@@ -192,7 +192,7 @@ impl Quote {
         };
 
         // THIS CANNOT MODIFY `quote.data`.
-        self.fee_amount = self.data.fee_parameters.subsidized(subsidy) + verification_fee;
+        self.fee_amount = self.data.fee_parameters.subsidized_with_additional_cost(subsidy, verification_fee);
         self
     }
 
@@ -240,7 +240,6 @@ pub struct QuoteData {
     /// `SellAmount::AfterFee` variant, this will be the expected sell amount if
     /// exactly `sell_amount` were traded.
     pub quoted_buy_amount: U256,
-    // TODO: The additional `verification_gas_limit` SHOULD NOT BE reflected here.
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
@@ -443,7 +442,6 @@ pub struct OrderQuoter {
     now: Arc<dyn Now>,
     eip1271_onchain_quote_validity_seconds: Duration,
     presign_onchain_quote_validity_seconds: Duration,
-    flat_gas_fee: U256,
 }
 
 impl OrderQuoter {
@@ -455,7 +453,6 @@ impl OrderQuoter {
         storage: Arc<dyn QuoteStoring>,
         eip1271_onchain_quote_validity_seconds: Duration,
         presign_onchain_quote_validity_seconds: Duration,
-        flat_gas_fee: U256,
     ) -> Self {
         Self {
             price_estimator,
@@ -466,7 +463,6 @@ impl OrderQuoter {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds,
             presign_onchain_quote_validity_seconds,
-            flat_gas_fee,
         }
     }
 
@@ -474,15 +470,15 @@ impl OrderQuoter {
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
-        let (signature_gas_fee, expiration) = match parameters.signing_scheme {
+        let expiration = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit,
-            } => (verification_gas_limit, self.now.now() + self.eip1271_onchain_quote_validity_seconds),
+                ..
+            } => self.now.now() + self.eip1271_onchain_quote_validity_seconds,
             QuoteSigningScheme::PreSign {
                 onchain_order: true,
-            } => (self.flat_gas_fee, self.now.now() + self.presign_onchain_quote_validity_seconds),
-            _ => (self.flat_gas_fee, self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS)),
+            } => self.now.now() + self.presign_onchain_quote_validity_seconds,
+            _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
         };
 
         let trade_query = parameters.to_price_query();
@@ -510,7 +506,7 @@ impl OrderQuoter {
             } => (trade_estimate.out_amount, *buy_amount),
         };
         let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as f64 + signature_gas_fee.to_f64_lossy(),
+            gas_amount: trade_estimate.gas as _,
             gas_price: gas_estimate.effective_gas_price(),
             sell_token_price,
         };
@@ -813,7 +809,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -930,7 +925,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -1048,7 +1042,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -1131,7 +1124,6 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert!(matches!(
@@ -1201,7 +1193,6 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert!(matches!(
@@ -1239,7 +1230,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         let quote = quoter.calculate_quote(Default::default()).await.unwrap();
@@ -1291,7 +1281,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -1371,7 +1360,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -1450,7 +1438,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert_eq!(
@@ -1523,7 +1510,6 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert!(matches!(
@@ -1557,7 +1543,6 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            flat_gas_fee: 0.into(),
         };
 
         assert!(matches!(

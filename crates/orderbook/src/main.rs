@@ -484,8 +484,6 @@ async fn main() {
         eip1271: args.enable_eip1271_orders,
         eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
         presign: args.enable_presign_orders,
-        // TODO: Should it be in CLI arguments?
-        flat_gas_fee: 0.into(),
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
@@ -500,7 +498,6 @@ async fn main() {
                 .unwrap(),
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
                 .unwrap(),
-            signature_configuration.flat_gas_fee,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());

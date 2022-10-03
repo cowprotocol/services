@@ -342,8 +342,7 @@ impl OrderValidating for OrderValidator {
             {
                 tracing::debug!(?signature, "skipping EIP-1271 signature validation");
                 // We don't care! Because we are skipping validation anyway
-                // but apply the flat gas fee
-                self.signature_configuration.flat_gas_fee
+                0.into()
             } else {
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
@@ -354,8 +353,8 @@ impl OrderValidating for OrderValidator {
                     .await?
             }
         } else {
-            // in any other case, just apply the flat fee
-            self.signature_configuration.flat_gas_fee
+            // in any other case, just apply 0
+            0.into()
         };
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -495,9 +494,6 @@ impl OrderValidating for OrderValidator {
 pub struct SignatureConfiguration {
     pub eip1271: bool,
     pub eip1271_skip_creation_validation: bool,
-    /// Additional flat gas fee to be applied if signature is not EIP-1217
-    /// or if EIP-1271 validation is skipped on creation.
-    pub flat_gas_fee: U256,
     pub presign: bool,
 }
 
@@ -508,7 +504,6 @@ impl SignatureConfiguration {
         Self {
             eip1271: false,
             eip1271_skip_creation_validation: false,
-            flat_gas_fee: 0.into(),
             presign: false,
         }
     }
@@ -518,7 +513,6 @@ impl SignatureConfiguration {
         Self {
             eip1271: true,
             eip1271_skip_creation_validation: false,
-            flat_gas_fee: 0.into(),
             presign: true,
         }
     }
@@ -963,6 +957,16 @@ mod tests {
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
 
+        let mut signature_validating = MockSignatureValidating::new();
+        // SignatureCheck {
+        //     signer: owner,
+        //     hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+        //     signature: signature.to_owned(),
+        // }
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(100_u128.into()));
+
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -974,7 +978,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
+            Arc::new(signature_validating),
         );
 
         let creation = OrderCreation {
@@ -1475,12 +1479,16 @@ mod tests {
         };
         let fee_amount = quote_data.fee_amount;
         let quote_id = Some(42);
+        let quote_signing_scheme = QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            verification_gas_limit: default_verification_gas_limit(),
+        };
         order_quoter
             .expect_find_quote()
             .with(
                 eq(quote_id),
                 eq(quote_search_parameters.clone()),
-                eq(&QuoteSigningScheme::Eip712),
+                eq(quote_signing_scheme),
             )
             .returning(move |_, _, _| Ok(quote_data.clone()));
 
@@ -1489,10 +1497,7 @@ mod tests {
             &quote_search_parameters,
             quote_id,
             fee_amount,
-            QuoteSigningScheme::Eip1271 {
-                onchain_order: true,
-                verification_gas_limit: default_verification_gas_limit(),
-            },
+            quote_signing_scheme,
         )
         .await
         .unwrap();
