@@ -67,21 +67,12 @@ impl RecentEventsCache {
         });
     }
 
-    fn first_event_block(&self) -> Result<u64> {
-        Ok(self
-            .events
-            .first()
-            .context("event cache is empty")?
-            .meta
-            .as_ref()
-            .context("event meta is empty")?
-            .block_number)
-    }
-
-    pub async fn get_events(&self, block_number: u64) -> Result<Vec<Event<UniswapV3Event>>> {
-        if block_number < self.first_event_block().context("empty event cache")?
-            || block_number > self.last_event_block().await?
-        {
+    pub async fn get_events(
+        &self,
+        block_range: RangeInclusive<u64>,
+    ) -> Result<Vec<Event<UniswapV3Event>>> {
+        // todo not sure if I need this?
+        if *block_range.end() > self.last_event_block().await? {
             return Err(anyhow!("events cache miss"));
         }
 
@@ -92,7 +83,10 @@ impl RecentEventsCache {
                 event
                     .meta
                     .as_ref()
-                    .filter(|event| event.block_number <= block_number)
+                    .filter(|event| {
+                        event.block_number >= *block_range.start()
+                            && event.block_number <= *block_range.end()
+                    })
                     .is_some()
             })
             .cloned()
