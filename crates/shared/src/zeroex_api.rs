@@ -15,6 +15,7 @@ use reqwest::{
     Client, IntoUrl, Url,
 };
 use serde::Deserialize;
+use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
@@ -105,9 +106,8 @@ pub struct Slippage(f64);
 impl Slippage {
     pub const ONE_PERCENT: Self = Self(0.01);
 
-    /// Creates a slippage amount from the specified basis points.
-    pub fn from_basis_points(basis_points: u32) -> Self {
-        let factor = (basis_points as f64) / 10000.;
+    /// Creates a slippage amount from the specified slippage factor.
+    pub fn new(factor: f64) -> Self {
         Slippage(factor)
     }
 }
@@ -170,15 +170,16 @@ impl Default for OrdersQuery {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
-    #[derivative(Default(value = "chrono::MIN_DATETIME"))]
+    #[derivative(Default(value = "DateTime::<Utc>::MIN_UTC"))]
     pub created_at: DateTime<Utc>,
     #[serde(with = "model::bytes_hex")]
     pub order_hash: Vec<u8>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
 }
 
@@ -191,6 +192,7 @@ pub struct ZeroExSignature {
     pub signature_type: u8,
 }
 
+#[serde_as]
 #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
@@ -198,8 +200,8 @@ pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
-    #[derivative(Default(value = "chrono::naive::MAX_DATETIME.timestamp() as u64"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
+    #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the order.
     /// This is typically used to incentivize off-chain order relay.
@@ -208,7 +210,7 @@ pub struct Order {
     /// two parties that will be involved in the trade if the order gets filled.
     pub maker: H160,
     /// The amount of `maker_token` being sold by the maker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
     pub maker_token: H160,
@@ -229,12 +231,12 @@ pub struct Order {
     /// anyone can fill the order.
     pub taker: H160,
     /// The amount of `taker_token` being sold by the taker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_amount: u128,
     /// The address of the ERC20 token the taker is selling to the maker.
     pub taker_token: H160,
     /// Amount of takerToken paid by the taker to the feeRecipient.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_token_fee_amount: u128,
     /// Address of the contract where the transaction should be sent, usually this is
     /// the 0x exchange proxy contract.
@@ -277,6 +279,7 @@ pub struct OrdersResponse {
 }
 
 /// A Ox API `price` response.
+#[serde_as]
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -286,9 +289,9 @@ pub struct PriceResponse {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub allowance_target: H160,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub price: f64,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub estimated_gas: u64,
 }
 
@@ -524,14 +527,14 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn test_api_e2e() {
+    async fn zeroex_swap() {
         let zeroex_client = DefaultZeroExApi::default();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Some(Slippage::ONE_PERCENT),
+            slippage_percentage: Some(Slippage::new(0.012345678)),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };

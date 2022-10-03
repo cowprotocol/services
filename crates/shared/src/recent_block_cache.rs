@@ -25,9 +25,10 @@ use ethcontract::BlockNumber;
 use lru::LruCache;
 use prometheus::IntCounterVec;
 use std::{
+    cmp,
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     hash::Hash,
-    num::NonZeroU64,
+    num::{NonZeroU64, NonZeroUsize},
     sync::Mutex,
     time::Duration,
 };
@@ -88,7 +89,7 @@ where
 #[derive(Clone, Copy, Debug)]
 pub struct CacheConfig {
     pub number_of_blocks_to_cache: NonZeroU64,
-    pub number_of_entries_to_auto_update: usize,
+    pub number_of_entries_to_auto_update: NonZeroUsize,
     pub maximum_recent_block_age: u64,
     pub max_retries: u32,
     pub delay_between_retries: Duration,
@@ -98,7 +99,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             number_of_blocks_to_cache: NonZeroU64::new(1).unwrap(),
-            number_of_entries_to_auto_update: Default::default(),
+            number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
             maximum_recent_block_age: Default::default(),
             max_retries: Default::default(),
             delay_between_retries: Default::default(),
@@ -271,7 +272,11 @@ impl<K, V> Mutexed<K, V>
 where
     K: CacheKey<V>,
 {
-    fn new(entries_lru_size: usize, current_block: u64, maximum_recent_block_age: u64) -> Self {
+    fn new(
+        entries_lru_size: NonZeroUsize,
+        current_block: u64,
+        maximum_recent_block_age: u64,
+    ) -> Self {
         Self {
             recently_used: LruCache::new(entries_lru_size),
             cached_most_recently_at_block: HashMap::new(),
@@ -304,7 +309,7 @@ where
             match self.cached_most_recently_at_block.entry(key.clone()) {
                 Entry::Occupied(mut entry) => {
                     let value = entry.get_mut();
-                    *value = (*value).max(block);
+                    *value = cmp::max(*value, block);
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(block);
@@ -398,7 +403,7 @@ mod tests {
         let (_sender, receiver) = watch::channel(block);
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: 2,
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -452,7 +457,7 @@ mod tests {
         let (_sender, receiver) = watch::channel(block);
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: 2,
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -500,7 +505,7 @@ mod tests {
         let (_sender, receiver) = watch::channel(block);
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: 2,
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -557,7 +562,7 @@ mod tests {
         let (_sender, receiver) = watch::channel(block);
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: 2,
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 maximum_recent_block_age: 10,
                 ..Default::default()
             },
@@ -624,6 +629,7 @@ mod tests {
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -633,24 +639,23 @@ mod tests {
         .unwrap();
 
         cache
-            .fetch(test_keys(0..1), Block::Number(10))
+            .fetch(test_keys(0..10), Block::Number(10))
             .now_or_never()
             .unwrap()
             .unwrap();
-
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 1);
+        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 10);
         cache
             .update_cache_at_block(14)
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 1);
+        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 12);
         cache
             .update_cache_at_block(15)
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(cache.mutexed.lock().unwrap().entries.is_empty());
+        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
     }
 
     #[test]

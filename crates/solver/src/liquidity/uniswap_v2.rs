@@ -1,4 +1,4 @@
-use super::{slippage, AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
@@ -118,24 +118,22 @@ impl UniswapLikeLiquidity {
 impl Inner {
     fn settle(
         &self,
-        (token_in, amount_in): (H160, U256),
+        (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
     ) -> (Approval, UniswapInteraction) {
-        let amount_in_with_slippage = slippage::amount_plus_max_slippage(amount_in);
         let approval = self
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_in, amount_in_with_slippage);
+            .approve_token_or_default(token_in, amount_in_max);
 
         (
             approval,
             UniswapInteraction {
                 router: self.router.clone(),
                 settlement: self.gpv2_settlement.clone(),
-                // Apply fixed slippage tolerance in case balances change between solution finding and mining
                 amount_out,
-                amount_in_max: amount_in_with_slippage,
+                amount_in_max,
                 token_in,
                 token_out,
             },
@@ -144,9 +142,10 @@ impl Inner {
 }
 
 impl SettlementHandling<ConstantProductOrder> for Inner {
-    // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
+    // Creates the required interaction to convert the given input into output. Assumes slippage is
+    // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let (approval, swap) = self.settle(execution.input, execution.output);
+        let (approval, swap) = self.settle(execution.input_max, execution.output);
         encoder.append_to_execution_plan(approval);
         encoder.append_to_execution_plan(swap);
         Ok(())
@@ -187,26 +186,12 @@ mod tests {
         let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()));
         assert_eq!(approval, Approval::AllowanceSufficient);
 
-        // Allowance needed because of slippage
-        let (approval, _) = inner.settle((token_a, 100.into()), (token_b, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
-        let (approval, _) = inner.settle((token_a, 150.into()), (token_b, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
         // Token B below, equal, above
         let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()));
         assert_eq!(approval, Approval::AllowanceSufficient);
 
         let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()));
         assert_eq!(approval, Approval::AllowanceSufficient);
-
-        // Allowance needed because of slippage
-        let (approval, _) = inner.settle((token_b, 200.into()), (token_a, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
-        let (approval, _) = inner.settle((token_b, 250.into()), (token_a, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Untracked token
         let (approval, _) =

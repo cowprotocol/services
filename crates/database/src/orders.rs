@@ -292,7 +292,6 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
-    pub is_ethflow_order: bool,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -320,7 +319,6 @@ o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, 
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.is_liquidity_order,
-(SELECT EXISTS(SELECT 1 FROM ethflow_orders eo WHERE eo.uid = o.uid)) as is_ethflow_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -405,7 +403,8 @@ pub fn user_orders<'a>(
     const QUERY: &str = const_format::concatcp!(
 "SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
-" WHERE o.owner = $1 ",
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE (o.owner = $1 OR onchain_o.sender = $1) ",
 "ORDER BY o.creation_timestamp DESC ",
 "LIMIT $2 ",
 "OFFSET $3 ",
@@ -457,6 +456,7 @@ mod tests {
         byte_array::ByteArray,
         ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
@@ -629,41 +629,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_reading_ethflow_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            sell_amount: 1.into(),
-            buy_amount: 1.into(),
-            signing_scheme: SigningScheme::Eip1271,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-
-        let order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!order.is_ethflow_order);
-
-        let eth_order_placement = EthOrderPlacement {
-            uid: order.uid,
-            valid_to: 0i64,
-        };
-        insert_ethflow_order(&mut db, &eth_order_placement)
-            .await
-            .unwrap();
-        let order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(order.is_ethflow_order);
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn postgres_solvable_presign_orders() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
@@ -825,7 +790,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let owners: Vec<Address> = (0u8..2).map(|i| ByteArray([i; 20])).collect();
+        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
 
         fn datetime(offset: u32) -> DateTime<Utc> {
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
@@ -878,6 +843,17 @@ mod tests {
 
         let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
         assert_eq!(result, vec![]);
+
+        let onchain_order = OnchainOrderPlacement {
+            order_uid: ByteArray(orders[0].0),
+            sender: owners[2],
+        };
+        let event_index = EventIndex::default();
+        insert_onchain_order(&mut db, &event_index, &onchain_order)
+            .await
+            .unwrap();
+        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
+        assert_eq!(result, vec![orders[0]]);
     }
 
     #[tokio::test]

@@ -1,7 +1,10 @@
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
-    liquidity::{order_converter::OrderConverter, AmmOrderExecution, LimitOrder, Liquidity},
+    liquidity::{
+        order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
+        Liquidity,
+    },
     settlement::{Interaction, Settlement},
 };
 use anyhow::{anyhow, Context as _, Result};
@@ -27,10 +30,17 @@ pub async fn convert_settlement(
     context: SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
+    slippage: SlippageContext<'_>,
 ) -> Result<Settlement> {
-    IntermediateSettlement::new(settled, context, allowance_manager, order_converter)
-        .await?
-        .into_settlement()
+    IntermediateSettlement::new(
+        settled,
+        context,
+        allowance_manager,
+        order_converter,
+        slippage,
+    )
+    .await?
+    .into_settlement()
 }
 
 #[derive(Clone, Debug)]
@@ -58,14 +68,18 @@ impl Execution {
         }
     }
 
-    fn add_to_settlement(&self, settlement: &mut Settlement) -> Result<()> {
+    fn add_to_settlement(
+        &self,
+        settlement: &mut Settlement,
+        slippage: &SlippageContext,
+    ) -> Result<()> {
         use Execution::*;
 
         match self {
             LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
             Amm(executed_amm) => {
                 let execution = AmmOrderExecution {
-                    input: executed_amm.input,
+                    input_max: slippage.execution_input_max(executed_amm.input)?,
                     output: executed_amm.output,
                 };
                 match &executed_amm.order {
@@ -97,10 +111,11 @@ impl Execution {
 
 // An intermediate representation between SettledBatchAuctionModel and Settlement useful for doing
 // the error checking up front and then working with a more convenient representation.
-struct IntermediateSettlement {
+struct IntermediateSettlement<'a> {
     approvals: Vec<Approval>,
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
+    slippage: SlippageContext<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -136,13 +151,14 @@ impl Interaction for InteractionData {
     }
 }
 
-impl IntermediateSettlement {
+impl<'a> IntermediateSettlement<'a> {
     async fn new(
         settled: SettledBatchAuctionModel,
         context: SettlementContext,
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
-    ) -> Result<Self> {
+        slippage: SlippageContext<'a>,
+    ) -> Result<IntermediateSettlement<'a>> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
         let foreign_liquidity_orders =
@@ -161,6 +177,7 @@ impl IntermediateSettlement {
             executions,
             prices,
             approvals,
+            slippage,
         })
     }
 
@@ -188,7 +205,7 @@ impl IntermediateSettlement {
                 continue;
             }
 
-            execution.add_to_settlement(&mut settlement)?;
+            execution.add_to_settlement(&mut settlement, &self.slippage)?;
         }
 
         Ok(settlement)
@@ -542,6 +559,7 @@ mod tests {
             prepared,
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(weth)),
+            SlippageContext::default(),
         )
         .await
         .unwrap();
@@ -586,7 +604,7 @@ mod tests {
         assert_eq!(
             cp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input: (t0, 8.into()),
+                input_max: (t0, 9.into()),
                 output: (t1, 9.into()),
             }]
         );
@@ -594,14 +612,14 @@ mod tests {
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input: (t0, 1.into()),
+                input_max: (t0, 2.into()),
                 output: (t1, 2.into()),
             }]
         );
         assert_eq!(
             sp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input: (t0, 4.into()),
+                input_max: (t0, 5.into()),
                 output: (t1, 6.into()),
             }]
         );

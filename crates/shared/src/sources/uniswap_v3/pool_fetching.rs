@@ -38,12 +38,12 @@ pub struct PoolState {
     pub sqrt_price: U256,
     #[serde(with = "u256_decimal")]
     pub liquidity: U256,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     // (tick_idx, liquidity_net)
     #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
     pub liquidity_net: Vec<(BigInt, BigInt)>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub fee: Ratio<u32>,
 }
 

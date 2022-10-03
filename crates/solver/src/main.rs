@@ -2,7 +2,6 @@ use anyhow::Context;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
 use num::rational::Ratio;
-use primitive_types::U256;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
@@ -104,12 +103,10 @@ async fn main() {
 
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
-        // 0 because we don't make use of the auto update functionality as we always fetch
-        // for specific blocks
-        number_of_entries_to_auto_update: 0,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        ..Default::default()
     };
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
         sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
@@ -226,25 +223,21 @@ async fn main() {
         network_name.to_string(),
         chain_id,
         args.shared.disabled_one_inch_protocols,
-        args.paraswap_slippage_bps,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
         &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
-        args.zeroex_slippage_bps,
         args.shared.disabled_zeroex_sources,
-        args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
         args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
-        args.oneinch_max_slippage_in_eth
-            .map(|float| U256::from_f64_lossy(float * 1e18)),
         order_converter.clone(),
         args.max_settlements_per_solver,
         args.max_merged_settlements,
+        &args.slippage,
     )
     .expect("failure creating solvers");
 

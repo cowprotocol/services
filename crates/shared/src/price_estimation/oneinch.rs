@@ -42,6 +42,7 @@ mod tests {
         oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
         price_estimation::{single_estimate, PriceEstimationError},
     };
+    use futures::FutureExt as _;
     use model::order::OrderKind;
     use reqwest::Client;
 
@@ -75,18 +76,21 @@ mod tests {
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
         one_inch.expect_get_sell_order_quote().return_once(|_| {
-            Ok(SellOrderQuote {
-                from_token: Token {
-                    address: testlib::tokens::WETH,
-                },
-                to_token: Token {
-                    address: testlib::tokens::GNO,
-                },
-                to_token_amount: 808_069_760_400_778_577u128.into(),
-                from_token_amount: 100_000_000_000_000_000u128.into(),
-                protocols: Vec::default(),
-                estimated_gas: 189_386,
-            })
+            async {
+                Ok(SellOrderQuote {
+                    from_token: Token {
+                        address: testlib::tokens::WETH,
+                    },
+                    to_token: Token {
+                        address: testlib::tokens::GNO,
+                    },
+                    to_token_amount: 808_069_760_400_778_577u128.into(),
+                    from_token_amount: 100_000_000_000_000_000u128.into(),
+                    protocols: Vec::default(),
+                    estimated_gas: 189_386,
+                })
+            }
+            .boxed()
         });
 
         let estimator = OneInchPriceEstimator::test(one_inch);
@@ -137,11 +141,14 @@ mod tests {
             .expect_get_sell_order_quote()
             .times(1)
             .return_once(|_| {
-                Err(RestError {
-                    status_code: 500,
-                    description: "Internal Server Error".to_string(),
+                async {
+                    Err(RestError {
+                        status_code: 500,
+                        description: "Internal Server Error".to_string(),
+                    }
+                    .into())
                 }
-                .into())
+                .boxed()
             });
 
         let estimator = OneInchPriceEstimator::test(one_inch);
@@ -168,7 +175,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| Err(anyhow::anyhow!("malformed JSON").into()));
+            .return_once(|_| async { Err(anyhow::anyhow!("malformed JSON").into()) }.boxed());
 
         let estimator = OneInchPriceEstimator::test(one_inch);
 

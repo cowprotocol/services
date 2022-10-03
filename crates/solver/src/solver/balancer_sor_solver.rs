@@ -6,13 +6,12 @@ use super::{
 };
 use crate::{
     encoding::EncodedInteraction,
-    interactions::{allowances::ApprovalRequest, balancer_v2::SwapKind},
-    liquidity::LimitOrder,
+    interactions::{
+        allowances::{AllowanceManaging, ApprovalRequest},
+        balancer_v2::{self, SwapKind},
+    },
+    liquidity::{slippage::SlippageCalculator, LimitOrder},
     settlement::{Interaction, Settlement},
-};
-use crate::{
-    interactions::{allowances::AllowanceManaging, balancer_v2},
-    liquidity::slippage,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
@@ -29,6 +28,7 @@ pub struct BalancerSorSolver {
     settlement: GPv2Settlement,
     api: Arc<dyn BalancerSorApi>,
     allowance_fetcher: Arc<dyn AllowanceManaging>,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl BalancerSorSolver {
@@ -38,6 +38,7 @@ impl BalancerSorSolver {
         settlement: GPv2Settlement,
         api: Arc<dyn BalancerSorApi>,
         allowance_fetcher: Arc<dyn AllowanceManaging>,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         Self {
             account,
@@ -45,6 +46,7 @@ impl BalancerSorSolver {
             settlement,
             api,
             allowance_fetcher,
+            slippage_calculator,
         }
     }
 }
@@ -86,13 +88,14 @@ impl SingleOrderSolving for BalancerSorSolver {
             return Ok(None);
         }
 
+        let slippage = self.slippage_calculator.auction_context(auction);
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
                 quoted_sell_amount,
-                slippage::amount_minus_max_slippage(quoted_buy_amount),
+                slippage.apply_to_amount_out(order.buy_token, quoted_buy_amount)?,
             ),
             OrderKind::Buy => (
-                slippage::amount_plus_max_slippage(quoted_sell_amount),
+                slippage.apply_to_amount_in(order.sell_token, quoted_sell_amount)?,
                 quoted_buy_amount,
             ),
         };
@@ -315,6 +318,7 @@ mod tests {
             settlement.clone(),
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let result = solver
@@ -437,6 +441,7 @@ mod tests {
             settlement.clone(),
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let result = solver
@@ -512,6 +517,7 @@ mod tests {
             settlement,
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         assert!(matches!(
@@ -542,6 +548,7 @@ mod tests {
             settlement,
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let sell_settlement = solver
