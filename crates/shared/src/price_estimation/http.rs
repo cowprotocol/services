@@ -384,7 +384,7 @@ mod tests {
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
-    use clap::ArgEnum;
+    use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
     use model::order::OrderKind;
     use reqwest::Client;
@@ -467,6 +467,7 @@ mod tests {
                 Default::default(),
                 current_block_stream.clone(),
                 client.clone(),
+                web3.clone(),
                 &contracts,
                 Default::default(),
             )
@@ -512,6 +513,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
+                from: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount1,
@@ -532,6 +534,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
+                from: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount2,

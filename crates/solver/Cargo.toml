@@ -15,43 +15,44 @@ name = "solver"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "3.1", features = ["derive", "env"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
-derivative = "2.2"
-derive_more = "0.99"
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
-ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0" }
-futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_"] }
+derivative = { workspace = true }
+ethcontract = { workspace = true }
+ethcontract-mock = { workspace = true }
+futures = { workspace = true }
+gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
-hex = "0.4"
-hex-literal = "0.3"
-itertools = "0.10"
-jsonrpc-core = "18.0"
-lazy_static = "1.4"
-maplit = "1.0"
+hex = { workspace = true }
+hex-literal = { workspace = true }
+itertools = { workspace = true }
+jsonrpc-core = "18"
+lazy_static = { workspace = true }
+maplit = { workspace = true }
+mockall = { workspace = true }
 model = { path = "../model" }
-num = "0.4"
-number_conversions = { path = "../number_conversions" }
-primitive-types = { version = "0.10", features = ["fp-conversion"] }
-prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-rand = "0.8"
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_with = { version = "1.11", default-features = false }
+num = { workspace = true }
+number-conversions = { path = "../number-conversions" }
+once_cell = { workspace = true }
+primitive-types = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
 shared = { path = "../shared" }
-strum = { version = "0.24", features = ["derive"] }
-thiserror = "1.0"
-tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "time", "test-util"] }
-tracing = "0.1"
-web3 = { version = "0.18", default-features = false }
-mockall = "0.11"
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing = { workspace = true }
+web3 = { workspace = true }
 
 [dev-dependencies]
-tracing-subscriber = "0.3"
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
 testlib = { path = "../testlib" }

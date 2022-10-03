@@ -1,16 +1,17 @@
 [package]
 name = "database"
 version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-bigdecimal = "0.3"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+bigdecimal = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 const_format = "0.2"
-futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = "0.4"
-sqlx = { version = "0.6", default-features = false, features = ["chrono", "bigdecimal", "macros", "postgres"] }
+futures = { workspace = true }
+hex = { workspace = true }
+sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
-tokio = { version = "1.15", features = ["macros"] }
+tokio = { workspace = true, features = ["macros"] }

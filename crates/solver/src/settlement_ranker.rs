@@ -1,6 +1,6 @@
 use crate::{
     driver::solver_settlements::{self, retain_mature_settlements},
-    metrics::{SolverMetrics, SolverRunOutcome},
+    metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     solver::{SettlementWithError, Solver, SolverRunError},
@@ -15,7 +15,7 @@ type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
-    pub settlement_rater: Box<dyn SettlementRating>,
+    pub settlement_rater: Arc<dyn SettlementRating>,
     // TODO: these should probably come from the autopilot to make the test parameters identical for
     // everyone.
     pub min_order_age: Duration,
@@ -137,6 +137,17 @@ impl SettlementRanker {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+
+        tracing::info!(
+            "{} settlements passed simulation and {} failed",
+            rated_settlements.len(),
+            errors.len(),
+        );
+        for (solver, _, _) in &rated_settlements {
+            self.metrics
+                .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+        }
+
         Ok((rated_settlements, errors))
     }
 }

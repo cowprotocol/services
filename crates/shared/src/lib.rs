@@ -7,10 +7,16 @@ pub mod arguments;
 pub mod bad_token;
 pub mod balancer_sor_api;
 pub mod baseline_solver;
+pub mod code_fetching;
+pub mod code_simulation;
 pub mod conversions;
 pub mod current_block;
+pub mod db_order_conversions;
 pub mod ethcontract_error;
 pub mod event_handling;
+pub mod event_storing_helpers;
+pub mod exit_process_on_panic;
+pub mod fee_subsidy;
 pub mod gas_price;
 pub mod gas_price_estimation;
 pub mod http_client;
@@ -19,28 +25,33 @@ pub mod maintenance;
 pub mod metrics;
 pub mod network;
 pub mod oneinch_api;
+pub mod order_quoting;
+pub mod order_validation;
 pub mod paraswap_api;
 pub mod price_estimation;
 pub mod rate_limiter;
 pub mod recent_block_cache;
+pub mod remaining_amounts;
 pub mod request_sharing;
 pub mod signature_validator;
-pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;
+pub mod tenderly_api;
 pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
 pub mod tracing;
+pub mod trade_finding;
 pub mod transport;
 pub mod univ3_router_api;
-pub mod web3_traits;
 pub mod zeroex_api;
 
+use self::{http_client::HttpClientFactory, transport::http::HttpTransport};
 use ethcontract::{
     batch::CallBatch,
     dyns::{DynTransport, DynWeb3},
 };
+use reqwest::Url;
 use std::{
     future::Future,
     time::{Duration, Instant},
@@ -50,13 +61,14 @@ pub type Web3Transport = DynTransport;
 pub type Web3 = DynWeb3;
 pub type Web3CallBatch = CallBatch<Web3Transport>;
 
-/// The standard http client we use in the api and driver.
-pub fn http_client(timeout: Duration) -> reqwest::Client {
-    reqwest::ClientBuilder::new()
-        .timeout(timeout)
-        .user_agent("cowprotocol-services/2.0.0")
-        .build()
-        .unwrap()
+/// Create a Web3 instance.
+pub fn web3(http_factory: &HttpClientFactory, url: &Url, name: impl ToString) -> Web3 {
+    let transport = Web3Transport::new(HttpTransport::new(
+        http_factory.configure(|builder| builder.cookie_store(true)),
+        url.clone(),
+        name.to_string(),
+    ));
+    Web3::new(transport)
 }
 
 /// Run a future and callback with the time the future took. The call back can for example log the

@@ -1,27 +1,27 @@
 use super::Postgres;
-use crate::order_quoting::Quote;
 use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
-    orders::{
-        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
-    },
+    orders::{FullOrder, OrderKind as DbOrderKind},
 };
 use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{
-        BuyTokenDestination, Order, OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid,
-        SellTokenSource,
-    },
-    signature::{Signature, SigningScheme},
+    order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    signature::Signature,
 };
 use num::Zero;
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
+use shared::{
+    db_order_conversions::{
+        buy_token_destination_from, buy_token_destination_into, order_kind_from, order_kind_into,
+        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
+    },
+    order_quoting::Quote,
+};
 use sqlx::{types::BigDecimal, Connection, PgConnection};
 use std::convert::TryInto;
 
@@ -39,8 +39,6 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
-    /// Orders that are solvable: minimum valid to, not fully executed, not invalidated.
-    async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders>;
     /// All orders of a single user ordered by creation date descending (newest orders first).
     async fn user_orders(
         &self,
@@ -53,68 +51,6 @@ pub trait OrderStoring: Send + Sync {
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
-}
-
-pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {
-    match kind {
-        OrderKind::Buy => DbOrderKind::Buy,
-        OrderKind::Sell => DbOrderKind::Sell,
-    }
-}
-
-pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
-    match kind {
-        DbOrderKind::Buy => OrderKind::Buy,
-        DbOrderKind::Sell => OrderKind::Sell,
-    }
-}
-
-fn sell_token_source_into(source: SellTokenSource) -> DbSellTokenSource {
-    match source {
-        SellTokenSource::Erc20 => DbSellTokenSource::Erc20,
-        SellTokenSource::Internal => DbSellTokenSource::Internal,
-        SellTokenSource::External => DbSellTokenSource::External,
-    }
-}
-
-fn sell_token_source_from(source: DbSellTokenSource) -> SellTokenSource {
-    match source {
-        DbSellTokenSource::Erc20 => SellTokenSource::Erc20,
-        DbSellTokenSource::Internal => SellTokenSource::Internal,
-        DbSellTokenSource::External => SellTokenSource::External,
-    }
-}
-
-fn buy_token_destination_into(destination: BuyTokenDestination) -> DbBuyTokenDestination {
-    match destination {
-        BuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
-        BuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
-    }
-}
-
-fn buy_token_destination_from(destination: DbBuyTokenDestination) -> BuyTokenDestination {
-    match destination {
-        DbBuyTokenDestination::Erc20 => BuyTokenDestination::Erc20,
-        DbBuyTokenDestination::Internal => BuyTokenDestination::Internal,
-    }
-}
-
-fn signing_scheme_into(scheme: SigningScheme) -> DbSigningScheme {
-    match scheme {
-        SigningScheme::Eip712 => DbSigningScheme::Eip712,
-        SigningScheme::EthSign => DbSigningScheme::EthSign,
-        SigningScheme::Eip1271 => DbSigningScheme::Eip1271,
-        SigningScheme::PreSign => DbSigningScheme::PreSign,
-    }
-}
-
-fn signing_scheme_from(scheme: DbSigningScheme) -> SigningScheme {
-    match scheme {
-        DbSigningScheme::Eip712 => SigningScheme::Eip712,
-        DbSigningScheme::EthSign => SigningScheme::EthSign,
-        DbSigningScheme::Eip1271 => SigningScheme::Eip1271,
-        DbSigningScheme::PreSign => SigningScheme::PreSign,
-    }
 }
 
 #[derive(Debug)]
@@ -310,28 +246,6 @@ impl OrderStoring for Postgres {
         .try_collect()
         .await
     }
-
-    async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["solvable_orders"])
-            .start_timer();
-
-        let mut ex = self.pool.begin().await?;
-        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect::<Vec<_>>()
-            .await?;
-        let latest_settlement_block =
-            database::orders::latest_settlement_block(&mut ex).await? as u64;
-        Ok(SolvableOrders {
-            orders,
-            latest_settlement_block,
-        })
-    }
 }
 
 fn calculate_status(order: &FullOrder) -> OrderStatus {
@@ -432,18 +346,16 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use super::*;
     use chrono::Duration;
-    use database::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement},
+    use database::byte_array::ByteArray;
+    use database::orders::{
+        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
+        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    };
+    use model::{
+        order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+        signature::{Signature, SigningScheme},
     };
     use std::sync::atomic::{AtomicI64, Ordering};
-
-    async fn append_events(db: &Postgres, events: &[(EventIndex, Event)]) -> Result<()> {
-        let mut transaction = db.pool.begin().await?;
-        database::events::append(&mut transaction, events).await?;
-        transaction.commit().await?;
-        Ok(())
-    }
 
     #[test]
     fn order_status() {
@@ -751,50 +663,6 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(old_order_cancellation, None);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_solvable_orders_settlement_block() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            0
-        );
-        append_events(
-            &db,
-            &[(
-                EventIndex {
-                    block_number: 1,
-                    log_index: 0,
-                },
-                Event::Settlement(Settlement::default()),
-            )],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            1
-        );
-        append_events(
-            &db,
-            &[(
-                EventIndex {
-                    block_number: 5,
-                    log_index: 3,
-                },
-                Event::Settlement(Settlement::default()),
-            )],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            5
-        );
     }
 
     #[tokio::test]

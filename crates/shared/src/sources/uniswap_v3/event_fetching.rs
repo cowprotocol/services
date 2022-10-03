@@ -1,4 +1,5 @@
-use crate::event_handling::{BlockNumber, EventRetrieving, EventStoring};
+use crate::current_block::RangeInclusive;
+use crate::event_handling::{EventRetrieving, EventStoring};
 use crate::Web3;
 
 use anyhow::{anyhow, Context, Result};
@@ -10,7 +11,6 @@ use ethcontract::{
     common::abi::Error, contract::ParseLog, dyns::DynAllEventsBuilder, errors::ExecutionError,
     Event, RawLog, H160, H256,
 };
-use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UniswapV3Event {
@@ -105,9 +105,9 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     async fn replace_events(
         &mut self,
         events: Vec<Event<UniswapV3Event>>,
-        range: RangeInclusive<BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()> {
-        self.remove_events_newer_than_block(range.start().to_u64());
+        self.remove_events_newer_than_block(*range.start());
         self.append_events(events).await
     }
 

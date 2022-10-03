@@ -18,6 +18,9 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
+        builder.contract_mod_override("cowswap_onchain_orders")
+    });
     generate_contract_with_config("BalancerV2Authorizer", |builder| {
         builder.contract_mod_override("balancer_v2_authorizer")
     });
@@ -351,6 +354,10 @@ fn main() {
             .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
+
+    generate_contract("AnyoneAuthenticator");
+    generate_contract("PhonyERC20");
+    generate_contract("Trader");
 }
 
 fn generate_contract(name: &str) {

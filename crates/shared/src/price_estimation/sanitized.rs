@@ -230,6 +230,7 @@ mod tests {
             // This is the common case (Tokens are supported, distinct and not ETH).
             // Will be estimated by the wrapped_estimator.
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(2),
                 in_amount: 1.into(),
@@ -239,6 +240,7 @@ mod tests {
             // `wrapped_estimator`.
             // `sanitized_estimator` will add cost of unwrapping ETH to Estimate.
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BUY_ETH_ADDRESS,
                 in_amount: 1.into(),
@@ -246,6 +248,7 @@ mod tests {
             },
             // Will cause buffer overflow of gas price in `sanitized_estimator`.
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BUY_ETH_ADDRESS,
                 in_amount: U256::MAX,
@@ -255,6 +258,7 @@ mod tests {
             // `wrapped_estimator`.
             // `sanitized_estimator` will add cost of wrapping ETH to Estimate.
             Query {
+                from: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
@@ -262,6 +266,7 @@ mod tests {
             },
             // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are identical.
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
@@ -269,6 +274,7 @@ mod tests {
             },
             // Can be estimated by `sanitized_estimator` because both tokens are the native token.
             Query {
+                from: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: BUY_ETH_ADDRESS,
                 in_amount: 1.into(),
@@ -276,6 +282,7 @@ mod tests {
             },
             // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
             Query {
+                from: None,
                 sell_token: native_token,
                 buy_token: BUY_ETH_ADDRESS,
                 in_amount: 1.into(),
@@ -283,6 +290,7 @@ mod tests {
             },
             // Can be estimated by `sanitized_estimator` because it is a native token wrap.
             Query {
+                from: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: native_token,
                 in_amount: 1.into(),
@@ -290,6 +298,7 @@ mod tests {
             },
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
             Query {
+                from: None,
                 sell_token: BAD_TOKEN,
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
@@ -297,6 +306,7 @@ mod tests {
             },
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BAD_TOKEN,
                 in_amount: 1.into(),
@@ -440,6 +450,7 @@ mod tests {
         let queries = [
             // difficult
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(2),
                 in_amount: 1.into(),
@@ -447,6 +458,7 @@ mod tests {
             },
             //easy
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),

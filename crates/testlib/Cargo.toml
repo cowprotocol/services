@@ -2,13 +2,11 @@
 name = "testlib"
 version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
-edition = "2018"
-license = "MIT"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
-ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0" }
-hex-literal = "0.3"
+ethcontract = { workspace = true }
+ethcontract-mock = { workspace = true }
+hex-literal = { workspace = true }

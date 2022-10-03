@@ -9,6 +9,7 @@ pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
 pub mod sanitized;
+pub mod trade_finder;
 pub mod zeroex;
 
 use crate::{
@@ -30,7 +31,7 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum PriceEstimatorType {
     Baseline,
@@ -85,6 +86,8 @@ impl Clone for PriceEstimationError {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Query {
+    /// Optional `from` address that would be executing the query.
+    pub from: Option<H160>,
     pub sell_token: H160,
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in buy_token.
@@ -92,7 +95,7 @@ pub struct Query {
     pub kind: OrderKind,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp

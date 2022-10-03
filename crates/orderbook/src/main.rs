@@ -6,16 +6,7 @@ use contracts::{
 use ethcontract::errors::DeployError;
 use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
-    database::Postgres,
-    fee_subsidy::{
-        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
-    },
-    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
-    order_validation::{OrderValidator, SignatureConfiguration},
-    orderbook::Orderbook,
-    serve_api,
-    solvable_orders::SolvableOrdersCache,
-    verify_deployed_contract_constants,
+    database::Postgres, orderbook::Orderbook, serve_api, verify_deployed_contract_constants,
 };
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -23,21 +14,24 @@ use shared::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder::{
-            blockscout::BlockscoutTokenOwnerFinder, BalancerVaultFinder, TokenOwnerFinding,
-            UniswapLikePairProviderFinder, UniswapV3Finder,
-        },
+        token_owner_finder,
         trace_call::TraceCallDetector,
     },
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    fee_subsidy::{
+        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
+    },
     gas_price::InstrumentedGasEstimator,
+    http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
+    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
+    order_validation::{OrderValidator, SignatureConfiguration},
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         balancer_sor::BalancerSor,
@@ -65,9 +59,7 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
@@ -79,24 +71,14 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running order book with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
 
-    let client = shared::http_client(args.shared.http_timeout);
+    let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url.clone(),
-        "".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
-    let current_block = web3
-        .eth()
-        .block_number()
-        .await
-        .expect("block_number")
-        .as_u64();
+    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -157,7 +139,7 @@ async fn main() {
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
+            &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key.clone(),
@@ -187,57 +169,41 @@ async fn main() {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
-        .into_iter()
-        .map(|provider| -> Arc<dyn TokenOwnerFinding> {
-            Arc::new(UniswapLikePairProviderFinder {
-                inner: provider,
-                base_tokens: base_tokens.tokens().iter().copied().collect(),
-            })
-        })
-        .collect();
-    if let Some(contract) = &vault {
-        finders.push(Arc::new(BalancerVaultFinder(contract.clone())));
-    }
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
         other => Some(other.unwrap()),
     };
-    if let Some(contract) = uniswapv3_factory {
-        finders.push(Arc::new(
-            UniswapV3Finder::new(
-                contract,
-                base_tokens.tokens().iter().copied().collect(),
-                current_block,
-                args.token_detector_fee_values,
-            )
-            .await
-            .expect("create uniswapv3 finder"),
-        ));
-    }
-    if args.enable_blockscout {
-        if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
-            finders.push(Arc::new(finder));
-        }
-    }
-    let trace_call_detector = TraceCallDetector {
-        web3: web3.clone(),
-        finders,
-        settlement_contract: settlement_contract.address(),
-    };
-    let caching_detector = CachingDetector::new(
-        Box::new(trace_call_detector),
-        args.token_quality_cache_expiry,
-    );
+
+    let finder = token_owner_finder::init(
+        &args.token_owner_finder,
+        web3.clone(),
+        chain_id,
+        &http_factory,
+        &pair_providers,
+        vault.as_ref(),
+        uniswapv3_factory.as_ref(),
+        &base_tokens,
+    )
+    .await
+    .expect("failed to initialize token owner finders");
+
+    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
+        Box::new(CachingDetector::new(
+            Box::new(TraceCallDetector {
+                web3: shared::web3(&http_factory, tracing_node_url, "trace"),
+                finder,
+                settlement_contract: settlement_contract.address(),
+            }),
+            args.token_quality_cache_expiry,
+        ))
+    });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
             allowed_tokens,
             unsupported_tokens,
-            if args.skip_trace_api {
-                UnknownTokenStrategy::Allow
-            } else {
-                UnknownTokenStrategy::Forward(Box::new(caching_detector))
-            },
+            trace_call_detector
+                .map(|detector| UnknownTokenStrategy::Forward(detector))
+                .unwrap_or(UnknownTokenStrategy::Allow),
         )
         .instrumented(),
     );
@@ -279,7 +245,8 @@ async fn main() {
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
-                client.clone(),
+                http_factory.create(),
+                web3.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )
@@ -292,7 +259,7 @@ async fn main() {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone())
+            UniswapV3PoolFetcher::new(chain_id, http_factory.create(), web3.clone())
                 .await
                 .expect("failed to create UniswapV3 pool fetcher in orderbook"),
         );
@@ -302,24 +269,27 @@ async fn main() {
     };
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
+            &http_factory,
             args.shared
                 .zeroex_url
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
-            client.clone(),
         )
         .unwrap(),
     );
-    let one_inch_api =
-        OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id)
-            .map(Arc::new);
+    let one_inch_api = OneInchClientImpl::new(
+        args.shared.one_inch_url.clone(),
+        http_factory.create(),
+        chain_id,
+    )
+    .map(Arc::new);
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name)
     };
-    let balancer_sor_api = args
-        .balancer_sor_url
-        .map(|url| Arc::new(DefaultBalancerSorApi::new(client.clone(), url, chain_id).unwrap()));
+    let balancer_sor_api = args.balancer_sor_url.map(|url| {
+        Arc::new(DefaultBalancerSorApi::new(http_factory.create(), url, chain_id).unwrap())
+    });
     let create_base_estimator =
         |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
             let rate_limiter = |name| {
@@ -337,7 +307,7 @@ async fn main() {
                         network_name: network_name.to_string(),
                         chain_id,
                         base,
-                        client: client.clone(),
+                        client: http_factory.create(),
                         config: SolverConfig {
                             use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
                             objective: Some(Objective::SurplusFeesCosts),
@@ -366,7 +336,7 @@ async fn main() {
                 )),
                 PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
                     Arc::new(DefaultParaswapApi {
-                        client: client.clone(),
+                        client: http_factory.create(),
                         partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
                         rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
                             RateLimiter::from_strategy(strategy, "paraswap_api".into())
@@ -391,6 +361,7 @@ async fn main() {
                     one_inch_api.as_ref().unwrap().clone(),
                     args.shared.disabled_one_inch_protocols.clone(),
                     rate_limiter(estimator.name()),
+                    args.shared.one_inch_referrer_address
                 )),
                 PriceEstimatorType::Yearn => create_http_estimator(
                     "yearn-price-estimator".to_string(),
@@ -428,14 +399,16 @@ async fn main() {
     };
 
     let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-        args.price_estimators
+        args.order_quoting
+            .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
     ))));
 
     let fast_price_estimator = Arc::new(sanitized(Box::new(RacingCompetitionPriceEstimator::new(
-        args.price_estimators
+        args.order_quoting
+            .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
@@ -475,15 +448,24 @@ async fn main() {
     };
     let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
         tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(token, vtoken, args.cow_fee_factors.unwrap_or_default())
+        CowSubsidy::new(
+            token,
+            vtoken,
+            args.order_quoting.cow_fee_factors.unwrap_or_default(),
+        )
     });
 
     let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.fee_discount,
-        min_discounted_fee: args.min_discounted_fee,
-        fee_factor: args.fee_factor,
-        liquidity_order_owners: args.liquidity_order_owners.iter().copied().collect(),
-        partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
+        fee_discount: args.order_quoting.fee_discount,
+        min_discounted_fee: args.order_quoting.min_discounted_fee,
+        fee_factor: args.order_quoting.fee_factor,
+        liquidity_order_owners: args
+            .order_quoting
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
@@ -502,38 +484,29 @@ async fn main() {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             storage,
-            chrono::Duration::from_std(args.eip1271_onchain_quote_validity_seconds).unwrap(),
-            chrono::Duration::from_std(args.presign_onchain_quote_validity_seconds).unwrap(),
+            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+                .unwrap(),
+            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+                .unwrap(),
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
-        database.clone(),
-        args.banned_users.iter().copied().collect(),
-        balance_fetcher.clone(),
-        bad_token_detector.clone(),
-        current_block_stream.clone(),
-        native_price_estimator.clone(),
-        signature_validator.clone(),
-        database.clone(),
-    );
-    let block = current_block_stream.borrow().number.unwrap().as_u64();
-    solvable_orders_cache
-        .update(block)
-        .await
-        .expect("failed to perform initial solvable orders update");
     let order_validator = Arc::new(OrderValidator::new(
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.liquidity_order_owners.iter().copied().collect(),
+        args.order_quoting
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
         SignatureConfiguration {
             eip1271: args.enable_eip1271_orders,
+            eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
             presign: args.enable_presign_orders,
         },
         bad_token_detector.clone(),
@@ -544,13 +517,11 @@ async fn main() {
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
-        database.clone(),
-        solvable_orders_cache.clone(),
-        args.solvable_orders_max_update_age,
+        database.as_ref().clone(),
         order_validator.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![pool_fetcher, solvable_orders_cache.clone()],
+        maintainers: vec![pool_fetcher],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
@@ -572,7 +543,6 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
-        solvable_orders_cache.clone(),
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));

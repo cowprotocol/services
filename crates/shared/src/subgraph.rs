@@ -25,7 +25,7 @@ pub trait ContainsId {
     fn get_id(&self) -> String;
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct Data<T> {
     #[serde(alias = "pools", alias = "ticks")]
     pub inner: Vec<T>,

@@ -1,9 +1,11 @@
 [package]
 name = "global-metrics"
 version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-once_cell = "1.9"
-prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
+once_cell = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }

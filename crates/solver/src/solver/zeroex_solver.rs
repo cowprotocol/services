@@ -21,11 +21,14 @@ use super::{
     single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
-use crate::interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest};
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
+};
+use crate::{
+    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+    liquidity::slippage::SlippageCalculator,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
@@ -33,8 +36,7 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
-    solver_utils::Slippage,
-    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
+    zeroex_api::{Slippage, SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
     Web3,
 };
 use std::{
@@ -47,8 +49,8 @@ pub struct ZeroExSolver {
     account: Account,
     api: Arc<dyn ZeroExApi>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
-    zeroex_slippage_bps: u32,
     excluded_sources: Vec<String>,
+    slippage_calculator: SlippageCalculator,
 }
 
 /// Chain ID for Mainnet.
@@ -61,8 +63,8 @@ impl ZeroExSolver {
         settlement_contract: GPv2Settlement,
         chain_id: u64,
         api: Arc<dyn ZeroExApi>,
-        zeroex_slippage_bps: u32,
         excluded_sources: Vec<String>,
+        slippage_calculator: SlippageCalculator,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -73,8 +75,8 @@ impl ZeroExSolver {
             account,
             allowance_fetcher: Box::new(allowance_fetcher),
             api,
-            zeroex_slippage_bps,
             excluded_sources,
+            slippage_calculator,
         })
     }
 }
@@ -84,7 +86,7 @@ impl SingleOrderSolving for ZeroExSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        _: &Auction,
+        auction: &Auction,
     ) -> Result<Option<Settlement>, SettlementError> {
         let (buy_amount, sell_amount) = match order.kind {
             OrderKind::Buy => (Some(order.buy_amount), None),
@@ -95,8 +97,12 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
-                .unwrap(),
+            slippage_percentage: Some(Slippage::new(
+                self.slippage_calculator
+                    .auction_context(auction)
+                    .relative_for_order(&order)?
+                    .as_factor(),
+            )),
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
         };
@@ -166,6 +172,7 @@ mod tests {
     use crate::liquidity::LimitOrder;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
+    use ethcontract::futures::FutureExt as _;
     use ethcontract::{Web3, H160, U256};
     use mockall::predicate::*;
     use mockall::Sequence;
@@ -189,8 +196,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .unwrap();
         let settlement = solver
@@ -231,8 +238,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .unwrap();
         let settlement = solver
@@ -267,18 +274,21 @@ mod tests {
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: U256::from_dec_str("100").unwrap(),
-                    buy_amount: U256::from_dec_str("91").unwrap(),
-                    allowance_target,
-                    price: 0.91_f64,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: hex::decode("00").unwrap(),
-                value: U256::from_dec_str("0").unwrap(),
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: U256::from_dec_str("100").unwrap(),
+                        buy_amount: U256::from_dec_str("91").unwrap(),
+                        allowance_target,
+                        price: 0.91_f64,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: hex::decode("00").unwrap(),
+                    value: U256::from_dec_str("0").unwrap(),
+                })
+            }
+            .boxed()
         });
 
         allowance_fetcher
@@ -300,8 +310,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let buy_order_passing_limit = LimitOrder {
@@ -391,8 +401,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .is_err())
     }
@@ -407,18 +417,21 @@ mod tests {
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: U256::from_dec_str("100").unwrap(),
-                    buy_amount: U256::from_dec_str("91").unwrap(),
-                    allowance_target,
-                    price: 13.121_002_575_170_278_f64,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: hex::decode("").unwrap(),
-                value: U256::from_dec_str("0").unwrap(),
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: U256::from_dec_str("100").unwrap(),
+                        buy_amount: U256::from_dec_str("91").unwrap(),
+                        allowance_target,
+                        price: 13.121_002_575_170_278_f64,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: hex::decode("").unwrap(),
+                    value: U256::from_dec_str("0").unwrap(),
+                })
+            }
+            .boxed()
         });
 
         // On first invocation no prior allowance, then max allowance set.
@@ -448,8 +461,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder {
@@ -483,19 +496,22 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         let mut client = MockZeroExApi::new();
-        client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 1000.into(),
-                    buy_amount: 5000.into(),
-                    allowance_target: shared::addr!("0000000000000000000000000000000000000000"),
-                    price: 0.,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: vec![],
-                value: 0.into(),
-            })
+        client.expect_get_swap().returning(|_| {
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 1000.into(),
+                        buy_amount: 5000.into(),
+                        allowance_target: shared::addr!("0000000000000000000000000000000000000000"),
+                        price: 0.,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: vec![],
+                    value: 0.into(),
+                })
+            }
+            .boxed()
         });
 
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
@@ -507,8 +523,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder {

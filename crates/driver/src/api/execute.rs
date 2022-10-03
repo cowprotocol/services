@@ -20,14 +20,15 @@ pub fn post_execute(
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     post_execute_request(prefix).and_then(move |summary: SettlementSummary| {
         let driver = driver.clone();
+        let auction_id = summary.auction_id;
         async move {
             let result = driver.on_auction_won(summary.clone()).await;
             if let Err(err) = &result {
-                tracing::warn!(?err, ?summary, "post_execute error");
+                tracing::warn!(?err, "post_execute error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        .instrument(tracing::info_span!("solver", name = prefix))
+        .instrument(tracing::info_span!("execute", solver = prefix, auction_id))
     })
 }
 
@@ -49,7 +50,10 @@ impl IntoWarpReply for ExecuteError {
                 ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            Self::Other(err) => err.into_warp_reply(),
+            Self::Other(err) => with_status(
+                error("InternalServerError", err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         }
     }
 }

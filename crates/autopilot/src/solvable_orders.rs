@@ -1,15 +1,13 @@
-use crate::{database::orders::OrderStoring, solver_competition::SolverCompetitionStoring};
+use crate::database::Postgres;
 use anyhow::{Context as _, Result};
-use ethcontract::H256;
 use futures::StreamExt;
 use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
-use primitive_types::{H160, U256};
+use primitive_types::{H160, H256, U256};
 use prometheus::{IntCounter, IntGauge};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
     current_block::CurrentBlockStream,
-    maintenance::Maintaining,
     price_estimation::native::NativePriceEstimating,
     signature_validator::{SignatureCheck, SignatureValidating},
 };
@@ -19,7 +17,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
-use tokio::{sync::Notify, time::Instant};
+use tokio::time::Instant;
 
 // When creating the auction after solvable orders change we need to fetch native prices for a
 // potentially large amount of tokens. This is the maximum amount of time we allot for this
@@ -52,15 +50,13 @@ pub struct Metrics {
 /// book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Arc<dyn OrderStoring>,
+    database: Postgres,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    notify: Notify,
     cache: Mutex<Inner>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     signature_validator: Arc<dyn SignatureValidating>,
-    solver_competition: Arc<dyn SolverCompetitionStoring>,
     metrics: &'static Metrics,
 }
 
@@ -69,7 +65,6 @@ type Balances = HashMap<Query, U256>;
 struct Inner {
     orders: SolvableOrders,
     balances: Balances,
-    auction: Auction,
 }
 
 #[derive(Clone, Debug)]
@@ -84,14 +79,14 @@ impl SolvableOrdersCache {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
-        database: Arc<dyn OrderStoring>,
+        database: Postgres,
         banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         signature_validator: Arc<dyn SignatureValidating>,
-        solver_competition: Arc<dyn SolverCompetitionStoring>,
+        update_interval: Duration,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -99,7 +94,6 @@ impl SolvableOrdersCache {
             banned_users,
             balance_fetcher,
             bad_token_detector,
-            notify: Default::default(),
             cache: Mutex::new(Inner {
                 orders: SolvableOrders {
                     orders: Default::default(),
@@ -108,43 +102,17 @@ impl SolvableOrdersCache {
                     block: 0,
                 },
                 balances: Default::default(),
-                auction: Auction::default(),
             }),
             native_price_estimator,
             signature_validator,
-            solver_competition,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         });
-        tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
+        tokio::task::spawn(update_task(
+            Arc::downgrade(&self_),
+            update_interval,
+            current_block,
+        ));
         self_
-    }
-
-    pub fn cached_balance(&self, key: &Query) -> Option<U256> {
-        let inner = self.cache.lock().unwrap();
-        inner.balances.get(key).copied()
-    }
-
-    /// Orders and timestamp at which last update happened.
-    pub fn cached_solvable_orders(&self) -> SolvableOrders {
-        self.cache.lock().unwrap().orders.clone()
-    }
-
-    // Returns auction and update time.
-    pub fn cached_auction(&self) -> (Auction, Instant) {
-        let cache = self.cache.lock().unwrap();
-        (cache.auction.clone(), cache.orders.update_time)
-    }
-
-    /// The cache will update the solvable orders and missing balances as soon as possible.
-    pub fn request_update(&self) {
-        self.notify.notify_one();
-    }
-
-    /// Updates the id immediately without having to wait for next full cache update.
-    pub async fn update_next_solver_competition_id(&self) -> Result<()> {
-        let id = self.solver_competition.next_solver_competition().await?;
-        self.cache.lock().unwrap().auction.next_solver_competition = id;
-        Ok(())
     }
 
     /// Manually update solvable orders. Usually called by the background updating task.
@@ -202,15 +170,13 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
-        let next_solver_competition = self.solver_competition.next_solver_competition().await?;
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            next_solver_competition,
             orders: orders.clone(),
             prices,
         };
-
+        let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {
             orders: SolvableOrders {
                 orders,
@@ -219,10 +185,18 @@ impl SolvableOrdersCache {
                 block,
             },
             balances: new_balances,
-            auction,
         };
 
+        tracing::debug!(
+            "updated auction with {} solvable orders",
+            auction.orders.len(),
+        );
+
         Ok(())
+    }
+
+    pub fn last_update_time(&self) -> Instant {
+        self.cache.lock().unwrap().orders.update_time
     }
 }
 
@@ -267,7 +241,7 @@ async fn filter_invalid_signature_orders(
                 if let Err(err) = validations.next().unwrap() {
                     tracing::warn!(
                         order_uid =% order.metadata.uid, ?err,
-                        "filtering EIP-1271 order as signature became invalid"
+                        "filtered order because of invalid EIP-1271 signature"
                     );
                     return false;
                 }
@@ -340,6 +314,11 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
                 remaining_balance = balance;
                 result.push(order);
+            } else {
+                tracing::debug!(
+                    order_uid = ?order.metadata.uid,
+                    "filtered order because of insufficient allowance/balance",
+                );
             }
         }
     }
@@ -354,17 +333,26 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
 ///
 /// Returns `Err` on overflow.
 fn max_transfer_out_amount(order: &Order) -> Result<U256> {
-    let amounts = order.remaining_amounts()?;
-    amounts
-        .sell_amount
-        .checked_add(amounts.fee_amount)
-        .context("overflow computing maximum transfer out amount")
+    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
+    let sell = remaining.remaining(order.data.sell_amount)?;
+    let fee = remaining.remaining(order.data.fee_amount)?;
+    sell.checked_add(fee).context("add")
 }
 
 /// Keep updating the cache every N seconds or when an update notification happens.
 /// Exits when this becomes the only reference to the cache.
-async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlockStream) {
+async fn update_task(
+    cache: Weak<SolvableOrdersCache>,
+    update_interval: Duration,
+    current_block: CurrentBlockStream,
+) {
     loop {
+        // We are not updating on block changes because
+        // - the state of orders could change even when the block does not like when an order
+        //   gets cancelled off chain
+        // - the event updater takes some time to run and if we go first we would not update the
+        //   orders with the most recent events.
+        tokio::time::sleep(update_interval).await;
         let cache = match cache.upgrade() {
             Some(self_) => self_,
             None => {
@@ -372,19 +360,6 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
                 break;
             }
         };
-        {
-            // We are not updating on block changes because
-            // - the state of orders could change even when the block does not like when an order
-            //   gets cancelled off chain
-            // - the event updater takes some time to run and if we go first we would not update the
-            //   orders with the most recent events.
-            const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
-            let timeout = tokio::time::sleep(UPDATE_INTERVAL);
-            let notified = cache.notify.notified();
-            futures::pin_mut!(timeout);
-            futures::pin_mut!(notified);
-            futures::future::select(timeout, notified).await;
-        }
         let block = match current_block.borrow().number {
             Some(block) => block.as_u64(),
             None => {
@@ -395,23 +370,17 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
         let start = Instant::now();
         match cache.update(block).await {
             Ok(()) => tracing::debug!(
+                %block,
                 "updated solvable orders in {}s",
                 start.elapsed().as_secs_f32()
             ),
             Err(err) => tracing::error!(
                 ?err,
+                %block,
                 "failed to update solvable orders in {}s",
                 start.elapsed().as_secs_f32()
             ),
         }
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for SolvableOrdersCache {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.request_update();
-        Ok(())
     }
 }
 
@@ -530,20 +499,13 @@ async fn filter_unsupported_tokens(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        database::orders::MockOrderStoring, database::orders::SolvableOrders as DbOrders,
-        solver_competition::MockSolverCompetitionStoring,
-    };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
-    use model::order::{
-        OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid, SellTokenSource,
-    };
+    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid};
     use primitive_types::H160;
     use shared::{
-        account_balances::MockBalanceFetching,
         bad_token::list_based::ListBasedDetector,
         price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
         signature_validator::{MockSignatureValidating, SignatureValidationError},
@@ -586,153 +548,6 @@ mod tests {
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
         let orders_ = solvable_orders(orders.clone(), &balances);
         assert_eq!(orders_, orders[1..]);
-    }
-
-    #[tokio::test]
-    async fn caches_orders_and_balances() {
-        let mut balance_fetcher = MockBalanceFetching::new();
-        let mut order_storing = MockOrderStoring::new();
-        let (_, receiver) = tokio::sync::watch::channel(Default::default());
-        let bad_token_detector =
-            shared::bad_token::list_based::ListBasedDetector::deny_list(Vec::new());
-
-        let owner = H160::from_low_u64_le(0);
-        let sell_token_0 = H160::from_low_u64_le(1);
-        let sell_token_1 = H160::from_low_u64_le(2);
-
-        let orders = [
-            Order {
-                data: OrderData {
-                    sell_token: sell_token_0,
-                    sell_token_balance: SellTokenSource::Erc20,
-                    sell_amount: 1.into(),
-                    buy_amount: 1.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    owner,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                data: OrderData {
-                    sell_token: sell_token_1,
-                    sell_token_balance: SellTokenSource::Erc20,
-                    sell_amount: 1.into(),
-                    buy_amount: 1.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    owner,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-
-        order_storing
-            .expect_solvable_orders()
-            .times(1)
-            .return_once({
-                let orders = orders.clone();
-                move |_| {
-                    Ok(DbOrders {
-                        orders: vec![orders[0].clone()],
-                        latest_settlement_block: 0,
-                    })
-                }
-            });
-        order_storing
-            .expect_solvable_orders()
-            .times(1)
-            .return_once({
-                let orders = orders.clone();
-                move |_| {
-                    Ok(DbOrders {
-                        orders: orders.into(),
-                        latest_settlement_block: 0,
-                    })
-                }
-            });
-        order_storing
-            .expect_solvable_orders()
-            .times(1)
-            .return_once(|_| {
-                Ok(DbOrders {
-                    orders: Vec::new(),
-                    latest_settlement_block: 0,
-                })
-            });
-
-        balance_fetcher
-            .expect_get_balances()
-            .times(1)
-            .return_once(|_| vec![Ok(1.into())]);
-        balance_fetcher
-            .expect_get_balances()
-            .times(1)
-            .return_once(|_| vec![Ok(2.into())]);
-        balance_fetcher
-            .expect_get_balances()
-            .times(1)
-            .return_once(|_| Vec::new());
-
-        let mut native = MockNativePriceEstimating::new();
-        native.expect_estimate_native_prices().returning(|a| {
-            futures::stream::iter(std::iter::repeat(Ok(1.0)).take(a.len()).enumerate()).boxed()
-        });
-
-        let mut solver_competition = MockSolverCompetitionStoring::new();
-        solver_competition
-            .expect_next_solver_competition()
-            .returning(|| Ok(1337));
-
-        let cache = SolvableOrdersCache::new(
-            Duration::from_secs(0),
-            Arc::new(order_storing),
-            Default::default(),
-            Arc::new(balance_fetcher),
-            Arc::new(bad_token_detector),
-            receiver,
-            Arc::new(native),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(solver_competition),
-        );
-
-        cache.update(0).await.unwrap();
-        assert_eq!(
-            cache.cached_balance(&Query::from_order(&orders[0])),
-            Some(1.into())
-        );
-        assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None);
-        let orders_ = cache.cached_solvable_orders().orders;
-        assert_eq!(orders_.len(), 1);
-        assert_eq!(orders_[0].metadata.available_balance, Some(1.into()));
-        let auction = cache.cached_auction().0;
-        assert_eq!(auction.orders.len(), 1);
-
-        cache.update(0).await.unwrap();
-        assert_eq!(
-            cache.cached_balance(&Query::from_order(&orders[0])),
-            Some(1.into())
-        );
-        assert_eq!(
-            cache.cached_balance(&Query::from_order(&orders[1])),
-            Some(2.into())
-        );
-        let orders_ = cache.cached_solvable_orders().orders;
-        assert_eq!(orders_.len(), 2);
-        let auction = cache.cached_auction().0;
-        assert_eq!(auction.orders.len(), 2);
-
-        cache.update(0).await.unwrap();
-        assert_eq!(cache.cached_balance(&Query::from_order(&orders[0])), None,);
-        assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None,);
-        let orders_ = cache.cached_solvable_orders().orders;
-        assert_eq!(orders_.len(), 0);
-        let auction = cache.cached_auction().0;
-        assert_eq!(auction.orders.len(), 0);
     }
 
     #[test]

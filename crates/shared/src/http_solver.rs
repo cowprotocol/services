@@ -1,5 +1,5 @@
 use crate::http_client::response_body_with_size_limit;
-use ::model::solver_competition::SolverCompetitionId;
+use ::model::auction::AuctionId;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, Url};
@@ -58,9 +58,6 @@ pub struct SolverConfig {
     /// Controls value of the `max_nr_exec_orders` parameter.
     pub max_nr_exec_orders: u32,
 
-    /// Controls if we should fill the `ucp_policy` parameter.
-    pub has_ucp_policy_parameter: bool,
-
     /// Controls if/how to set `use_internal_buffers`.
     pub use_internal_buffers: Option<bool>,
 
@@ -73,7 +70,6 @@ impl Default for SolverConfig {
         Self {
             api_key: None,
             max_nr_exec_orders: 100,
-            has_ucp_policy_parameter: false,
             use_internal_buffers: None,
             objective: None,
         }
@@ -116,10 +112,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 "max_nr_exec_orders",
                 self.config.max_nr_exec_orders.to_string().as_str(),
             );
-        if self.config.has_ucp_policy_parameter {
-            url.query_pairs_mut()
-                .append_pair("ucp_policy", "EnforceForOrders");
-        }
         if let Some(use_internal_buffers) = self.config.use_internal_buffers {
             url.query_pairs_mut().append_pair(
                 "use_internal_buffers",
@@ -182,7 +174,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 }
 
 impl DefaultHttpSolverApi {
-    fn generate_instance_name(&self, auction_id: SolverCompetitionId) -> String {
+    fn generate_instance_name(&self, auction_id: AuctionId) -> String {
         let now = chrono::Utc::now();
         format!(
             "{}_{}_{}_{}",

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use gas_estimation::GasPriceEstimating;
-use model::auction::Auction as AuctionModel;
+use model::auction::AuctionWithId as AuctionModel;
 use primitive_types::H160;
 use shared::recent_block_cache::Block;
 use solver::{
@@ -19,10 +19,10 @@ use std::{
 /// Determines how much time a solver has to compute solutions for an incoming `Auction`.
 const RUN_DURATION: Duration = Duration::from_secs(15);
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
+#[cfg_attr(test, mockall::automock)]
 pub trait AuctionConverting: Send + Sync {
-    async fn convert_auction(&self, model: AuctionModel, block: Block) -> Result<Auction>;
+    async fn convert_auction(&self, model: AuctionModel, block: u64) -> Result<Auction>;
 }
 
 pub struct AuctionConverter {
@@ -51,7 +51,9 @@ impl AuctionConverter {
 
 #[async_trait::async_trait]
 impl AuctionConverting for AuctionConverter {
-    async fn convert_auction(&self, auction: AuctionModel, block: Block) -> Result<Auction> {
+    async fn convert_auction(&self, auction: AuctionModel, block: u64) -> Result<Auction> {
+        let auction_id = auction.id;
+        let auction = auction.auction;
         let run = self.run.fetch_add(1, Ordering::SeqCst);
         let orders = auction
             .orders
@@ -86,7 +88,7 @@ impl AuctionConverting for AuctionConverter {
 
         let liquidity = self
             .liquidity_collector
-            .get_liquidity_for_orders(&orders, block)
+            .get_liquidity_for_orders(&orders, Block::Number(block))
             .await?;
 
         let external_prices =
@@ -102,10 +104,11 @@ impl AuctionConverting for AuctionConverter {
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
         Ok(Auction {
-            id: auction.next_solver_competition,
+            id: auction_id,
             run,
             orders,
             liquidity,
+            liquidity_fetch_block: block,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + RUN_DURATION,
             external_prices,
@@ -201,17 +204,16 @@ mod tests {
             order_converter,
         );
         let mut model = AuctionModel {
-            block: 1,
-            latest_settlement_block: 2,
-            next_solver_competition: 3,
-            orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
-            prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+            id: 3,
+            auction: model::auction::Auction {
+                block: 1,
+                latest_settlement_block: 2,
+                orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
+                prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+            },
         };
 
-        let auction = converter
-            .convert_auction(model.clone(), Block::Number(3))
-            .await
-            .unwrap();
+        let auction = converter.convert_auction(model.clone(), 3).await.unwrap();
         assert_eq!(auction.id, 3);
         assert_eq!(
             auction
@@ -240,18 +242,12 @@ mod tests {
             );
         }
 
-        let auction = converter
-            .convert_auction(model.clone(), Block::Number(3))
-            .await
-            .unwrap();
+        let auction = converter.convert_auction(model.clone(), 3).await.unwrap();
         assert_eq!(auction.run, 1);
 
         // auction has to include at least 1 user order
-        model.orders = vec![order(1, 2, false)];
-        model.orders[0].metadata.is_liquidity_order = true;
-        assert!(converter
-            .convert_auction(model, Block::Number(3))
-            .await
-            .is_err());
+        model.auction.orders = vec![order(1, 2, false)];
+        model.auction.orders[0].metadata.is_liquidity_order = true;
+        assert!(converter.convert_auction(model, 3).await.is_err());
     }
 }

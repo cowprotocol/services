@@ -108,6 +108,20 @@ impl Default for Order {
     }
 }
 
+pub async fn insert_orders_and_ignore_conflicts(
+    ex: &mut PgConnection,
+    orders: &[Order],
+) -> Result<(), sqlx::Error> {
+    for order in orders {
+        match insert_order(ex, order).await {
+            Ok(_) => (),
+            Err(err) if is_duplicate_record_error(&err) => (),
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(())
+}
+
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO orders (
@@ -389,7 +403,8 @@ pub fn user_orders<'a>(
     const QUERY: &str = const_format::concatcp!(
 "SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
-" WHERE o.owner = $1 ",
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE (o.owner = $1 OR onchain_o.sender = $1) ",
 "ORDER BY o.creation_timestamp DESC ",
 "LIMIT $2 ",
 "OFFSET $3 ",
@@ -410,7 +425,9 @@ pub fn solvable_orders(
 "SELECT * FROM ( ",
     "SELECT ", ORDERS_SELECT,
     " FROM ", ORDERS_FROM,
-    " WHERE o.valid_to >= $1 ",
+    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
+    " WHERE o.valid_to >= $1",
+    " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
 r#") AS unfiltered
 WHERE
     CASE kind
@@ -437,7 +454,9 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
+        ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
@@ -468,6 +487,22 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let err = insert_order(&mut db, &order).await.unwrap_err();
         assert!(is_duplicate_record_error(&err));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_and_ignore_conflicts_ignores_the_conflict() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
+            .await
+            .unwrap();
+        insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -735,6 +770,17 @@ mod tests {
         .await
         .unwrap();
         assert!(get_order(&mut db, 3).await.is_some());
+
+        //no longer solvable, if it is a ethflow-order
+        //with shorter user_valid_to from the ethflow
+        let ethflow_order = EthOrderPlacement {
+            uid: order.uid,
+            valid_to: 2,
+        };
+        insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
+
+        assert!(get_order(&mut db, 3).await.is_none());
+        assert!(get_order(&mut db, 2).await.is_some());
     }
 
     #[tokio::test]
@@ -744,7 +790,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let owners: Vec<Address> = (0u8..2).map(|i| ByteArray([i; 20])).collect();
+        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
 
         fn datetime(offset: u32) -> DateTime<Utc> {
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
@@ -797,6 +843,17 @@ mod tests {
 
         let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
         assert_eq!(result, vec![]);
+
+        let onchain_order = OnchainOrderPlacement {
+            order_uid: ByteArray(orders[0].0),
+            sender: owners[2],
+        };
+        let event_index = EventIndex::default();
+        insert_onchain_order(&mut db, &event_index, &onchain_order)
+            .await
+            .unwrap();
+        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
+        assert_eq!(result, vec![orders[0]]);
     }
 
     #[tokio::test]

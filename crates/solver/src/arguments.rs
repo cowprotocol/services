@@ -1,16 +1,26 @@
 use crate::{
+    liquidity::slippage,
     settlement_access_list::AccessListEstimatorType,
     solver::{ExternalSolverArg, SolverAccountArg, SolverType},
 };
 use primitive_types::H160;
 use reqwest::Url;
-use shared::arguments::{display_list, display_option};
+use shared::{
+    arguments::{display_list, display_option, display_secret_option},
+    http_client,
+};
 use std::time::Duration;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub slippage: slippage::Arguments,
 
     /// The API endpoint to fetch the orderbook
     #[clap(long, env, default_value = "http://localhost:8080")]
@@ -43,7 +53,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub target_confirm_time: Duration,
 
@@ -57,7 +67,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "1",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub settle_interval: Duration,
 
@@ -66,7 +76,7 @@ pub struct Arguments {
         long,
         env,
         default_values = &["Naive", "Baseline"],
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -94,7 +104,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub min_order_age: Duration,
 
@@ -111,7 +121,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub solver_time_limit: Duration,
 
@@ -129,25 +139,9 @@ pub struct Arguments {
         long,
         env,
         default_value = "1500",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub gas_price_cap: f64,
-
-    /// The slippage tolerance we apply to the price quoted by Paraswap
-    #[clap(long, env, default_value = "10")]
-    pub paraswap_slippage_bps: u32,
-
-    /// The slippage tolerance we apply to the price quoted by zeroEx
-    #[clap(long, env, default_value = "10")]
-    pub zeroex_slippage_bps: u32,
-
-    /// The default slippage tolerance we apply to the price quoted by OneInchSolver
-    #[clap(long, env, default_value = "10")]
-    pub oneinch_slippage_bps: u32,
-
-    /// The maximum slippage in ETH we are willing to incur per trade on 1Inch
-    #[clap(long, env)]
-    pub oneinch_max_slippage_in_eth: Option<f64>,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
@@ -157,7 +151,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "PublicMempool",
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -167,12 +161,16 @@ pub struct Arguments {
     /// fails. Individual estimators might support different networks.
     /// `Tenderly`: supports every network.
     /// `Web3`: supports every network.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The URL for tenderly transaction simulation.
+    /// The Tenderly user associated with the API key.
     #[clap(long, env)]
-    pub tenderly_url: Option<Url>,
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
 
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
@@ -197,7 +195,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_eden_tip: f64,
 
@@ -206,7 +204,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "120",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_submission_seconds: Duration,
 
@@ -215,7 +213,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_flashbot_tip: f64,
 
@@ -223,7 +221,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "2",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub submission_retry_interval_seconds: Duration,
 
@@ -232,7 +230,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "0.05",
-        parse(try_from_str = shared::arguments::parse_percentage_factor)
+        value_parser = shared::arguments::parse_percentage_factor
     )]
     pub additional_tip_percentage: f64,
 
@@ -240,11 +238,17 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
+    /// Don't submit high revert risk (i.e. transactions that interact with on-chain
+    /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
+    /// transaction submission strategies are available.
+    #[clap(long, env)]
+    pub disable_high_risk_public_mempool_transactions: bool,
+
     /// Fee scaling factor for objective value. This controls the constant
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
     /// The maximum number of settlements the driver considers per solver.
@@ -256,7 +260,7 @@ pub struct Arguments {
     /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
     /// of unwraps per settled batch.
     /// Only values in the range [0.0, 1.0] make sense.
-    #[clap(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
+    #[clap(long, env, default_value = "0.6", value_parser = shared::arguments::parse_percentage_factor)]
     pub weth_unwrap_factor: f64,
 
     /// Gas limit for simulations. This parameter is important to set correctly, such that
@@ -282,17 +286,33 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.slippage)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
         writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
         writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
         writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
-        writeln!(f, "solver_account: {:?}", self.solver_account)?;
+        display_option(
+            f,
+            "solver_account",
+            &self
+                .solver_account
+                .as_ref()
+                .map(|account| format!("{account:?}")),
+        )?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(f, "settle_interval: {:?}", self.settle_interval)?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "solver_accounts: {:?}", self.solver_accounts)?;
-        writeln!(f, "external_solvers: {:?}", self.external_solvers)?;
+        display_list(
+            f,
+            "external_solvers",
+            self.external_solvers
+                .iter()
+                .flatten()
+                .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
+        )?;
         writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
@@ -303,30 +323,17 @@ impl std::fmt::Display for Arguments {
             self.market_makable_token_list
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
-        writeln!(f, "paraswap_slippage_bps: {}", self.paraswap_slippage_bps)?;
-        writeln!(f, "zeroex_slippage_bps: {}", self.zeroex_slippage_bps)?;
-        writeln!(f, "oneinch_slippage_bps: {}", self.oneinch_slippage_bps)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(
             f,
             "access_list_estimators: {:?}",
-            self.access_list_estimators
+            &self.access_list_estimators
         )?;
-        write!(f, "tenderly_url: ")?;
-        display_option(&self.tenderly_url, f)?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "tenderly_api_key: {}",
-            self.tenderly_api_key
-                .as_deref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_option(f, "tenderly_user", &self.tenderly_user)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
+        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
-        write!(f, "flashbots_api_url: ")?;
-        display_list(self.flashbots_api_url.iter(), f)?;
-        writeln!(f)?;
+        display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
         writeln!(
             f,
             "max_additional_eden_tip: {}",
@@ -349,12 +356,19 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "additional_tip_percentage: {}",
+            "additional_tip_percentage: {}%",
             self.additional_tip_percentage
         )?;
-        write!(f, "transaction_submission_nodes: ",)?;
-        display_list(self.transaction_submission_nodes.iter(), f)?;
-        writeln!(f)?;
+        display_list(
+            f,
+            "transaction_submission_nodes",
+            &self.transaction_submission_nodes,
+        )?;
+        writeln!(
+            f,
+            "disable_high_risk_public_mempool_transactions: {}",
+            self.disable_high_risk_public_mempool_transactions,
+        )?;
         writeln!(
             f,
             "fee_objective_scaling_factor: {}",
@@ -367,9 +381,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
-        write!(f, "max_settlement_price_deviation: ")?;
-        display_option(&self.max_settlement_price_deviation, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "max_settlement_price_deviation",
+            &self.max_settlement_price_deviation,
+        )?;
         writeln!(
             f,
             "token_list_restriction_for_price_checks: {:?}",
@@ -379,12 +395,11 @@ impl std::fmt::Display for Arguments {
     }
 }
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum TransactionStrategyArg {
     PublicMempool,
     Eden,
     Flashbots,
-    CustomNodes,
     DryRun,
 }

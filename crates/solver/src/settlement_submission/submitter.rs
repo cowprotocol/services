@@ -14,9 +14,9 @@
 // find the one that got mined (if any).
 
 mod common;
-pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
+pub mod public_mempool_api;
 
 use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
@@ -34,10 +34,28 @@ use std::{
     fmt,
     time::{Duration, Instant},
 };
+use strum::IntoStaticStr;
 use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
+
+/// Error messages which suggest that the node is already aware of the submitted tx thus prompting
+/// us to increase the replacement gas price.
+pub const TX_ALREADY_KNOWN: &[&str] = &[
+    "Transaction gas price supplied is too low", //openethereum
+    "already known",                             //infura, erigon, eden
+    "INTERNAL_ERROR: existing tx with same hash", //erigon
+    "replacement transaction underpriced",       //eden
+];
+
+/// Error messages suggesting that the transaction we tried to submit has already been mined
+/// because its nonce is suddenly too low.
+pub const TX_ALREADY_MINED: &[&str] = &[
+    "Transaction nonce is too low", //openethereum
+    "nonce too low",                //infura, erigon
+    "OldNonce",                     //erigon
+];
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -54,17 +72,17 @@ pub struct SubmitterParams {
     pub network_id: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SubmissionLoopStatus {
     Enabled(AdditionalTip),
     Disabled(DisabledReason),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, IntoStaticStr)]
 pub enum Strategy {
     Eden,
     Flashbots,
-    CustomNodes,
+    PublicMempool,
 }
 
 impl fmt::Display for Strategy {
@@ -73,13 +91,13 @@ impl fmt::Display for Strategy {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum AdditionalTip {
     Off,
     On,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum DisabledReason {
     MevExtractable,
 }
@@ -120,20 +138,12 @@ pub struct SubmitterGasPriceEstimator<'a> {
     pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
-    /// Gas price from pending transaction from previous submission loop
-    pub pending_gas_price: Option<GasPrice1559>,
 }
 
 impl SubmitterGasPriceEstimator<'_> {
     pub fn with_additional_tip(&self, max_additional_tip: Option<f64>) -> Self {
         Self {
             max_additional_tip,
-            ..*self
-        }
-    }
-    pub fn with_pending_gas_price(&self, pending_gas_price: Option<GasPrice1559>) -> Self {
-        Self {
-            pending_gas_price,
             ..*self
         }
     }
@@ -146,7 +156,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         gas_limit: f64,
         time_limit: Duration,
     ) -> Result<GasPrice1559> {
-        let gas_price = match self.inner.estimate_with_limits(gas_limit, time_limit).await {
+        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
             Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
                 gas_price.max_priority_fee_per_gas +=
@@ -164,24 +174,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
                 self.gas_price_cap
             )),
             Err(err) => Err(err),
-        };
-
-        // If pending gas price exist, return max(gas_price, pending_gas_price*1.125)
-        gas_price.map(|gas_price| match self.pending_gas_price {
-            Some(pending_gas_price) => {
-                tracing::debug!("found pending transaction: {:?}", pending_gas_price);
-                let pending_gas_price = pending_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                if gas_price.max_fee_per_gas >= pending_gas_price.max_fee_per_gas
-                    && gas_price.max_priority_fee_per_gas
-                        >= pending_gas_price.max_priority_fee_per_gas
-                {
-                    gas_price
-                } else {
-                    pending_gas_price
-                }
-            }
-            None => gas_price,
-        })
+        }
     }
 }
 
@@ -226,11 +219,7 @@ impl<'a> Submitter<'a> {
         let nonce = self.nonce().await?;
         let name = self.submit_api.name();
 
-        tracing::debug!(
-            "starting solution submission at nonce {} with submitter {}",
-            nonce,
-            name
-        );
+        tracing::debug!("starting solution submission at nonce {}", nonce);
 
         self.submitted_transactions.remove_older_than(nonce);
 
@@ -262,15 +251,15 @@ impl<'a> Submitter<'a> {
 
         let fallback_result = tokio::select! {
             method_error = submit_future.fuse() => {
-                tracing::debug!("stopping submission for {} because simulation failed: {:?}", name, method_error);
+                tracing::debug!("stopping submission because simulation failed: {:?}", method_error);
                 Err(method_error)
             },
             new_nonce = nonce_future.fuse() => {
-                tracing::debug!("stopping submission for {} because account nonce changed to {}", name, new_nonce);
+                tracing::debug!("stopping submission because account nonce changed to {}", new_nonce);
                 Ok(None)
             },
             _ = deadline_future.fuse() => {
-                tracing::debug!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
+                tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
 
                 if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
@@ -309,9 +298,8 @@ impl<'a> Submitter<'a> {
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
 
             tracing::debug!(
-                "waiting up to {} seconds for {} to see if a transaction was mined",
+                "waiting up to {} seconds to see if a transaction was mined",
                 MINED_TX_PROPAGATE_TIME.as_secs(),
-                name
             );
 
             let transactions = transactions
@@ -324,7 +312,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::debug!("{} found mined transaction {:?}", name, receipt);
+                    tracing::debug!("found mined transaction {:?}", receipt);
                     track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
@@ -335,7 +323,7 @@ impl<'a> Submitter<'a> {
             }
         }
 
-        tracing::debug!("{} did not find any mined transaction", name);
+        tracing::debug!("did not find any mined transaction");
         fallback_result
             .transpose()
             .unwrap_or(Err(SubmissionError::Timeout))
@@ -378,43 +366,35 @@ impl<'a> Submitter<'a> {
         params: &SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
-        let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         tracing::debug!(
-            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
-            submitter_name
+            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
         );
-
-        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
         let mut access_list: Option<AccessList> = None;
 
+        // Try to find submitted transaction from previous submission attempt (with the same address and nonce)
+        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
+
         loop {
-            tracing::debug!("entered loop with submitter: {}", submitter_name);
+            tracing::debug!("entered loop with submitter");
 
             let submission_status = self
                 .submit_api
                 .submission_status(&settlement, &params.network_id);
             let estimator = match submission_status {
                 SubmissionLoopStatus::Disabled(reason) => {
-                    tracing::debug!(
-                        "strategy {} temporarily disabled, reason: {:?}",
-                        submitter_name,
-                        reason
-                    );
+                    tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
-                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => self
-                    .gas_price_estimator
-                    .with_additional_tip(None)
-                    .with_pending_gas_price(pending_gas_price),
-                SubmissionLoopStatus::Enabled(AdditionalTip::On) => self
-                    .gas_price_estimator
-                    .with_pending_gas_price(pending_gas_price),
+                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
+                    self.gas_price_estimator.with_additional_tip(None)
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
+                    self.gas_price_estimator.clone()
+                }
             };
-            pending_gas_price = None;
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
@@ -452,9 +432,12 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
-                if let Some((_, previous_gas_price)) = transactions.last() {
-                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                    match self.cancel_transaction(&gas_price, nonce).await {
+                if let Some(previous_gas_price) = pending_gas_price {
+                    // We only match the replacement gas price because we don't care about the
+                    // cancellation actually being mined as long as it successfully replaces the
+                    // original transaction in the mempool.
+                    let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                    match self.cancel_transaction(&replacement_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
@@ -463,13 +446,10 @@ impl<'a> Submitter<'a> {
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
-            if let Some(previous_gas_price) = transactions
-                .last()
-                .map(|(_, previous_gas_price)| previous_gas_price)
-            {
-                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
-                    || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
+            if let Some(previous_gas_price) = pending_gas_price {
+                let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                if gas_price.max_priority_fee_per_gas < replacement_price.max_priority_fee_per_gas
+                    || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
@@ -477,29 +457,43 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
+                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}",
                 gas_price.base_fee_per_gas,
                 gas_price.max_fee_per_gas,
                 gas_price.max_priority_fee_per_gas,
                 params.gas_estimate,
-                submitter_name,
             );
 
             // execute transaction
 
+            let label: &'static str = self.submit_api.name().into();
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
-                    tracing::debug!(
-                        submitter = %submitter_name, ?handle,
-                        "submitted transaction",
-                    );
+                    tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
+                    pending_gas_price = Some(gas_price);
+                    track_submission_success(label, true);
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        submitter = %submitter_name, ?err,
-                        "submission failed",
-                    );
+                    let err = err.to_string();
+                    if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
+                        // Due to a race condition we sometimes notice too late that a tx was
+                        // already mined and submit once too often.
+                        tracing::debug!(?err, "transaction already mined");
+                        track_submission_success(label, true);
+                    } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                        // This case means that the node is already aware of the tx although we
+                        // didn't get any confirmation in the form of a tx handle. If that happens
+                        // we simply set the current gas price as the pending gas price which means
+                        // we will only try submitting again when the gas price increased by
+                        // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
+                        pending_gas_price = Some(gas_price);
+                        tracing::debug!(?err, "transaction already known");
+                        track_submission_success(label, true);
+                    } else {
+                        tracing::warn!(?err, "submission failed");
+                        track_submission_success(label, false);
+                    }
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
@@ -643,18 +637,16 @@ fn track_mined_transactions(submitter: &str) {
 
 #[cfg(test)]
 mod tests {
-
-    use std::sync::Arc;
-
-    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
-
     use super::super::submitter::flashbots_api::FlashbotsApi;
     use super::*;
+    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
-    use shared::gas_price_estimation::FakeGasPriceEstimator;
-    use shared::transport::create_env_test_transport;
+    use shared::{
+        gas_price_estimation::FakeGasPriceEstimator, transport::create_env_test_transport,
+    };
+    use std::sync::Arc;
     use tracing::level_filters::LevelFilter;
 
     #[tokio::test]
@@ -689,18 +681,14 @@ mod tests {
             max_additional_tip: Some(3.0),
             gas_price_cap: 100e9,
             additional_tip_percentage_of_max_fee: Some(0.05),
-            pending_gas_price: None,
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
-                &Client::new(),
                 &web3,
                 &[AccessListEstimatorType::Web3],
                 None,
-                None,
                 "1".to_string(),
             )
-            .await
             .unwrap(),
         );
 
@@ -749,7 +737,6 @@ mod tests {
             additional_tip_percentage_of_max_fee: Some(5.),
             max_additional_tip: Some(10.),
             gas_price_cap: 0.,
-            pending_gas_price: None,
         };
 
         let gas_price_estimator = gas_price_estimator.with_additional_tip(None);

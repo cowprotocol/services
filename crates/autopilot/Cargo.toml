@@ -1,7 +1,9 @@
 [package]
 name = "autopilot"
 version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "autopilot"
@@ -13,24 +15,31 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-async-trait = "0.1"
-clap = { version = "3.1", features = ["derive", "env"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
-futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_"] }
+ethcontract = { workspace = true }
+futures = { workspace = true }
+gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
+itertools = { workspace = true }
+maplit = { workspace = true }
 model = { path = "../model" }
-number_conversions = { path = "../number_conversions" }
-primitive-types = { version = "0.10" }
-prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-serde_json = "1.0"
-shared= { path = "../shared" }
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
-tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
-tracing = "0.1"
-url = "2.2"
-web3 = { version = "0.18", default-features = false }
+number-conversions = { path = "../number-conversions" }
+primitive-types = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+serde_json = { workspace = true }
+shared = { path = "../shared" }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = { workspace = true }
+url = { workspace = true }
+web3 = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

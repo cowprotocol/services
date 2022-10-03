@@ -1,0 +1,12 @@
+[package]
+name = "number-conversions"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = { workspace = true }
+bigdecimal = { workspace = true }
+num = { workspace = true }
+primitive-types = { workspace = true }

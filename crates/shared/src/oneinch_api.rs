@@ -4,21 +4,23 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 //! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
 //! uses EIP 1559 gas prices.
-use crate::solver_utils::Slippage;
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 use cached::{Cached, TimedCache};
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
-use serde::Deserialize;
-use std::fmt::{self, Display, Formatter};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use serde::{de::DeserializeOwned, Deserialize};
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use thiserror::Error;
 
 /// Parts to split a swap.
 ///
 /// This type is generic on the maximum number of splits allowed.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub struct Amount<const MIN: usize, const MAX: usize>(usize);
 
 impl<const MIN: usize, const MAX: usize> Amount<MIN, MAX> {
@@ -69,6 +71,9 @@ pub struct SellOrderQuoteQuery {
     pub virtual_parts: Option<Amount<1, 500>>,
     /// Which tokens should be used for intermediate trading hops.
     pub connector_tokens: Option<Vec<H160>>,
+    /// Adress referring this trade which will receive a portion of the swap
+    /// fees as a reward.
+    pub referrer_address: Option<H160>,
 }
 
 // The `Display` implementation for `H160` unfortunately does not print
@@ -131,6 +136,10 @@ impl SellOrderQuoteQuery {
             url.query_pairs_mut()
                 .append_pair("gasPrice", &gas_price.to_string());
         }
+        if let Some(referrer_address) = self.referrer_address {
+            url.query_pairs_mut()
+                .append_pair("referrerAddress", &addr2str(referrer_address));
+        }
 
         url
     }
@@ -140,6 +149,7 @@ impl SellOrderQuoteQuery {
         buy_token: H160,
         protocols: Option<Vec<String>>,
         amount: U256,
+        referrer_address: Option<H160>,
     ) -> Self {
         Self {
             from_token_address: sell_token,
@@ -154,6 +164,7 @@ impl SellOrderQuoteQuery {
             gas_price: None,
             virtual_parts: None,
             connector_tokens: None,
+            referrer_address,
         }
     }
 }
@@ -189,8 +200,6 @@ pub struct SwapQuery {
     pub disable_estimate: Option<bool>,
     /// Receiver of destination currency. default: from_address
     pub dest_receiver: Option<H160>,
-    /// Who is referring this swap to 1Inch.
-    pub referrer_address: Option<H160>,
     /// Should Chi of from_token_address be burnt to compensate for gas.
     /// default: false
     pub burn_chi: Option<bool>,
@@ -199,6 +208,34 @@ pub struct SwapQuery {
     /// default: true
     pub allow_partial_fill: Option<bool>,
     pub quote: SellOrderQuoteQuery,
+}
+
+/// A slippage amount.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub struct Slippage(f64);
+
+impl Slippage {
+    pub const ONE_PERCENT: Self = Self(1.);
+
+    /// Creates a slippage amount from the specified percentage.
+    pub fn percentage(amount: f64) -> Result<Self> {
+        // 1Inch API only accepts a slippage from 0 to 50.
+        ensure!(
+            (0. ..=50.).contains(&amount),
+            "slippage outside of [0%, 50%] range"
+        );
+
+        Ok(Slippage(amount))
+    }
+}
+
+impl Display for Slippage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // Note that we use a rounded slippage percentage. This is because the
+        // 1Inch API will repsond with server errors if the slippage paramter
+        // has too much precision.
+        write!(f, "{:.4}", self.0)
+    }
 }
 
 impl SwapQuery {
@@ -243,7 +280,7 @@ impl SwapQuery {
             url.query_pairs_mut()
                 .append_pair("destReceiver", &addr2str(dest_receiver));
         }
-        if let Some(referrer_address) = self.referrer_address {
+        if let Some(referrer_address) = self.quote.referrer_address {
             url.query_pairs_mut()
                 .append_pair("referrerAddress", &addr2str(referrer_address));
         }
@@ -287,6 +324,7 @@ impl SwapQuery {
         from_address: H160,
         protocols: Option<Vec<String>>,
         slippage: Slippage,
+        referrer_address: Option<H160>,
     ) -> Self {
         Self {
             from_address,
@@ -295,10 +333,13 @@ impl SwapQuery {
             // does not hold balances to traded tokens.
             disable_estimate: Some(true),
             quote: SellOrderQuoteQuery::with_default_options(
-                sell_token, buy_token, protocols, in_amount,
+                sell_token,
+                buy_token,
+                protocols,
+                in_amount,
+                referrer_address,
             ),
             dest_receiver: None,
-            referrer_address: None,
             burn_chi: None,
             allow_partial_fill: Some(false),
         }
@@ -306,14 +347,41 @@ impl SwapQuery {
 }
 
 /// A 1Inch API response.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum RestResponse<T> {
     Ok(T),
     Err(RestError),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
+#[derive(Debug, Error)]
+pub enum OneInchError {
+    #[error("1Inch API error: {0}")]
+    Api(#[from] RestError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl OneInchError {
+    pub fn is_insuffucient_liquidity(&self) -> bool {
+        matches!(self, Self::Api(err) if err.description == "insufficient liquidity")
+    }
+}
+
+impl From<reqwest::Error> for OneInchError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
+impl From<serde_json::Error> for OneInchError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default, Error)]
+#[error("1Inch API error ({status_code}): {description}")]
 #[serde(rename_all = "camelCase")]
 pub struct RestError {
     pub status_code: u32,
@@ -383,7 +451,7 @@ impl std::fmt::Debug for Transaction {
     }
 }
 /// Approve spender response.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct Spender {
     pub address: H160,
 }
@@ -406,23 +474,23 @@ pub struct Protocols {
 }
 
 // Mockable version of API Client
-#[mockall::automock]
 #[async_trait::async_trait]
-pub trait OneInchClient: Send + Sync {
+#[mockall::automock]
+pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>>;
+    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
 
     /// Quotes a sell order with the 1Inch API.
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
-    ) -> Result<RestResponse<SellOrderQuote>>;
+    ) -> Result<SellOrderQuote, OneInchError>;
 
     /// Retrieves the address of the spender to use for token approvals.
-    async fn get_spender(&self) -> Result<Spender>;
+    async fn get_spender(&self) -> Result<Spender, OneInchError>;
 
     /// Retrieves a list of the on-chain protocols supported by 1Inch.
-    async fn get_liquidity_sources(&self) -> Result<Protocols>;
+    async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError>;
 }
 
 /// 1Inch API Client implementation.
@@ -456,18 +524,18 @@ impl OneInchClientImpl {
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>> {
+    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError> {
         logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
-    ) -> Result<RestResponse<SellOrderQuote>> {
+    ) -> Result<SellOrderQuote, OneInchError> {
         logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
-    async fn get_spender(&self) -> Result<Spender> {
+    async fn get_spender(&self) -> Result<Spender, OneInchError> {
         let endpoint = format!("v4.1/{}/approve/spender", self.chain_id);
         let url = self
             .base_url
@@ -476,7 +544,7 @@ impl OneInchClient for OneInchClientImpl {
         logged_query(&self.client, url).await
     }
 
-    async fn get_liquidity_sources(&self) -> Result<Protocols> {
+    async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
         let endpoint = format!("v4.1/{}/liquidity-sources", self.chain_id);
         let url = self
             .base_url
@@ -486,14 +554,17 @@ impl OneInchClient for OneInchClientImpl {
     }
 }
 
-async fn logged_query<D>(client: &Client, url: Url) -> Result<D>
+async fn logged_query<D>(client: &Client, url: Url) -> Result<D, OneInchError>
 where
-    D: for<'de> Deserialize<'de>,
+    D: DeserializeOwned,
 {
     tracing::debug!("Query 1inch API for url {}", url);
     let response = client.get(url).send().await?.text().await;
     tracing::debug!("Response from 1inch API: {:?}", response);
-    serde_json::from_str(&response?).context("1inch result parsing failed")
+    match serde_json::from_str::<RestResponse<D>>(&response?)? {
+        RestResponse::Ok(result) => Ok(result),
+        RestResponse::Err(err) => Err(err.into()),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -552,13 +623,11 @@ impl Default for ProtocolCache {
 mod tests {
     use super::*;
     use crate::addr;
+    use futures::FutureExt as _;
 
     #[test]
-    fn slippage_from_basis_points() {
-        assert_eq!(
-            Slippage::percentage_from_basis_points(50).unwrap(),
-            Slippage::percentage(0.5).unwrap(),
-        )
+    fn slippage_rounds_percentage() {
+        assert_eq!(Slippage(1.2345678).to_string(), "1.2346");
     }
 
     #[test]
@@ -580,7 +649,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+            slippage: Slippage::percentage(0.5).unwrap(),
             disable_estimate: None,
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -595,9 +664,9 @@ mod tests {
                 gas_price: None,
                 virtual_parts: None,
                 connector_tokens: None,
+                referrer_address: None,
             },
             dest_receiver: None,
-            referrer_address: None,
             burn_chi: None,
             allow_partial_fill: None,
         }
@@ -610,7 +679,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5",
+                &slippage=0.5000",
         );
     }
 
@@ -619,7 +688,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+            slippage: Slippage::percentage(0.5).unwrap(),
             disable_estimate: Some(true),
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -637,11 +706,11 @@ mod tests {
                     addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                     addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                 ]),
+                referrer_address: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
             },
             burn_chi: Some(false),
             allow_partial_fill: Some(false),
             dest_receiver: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
-            referrer_address: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
         }
         .into_url(&base_url, 1);
 
@@ -652,7 +721,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5\
+                &slippage=0.5000\
                 &protocols=WETH%2CUNISWAP_V3\
                 &disableEstimate=true\
                 &complexityLevel=2\
@@ -811,18 +880,18 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+                slippage: Slippage::ONE_PERCENT,
                 disable_estimate: None,
                 quote: SellOrderQuoteQuery::with_default_options(
                     addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
                     addr!("111111111117dc0aa78b770fa6a738034120c302"),
                     None,
                     1_000_000_000_000_000_000u128.into(),
+                    None,
                 ),
                 burn_chi: None,
                 allow_partial_fill: None,
                 dest_receiver: None,
-                referrer_address: None,
             })
             .await
             .unwrap();
@@ -836,7 +905,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+                slippage: Slippage::percentage(1.2345678).unwrap(),
                 disable_estimate: Some(true),
                 quote: SellOrderQuoteQuery {
                     from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -848,15 +917,16 @@ mod tests {
                     main_route_parts: Some(Amount::new(3).unwrap()),
                     parts: Some(Amount::new(3).unwrap()),
                     fee: Some(1.5),
-                    gas_price: Some(100_000.into()),
+                    // setting `gas_price` will produce a response with different fields
+                    gas_price: None,
                     connector_tokens: Some(vec![
                         addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                     ]),
                     virtual_parts: Some(Amount::new(10).unwrap()),
+                    referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
                 },
                 dest_receiver: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
-                referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
                 burn_chi: Some(false),
                 allow_partial_fill: Some(false),
             })
@@ -903,6 +973,7 @@ mod tests {
             gas_price: None,
             virtual_parts: None,
             connector_tokens: None,
+            referrer_address: None,
         }
         .into_url(&base_url, 1);
 
@@ -934,6 +1005,7 @@ mod tests {
             gas_limit: Some(Amount::new(750_000).unwrap()),
             main_route_parts: Some(Amount::new(3).unwrap()),
             parts: Some(Amount::new(3).unwrap()),
+            referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
         }
         .into_url(&base_url, 1);
 
@@ -951,7 +1023,8 @@ mod tests {
                 &mainRouteParts=3\
                 &virtualParts=42\
                 &parts=3\
-                &gasPrice=200000"
+                &gasPrice=200000\
+                &referrerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41"
         );
     }
 
@@ -1078,6 +1151,7 @@ mod tests {
                 addr!("111111111117dc0aa78b770fa6a738034120c302"),
                 None,
                 1_000_000_000_000_000_000u128.into(),
+                None,
             ))
             .await
             .unwrap();
@@ -1100,11 +1174,13 @@ mod tests {
                     addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                 ]),
                 virtual_parts: Some(Amount::new(42).unwrap()),
-                gas_price: Some(200_000.into()),
+                // setting `gas_price` will produce a response with different fields
+                gas_price: None,
                 complexity_level: Some(Amount::new(3).unwrap()),
                 gas_limit: Some(Amount::new(750_000).unwrap()),
                 main_route_parts: Some(Amount::new(2).unwrap()),
                 parts: Some(Amount::new(2).unwrap()),
+                referrer_address: Some(addr!("6C642caFCbd9d8383250bb25F67aE409147f78b2")),
             })
             .await
             .unwrap();
@@ -1126,9 +1202,12 @@ mod tests {
         let mut api = MockOneInchClient::new();
         // only 1 API call when calling get_allowed_protocols 2 times
         api.expect_get_liquidity_sources().times(1).returning(|| {
-            Ok(Protocols {
-                protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
-            })
+            async {
+                Ok(Protocols {
+                    protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
+                })
+            }
+            .boxed()
         });
 
         let cache = ProtocolCache::default();

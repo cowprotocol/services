@@ -7,15 +7,28 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
+use ethcontract::errors::ExecutionError;
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
+use primitive_types::U256;
 use shared::Web3;
 use std::sync::Arc;
 use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
+
+pub struct SimulationDetails {
+    pub settlement: Settlement,
+    pub solver: Arc<dyn Solver>,
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
+    pub access_list: Option<AccessList>,
+    /// The outcome of the simulation. Contains either how much gas the settlement used or the
+    /// reason why the transaction reverted during the simulation.
+    pub gas_estimate: Result<U256, ExecutionError>,
+}
 
 #[mockall::automock]
 #[async_trait::async_trait]
@@ -27,6 +40,14 @@ pub trait SettlementRating: Send + Sync {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)>;
+
+    /// Simulates the settlements and returns the gas used (or reason for revert) as well as
+    /// the access list for each settlement.
+    async fn simulate_settlements(
+        &self,
+        settlements: Vec<SolverSettlement>,
+        gas_price: GasPrice1559,
+    ) -> Result<Vec<SimulationDetails>>;
 }
 
 pub struct SettlementRater {
@@ -73,14 +94,12 @@ impl SettlementRater {
 
 #[async_trait::async_trait]
 impl SettlementRating for SettlementRater {
-    async fn rate_settlements(
+    async fn simulate_settlements(
         &self,
-        settlements: Vec<SolverSettlement>,
-        prices: &ExternalPrices,
+        settlements: Vec<(Arc<dyn Solver>, Settlement)>,
         gas_price: GasPrice1559,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
+    ) -> Result<Vec<SimulationDetails>> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
-
         let simulations = simulate_and_estimate_gas_at_current_block(
             settlements.iter().map(|settlement| {
                 (
@@ -95,6 +114,29 @@ impl SettlementRating for SettlementRater {
         )
         .await
         .context("failed to simulate settlements")?;
+
+        let details: Vec<_> = settlements
+            .into_iter()
+            .zip(simulations.into_iter())
+            .map(
+                |((solver, settlement, access_list), simulation_result)| SimulationDetails {
+                    settlement,
+                    solver,
+                    access_list,
+                    gas_estimate: simulation_result,
+                },
+            )
+            .collect();
+        Ok(details)
+    }
+
+    async fn rate_settlements(
+        &self,
+        settlements: Vec<SolverSettlement>,
+        prices: &ExternalPrices,
+        gas_price: GasPrice1559,
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
+        let simulations = self.simulate_settlements(settlements, gas_price).await?;
 
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
@@ -115,16 +157,21 @@ impl SettlementRating for SettlementRater {
         };
 
         Ok(
-            (settlements.into_iter().zip(simulations).enumerate()).partition_map(
-                |(i, ((solver, settlement, access_list), result))| match result {
+            (simulations.into_iter().enumerate()).partition_map(|(i, details)| {
+                match details.gas_estimate {
                     Ok(gas_estimate) => Either::Left((
-                        solver.clone(),
-                        rate_settlement(i, settlement, gas_estimate),
-                        access_list,
+                        details.solver,
+                        rate_settlement(i, details.settlement, gas_estimate),
+                        details.access_list,
                     )),
-                    Err(err) => Either::Right((solver, settlement, access_list, err)),
-                },
-            ),
+                    Err(err) => Either::Right((
+                        details.solver,
+                        details.settlement,
+                        details.access_list,
+                        err,
+                    )),
+                }
+            }),
         )
     }
 }

@@ -7,7 +7,7 @@ use sqlx::{
 
 pub type QuoteId = i64;
 
-#[derive(Clone, Debug, Default, PartialEq, sqlx::Type)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "QuoteKind")]
 #[sqlx(rename_all = "lowercase")]
 pub enum QuoteKind {

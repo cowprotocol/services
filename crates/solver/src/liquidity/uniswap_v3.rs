@@ -1,4 +1,4 @@
-use super::{slippage, AmmOrderExecution, ConcentratedLiquidity, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConcentratedLiquidity, LimitOrder, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
@@ -136,17 +136,16 @@ impl UniswapV3Liquidity {
 impl UniswapV3SettlementHandler {
     fn settle(
         &self,
-        (token_in, amount_in): (H160, U256),
+        (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
         fee: u32,
     ) -> (Approval, UniswapV3Interaction) {
-        let amount_in_with_slippage = slippage::amount_plus_max_slippage(amount_in);
         let approval = self
             .inner
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_in, amount_in_with_slippage);
+            .approve_token_or_default(token_in, amount_in_max);
 
         (
             approval,
@@ -166,7 +165,7 @@ impl UniswapV3SettlementHandler {
                             .into()
                     },
                     amount_out,
-                    amount_in_max: amount_in_with_slippage,
+                    amount_in_max,
                     sqrt_price_limit_x96: U256::zero(),
                 },
             },
@@ -175,10 +174,11 @@ impl UniswapV3SettlementHandler {
 }
 
 impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
-    // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
+    // Creates the required interaction to convert the given input into output. Assumes slippage is
+    // already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(
-            execution.input,
+            execution.input_max,
             execution.output,
             self.fee.context("missing fee")?,
         );
@@ -228,15 +228,6 @@ mod tests {
             settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
 
-        // Allowance needed because of slippage
-        let (approval, _) =
-            settlement_handler.settle((token_a, 100.into()), (token_b, 100.into()), 10);
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
-        let (approval, _) =
-            settlement_handler.settle((token_a, 150.into()), (token_b, 100.into()), 10);
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
         // Token B below, equal, above
         let (approval, _) =
             settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
@@ -245,15 +236,6 @@ mod tests {
         let (approval, _) =
             settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
-
-        // Allowance needed because of slippage
-        let (approval, _) =
-            settlement_handler.settle((token_b, 200.into()), (token_a, 100.into()), 10);
-        assert_ne!(approval, Approval::AllowanceSufficient);
-
-        let (approval, _) =
-            settlement_handler.settle((token_b, 250.into()), (token_a, 100.into()), 10);
-        assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Untracked token
         let (approval, _) = settlement_handler.settle(
@@ -268,7 +250,7 @@ mod tests {
     fn test_encode() {
         let settlement_handler = UniswapV3SettlementHandler::new_dummy(Default::default());
         let execution = AmmOrderExecution {
-            input: (H160::default(), U256::zero()),
+            input_max: (H160::default(), U256::zero()),
             output: (H160::default(), U256::zero()),
         };
         let mut encoder = SettlementEncoder::new(Default::default());

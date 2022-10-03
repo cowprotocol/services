@@ -1,12 +1,23 @@
 use primitive_types::{H160, U256};
-use shared::{arguments::display_option, bad_token::token_owner_finder::FeeValues};
-use std::{net::SocketAddr, time::Duration};
+use shared::{arguments::display_option, bad_token::token_owner_finder, http_client};
+use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 use url::Url;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub token_owner_finder: token_owner_finder::Arguments,
+
+    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
+    /// to be used exclusively for tracing calls.
+    #[clap(long, env)]
+    pub tracing_node_url: Option<Url>,
 
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
@@ -28,31 +39,18 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    #[clap(long, env, default_value = "static", arg_enum)]
-    pub token_detector_fee_values: FeeValues,
-
-    /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env, default_value = "true")]
-    pub enable_blockscout: bool,
-
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[clap(
         long,
         env,
         default_value = "600",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub token_quality_cache_expiry: Duration,
 
-    /// Don't use the trace_callMany api that only some nodes support to check whether a token
-    /// should be denied.
-    /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
-    pub skip_trace_api: bool,
-
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: usize,
+    pub pool_cache_lru_size: NonZeroUsize,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -73,7 +71,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        parse(try_from_str = U256::from_dec_str)
+        value_parser = U256::from_dec_str
     )]
     pub amount_to_estimate_prices_with: Option<U256>,
 
@@ -90,7 +88,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "Baseline",
-        arg_enum,
+        value_enum,
         use_value_delimiter = true
     )]
     pub native_price_estimators: Vec<shared::price_estimation::PriceEstimatorType>,
@@ -100,14 +98,39 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub native_price_cache_max_age_secs: Duration,
+
+    /// The minimum amount of time in seconds an order has to be valid for.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub min_order_validity_period: Duration,
+
+    /// List of account addresses to be denied from order creation
+    #[clap(long, env, use_value_delimiter = true)]
+    pub banned_users: Vec<H160>,
+
+    /// If the auction hasn't been updated in this amount of time the pod fails the liveness check.
+    #[clap(
+        long,
+        env,
+        default_value = "300",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_auction_age: Duration,
 }
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.token_owner_finder)?;
+        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
@@ -115,30 +138,23 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
         writeln!(
             f,
-            "token_detector_fee_values: {:?}",
-            self.token_detector_fee_values
-        )?;
-        writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
-        writeln!(
-            f,
             "token_quality_cache_expiry: {:?}",
             self.token_quality_cache_expiry
         )?;
-        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        write!(f, "balancer_sor_url: ")?;
-        write!(f, "price_estimation_rate_limiter: ")?;
-        display_option(&self.price_estimation_rate_limiter, f)?;
-        writeln!(f)?;
-        write!(f, "amount_to_estimate_prices_with: ")?;
-        display_option(&self.amount_to_estimate_prices_with, f)?;
-        writeln!(f)?;
-        write!(f, "quasimodo_solver_url: ")?;
-        display_option(&self.quasimodo_solver_url, f)?;
-        writeln!(f)?;
-        write!(f, "yearn_solver_url: ")?;
-        display_option(&self.yearn_solver_url, f)?;
-        writeln!(f)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(
+            f,
+            "price_estimation_rate_limiter",
+            &self.price_estimation_rate_limiter,
+        )?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
             "native_price_estimators: {:?}",
@@ -149,6 +165,13 @@ impl std::fmt::Display for Arguments {
             "native_price_cache_max_age_secs: {:?}",
             self.native_price_cache_max_age_secs
         )?;
+        writeln!(
+            f,
+            "min_order_validity_period: {:?}",
+            self.min_order_validity_period
+        )?;
+        writeln!(f, "banned_users: {:?}", self.banned_users)?;
+        writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
         Ok(())
     }
 }

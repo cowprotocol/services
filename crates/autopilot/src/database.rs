@@ -1,5 +1,6 @@
-pub mod auction;
+mod auction;
 mod events;
+pub mod onchain_order_events;
 mod quotes;
 
 use sqlx::{PgConnection, PgPool};

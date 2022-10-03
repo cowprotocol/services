@@ -1,22 +1,19 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
+use autopilot::{event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
-use orderbook::{
-    database::Postgres,
-    fee_subsidy::Subsidy,
-    order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, SignatureConfiguration},
-    orderbook::Orderbook,
-    solvable_orders::SolvableOrdersCache,
-};
-use reqwest::Client;
+use orderbook::{database::Postgres, orderbook::Orderbook};
+use reqwest::{Client, StatusCode};
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
+    order_quoting::{OrderQuoter, QuoteHandler},
+    order_validation::{OrderValidator, SignatureConfiguration},
     price_estimation::baseline::BaselinePriceEstimator,
     price_estimation::native::NativePriceEstimator,
     price_estimation::sanitized::SanitizedPriceEstimator,
@@ -30,7 +27,12 @@ use shared::{
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
 use std::{
-    collections::HashSet, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
+    collections::HashSet,
+    future::pending,
+    num::{NonZeroU64, NonZeroUsize},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
 };
 use web3::signing::{Key as _, SecretKeyRef};
 
@@ -179,8 +181,9 @@ impl OrderbookServices {
             .unwrap();
         database::clear_DANGER(&api_db.pool).await.unwrap();
         let event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            contracts.gp_settlement.clone(),
+            GPv2SettlementContract::new(contracts.gp_settlement.clone()),
             autopilot_db.clone(),
+            contracts.gp_settlement.clone().raw_instance().web3(),
             None,
         ));
         let pair_provider = uniswap_pair_provider(contracts);
@@ -190,7 +193,7 @@ impl OrderbookServices {
         let pool_fetcher = PoolCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
-                number_of_entries_to_auto_update: 20,
+                number_of_entries_to_auto_update: NonZeroUsize::new(20).unwrap(),
                 maximum_recent_block_age: 4,
                 ..Default::default()
             },
@@ -242,14 +245,14 @@ impl OrderbookServices {
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
-            api_db.clone(),
+            autopilot_db.clone(),
             Default::default(),
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
             native_price_estimator,
             signature_validator.clone(),
-            api_db.clone(),
+            Duration::from_secs(1),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -267,9 +270,7 @@ impl OrderbookServices {
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),
-            api_db.clone(),
-            solvable_orders_cache.clone(),
-            Duration::from_secs(600),
+            api_db.as_ref().clone(),
             order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance {
@@ -284,7 +285,6 @@ impl OrderbookServices {
             pending(),
             api_db.clone(),
             None,
-            solvable_orders_cache.clone(),
         );
 
         Self {
@@ -298,17 +298,27 @@ impl OrderbookServices {
 }
 
 /// Returns error if communicating with the api fails or if a timeout is reached.
-pub async fn wait_for_solvable_orders(api: &OrderBookApi, minimum: usize) -> Result<()> {
+pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
     let task = async {
         loop {
-            let auction = api.get_auction().await?;
-            if auction.orders.len() >= minimum {
-                return Ok(());
+            let response = client
+                .get(format!("{}/api/v1/auction", API_HOST))
+                .send()
+                .await?;
+            match response.status() {
+                StatusCode::OK => {
+                    let auction: model::auction::AuctionWithId = response.json().await?;
+                    if auction.auction.orders.len() >= minimum {
+                        return Ok(());
+                    }
+                }
+                StatusCode::NOT_FOUND => (),
+                other => anyhow::bail!("unexpected status code {}", other),
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     };
-    match tokio::time::timeout(Duration::from_secs(10), task).await {
+    match tokio::time::timeout(Duration::from_secs(5), task).await {
         Ok(inner) => inner,
         Err(_) => Err(anyhow!("timeout")),
     }

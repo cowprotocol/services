@@ -278,7 +278,7 @@ struct Arguments {
         long,
         env,
         default_value = "600",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     time_without_trade: Duration,
 
@@ -287,7 +287,7 @@ struct Arguments {
         long,
         env,
         default_value = "180",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     min_order_age: Duration,
 
@@ -296,7 +296,7 @@ struct Arguments {
         long,
         env,
         default_value = "1800",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     min_alert_interval: Duration,
 
@@ -316,6 +316,7 @@ struct Arguments {
 async fn main() {
     let args = Arguments::parse();
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running alerter with {:#?}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);

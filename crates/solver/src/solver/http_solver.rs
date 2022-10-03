@@ -4,7 +4,10 @@ pub mod settlement;
 use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{order_converter::OrderConverter, Exchange, LimitOrder, Liquidity},
+    liquidity::{
+        order_converter::OrderConverter, slippage::SlippageCalculator, Exchange, LimitOrder,
+        Liquidity,
+    },
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
@@ -13,12 +16,11 @@ use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
-use model::{order::OrderKind, solver_competition::SolverCompetitionId};
+use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
-use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
 use shared::{
-    http_solver::{gas_model::GasModel, model::*},
+    http_solver::{gas_model::GasModel, model::*, DefaultHttpSolverApi, HttpSolverApi},
     sources::balancer_v2::pools::common::compute_scaling_rate,
 };
 use shared::{
@@ -61,6 +63,8 @@ pub struct HttpSolver {
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
+    filter_non_fee_connected_orders: bool,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl HttpSolver {
@@ -74,6 +78,8 @@ impl HttpSolver {
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
+        filter_non_fee_connected_orders: bool,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         Self {
             solver,
@@ -84,12 +90,14 @@ impl HttpSolver {
             allowance_manager,
             order_converter,
             instance_cache,
+            filter_non_fee_connected_orders,
+            slippage_calculator,
         }
     }
 
     async fn prepare_model(
         &self,
-        auction_id: SolverCompetitionId,
+        auction_id: AuctionId,
         run_id: u64,
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
@@ -137,9 +145,19 @@ impl HttpSolver {
         // slow down the solver and the solver can estimate them on its own.
         let price_estimates = external_prices.into_http_solver_prices();
 
-        // For the solver to run correctly we need to be sure that there are no
-        // isolated islands of tokens without connection between them.
-        let fee_connected_tokens = compute_fee_connected_tokens(&liquidity, self.native_token);
+        let fee_connected_tokens = if self.filter_non_fee_connected_orders {
+            // For the optimization HTTP solver to run correctly we need to be
+            // sure that there are no isolated islands of tokens without
+            // connection between them. Ideally, this filtering **should not be
+            // needed** and done in the optimization solvers themselves, since
+            // it is logic specific to those solvers.
+            compute_fee_connected_tokens(&liquidity, self.native_token)
+        } else {
+            // For external solvers assume all tokens are connected to the fee
+            // token as they may use additional internal liquidity that we don't
+            // know about.
+            tokens.iter().copied().collect()
+        };
         let gas_model = GasModel {
             native_token: self.native_token,
             gas_price,
@@ -399,6 +417,7 @@ impl Solver for HttpSolver {
             gas_price,
             deadline,
             external_prices,
+            ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         if orders.is_empty() {
@@ -415,7 +434,14 @@ impl Solver for HttpSolver {
                 Some(data) if data.run_id == run => (data.model.clone(), data.context.clone()),
                 _ => {
                     let (model, context) = self
-                        .prepare_model(id, run, orders, liquidity, gas_price, external_prices)
+                        .prepare_model(
+                            id,
+                            run,
+                            orders,
+                            liquidity,
+                            gas_price,
+                            external_prices.clone(),
+                        )
                         .await?;
                     tracing::debug!(
                         "Problem sent to http solvers (json):\n{}",
@@ -450,11 +476,13 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
+        let slippage = self.slippage_calculator.context(&external_prices);
         match settlement::convert_settlement(
             settled.clone(),
             context,
             self.allowance_manager.clone(),
             self.order_converter.clone(),
+            slippage,
         )
         .await
         {
@@ -547,6 +575,8 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
+            true,
+            SlippageCalculator::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {

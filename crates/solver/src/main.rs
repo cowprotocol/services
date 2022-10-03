@@ -2,10 +2,10 @@ use anyhow::Context;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
 use num::rational::Ratio;
-use primitive_types::U256;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
     network::network_name,
@@ -17,11 +17,10 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
@@ -33,10 +32,9 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
-    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -51,19 +49,15 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running solver with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_solver".into()), None);
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
 
-    let client = shared::http_client(args.shared.http_timeout);
+    let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url,
-        "base".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -93,7 +87,7 @@ async fn main() {
     })));
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
+            &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key,
@@ -109,12 +103,10 @@ async fn main() {
 
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
-        // 0 because we don't make use of the auto update functionality as we always fetch
-        // for specific blocks
-        number_of_entries_to_auto_update: 0,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        ..Default::default()
     };
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
         sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
@@ -146,7 +138,8 @@ async fn main() {
                     token_info_fetcher.clone(),
                     cache_config,
                     current_block_stream.clone(),
-                    client.clone(),
+                    http_factory.create(),
+                    web3.clone(),
                     &contracts,
                     args.shared.balancer_pool_deny_list,
                 )
@@ -200,12 +193,12 @@ async fn main() {
 
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
+            &http_factory,
             args.shared
                 .zeroex_url
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key,
-            client.clone(),
         )
         .unwrap(),
     );
@@ -230,34 +223,39 @@ async fn main() {
         network_name.to_string(),
         chain_id,
         args.shared.disabled_one_inch_protocols,
-        args.paraswap_slippage_bps,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
-        client.clone(),
+        &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
-        args.zeroex_slippage_bps,
         args.shared.disabled_zeroex_sources,
-        args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
+        args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
-        args.oneinch_max_slippage_in_eth
-            .map(|float| U256::from_f64_lossy(float * 1e18)),
         order_converter.clone(),
         args.max_settlements_per_solver,
         args.max_merged_settlements,
+        &args.slippage,
     )
     .expect("failure creating solvers");
 
+    metrics.initialize_solver_metrics(
+        &solver
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
+
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&web3).await.unwrap(),
+            base_tokens.clone(),
+            settlement_contract.clone(),
+        ))
     } else {
         None
     };
@@ -265,7 +263,7 @@ async fn main() {
     let (uniswap_v3_liquidity, uniswap_v3_maintainer) =
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
             let uniswap_v3_pool_fetcher = Arc::new(
-                UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone())
+                UniswapV3PoolFetcher::new(chain_id, http_factory.create(), web3.clone())
                     .await
                     .expect("failed to create UniswapV3 pool fetcher in solver"),
             );
@@ -290,23 +288,19 @@ async fn main() {
         zeroex_liquidity,
         uniswap_v3_liquidity,
     };
-    let market_makable_token_list =
-        TokenList::from_url(&args.market_makable_token_list, chain_id, client.clone())
-            .await
-            .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
-            .ok();
+    let market_makable_token_list = TokenList::from_url(
+        &args.market_makable_token_list,
+        chain_id,
+        http_factory.create(),
+    )
+    .await
+    .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
+    .ok();
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
         .enumerate()
-        .map(|(index, url)| {
-            let transport = Web3Transport::new(HttpTransport::new(
-                client.clone(),
-                url.clone(),
-                index.to_string(),
-            ));
-            (web3::Web3::new(transport), url)
-        })
+        .map(|(index, url)| (shared::web3(&http_factory, &url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
@@ -321,7 +315,7 @@ async fn main() {
             .unwrap();
         assert_eq!(
             node_network_id, network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -332,23 +326,10 @@ async fn main() {
     let mut transaction_strategies = vec![];
     for strategy in args.transaction_strategy {
         match strategy {
-            TransactionStrategyArg::PublicMempool => {
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
-                }))
-            }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(
-                            client.clone(),
-                            args.eden_api_url.clone(),
-                            submitted_transactions.clone(),
-                        )
-                        .unwrap(),
+                        EdenApi::new(http_factory.create(), args.eden_api_url.clone()).unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
@@ -359,7 +340,7 @@ async fn main() {
                 for flashbots_url in args.flashbots_api_url.clone() {
                     transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
                         submit_api: Box::new(
-                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
+                            FlashbotsApi::new(http_factory.create(), flashbots_url).unwrap(),
                         ),
                         max_additional_tip: args.max_additional_flashbot_tip,
                         additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
@@ -367,16 +348,19 @@ async fn main() {
                     }))
                 }
             }
-            TransactionStrategyArg::CustomNodes => {
+            TransactionStrategyArg::PublicMempool => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        submission_nodes.clone(),
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {
@@ -384,16 +368,24 @@ async fn main() {
             }
         }
     }
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &client,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
-        .await
         .expect("failed to create access list estimator"),
     );
     let solution_submitter = SolutionSubmitter {
@@ -409,13 +401,9 @@ async fn main() {
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
-        client.clone(),
+        http_factory.create(),
         args.shared.solver_competition_auth,
     );
-    let tenderly = args
-        .tenderly_url
-        .zip(args.tenderly_api_key)
-        .and_then(|(url, api_key)| TenderlyApi::new(url, client.clone(), &api_key).ok());
 
     let mut driver = Driver::new(
         settlement_contract,
@@ -440,7 +428,7 @@ async fn main() {
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
-        tenderly,
+        tenderly_api,
     );
 
     let maintainer = ServiceMaintenance {

@@ -239,7 +239,7 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AmmOrderExecution {
-    pub input: (H160, U256),
+    pub input_max: (H160, U256),
     pub output: (H160, U256),
 }
 

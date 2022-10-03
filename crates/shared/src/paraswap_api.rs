@@ -1,30 +1,26 @@
 use crate::{
     debug_bytes,
-    rate_limiter::{RateLimiter, RateLimiterError},
+    rate_limiter::{back_off, RateLimiter, RateLimiterError},
 };
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
-use reqwest::{Client, RequestBuilder, Response, Url};
+use reqwest::{Client, RequestBuilder, Url};
 use serde::{
     de::{DeserializeOwned, Error},
     Deserialize, Deserializer, Serialize,
 };
 use serde_json::Value;
+use serde_with::{serde_as, DisplayFromStr};
 use thiserror::Error;
 
 const BASE_URL: &str = "https://apiv5.paraswap.io";
 
-/// Determines if the HTTP response indicates that the API should back off for a while.
-fn requires_back_off(response: &Result<Response, reqwest::Error>) -> bool {
-    matches!(response, Ok(response) if response.status() == 429)
-}
-
 /// Mockable implementation of the API for unit test
-#[mockall::automock]
 #[async_trait::async_trait]
-pub trait ParaswapApi: Send + Sync {
+#[mockall::automock]
+pub trait ParaswapApi: Send + Sync + 'static {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
@@ -46,7 +42,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let request = self.client.get(url).send();
 
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
             _ => request.await?,
         };
         let status = response.status();
@@ -65,7 +61,7 @@ impl ParaswapApi for DefaultParaswapApi {
         };
         let request = query.into_request(&self.client).send();
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
             _ => request.await?,
         };
         let response_text = response.text().await?;
@@ -155,9 +151,9 @@ pub struct PriceQuery {
     /// destination token address
     pub dest_token: H160,
     /// decimals of from token (according to API needed  to trade any token)
-    pub src_decimals: usize,
+    pub src_decimals: u8,
     /// decimals of to token (according to API needed to trade any token)
-    pub dest_decimals: usize,
+    pub dest_decimals: u8,
     /// amount of source token (in the smallest denomination, e.g. for ETH - 10**18)
     pub amount: U256,
     /// Type of order
@@ -198,7 +194,7 @@ impl PriceQuery {
 }
 
 /// A Paraswap API price response.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct PriceResponse {
     /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
     pub price_route_raw: Value,
@@ -222,6 +218,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             price_route: Value,
         }
 
+        #[serde_as]
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
@@ -230,7 +227,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             #[serde(with = "u256_decimal")]
             dest_amount: U256,
             token_transfer_proxy: H160,
-            #[serde(with = "serde_with::rust::display_fromstr")]
+            #[serde_as(as = "DisplayFromStr")]
             gas_cost: u64,
         }
 
@@ -266,9 +263,9 @@ pub struct TransactionBuilderQuery {
     /// The maximum slippage in BPS.
     pub slippage: u32,
     /// The decimals of the source token
-    pub src_decimals: usize,
+    pub src_decimals: u8,
     /// The decimals of the destination token
-    pub dest_decimals: usize,
+    pub dest_decimals: u8,
     /// priceRoute part from /prices endpoint response (without any change)
     pub price_route: Value,
     /// The address of the signer

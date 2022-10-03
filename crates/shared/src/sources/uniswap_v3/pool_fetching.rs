@@ -6,7 +6,7 @@ use crate::Web3;
 use super::event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher};
 use super::graph_api::{PoolData, TickData, Token, UniV3SubgraphClient};
 use anyhow::{Context, Result};
-use ethcontract::{Event, H160, U256};
+use ethcontract::{BlockNumber, Event, H160, U256};
 use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
 use num::{rational::Ratio, BigInt, Zero};
@@ -28,7 +28,7 @@ pub trait PoolFetching: Send + Sync {
 }
 
 /// Pool data in a format prepared for solvers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolInfo {
     pub address: H160,
     pub tokens: Vec<Token>,
@@ -38,23 +38,23 @@ pub struct PoolInfo {
 
 /// Pool state in a format prepared for solvers.
 #[serde_as]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolState {
     #[serde(with = "u256_decimal")]
     pub sqrt_price: U256,
     #[serde(with = "u256_decimal")]
     pub liquidity: U256,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     // (tick_idx, liquidity_net)
     #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
     pub liquidity_net: HashMap<BigInt, BigInt>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub fee: Ratio<u32>,
 }
 
 /// Pool stats in a format prepared for solvers
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolStats {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "mean")]
@@ -123,6 +123,18 @@ impl UniswapV3PoolFetcher {
     pub async fn new(chain_id: u64, client: Client, web3: Web3) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
         let registered_pools = graph_api.get_registered_pools().await?;
+        let fetched_block = web3
+            .eth()
+            .block(BlockNumber::Number(registered_pools.fetched_block_number.into()).into())
+            .await?
+            .context("missing block for fetched block number")?;
+        let fetched_block = (
+            fetched_block
+                .number
+                .context("missing fetched block number")?
+                .as_u64(),
+            fetched_block.hash.context("missing fetched block hash")?,
+        );
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
             "initialized registered pools",
@@ -147,7 +159,7 @@ impl UniswapV3PoolFetcher {
                     contracts: registered_pools.pools.iter().map(|pool| pool.id).collect(),
                 },
                 RecentEventsCache::default(),
-                Some(registered_pools.fetched_block_number),
+                Some(fetched_block),
             )),
         })
     }
@@ -282,7 +294,11 @@ impl PoolFetching for UniswapV3PoolFetcher {
 /// For a given checkpoint, append events to get a new checkpoint
 fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV3Event>>) {
     for event in &events {
-        let address = event.meta.as_ref().expect("metadata must exist for mined blocks").address;
+        let address = event
+            .meta
+            .as_ref()
+            .expect("metadata must exist for mined blocks")
+            .address;
         if let Some(pool) = pools.get_mut(&address) {
             match &event.data {
                 UniswapV3Event::Burn(burn) => {

@@ -14,7 +14,7 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
-use strum::VariantNames;
+use strum::{IntoEnumIterator, VariantNames};
 
 /// The maximum time between the completion of two run loops. If exceeded the service will be considered unhealthy.
 const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
@@ -33,6 +33,7 @@ pub enum SolverRunOutcome {
 }
 
 /// The outcome of settlement submission.
+#[derive(strum::EnumIter)]
 pub enum SettlementSubmissionOutcome {
     /// A settlement transaction was mined and included on the blockchain.
     Success,
@@ -50,17 +51,46 @@ pub enum SettlementSubmissionOutcome {
     Failed,
 }
 
+impl SettlementSubmissionOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            SettlementSubmissionOutcome::Success => "success",
+            SettlementSubmissionOutcome::Revert => "revert",
+            SettlementSubmissionOutcome::Timeout => "timeout",
+            SettlementSubmissionOutcome::Cancel => "cancel",
+            SettlementSubmissionOutcome::SimulationRevert => "simulationrevert",
+            SettlementSubmissionOutcome::Disabled => "disabled",
+            SettlementSubmissionOutcome::Failed => "failed",
+        }
+    }
+}
+
+#[derive(strum::EnumIter)]
+pub enum SolverSimulationOutcome {
+    Success,
+    Failure,
+    FailureOnLatest,
+}
+
+impl SolverSimulationOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            SolverSimulationOutcome::Success => "success",
+            SolverSimulationOutcome::Failure => "failure",
+            SolverSimulationOutcome::FailureOnLatest => "failure_on_latest",
+        }
+    }
+}
+
 pub trait SolverMetrics: Send + Sync {
     fn orders_fetched(&self, orders: &[LimitOrder]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, start: Instant);
     fn order_settled(&self, order: &Order, solver: &str);
-    fn settlement_simulation_succeeded(&self, solver: &str);
-    fn settlement_simulation_failed_on_latest(&self, solver: &str);
+    fn settlement_simulation(&self, solver: &str, outcome: SolverSimulationOutcome);
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str);
     fn single_order_solver_succeeded(&self, solver: &str);
     fn single_order_solver_failed(&self, solver: &str);
-    fn settlement_simulation_failed(&self, solver: &str);
     fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str);
     fn settlement_access_list_saved_gas(&self, gas_saved: f64, sign: &str);
     fn settlement_revertable_status(&self, status: Revertable, solver: &str);
@@ -232,6 +262,24 @@ impl Metrics {
             settlement_access_list_saved_gas,
         })
     }
+
+    /// Initialize known to exist labels on solver related metrics to 0.
+    ///
+    /// Useful to make sure the prometheus metric exists for example for alerting.
+    pub fn initialize_solver_metrics(&self, solver_names: &[&str]) {
+        for solver in solver_names {
+            for outcome in SolverSimulationOutcome::iter() {
+                self.settlement_simulations
+                    .with_label_values(&[outcome.label(), solver])
+                    .reset();
+            }
+            for outcome in SettlementSubmissionOutcome::iter() {
+                self.settlement_submissions
+                    .with_label_values(&[outcome.label(), solver])
+                    .reset();
+            }
+        }
+    }
 }
 
 impl SolverMetrics for Metrics {
@@ -293,15 +341,9 @@ impl SolverMetrics for Metrics {
             )
     }
 
-    fn settlement_simulation_succeeded(&self, solver: &str) {
+    fn settlement_simulation(&self, solver: &str, outcome: SolverSimulationOutcome) {
         self.settlement_simulations
-            .with_label_values(&["success", solver])
-            .inc()
-    }
-
-    fn settlement_simulation_failed_on_latest(&self, solver: &str) {
-        self.settlement_simulations
-            .with_label_values(&["failure_on_latest", solver])
+            .with_label_values(&[outcome.label(), solver])
             .inc()
     }
 
@@ -327,24 +369,9 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn settlement_simulation_failed(&self, solver: &str) {
-        self.settlement_simulations
-            .with_label_values(&["failure", solver])
-            .inc()
-    }
-
     fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str) {
-        let result = match outcome {
-            SettlementSubmissionOutcome::Success => "success",
-            SettlementSubmissionOutcome::Revert => "revert",
-            SettlementSubmissionOutcome::Timeout => "timeout",
-            SettlementSubmissionOutcome::Cancel => "cancel",
-            SettlementSubmissionOutcome::SimulationRevert => "simulationrevert",
-            SettlementSubmissionOutcome::Disabled => "disabled",
-            SettlementSubmissionOutcome::Failed => "failed",
-        };
         self.settlement_submissions
-            .with_label_values(&[result, solver])
+            .with_label_values(&[outcome.label(), solver])
             .inc()
     }
 
@@ -414,12 +441,9 @@ impl SolverMetrics for NoopMetrics {
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
     fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
     fn order_settled(&self, _: &Order, _: &str) {}
-    fn settlement_simulation_succeeded(&self, _: &str) {}
-    fn settlement_simulation_failed_on_latest(&self, _: &str) {}
     fn solver_run(&self, _: SolverRunOutcome, _: &str) {}
     fn single_order_solver_succeeded(&self, _: &str) {}
     fn single_order_solver_failed(&self, _: &str) {}
-    fn settlement_simulation_failed(&self, _: &str) {}
     fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &str) {}
     fn settlement_revertable_status(&self, _: Revertable, _: &str) {}
     fn settlement_access_list_saved_gas(&self, _: f64, _: &str) {}
@@ -429,6 +453,7 @@ impl SolverMetrics for NoopMetrics {
     fn complete_runloop_until_transaction(&self, _: Duration) {}
     fn transaction_submission(&self, _: Duration) {}
     fn transaction_gas_price(&self, _: U256) {}
+    fn settlement_simulation(&self, _: &str, _: SolverSimulationOutcome) {}
 }
 
 #[cfg(test)]
@@ -440,9 +465,10 @@ mod tests {
         let metrics = Metrics::new().unwrap();
         metrics.settlement_computed("asdf", Instant::now());
         metrics.order_settled(&Default::default(), "test");
-        metrics.settlement_simulation_succeeded("test");
-        metrics.settlement_simulation_failed("test");
+        metrics.settlement_simulation("test", SolverSimulationOutcome::Success);
+        metrics.settlement_simulation("test", SolverSimulationOutcome::Failure);
         metrics.settlement_submitted(SettlementSubmissionOutcome::Success, "test");
         metrics.orders_matched_but_not_settled(20);
+        metrics.initialize_solver_metrics(&["", "a"]);
     }
 }

@@ -1,4 +1,5 @@
 use crate::{
+    auction::AuctionId,
     order::OrderUid,
     u256_decimal::{self, DecimalU256},
 };
@@ -7,11 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::BTreeMap;
 
-pub type SolverCompetitionId = i64;
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverCompetition {
+    // default annotation because until https://github.com/cowprotocol/services/pull/488 we weren't
+    // storing an auction id in the database.
+    #[serde(default)]
+    pub auction_id: AuctionId,
     pub gas_price: f64,
     pub auction_start_block: u64,
     pub liquidity_collected_block: u64,
@@ -22,7 +25,7 @@ pub struct SolverCompetition {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
@@ -53,7 +56,7 @@ pub struct Objective {
     pub gas: u64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub id: OrderUid,
@@ -69,6 +72,7 @@ mod tests {
     #[test]
     fn serialize() {
         let correct = serde_json::json!({
+            "auctionId": 0,
             "gasPrice": 1.0f64,
             "auctionStartBlock": 13u64,
             "liquidityCollectedBlock": 14u64,
@@ -119,6 +123,7 @@ mod tests {
         });
 
         let orig = SolverCompetition {
+            auction_id: 0,
             gas_price: 1.,
             auction_start_block: 13,
             liquidity_collected_block: 14,

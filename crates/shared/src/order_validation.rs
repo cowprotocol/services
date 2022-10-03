@@ -1,6 +1,13 @@
-use crate::order_quoting::{
-    CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
-    QuoteSearchParameters,
+use crate::{
+    account_balances::{BalanceFetching, TransferSimulationError},
+    bad_token::BadTokenDetecting,
+    code_fetching::CodeFetching,
+    order_quoting::{
+        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
+        QuoteSearchParameters,
+    },
+    price_estimation::PriceEstimationError,
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
 };
 use anyhow::anyhow;
 use contracts::WETH9;
@@ -15,16 +22,9 @@ use model::{
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
     DomainSeparator,
 };
-use shared::{
-    account_balances::{BalanceFetching, TransferSimulationError},
-    bad_token::BadTokenDetecting,
-    price_estimation::PriceEstimationError,
-    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    web3_traits::CodeFetching,
-};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
     /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
@@ -174,7 +174,7 @@ pub struct OrderValidator {
     signature_validator: Arc<dyn SignatureValidating>,
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default)]
 pub struct PreOrderData {
     pub owner: H160,
     pub sell_token: H160,
@@ -336,13 +336,20 @@ impl OrderValidating for OrderValidator {
         let signing_scheme = order.signature.scheme();
 
         if let Signature::Eip1271(signature) = &order.signature {
-            self.signature_validator
-                .validate_signature(SignatureCheck {
-                    signer: owner,
-                    hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
-                    signature: signature.to_owned(),
-                })
-                .await?;
+            if self
+                .signature_configuration
+                .eip1271_skip_creation_validation
+            {
+                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+            } else {
+                self.signature_validator
+                    .validate_signature(SignatureCheck {
+                        signer: owner,
+                        hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                        signature: signature.to_owned(),
+                    })
+                    .await?;
+            }
         }
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -358,9 +365,32 @@ impl OrderValidating for OrderValidator {
         ))
         .await
         .map_err(ValidationError::Partial)?;
-
+        let quote_kind = convert_signing_scheme_into_quote_kind(order.signature.scheme(), true)?;
+        let quote_parameters = QuoteSearchParameters {
+            sell_token: order.data.sell_token,
+            buy_token: order.data.buy_token,
+            sell_amount: order.data.sell_amount,
+            buy_amount: order.data.buy_amount,
+            fee_amount: order.data.fee_amount,
+            kind: order.data.kind,
+            from: owner,
+            app_data: order.data.app_data,
+            quote_kind,
+        };
         let quote = if !liquidity_owner {
-            Some(get_quote_and_check_fee(&*self.quoter, &order, true, owner).await?)
+            Some(
+                get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    order.data.fee_amount,
+                    convert_signing_scheme_into_quote_signing_scheme(
+                        order.signature.scheme(),
+                        true,
+                    )?,
+                )
+                .await?,
+            )
         } else {
             // We don't try to get quotes for orders created by liqudity order
             // owners for two reasons:
@@ -429,7 +459,13 @@ impl OrderValidating for OrderValidator {
         // are not intended to be filled immediately and so need to be treated
         // slightly differently by the protocol.
         let is_liquidity_order = match &quote {
-            Some(quote) if is_order_outside_market_price(&order.data, quote) => {
+            Some(quote)
+                if is_order_outside_market_price(
+                    &quote_parameters.sell_amount,
+                    &quote_parameters.buy_amount,
+                    quote,
+                ) =>
+            {
                 let order_uid = order.data.uid(domain_separator, &owner);
                 tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
                 true
@@ -450,9 +486,10 @@ impl OrderValidating for OrderValidator {
 }
 
 /// Signature configuration that is accepted by the orderbook.
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SignatureConfiguration {
     pub eip1271: bool,
+    pub eip1271_skip_creation_validation: bool,
     pub presign: bool,
 }
 
@@ -462,6 +499,7 @@ impl SignatureConfiguration {
     pub fn off_chain() -> Self {
         Self {
             eip1271: false,
+            eip1271_skip_creation_validation: false,
             presign: false,
         }
     }
@@ -470,6 +508,7 @@ impl SignatureConfiguration {
     pub fn all() -> Self {
         Self {
             eip1271: true,
+            eip1271_skip_creation_validation: false,
             presign: true,
         }
     }
@@ -510,53 +549,39 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found and a quote ID was not
 /// specified.
-async fn get_quote_and_check_fee(
+pub async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
-    order: &OrderCreation,
-    order_placement_via_api: bool,
-    owner: H160,
+    quote_search_parameters: &QuoteSearchParameters,
+    quote_id: Option<i64>,
+    fee_amount: U256,
+    signing_scheme: QuoteSigningScheme,
 ) -> Result<Quote, ValidationError> {
-    let quote_kind =
-        convert_signing_scheme_into_quote_kind(order.signature.scheme(), order_placement_via_api)?;
-    let parameters = QuoteSearchParameters {
-        sell_token: order.data.sell_token,
-        buy_token: order.data.buy_token,
-        sell_amount: order.data.sell_amount,
-        buy_amount: order.data.buy_amount,
-        fee_amount: order.data.fee_amount,
-        kind: order.data.kind,
-        from: owner,
-        app_data: order.data.app_data,
-        quote_kind,
-    };
-
-    let quote = match quoter.find_quote(order.quote_id, parameters).await {
+    let quote = match quoter
+        .find_quote(quote_id, quote_search_parameters.clone())
+        .await
+    {
         Ok(quote) => {
-            tracing::debug!(quote_id =? order.quote_id, "found quote for order creation");
+            tracing::debug!(quote_id =? quote.id, "found quote for order creation");
             quote
         }
         // We couldn't find a quote, and no ID was specified. Try computing a
         // fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
-            let signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
-                order.signature.scheme(),
-                order_placement_via_api,
-            )?;
+        Err(FindQuoteError::NotFound(_)) if quote_id.is_none() => {
             let parameters = QuoteParameters {
-                sell_token: order.data.sell_token,
-                buy_token: order.data.buy_token,
-                side: match order.data.kind {
+                sell_token: quote_search_parameters.sell_token,
+                buy_token: quote_search_parameters.buy_token,
+                side: match quote_search_parameters.kind {
                     OrderKind::Buy => OrderQuoteSide::Buy {
-                        buy_amount_after_fee: order.data.buy_amount,
+                        buy_amount_after_fee: quote_search_parameters.buy_amount,
                     },
                     OrderKind::Sell => OrderQuoteSide::Sell {
                         sell_amount: SellAmount::AfterFee {
-                            value: order.data.sell_amount,
+                            value: quote_search_parameters.sell_amount,
                         },
                     },
                 },
-                from: owner,
-                app_data: order.data.app_data,
+                from: quote_search_parameters.from,
+                app_data: quote_search_parameters.app_data,
                 signing_scheme,
             };
             let quote = quoter.calculate_quote(parameters).await?;
@@ -567,7 +592,7 @@ async fn get_quote_and_check_fee(
         Err(err) => return Err(err.into()),
     };
 
-    if order.data.fee_amount < quote.fee_amount {
+    if fee_amount < quote.fee_amount {
         return Err(ValidationError::InsufficientFee);
     }
 
@@ -579,8 +604,8 @@ async fn get_quote_and_check_fee(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
-    order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
+pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
+    sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 
 fn convert_signing_scheme_into_quote_signing_scheme(
@@ -601,7 +626,7 @@ fn convert_signing_scheme_into_quote_signing_scheme(
     }
 }
 
-fn convert_signing_scheme_into_quote_kind(
+pub fn convert_signing_scheme_into_quote_kind(
     scheme: SigningScheme,
     order_placement_via_api: bool,
 ) -> Result<QuoteKind, ValidationError> {
@@ -618,26 +643,22 @@ fn convert_signing_scheme_into_quote_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::order_quoting::MockOrderQuoting;
+    use crate::{
+        account_balances::MockBalanceFetching,
+        bad_token::{MockBadTokenDetecting, TokenQuality},
+        code_fetching::MockCodeFetching,
+        dummy_contract,
+        order_quoting::MockOrderQuoting,
+        rate_limiter::RateLimiterError,
+        signature_validator::MockSignatureValidating,
+    };
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{
-        app_id::AppId,
-        order::OrderBuilder,
-        signature::{EcdsaSignature, EcdsaSigningScheme},
-    };
+    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
-    use shared::{
-        account_balances::MockBalanceFetching,
-        bad_token::{MockBadTokenDetecting, TokenQuality},
-        dummy_contract,
-        rate_limiter::RateLimiterError,
-        signature_validator::MockSignatureValidating,
-        web3_traits::MockCodeFetching,
-    };
 
     #[test]
     fn minimum_balance_() {
@@ -982,7 +1003,31 @@ mod tests {
         };
 
         assert!(validator
-            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .await
+            .is_ok());
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: creation.from.unwrap(),
+                hash: order_hash,
+                signature: vec![1, 2, 3],
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let validator = OrderValidator {
+            signature_validator: Arc::new(signature_validator),
+            signature_configuration: SignatureConfiguration {
+                eip1271_skip_creation_validation: true,
+                ..SignatureConfiguration::all()
+            },
+            ..validator
+        };
+
+        assert!(validator
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await
             .is_ok());
     }
@@ -1398,49 +1443,40 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_find_by_id() {
-        let order = OrderCreation {
-            data: OrderData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                sell_amount: 3.into(),
-                buy_amount: 4.into(),
-                app_data: AppId([5; 32]),
-                fee_amount: 6.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            quote_id: Some(42),
+        let mut order_quoter = MockOrderQuoting::new();
+        let quote_search_parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 3.into(),
+            buy_amount: 4.into(),
+            fee_amount: 6.into(),
+            kind: OrderKind::Buy,
+            from: H160([0xf0; 20]),
+            app_data: AppId([5; 32]),
+            quote_kind: QuoteKind::Standard,
+        };
+        let quote_data = Quote {
+            fee_amount: 6.into(),
             ..Default::default()
         };
-        let from = H160([0xf0; 20]);
-
-        let mut order_quoter = MockOrderQuoting::new();
+        let fee_amount = quote_data.fee_amount;
+        let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
-            .with(
-                eq(Some(42)),
-                eq(QuoteSearchParameters {
-                    sell_token: H160([1; 20]),
-                    buy_token: H160([2; 20]),
-                    sell_amount: 3.into(),
-                    buy_amount: 4.into(),
-                    fee_amount: 6.into(),
-                    kind: OrderKind::Buy,
-                    from: H160([0xf0; 20]),
-                    app_data: AppId([5; 32]),
-                    quote_kind: QuoteKind::Standard,
-                }),
-            )
-            .returning(|_, _| {
-                Ok(Quote {
-                    fee_amount: 6.into(),
-                    ..Default::default()
-                })
-            });
+            .with(eq(quote_id), eq(quote_search_parameters.clone()))
+            .returning(move |_, _| Ok(quote_data.clone()));
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
-            .await
-            .unwrap();
+        let quote = get_quote_and_check_fee(
+            &order_quoter,
+            &quote_search_parameters,
+            quote_id,
+            fee_amount,
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             quote,
@@ -1453,20 +1489,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_calculates_fresh_quote_when_not_found() {
-        let order = OrderCreation {
-            data: OrderData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
-                sell_amount: 3.into(),
-                buy_amount: 4.into(),
-                app_data: AppId([5; 32]),
-                fee_amount: 6.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            quote_id: None,
-            ..Default::default()
-        };
         let from = H160([0xf0; 20]);
 
         let mut order_quoter = MockOrderQuoting::new();
@@ -1474,28 +1496,45 @@ mod tests {
             .expect_find_quote()
             .with(eq(None), always())
             .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+        let quote_search_parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            kind: OrderKind::Sell,
+            from,
+            app_data: AppId([5; 32]),
+            quote_kind: QuoteKind::Standard,
+            ..Default::default()
+        };
+        let quote_data = Quote {
+            fee_amount: 6.into(),
+            ..Default::default()
+        };
+        let fee_amount = quote_data.fee_amount;
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
+                sell_token: quote_search_parameters.sell_token,
+                buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::AfterFee { value: 3.into() },
+                    sell_amount: SellAmount::AfterFee {
+                        value: quote_search_parameters.sell_amount,
+                    },
                 },
                 from,
-                app_data: AppId([5; 32]),
+                app_data: quote_search_parameters.app_data,
                 signing_scheme: QuoteSigningScheme::Eip712,
             }))
-            .returning(|_| {
-                Ok(Quote {
-                    fee_amount: 6.into(),
-                    ..Default::default()
-                })
-            });
+            .returning(move |_| Ok(quote_data.clone()));
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
-            .await
-            .unwrap();
+        let quote = get_quote_and_check_fee(
+            &order_quoter,
+            &quote_search_parameters,
+            None,
+            fee_amount,
+            QuoteSigningScheme::Eip712,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             quote,
@@ -1508,8 +1547,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_errors_when_not_found_by_id() {
-        let order = OrderCreation {
-            quote_id: Some(0),
+        let quote_search_paramters = QuoteSearchParameters {
             ..Default::default()
         };
 
@@ -1518,43 +1556,21 @@ mod tests {
             .expect_find_quote()
             .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
-            .await
-            .unwrap_err();
+        let err = get_quote_and_check_fee(
+            &order_quoter,
+            &quote_search_paramters,
+            Some(0),
+            U256::zero(),
+            QuoteSigningScheme::Eip712,
+        )
+        .await
+        .unwrap_err();
 
         assert!(matches!(err, ValidationError::QuoteNotFound));
     }
 
     #[tokio::test]
-    async fn get_quote_errors_in_case_of_api_call_and_quote_requested_for_onchain_orders() {
-        let order = OrderCreation {
-            data: OrderData {
-                fee_amount: 1.into(),
-                ..Default::default()
-            },
-            signature: Signature::Eip712(EcdsaSignature::default()),
-            ..Default::default()
-        };
-
-        let order_quoter = MockOrderQuoting::new();
-
-        let err = get_quote_and_check_fee(&order_quoter, &order, false, Default::default())
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, ValidationError::IncompatibleSigningScheme));
-    }
-
-    #[tokio::test]
     async fn get_quote_errors_on_insufficient_fees() {
-        let order = OrderCreation {
-            data: OrderData {
-                fee_amount: 1.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter.expect_find_quote().returning(|_, _| {
             Ok(Quote {
@@ -1563,9 +1579,15 @@ mod tests {
             })
         });
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
-            .await
-            .unwrap_err();
+        let err = get_quote_and_check_fee(
+            &order_quoter,
+            &Default::default(),
+            Default::default(),
+            U256::one(),
+            QuoteSigningScheme::Eip712,
+        )
+        .await
+        .unwrap_err();
 
         assert!(matches!(err, ValidationError::InsufficientFee));
     }
@@ -1578,12 +1600,12 @@ mod tests {
                 order_quoter
                     .expect_find_quote()
                     .returning(|_, _| Err($find_err));
-
                 let err = get_quote_and_check_fee(
                     &order_quoter,
                     &Default::default(),
-                    true,
                     Default::default(),
+                    Default::default(),
+                    QuoteSigningScheme::Eip712,
                 )
                 .await
                 .unwrap_err();
@@ -1614,8 +1636,9 @@ mod tests {
                 let err = get_quote_and_check_fee(
                     &order_quoter,
                     &Default::default(),
-                    true,
                     Default::default(),
+                    U256::zero(),
+                    QuoteSigningScheme::Eip712,
                 )
                 .await
                 .unwrap_err();
@@ -1662,67 +1685,22 @@ mod tests {
             ..Default::default()
         };
 
-        // *** SELL ORDERS ***
         // at market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"100".into(),
             &quote,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 99.into(), // 1% slippage
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"90".into(),
             &quote,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 1000.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            &quote
-        ));
-
-        // *** BUY ORDERS ***
-        // at market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // willing to sell more than market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 101.into(), // 1% slippage
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // wanting to sell less than market price
-        assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 1.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"1000".into(),
             &quote
         ));
     }

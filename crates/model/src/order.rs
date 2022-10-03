@@ -7,7 +7,7 @@ use crate::{
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
-use anyhow::{ensure, Context as _, Result};
+use anyhow::{anyhow, Result};
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use derivative::Derivative;
 use hex_literal::hex;
@@ -15,12 +15,13 @@ use num::BigUint;
 use primitive_types::{H160, H256, U256};
 use secp256k1::ONE_KEY;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
+use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::HashSet,
     fmt::{self, Debug, Display},
     str::FromStr,
 };
+use strum::EnumString;
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -81,61 +82,6 @@ impl Order {
 
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
-    }
-
-    /// Returns the remaining amounts for the order.
-    ///
-    /// For fill-or-kill orders, this trivially returns full buy, sell and fee
-    /// amounts for the order (since the order can only either be not executed
-    /// at all or fully executed).
-    ///
-    /// For partially fillable orders, it considers the currently executed
-    /// amount and computes what is left in the order.
-    ///
-    /// Returns an error on overflows or malformed orders.
-    pub fn remaining_amounts(&self) -> Result<RemainingOrderAmounts> {
-        if !self.data.partially_fillable {
-            // Note that we skip the "fill-ratio" computation for fill-or-kill
-            // orders despite yielding the same results in most cases. This is
-            // because this computation only happens for partially fillable
-            // orders in the settlement contract, and therefore overflows that
-            // may happen would incorrectly return `Err`.
-            return Ok(RemainingOrderAmounts {
-                sell_amount: self.data.sell_amount,
-                buy_amount: self.data.buy_amount,
-                fee_amount: self.data.fee_amount,
-                full_fee_amount: self.metadata.full_fee_amount,
-            });
-        }
-
-        let (max_executable_amount, executed_amount) = match self.data.kind {
-            OrderKind::Buy => (
-                self.data.buy_amount,
-                biguint_to_u256(&self.metadata.executed_buy_amount)
-                    .context("buy order executed amount overflows a u256")?,
-            ),
-            OrderKind::Sell => (
-                self.data.sell_amount,
-                self.metadata.executed_sell_amount_before_fees,
-            ),
-        };
-        ensure!(!max_executable_amount.is_zero(), "order with 0 amount");
-        let remaining_executable_amount = max_executable_amount
-            .checked_sub(executed_amount)
-            .context("order executed more than its maximum amount")?;
-        let scale = |amount: U256| -> Result<U256> {
-            amount
-                .checked_mul(remaining_executable_amount)
-                .and_then(|product| product.checked_div(max_executable_amount))
-                .context("overflow scaling remaining amounts")
-        };
-
-        Ok(RemainingOrderAmounts {
-            sell_amount: scale(self.data.sell_amount)?,
-            buy_amount: scale(self.data.buy_amount)?,
-            fee_amount: scale(self.data.fee_amount)?,
-            full_fee_amount: scale(self.metadata.full_fee_amount)?,
-        })
     }
 }
 
@@ -281,21 +227,14 @@ impl OrderData {
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
-    // keccak256("sell")
-    const KIND_SELL: [u8; 32] =
-        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
-    // keccak256("buy")
-    const KIND_BUY: [u8; 32] =
-        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
-
     // keccak256("erc20")
-    const BALANCE_ERC20: [u8; 32] =
+    pub const BALANCE_ERC20: [u8; 32] =
         hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
     // keccak256("external")
-    const BALANCE_EXTERNAL: [u8; 32] =
+    pub const BALANCE_EXTERNAL: [u8; 32] =
         hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
     // keccak256("internal")
-    const BALANCE_INTERNAL: [u8; 32] =
+    pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
 
     pub fn hash_struct(&self) -> [u8; 32] {
@@ -312,8 +251,8 @@ impl OrderData {
         hash_data[224..256].copy_from_slice(&self.app_data.0);
         self.fee_amount.to_big_endian(&mut hash_data[256..288]);
         hash_data[288..320].copy_from_slice(match self.kind {
-            OrderKind::Sell => &Self::KIND_SELL,
-            OrderKind::Buy => &Self::KIND_BUY,
+            OrderKind::Sell => &OrderKind::SELL,
+            OrderKind::Buy => &OrderKind::BUY,
         });
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(match self.sell_token_balance {
@@ -452,10 +391,10 @@ pub struct OrderMetadata {
     #[serde_as(as = "Option<DecimalU256>")]
     pub available_balance: Option<U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde(default, with = "u256_decimal")]
     pub executed_sell_amount_before_fees: U256,
@@ -598,10 +537,8 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     #[default]
@@ -610,6 +547,13 @@ pub enum OrderKind {
 }
 
 impl OrderKind {
+    // keccak256("sell")
+    pub const SELL: [u8; 32] =
+        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
+    // keccak256("buy")
+    pub const BUY: [u8; 32] =
+        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
+
     /// Returns a the order kind as a string label that can be used in metrics.
     pub fn label(&self) -> &'static str {
         match self {
@@ -617,13 +561,18 @@ impl OrderKind {
             Self::Sell => "sell",
         }
     }
+    pub fn from_contract_bytes(kind: [u8; 32]) -> Result<Self> {
+        match kind {
+            Self::SELL => Ok(OrderKind::Sell),
+            Self::BUY => Ok(OrderKind::Buy),
+            _ => Err(anyhow!("Order kind is not well defined")),
+        }
+    }
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
@@ -635,11 +584,20 @@ pub enum SellTokenSource {
     External,
 }
 
+impl SellTokenSource {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_EXTERNAL => Ok(Self::External),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+        }
+    }
+}
+
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
@@ -647,6 +605,16 @@ pub enum BuyTokenDestination {
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
+}
+
+impl BuyTokenDestination {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+        }
+    }
 }
 
 pub fn debug_app_data(
@@ -661,14 +629,6 @@ pub fn debug_biguint_to_string(
     formatter: &mut std::fmt::Formatter,
 ) -> Result<(), std::fmt::Error> {
     formatter.write_fmt(format_args!("{}", value))
-}
-
-fn biguint_to_u256(input: &BigUint) -> Option<U256> {
-    let bytes = input.to_bytes_be();
-    if bytes.len() > 32 {
-        return None;
-    }
-    Some(U256::from_big_endian(&bytes))
 }
 
 #[cfg(test)]
@@ -1019,185 +979,5 @@ mod tests {
     #[test]
     fn debug_order_data() {
         dbg!(Order::default());
-    }
-
-    #[test]
-    fn computes_remaining_order_amounts() {
-        // For fill-or-kill orders, we don't overflow even for very large buy
-        // orders (where `{sell,fee}_amount * buy_amount` would overflow).
-        assert_eq!(
-            Order {
-                data: OrderData {
-                    sell_amount: 1000.into(),
-                    buy_amount: U256::MAX,
-                    fee_amount: 337.into(),
-                    kind: OrderKind::Buy,
-                    partially_fillable: false,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    full_fee_amount: 42.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .remaining_amounts()
-            .unwrap(),
-            RemainingOrderAmounts {
-                sell_amount: 1000.into(),
-                buy_amount: U256::MAX,
-                fee_amount: 337.into(),
-                full_fee_amount: 42.into(),
-            },
-        );
-
-        // For partially fillable orders that are untouched, returns the full
-        // order amounts.
-        assert_eq!(
-            Order {
-                data: OrderData {
-                    sell_amount: 10.into(),
-                    buy_amount: 11.into(),
-                    fee_amount: 12.into(),
-                    kind: OrderKind::Sell,
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    executed_sell_amount_before_fees: 0.into(),
-                    full_fee_amount: 13.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .remaining_amounts()
-            .unwrap(),
-            RemainingOrderAmounts {
-                sell_amount: 10.into(),
-                buy_amount: 11.into(),
-                fee_amount: 12.into(),
-                full_fee_amount: 13.into(),
-            },
-        );
-
-        // Scales amounts by how much has been executed. Rounds down like the
-        // settlement contract.
-        assert_eq!(
-            Order {
-                data: OrderData {
-                    sell_amount: 100.into(),
-                    buy_amount: 100.into(),
-                    fee_amount: 101.into(),
-                    kind: OrderKind::Sell,
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    executed_sell_amount_before_fees: 90.into(),
-                    full_fee_amount: 200.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .remaining_amounts()
-            .unwrap(),
-            RemainingOrderAmounts {
-                sell_amount: 10.into(),
-                buy_amount: 10.into(),
-                fee_amount: 10.into(),
-                full_fee_amount: 20.into(),
-            },
-        );
-        assert_eq!(
-            Order {
-                data: OrderData {
-                    sell_amount: 100.into(),
-                    buy_amount: 10.into(),
-                    fee_amount: 101.into(),
-                    kind: OrderKind::Buy,
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    executed_buy_amount: 9_u32.into(),
-                    full_fee_amount: 200.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-            .remaining_amounts()
-            .unwrap(),
-            RemainingOrderAmounts {
-                sell_amount: 10.into(),
-                buy_amount: 1.into(),
-                fee_amount: 10.into(),
-                full_fee_amount: 20.into(),
-            },
-        );
-    }
-
-    #[test]
-    fn remaining_amount_errors() {
-        // Partially fillable order overflow when computing fill ratio.
-        assert!(Order {
-            data: OrderData {
-                sell_amount: 1000.into(),
-                fee_amount: 337.into(),
-                buy_amount: U256::MAX,
-                kind: OrderKind::Buy,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-        .remaining_amounts()
-        .is_err());
-
-        // Partially filled order overflowing executed amount.
-        assert!(Order {
-            data: OrderData {
-                buy_amount: U256::MAX,
-                kind: OrderKind::Sell,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                executed_buy_amount: BigUint::from(1_u8) << 256,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-        .remaining_amounts()
-        .is_err());
-
-        // Partially filled order that has executed more than its maximum.
-        assert!(Order {
-            data: OrderData {
-                sell_amount: 1.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 2.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-        .remaining_amounts()
-        .is_err());
-
-        // Partially fillable order with zero amount.
-        assert!(Order {
-            data: OrderData {
-                sell_amount: 0.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-        .remaining_amounts()
-        .is_err());
     }
 }

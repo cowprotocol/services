@@ -14,7 +14,7 @@ use database::{
 };
 use ethcontract::{Event as EthContractEvent, EventMetadata};
 use number_conversions::u256_to_big_decimal;
-use shared::event_handling::EventStoring;
+use shared::{current_block::RangeInclusive, event_handling::EventStoring};
 use std::convert::TryInto;
 
 pub fn contract_to_db_events(
@@ -72,7 +72,7 @@ impl EventStoring<ContractEvent> for Postgres {
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
-        range: std::ops::RangeInclusive<shared::event_handling::BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -81,7 +81,7 @@ impl EventStoring<ContractEvent> for Postgres {
 
         let events = contract_to_db_events(events)?;
         let mut transaction = self.0.begin().await?;
-        database::events::delete(&mut transaction, range.start().to_u64() as i64)
+        database::events::delete(&mut transaction, *range.start() as i64)
             .await
             .context("delete_events failed")?;
         database::events::append(&mut transaction, events.as_slice())
@@ -92,7 +92,7 @@ impl EventStoring<ContractEvent> for Postgres {
     }
 }
 
-fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
+pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     EventIndex {
         block_number: meta.block_number as i64,
         log_index: meta.log_index as i64,

@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use std::{
     fmt::{Display, Formatter},
     future::Future,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -164,6 +164,14 @@ impl RateLimiter {
             name,
         }
     }
+
+    /// Create a testing rate limiter.
+    pub fn test() -> Arc<Self> {
+        Arc::new(RateLimiter::from_strategy(
+            Default::default(),
+            "test".into(),
+        ))
+    }
 }
 
 #[derive(Error, Debug, Clone)]
@@ -208,6 +216,16 @@ impl RateLimiter {
         }
 
         Ok(result)
+    }
+}
+
+/// Shared module with common back-off checks.
+pub mod back_off {
+    use reqwest::Response;
+
+    /// Determines if the HTTP response indicates that the API should back off for a while.
+    pub fn on_http_429(response: &Result<Response, reqwest::Error>) -> bool {
+        matches!(response, Ok(response) if response.status() == 429)
     }
 }
 

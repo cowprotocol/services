@@ -108,7 +108,7 @@ impl BalancerSubgraphClient {
 }
 
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched, and for which the registered
     /// weighted pools can be considered up to date.
@@ -147,7 +147,7 @@ impl RegisteredPools {
 }
 
 /// Pool data from the Balancer V2 subgraph.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub pool_type: PoolType,
@@ -168,7 +168,7 @@ pub enum PoolType {
 
 /// Token data for pools.
 #[serde_as]
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct Token {
     pub address: H160,
     pub decimals: u8,
@@ -209,7 +209,7 @@ mod pools_query {
         }
     "#;
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Data {
         pub pools: Vec<PoolData>,
     }
@@ -224,18 +224,18 @@ mod block_number_query {
         }
     }"#;
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Data {
         #[serde(rename = "_meta")]
         pub meta: Meta,
     }
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Meta {
         pub block: Block,
     }
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Block {
         pub number: u64,
     }

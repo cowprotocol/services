@@ -1,5 +1,5 @@
 use futures::{
-    future::{Shared, WeakShared},
+    future::{BoxFuture, Shared, WeakShared},
     FutureExt,
 };
 use std::{future::Future, sync::Mutex};
@@ -17,6 +17,13 @@ use std::{future::Future, sync::Mutex};
 pub struct RequestSharing<Request, Fut: Future> {
     in_flight: Mutex<Vec<(Request, WeakShared<Fut>)>>,
 }
+
+/// Request sharing for boxed futures.
+pub type BoxRequestSharing<Request, Response> =
+    RequestSharing<Request, BoxFuture<'static, Response>>;
+
+/// A boxed shared future.
+pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
 impl<Request, Fut: Future> Default for RequestSharing<Request, Fut> {
     fn default() -> Self {
@@ -41,6 +48,18 @@ where
     /// Note that futures do nothing util polled so merely creating the response future is not
     /// expensive.
     pub fn shared(&self, request: Request, future: Fut) -> Shared<Fut> {
+        self.shared_or_else(request, move |_| future)
+    }
+
+    /// Returns an existing in flight future or creates and uses a new future from the specified
+    /// closure.
+    ///
+    /// This is similar to [`RequestSharing::shared`] but lazily creates the future. This can be
+    /// helpful when creating futures is non trivial (such as cloning a large vector).
+    pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
+    where
+        F: FnOnce(&Request) -> Fut,
+    {
         let mut in_flight = self.in_flight.lock().unwrap();
 
         // collect garbage and find copy of existing request
@@ -65,7 +84,7 @@ where
             return existing;
         }
 
-        let shared = future.shared();
+        let shared = future(&request).shared();
         // unwrap because downgrade only returns None if the Shared has already completed which
         // cannot be the case because we haven't polled it yet.
         in_flight.push((request, shared.downgrade().unwrap()));

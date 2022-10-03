@@ -4,16 +4,22 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::debug_bytes;
-use crate::solver_utils::{deserialize_decimal_f64, Slippage};
+use crate::{debug_bytes, http_client::HttpClientFactory};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
 use ethcontract::{H160, H256, U256};
 use model::u256_decimal;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Client, IntoUrl, Url,
+};
 use serde::Deserialize;
-use std::collections::HashSet;
+use serde_with::{serde_as, DisplayFromStr};
+use std::{
+    collections::HashSet,
+    fmt::{self, Display, Formatter},
+};
 use thiserror::Error;
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -44,7 +50,7 @@ pub struct SwapQuery {
     /// Amount of a token to sell, set in atoms.
     pub buy_amount: Option<U256>,
     /// Limit of price slippage you are willing to accept.
-    pub slippage_percentage: Slippage,
+    pub slippage_percentage: Option<Slippage>,
     /// List of sources to exclude.
     pub excluded_sources: Vec<String>,
     /// Requests trade routes which aim to protect against high slippage and MEV attacks.
@@ -62,7 +68,6 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
-            .append_pair("slippagePercentage", &self.slippage_percentage.to_string())
             .append_pair(
                 "enableSlippageProtection",
                 &self.enable_slippage_protection.to_string(),
@@ -74,6 +79,10 @@ impl SwapQuery {
         if let Some(amount) = self.buy_amount {
             url.query_pairs_mut()
                 .append_pair("buyAmount", &amount.to_string());
+        }
+        if let Some(slippage_percentage) = self.slippage_percentage {
+            url.query_pairs_mut()
+                .append_pair("slippagePercentage", &slippage_percentage.to_string());
         }
         if !self.excluded_sources.is_empty() {
             url.query_pairs_mut()
@@ -87,6 +96,25 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("intentOnFilling", "false");
         url
+    }
+}
+
+/// A 0x slippage amount.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub struct Slippage(f64);
+
+impl Slippage {
+    pub const ONE_PERCENT: Self = Self(0.01);
+
+    /// Creates a slippage amount from the specified slippage factor.
+    pub fn new(factor: f64) -> Self {
+        Slippage(factor)
+    }
+}
+
+impl Display for Slippage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -142,19 +170,20 @@ impl Default for OrdersQuery {
     }
 }
 
-#[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
+#[serde_as]
+#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
-    #[derivative(Default(value = "chrono::MIN_DATETIME"))]
+    #[derivative(Default(value = "DateTime::<Utc>::MIN_UTC"))]
     pub created_at: DateTime<Utc>,
     #[serde(with = "model::bytes_hex")]
     pub order_hash: Vec<u8>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZeroExSignature {
     pub r: H256,
@@ -163,15 +192,16 @@ pub struct ZeroExSignature {
     pub signature_type: u8,
 }
 
-#[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
+#[serde_as]
+#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
-    #[derivative(Default(value = "chrono::naive::MAX_DATETIME.timestamp() as u64"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
+    #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the order.
     /// This is typically used to incentivize off-chain order relay.
@@ -180,7 +210,7 @@ pub struct Order {
     /// two parties that will be involved in the trade if the order gets filled.
     pub maker: H160,
     /// The amount of `maker_token` being sold by the maker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
     pub maker_token: H160,
@@ -201,19 +231,19 @@ pub struct Order {
     /// anyone can fill the order.
     pub taker: H160,
     /// The amount of `taker_token` being sold by the taker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_amount: u128,
     /// The address of the ERC20 token the taker is selling to the maker.
     pub taker_token: H160,
     /// Amount of takerToken paid by the taker to the feeRecipient.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_token_fee_amount: u128,
     /// Address of the contract where the transaction should be sent, usually this is
     /// the 0x exchange proxy contract.
     pub verifying_contract: H160,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
 pub struct OrderRecord {
     #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
@@ -239,7 +269,7 @@ impl OrderRecord {
 }
 
 /// A Ox API `orders` response.
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrdersResponse {
     pub total: u64,
@@ -249,6 +279,7 @@ pub struct OrdersResponse {
 }
 
 /// A Ox API `price` response.
+#[serde_as]
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -258,9 +289,9 @@ pub struct PriceResponse {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub allowance_target: H160,
-    #[serde(deserialize_with = "deserialize_decimal_f64")]
+    #[serde_as(as = "DisplayFromStr")]
     pub price: f64,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub estimated_gas: u64,
 }
 
@@ -280,10 +311,10 @@ pub struct SwapResponse {
 }
 
 /// Abstract 0x API. Provides a mockable implementation.
-#[mockall::automock]
 #[async_trait::async_trait]
+#[mockall::automock]
 pub trait ZeroExApi: Send + Sync {
-    /// Retrieve a swap for the specified parameters from the 1Inch API.
+    /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
@@ -305,7 +336,6 @@ pub trait ZeroExApi: Send + Sync {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
-    api_key: Option<String>,
 }
 
 impl DefaultZeroExApi {
@@ -318,17 +348,41 @@ impl DefaultZeroExApi {
         addr!("Def1C0ded9bec7F1a1670819833240f027b25EfF");
 
     /// Create a new 0x HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl, api_key: Option<String>, client: Client) -> Result<Self> {
+    pub fn new(
+        http_factory: &HttpClientFactory,
+        base_url: impl IntoUrl,
+        api_key: Option<String>,
+    ) -> Result<Self> {
+        let client = match api_key {
+            Some(api_key) => {
+                let mut key = HeaderValue::from_str(&api_key)?;
+                key.set_sensitive(true);
+
+                let mut headers = HeaderMap::new();
+                headers.insert("0x-api-key", key);
+
+                http_factory.configure(|builder| builder.default_headers(headers))
+            }
+            None => http_factory.create(),
+        };
+
         Ok(Self {
             client,
             base_url: base_url.into_url().context("zeroex api url")?,
-            api_key,
         })
     }
 
     /// Create a new 0x HTTP API client using the default URL.
     pub fn with_default_url(client: Client) -> Self {
-        Self::new(Self::DEFAULT_URL, None, client).unwrap()
+        Self {
+            client,
+            base_url: Self::DEFAULT_URL.parse().unwrap(),
+        }
+    }
+
+    /// Create a 0x HTTP API client using the default URL and HTTP client.
+    pub fn test() -> Self {
+        Self::new(&HttpClientFactory::default(), Self::DEFAULT_URL, None).unwrap()
     }
 
     /// Retrieves specific page of current limit orders.
@@ -348,7 +402,7 @@ impl DefaultZeroExApi {
 
 impl Default for DefaultZeroExApi {
     fn default() -> Self {
-        Self::new(Self::DEFAULT_URL, None, Client::new()).unwrap()
+        Self::with_default_url(Client::new())
     }
 }
 
@@ -441,10 +495,7 @@ impl DefaultZeroExApi {
     ) -> Result<T, ZeroExResponseError> {
         tracing::debug!("Querying 0x API: {}", url);
 
-        let mut request = self.client.get(url.clone());
-        if let Some(key) = &self.api_key {
-            request = request.header("0x-api-key", key);
-        }
+        let request = self.client.get(url.clone());
         let response_text = request
             .send()
             .await
@@ -476,14 +527,14 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn test_api_e2e() {
+    async fn zeroex_swap() {
         let zeroex_client = DefaultZeroExApi::default();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::new(0.012345678)),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
@@ -498,13 +549,14 @@ mod tests {
     async fn test_api_e2e_private() {
         let url = std::env::var("ZEROEX_URL").unwrap();
         let api_key = std::env::var("ZEROEX_API_KEY").unwrap();
-        let zeroex_client = DefaultZeroExApi::new(url, Some(api_key), Client::new()).unwrap();
+        let zeroex_client =
+            DefaultZeroExApi::new(&HttpClientFactory::default(), url, Some(api_key)).unwrap();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::ONE_PERCENT),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
@@ -526,7 +578,7 @@ mod tests {
             buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
             sell_amount: Some(U256::from_f64_lossy(1000e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::ONE_PERCENT),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
@@ -548,8 +600,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders() {
-        let api =
-            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, None, Client::new()).unwrap();
+        let api = DefaultZeroExApi::default();
         let result = api.get_orders(&OrdersQuery::default()).await;
         dbg!(&result);
         assert!(result.is_ok());
@@ -558,8 +609,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders_paginated_with_empty_result() {
-        let api =
-            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, None, Client::new()).unwrap();
+        let api = DefaultZeroExApi::default();
         // `get_orders()` relies on `get_orders_with_pagination()` not producing and error instead
         // of an response with 0 records. To test that we request a page which should never have a
         // any records and check that it doesn't throw an error.

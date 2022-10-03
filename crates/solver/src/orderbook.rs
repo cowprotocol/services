@@ -1,8 +1,5 @@
 use anyhow::{Context, Result};
-use model::{
-    auction::Auction,
-    solver_competition::{SolverCompetition, SolverCompetitionId},
-};
+use model::{auction::AuctionWithId, solver_competition::SolverCompetition};
 use reqwest::{Client, Url};
 
 pub struct OrderBookApi {
@@ -21,16 +18,18 @@ impl OrderBookApi {
         }
     }
 
-    pub async fn get_auction(&self) -> Result<Auction> {
+    pub async fn get_auction(&self) -> Result<AuctionWithId> {
         let url = self.base.join("api/v1/auction")?;
-        let auction = self.client.get(url).send().await?.json().await?;
+        let response = self.client.get(url).send().await?;
+        if let Err(err) = response.error_for_status_ref() {
+            let body = response.text().await;
+            return Err(anyhow::Error::new(err).context(format!("body: {:?}", body)));
+        }
+        let auction = response.json().await?;
         Ok(auction)
     }
 
-    pub async fn send_solver_competition(
-        &self,
-        body: &SolverCompetition,
-    ) -> Result<SolverCompetitionId> {
+    pub async fn send_solver_competition(&self, body: &SolverCompetition) -> Result<()> {
         let url = self.base.join("api/v1/solver_competition")?;
         let mut request = self.client.post(url);
         if let Some(auth) = &self.competition_auth {
@@ -41,8 +40,7 @@ impl OrderBookApi {
             let body = response.text().await;
             return Err(anyhow::Error::new(err).context(format!("body: {:?}", body)));
         }
-
-        Ok(response.json().await?)
+        Ok(())
     }
 }
 

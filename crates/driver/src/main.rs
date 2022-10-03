@@ -6,10 +6,10 @@ use driver::{
     commit_reveal::CommitRevealSolver, driver::Driver,
 };
 use gas_estimation::GasPriceEstimating;
-use reqwest::Client;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::{Maintaining, ServiceMaintenance},
     recent_block_cache::CacheConfig,
@@ -20,24 +20,26 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
+    driver_logger::DriverLogger,
     interactions::allowances::AllowanceManager,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
         uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
     settlement_access_list::AccessListEstimating,
+    settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -50,12 +52,13 @@ use solver::{
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 struct CommonComponents {
-    client: Client,
+    http_factory: HttpClientFactory,
     web3: shared::Web3,
     network_id: String,
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     native_token_contract: WETH9,
+    tenderly_api: Option<Arc<dyn TenderlyApi>>,
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     order_converter: Arc<OrderConverter>,
@@ -64,13 +67,8 @@ struct CommonComponents {
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
-    let client = shared::http_client(args.http_timeout);
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.node_url.clone(),
-        "base".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let http_factory = HttpClientFactory::new(&args.http_client);
+    let web3 = shared::web3(&http_factory, &args.node_url, "base");
     let network_id = web3
         .net()
         .version()
@@ -88,21 +86,29 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &client,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
-        .await
         .expect("failed to create access list estimator"),
     );
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
+            &http_factory,
             &web3,
             args.gas_estimators.as_slice(),
             args.blocknative_api_key.clone(),
@@ -124,12 +130,13 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     });
 
     CommonComponents {
-        client,
+        http_factory,
         web3,
         network_id,
         chain_id,
         settlement_contract,
         native_token_contract,
+        tenderly_api,
         access_list_estimator,
         gas_price_estimator,
         order_converter,
@@ -158,7 +165,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                     network_name: common.network_id.clone(),
                     chain_id: common.chain_id,
                     base: arg.url.clone(),
-                    client: common.client.clone(),
+                    client: common.http_factory.create(),
                     config: SolverConfig {
                         use_internal_buffers: Some(args.use_internal_buffers),
                         ..Default::default()
@@ -171,27 +178,22 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 allowance_mananger.clone(),
                 common.order_converter.clone(),
                 http_solver_cache.clone(),
+                false,
+                args.slippage.get_global_calculator(),
             )) as Arc<dyn Solver>
         })
         .collect()
 }
 
 async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<SolutionSubmitter> {
-    let client = &common.client;
+    let client = || common.http_factory.create();
     let web3 = &common.web3;
 
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .iter()
         .enumerate()
-        .map(|(index, url)| {
-            let transport = Web3Transport::new(HttpTransport::new(
-                client.clone(),
-                url.clone(),
-                index.to_string(),
-            ));
-            (web3::Web3::new(transport), url)
-        })
+        .map(|(index, url)| (shared::web3(&common.http_factory, url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
@@ -206,7 +208,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             .unwrap();
         assert_eq!(
             node_network_id, common.network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -217,23 +219,10 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
     let mut transaction_strategies = vec![];
     for strategy in &args.transaction_strategy {
         match strategy {
-            TransactionStrategyArg::PublicMempool => {
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
-                }))
-            }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(
-                            client.clone(),
-                            args.eden_api_url.clone(),
-                            submitted_transactions.clone(),
-                        )
-                        .unwrap(),
+                        EdenApi::new(client(), args.eden_api_url.clone()).unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
@@ -243,25 +232,26 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             TransactionStrategyArg::Flashbots => {
                 for flashbots_url in args.flashbots_api_url.clone() {
                     transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
-                        submit_api: Box::new(
-                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
-                        ),
+                        submit_api: Box::new(FlashbotsApi::new(client(), flashbots_url).unwrap()),
                         max_additional_tip: args.max_additional_flashbot_tip,
                         additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
                         sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
                     }))
                 }
             }
-            TransactionStrategyArg::CustomNodes => {
+            TransactionStrategyArg::PublicMempool => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        submission_nodes.clone(),
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {
@@ -293,12 +283,10 @@ async fn build_auction_converter(
     ));
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.pool_cache_blocks,
-        // 0 because we don't make use of the auto update functionality as we always fetch
-        // for specific blocks
-        number_of_entries_to_auto_update: 0,
         maximum_recent_block_age: args.pool_cache_maximum_recent_block_age,
         max_retries: args.pool_cache_maximum_retries,
         delay_between_retries: args.pool_cache_delay_between_retries_seconds,
+        ..Default::default()
     };
     let baseline_sources = args.baseline_sources.clone().unwrap_or_else(|| {
         sources::defaults_for_chain(common.chain_id)
@@ -335,7 +323,8 @@ async fn build_auction_converter(
                     common.token_info_fetcher.clone(),
                     cache_config,
                     common.current_block_stream.clone(),
-                    common.client.clone(),
+                    common.http_factory.create(),
+                    common.web3.clone(),
                     &contracts,
                     args.balancer_pool_deny_list.clone(),
                 )
@@ -367,30 +356,35 @@ async fn build_auction_converter(
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
         let zeroex_api = Arc::new(
             DefaultZeroExApi::new(
+                &common.http_factory,
                 args.zeroex_url
                     .as_deref()
                     .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
                 args.zeroex_api_key.clone(),
-                common.client.clone(),
             )
             .unwrap(),
         );
 
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: common.settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            common.web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
+            base_tokens.clone(),
+            common.settlement_contract.clone(),
+        ))
     } else {
         None
     };
 
     let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(common.chain_id, common.client.clone(), common.web3.clone())
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in solver"),
+            UniswapV3PoolFetcher::new(
+                common.chain_id,
+                common.http_factory.create(),
+                common.web3.clone(),
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in solver"),
         );
 
         Some(UniswapV3Liquidity::new(
@@ -472,39 +466,70 @@ async fn build_amm_artifacts(
     res
 }
 
-#[tokio::main]
-async fn main() {
-    let args = driver::arguments::Arguments::parse();
-    shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
-    tracing::info!("running driver with validated arguments:\n{}", args);
-    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
-    let common = init_common_components(&args).await;
-    let solvers = build_solvers(&common, &args).await;
-    let submitter = build_submitter(&common, &args).await;
+async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<Driver>, String)> {
+    let solvers = build_solvers(common, args).await;
+    let submitter = build_submitter(common, args).await;
     let settlement_rater = Arc::new(SettlementRater {
         access_list_estimator: common.access_list_estimator.clone(),
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
     });
-    let auction_converter = build_auction_converter(&common, &args).await.unwrap();
+    let auction_converter = build_auction_converter(common, args).await.unwrap();
+    let metrics = Arc::new(Metrics::new().unwrap());
+    metrics.initialize_solver_metrics(
+        &solvers
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
 
-    let drivers = solvers
+    let settlement_ranker = Arc::new(SettlementRanker {
+        metrics: metrics.clone(),
+        settlement_rater: settlement_rater.clone(),
+        min_order_age: std::time::Duration::from_secs(30),
+        max_settlement_price_deviation: None,
+        token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
+    });
+    let logger = Arc::new(DriverLogger {
+        web3: common.web3.clone(),
+        network_id: common.network_id.clone(),
+        metrics,
+        settlement_contract: common.settlement_contract.clone(),
+        simulation_gas_limit: args.simulation_gas_limit,
+        tenderly: common.tenderly_api.clone(),
+    });
+
+    solvers
         .into_iter()
         .map(|solver| {
             let name = solver.name().to_string();
             let driver = Arc::new(Driver {
                 solver: Arc::new(CommitRevealSolver::new(
                     solver,
-                    settlement_rater.clone(),
                     common.gas_price_estimator.clone(),
+                    settlement_ranker.clone(),
+                    logger.clone(),
                 )),
                 submitter: submitter.clone(),
                 auction_converter: auction_converter.clone(),
                 block_stream: common.current_block_stream.clone(),
+                logger: logger.clone(),
+                settlement_rater: settlement_rater.clone(),
+                gas_price_estimator: common.gas_price_estimator.clone(),
             });
             (driver, name)
         })
-        .collect();
+        .collect()
+}
+
+#[tokio::main]
+async fn main() {
+    let args = driver::arguments::Arguments::parse();
+    shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
+    shared::exit_process_on_panic::set_panic_hook();
+    tracing::info!("running driver with validated arguments:\n{}", args);
+    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
+    let common = init_common_components(&args).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -512,7 +537,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
-        drivers,
+        build_drivers(&common, &args).await,
     );
 
     futures::pin_mut!(serve_api);

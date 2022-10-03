@@ -10,7 +10,7 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::maintenance::Maintaining;
+use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
 use shared::{
     sources::uniswap_v2::pool_fetching::PoolFetcher,
     token_list::{Token, TokenList},
@@ -22,7 +22,7 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::{custom_nodes_api::CustomNodesApi, Strategy},
+        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
@@ -41,7 +41,8 @@ async fn local_node_onchain_settlement_without_liquidity() {
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
@@ -146,7 +147,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         ..
     } = OrderbookServices::new(&web3, &contracts).await;
 
-    let client = reqwest::Client::new();
+    let http_factory = HttpClientFactory::default();
+    let client = http_factory.create();
 
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -169,8 +171,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
-    let api = create_orderbook_api();
-    wait_for_solvable_orders(&api, 1).await.unwrap();
+    wait_for_solvable_orders(&client, 1).await.unwrap();
 
     // Drive solution
     let uniswap_pair_provider = uniswap_pair_provider(&contracts);
@@ -221,27 +222,24 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             max_confirm_time: Duration::from_secs(120),
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }),
             ],
             access_list_estimator: Arc::new(
                 create_priority_estimator(
-                    &client,
                     &web3,
                     &[AccessListEstimatorType::Web3],
                     None,
-                    None,
                     network_id,
                 )
-                .await
                 .unwrap(),
             ),
         },
-        api,
+        create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
         15000000u128,
@@ -280,7 +278,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     solvable_orders_cache.update(0).await.unwrap();
 
     let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.orders.is_empty());
+    assert!(auction.auction.orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();
