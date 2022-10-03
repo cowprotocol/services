@@ -52,12 +52,10 @@ impl Default for HttpClientFactory {
     }
 }
 
-// Temporary workaround for <https://github.com/clap-rs/clap/issues/4279>
-pub type Arguments = HttpClientArguments;
-
 /// Command line arguments for the common HTTP factory.
 #[derive(clap::Parser)]
-pub struct HttpClientArguments {
+#[group(skip)]
+pub struct Arguments {
     /// Default timeout in seconds for http requests.
     #[clap(
         long,

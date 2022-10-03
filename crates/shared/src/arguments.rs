@@ -106,11 +106,9 @@ pub struct OrderQuotingArguments {
     pub cow_fee_factors: Option<SubsidyTiers>,
 }
 
-// Temporary workaround for <https://github.com/clap-rs/clap/issues/4279>
-pub type Arguments = SharedArguments;
-
 #[derive(clap::Parser)]
-pub struct SharedArguments {
+#[group(skip)]
+pub struct Arguments {
     #[clap(
         long,
         env,
