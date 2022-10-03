@@ -50,6 +50,6 @@ pub fn create_db_search_parameters(
         buy_amount: u256_to_big_decimal(&params.buy_amount),
         kind: order_kind_into(params.kind),
         expiration,
-        quote_kind: quote_kind,
+        quote_kind,
     }
 }

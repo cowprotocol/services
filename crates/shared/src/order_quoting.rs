@@ -192,7 +192,10 @@ impl Quote {
         };
 
         // THIS CANNOT MODIFY `quote.data`.
-        self.fee_amount = self.data.fee_parameters.subsidized_with_additional_cost(subsidy, verification_fee);
+        self.fee_amount = self
+            .data
+            .fee_parameters
+            .subsidized_with_additional_cost(subsidy, verification_fee);
         self
     }
 

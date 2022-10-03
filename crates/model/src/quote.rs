@@ -2,7 +2,8 @@ use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
-    time, u256_decimal::{self, DecimalU256},
+    time,
+    u256_decimal::{self, DecimalU256},
 };
 use anyhow::bail;
 use chrono::{DateTime, Utc};
@@ -88,7 +89,7 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
             (SigningScheme::Eip1271, onchain_order, verification_gas_limit) => Ok(Self::Eip1271 {
                 onchain_order,
                 verification_gas_limit: verification_gas_limit
-                    .unwrap_or(default_verification_gas_limit()),
+                    .unwrap_or_else(default_verification_gas_limit),
             }),
             (SigningScheme::PreSign, onchain_order, None) => Ok(Self::PreSign { onchain_order }),
             (_, _, Some(_)) => {

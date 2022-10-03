@@ -153,7 +153,11 @@ impl FeeParameters {
         self.subsidized_with_additional_cost(subsidy, 0.into())
     }
 
-    pub fn subsidized_with_additional_cost(&self, subsidy: &Subsidy, additional_cost: U256) -> U256 {
+    pub fn subsidized_with_additional_cost(
+        &self,
+        subsidy: &Subsidy,
+        additional_cost: U256,
+    ) -> U256 {
         // convert Eth value to f64
         let additional_cost = additional_cost.to_f64_lossy();
         let fee_in_eth = (self.gas_amount + additional_cost) * self.gas_price;
