@@ -958,14 +958,9 @@ mod tests {
             .returning(|_, _, _, _| Ok(()));
 
         let mut signature_validating = MockSignatureValidating::new();
-        // SignatureCheck {
-        //     signer: owner,
-        //     hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
-        //     signature: signature.to_owned(),
-        // }
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Ok(100_u128.into()));
+            .never();
 
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
@@ -1008,13 +1003,13 @@ mod tests {
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
             }))
-            .returning(|_| Ok(()));
+            .returning(|_| Ok(0.into()));
 
         let validator = OrderValidator {
             signature_validator: Arc::new(signature_validator),
@@ -1028,7 +1023,7 @@ mod tests {
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
@@ -1345,7 +1340,7 @@ mod tests {
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator::new(
