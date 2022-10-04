@@ -2,7 +2,7 @@ use crate::current_block::RangeInclusive;
 use crate::event_handling::{EventRetrieving, EventStoring};
 use crate::Web3;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use contracts::{
     uniswap_v3_pool::event_data::{Burn, Mint, Swap},
     UniswapV3Pool,
@@ -17,15 +17,16 @@ pub enum UniswapV3Event {
     Burn(Burn),
     Mint(Mint),
     Swap(Swap),
+    Other,
 }
 
 impl ParseLog for UniswapV3Event {
     fn parse_log(log: RawLog) -> Result<Self, ExecutionError> {
-        let standard_event = log.topics.get(0).copied().map(|topic| match topic {
+        let standard_event: Option<Result<UniswapV3Event, ExecutionError>> = log.topics.get(0).copied().map(|topic| match topic {
             H256 ([12 , 57 , 108 , 217 , 137 , 163 , 159 , 68 , 89 , 181 , 250 , 26 , 237 , 106 , 154 , 141 , 205 , 188 , 69 , 144 , 138 , 207 , 214 , 126 , 2 , 140 , 213 , 104 , 218 , 152 , 152 , 44]) => Ok (UniswapV3Event::Burn (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Burn").expect("generated event decode"))?)), 
             H256 ([122 , 83 , 8 , 11 , 164 , 20 , 21 , 139 , 231 , 236 , 105 , 185 , 135 , 181 , 251 , 125 , 7 , 222 , 225 , 1 , 254 , 133 , 72 , 143 , 8 , 83 , 174 , 22 , 35 , 157 , 11 , 222]) => Ok (UniswapV3Event::Mint (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Mint").expect ("generated event decode"))?)), 
             H256 ([196 , 32 , 121 , 249 , 74 , 99 , 80 , 215 , 230 , 35 , 95 , 41 , 23 , 73 , 36 , 249 , 40 , 204 , 42 , 200 , 24 , 235 , 100 , 254 , 216 , 0 , 78 , 17 , 95 , 188 , 202 , 103]) => Ok (UniswapV3Event::Swap (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Swap").expect ("generated event decode"))?)), 
-            _ => Err (ExecutionError::from(Error::Other(std::borrow::Cow::Borrowed("redundant eventy type, skipping...")))),});
+            _ => Ok(UniswapV3Event::Other),});
         if let Some(Ok(data)) = standard_event {
             return Ok(data);
         }
@@ -33,17 +34,13 @@ impl ParseLog for UniswapV3Event {
     }
 }
 
-pub struct UniswapV3PoolEventFetcher {
-    pub web3: Web3,
-    pub contracts: Vec<H160>,
-}
+pub struct UniswapV3PoolEventFetcher(pub Web3);
 
 impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
-        let mut events = DynAllEventsBuilder::new(self.web3.clone(), H160::default(), None);
-        events.filter.address = self.contracts.clone();
-        //events.filter.topics =
+        let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
+        events.filter.address = vec![];
         events
     }
 }
@@ -63,34 +60,25 @@ impl RecentEventsCache {
                 .as_ref()
                 .expect("events must have metadata")
                 .block_number
-                >= delete_from_block_number
+                < delete_from_block_number
         });
     }
 
-    pub async fn get_events(
-        &self,
-        block_range: RangeInclusive<u64>,
-    ) -> Result<Vec<Event<UniswapV3Event>>> {
-        // todo not sure if I need this?
-        if *block_range.end() > self.last_event_block().await? {
-            return Err(anyhow!("events cache miss"));
-        }
-
-        Ok(self
-            .events
+    pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<Event<UniswapV3Event>> {
+        self.events
             .iter()
-            .take_while(|event| {
+            .filter(|event| {
                 event
                     .meta
                     .as_ref()
-                    .filter(|event| {
+                    .map(|event| {
                         event.block_number >= *block_range.start()
                             && event.block_number <= *block_range.end()
                     })
-                    .is_some()
+                    .unwrap_or_default()
             })
             .cloned()
-            .collect())
+            .collect()
     }
 }
 
@@ -106,6 +94,12 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     }
 
     async fn append_events(&mut self, events: Vec<Event<UniswapV3Event>>) -> Result<()> {
+        let events = events.into_iter().filter(|event| match event.data {
+            UniswapV3Event::Burn(_) => true,
+            UniswapV3Event::Mint(_) => true,
+            UniswapV3Event::Swap(_) => true,
+            UniswapV3Event::Other => false,
+        });
         self.events.extend(events);
         Ok(())
     }
