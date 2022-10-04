@@ -6,6 +6,7 @@ use database::{
         BuyTokenDestination as DbBuyTokenDestination, SellTokenSource as DbSellTokenSource,
         SigningScheme as DbSigningScheme,
     },
+    quotes::QuoteKind,
 };
 use futures::{StreamExt, TryStreamExt};
 use model::{
@@ -15,7 +16,6 @@ use model::{
         BuyTokenDestination, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
         SellTokenSource,
     },
-    quote::QuoteSigningScheme,
     signature::{Signature, SigningScheme},
 };
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256};
@@ -62,7 +62,7 @@ impl QuoteStoring for Postgres {
         &self,
         params: QuoteSearchParameters,
         expiration: DateTime<Utc>,
-        signing_scheme: &QuoteSigningScheme,
+        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -70,7 +70,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.0.acquire().await?;
-        let params = create_db_search_parameters(params, expiration, signing_scheme);
+        let params = create_db_search_parameters(params, expiration, quote_kind);
         let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;

@@ -382,7 +382,7 @@ pub trait QuoteStoring: Send + Sync {
         &self,
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
-        signing_scheme: &QuoteSigningScheme,
+        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
 }
 
@@ -406,7 +406,7 @@ impl QuoteStoring for Forget {
         &self,
         _: QuoteSearchParameters,
         _: DateTime<Utc>,
-        _: &QuoteSigningScheme,
+        _: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>> {
         Ok(None)
     }
@@ -514,17 +514,7 @@ impl OrderQuoter {
             sell_token_price,
         };
 
-        let quote_kind = match parameters.signing_scheme {
-            QuoteSigningScheme::Eip1271 {
-                onchain_order: true,
-                ..
-            } => QuoteKind::Eip1271OnchainOrder,
-            QuoteSigningScheme::PreSign {
-                onchain_order: true,
-            } => QuoteKind::PreSignOnchainOrder,
-            _ => QuoteKind::Standard,
-        };
-
+        let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
@@ -627,11 +617,13 @@ impl OrderQuoting for OrderQuoter {
 
                     (id, data)
                 }
-                None => self
-                    .storage
-                    .find(parameters, now, signing_scheme)
-                    .await?
-                    .ok_or(FindQuoteError::NotFound(None))?,
+                None => {
+                    let quote_kind = quote_kind_from_signing_scheme(signing_scheme);
+                    self.storage
+                        .find(parameters, now, quote_kind)
+                        .await?
+                        .ok_or(FindQuoteError::NotFound(None))?
+                }
             };
             Ok(Quote::new(Some(id), data))
         };
@@ -682,6 +674,19 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
             app_data: request.app_data,
             signing_scheme: request.signing_scheme,
         }
+    }
+}
+
+fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
+    match scheme {
+        QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            ..
+        } => QuoteKind::Eip1271OnchainOrder,
+        QuoteSigningScheme::PreSign {
+            onchain_order: true,
+        } => QuoteKind::PreSignOnchainOrder,
+        _ => QuoteKind::Standard,
     }
 }
 
@@ -1406,12 +1411,11 @@ mod tests {
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
         };
-        let signing_scheme = QuoteSigningScheme::Eip712;
 
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_find()
-            .with(eq(parameters.clone()), eq(now), eq(signing_scheme))
+            .with(eq(parameters.clone()), eq(now), eq(QuoteKind::Standard))
             .returning(move |_, _, _| {
                 Ok(Some((
                     42,
