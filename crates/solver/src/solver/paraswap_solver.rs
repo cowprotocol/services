@@ -166,11 +166,16 @@ impl ParaswapSolver {
         price_response: &PriceResponse,
         token_info: &HashMap<H160, TokenInfo>,
     ) -> Result<TransactionBuilderQuery> {
+        let slippage = self.slippage_calculator.auction_context(auction);
         let trade_amount = match order.kind {
-            OrderKind::Sell => TradeAmount::Sell {
+            OrderKind::Sell => TradeAmount::Exact {
                 src_amount: price_response.src_amount,
+                dest_amount: slippage
+                    .apply_to_amount_out(order.buy_token, price_response.dest_amount)?,
             },
-            OrderKind::Buy => TradeAmount::Buy {
+            OrderKind::Buy => TradeAmount::Exact {
+                src_amount: slippage
+                    .apply_to_amount_in(order.sell_token, price_response.src_amount)?,
                 dest_amount: price_response.dest_amount,
             },
         };
@@ -178,11 +183,6 @@ impl ParaswapSolver {
             src_token: order.sell_token,
             dest_token: order.buy_token,
             trade_amount,
-            slippage: self
-                .slippage_calculator
-                .auction_context(auction)
-                .relative_for_order(order)?
-                .as_bps(),
             src_decimals: decimals(token_info, &order.sell_token)?,
             dest_decimals: decimals(token_info, &order.buy_token)?,
             price_route: price_response.clone().price_route_raw,
@@ -462,11 +462,11 @@ mod tests {
             .returning(|transaction| {
                 assert_eq!(
                     transaction.trade_amount,
-                    TradeAmount::Sell {
+                    TradeAmount::Exact {
                         src_amount: 100.into(),
+                        dest_amount: 89.into(), // 99 - 10% slippage
                     }
                 );
-                assert_eq!(transaction.slippage, 1000);
                 async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);
@@ -476,11 +476,11 @@ mod tests {
             .returning(|transaction| {
                 assert_eq!(
                     transaction.trade_amount,
-                    TradeAmount::Buy {
+                    TradeAmount::Exact {
+                        src_amount: 110.into(), // 100 + 10% slippage
                         dest_amount: 99.into(),
                     }
                 );
-                assert_eq!(transaction.slippage, 1000);
                 async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);

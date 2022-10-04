@@ -260,8 +260,6 @@ pub struct TransactionBuilderQuery {
     /// The trade amount amount
     #[serde(flatten)]
     pub trade_amount: TradeAmount,
-    /// The maximum slippage in BPS.
-    pub slippage: u32,
     /// The decimals of the source token
     pub src_decimals: u8,
     /// The decimals of the destination token
@@ -276,15 +274,33 @@ pub struct TransactionBuilderQuery {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TradeAmount {
+    /// For a sell order, specify the sell amount and slippage used for
+    /// determining the minimum buy amount.
     #[serde(rename_all = "camelCase")]
     Sell {
         /// The source amount
         #[serde(with = "u256_decimal")]
         src_amount: U256,
+        /// The maximum slippage in BPS.
+        slippage: u32,
     },
+    /// For a buy order, specify the buy amount and slippage used for
+    /// determining the maximum sell amount.
     #[serde(rename_all = "camelCase")]
     Buy {
         /// The destination amount
+        #[serde(with = "u256_decimal")]
+        dest_amount: U256,
+        /// The maximum slippage in BPS.
+        slippage: u32,
+    },
+    /// For a any order (buy or sell), specify the limit amounts for building
+    /// the transaction. The order "side" (i.e. buy or sell) is determined based
+    /// on the initial `/price` query and the included `price_route`.
+    #[serde(rename_all = "camelCase")]
+    Exact {
+        #[serde(with = "u256_decimal")]
+        src_amount: U256,
         #[serde(with = "u256_decimal")]
         dest_amount: U256,
     },
@@ -380,8 +396,8 @@ mod tests {
                 dest_token,
                 trade_amount: TradeAmount::Sell {
                     src_amount: price_response.src_amount,
+                    slippage: 1000,
                 },
-                slippage: 1000,
                 src_decimals: 18,
                 dest_decimals: 18,
                 price_route: price_response.price_route_raw,
@@ -443,8 +459,8 @@ mod tests {
                 dest_token,
                 trade_amount: TradeAmount::Buy {
                     dest_amount: price_response.dest_amount,
+                    slippage: 1000,
                 },
-                slippage: 1000,
                 src_decimals: 18,
                 dest_decimals: 18,
                 price_route: price_response.price_route_raw,
@@ -750,8 +766,8 @@ mod tests {
             dest_token,
             trade_amount: TradeAmount::Sell {
                 src_amount: price_response.src_amount,
+                slippage: 1000, // 10%
             },
-            slippage: 1000, // 10%
             src_decimals: 18,
             dest_decimals: 18,
             price_route: price_response.price_route_raw,
@@ -769,8 +785,8 @@ mod tests {
                 dest_token: H160([2; 20]),
                 trade_amount: TradeAmount::Sell {
                     src_amount: 1337.into(),
+                    slippage: 250,
                 },
-                slippage: 250,
                 src_decimals: 18,
                 dest_decimals: 18,
                 price_route: Value::Null,
