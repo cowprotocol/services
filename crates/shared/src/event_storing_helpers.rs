@@ -7,7 +7,6 @@ use database::{
     byte_array::ByteArray,
     quotes::{Quote as DbQuote, QuoteKind, QuoteSearchParameters as DbQuoteSearchParameters},
 };
-use model::quote::QuoteSigningScheme;
 use number_conversions::u256_to_big_decimal;
 
 pub fn create_quote_row(data: QuoteData) -> DbQuote {
@@ -29,19 +28,8 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
 pub fn create_db_search_parameters(
     params: QuoteSearchParameters,
     expiration: DateTime<Utc>,
-    signing_scheme: &QuoteSigningScheme,
+    quote_kind: QuoteKind,
 ) -> DbQuoteSearchParameters {
-    let quote_kind = match signing_scheme {
-        QuoteSigningScheme::Eip1271 {
-            onchain_order: true,
-            ..
-        } => QuoteKind::Eip1271OnchainOrder,
-        QuoteSigningScheme::PreSign {
-            onchain_order: true,
-        } => QuoteKind::PreSignOnchainOrder,
-        _ => QuoteKind::Standard,
-    };
-
     DbQuoteSearchParameters {
         sell_token: ByteArray(params.sell_token.0),
         buy_token: ByteArray(params.buy_token.0),
