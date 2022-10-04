@@ -14,11 +14,12 @@ use num::{rational::Ratio, BigInt, Zero};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
-use std::str::FromStr;
 use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,
 };
+
+const MAX_POOLS_TO_INITIALIZE: usize = 100;
 
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
@@ -151,19 +152,18 @@ impl UniswapV3PoolFetcher {
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 
-        let mut token_pairs = HashSet::new(); // todo define list
-        token_pairs.insert(
-            TokenPair::new(
-                H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
-                H160::from_str("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap(),
-            )
-            .unwrap(),
-        );
-        let pool_ids = token_pairs
-            .iter()
-            .filter_map(|pair| pools_by_token_pair.get(pair))
-            .flatten()
-            .cloned()
+        let mut pools = registered_pools.pools.clone();
+        pools.sort_unstable_by(|a, b| {
+            a.total_value_locked_eth
+                .partial_cmp(&b.total_value_locked_eth)
+                .unwrap()
+        });
+        let pool_ids = pools
+            .clone()
+            .into_iter()
+            .map(|pool| pool.id)
+            .rev()
+            .take(MAX_POOLS_TO_INITIALIZE)
             .collect::<Vec<_>>();
         let pools = graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, fetched_block.0)

@@ -38,6 +38,7 @@ const ALL_POOLS_QUERY: &str = r#"
             liquidity
             sqrtPrice
             tick
+            totalValueLockedETH
         }
     }
 "#;
@@ -67,6 +68,7 @@ const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
             liquidity
             sqrtPrice
             tick
+            totalValueLockedETH
             ticks {
                 id
                 tickIdx
@@ -145,7 +147,7 @@ impl UniV3SubgraphClient {
 }
 
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched
     pub fetched_block_number: u64,
@@ -155,7 +157,7 @@ pub struct RegisteredPools {
 
 /// Pool data from the Uniswap V3 subgraph.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub id: H160,
@@ -166,6 +168,9 @@ pub struct PoolData {
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(rename = "totalValueLockedETH")]
+    pub total_value_locked_eth: f64,
     pub ticks: Option<Vec<TickData>>,
 }
 
@@ -257,6 +262,7 @@ mod tests {
                       "feeTier": "10000",
                       "liquidity": "303015134493562686441",
                       "tick": "-92110",
+                      "totalValueLockedETH": "1.0",
                       "sqrtPrice": "792216481398733702759960397"
                     },
                     {
@@ -274,6 +280,7 @@ mod tests {
                       "feeTier": "3000",
                       "liquidity": "3125586395511534995",
                       "tick": "-189822",
+                      "totalValueLockedETH": "1.0",
                       "sqrtPrice": "5986323062404391218190509"
                     }
                 ],
@@ -300,6 +307,7 @@ mod tests {
                         sqrt_price: U256::from_str("792216481398733702759960397").unwrap(),
                         tick: BigInt::from(-92110),
                         ticks: None,
+                        total_value_locked_eth: 1.0
                     },
                     PoolData {
                         id: H160::from_str("0x0002e63328169d7feea121f1e32e4f620abf0352").unwrap(),
@@ -320,6 +328,7 @@ mod tests {
                         sqrt_price: U256::from_str("5986323062404391218190509").unwrap(),
                         tick: BigInt::from(-189822),
                         ticks: None,
+                        total_value_locked_eth: 1.0
                     },
                 ],
             }
