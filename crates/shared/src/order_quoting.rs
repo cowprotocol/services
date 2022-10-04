@@ -160,8 +160,6 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The final minimum subsidized fee amount for any order created for this
     /// quote.
-    ///
-    /// TODO: This is where the `verification_gas_limit` should be considered.
     pub fee_amount: U256,
 }
 
