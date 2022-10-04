@@ -10,7 +10,7 @@ use super::{
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::LimitOrder,
+    liquidity::{slippage::SlippageCalculator, LimitOrder},
     settlement::{Interaction, Settlement},
 };
 use anyhow::Result;
@@ -19,11 +19,9 @@ use derivative::Derivative;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
-use num::{BigRational, FromPrimitive, ToPrimitive};
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use reqwest::{Client, Url};
 use shared::{
-    conversions::U256Ext,
     oneinch_api::{
         OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, Swap, SwapQuery,
     },
@@ -43,9 +41,7 @@ pub struct OneInchSolver {
     #[derivative(Debug = "ignore")]
     allowance_fetcher: Box<dyn AllowanceManaging>,
     protocol_cache: ProtocolCache,
-    oneinch_slippage_bps: u32,
-    /// how much slippage in wei we allow per trade
-    max_slippage_in_wei: Option<U256>,
+    slippage_calculator: SlippageCalculator,
     referrer_address: Option<H160>,
 }
 
@@ -60,8 +56,7 @@ impl OneInchSolver {
         disabled_protocols: impl IntoIterator<Item = String>,
         client: Client,
         one_inch_url: Url,
-        oneinch_slippage_bps: u32,
-        max_slippage_in_wei: Option<U256>,
+        slippage_calculator: SlippageCalculator,
         referrer_address: Option<H160>,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
@@ -72,54 +67,13 @@ impl OneInchSolver {
             client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             protocol_cache: ProtocolCache::default(),
-            oneinch_slippage_bps,
-            max_slippage_in_wei,
+            slippage_calculator,
             referrer_address,
         })
     }
 }
 
 impl OneInchSolver {
-    /// Computes the max slippage we are willing to use for a given trade to limit the absolute
-    /// slippage to a configured upper limit in terms of wei. Because 1Inch keeps positive
-    /// slippage, always applying a default slippage would otherwise become very costly for huge
-    /// orders.
-    fn compute_max_slippage(
-        external_buy_token_price_in_wei: &BigRational,
-        buy_amount: &U256,
-        default_slippage_bps: u32,
-        max_slippage_in_wei: &U256,
-    ) -> Result<Slippage> {
-        let max_absolute_slippage_in_buy_token =
-            max_slippage_in_wei.to_big_rational() / external_buy_token_price_in_wei;
-
-        let max_relative_slippage_respecting_wei_limit =
-            max_absolute_slippage_in_buy_token / buy_amount.to_big_rational();
-
-        let max_slippage_bps_respecting_wei_limit =
-            max_relative_slippage_respecting_wei_limit * BigRational::from_u128(10_000).unwrap();
-
-        let final_slippage_bps = std::cmp::min(
-            max_slippage_bps_respecting_wei_limit
-                .to_u32()
-                // if the wei based slippage is too big for u32 the default slippage will be smaller
-                // so we can safely use it as a fallback
-                .unwrap_or(default_slippage_bps),
-            default_slippage_bps,
-        );
-
-        if final_slippage_bps < default_slippage_bps {
-            tracing::debug!(
-                default_slippage_bps,
-                final_slippage_bps,
-                ?max_slippage_in_wei,
-                "reducing default slippage bps to respect max absolute slippage configuration",
-            );
-        }
-
-        Slippage::from_basis_points(final_slippage_bps)
-    }
-
     /// Settles a single sell order against a 1Inch swap using the specified protocols and
     /// slippage.
     async fn settle_order_with_protocols_and_slippage(
@@ -205,18 +159,12 @@ impl SingleOrderSolving for OneInchSolver {
             .protocol_cache
             .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
             .await?;
-        let slippage = match self.max_slippage_in_wei {
-            Some(wei) => Self::compute_max_slippage(
-                auction.external_prices.price(&order.buy_token).expect(
-                    "auction should only contain orders where prices \
-                    for buy_token and sell_token are known",
-                ),
-                &order.buy_amount,
-                self.oneinch_slippage_bps,
-                &wei,
-            )?,
-            None => Slippage::from_basis_points(self.oneinch_slippage_bps).unwrap(),
-        };
+        let slippage = Slippage::percentage(
+            self.slippage_calculator
+                .auction_context(auction)
+                .relative_for_order(&order)?
+                .as_percentage(),
+        )?;
         self.settle_order_with_protocols_and_slippage(order, protocols, slippage)
             .await
     }
@@ -249,16 +197,23 @@ impl From<OneInchError> for SettlementError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use crate::liquidity::LimitOrder;
-    use crate::solver::ExternalPrices;
-    use crate::test::account;
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        liquidity::LimitOrder,
+        solver::ExternalPrices,
+        test::account,
+    };
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
+    use futures::FutureExt as _;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
-    use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
-    use shared::{dummy_contract, transport::create_env_test_transport};
+    use shared::{
+        conversions::U256Ext as _,
+        dummy_contract,
+        oneinch_api::{MockOneInchClient, Protocols, Spender},
+        transport::create_env_test_transport,
+    };
 
     fn dummy_solver(
         client: MockOneInchClient,
@@ -272,8 +227,7 @@ mod tests {
             client: Box::new(client),
             allowance_fetcher: Box::new(allowance_fetcher),
             protocol_cache: ProtocolCache::default(),
-            oneinch_slippage_bps: 10u32,
-            max_slippage_in_wei: Some(U256::MAX),
+            slippage_calculator: SlippageCalculator::default(),
             referrer_address: None,
         }
     }
@@ -295,54 +249,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn limits_max_slippage() {
-        let slippage = OneInchSolver::compute_max_slippage(
-            &U256::exp10(9).to_big_rational(), // USDC price in wei
-            &U256::exp10(12),                  // USDC buy amount
-            10,                                // default slippage in bps
-            &U256::exp10(17),                  // max slippage in wei
-        )
-        .unwrap();
-        assert_eq!(slippage, Slippage::from_basis_points(1).unwrap());
-    }
-
-    #[test]
-    fn limits_max_slippage_second() {
-        let slippage = OneInchSolver::compute_max_slippage(
-            &BigRational::new(2.into(), 1000.into()), // price in wei
-            &U256::exp10(23),                         // buy amount
-            10,                                       // default slippage in bps
-            &U256::exp10(17),                         // max slippage in wei
-        )
-        .unwrap();
-        assert_eq!(slippage, Slippage::from_basis_points(5).unwrap());
-    }
-
-    #[test]
-    fn limits_max_slippage_third() {
-        let slippage = OneInchSolver::compute_max_slippage(
-            &U256::exp10(9).to_big_rational(), // USDC price in wei
-            &U256::exp10(8),                   // USDC buy amount
-            10,                                // default slippage in bps
-            &U256::exp10(17),                  // max slippage in wei
-        )
-        .unwrap();
-        assert_eq!(slippage, Slippage::from_basis_points(10).unwrap());
-    }
-
-    #[test]
-    fn limits_max_slippage_fourth() {
-        let slippage = OneInchSolver::compute_max_slippage(
-            &U256::exp10(9).to_big_rational(), // USDC price in wei
-            &U256::exp10(17),                  // USDC buy amount
-            10,                                // default slippage in bps
-            &U256::exp10(17),                  // max slippage in wei
-        )
-        .unwrap();
-        assert_eq!(slippage, Slippage::from_basis_points(0).unwrap());
-    }
-
     #[tokio::test]
     async fn test_satisfies_limit_price() {
         let mut client = MockOneInchClient::new();
@@ -353,16 +259,22 @@ mod tests {
         let native_token = H160::from_low_u64_be(3);
 
         client.expect_get_spender().returning(|| {
-            Ok(Spender {
-                address: H160::zero(),
-            })
+            async {
+                Ok(Spender {
+                    address: H160::zero(),
+                })
+            }
+            .boxed()
         });
         client.expect_get_swap().returning(|_| {
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 99.into(),
-                ..Default::default()
-            })
+            async {
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 99.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         allowance_fetcher
@@ -433,22 +345,31 @@ mod tests {
             .returning(|_| Ok(Approval::AllowanceSufficient));
 
         client.expect_get_liquidity_sources().returning(|| {
-            Ok(Protocols {
-                protocols: vec!["GoodProtocol".into(), "BadProtocol".into()],
-            })
+            async {
+                Ok(Protocols {
+                    protocols: vec!["GoodProtocol".into(), "BadProtocol".into()],
+                })
+            }
+            .boxed()
         });
         client.expect_get_spender().returning(|| {
-            Ok(Spender {
-                address: H160::zero(),
-            })
+            async {
+                Ok(Spender {
+                    address: H160::zero(),
+                })
+            }
+            .boxed()
         });
         client.expect_get_swap().times(1).returning(|query| {
-            assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 100.into(),
-                ..Default::default()
-            })
+            async move {
+                assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 100.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         let solver = OneInchSolver {
@@ -482,13 +403,16 @@ mod tests {
 
         client
             .expect_get_spender()
-            .returning(move || Ok(Spender { address: spender }));
+            .returning(move || async move { Ok(Spender { address: spender }) }.boxed());
         client.expect_get_swap().returning(|_| {
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 100.into(),
-                ..Default::default()
-            })
+            async {
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 100.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         // On first invocation no prior allowance, then max allowance set.
@@ -577,12 +501,10 @@ mod tests {
             vec!["PMM1".to_string()],
             Client::new(),
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
-            10u32,
-            None,
+            SlippageCalculator::default(),
             None,
         )
         .unwrap();
-        let slippage = Slippage::from_basis_points(solver.oneinch_slippage_bps).unwrap();
         let settlement = solver
             .settle_order_with_protocols_and_slippage(
                 Order {
@@ -598,7 +520,7 @@ mod tests {
                 }
                 .into(),
                 None,
-                slippage,
+                Slippage::ONE_PERCENT,
             )
             .await
             .unwrap()

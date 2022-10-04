@@ -137,7 +137,6 @@ pub fn block_number(block: &Block) -> Result<u64> {
 #[async_trait::async_trait]
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
-    async fn current_block_number(&self) -> Result<u64>;
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
@@ -149,15 +148,6 @@ impl BlockRetrieving for Web3 {
             .await
             .context("failed to get current block")?
             .ok_or_else(|| anyhow!("no current block"))
-    }
-
-    async fn current_block_number(&self) -> Result<u64> {
-        Ok(self
-            .eth()
-            .block_number()
-            .await
-            .context("failed to get current block number")?
-            .as_u64())
     }
 
     /// get blocks defined by the range (inclusive)

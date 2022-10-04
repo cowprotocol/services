@@ -10,7 +10,7 @@ use futures::{future, Stream, StreamExt, TryStreamExt};
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
-pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
+pub const MAX_REORG_BLOCK_COUNT: u64 = 64;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // MAX_BLOCKS_QUERIED is bigger than MAX_REORG_BLOCK_COUNT to increase the chances
@@ -152,6 +152,8 @@ where
         }
 
         // handle special case when no new block is added
+        // this case would be caught later in algorithm by `detect_reorg_path`,
+        // but we skip some node calls by returning early
         if (current_block_number, current_block_hash)
             == (last_handled_block_number, last_handled_block_hash)
         {
@@ -214,8 +216,10 @@ where
         if let Some(range) = event_range.history_range {
             self.update_events_from_old_blocks(range).await?;
         }
-        self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
-            .await?;
+        if !event_range.latest_blocks.is_empty() {
+            self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
+                .await?;
+        }
         Ok(())
     }
 
@@ -286,27 +290,36 @@ where
 
     async fn update_events_from_latest_blocks(
         &mut self,
-        blocks: &[BlockNumberHash],
+        latest_blocks: &[BlockNumberHash],
         is_reorg: bool,
     ) -> Result<()> {
-        let (blocks, events) = self.past_events_by_block_hashes(blocks).await;
-        track_block_range(&format!("range_{}", blocks.len()));
-        tracing::debug!(
-            "final blocks for updating: {:?} - {:?}",
-            blocks.first(),
-            blocks.last()
+        debug_assert!(
+            !latest_blocks.is_empty(),
+            "entered update events with empty block list"
         );
+        let (blocks, events) = self.past_events_by_block_hashes(latest_blocks).await;
+        track_block_range(&format!("range_{}", blocks.len()));
         if blocks.is_empty() {
-            return Ok(());
+            return Err(anyhow::anyhow!(
+                "no blocks to be updated - all filtered out"
+            ));
         }
+
+        // update storage regardless if it's a full update or partial update
         let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
             self.store.replace_events(events, range.clone()).await?;
         } else {
             self.store.append_events(events).await?;
         }
-
         self.update_last_handled_blocks(&blocks);
+
+        // in case of partial update return error as an indicator that update did not finish as expected
+        // either way we update partially to have the most latest state in the storage in every moment
+        if blocks != latest_blocks {
+            tracing::debug!("partial update: {:?} - {:?}", blocks.first(), blocks.last());
+            return Err(anyhow::anyhow!("update done partially"));
+        }
         Ok(())
     }
 
@@ -646,7 +659,10 @@ mod tests {
         let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED + 1).unwrap();
         let (history_range, latest_range) = split_range(range);
         assert_eq!(history_range, Some(RangeInclusive::try_new(0, 1).unwrap()));
-        assert_eq!(latest_range, RangeInclusive::try_new(2, 51).unwrap());
+        assert_eq!(
+            latest_range,
+            RangeInclusive::try_new(2, MAX_BLOCKS_QUERIED + 1).unwrap()
+        );
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 use primitive_types::{H160, U256};
 use shared::{arguments::display_option, bad_token::token_owner_finder, http_client};
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 use url::Url;
 
 #[derive(clap::Parser)]
@@ -44,13 +44,13 @@ pub struct Arguments {
         long,
         env,
         default_value = "600",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub token_quality_cache_expiry: Duration,
 
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: usize,
+    pub pool_cache_lru_size: NonZeroUsize,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -71,7 +71,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        parse(try_from_str = U256::from_dec_str)
+        value_parser = U256::from_dec_str
     )]
     pub amount_to_estimate_prices_with: Option<U256>,
 
@@ -88,7 +88,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "Baseline",
-        arg_enum,
+        value_enum,
         use_value_delimiter = true
     )]
     pub native_price_estimators: Vec<shared::price_estimation::PriceEstimatorType>,
@@ -98,7 +98,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub native_price_cache_max_age_secs: Duration,
 
@@ -107,7 +107,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "60",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub min_order_validity_period: Duration,
 
@@ -120,7 +120,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "300",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_auction_age: Duration,
 }

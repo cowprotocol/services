@@ -12,12 +12,14 @@ pub mod time;
 pub mod trade;
 pub mod u256_decimal;
 
-use ethabi::{encode, Token};
 use hex::{FromHex, FromHexError};
 use lazy_static::lazy_static;
 use primitive_types::H160;
 use std::fmt;
-use web3::signing;
+use web3::{
+    ethabi::{encode, Token},
+    signing,
+};
 
 /// Erc20 token pair specified by two contract addresses.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

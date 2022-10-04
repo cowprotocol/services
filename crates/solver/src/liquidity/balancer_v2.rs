@@ -6,8 +6,7 @@ use crate::{
         BalancerSwapGivenOutInteraction,
     },
     liquidity::{
-        slippage, AmmOrderExecution, LimitOrder, SettlementHandling, StablePoolOrder,
-        WeightedProductOrder,
+        AmmOrderExecution, LimitOrder, SettlementHandling, StablePoolOrder, WeightedProductOrder,
     },
     settlement::SettlementEncoder,
 };
@@ -145,10 +144,10 @@ impl SettlementHandler {
         execution: AmmOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        let (asset_in, amount_in) = execution.input;
+        let (asset_in, amount_in_max) = execution.input_max;
         let (asset_out, amount_out) = execution.output;
 
-        encoder.append_to_execution_plan(self.allowances.approve_token(asset_in, amount_in)?);
+        encoder.append_to_execution_plan(self.allowances.approve_token(asset_in, amount_in_max)?);
         encoder.append_to_execution_plan(BalancerSwapGivenOutInteraction {
             settlement: self.settlement.clone(),
             vault: self.vault.clone(),
@@ -156,7 +155,7 @@ impl SettlementHandler {
             asset_in,
             asset_out,
             amount_out,
-            amount_in_max: slippage::amount_plus_max_slippage(amount_in),
+            amount_in_max,
             // Balancer pools allow passing additional user data in order to
             // control pool behaviour for swaps. That being said, weighted pools
             // do not seem to make use of this at the moment so leave it empty.
@@ -395,7 +394,7 @@ mod tests {
         SettlementHandling::<WeightedProductOrder>::encode(
             &handler,
             AmmOrderExecution {
-                input: (H160([0x70; 20]), 10.into()),
+                input_max: (H160([0x70; 20]), 10.into()),
                 output: (H160([0x71; 20]), 11.into()),
             },
             &mut encoder,
@@ -404,7 +403,7 @@ mod tests {
         SettlementHandling::<WeightedProductOrder>::encode(
             &handler,
             AmmOrderExecution {
-                input: (H160([0x71; 20]), 12.into()),
+                input_max: (H160([0x71; 20]), 12.into()),
                 output: (H160([0x72; 20]), 13.into()),
             },
             &mut encoder,
@@ -427,7 +426,7 @@ mod tests {
                     asset_in: H160([0x70; 20]),
                     asset_out: H160([0x71; 20]),
                     amount_out: 11.into(),
-                    amount_in_max: slippage::amount_plus_max_slippage(10.into()),
+                    amount_in_max: 10.into(),
                     user_data: Default::default(),
                 }
                 .encode(),
@@ -439,7 +438,7 @@ mod tests {
                     asset_in: H160([0x71; 20]),
                     asset_out: H160([0x72; 20]),
                     amount_out: 13.into(),
-                    amount_in_max: slippage::amount_plus_max_slippage(12.into()),
+                    amount_in_max: 12.into(),
                     user_data: Default::default(),
                 }
                 .encode(),

@@ -3,19 +3,33 @@
 use super::{Interaction, Query, Quote, Trade, TradeError, TradeFinding};
 use crate::{
     oneinch_api::{
-        OneInchClient, OneInchError, ProtocolCache, SellOrderQuoteQuery, Slippage, SwapQuery,
+        OneInchClient, OneInchError, ProtocolCache, SellOrderQuoteQuery, Slippage, Swap, SwapQuery,
     },
     price_estimation::gas,
+    request_sharing::{BoxRequestSharing, BoxShared},
 };
+use futures::FutureExt as _;
 use model::order::OrderKind;
 use primitive_types::H160;
 use std::sync::Arc;
 
 pub struct OneInchTradeFinder {
+    inner: Inner,
+    sharing: BoxRequestSharing<InternalQuery, Result<Quote, TradeError>>,
+}
+
+#[derive(Clone)]
+struct Inner {
     api: Arc<dyn OneInchClient>,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     referrer_address: Option<H160>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct InternalQuery {
+    data: Query,
+    allowed_protocols: Option<Vec<String>>,
 }
 
 impl OneInchTradeFinder {
@@ -25,13 +39,60 @@ impl OneInchTradeFinder {
         referrer_address: Option<H160>,
     ) -> Self {
         Self {
-            api,
-            disabled_protocols,
-            protocol_cache: ProtocolCache::default(),
-            referrer_address,
+            inner: Inner {
+                api,
+                disabled_protocols,
+                protocol_cache: ProtocolCache::default(),
+                referrer_address,
+            },
+            sharing: Default::default(),
         }
     }
 
+    fn shared_quote(
+        &self,
+        query: &Query,
+        allowed_protocols: Option<Vec<String>>,
+    ) -> BoxShared<Result<Quote, TradeError>> {
+        let query = InternalQuery {
+            data: *query,
+            allowed_protocols,
+        };
+
+        self.sharing.shared_or_else(query, move |query| {
+            let inner = self.inner.clone();
+            let query = query.clone();
+            async move { inner.perform_quote(query).await }.boxed()
+        })
+    }
+
+    async fn quote(&self, query: &Query) -> Result<Quote, TradeError> {
+        let allowed_protocols = self.inner.verify_query_and_get_protocols(query).await?;
+        self.shared_quote(query, allowed_protocols).await
+    }
+
+    async fn swap(&self, query: &Query) -> Result<Trade, TradeError> {
+        let allowed_protocols = self.inner.verify_query_and_get_protocols(query).await?;
+        let (quote, spender, swap) = futures::try_join!(
+            self.shared_quote(query, allowed_protocols.clone()),
+            self.inner.spender(),
+            self.inner.swap(query, allowed_protocols),
+        )?;
+
+        Ok(Trade {
+            out_amount: quote.out_amount,
+            gas_estimate: quote.gas_estimate,
+            approval: Some((query.sell_token, spender)),
+            interaction: Interaction {
+                target: swap.tx.to,
+                value: swap.tx.value,
+                data: swap.tx.data,
+            },
+        })
+    }
+}
+
+impl Inner {
     async fn verify_query_and_get_protocols(
         &self,
         query: &Query,
@@ -48,23 +109,14 @@ impl OneInchTradeFinder {
         Ok(allowed_protocols)
     }
 
-    async fn quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        let allowed_protocols = self.verify_query_and_get_protocols(query).await?;
-        Ok(self.perform_quote(query, allowed_protocols).await?)
-    }
-
-    async fn perform_quote(
-        &self,
-        query: &Query,
-        allowed_protocols: Option<Vec<String>>,
-    ) -> Result<Quote, OneInchError> {
+    async fn perform_quote(&self, query: InternalQuery) -> Result<Quote, TradeError> {
         let quote = self
             .api
             .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
-                query.sell_token,
-                query.buy_token,
-                allowed_protocols,
-                query.in_amount,
+                query.data.sell_token,
+                query.data.buy_token,
+                query.allowed_protocols,
+                query.data.in_amount,
                 self.referrer_address,
             ))
             .await?;
@@ -75,12 +127,18 @@ impl OneInchTradeFinder {
         })
     }
 
-    async fn quote_and_swap(&self, query: &Query) -> Result<Trade, TradeError> {
-        let allowed_protocols = self.verify_query_and_get_protocols(query).await?;
-        let (quote, spender, swap) = futures::try_join!(
-            self.perform_quote(query, allowed_protocols.clone()),
-            self.api.get_spender(),
-            self.api.get_swap(SwapQuery::with_default_options(
+    async fn spender(&self) -> Result<H160, TradeError> {
+        Ok(self.api.get_spender().await?.address)
+    }
+
+    async fn swap(
+        &self,
+        query: &Query,
+        allowed_protocols: Option<Vec<String>>,
+    ) -> Result<Swap, TradeError> {
+        Ok(self
+            .api
+            .get_swap(SwapQuery::with_default_options(
                 query.sell_token,
                 query.buy_token,
                 query.in_amount,
@@ -88,19 +146,8 @@ impl OneInchTradeFinder {
                 allowed_protocols,
                 Slippage::ONE_PERCENT,
                 self.referrer_address,
-            )),
-        )?;
-
-        Ok(Trade {
-            out_amount: quote.out_amount,
-            gas_estimate: quote.gas_estimate,
-            approval: Some((query.sell_token, spender.address)),
-            interaction: Interaction {
-                target: swap.tx.to,
-                value: swap.tx.value,
-                data: swap.tx.data,
-            },
-        })
+            ))
+            .await?)
     }
 }
 
@@ -120,12 +167,14 @@ impl TradeFinding for OneInchTradeFinder {
     }
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
-        self.quote_and_swap(query).await
+        self.swap(query).await
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::oneinch_api::{
         MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Spender, Swap, Token,
@@ -149,18 +198,21 @@ mod tests {
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
         one_inch.expect_get_sell_order_quote().return_once(|_| {
-            Ok(SellOrderQuote {
-                from_token: Token {
-                    address: testlib::tokens::WETH,
-                },
-                to_token: Token {
-                    address: testlib::tokens::GNO,
-                },
-                to_token_amount: 808_069_760_400_778_577u128.into(),
-                from_token_amount: 100_000_000_000_000_000u128.into(),
-                protocols: Vec::default(),
-                estimated_gas: 189_386,
-            })
+            async {
+                Ok(SellOrderQuote {
+                    from_token: Token {
+                        address: testlib::tokens::WETH,
+                    },
+                    to_token: Token {
+                        address: testlib::tokens::GNO,
+                    },
+                    to_token_amount: 808_069_760_400_778_577u128.into(),
+                    from_token_amount: 100_000_000_000_000_000u128.into(),
+                    protocols: Vec::default(),
+                    estimated_gas: 189_386,
+                })
+            }
+            .boxed()
         });
 
         let estimator = create_trade_finder(one_inch);
@@ -200,45 +252,54 @@ mod tests {
         //     slippage=1&\
         //     disableEstimate=true'
         one_inch.expect_get_sell_order_quote().return_once(|_| {
-            Ok(SellOrderQuote {
-                from_token: Token {
-                    address: testlib::tokens::WETH,
-                },
-                to_token: Token {
-                    address: testlib::tokens::GNO,
-                },
-                to_token_amount: 808_069_760_400_778_577u128.into(),
-                from_token_amount: 100_000_000_000_000_000u128.into(),
-                protocols: Vec::default(),
-                estimated_gas: 189_386,
-            })
+            async {
+                Ok(SellOrderQuote {
+                    from_token: Token {
+                        address: testlib::tokens::WETH,
+                    },
+                    to_token: Token {
+                        address: testlib::tokens::GNO,
+                    },
+                    to_token_amount: 808_069_760_400_778_577u128.into(),
+                    from_token_amount: 100_000_000_000_000_000u128.into(),
+                    protocols: Vec::default(),
+                    estimated_gas: 189_386,
+                })
+            }
+            .boxed()
         });
         one_inch.expect_get_spender().return_once(|| {
-            Ok(Spender {
-                address: addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
-            })
+            async {
+                Ok(Spender {
+                    address: addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
+                })
+            }
+            .boxed()
         });
         one_inch.expect_get_swap().return_once(|_| {
-            Ok(Swap {
-                from_token: Token {
-                    address: testlib::tokens::WETH,
-                },
-                to_token: Token {
-                    address: testlib::tokens::GNO,
-                },
-                to_token_amount: 808_069_760_400_778_577u128.into(),
-                from_token_amount: 100_000_000_000_000_000u128.into(),
-                protocols: Default::default(),
-                tx: Transaction {
-                    from: Default::default(),
-                    to: addr!("1111111254fb6c44bac0bed2854e76f90643097d"),
-                    data: vec![0xe4, 0x49, 0x02, 0x2e],
-                    value: Default::default(),
-                    max_fee_per_gas: Default::default(),
-                    max_priority_fee_per_gas: Default::default(),
-                    gas: Default::default(),
-                },
-            })
+            async {
+                Ok(Swap {
+                    from_token: Token {
+                        address: testlib::tokens::WETH,
+                    },
+                    to_token: Token {
+                        address: testlib::tokens::GNO,
+                    },
+                    to_token_amount: 808_069_760_400_778_577u128.into(),
+                    from_token_amount: 100_000_000_000_000_000u128.into(),
+                    protocols: Default::default(),
+                    tx: Transaction {
+                        from: Default::default(),
+                        to: addr!("1111111254fb6c44bac0bed2854e76f90643097d"),
+                        data: vec![0xe4, 0x49, 0x02, 0x2e],
+                        value: Default::default(),
+                        max_fee_per_gas: Default::default(),
+                        max_priority_fee_per_gas: Default::default(),
+                        gas: Default::default(),
+                    },
+                })
+            }
+            .boxed()
         });
 
         let estimator = create_trade_finder(one_inch);
@@ -294,10 +355,13 @@ mod tests {
             .expect_get_sell_order_quote()
             .times(1)
             .return_once(|_| {
-                Err(OneInchError::Api(RestError {
-                    status_code: 500,
-                    description: "Internal Server Error".to_string(),
-                }))
+                async {
+                    Err(OneInchError::Api(RestError {
+                        status_code: 500,
+                        description: "Internal Server Error".to_string(),
+                    }))
+                }
+                .boxed()
             });
 
         let estimator = create_trade_finder(one_inch);
@@ -324,7 +388,9 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| Err(OneInchError::Other(anyhow::anyhow!("malformed JSON"))));
+            .return_once(|_| {
+                async { Err(OneInchError::Other(anyhow::anyhow!("malformed JSON"))) }.boxed()
+            });
 
         let estimator = create_trade_finder(one_inch);
 
@@ -342,6 +408,34 @@ mod tests {
             est,
             Err(TradeError::Other(e)) if e.to_string() == "malformed JSON"
         ));
+    }
+
+    #[tokio::test]
+    async fn shares_quote_api_request() {
+        let mut oneinch = MockOneInchClient::new();
+        oneinch.expect_get_sell_order_quote().return_once(|_| {
+            async move {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                Ok(Default::default())
+            }
+            .boxed()
+        });
+        oneinch
+            .expect_get_spender()
+            .return_once(|| async { Ok(Default::default()) }.boxed());
+        oneinch
+            .expect_get_swap()
+            .return_once(|_| async { Ok(Default::default()) }.boxed());
+
+        let trader = OneInchTradeFinder::new(Arc::new(oneinch), Vec::new(), None);
+
+        let query = Query {
+            kind: OrderKind::Sell,
+            ..Default::default()
+        };
+        let result = futures::try_join!(trader.get_quote(&query), trader.get_trade(&query));
+
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

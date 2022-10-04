@@ -253,7 +253,7 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if self.banned_users.contains(&order.owner) {
+        if self.banned_users.contains(&order.owner) || self.banned_users.contains(&order.receiver) {
             return Err(PartialValidationError::Forbidden);
         }
 
@@ -764,6 +764,15 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     owner: H160::from_low_u64_be(1),
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::Forbidden)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    receiver: H160::from_low_u64_be(1),
                     ..Default::default()
                 })
                 .await,

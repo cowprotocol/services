@@ -11,6 +11,7 @@ use num::BigInt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use serde_with::{serde_as, DisplayFromStr};
 
 const ALL_POOLS_QUERY: &str = r#"
     query Pools($block: Int, $pageSize: Int, $lastId: ID) {
@@ -174,6 +175,7 @@ pub struct RegisteredPools {
 }
 
 /// Pool data from the Uniswap V3 subgraph.
+#[serde_as]
 #[derive(Debug, Clone, Deserialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
@@ -183,7 +185,7 @@ pub struct PoolData {
     pub fee_tier: U256,
     pub liquidity: U256,
     pub sqrt_price: U256,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     pub ticks: Option<Vec<TickData>>,
 }
@@ -195,13 +197,14 @@ impl ContainsId for PoolData {
 }
 
 /// Tick data from the Uniswap V3 subgraph.
+#[serde_as]
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
     pub id: String,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub tick_idx: BigInt,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub liquidity_net: BigInt,
     pub pool_address: H160,
 }
@@ -212,12 +215,13 @@ impl ContainsId for TickData {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub id: H160,
     pub symbol: String,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub decimals: u8,
 }
 
