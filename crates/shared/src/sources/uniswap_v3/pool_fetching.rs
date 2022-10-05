@@ -258,10 +258,6 @@ impl UniswapV3PoolFetcher {
             Some(init_block),
         ));
 
-        // run maintenance to initially populate events cache
-        // without this, `fetch` could be called before first maintenance run on app startup
-        events.run_maintenance().await?; // todo handle partial failure of maintenance
-
         Ok(Self {
             web3: web3.clone(),
             checkpoint,
@@ -306,6 +302,23 @@ impl PoolFetching for UniswapV3PoolFetcher {
             Block::Recent => self.web3.eth().block_number().await?.as_u64(),
             Block::Number(number) => number,
         };
+
+        // sanity check if events are up to date
+        let last_handled_block = self
+            .events
+            .lock()
+            .await
+            .last_handled_block()
+            .unwrap_or_default()
+            .0;
+        if block_number > last_handled_block {
+            tracing::debug!(
+                "can't get liquidity for block {} since the last handled block is {}",
+                block_number,
+                last_handled_block
+            );
+            return Ok(Default::default());
+        }
 
         // this is the only place where this function uses checkpoint - no data racing between maintenance
         let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
@@ -548,6 +561,7 @@ mod tests {
         let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone())
             .await
             .unwrap();
+        fetcher.run_maintenance().await.unwrap();
         let token_pairs = HashSet::from([
             TokenPair::new(
                 H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
