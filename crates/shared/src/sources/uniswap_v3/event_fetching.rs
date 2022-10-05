@@ -1,6 +1,9 @@
+use std::str::FromStr;
+
 use crate::current_block::RangeInclusive;
 use crate::event_handling::{EventRetrieving, EventStoring};
 use crate::Web3;
+use hex_literal::hex;
 
 use anyhow::{Context, Result};
 use contracts::{
@@ -22,11 +25,40 @@ pub enum UniswapV3Event {
 
 impl ParseLog for UniswapV3Event {
     fn parse_log(log: RawLog) -> Result<Self, ExecutionError> {
-        let standard_event: Option<Result<UniswapV3Event, ExecutionError>> = log.topics.get(0).copied().map(|topic| match topic {
-            H256 ([12 , 57 , 108 , 217 , 137 , 163 , 159 , 68 , 89 , 181 , 250 , 26 , 237 , 106 , 154 , 141 , 205 , 188 , 69 , 144 , 138 , 207 , 214 , 126 , 2 , 140 , 213 , 104 , 218 , 152 , 152 , 44]) => Ok (UniswapV3Event::Burn (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Burn").expect("generated event decode"))?)), 
-            H256 ([122 , 83 , 8 , 11 , 164 , 20 , 21 , 139 , 231 , 236 , 105 , 185 , 135 , 181 , 251 , 125 , 7 , 222 , 225 , 1 , 254 , 133 , 72 , 143 , 8 , 83 , 174 , 22 , 35 , 157 , 11 , 222]) => Ok (UniswapV3Event::Mint (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Mint").expect ("generated event decode"))?)), 
-            H256 ([196 , 32 , 121 , 249 , 74 , 99 , 80 , 215 , 230 , 35 , 95 , 41 , 23 , 73 , 36 , 249 , 40 , 204 , 42 , 200 , 24 , 235 , 100 , 254 , 216 , 0 , 78 , 17 , 95 , 188 , 202 , 103]) => Ok (UniswapV3Event::Swap (log.clone().decode(UniswapV3Pool::raw_contract().abi.event("Swap").expect ("generated event decode"))?)), 
-            _ => Ok(UniswapV3Event::Other),});
+        let standard_event: Option<Result<UniswapV3Event, ExecutionError>> =
+            log.topics.get(0).copied().map(|topic| match topic {
+                H256(hex!("0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c")) => {
+                    Ok(UniswapV3Event::Burn(
+                        log.clone().decode(
+                            UniswapV3Pool::raw_contract()
+                                .abi
+                                .event("Burn")
+                                .expect("generated event decode"),
+                        )?,
+                    ))
+                }
+                H256(hex!("7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde")) => {
+                    Ok(UniswapV3Event::Mint(
+                        log.clone().decode(
+                            UniswapV3Pool::raw_contract()
+                                .abi
+                                .event("Mint")
+                                .expect("generated event decode"),
+                        )?,
+                    ))
+                }
+                H256(hex!("c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67")) => {
+                    Ok(UniswapV3Event::Swap(
+                        log.clone().decode(
+                            UniswapV3Pool::raw_contract()
+                                .abi
+                                .event("Swap")
+                                .expect("generated event decode"),
+                        )?,
+                    ))
+                }
+                _ => Ok(UniswapV3Event::Other),
+            });
         if let Some(Ok(data)) = standard_event {
             return Ok(data);
         }
@@ -40,7 +72,24 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
-        events.filter.address = vec![];
+        let events_signatures = vec![
+            H256::from_str(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67", //swap
+            )
+            .unwrap(),
+            H256::from_str(
+                "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c", //burn
+            )
+            .unwrap(),
+            H256::from_str(
+                "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde", //mint
+            )
+            .unwrap(),
+        ];
+        events.filter = events
+            .filter
+            .address(vec![])
+            .topic0(events_signatures.into());
         events
     }
 }
