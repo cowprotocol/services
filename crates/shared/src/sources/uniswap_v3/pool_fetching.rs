@@ -121,7 +121,7 @@ impl PoolsCheckpointHandler {
     /// Then fetches state/ticks for the most deepest pools (subset of all existing pools)
     pub async fn new(chain_id: u64, client: Client) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
-        let registered_pools = graph_api.get_registered_pools().await?;
+        let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
             "initialized registered pools",
@@ -136,13 +136,13 @@ impl PoolsCheckpointHandler {
 
         // can't fetch the state of all pools in constructor for performance reasons,
         // so let's fetch the top MAX_POOLS_TO_INITIALIZE pools with the highest liquidity
-        let mut pools = registered_pools.pools.clone();
-        pools.sort_unstable_by(|a, b| {
+        registered_pools.pools.sort_unstable_by(|a, b| {
             a.total_value_locked_eth
                 .partial_cmp(&b.total_value_locked_eth)
                 .unwrap()
         });
-        let pool_ids = pools
+        let pool_ids = registered_pools
+            .pools
             .clone()
             .into_iter()
             .map(|pool| pool.id)
