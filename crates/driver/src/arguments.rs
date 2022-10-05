@@ -260,11 +260,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
-    /// The number of decimal places considered when comparing the objective value of different solutions.
-    /// Note, that objective values are computed in wei. E.g. a value of -15 would consider solutions with
-    /// with objective value 0.0012 ETH and 0.0016 ETH equivalent.
+    /// When comparing the objective value of different solutions, ignore the N least significant digits in base 10.
+    /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
+    /// value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
-    pub solution_comparison_decimal_precision: i32,
+    pub solution_comparison_decimal_cutoff: i32,
 }
 
 impl std::fmt::Display for Arguments {

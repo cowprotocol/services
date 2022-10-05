@@ -86,7 +86,7 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
-        solution_comparison_decimal_precision: i32,
+        solution_comparison_decimal_cutoff: i32,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -108,7 +108,7 @@ impl Driver {
             metrics: metrics.clone(),
             min_order_age,
             settlement_rater,
-            decimal_precision: solution_comparison_decimal_precision,
+            decimal_cutoff: solution_comparison_decimal_cutoff,
         };
 
         let logger = DriverLogger {

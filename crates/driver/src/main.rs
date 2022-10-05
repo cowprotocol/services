@@ -489,7 +489,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         min_order_age: std::time::Duration::from_secs(30),
         max_settlement_price_deviation: None,
         token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
-        decimal_precision: args.solution_comparison_decimal_precision,
+        decimal_cutoff: args.solution_comparison_decimal_cutoff,
     });
     let logger = Arc::new(DriverLogger {
         web3: common.web3.clone(),
