@@ -20,7 +20,6 @@ pub enum UniswapV3Event {
     Burn(Burn),
     Mint(Mint),
     Swap(Swap),
-    Other,
 }
 
 impl ParseLog for UniswapV3Event {
@@ -57,7 +56,7 @@ impl ParseLog for UniswapV3Event {
                         )?,
                     ))
                 }
-                _ => Ok(UniswapV3Event::Other),
+                _ => Err(ExecutionError::from(Error::InvalidData)),
             });
         if let Some(Ok(data)) = standard_event {
             return Ok(data);
@@ -143,12 +142,6 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     }
 
     async fn append_events(&mut self, events: Vec<Event<UniswapV3Event>>) -> Result<()> {
-        let events = events.into_iter().filter(|event| match event.data {
-            UniswapV3Event::Burn(_) => true,
-            UniswapV3Event::Mint(_) => true,
-            UniswapV3Event::Swap(_) => true,
-            UniswapV3Event::Other => false,
-        });
         self.events.extend(events);
         Ok(())
     }

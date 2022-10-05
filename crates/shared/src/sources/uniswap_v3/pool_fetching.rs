@@ -419,7 +419,6 @@ fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV
                     pool.liquidity = swap.liquidity.into();
                     pool.sqrt_price = swap.sqrt_price_x96;
                 }
-                UniswapV3Event::Other => (),
             }
         }
     }
