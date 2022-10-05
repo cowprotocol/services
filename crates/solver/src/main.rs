@@ -406,7 +406,7 @@ async fn main() {
     let api = OrderBookApi::new(
         args.orderbook_url,
         http_factory.create(),
-        args.shared.solver_competition_auth,
+        args.shared.solver_competition_auth.clone(),
     );
 
     let mut driver = Driver::new(

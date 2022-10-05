@@ -424,6 +424,10 @@ impl Driver {
     }
 
     async fn send_solver_competition(&self, body: &SolverCompetition) {
+        // For example shadow solver shouldn't store competition info.
+        if !self.api.is_authenticated() {
+            return;
+        }
         match self.api.send_solver_competition(body).await {
             Ok(()) => tracing::debug!("stored solver competition"),
             Err(err) => tracing::error!(?err, "failed to send solver competition"),
