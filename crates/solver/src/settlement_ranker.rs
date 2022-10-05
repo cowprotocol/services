@@ -21,7 +21,7 @@ pub struct SettlementRanker {
     pub min_order_age: Duration,
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
-    pub decimal_cutoff: i32,
+    pub decimal_cutoff: u16,
 }
 
 impl SettlementRanker {
@@ -153,18 +153,18 @@ impl SettlementRanker {
     }
 }
 
-fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: i32) -> Ordering {
-    let precision = BigRational::from_i8(10).unwrap().pow(decimals);
-    let rounded_lhs = (lhs
+fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
+    let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
+    let rounded_lhs = lhs
         .objective_value()
         .checked_div(&precision)
-        .expect("precision cannot be 0"))
-    .floor();
-    let rounded_rhs = (rhs
+        .expect("precision cannot be 0")
+        .floor();
+    let rounded_rhs = rhs
         .objective_value()
         .checked_div(&precision)
-        .expect("precision cannot be 0"))
-    .floor();
+        .expect("precision cannot be 0")
+        .floor();
     rounded_lhs.cmp(&rounded_rhs)
 }
 
@@ -201,15 +201,6 @@ mod tests {
 
     #[test]
     fn compare_solutions_rounded() {
-        let better = RatedSettlement::with_objective(0.16);
-        let worse = RatedSettlement::with_objective(0.12);
-        assert_eq!(compare_solutions(&better, &worse, -2), Ordering::Greater);
-        assert_eq!(compare_solutions(&worse, &better, -2), Ordering::Less);
-        assert_eq!(compare_solutions(&better, &worse, -1), Ordering::Equal);
-
-        let worst = RatedSettlement::with_objective(0.09);
-        assert_eq!(compare_solutions(&worse, &worst, -1), Ordering::Greater);
-
         let better = RatedSettlement::with_objective(77495164315950.95);
         let worse = RatedSettlement::with_objective(77278255312878.95);
         assert_eq!(compare_solutions(&better, &worse, 12), Ordering::Equal);

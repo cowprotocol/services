@@ -286,7 +286,7 @@ pub struct Arguments {
     /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
     /// value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
-    pub solution_comparison_decimal_cutoff: i32,
+    pub solution_comparison_decimal_cutoff: u16,
 }
 
 impl std::fmt::Display for Arguments {
