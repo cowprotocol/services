@@ -208,7 +208,7 @@ impl PoolsCheckpointHandler {
             (checkpoint.missing_pools.clone(), checkpoint.block_number)
         };
 
-        let pool_ids = missing_pools.clone().into_iter().collect::<Vec<_>>();
+        let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
         let pools = self
             .graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
@@ -216,11 +216,9 @@ impl PoolsCheckpointHandler {
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for pool in pools {
+            checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, pool);
         }
-        checkpoint
-            .missing_pools
-            .retain(|missing_pool| !missing_pools.contains(missing_pool));
         Ok(())
     }
 }
