@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::current_block::RangeInclusive;
 use crate::event_handling::{EventRetrieving, EventStoring};
 use crate::Web3;
@@ -15,6 +13,13 @@ use ethcontract::{
     Event, RawLog, H160, H256,
 };
 
+const SWAP_TOPIC: [u8; 32] =
+    hex!("c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67");
+const BURN_TOPIC: [u8; 32] =
+    hex!("0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c");
+const MINT_TOPIC: [u8; 32] =
+    hex!("7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde");
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UniswapV3Event {
     Burn(Burn),
@@ -26,36 +31,30 @@ impl ParseLog for UniswapV3Event {
     fn parse_log(log: RawLog) -> Result<Self, ExecutionError> {
         let standard_event: Option<Result<UniswapV3Event, ExecutionError>> =
             log.topics.get(0).copied().map(|topic| match topic {
-                H256(hex!("0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c")) => {
-                    Ok(UniswapV3Event::Burn(
-                        log.clone().decode(
-                            UniswapV3Pool::raw_contract()
-                                .abi
-                                .event("Burn")
-                                .expect("generated event decode"),
-                        )?,
-                    ))
-                }
-                H256(hex!("7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde")) => {
-                    Ok(UniswapV3Event::Mint(
-                        log.clone().decode(
-                            UniswapV3Pool::raw_contract()
-                                .abi
-                                .event("Mint")
-                                .expect("generated event decode"),
-                        )?,
-                    ))
-                }
-                H256(hex!("c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67")) => {
-                    Ok(UniswapV3Event::Swap(
-                        log.clone().decode(
-                            UniswapV3Pool::raw_contract()
-                                .abi
-                                .event("Swap")
-                                .expect("generated event decode"),
-                        )?,
-                    ))
-                }
+                H256(BURN_TOPIC) => Ok(UniswapV3Event::Burn(
+                    log.clone().decode(
+                        UniswapV3Pool::raw_contract()
+                            .abi
+                            .event("Burn")
+                            .expect("generated event decode"),
+                    )?,
+                )),
+                H256(MINT_TOPIC) => Ok(UniswapV3Event::Mint(
+                    log.clone().decode(
+                        UniswapV3Pool::raw_contract()
+                            .abi
+                            .event("Mint")
+                            .expect("generated event decode"),
+                    )?,
+                )),
+                H256(SWAP_TOPIC) => Ok(UniswapV3Event::Swap(
+                    log.clone().decode(
+                        UniswapV3Pool::raw_contract()
+                            .abi
+                            .event("Swap")
+                            .expect("generated event decode"),
+                    )?,
+                )),
                 _ => Err(ExecutionError::from(Error::InvalidData)),
             });
         if let Some(Ok(data)) = standard_event {
@@ -71,20 +70,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
-        let events_signatures = vec![
-            H256::from_str(
-                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67", //swap
-            )
-            .unwrap(),
-            H256::from_str(
-                "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c", //burn
-            )
-            .unwrap(),
-            H256::from_str(
-                "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde", //mint
-            )
-            .unwrap(),
-        ];
+        let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
         events.filter = events
             .filter
             .address(vec![])
