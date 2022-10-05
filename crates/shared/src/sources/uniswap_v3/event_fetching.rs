@@ -133,13 +133,16 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        Ok(self
-            .events
-            .last()
-            .context("event cache is empty")?
-            .meta
-            .as_ref()
-            .context("event meta is empty")?
-            .block_number)
+        let block_number = match self.events.last() {
+            Some(event) => {
+                event
+                    .meta
+                    .as_ref()
+                    .context("event meta is empty")?
+                    .block_number
+            }
+            None => 0,
+        };
+        Ok(block_number)
     }
 }
