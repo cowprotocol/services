@@ -11,7 +11,7 @@ pub async fn save(
 INSERT INTO solver_competitions (id, json, tx_hash)
 VALUES ($1, $2, $3)
 ON CONFLICT (id) DO UPDATE
-SET json = EXCLUDED.json, tx_hash = EXCLUDEd.tx_hash
+SET json = EXCLUDED.json, tx_hash = EXCLUDED.tx_hash
     ;"#;
     sqlx::query(QUERY)
         .bind(id)
