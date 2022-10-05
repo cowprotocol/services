@@ -360,6 +360,11 @@ impl Driver {
                 winning_settlement
             );
 
+            // At this point we know that we are going to attempt to settle on chain. We store the
+            // competition info immediately in case we don't find the mined transaction hash later
+            // for example because the driver got restarted. If we get a hash then we store the
+            // competition info again this time including the hash.
+            self.send_solver_competition(&solver_competition).await;
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             match submit_settlement(
@@ -381,6 +386,7 @@ impl Driver {
                 }
                 _ => (),
             }
+            self.send_solver_competition(&solver_competition).await;
 
             self.logger.report_on_batch(
                 &(winning_solver, winning_settlement),
@@ -389,7 +395,6 @@ impl Driver {
                     .map(|(solver, settlement, _)| (solver, settlement))
                     .collect(),
             );
-            self.send_solver_competition(solver_competition).await;
         }
         // Happens after settlement submission so that we do not delay it.
         self.logger.report_simulation_errors(
@@ -418,10 +423,14 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(&self, body: SolverCompetition) {
-        match self.api.send_solver_competition(&body).await {
+    async fn send_solver_competition(&self, body: &SolverCompetition) {
+        // For example shadow solver shouldn't store competition info.
+        if !self.api.is_authenticated() {
+            return;
+        }
+        match self.api.send_solver_competition(body).await {
             Ok(()) => tracing::debug!("stored solver competition"),
-            Err(err) => tracing::warn!(?err, "failed to send solver competition"),
+            Err(err) => tracing::error!(?err, "failed to send solver competition"),
         }
     }
 }
