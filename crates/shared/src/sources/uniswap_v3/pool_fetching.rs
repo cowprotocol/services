@@ -6,7 +6,7 @@ use crate::Web3;
 
 use super::event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher};
 use super::graph_api::{PoolData, TickData, Token, UniV3SubgraphClient};
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use ethcontract::{BlockNumber, Event, H160, U256};
 use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
@@ -439,8 +439,12 @@ fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV
 #[async_trait::async_trait]
 impl Maintaining for UniswapV3PoolFetcher {
     async fn run_maintenance(&self) -> Result<()> {
-        self.events.run_maintenance().await?;
-        self.checkpoint.update_missing_pools().await?;
+        let (result1, result2) = futures::join!(
+            self.events.run_maintenance(),
+            self.checkpoint.update_missing_pools()
+        );
+        ensure!(result1.is_ok(), result1.unwrap_err());
+        ensure!(result2.is_ok(), result2.unwrap_err());
         self.move_checkpoint_to_future().await
     }
 }
