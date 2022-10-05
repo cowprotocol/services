@@ -226,7 +226,6 @@ impl PoolsCheckpointHandler {
 }
 
 pub struct UniswapV3PoolFetcher {
-    web3: Web3,
     /// Pools state on a specific block number in history considered reorg safe
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block` pools state.
@@ -258,11 +257,7 @@ impl UniswapV3PoolFetcher {
             Some(init_block),
         ));
 
-        Ok(Self {
-            web3: web3.clone(),
-            checkpoint,
-            events,
-        })
+        Ok(Self { checkpoint, events })
     }
 
     /// Moves the checkpoint to the block `latest_block - MAX_REORG_BLOCK_COUNT`
@@ -299,7 +294,14 @@ impl PoolFetching for UniswapV3PoolFetcher {
         at_block: Block,
     ) -> Result<Vec<PoolInfo>> {
         let block_number = match at_block {
-            Block::Recent => self.web3.eth().block_number().await?.as_u64(),
+            Block::Recent => self
+                .events
+                .lock()
+                .await
+                .store()
+                .last_event_block()
+                .await
+                .unwrap_or_default(),
             Block::Number(number) => number,
         };
 
@@ -324,7 +326,6 @@ impl PoolFetching for UniswapV3PoolFetcher {
         let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
 
         if block_number > checkpoint_block_number {
-            // this is the only place where this function uses events - no data racing between maintenance
             let block_range = RangeInclusive::try_new(checkpoint_block_number + 1, block_number)?;
             let events = self.events.lock().await.store().get_events(block_range);
             append_events(&mut checkpoint, events);
