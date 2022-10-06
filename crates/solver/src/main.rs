@@ -406,7 +406,7 @@ async fn main() {
     let api = OrderBookApi::new(
         args.orderbook_url,
         http_factory.create(),
-        args.shared.solver_competition_auth,
+        args.shared.solver_competition_auth.clone(),
     );
 
     let mut driver = Driver::new(
@@ -433,6 +433,7 @@ async fn main() {
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
         tenderly_api,
+        args.solution_comparison_decimal_cutoff,
     );
 
     let maintainer = ServiceMaintenance {

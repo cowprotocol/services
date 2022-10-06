@@ -140,7 +140,7 @@ pub fn create_orderbook_api() -> OrderBookApi {
     OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         Client::new(),
-        None,
+        Some("".to_string()),
     )
 }
 

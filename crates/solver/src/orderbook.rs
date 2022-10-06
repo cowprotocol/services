@@ -29,6 +29,11 @@ impl OrderBookApi {
         Ok(auction)
     }
 
+    /// If this is false then sending solver competition most likely fails.
+    pub fn is_authenticated(&self) -> bool {
+        self.competition_auth.is_some()
+    }
+
     pub async fn send_solver_competition(&self, body: &SolverCompetition) -> Result<()> {
         let url = self.base.join("api/v1/solver_competition")?;
         let mut request = self.client.post(url);
