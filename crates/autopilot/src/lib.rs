@@ -33,6 +33,7 @@ use shared::{
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
+    maintenance::Maintaining,
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
     order_quoting::OrderQuoter,
@@ -538,21 +539,17 @@ pub async fn main(args: arguments::Arguments) {
             .web3(),
         sync_start,
     ));
-
-    let mut service_maintainer = if args.enable_ethflow_orders {
-        shared::maintenance::ServiceMaintenance {
-            maintainers: vec![
-                pool_fetcher,
-                event_updater,
-                broadcaster_event_updater,
-                Arc::new(db.clone()),
-            ],
-        }
+    let maintainers: Vec<Arc<dyn Maintaining>> = if args.enable_ethflow_orders {
+        vec![
+            pool_fetcher,
+            event_updater,
+            broadcaster_event_updater,
+            Arc::new(db.clone()),
+        ]
     } else {
-        shared::maintenance::ServiceMaintenance {
-            maintainers: vec![pool_fetcher, event_updater, Arc::new(db.clone())],
-        }
+        vec![pool_fetcher, event_updater, Arc::new(db.clone())]
     };
+    let mut service_maintainer = shared::maintenance::ServiceMaintenance { maintainers };
 
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
