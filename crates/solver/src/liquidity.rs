@@ -23,8 +23,7 @@ use shared::sources::{
     },
     uniswap_v3::pool_fetching::PoolInfo,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support

@@ -311,16 +311,20 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{
-        tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
+    use crate::{
+        liquidity::{
+            tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
+        },
+        test::account,
     };
-    use crate::test::account;
     use model::order::OrderKind;
     use num::rational::Ratio;
-    use shared::sources::balancer_v2::swap::fixed_point::Bfp;
     use shared::{
         addr,
-        sources::balancer_v2::pool_fetching::{TokenState, WeightedTokenState},
+        sources::balancer_v2::{
+            pool_fetching::{TokenState, WeightedTokenState},
+            swap::fixed_point::Bfp,
+        },
     };
 
     #[test]

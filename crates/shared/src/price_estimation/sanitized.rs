@@ -203,8 +203,10 @@ impl PriceEstimating for SanitizedPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bad_token::{MockBadTokenDetecting, TokenQuality};
-    use crate::price_estimation::{vec_estimates, MockPriceEstimating};
+    use crate::{
+        bad_token::{MockBadTokenDetecting, TokenQuality},
+        price_estimation::{vec_estimates, MockPriceEstimating},
+    };
     use futures::StreamExt;
     use model::order::OrderKind;
     use primitive_types::{H160, U256};

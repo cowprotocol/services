@@ -16,10 +16,14 @@ pub mod post_solver_competition;
 mod replace_order;
 mod version;
 
-use crate::solver_competition::SolverCompetitionStoring;
-use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
-use shared::api::{error, finalize_router, internal_error, ApiReply};
-use shared::order_quoting::QuoteHandler;
+use crate::{
+    database::trades::TradeRetrieving, orderbook::Orderbook,
+    solver_competition::SolverCompetitionStoring,
+};
+use shared::{
+    api::{error, finalize_router, internal_error, ApiReply},
+    order_quoting::QuoteHandler,
+};
 use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
 

@@ -123,10 +123,8 @@ pub fn get_amount_estimate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::api::response_body;
-    use shared::price_estimation::PriceEstimationError;
-    use warp::hyper::StatusCode;
-    use warp::{test::request, Reply};
+    use shared::{api::response_body, price_estimation::PriceEstimationError};
+    use warp::{hyper::StatusCode, test::request, Reply};
 
     #[tokio::test]
     async fn test_get_amount_estimate_request() {
