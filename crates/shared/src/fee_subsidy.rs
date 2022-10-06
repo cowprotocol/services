@@ -142,7 +142,15 @@ impl Default for FeeParameters {
 
 impl FeeParameters {
     pub fn unsubsidized(&self) -> U256 {
-        dtou(self.gas_amount * self.gas_price / self.sell_token_price)
+        self.unsubsidized_with_additional_cost(0.into())
+    }
+
+    pub fn unsubsidized_with_additional_cost(&self, additional_cost: U256) -> U256 {
+        // convert Eth value to f64
+        let additional_cost = additional_cost.to_f64_lossy();
+        let fee_in_eth = (self.gas_amount + additional_cost) * self.gas_price;
+
+        dtou(fee_in_eth / self.sell_token_price)
     }
 
     pub fn subsidized(&self, subsidy: &Subsidy) -> U256 {
