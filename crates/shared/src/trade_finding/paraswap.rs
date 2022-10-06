@@ -51,7 +51,7 @@ impl ParaswapTradeFinder {
     }
 
     fn shared_quote(&self, query: &Query) -> BoxShared<Result<InternalQuote, TradeError>> {
-        self.sharing.shared_or_else(*query, || {
+        self.sharing.shared_or_else(*query, |_| {
             let inner = self.inner.clone();
             let query = *query;
             async move { inner.quote(&query).await }.boxed()
@@ -113,12 +113,13 @@ impl Inner {
             trade_amount: match query.kind {
                 OrderKind::Buy => TradeAmount::Buy {
                     dest_amount: query.in_amount,
+                    slippage: Self::DEFAULT_SLIPPAGE,
                 },
                 OrderKind::Sell => TradeAmount::Sell {
                     src_amount: query.in_amount,
+                    slippage: Self::DEFAULT_SLIPPAGE,
                 },
             },
-            slippage: Self::DEFAULT_SLIPPAGE,
             src_decimals: decimals(&quote.tokens, &query.sell_token)?,
             dest_decimals: decimals(&quote.tokens, &query.buy_token)?,
             price_route: quote.price.price_route_raw.take(),

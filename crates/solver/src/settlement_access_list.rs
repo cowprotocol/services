@@ -225,7 +225,7 @@ impl AccessListEstimating for PriorityAccessListEstimating {
     }
 }
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum AccessListEstimatorType {
     Web3,

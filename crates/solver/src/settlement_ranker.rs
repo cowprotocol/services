@@ -1,5 +1,5 @@
 use crate::{
-    driver::solver_settlements::{self, retain_mature_settlements},
+    driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
@@ -7,9 +7,9 @@ use crate::{
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
-use num::{rational::Ratio, BigInt};
+use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
 use rand::prelude::SliceRandom;
-use std::{sync::Arc, time::Duration};
+use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
@@ -21,6 +21,7 @@ pub struct SettlementRanker {
     pub min_order_age: Duration,
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
+    pub decimal_cutoff: u16,
 }
 
 impl SettlementRanker {
@@ -136,7 +137,7 @@ impl SettlementRanker {
         // preference to any specific solver when there is an objective value tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
 
-        rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+        rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
 
         tracing::info!(
             "{} settlements passed simulation and {} failed",
@@ -149,5 +150,60 @@ impl SettlementRanker {
         }
 
         Ok((rated_settlements, errors))
+    }
+}
+
+fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
+    let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
+    let rounded_lhs = lhs
+        .objective_value()
+        .checked_div(&precision)
+        .expect("precision cannot be 0")
+        .floor();
+    let rounded_rhs = rhs
+        .objective_value()
+        .checked_div(&precision)
+        .expect("precision cannot be 0")
+        .floor();
+    rounded_lhs.cmp(&rounded_rhs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethcontract::U256;
+    use num::Zero;
+
+    use crate::driver::solver_settlements::RatedSettlement;
+
+    impl RatedSettlement {
+        fn with_objective(objective_value: f64) -> Self {
+            Self {
+                id: 42,
+                settlement: Default::default(),
+                surplus: BigRational::from_float(objective_value).unwrap(),
+                unscaled_subsidized_fee: Zero::zero(),
+                scaled_unsubsidized_fee: Zero::zero(),
+                gas_estimate: U256::zero(),
+                gas_price: Zero::zero(),
+            }
+        }
+    }
+
+    #[test]
+    fn compare_solutions_precise() {
+        let better = RatedSettlement::with_objective(77495164315950.95);
+        let worse = RatedSettlement::with_objective(77278255312878.95);
+        assert_eq!(compare_solutions(&better, &worse, 0), Ordering::Greater);
+        assert_eq!(compare_solutions(&worse, &better, 0), Ordering::Less);
+        assert_eq!(compare_solutions(&better, &better, 0), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_solutions_rounded() {
+        let better = RatedSettlement::with_objective(77495164315950.95);
+        let worse = RatedSettlement::with_objective(77278255312878.95);
+        assert_eq!(compare_solutions(&better, &worse, 12), Ordering::Equal);
+        assert_eq!(compare_solutions(&better, &worse, 11), Ordering::Greater);
     }
 }

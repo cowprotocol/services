@@ -179,6 +179,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 common.order_converter.clone(),
                 http_solver_cache.clone(),
                 false,
+                args.slippage.get_global_calculator(),
             )) as Arc<dyn Solver>
         })
         .collect()
@@ -282,12 +283,10 @@ async fn build_auction_converter(
     ));
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.pool_cache_blocks,
-        // 0 because we don't make use of the auto update functionality as we always fetch
-        // for specific blocks
-        number_of_entries_to_auto_update: 0,
         maximum_recent_block_age: args.pool_cache_maximum_recent_block_age,
         max_retries: args.pool_cache_maximum_retries,
         delay_between_retries: args.pool_cache_delay_between_retries_seconds,
+        ..Default::default()
     };
     let baseline_sources = args.baseline_sources.clone().unwrap_or_else(|| {
         sources::defaults_for_chain(common.chain_id)
@@ -490,6 +489,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         min_order_age: std::time::Duration::from_secs(30),
         max_settlement_price_deviation: None,
         token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
+        decimal_cutoff: args.solution_comparison_decimal_cutoff,
     });
     let logger = Arc::new(DriverLogger {
         web3: common.web3.clone(),

@@ -15,12 +15,13 @@ use num::BigUint;
 use primitive_types::{H160, H256, U256};
 use secp256k1::ONE_KEY;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
+use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::HashSet,
     fmt::{self, Debug, Display},
     str::FromStr,
 };
+use strum::EnumString;
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -390,10 +391,10 @@ pub struct OrderMetadata {
     #[serde_as(as = "Option<DecimalU256>")]
     pub available_balance: Option<U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde(default, with = "u256_decimal")]
     pub executed_sell_amount_before_fees: U256,
@@ -405,7 +406,6 @@ pub struct OrderMetadata {
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
     pub is_liquidity_order: bool,
-    pub is_ethflow_order: bool,
 }
 
 impl Default for OrderMetadata {
@@ -424,7 +424,6 @@ impl Default for OrderMetadata {
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
             is_liquidity_order: false,
-            is_ethflow_order: false,
         }
     }
 }
@@ -538,10 +537,8 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     #[default]
@@ -574,10 +571,8 @@ impl OrderKind {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
@@ -601,10 +596,8 @@ impl SellTokenSource {
 }
 
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
@@ -681,7 +674,6 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
-            "isEthflowOrder": false,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -699,7 +691,6 @@ mod tests {
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
                 is_liquidity_order: false,
-                is_ethflow_order: false,
             },
             data: OrderData {
                 sell_token: H160::from_low_u64_be(10),

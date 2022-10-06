@@ -384,7 +384,7 @@ mod tests {
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
-    use clap::ArgEnum;
+    use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
     use model::order::OrderKind;
     use reqwest::Client;

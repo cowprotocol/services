@@ -245,6 +245,7 @@ pub fn tenderly_link(
 mod tests {
     use super::*;
     use crate::interactions::allowances::{Allowances, MockAllowanceManaging};
+    use crate::liquidity::slippage::SlippageContext;
     use crate::liquidity::{
         balancer_v2::SettlementHandler, order_converter::OrderConverter, uniswap_v2::Inner,
         ConstantProductOrder, Liquidity, StablePoolOrder,
@@ -654,6 +655,7 @@ mod tests {
             settlement_context,
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
+            SlippageContext::default(),
         )
         .await
         .map(|settlement| vec![settlement])

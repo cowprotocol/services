@@ -27,7 +27,12 @@ use shared::{
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
 use std::{
-    collections::HashSet, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
+    collections::HashSet,
+    future::pending,
+    num::{NonZeroU64, NonZeroUsize},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
 };
 use web3::signing::{Key as _, SecretKeyRef};
 
@@ -135,7 +140,7 @@ pub fn create_orderbook_api() -> OrderBookApi {
     OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         Client::new(),
-        None,
+        Some("".to_string()),
     )
 }
 
@@ -188,7 +193,7 @@ impl OrderbookServices {
         let pool_fetcher = PoolCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
-                number_of_entries_to_auto_update: 20,
+                number_of_entries_to_auto_update: NonZeroUsize::new(20).unwrap(),
                 maximum_recent_block_age: 4,
                 ..Default::default()
             },

@@ -278,7 +278,7 @@ struct Arguments {
         long,
         env,
         default_value = "600",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     time_without_trade: Duration,
 
@@ -287,7 +287,7 @@ struct Arguments {
         long,
         env,
         default_value = "180",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     min_order_age: Duration,
 
@@ -296,7 +296,7 @@ struct Arguments {
         long,
         env,
         default_value = "1800",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     min_alert_interval: Duration,
 

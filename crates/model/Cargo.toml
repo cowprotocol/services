@@ -9,22 +9,21 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-anyhow = "1"
-bigdecimal = "0.3"
-chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
-derivative = "2.2"
-ethabi = "15.0"
-enum-utils = "0.1"
-hex = { version = "0.4", default-features = false }
-hex-literal = "0.3"
-lazy_static = "1.4"
-maplit = "1.0"
-num = "0.4"
-primitive-types = { version = "0.10" }
-secp256k1 = "0.21"
-serde = { version = "1.0", features = ["derive"] }
-serde_with = { version = "1.11", default-features = false, features = ["macros"] }
-web3 = { version = "0.18", default-features = false, features = ["signing"] }
+anyhow = { workspace = true }
+bigdecimal = { workspace = true }
+chrono = { workspace = true, features = ["serde", "clock"] }
+derivative = { workspace = true }
+hex = { workspace = true, default-features = false }
+hex-literal = { workspace = true }
+lazy_static = { workspace = true }
+maplit = { workspace = true }
+num = { workspace = true }
+primitive-types = { workspace = true }
+secp256k1 = { workspace = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
+strum = { workspace = true }
+web3 = { workspace = true, features = ["signing"] }
 
 [dev-dependencies]
-serde_json = "1.0"
+serde_json = { workspace = true }

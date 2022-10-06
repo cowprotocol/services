@@ -1,4 +1,7 @@
-use crate::{liquidity, settlement::Settlement};
+use crate::{
+    liquidity::{self, slippage::SlippageContext},
+    settlement::Settlement,
+};
 use anyhow::Result;
 use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
 use model::{
@@ -39,13 +42,14 @@ impl TokenContext {
 }
 
 pub fn solve(
+    slippage: &SlippageContext,
     orders: impl IntoIterator<Item = LimitOrder>,
     pool: &ConstantProductOrder,
 ) -> Option<Settlement> {
     let mut orders: Vec<LimitOrder> = orders.into_iter().collect();
     while !orders.is_empty() {
         let (context_a, context_b) = split_into_contexts(&orders, pool);
-        if let Some(valid_solution) = solve_orders(&orders, pool, &context_a, &context_b)
+        if let Some(valid_solution) = solve_orders(slippage, &orders, pool, &context_a, &context_b)
             .filter(|settlement| is_valid_solution(settlement, pool.tokens))
         {
             return Some(valid_solution);
@@ -80,15 +84,16 @@ pub fn solve(
 /// for that pair is not available.
 ///
 fn solve_orders(
+    slippage: &SlippageContext,
     orders: &[LimitOrder],
     pool: &ConstantProductOrder,
     context_a: &TokenContext,
     context_b: &TokenContext,
 ) -> Option<Settlement> {
     if context_a.is_excess_after_fees(context_b, pool.fee) {
-        solve_with_uniswap(orders, pool, context_b, context_a)
+        solve_with_uniswap(slippage, orders, pool, context_b, context_a)
     } else if context_b.is_excess_after_fees(context_a, pool.fee) {
-        solve_with_uniswap(orders, pool, context_a, context_b)
+        solve_with_uniswap(slippage, orders, pool, context_a, context_b)
     } else {
         solve_without_uniswap(orders, context_a, context_b).ok()
     }
@@ -118,6 +123,7 @@ fn solve_without_uniswap(
 /// The clearing price is the effective exchange rate used by the AMM interaction.
 ///
 fn solve_with_uniswap(
+    slippage: &SlippageContext,
     orders: &[LimitOrder],
     pool: &ConstantProductOrder,
     shortage: &TokenContext,
@@ -172,7 +178,9 @@ fn solve_with_uniswap(
         .with_liquidity(
             pool,
             AmmOrderExecution {
-                input: (uniswap_in_token, uniswap_in),
+                input_max: slippage
+                    .execution_input_max((uniswap_in_token, uniswap_in))
+                    .ok()?,
                 output: (uniswap_out_token, uniswap_out_with_rounding),
             },
         )
@@ -319,6 +327,10 @@ fn is_valid_solution(solution: &Settlement, pair: TokenPair) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{
+        liquidity::slippage::SlippageCalculator, settlement::external_prices::ExternalPrices,
+    };
     use liquidity::tests::CapturingSettlementHandler;
     use maplit::hashmap;
     use model::{
@@ -326,12 +338,18 @@ mod tests {
         TokenPair,
     };
     use num::rational::Ratio;
+    use once_cell::sync::OnceCell;
     use shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool};
-
-    use super::*;
 
     fn to_wei(base: u128) -> U256 {
         U256::from(base) * U256::from(10).pow(18.into())
+    }
+
+    fn without_slippage() -> SlippageContext<'static> {
+        static CONTEXT: OnceCell<(ExternalPrices, SlippageCalculator)> = OnceCell::new();
+        let (prices, calculator) =
+            CONTEXT.get_or_init(|| (Default::default(), SlippageCalculator::from_bps(0, None)));
+        calculator.context(prices)
     }
 
     #[test]
@@ -366,16 +384,16 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone(), &pool).unwrap();
+        let result = solve(&without_slippage(), orders.clone(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.input_max.0, token_b);
         assert_eq!(interaction.output.0, token_a);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy min_buy amounts
         assert!(orders[0].sell_amount + interaction.output.1 >= orders[1].buy_amount);
-        assert!(orders[1].sell_amount - interaction.input.1 > orders[0].buy_amount);
+        assert!(orders[1].sell_amount - interaction.input_max.1 > orders[0].buy_amount);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy expected buy amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
@@ -384,10 +402,10 @@ mod tests {
         // Multiplying sellAmount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
         // We should have at least as much to give (sell amount +/- uniswap) as is expected by the buyer
         let expected_buy = (orders[0].sell_amount * price_a).ceil_div(&price_b);
-        assert!(orders[1].sell_amount - interaction.input.1 >= expected_buy);
+        assert!(orders[1].sell_amount - interaction.input_max.1 >= expected_buy);
 
         let expected_buy = (orders[1].sell_amount * price_b).ceil_div(&price_a);
-        assert!(orders[0].sell_amount + interaction.input.1 >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.input_max.1 >= expected_buy);
     }
 
     #[test]
@@ -422,15 +440,15 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone(), &pool).unwrap();
+        let result = solve(&without_slippage(), orders.clone(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input.0, token_a);
+        assert_eq!(interaction.input_max.0, token_a);
         assert_eq!(interaction.output.0, token_b);
 
         // Make sure the sell amounts cover the uniswap in, and min buy amounts are covered by uniswap out
-        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input.1);
+        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input_max.1);
         assert!(interaction.output.1 >= orders[0].buy_amount + orders[1].buy_amount);
 
         // Make sure expected buy amounts (given prices) are also covered by uniswap out amounts
@@ -474,16 +492,16 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone(), &pool).unwrap();
+        let result = solve(&SlippageContext::default(), orders.clone(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.input_max.0, token_b);
         assert_eq!(interaction.output.0, token_a);
 
         // Make sure the buy amounts +/- uniswap interaction satisfy max_sell amounts
         assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
-        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input.1);
+        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input_max.1);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
@@ -492,7 +510,7 @@ mod tests {
         // Multiplying buyAmount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
         // The seller should expect to sell at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.input.1 <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
 
         let expected_sell = orders[1].buy_amount * price_a / price_b;
         assert!(orders[0].buy_amount + interaction.output.1 <= expected_sell);
@@ -530,18 +548,18 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone(), &pool).unwrap();
+        let result = solve(&SlippageContext::default(), orders.clone(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.input_max.0, token_b);
         assert_eq!(interaction.output.0, token_a);
 
         // Make sure the buy order's sell amount - uniswap interaction satisfies sell order's limit
         assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
 
         // Make sure the sell order's buy amount + uniswap interaction satisfies buy order's limit
-        assert!(orders[1].buy_amount + interaction.input.1 >= orders[0].sell_amount);
+        assert!(orders[1].buy_amount + interaction.input_max.1 >= orders[0].sell_amount);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
@@ -550,7 +568,7 @@ mod tests {
         // Multiplying buy_amount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
         // The seller should expect to sell at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.input.1 <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
 
         // Multiplying sell_amount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
         // We should have at least as much to give (sell amount + uniswap out) as is expected by the buyer
@@ -590,7 +608,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders, &pool).unwrap();
+        let result = solve(&SlippageContext::default(), orders, &pool).unwrap();
         assert!(amm_handler.calls().is_empty());
         assert_eq!(
             result.clearing_prices(),
@@ -671,7 +689,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
-        let result = solve(orders, &pool).unwrap();
+        let result = solve(&SlippageContext::default(), orders, &pool).unwrap();
 
         assert_eq!(result.traded_orders().count(), 2);
         assert!(is_valid_solution(&result, pool.tokens));
@@ -717,7 +735,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
-        assert!(solve(orders, &pool).is_none());
+        assert!(solve(&SlippageContext::default(), orders, &pool).is_none());
     }
 
     #[test]
@@ -850,7 +868,7 @@ mod tests {
             settlement_handling: amm_handler,
         };
         // This line should not panic.
-        solve(orders, &pool);
+        solve(&SlippageContext::default(), orders, &pool);
     }
 
     #[test]
@@ -894,10 +912,10 @@ mod tests {
         };
 
         // The first order by itself should not be matchable.
-        assert!(solve(orders[0..1].to_vec(), &pool).is_none());
+        assert!(solve(&SlippageContext::default(), orders[0..1].to_vec(), &pool).is_none());
 
         // Only the second order should match
-        let result = solve(orders, &pool).unwrap();
+        let result = solve(&SlippageContext::default(), orders, &pool).unwrap();
         assert_eq!(result.traded_orders().count(), 1);
     }
 
@@ -954,7 +972,7 @@ mod tests {
             token_b => excess_amount_a,
         };
 
-        let settlement = solve(orders, &pool.into()).unwrap();
+        let settlement = solve(&SlippageContext::default(), orders, &pool.into()).unwrap();
         let trades = settlement
             .executed_trades()
             .map(|(_, trade)| trade)
@@ -973,6 +991,42 @@ mod tests {
         assert_eq!(
             trades[1].sell_amount,
             U256::from(8_000_001) * expected_prices[&token_a] / expected_prices[&token_b],
+        );
+    }
+
+    #[test]
+    fn applies_slippage_to_amm_execution() {
+        let token_a = Address::from_low_u64_be(0);
+        let token_b = Address::from_low_u64_be(1);
+        let orders = vec![LimitOrder {
+            sell_token: token_a,
+            buy_token: token_b,
+            sell_amount: to_wei(40),
+            buy_amount: to_wei(30),
+            kind: OrderKind::Sell,
+            id: "0".to_string(),
+            ..Default::default()
+        }];
+
+        let amm_handler = CapturingSettlementHandler::arc();
+        let pool = ConstantProductOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
+            fee: Ratio::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
+        };
+        let slippage = SlippageContext::default();
+        solve(&slippage, orders, &pool).unwrap();
+
+        assert_eq!(
+            amm_handler.calls(),
+            vec![AmmOrderExecution {
+                input_max: slippage.execution_input_max((token_a, to_wei(40))).unwrap(),
+                output: (
+                    token_b,
+                    pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
+                ),
+            }],
         );
     }
 }

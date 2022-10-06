@@ -5,7 +5,7 @@ use super::{
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::LimitOrder,
+    liquidity::{slippage::SlippageCalculator, LimitOrder},
     settlement::{Interaction, Settlement},
 };
 use anyhow::{anyhow, Result};
@@ -39,8 +39,8 @@ pub struct ParaswapSolver {
     allowance_fetcher: Box<dyn AllowanceManaging>,
     #[derivative(Debug = "ignore")]
     client: Box<dyn ParaswapApi + Send + Sync>,
-    slippage_bps: u32,
     disabled_paraswap_dexs: Vec<String>,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl ParaswapSolver {
@@ -50,11 +50,11 @@ impl ParaswapSolver {
         web3: Web3,
         settlement_contract: GPv2Settlement,
         token_info: Arc<dyn TokenInfoFetching>,
-        slippage_bps: u32,
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
         rate_limiter: Option<RateLimiter>,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
 
@@ -68,8 +68,8 @@ impl ParaswapSolver {
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
                 rate_limiter,
             }),
-            slippage_bps,
             disabled_paraswap_dexs,
+            slippage_calculator,
         }
     }
 }
@@ -89,7 +89,7 @@ impl SingleOrderSolving for ParaswapSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        _: &Auction,
+        auction: &Auction,
     ) -> Result<Option<Settlement>, SettlementError> {
         let token_info = self
             .token_info
@@ -105,7 +105,7 @@ impl SingleOrderSolving for ParaswapSolver {
             return Ok(None);
         }
         let transaction_query =
-            self.transaction_query_from(&order, &price_response, &token_info)?;
+            self.transaction_query_from(auction, &order, &price_response, &token_info)?;
         let transaction = self.client.transaction(transaction_query).await?;
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => price_response.dest_amount,
@@ -161,15 +161,21 @@ impl ParaswapSolver {
 
     fn transaction_query_from(
         &self,
+        auction: &Auction,
         order: &LimitOrder,
         price_response: &PriceResponse,
         token_info: &HashMap<H160, TokenInfo>,
     ) -> Result<TransactionBuilderQuery> {
+        let slippage = self.slippage_calculator.auction_context(auction);
         let trade_amount = match order.kind {
-            OrderKind::Sell => TradeAmount::Sell {
+            OrderKind::Sell => TradeAmount::Exact {
                 src_amount: price_response.src_amount,
+                dest_amount: slippage
+                    .apply_to_amount_out(order.buy_token, price_response.dest_amount)?,
             },
-            OrderKind::Buy => TradeAmount::Buy {
+            OrderKind::Buy => TradeAmount::Exact {
+                src_amount: slippage
+                    .apply_to_amount_in(order.sell_token, price_response.src_amount)?,
                 dest_amount: price_response.dest_amount,
             },
         };
@@ -177,7 +183,6 @@ impl ParaswapSolver {
             src_token: order.sell_token,
             dest_token: order.buy_token,
             trade_amount,
-            slippage: self.slippage_bps,
             src_decimals: decimals(token_info, &order.sell_token)?,
             dest_decimals: decimals(token_info, &order.buy_token)?,
             price_route: price_response.clone().price_route_raw,
@@ -237,8 +242,8 @@ mod tests {
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder::default();
@@ -290,8 +295,8 @@ mod tests {
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
+            slippage_calculator: Default::default(),
         };
 
         let order_passing_limit = LimitOrder {
@@ -398,8 +403,8 @@ mod tests {
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder {
@@ -457,11 +462,11 @@ mod tests {
             .returning(|transaction| {
                 assert_eq!(
                     transaction.trade_amount,
-                    TradeAmount::Sell {
+                    TradeAmount::Exact {
                         src_amount: 100.into(),
+                        dest_amount: 89.into(), // 99 - 10% slippage
                     }
                 );
-                assert_eq!(transaction.slippage, 1000);
                 async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);
@@ -471,11 +476,11 @@ mod tests {
             .returning(|transaction| {
                 assert_eq!(
                     transaction.trade_amount,
-                    TradeAmount::Buy {
+                    TradeAmount::Exact {
+                        src_amount: 110.into(), // 100 + 10% slippage
                         dest_amount: 99.into(),
                     }
                 );
-                assert_eq!(transaction.slippage, 1000);
                 async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);
@@ -497,8 +502,8 @@ mod tests {
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 1000, // 10%
             disabled_paraswap_dexs: vec![],
+            slippage_calculator: SlippageCalculator::from_bps(1000, None),
         };
 
         let sell_order = LimitOrder {
@@ -548,11 +553,11 @@ mod tests {
             web3,
             settlement,
             token_info_fetcher,
-            1,
             vec![],
             Client::new(),
             None,
             None,
+            SlippageCalculator::default(),
         );
 
         let settlement = solver
