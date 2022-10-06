@@ -203,6 +203,9 @@ impl HttpPriceEstimator {
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
+        for interaction in settlement.interaction_data {
+            cost += self.extract_cost(&interaction.cost)?;
+        }
         let gas = (cost / gas_price).as_u64()
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
