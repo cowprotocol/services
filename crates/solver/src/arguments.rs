@@ -281,6 +281,12 @@ pub struct Arguments {
     /// in the settlement are checked for price deviation.
     #[clap(long, env, use_value_delimiter = true)]
     pub token_list_restriction_for_price_checks: Option<Vec<H160>>,
+
+    /// When comparing the objective value of different solutions, ignore the N least significant digits in base 10.
+    /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
+    /// value 0.0012 ETH and 0.0016 ETH equivalent.
+    #[clap(long, env, default_value = "0")]
+    pub solution_comparison_decimal_cutoff: u16,
 }
 
 impl std::fmt::Display for Arguments {
