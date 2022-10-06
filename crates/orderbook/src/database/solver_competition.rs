@@ -2,11 +2,12 @@ use super::Postgres;
 use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::{Context, Result};
 use database::byte_array::ByteArray;
-use model::solver_competition::SolverCompetition;
+use model::{auction::AuctionId, order::OrderUid, solver_competition::SolverCompetition};
+use std::collections::HashMap;
 
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
-    async fn save(&self, data: SolverCompetition) -> Result<()> {
+    async fn save_competition(&self, data: SolverCompetition) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_solver_competition"])
@@ -25,7 +26,32 @@ impl SolverCompetitionStoring for Postgres {
         Ok(())
     }
 
-    async fn load(&self, id: Identifier) -> Result<SolverCompetition, LoadSolverCompetitionError> {
+    async fn save_rewards(
+        &self,
+        auction: AuctionId,
+        rewards: HashMap<OrderUid, f64>,
+    ) -> Result<()> {
+        if rewards.is_empty() {
+            return Ok(());
+        }
+
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["save_fee_rewards"])
+            .start_timer();
+
+        let mut ex = self.pool.begin().await?;
+        for (order, reward) in rewards {
+            database::order_rewards::save(&mut ex, ByteArray(order.0), auction, reward).await?;
+        }
+        ex.commit().await?;
+        Ok(())
+    }
+
+    async fn load_competition(
+        &self,
+        id: Identifier,
+    ) -> Result<SolverCompetition, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["load_solver_competition"])
@@ -79,8 +105,8 @@ mod tests {
                 call_data: vec![1, 2],
             }],
         };
-        db.save(expected.clone()).await.unwrap();
-        let actual = db.load(Identifier::Id(0)).await.unwrap();
+        db.save_competition(expected.clone()).await.unwrap();
+        let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
         assert_eq!(expected, actual);
     }
 
@@ -91,7 +117,7 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let result = db
-            .load(Identifier::Transaction(Default::default()))
+            .load_competition(Identifier::Transaction(Default::default()))
             .await
             .unwrap_err();
         assert!(matches!(result, LoadSolverCompetitionError::NotFound));
