@@ -476,6 +476,10 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
+        if settled.orders.is_empty() {
+            return Ok(vec![]);
+        }
+
         let slippage = self.slippage_calculator.context(&external_prices);
         match settlement::convert_settlement(
             settled.clone(),

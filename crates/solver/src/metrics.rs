@@ -85,7 +85,7 @@ impl SolverSimulationOutcome {
 pub trait SolverMetrics: Send + Sync {
     fn orders_fetched(&self, orders: &[LimitOrder]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
-    fn settlement_computed(&self, solver_type: &str, start: Instant);
+    fn settlement_computed(&self, solver_type: &str, response: &str, start: Instant);
     fn order_settled(&self, order: &Order, solver: &str);
     fn settlement_simulation(&self, solver: &str, outcome: SolverSimulationOutcome);
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str);
@@ -146,7 +146,7 @@ impl Metrics {
                 "computation_time_ms",
                 "Ms each solver takes to compute their solution",
             ),
-            &["solver_type"],
+            &["solver_type", "solution_type"],
         )?;
         registry.register(Box::new(solver_computation_time.clone()))?;
 
@@ -309,9 +309,9 @@ impl SolverMetrics for Metrics {
         })
     }
 
-    fn settlement_computed(&self, solver_type: &str, start: Instant) {
+    fn settlement_computed(&self, solver_type: &str, response: &str, start: Instant) {
         self.solver_computation_time
-            .with_label_values(&[solver_type])
+            .with_label_values(&[solver_type, response])
             .inc_by(
                 Instant::now()
                     .duration_since(start)
@@ -439,7 +439,7 @@ pub struct NoopMetrics {}
 impl SolverMetrics for NoopMetrics {
     fn orders_fetched(&self, _liquidity: &[LimitOrder]) {}
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
-    fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
+    fn settlement_computed(&self, _solver_type: &str, _response: &str, _start: Instant) {}
     fn order_settled(&self, _: &Order, _: &str) {}
     fn solver_run(&self, _: SolverRunOutcome, _: &str) {}
     fn single_order_solver_succeeded(&self, _: &str) {}
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn metrics_work() {
         let metrics = Metrics::new().unwrap();
-        metrics.settlement_computed("asdf", Instant::now());
+        metrics.settlement_computed("asdf", "none", Instant::now());
         metrics.order_settled(&Default::default(), "test");
         metrics.settlement_simulation("test", SolverSimulationOutcome::Success);
         metrics.settlement_simulation("test", SolverSimulationOutcome::Failure);

@@ -170,7 +170,13 @@ impl Driver {
                         Ok(inner) => inner.map_err(SolverRunError::Solving),
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
-                metrics.settlement_computed(solver.name(), start_time);
+                let response = match &result {
+                    Err(SolverRunError::Timeout) => "solution",
+                    Ok(solutions) if solutions.is_empty() => "none",
+                    Err(_) => "error",
+                    Ok(_) => "solution",
+                };
+                metrics.settlement_computed(solver.name(), response, start_time);
                 (solver.clone(), result)
             }
         }))
