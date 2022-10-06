@@ -926,6 +926,7 @@ mod tests {
                 sequence: 1u32,
                 position: 1u32,
             })),
+            cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
             order: Default::default(),
