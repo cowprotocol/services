@@ -91,10 +91,6 @@ pub async fn main(args: arguments::Arguments) {
     let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
-    // The events from the ethflow contract are read with the more generic contract
-    // interface called CoWSwapOnchainOrders.
-    let cowswap_onchain_order_contract_for_eth_flow =
-        contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
@@ -447,7 +443,12 @@ pub async fn main(args: arguments::Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+
     if args.enable_ethflow_orders {
+        // The events from the ethflow contract are read with the more generic contract
+        // interface called CoWSwapOnchainOrders.
+        let cowswap_onchain_order_contract_for_eth_flow =
+            contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
         let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
             shared::gas_price_estimation::create_priority_estimator(
                 &http_factory,
