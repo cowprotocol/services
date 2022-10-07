@@ -445,110 +445,108 @@ pub async fn main(args: arguments::Arguments) {
         settlement_contract.clone().raw_instance().web3(),
         sync_start,
     ));
-    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
-            &web3,
-            args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    ));
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_tokens = match (cow_token, cow_vtoken) {
-        (None, None) => None,
-        (Some(token), Some(vtoken)) => Some((token, vtoken)),
-        _ => panic!("should either have both cow token contracts or none"),
-    };
-    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-        tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(
-            token,
-            vtoken,
-            args.order_quoting.cow_fee_factors.unwrap_or_default(),
-        )
-    });
-    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: args
-            .order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
-        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
-    }) as Arc<dyn FeeSubsidizing>;
+    let mut maintainers: Vec<Arc<dyn Maintaining>> =
+        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+    if args.enable_ethflow_orders {
+        let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+            shared::gas_price_estimation::create_priority_estimator(
+                &http_factory,
+                &web3,
+                args.shared.gas_estimators.as_slice(),
+                args.shared.blocknative_api_key.clone(),
+            )
+            .await
+            .expect("failed to create gas price estimator"),
+        ));
+        let cow_token = match CowProtocolToken::deployed(&web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            other => Some(other.unwrap()),
+        };
+        let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            other => Some(other.unwrap()),
+        };
+        let cow_tokens = match (cow_token, cow_vtoken) {
+            (None, None) => None,
+            (Some(token), Some(vtoken)) => Some((token, vtoken)),
+            _ => panic!("should either have both cow token contracts or none"),
+        };
+        let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
+            tracing::debug!("using cow token contracts for subsidy");
+            CowSubsidy::new(
+                token,
+                vtoken,
+                args.order_quoting.cow_fee_factors.unwrap_or_default(),
+            )
+        });
+        let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+            fee_discount: args.order_quoting.fee_discount,
+            min_discounted_fee: args.order_quoting.min_discounted_fee,
+            fee_factor: args.order_quoting.fee_factor,
+            liquidity_order_owners: args
+                .order_quoting
+                .liquidity_order_owners
+                .iter()
+                .copied()
+                .collect(),
+            partner_additional_fee_factors: args
+                .order_quoting
+                .partner_additional_fee_factors
+                .clone(),
+        }) as Arc<dyn FeeSubsidizing>;
 
-    let fee_subsidy = match cow_subsidy {
-        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-            fee_subsidy_config,
-            Arc::new(cow_subsidy),
-        ])),
-        None => fee_subsidy_config,
-    };
-    let mut base_estimators_instances: HashMap<_, _> = Default::default();
-    let mut get_or_create_base_estimator = move |estimator| {
-        base_estimators_instances
-            .entry(estimator)
-            .or_insert_with(|| create_base_estimator(estimator))
-            .clone()
-    };
-    let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-        args.order_quoting
-            .price_estimators
-            .iter()
-            .map(|estimator| get_or_create_base_estimator(*estimator))
-            .collect(),
-    ))));
-    let database = Arc::new(db.clone());
-    let quoter = OrderQuoter::new(
-        price_estimator.clone(),
-        native_price_estimator.clone(),
-        gas_price_estimator,
-        fee_subsidy,
-        database.clone(),
-        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
-            .unwrap(),
-        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
-            .unwrap(),
-    );
-    let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
-    let onchain_order_event_parser = OnchainOrderParser::new(
-        db.clone(),
-        Box::new(quoter),
-        Box::new(custom_ethflow_order_parser),
-        DomainSeparator::new(chain_id, settlement_contract.address()),
-        settlement_contract.address(),
-    );
-    let broadcaster_event_updater = Arc::new(EventUpdater::new(
-        CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
-        onchain_order_event_parser,
-        cowswap_onchain_order_contract_for_eth_flow
-            .clone()
-            .raw_instance()
-            .web3(),
-        sync_start,
-    ));
-    let maintainers: Vec<Arc<dyn Maintaining>> = if args.enable_ethflow_orders {
-        vec![
-            pool_fetcher,
-            event_updater,
-            broadcaster_event_updater,
-            Arc::new(db.clone()),
-        ]
-    } else {
-        vec![pool_fetcher, event_updater, Arc::new(db.clone())]
-    };
+        let fee_subsidy = match cow_subsidy {
+            Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
+                fee_subsidy_config,
+                Arc::new(cow_subsidy),
+            ])),
+            None => fee_subsidy_config,
+        };
+        let mut base_estimators_instances: HashMap<_, _> = Default::default();
+        let mut get_or_create_base_estimator = move |estimator| {
+            base_estimators_instances
+                .entry(estimator)
+                .or_insert_with(|| create_base_estimator(estimator))
+                .clone()
+        };
+        let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
+            args.order_quoting
+                .price_estimators
+                .iter()
+                .map(|estimator| get_or_create_base_estimator(*estimator))
+                .collect(),
+        ))));
+        let database = Arc::new(db.clone());
+        let quoter = OrderQuoter::new(
+            price_estimator,
+            native_price_estimator.clone(),
+            gas_price_estimator,
+            fee_subsidy,
+            database,
+            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+                .unwrap(),
+            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+                .unwrap(),
+        );
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let onchain_order_event_parser = OnchainOrderParser::new(
+            db.clone(),
+            Box::new(quoter),
+            Box::new(custom_ethflow_order_parser),
+            DomainSeparator::new(chain_id, settlement_contract.address()),
+            settlement_contract.address(),
+        );
+        let broadcaster_event_updater = Arc::new(EventUpdater::new(
+            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
+            onchain_order_event_parser,
+            cowswap_onchain_order_contract_for_eth_flow
+                .clone()
+                .raw_instance()
+                .web3(),
+            sync_start,
+        ));
+        maintainers.push(broadcaster_event_updater);
+    }
     let mut service_maintainer = shared::maintenance::ServiceMaintenance { maintainers };
 
     if let Some(balancer) = balancer_pool_fetcher {
