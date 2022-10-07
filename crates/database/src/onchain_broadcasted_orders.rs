@@ -45,7 +45,7 @@ pub async fn append(
     Ok(())
 }
 
-pub async fn insert_onchain_order(
+async fn insert_onchain_order(
     ex: &mut PgConnection,
     index: &EventIndex,
     event: &OnchainOrderPlacement,
