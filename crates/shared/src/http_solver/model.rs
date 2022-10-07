@@ -148,6 +148,7 @@ pub struct InteractionData {
     /// `AMM -> GPv2Settlement`
     pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlan>,
+    pub cost: Option<TokenAmount>,
 }
 
 #[serde_as]
@@ -762,7 +763,11 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": "internal"
+                        "exec_plan": "internal",
+                        "cost": {
+                            "amount": "1",
+                            "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                        }
                     }
                 "#,
             )
@@ -786,6 +791,10 @@ mod tests {
                     }
                 ],
                 exec_plan: Some(ExecutionPlan::Internal),
+                cost: Some(TokenAmount {
+                    amount: 1.into(),
+                    token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+                })
             },
         );
     }
