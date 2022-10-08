@@ -637,8 +637,7 @@ fn track_mined_transactions(submitter: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::submitter::flashbots_api::FlashbotsApi;
-    use super::*;
+    use super::{super::submitter::flashbots_api::FlashbotsApi, *};
     use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;

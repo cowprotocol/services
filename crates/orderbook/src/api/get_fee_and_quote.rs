@@ -7,8 +7,10 @@ use model::{
     u256_decimal,
 };
 use serde::{Deserialize, Serialize};
-use shared::api::{convert_json_response, ApiReply};
-use shared::order_quoting::QuoteHandler;
+use shared::{
+    api::{convert_json_response, ApiReply},
+    order_quoting::QuoteHandler,
+};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 

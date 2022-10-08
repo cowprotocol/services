@@ -3,9 +3,12 @@ use crate::{
     maintenance::Maintaining,
 };
 use anyhow::{Context, Error, Result};
-use ethcontract::contract::{AllEventsBuilder, ParseLog};
-use ethcontract::errors::ExecutionError;
-use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
+use ethcontract::{
+    contract::{AllEventsBuilder, ParseLog},
+    dyns::DynTransport,
+    errors::ExecutionError,
+    Event as EthcontractEvent, EventMetadata,
+};
 use futures::{future, Stream, StreamExt, TryStreamExt};
 use tokio::sync::Mutex;
 

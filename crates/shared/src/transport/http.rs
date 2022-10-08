@@ -3,16 +3,18 @@ use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
 use reqwest::{Client, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::fmt::{Debug, Formatter};
 use std::{
     collections::HashMap,
+    fmt::{Debug, Formatter},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
-use web3::error::TransportError;
-use web3::{error::Error as Web3Error, helpers, BatchTransport, RequestId, Transport};
+use web3::{
+    error::{Error as Web3Error, TransportError},
+    helpers, BatchTransport, RequestId, Transport,
+};
 
 #[derive(Clone)]
 pub struct HttpTransport {
@@ -268,8 +270,7 @@ impl TransportMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::create_env_test_transport;
-    use crate::Web3;
+    use crate::{transport::create_env_test_transport, Web3};
 
     #[test]
     fn handles_batch_response_being_in_different_order_than_input() {

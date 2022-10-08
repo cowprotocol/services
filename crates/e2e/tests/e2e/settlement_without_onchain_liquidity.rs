@@ -10,8 +10,9 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
 use shared::{
+    http_client::HttpClientFactory,
+    maintenance::Maintaining,
     sources::uniswap_v2::pool_fetching::PoolFetcher,
     token_list::{Token, TokenList},
     Web3,

@@ -1,5 +1,4 @@
-use ethcontract::futures::FutureExt;
-use ethcontract::U256;
+use ethcontract::{futures::FutureExt, U256};
 use lazy_static::lazy_static;
 use shared::{transport::create_test_transport, Web3};
 use std::{

@@ -1,6 +1,5 @@
 use super::SettlementSimulating;
-use crate::settlement::Settlement;
-use crate::solver::http_solver::buffers::BufferRetrieving;
+use crate::{settlement::Settlement, solver::http_solver::buffers::BufferRetrieving};
 use contracts::WETH9;
 use primitive_types::U256;
 
@@ -74,9 +73,10 @@ pub async fn optimize_unwrapping(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::UnwrapWethInteraction;
-    use crate::settlement_post_processing::MockSettlementSimulating;
-    use crate::solver::http_solver::buffers::MockBufferRetrieving;
+    use crate::{
+        interactions::UnwrapWethInteraction, settlement_post_processing::MockSettlementSimulating,
+        solver::http_solver::buffers::MockBufferRetrieving,
+    };
     use maplit::hashmap;
     use shared::dummy_contract;
     use std::collections::HashMap;

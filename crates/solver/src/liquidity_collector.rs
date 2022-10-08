@@ -1,9 +1,6 @@
-use crate::{
-    liquidity::Liquidity,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, uniswap_v2::UniswapLikeLiquidity,
-        uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity, LimitOrder,
-    },
+use crate::liquidity::{
+    balancer_v2::BalancerV2Liquidity, uniswap_v2::UniswapLikeLiquidity,
+    uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity, LimitOrder, Liquidity,
 };
 use anyhow::{Context, Result};
 use shared::recent_block_cache::Block;

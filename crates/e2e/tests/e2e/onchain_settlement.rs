@@ -13,8 +13,10 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
-use shared::{sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
+use shared::{
+    http_client::HttpClientFactory, maintenance::Maintaining,
+    sources::uniswap_v2::pool_fetching::PoolFetcher, Web3,
+};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
     liquidity_collector::LiquidityCollector,

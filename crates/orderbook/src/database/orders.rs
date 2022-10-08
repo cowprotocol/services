@@ -346,10 +346,12 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use super::*;
     use chrono::Duration;
-    use database::byte_array::ByteArray;
-    use database::orders::{
-        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    use database::{
+        byte_array::ByteArray,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
+            SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+        },
     };
     use model::{
         order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},

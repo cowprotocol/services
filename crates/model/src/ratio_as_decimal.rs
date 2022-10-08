@@ -61,8 +61,7 @@ where
 mod tests {
     use super::*;
     use num::{BigRational, Zero};
-    use serde_json::json;
-    use serde_json::value::Serializer;
+    use serde_json::{json, value::Serializer};
 
     #[test]
     fn serializer() {

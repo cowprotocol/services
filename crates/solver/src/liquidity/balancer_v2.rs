@@ -178,11 +178,10 @@ mod tests {
     use model::TokenPair;
     use num::BigRational;
     use primitive_types::H160;
-    use shared::sources::balancer_v2::pool_fetching::AmplificationParameter;
     use shared::{
         dummy_contract,
-        sources::balancer_v2::pool_fetching::{CommonPoolState, FetchedBalancerPools},
         sources::balancer_v2::pool_fetching::{
+            AmplificationParameter, CommonPoolState, FetchedBalancerPools,
             MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,
         },
     };
