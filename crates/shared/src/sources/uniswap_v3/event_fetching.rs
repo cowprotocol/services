@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 
-use crate::current_block::RangeInclusive;
-use crate::event_handling::{EventRetrieving, EventStoring};
-use crate::Web3;
+use crate::{
+    current_block::RangeInclusive,
+    event_handling::{EventRetrieving, EventStoring},
+    Web3,
+};
 use hex_literal::hex;
 
 use anyhow::{Context, Result};

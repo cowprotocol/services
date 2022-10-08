@@ -1,11 +1,15 @@
-use crate::current_block::RangeInclusive;
-use crate::event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT};
-use crate::maintenance::Maintaining;
-use crate::recent_block_cache::Block;
-use crate::Web3;
+use crate::{
+    current_block::RangeInclusive,
+    event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+    maintenance::Maintaining,
+    recent_block_cache::Block,
+    Web3,
+};
 
-use super::event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher};
-use super::graph_api::{PoolData, TickData, Token, UniV3SubgraphClient};
+use super::{
+    event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
+    graph_api::{PoolData, TickData, Token, UniV3SubgraphClient},
+};
 use anyhow::{Context, Result};
 use ethcontract::{BlockNumber, Event, H160, U256};
 use itertools::{Either, Itertools};
@@ -14,9 +18,8 @@ use num::{rational::Ratio, BigInt, Zero};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
-use std::collections::BTreeMap;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Mutex,
 };
 
