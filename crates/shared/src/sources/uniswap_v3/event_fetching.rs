@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::current_block::RangeInclusive;
 use crate::event_handling::{EventRetrieving, EventStoring};
 use crate::Web3;
@@ -81,36 +83,21 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
 
 #[derive(Debug, Default)]
 pub struct RecentEventsCache {
-    /// Events are ordered by block number
-    events: Vec<Event<UniswapV3Event>>,
+    /// Block number used as a Key
+    events: BTreeMap<u64, Vec<Event<UniswapV3Event>>>,
 }
 
 impl RecentEventsCache {
     /// Removes all events from the specified block.
-    pub fn remove_events_newer_than_block(&mut self, delete_from_block_number: u64) {
-        self.events.retain(|event| {
-            event
-                .meta
-                .as_ref()
-                .expect("events must have metadata")
-                .block_number
-                < delete_from_block_number
-        });
+    fn remove_events_newer_than_block(&mut self, delete_from_block_number: u64) {
+        self.events
+            .retain(|&block_number, _| block_number < delete_from_block_number);
     }
 
     pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<Event<UniswapV3Event>> {
         self.events
-            .iter()
-            .filter(|event| {
-                event
-                    .meta
-                    .as_ref()
-                    .map(|event| {
-                        event.block_number >= *block_range.start()
-                            && event.block_number <= *block_range.end()
-                    })
-                    .unwrap_or_default()
-            })
+            .range(block_range.start()..=block_range.end())
+            .flat_map(|(_, events)| events)
             .cloned()
             .collect()
     }
@@ -128,21 +115,130 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     }
 
     async fn append_events(&mut self, events: Vec<Event<UniswapV3Event>>) -> Result<()> {
-        self.events.extend(events);
+        for event in events {
+            self.events
+                .entry(
+                    event
+                        .meta
+                        .as_ref()
+                        .context("event meta is empty")?
+                        .block_number,
+                )
+                .or_default()
+                .push(event)
+        }
         Ok(())
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        let block_number = match self.events.last() {
-            Some(event) => {
-                event
-                    .meta
-                    .as_ref()
-                    .context("event meta is empty")?
-                    .block_number
-            }
-            None => 0,
-        };
-        Ok(block_number)
+        self.events.keys().last().cloned().context("no events")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ethcontract::EventMetadata;
+
+    use super::*;
+
+    fn build_event(block_number: u64) -> Event<UniswapV3Event> {
+        Event {
+            data: UniswapV3Event::Swap(Swap::default()),
+            meta: Some(EventMetadata {
+                block_number,
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn remove_events_newer_than_block_test_empty() {
+        let mut cache = RecentEventsCache::default();
+        cache.remove_events_newer_than_block(5);
+    }
+
+    #[test]
+    fn remove_events_newer_than_block_test() {
+        let events = BTreeMap::from([
+            (1u64, vec![build_event(1)]),
+            (2, vec![build_event(2)]),
+            (3, vec![build_event(3)]),
+        ]);
+        let mut cache = RecentEventsCache { events };
+        cache.remove_events_newer_than_block(2);
+
+        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [1]);
+    }
+
+    #[test]
+    fn get_events_test_empty() {
+        let cache = RecentEventsCache::default();
+        let events = cache.get_events(RangeInclusive::try_new(5u64, 5).unwrap());
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn get_events_test() {
+        let events = BTreeMap::from([
+            (1u64, vec![build_event(1), build_event(1)]),
+            (2, vec![build_event(2), build_event(2)]),
+            (3, vec![build_event(3), build_event(3)]),
+            (4, vec![build_event(4), build_event(4)]),
+        ]);
+        let cache = RecentEventsCache { events };
+
+        // test inside range
+        let expected_events = vec![
+            build_event(2),
+            build_event(2),
+            build_event(3),
+            build_event(3),
+        ];
+        let events = cache.get_events(RangeInclusive::try_new(2u64, 3).unwrap());
+        assert_eq!(events, expected_events);
+
+        // test wide range
+        let expected_events = vec![
+            build_event(2),
+            build_event(2),
+            build_event(3),
+            build_event(3),
+            build_event(4),
+            build_event(4),
+        ];
+        let events = cache.get_events(RangeInclusive::try_new(2u64, 7).unwrap());
+        assert_eq!(events, expected_events);
+    }
+
+    #[tokio::test]
+    async fn append_events_test() {
+        let events = BTreeMap::from([(1u64, vec![build_event(1), build_event(1)])]);
+        let mut cache = RecentEventsCache { events };
+
+        let appended_events = vec![build_event(1), build_event(2), build_event(2)];
+        let expected_events = BTreeMap::from([
+            (1u64, vec![build_event(1), build_event(1), build_event(1)]),
+            (2, vec![build_event(2), build_event(2)]),
+        ]);
+        cache.append_events(appended_events).await.unwrap();
+        assert_eq!(cache.events, expected_events);
+    }
+
+    #[tokio::test]
+    async fn last_event_block_test_empty() {
+        let cache = RecentEventsCache::default();
+        let result = cache.last_event_block().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn last_event_block_test() {
+        let events = BTreeMap::from([
+            (1u64, vec![build_event(1), build_event(1)]),
+            (2, vec![build_event(2), build_event(2)]),
+        ]);
+        let cache = RecentEventsCache { events };
+        let result = cache.last_event_block().await.unwrap();
+        assert_eq!(result, 2);
     }
 }
