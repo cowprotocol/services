@@ -203,6 +203,9 @@ impl HttpPriceEstimator {
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
+        for interaction in settlement.interaction_data {
+            cost += self.extract_cost(&interaction.cost)?;
+        }
         let gas = (cost / gas_price).as_u64()
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
@@ -374,16 +377,19 @@ impl PriceEstimating for HttpPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::current_block::current_block_stream;
-    use crate::http_solver::{DefaultHttpSolverApi, SolverConfig};
-    use crate::price_estimation::Query;
-    use crate::recent_block_cache::CacheConfig;
-    use crate::sources::balancer_v2::pool_fetching::BalancerContracts;
-    use crate::sources::balancer_v2::BalancerFactoryKind;
-    use crate::sources::uniswap_v2;
-    use crate::token_info::TokenInfoFetcher;
-    use crate::transport::http::HttpTransport;
-    use crate::Web3;
+    use crate::{
+        current_block::current_block_stream,
+        http_solver::{DefaultHttpSolverApi, SolverConfig},
+        price_estimation::Query,
+        recent_block_cache::CacheConfig,
+        sources::{
+            balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind},
+            uniswap_v2,
+        },
+        token_info::TokenInfoFetcher,
+        transport::http::HttpTransport,
+        Web3,
+    };
     use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
     use model::order::OrderKind;

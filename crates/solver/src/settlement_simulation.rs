@@ -244,25 +244,31 @@ pub fn tenderly_link(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{Allowances, MockAllowanceManaging};
-    use crate::liquidity::slippage::SlippageContext;
-    use crate::liquidity::{
-        balancer_v2::SettlementHandler, order_converter::OrderConverter, uniswap_v2::Inner,
-        ConstantProductOrder, Liquidity, StablePoolOrder,
+    use crate::{
+        interactions::allowances::{Allowances, MockAllowanceManaging},
+        liquidity::{
+            balancer_v2::SettlementHandler, order_converter::OrderConverter,
+            slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
+            StablePoolOrder,
+        },
+        solver::http_solver::settlement::{convert_settlement, SettlementContext},
     };
-    use crate::solver::http_solver::settlement::{convert_settlement, SettlementContext};
     use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
     use ethcontract::{Account, PrivateKey};
     use maplit::hashmap;
     use model::{order::Order, TokenPair};
     use num::{rational::Ratio, BigRational};
     use serde_json::json;
-    use shared::http_solver::model::SettledBatchAuctionModel;
-    use shared::sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter};
-    use shared::tenderly_api::TenderlyHttpApi;
-    use shared::transport::create_env_test_transport;
-    use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
+    use shared::{
+        http_solver::model::SettledBatchAuctionModel,
+        sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
+        tenderly_api::TenderlyHttpApi,
+        transport::create_env_test_transport,
+    };
+    use std::{
+        str::FromStr,
+        sync::{Arc, Mutex},
+    };
 
     // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored --nocapture
     #[tokio::test]

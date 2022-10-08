@@ -1,20 +1,25 @@
 use super::SettlementHandling;
-use crate::interactions::{
-    allowances::{AllowanceManager, AllowanceManaging, Allowances},
-    ZeroExInteraction,
+use crate::{
+    interactions::{
+        allowances::{AllowanceManager, AllowanceManaging, Allowances},
+        ZeroExInteraction,
+    },
+    liquidity::{Exchange, LimitOrder, Liquidity},
+    settlement::SettlementEncoder,
 };
-use crate::liquidity::{Exchange, LimitOrder, Liquidity};
-use crate::settlement::SettlementEncoder;
 use anyhow::Result;
 use contracts::{GPv2Settlement, IZeroEx};
-use model::order::OrderKind;
-use model::TokenPair;
+use model::{order::OrderKind, TokenPair};
 use primitive_types::{H160, U256};
-use shared::baseline_solver::BaseTokens;
-use shared::zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi};
-use shared::Web3;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use shared::{
+    baseline_solver::BaseTokens,
+    zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
+    Web3,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 pub struct ZeroExLiquidity {
     pub api: Arc<dyn ZeroExApi>,

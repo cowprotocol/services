@@ -14,8 +14,10 @@ use shared::{
     baseline_solver::BaseTokens, recent_block_cache::Block,
     sources::uniswap_v2::pool_fetching::PoolFetching, Web3,
 };
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,

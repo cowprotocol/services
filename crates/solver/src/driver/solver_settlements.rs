@@ -169,16 +169,16 @@ pub fn retain_mature_settlements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::external_prices::externalprices;
-    use crate::settlement::{LiquidityOrderTrade, OrderTrade, Trade};
-    use crate::solver::dummy_arc_solver;
+    use crate::{
+        settlement::{external_prices::externalprices, LiquidityOrderTrade, OrderTrade, Trade},
+        solver::dummy_arc_solver,
+    };
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
     use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
     use num::{BigRational, One as _};
     use primitive_types::{H160, U256};
-    use std::collections::HashSet;
-    use std::ops::Sub;
+    use std::{collections::HashSet, ops::Sub};
 
     fn trade(created_at: DateTime<Utc>, uid: u8) -> OrderTrade {
         OrderTrade {

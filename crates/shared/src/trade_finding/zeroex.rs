@@ -101,8 +101,7 @@ impl From<ZeroExResponseError> for TradeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zeroex_api::{DefaultZeroExApi, PriceResponse};
-    use crate::zeroex_api::{MockZeroExApi, SwapResponse};
+    use crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse};
     use reqwest::Client;
     use std::time::Duration;
 

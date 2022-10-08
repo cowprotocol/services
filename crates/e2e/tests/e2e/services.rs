@@ -14,9 +14,10 @@ use shared::{
     maintenance::ServiceMaintenance,
     order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
-    price_estimation::baseline::BaselinePriceEstimator,
-    price_estimation::native::NativePriceEstimator,
-    price_estimation::sanitized::SanitizedPriceEstimator,
+    price_estimation::{
+        baseline::BaselinePriceEstimator, native::NativePriceEstimator,
+        sanitized::SanitizedPriceEstimator,
+    },
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
@@ -140,7 +141,7 @@ pub fn create_orderbook_api() -> OrderBookApi {
     OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         Client::new(),
-        None,
+        Some("".to_string()),
     )
 }
 

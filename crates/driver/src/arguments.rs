@@ -259,6 +259,12 @@ pub struct Arguments {
     /// ZeroEx API key.
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
+
+    /// When comparing the objective value of different solutions, ignore the N least significant digits in base 10.
+    /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
+    /// value 0.0012 ETH and 0.0016 ETH equivalent.
+    #[clap(long, env, default_value = "0")]
+    pub solution_comparison_decimal_cutoff: u16,
 }
 
 impl std::fmt::Display for Arguments {
