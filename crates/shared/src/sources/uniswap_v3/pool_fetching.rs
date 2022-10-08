@@ -6,7 +6,7 @@ use crate::Web3;
 
 use super::event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher};
 use super::graph_api::{PoolData, TickData, Token, UniV3SubgraphClient};
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result};
 use ethcontract::{BlockNumber, Event, H160, U256};
 use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
@@ -443,8 +443,8 @@ impl Maintaining for UniswapV3PoolFetcher {
             self.events.run_maintenance(),
             self.checkpoint.update_missing_pools()
         );
-        ensure!(result1.is_ok(), result1.unwrap_err());
-        ensure!(result2.is_ok(), result2.unwrap_err());
+        result1?;
+        result2?;
         self.move_checkpoint_to_future().await
     }
 }
