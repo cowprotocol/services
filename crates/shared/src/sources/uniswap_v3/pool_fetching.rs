@@ -479,12 +479,10 @@ mod tests {
             "tokens": [
                 {
                     "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",
-                    "symbol": "BCZ",
                     "decimals": "18",
                 },
                 {
                     "id": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                    "symbol": "WETH",
                     "decimals": "18",
                 }
             ],
