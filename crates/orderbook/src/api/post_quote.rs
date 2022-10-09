@@ -257,6 +257,7 @@ mod tests {
             partially_fillable: false,
             sell_token_balance: Default::default(),
             buy_token_balance: Default::default(),
+            signing_scheme: Default::default()
         };
         let order_quote_response = OrderQuoteResponse {
             quote,

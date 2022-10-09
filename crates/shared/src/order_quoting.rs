@@ -79,6 +79,7 @@ impl QuoteHandler {
                 partially_fillable: request.partially_fillable,
                 sell_token_balance: request.sell_token_balance,
                 buy_token_balance: request.buy_token_balance,
+                signing_scheme: request.signing_scheme
             },
             from: request.from,
             expiration: quote.data.expiration,
