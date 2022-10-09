@@ -276,12 +276,21 @@ impl UniswapV3PoolFetcher {
         );
 
         if new_checkpoint_block > old_checkpoint_block {
-            let block_range =
-                RangeInclusive::try_new(old_checkpoint_block + 1, new_checkpoint_block)?;
-            let events = self.events.lock().await.store().get_events(block_range);
-            let mut checkpoint = self.checkpoint.pools_checkpoint.lock().unwrap();
-            append_events(&mut checkpoint.pools, events);
-            checkpoint.block_number = new_checkpoint_block;
+            {
+                let block_range =
+                    RangeInclusive::try_new(old_checkpoint_block + 1, new_checkpoint_block)?;
+                let events = self.events.lock().await.store().get_events(block_range);
+                let mut checkpoint = self.checkpoint.pools_checkpoint.lock().unwrap();
+                append_events(&mut checkpoint.pools, events);
+                checkpoint.block_number = new_checkpoint_block;
+            }
+
+            // clear events before new_checkpoint_block
+            self.events
+                .lock()
+                .await
+                .store_mut()
+                .remove_events_older_than_block(new_checkpoint_block - 1);
         }
         Ok(())
     }

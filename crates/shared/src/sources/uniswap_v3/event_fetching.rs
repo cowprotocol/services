@@ -90,7 +90,13 @@ pub struct RecentEventsCache {
 }
 
 impl RecentEventsCache {
-    /// Removes all events from the specified block.
+    /// Removes all events up to the specified block, including specified block.
+    pub fn remove_events_older_than_block(&mut self, delete_up_to_block_number: u64) {
+        self.events
+            .retain(|&block_number, _| block_number > delete_up_to_block_number);
+    }
+
+    /// Removes all events from the specified block, including specified block.
     fn remove_events_newer_than_block(&mut self, delete_from_block_number: u64) {
         self.events
             .retain(|&block_number, _| block_number < delete_from_block_number);
@@ -151,6 +157,25 @@ mod tests {
                 ..Default::default()
             }),
         }
+    }
+
+    #[test]
+    fn remove_events_older_than_block_test_empty() {
+        let mut cache = RecentEventsCache::default();
+        cache.remove_events_older_than_block(5);
+    }
+
+    #[test]
+    fn remove_events_older_than_block_test() {
+        let events = BTreeMap::from([
+            (1u64, vec![build_event(1)]),
+            (2, vec![build_event(2)]),
+            (3, vec![build_event(3)]),
+        ]);
+        let mut cache = RecentEventsCache { events };
+        cache.remove_events_older_than_block(2);
+
+        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [3]);
     }
 
     #[test]
