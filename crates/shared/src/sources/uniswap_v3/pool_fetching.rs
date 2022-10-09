@@ -320,7 +320,10 @@ impl PoolFetching for UniswapV3PoolFetcher {
                 block_number,
                 last_handled_block
             );
-            return Ok(Default::default());
+            if let Err(err) = self.events.run_maintenance().await {
+                tracing::debug!("failed to update events on fetch because {}", err);
+                return Ok(Default::default());
+            }
         }
 
         // this is the only place where this function uses checkpoint - no data racing between maintenance
