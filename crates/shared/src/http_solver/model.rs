@@ -469,12 +469,10 @@ mod tests {
                     tokens: vec![
                         Token {
                             id: buy_token,
-                            symbol: "CAT".to_string(),
                             decimals: 6,
                         },
                         Token {
                             id: sell_token,
-                            symbol: "DOG".to_string(),
                             decimals: 18,
                         },
                     ],

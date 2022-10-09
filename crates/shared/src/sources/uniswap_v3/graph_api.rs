@@ -204,7 +204,6 @@ impl ContainsId for TickData {
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub id: H160,
-    pub symbol: String,
     #[serde_as(as = "DisplayFromStr")]
     pub decimals: u8,
 }
@@ -293,13 +292,11 @@ mod tests {
                         token0: Token {
                             id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f")
                                 .unwrap(),
-                            symbol: "BCZ".to_string(),
                             decimals: 18,
                         },
                         token1: Token {
                             id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
                                 .unwrap(),
-                            symbol: "WETH".to_string(),
                             decimals: 18,
                         },
                         fee_tier: U256::from_str("10000").unwrap(),
@@ -314,13 +311,11 @@ mod tests {
                         token0: Token {
                             id: H160::from_str("0x0d438f3b5175bebc262bf23753c1e53d03432bde")
                                 .unwrap(),
-                            symbol: "wNXM".to_string(),
                             decimals: 18,
                         },
                         token1: Token {
                             id: H160::from_str("0x903bef1736cddf2a537176cf3c64579c3867a881")
                                 .unwrap(),
-                            symbol: "ICHI".to_string(),
                             decimals: 9,
                         },
                         fee_tier: U256::from_str("3000").unwrap(),

@@ -511,12 +511,10 @@ mod tests {
             tokens: vec![
                 Token {
                     id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f").unwrap(),
-                    symbol: "BCZ".to_string(),
                     decimals: 18,
                 },
                 Token {
                     id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
-                    symbol: "WETH".to_string(),
                     decimals: 18,
                 },
             ],
