@@ -37,7 +37,7 @@ impl SolverCompetitionStoring for Postgres {
 
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["save_fee_rewards"])
+            .with_label_values(&["save_order_rewards"])
             .start_timer();
 
         let mut ex = self.pool.begin().await?;
