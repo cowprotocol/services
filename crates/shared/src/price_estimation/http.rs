@@ -380,22 +380,24 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::current_block::current_block_stream;
-    use crate::gas_price_estimation::FakeGasPriceEstimator;
-    use crate::http_solver::model::{
-        ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel,
+    use crate::{
+        current_block::current_block_stream,
+        gas_price_estimation::FakeGasPriceEstimator,
+        http_solver::{
+            model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
+            DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig,
+        },
+        price_estimation::Query,
+        recent_block_cache::CacheConfig,
+        sources::{
+            balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind},
+            uniswap_v2,
+            uniswap_v2::{pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher},
+        },
+        token_info::{MockTokenInfoFetching, TokenInfoFetcher},
+        transport::http::HttpTransport,
+        Web3,
     };
-    use crate::http_solver::{DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig};
-    use crate::price_estimation::Query;
-    use crate::recent_block_cache::CacheConfig;
-    use crate::sources::balancer_v2::pool_fetching::BalancerContracts;
-    use crate::sources::balancer_v2::BalancerFactoryKind;
-    use crate::sources::uniswap_v2;
-    use crate::sources::uniswap_v2::pool_cache::PoolCache;
-    use crate::sources::uniswap_v2::pool_fetching::test_util::FakePoolFetcher;
-    use crate::token_info::{MockTokenInfoFetching, TokenInfoFetcher};
-    use crate::transport::http::HttpTransport;
-    use crate::Web3;
     use anyhow::bail;
     use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
