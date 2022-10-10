@@ -22,11 +22,11 @@ use ethcontract::{H160, U256};
 use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
 use num::BigRational;
-use std::sync::Arc;
 use std::{
     cmp::{Eq, PartialEq},
     future::Future,
     hash::Hash,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use thiserror::Error;

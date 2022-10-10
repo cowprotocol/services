@@ -15,15 +15,16 @@ use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
-use shared::paraswap_api::{
-    DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
-    TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
+use shared::{
+    paraswap_api::{
+        DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
+        TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
+    },
+    rate_limiter::RateLimiter,
+    token_info::{TokenInfo, TokenInfoFetching},
+    Web3,
 };
-use shared::rate_limiter::RateLimiter;
-use shared::token_info::TokenInfo;
-use shared::{token_info::TokenInfoFetching, Web3};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 const REFERRER: &str = "GPv2";
 

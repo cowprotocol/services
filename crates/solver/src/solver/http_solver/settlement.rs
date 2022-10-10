@@ -383,11 +383,9 @@ mod tests {
     use hex_literal::hex;
     use maplit::hashmap;
     use model::{order::OrderData, signature::Signature, TokenPair};
-    use num::rational::Ratio;
-    use num::BigRational;
+    use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
-        pool_fetching::AmplificationParameter,
-        pool_fetching::{TokenState, WeightedTokenState},
+        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
         swap::fixed_point::Bfp,
     };
 

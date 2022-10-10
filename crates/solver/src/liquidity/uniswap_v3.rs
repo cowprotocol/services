@@ -12,8 +12,8 @@ use model::TokenPair;
 use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
 use shared::{baseline_solver::BaseTokens, sources::uniswap_v3::pool_fetching::PoolFetching, Web3};
-use std::collections::HashSet;
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };

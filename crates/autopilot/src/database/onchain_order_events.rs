@@ -1,4 +1,4 @@
-mod ethflow_events;
+pub mod ethflow_events;
 
 use super::{events::meta_to_event_index, Metrics, Postgres};
 use anyhow::{anyhow, bail, Context, Result};
@@ -13,10 +13,10 @@ use ethcontract::{Event as EthContractEvent, H160};
 use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
-    order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
+    app_id::AppId,
+    order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
     signature::SigningScheme,
     DomainSeparator,
-    {app_id::AppId, order::OrderData},
 };
 use number_conversions::u256_to_big_decimal;
 use shared::{

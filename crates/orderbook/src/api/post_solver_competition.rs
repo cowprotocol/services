@@ -2,14 +2,14 @@
 //! competition into the api.
 
 use crate::solver_competition::SolverCompetitionStoring;
-use model::solver_competition::SolverCompetition;
+use anyhow::{anyhow, Context};
+use model::solver_competition::Request;
 use reqwest::StatusCode;
-use shared::api::convert_json_response_with_status;
+use shared::api::{convert_json_response_with_status, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
-fn request() -> impl Filter<Extract = (Option<String>, SolverCompetition), Error = Rejection> + Clone
-{
+fn request() -> impl Filter<Extract = (Option<String>, Request), Error = Rejection> + Clone {
     warp::path!("solver_competition")
         .and(warp::post())
         .and(warp::header::optional::<String>("Authorization"))
@@ -23,7 +23,7 @@ pub fn post(
     handler: Arc<dyn SolverCompetitionStoring>,
     expected_auth: Option<String>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request().and_then(move |auth, model: SolverCompetition| {
+    request().and_then(move |auth, request: Request| {
         let handler = handler.clone();
         let expected_auth = expected_auth.clone();
         async move {
@@ -34,9 +34,24 @@ pub fn post(
                 ));
             }
 
-            let result = handler.save(model).await;
+            if request.auction != request.competition.auction_id {
+                return Ok(anyhow!(
+                    "auction ids don't match {} != {}",
+                    request.auction,
+                    request.competition.auction_id
+                )
+                .into_warp_reply());
+            }
+            let result0 = handler
+                .save_rewards(request.auction, request.rewards.into_iter().collect())
+                .await
+                .context("save_rewards");
+            let result1 = handler
+                .save_competition(request.competition)
+                .await
+                .context("save_competition");
             Ok(convert_json_response_with_status(
-                result,
+                result0.and(result1),
                 StatusCode::CREATED,
             ))
         }
@@ -52,10 +67,11 @@ mod tests {
     #[tokio::test]
     async fn test_no_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
-        handler.expect_save().returning(|_| Ok(()));
+        handler.expect_save_competition().returning(|_| Ok(()));
+        handler.expect_save_rewards().returning(|_, _| Ok(()));
 
         let filter = post(Arc::new(handler), None);
-        let body = serde_json::to_vec(&SolverCompetition::default()).unwrap();
+        let body = serde_json::to_vec(&Request::default()).unwrap();
 
         let request = request()
             .path("/solver_competition")
@@ -69,10 +85,14 @@ mod tests {
     #[tokio::test]
     async fn test_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
-        handler.expect_save().times(1).returning(|_| Ok(()));
+        handler
+            .expect_save_competition()
+            .times(1)
+            .returning(|_| Ok(()));
+        handler.expect_save_rewards().returning(|_, _| Ok(()));
 
         let filter = post(Arc::new(handler), Some("auth".to_string()));
-        let body = serde_json::to_vec(&SolverCompetition::default()).unwrap();
+        let body = serde_json::to_vec(&Request::default()).unwrap();
 
         let request_ = request()
             .path("/solver_competition")

@@ -50,10 +50,9 @@ use shared::{
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
-    sources::balancer_v2::BalancerFactoryKind,
     sources::{
         self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
+        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,

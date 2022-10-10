@@ -1,8 +1,10 @@
 use crate::http_client::response_body_with_size_limit;
 use ::model::auction::AuctionId;
 use anyhow::{anyhow, ensure, Context, Result};
-use reqwest::header::{self, HeaderValue};
-use reqwest::{Client, Url};
+use reqwest::{
+    header::{self, HeaderValue},
+    Client, Url,
+};
 use std::time::Duration;
 
 pub mod gas_model;

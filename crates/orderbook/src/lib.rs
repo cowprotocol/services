@@ -4,8 +4,7 @@ pub mod database;
 pub mod orderbook;
 pub mod solver_competition;
 
-use crate::database::trades::TradeRetrieving;
-use crate::orderbook::Orderbook;
+use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use futures::Future;

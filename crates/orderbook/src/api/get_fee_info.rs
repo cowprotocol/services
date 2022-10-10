@@ -8,8 +8,10 @@ use model::{
 };
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use shared::api::{convert_json_response, ApiReply};
-use shared::order_quoting::QuoteHandler;
+use shared::{
+    api::{convert_json_response, ApiReply},
+    order_quoting::QuoteHandler,
+};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -73,10 +75,8 @@ pub fn get_fee_info(
 mod tests {
     use super::*;
     use chrono::FixedOffset;
-    use shared::api::response_body;
-    use shared::price_estimation::PriceEstimationError;
-    use warp::hyper::StatusCode;
-    use warp::{test::request, Reply};
+    use shared::{api::response_body, price_estimation::PriceEstimationError};
+    use warp::{hyper::StatusCode, test::request, Reply};
 
     #[tokio::test]
     async fn get_fee_info_request_ok() {

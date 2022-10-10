@@ -664,8 +664,8 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee_subsidy::Subsidy;
     use crate::{
+        fee_subsidy::Subsidy,
         gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
     };

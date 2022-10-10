@@ -2,8 +2,7 @@ use crate::Web3;
 use async_trait::async_trait;
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, H160};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 const MAX_BATCH_SIZE: usize = 100;

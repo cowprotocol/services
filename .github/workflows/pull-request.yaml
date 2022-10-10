@@ -12,13 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
       - run: |
           rustup --version
           rustup show
           cargo --version
-          cargo fmt --version
+          cargo +nightly fmt --version
           cargo clippy --version
-      - run: cargo fmt --all -- --check
+      - run: cargo +nightly fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
   rust-tests:
     timeout-minutes: 60

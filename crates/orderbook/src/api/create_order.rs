@@ -1,11 +1,12 @@
 use crate::orderbook::{AddOrderError, Orderbook};
 use anyhow::Result;
 use model::order::{OrderCreation, OrderUid};
-use shared::api::{error, extract_payload, internal_error, ApiReply, IntoWarpReply};
-use shared::order_validation::{PartialValidationError, ValidationError};
+use shared::{
+    api::{error, extract_payload, internal_error, ApiReply, IntoWarpReply},
+    order_validation::{PartialValidationError, ValidationError},
+};
 use std::{convert::Infallible, sync::Arc};
-use warp::reply::with_status;
-use warp::{hyper::StatusCode, Filter, Rejection};
+use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
 {

@@ -26,10 +26,13 @@ use num::BigRational;
 use reqwest::Url;
 use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
+    baseline_solver::BaseTokens,
+    conversions::U256Ext,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
+    token_info::TokenInfoFetching,
     zeroex_api::ZeroExApi,
-    {baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3},
+    Web3,
 };
 use std::{
     fmt::{self, Debug, Formatter},
