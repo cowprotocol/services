@@ -28,7 +28,7 @@ pub fn get(
         .and_then(move |identifier: Identifier| {
             let handler = handler.clone();
             async move {
-                let result = handler.load_competition(identifier).await;
+                let result = handler.load(identifier).await;
                 Result::<_, Infallible>::Ok(convert_json_response(result))
             }
         })
@@ -53,11 +53,11 @@ mod tests {
     async fn test() {
         let mut storage = MockSolverCompetitionStoring::new();
         storage
-            .expect_load_competition()
+            .expect_load()
             .times(2)
             .returning(|_| Ok(Default::default()));
         storage
-            .expect_load_competition()
+            .expect_load()
             .times(1)
             .return_once(|_| Err(LoadSolverCompetitionError::NotFound));
         let filter = get(Arc::new(storage));

@@ -298,7 +298,7 @@ impl Driver {
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
-        let solver_competition = SolverCompetition {
+        let mut solver_competition = SolverCompetition {
             auction_id,
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
@@ -344,11 +344,6 @@ impl Driver {
                 })
                 .collect(),
         };
-        let mut solver_competition = model::solver_competition::Request {
-            auction: auction_id,
-            competition: solver_competition,
-            rewards: Vec::new(),
-        };
 
         if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
             winning_settlement.settlement = self
@@ -367,14 +362,6 @@ impl Driver {
                 winning_settlement
             );
 
-            // TODO: use the rewards that we received from autopilot in the auction.
-            // Note that order_trades doesn't include liquidity orders.
-            for trade in winning_settlement.settlement.encoder.order_trades() {
-                let uid = trade.trade.order.metadata.uid;
-                let reward = 35.;
-                solver_competition.rewards.push((uid, reward));
-            }
-
             // At this point we know that we are going to attempt to settle on chain. We store the
             // competition info immediately in case we don't find the mined transaction hash later
             // for example because the driver got restarted. If we get a hash then we store the
@@ -382,7 +369,7 @@ impl Driver {
             self.send_solver_competition(&solver_competition).await;
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
-            let hash = match submit_settlement(
+            match submit_settlement(
                 &self.solution_submitter,
                 &self.logger,
                 winning_solver.clone(),
@@ -394,17 +381,14 @@ impl Driver {
             {
                 Ok(receipt) => {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
-                    Some(receipt.transaction_hash)
+                    solver_competition.transaction_hash = Some(receipt.transaction_hash);
                 }
-                Err(SubmissionError::Revert(hash)) => Some(hash),
-                _ => None,
-            };
-            if let Some(hash) = hash {
-                // Rewards were already stored and don't change.
-                solver_competition.rewards.clear();
-                solver_competition.competition.transaction_hash = Some(hash);
-                self.send_solver_competition(&solver_competition).await;
+                Err(SubmissionError::Revert(hash)) => {
+                    solver_competition.transaction_hash = Some(hash);
+                }
+                _ => (),
             }
+            self.send_solver_competition(&solver_competition).await;
 
             self.logger.report_on_batch(
                 &(winning_solver, winning_settlement),
@@ -441,7 +425,7 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(&self, body: &model::solver_competition::Request) {
+    async fn send_solver_competition(&self, body: &SolverCompetition) {
         // For example shadow solver shouldn't store competition info.
         if !self.api.is_authenticated() {
             return;
