@@ -127,6 +127,7 @@ impl ZeroExLiquidity {
                 allowances,
             }),
             exchange: Exchange::ZeroEx,
+            reward: 0.,
         };
         Some(Liquidity::LimitOrder(limit_order))
     }

@@ -170,11 +170,19 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
+        let mut rewards = BTreeMap::new();
+        for order in &orders {
+            let reward = self.solver_reward(order).await;
+            if let Ok(Some(reward)) = reward {
+                rewards.insert(order.metadata.uid, reward);
+            }
+        }
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders.clone(),
             prices,
+            rewards,
         };
         let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {
@@ -197,6 +205,14 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
+    }
+
+    async fn solver_reward(&self, order: &Order) -> Result<Option<f64>> {
+        // TODO: decide how reward works for partially fillable orders
+        if order.metadata.is_liquidity_order || order.data.partially_fillable {
+            return Ok(None);
+        }
+        Ok(Some(35.))
     }
 }
 

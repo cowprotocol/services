@@ -43,6 +43,8 @@ pub struct OrderModel {
     /// usual user provided orders because those can be batched together and it's only relevant if
     /// the pre- and post conditions are met after the complete batch got executed.
     pub has_atomic_execution: bool,
+    /// CIP-14 risk adjusted solver reward
+    pub reward: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -408,6 +410,7 @@ mod tests {
             is_liquidity_order: false,
             mandatory: false,
             has_atomic_execution: false,
+            reward: 3.,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -555,7 +558,8 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
-              "has_atomic_execution": false
+              "has_atomic_execution": false,
+              "reward": 3.0
             },
           },
           "amms": {
