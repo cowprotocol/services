@@ -2,10 +2,10 @@
 //! competition into the api.
 
 use crate::solver_competition::SolverCompetitionStoring;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use model::solver_competition::Request;
 use reqwest::StatusCode;
-use shared::api::convert_json_response_with_status;
+use shared::api::{convert_json_response_with_status, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
@@ -34,6 +34,14 @@ pub fn post(
                 ));
             }
 
+            if request.auction != request.competition.auction_id {
+                return Ok(anyhow!(
+                    "auction ids don't match {} != {}",
+                    request.auction,
+                    request.competition.auction_id
+                )
+                .into_warp_reply());
+            }
             let result0 = handler
                 .save_rewards(request.auction, request.rewards.into_iter().collect())
                 .await
