@@ -258,6 +258,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
+                pre_interactions: Vec::new(),
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -588,6 +589,7 @@ mod tests {
                             ..Default::default()
                         },
                         signature: Signature::PreSign,
+                        ..Default::default()
                     },
                     sell_token_index: 1,
                     executed_amount: 101.into(),

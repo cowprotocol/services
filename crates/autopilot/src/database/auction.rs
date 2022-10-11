@@ -27,7 +27,7 @@ pub struct SolvableOrders {
 use chrono::{DateTime, Utc};
 use model::quote::QuoteId;
 use shared::{
-    db_order_conversions::order_kind_from,
+    db_order_conversions::{extract_pre_interactions, order_kind_from},
     event_storing_helpers::{create_db_search_parameters, create_quote_row},
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
@@ -118,6 +118,7 @@ impl Postgres {
 
 fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;
+    let pre_interactions = extract_pre_interactions(&order)?;
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -166,6 +167,7 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         metadata,
         data,
         signature,
+        pre_interactions,
     })
 }
 
