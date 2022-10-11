@@ -1,6 +1,9 @@
 use crate::commit_reveal::SettlementSummary;
 use anyhow::{Context, Result};
-use model::order::{Order, OrderKind};
+use model::{
+    interaction::Interaction,
+    order::{Order, OrderKind},
+};
 use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
@@ -8,7 +11,7 @@ use shared::{
 };
 use solver::settlement::{
     external_prices::ExternalPrices, trade_surplus_in_native_token, verify_executed_amount,
-    Interaction, Settlement, SettlementEncoder, TradeExecution,
+    Settlement, SettlementEncoder, TradeExecution,
 };
 use std::{
     collections::hash_map::{Entry, HashMap},

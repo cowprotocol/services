@@ -4,7 +4,7 @@ mod settlement_encoder;
 use self::external_prices::ExternalPrices;
 pub use self::settlement_encoder::{verify_executed_amount, SettlementEncoder};
 use crate::{
-    encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
+    encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
 };
 use anyhow::Result;
@@ -225,21 +225,8 @@ impl LiquidityOrderTrade {
         )
     }
 }
-
-pub trait Interaction: std::fmt::Debug + Send + Sync {
-    // TODO: not sure if this should return a result.
-    // Write::write returns a result but we know we write to a vector in memory so we know it will
-    // never fail. Then the question becomes whether interactions should be allowed to fail encoding
-    // for other reasons.
-    fn encode(&self) -> Vec<EncodedInteraction>;
-}
-
-impl Interaction for EncodedInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.clone()]
-    }
-}
-
+#[cfg(test)]
+use model::interaction::{EncodedInteraction, Interaction};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;

@@ -1,5 +1,6 @@
-use crate::{encoding::EncodedInteraction, settlement::Interaction};
+use crate::encoding::EncodedInteraction;
 use hex_literal::hex;
+use model::interaction::Interaction;
 use primitive_types::{H160, U256};
 
 // vk: A simple contract I made with verified code on etherscan:

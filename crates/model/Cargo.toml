@@ -12,6 +12,7 @@ doctest = false
 anyhow = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
+ethcontract = { workspace = true }
 derivative = { workspace = true }
 hex = { workspace = true, default-features = false }
 hex-literal = { workspace = true }

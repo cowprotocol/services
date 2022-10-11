@@ -1,6 +1,7 @@
-use crate::{encoding::EncodedInteraction, settlement::Interaction};
+use crate::encoding::EncodedInteraction;
 use contracts::IZeroEx;
 use ethcontract::Bytes;
+use model::interaction::Interaction;
 use shared::zeroex_api::Order;
 
 #[derive(Clone, Debug)]

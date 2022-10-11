@@ -1,7 +1,8 @@
-use crate::{encoding::EncodedInteraction, settlement::Interaction};
+use crate::encoding::EncodedInteraction;
 use anyhow::{ensure, Result};
 use contracts::WETH9;
 use ethcontract::Bytes;
+use model::interaction::Interaction;
 use primitive_types::U256;
 
 #[derive(Clone, Debug)]

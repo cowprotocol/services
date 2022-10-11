@@ -8,8 +8,11 @@ use crate::{debug_bytes, http_client::HttpClientFactory};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
-use ethcontract::{H160, H256, U256};
-use model::u256_decimal;
+use ethcontract::{Bytes, H160, H256, U256};
+use model::{
+    interaction::{EncodedInteraction, Interaction},
+    u256_decimal,
+};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, IntoUrl, Url,
@@ -308,6 +311,12 @@ pub struct SwapResponse {
     pub data: Vec<u8>,
     #[serde(with = "u256_decimal")]
     pub value: U256,
+}
+
+impl Interaction for SwapResponse {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![(self.to, self.value, Bytes(self.data.clone()))]
+    }
 }
 
 /// Abstract 0x API. Provides a mockable implementation.

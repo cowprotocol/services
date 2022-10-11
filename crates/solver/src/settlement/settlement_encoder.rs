@@ -1,11 +1,15 @@
-use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
+use super::{ExternalPrices, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
 use crate::{
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
     settlement::trade_surplus_in_native_token,
 };
 use anyhow::{bail, ensure, Context as _, Result};
-use model::order::{Order, OrderKind};
+use itertools::Itertools;
+use model::{
+    interaction::{Interaction, InteractionData},
+    order::{Order, OrderKind},
+};
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
@@ -48,6 +52,7 @@ pub struct SettlementEncoder {
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
     execution_plan: Vec<MaybeInternalizableInteraction>,
+    pre_interactions: Vec<Arc<InteractionData>>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -80,6 +85,7 @@ impl SettlementEncoder {
             order_trades: Vec::new(),
             liquidity_order_trades: Vec::new(),
             execution_plan: Vec::new(),
+            pre_interactions: Vec::new(),
             unwraps: Vec::new(),
         }
     }
@@ -104,6 +110,7 @@ impl SettlementEncoder {
             order_trades: self.order_trades.clone(),
             liquidity_order_trades: self.liquidity_order_trades.clone(),
             execution_plan: Vec::new(),
+            pre_interactions: self.pre_interactions.clone(),
             unwraps: self.unwraps.clone(),
         }
     }
@@ -152,7 +159,7 @@ impl SettlementEncoder {
 
         let order_trade = OrderTrade {
             trade: Trade {
-                order,
+                order: order.clone(),
                 sell_token_index,
                 executed_amount,
                 scaled_unsubsidized_fee,
@@ -164,6 +171,8 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, *buy_price)
             .context("impossible trade execution")?;
 
+        self.pre_interactions
+            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
         self.order_trades.push(order_trade);
         Ok(execution)
     }
@@ -218,7 +227,7 @@ impl SettlementEncoder {
             .checked_div(order.data.buy_amount)
             .context("buy_price calculation failed")?;
         let trade = Trade {
-            order,
+            order: order.clone(),
             sell_token_index,
             executed_amount,
             scaled_unsubsidized_fee,
@@ -233,6 +242,8 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, buy_price)
             .context("impossible trade execution")?;
 
+        self.pre_interactions
+            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
         self.liquidity_order_trades.push(liquidity_order_trade);
         Ok(execution)
     }
@@ -405,7 +416,13 @@ impl SettlementEncoder {
             clearing_prices,
             trades,
             interactions: [
-                Vec::new(),
+                // In the following it is assumed that all different interactions
+                // are only required once to be executed.
+                self.pre_interactions
+                    .into_iter()
+                    .unique()
+                    .flat_map(|interaction| interaction.encode())
+                    .collect(),
                 iter::empty()
                     .chain(
                         self.execution_plan

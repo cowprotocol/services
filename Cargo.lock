@@ -1846,6 +1846,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "derivative",
+ "ethcontract",
  "hex",
  "hex-literal",
  "lazy_static",

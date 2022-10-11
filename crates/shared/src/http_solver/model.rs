@@ -1,7 +1,8 @@
 use derivative::Derivative;
-use ethcontract::H160;
+use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
+    interaction::{EncodedInteraction, Interaction},
     order::OrderData,
     ratio_as_decimal,
     signature::Signature,
@@ -151,6 +152,12 @@ pub struct InteractionData {
     pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlan>,
     pub cost: Option<TokenAmount>,
+}
+
+impl Interaction for InteractionData {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
+    }
 }
 
 #[serde_as]

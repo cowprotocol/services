@@ -1,6 +1,7 @@
-use crate::{encoding::EncodedInteraction, settlement::Interaction};
+use crate::encoding::EncodedInteraction;
 use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use ethcontract::Bytes;
+use model::interaction::Interaction;
 use primitive_types::{H160, U256};
 
 #[derive(Debug)]
