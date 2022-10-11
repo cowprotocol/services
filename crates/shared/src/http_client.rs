@@ -14,7 +14,7 @@ const USER_AGENT: &str = "cowprotocol-services/2.0.0";
 /// places, while allowing for separate configurations, connection pools, and
 /// cookie stores (for things like sessions and default headers) across
 /// different APIs.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HttpClientFactory {
     timeout: Duration,
 }
