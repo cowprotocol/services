@@ -580,13 +580,35 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, H160::zero());
+        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
         orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
-        let orders_ = solvable_orders(orders.clone(), &balances, H160::zero());
+        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
         assert_eq!(orders_, orders[1..]);
+    }
+
+    #[tokio::test]
+    async fn do_not_filters_insufficient_balances_for_ethflow_orders() {
+        let ethflow_address = H160([3u8; 20]);
+        let orders = vec![Order {
+            data: OrderData {
+                sell_amount: 3.into(),
+                fee_amount: 3.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
+                owner: ethflow_address,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+
+        let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
+        let orders_ = solvable_orders(orders.clone(), &balances, ethflow_address);
+        assert_eq!(orders_, orders);
     }
 
     #[test]
@@ -897,7 +919,7 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, H160::zero());
+        let mut filtered_orders = solvable_orders(orders, &balances, H160([1u8; 20]));
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
         assert_eq!(expected_result, filtered_orders);
