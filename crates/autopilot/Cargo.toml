@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+approx = "0.5"
 async-trait = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -42,4 +43,5 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }

@@ -254,6 +254,7 @@ impl OrderbookServices {
             native_price_estimator,
             signature_validator.clone(),
             Duration::from_secs(1),
+            None,
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
