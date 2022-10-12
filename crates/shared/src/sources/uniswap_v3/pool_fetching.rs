@@ -291,7 +291,7 @@ impl UniswapV3PoolFetcher {
                 .lock()
                 .await
                 .store_mut()
-                .remove_events_older_than_block(new_checkpoint_block - 1);
+                .remove_events_older_than_block(new_checkpoint_block);
         }
         Ok(())
     }

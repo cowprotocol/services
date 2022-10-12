@@ -90,9 +90,9 @@ pub struct RecentEventsCache {
 }
 
 impl RecentEventsCache {
-    /// Removes all events up to the specified block, including specified block.
+    /// Removes all events up to the specified block, excluding the specified block.
     pub fn remove_events_older_than_block(&mut self, delete_up_to_block_number: u64) {
-        self.events = self.events.split_off(&(delete_up_to_block_number + 1));
+        self.events = self.events.split_off(&delete_up_to_block_number);
     }
 
     /// Removes all events from the specified block, including specified block.
@@ -173,7 +173,7 @@ mod tests {
         let mut cache = RecentEventsCache { events };
         cache.remove_events_older_than_block(2);
 
-        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [3]);
+        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [2, 3]);
     }
 
     #[test]
