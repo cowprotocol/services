@@ -90,6 +90,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,6 +180,7 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "approx",
  "async-trait",
  "chrono",
  "clap 4.0.8",
@@ -191,6 +201,7 @@ dependencies = [
  "serde_json",
  "shared",
  "sqlx",
+ "testlib",
  "tokio",
  "tracing",
  "url",
