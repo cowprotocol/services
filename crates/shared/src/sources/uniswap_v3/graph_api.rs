@@ -190,7 +190,6 @@ pub struct TickData {
     pub tick_idx: BigInt,
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity_net: BigInt,
-    pub pool_address: H160,
 }
 
 impl ContainsId for TickData {
@@ -356,15 +355,11 @@ mod tests {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
                         tick_idx: BigInt::from(0),
                         liquidity_net: BigInt::from(-303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
                     },
                     TickData {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
                         tick_idx: BigInt::from(-92200),
                         liquidity_net: BigInt::from(303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
                     },
                 ],
             }

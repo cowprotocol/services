@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
-    graph_api::{PoolData, TickData, Token, UniV3SubgraphClient},
+    graph_api::{PoolData, Token, UniV3SubgraphClient},
 };
 use anyhow::{Context, Result};
 use ethcontract::{BlockNumber, Event, H160, U256};
@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    ops::Neg,
     sync::Mutex,
 };
 
@@ -103,7 +104,7 @@ impl TryFrom<PoolData> for PoolInfo {
 #[derive(Default)]
 struct PoolsCheckpoint {
     /// Pools state.
-    pools: HashMap<H160, PoolData>,
+    pools: HashMap<H160, PoolInfo>,
     /// Block number for which `pools` field was populated.
     block_number: u64,
     /// Pools that don't exist in `pools` field, therefore need to be initialized and moved to `pools`
@@ -156,7 +157,7 @@ impl PoolsCheckpointHandler {
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
             .await?
             .into_iter()
-            .map(|pool| (pool.id, pool))
+            .filter_map(|pool| Some((pool.id, pool.try_into().ok()?)))
             .collect::<HashMap<_, _>>();
         let pools_checkpoint = Mutex::new(PoolsCheckpoint {
             pools,
@@ -173,7 +174,7 @@ impl PoolsCheckpointHandler {
 
     /// For a given list of token pairs, fetches the pools for the ones that exist in the checkpoint.
     /// For the ones that don't exist, flag as missing and expect to exist after the next maintenance run.
-    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<H160, PoolData>, u64) {
+    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<H160, PoolInfo>, u64) {
         let mut pool_ids = token_pairs
             .iter()
             .filter_map(|pair| self.pools_by_token_pair.get(pair))
@@ -185,9 +186,9 @@ impl PoolsCheckpointHandler {
         match pool_ids.peek() {
             Some(_) => {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                let (existing_pools, missing_pools): (HashMap<H160, PoolData>, Vec<H160>) =
+                let (existing_pools, missing_pools): (HashMap<H160, PoolInfo>, Vec<H160>) =
                     pool_ids.partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
-                        Some(entry) => Either::Left((entry.id, entry.clone())),
+                        Some(entry) => Either::Left((entry.address, entry.clone())),
                         _ => Either::Right(pool_id),
                     });
                 tracing::debug!(
@@ -220,7 +221,7 @@ impl PoolsCheckpointHandler {
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for pool in pools {
             checkpoint.missing_pools.remove(&pool.id);
-            checkpoint.pools.insert(pool.id, pool);
+            checkpoint.pools.insert(pool.id, pool.try_into()?);
         }
         Ok(())
     }
@@ -344,61 +345,46 @@ impl PoolFetching for UniswapV3PoolFetcher {
             append_events(&mut checkpoint, events);
         }
 
-        Ok(checkpoint
-            .into_values()
-            .flat_map(TryInto::try_into)
-            .collect())
+        Ok(checkpoint.into_values().collect())
     }
 }
 
 /// For a given checkpoint, append events to get a new checkpoint
-fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV3Event>>) {
-    for event in &events {
+fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV3Event>>) {
+    for event in events {
         let address = event
             .meta
-            .as_ref()
             .expect("metadata must exist for mined blocks")
             .address;
-        if let Some(pool) = pools.get_mut(&address) {
-            match &event.data {
+        if let Some(pool) = pools.get_mut(&address).map(|pool| &mut pool.state) {
+            match event.data {
                 UniswapV3Event::Burn(burn) => {
                     let tick_lower = BigInt::from(burn.tick_lower);
                     let tick_upper = BigInt::from(burn.tick_upper);
 
-                    //liquidity tracks the liquidity on recent tick,
+                    // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
                         pool.liquidity -= burn.amount.into();
                     }
 
-                    if let Some(ticks) = &mut pool.ticks {
-                        //todo optimize to map
-                        if ticks.iter().all(|tick| tick.tick_idx != tick_lower) {
-                            ticks.push(TickData {
-                                id: address.to_string() + "#" + &tick_lower.to_string(),
-                                tick_idx: tick_lower.clone(),
-                                liquidity_net: 0.into(),
-                                pool_address: address,
-                            });
-                        }
+                    pool.liquidity_net
+                        .entry(tick_lower.clone())
+                        .and_modify(|tick| *tick -= BigInt::from(burn.amount))
+                        .or_insert_with(|| BigInt::from(burn.amount).neg());
 
-                        if ticks.iter().all(|tick| tick.tick_idx != tick_upper) {
-                            ticks.push(TickData {
-                                id: address.to_string() + "#" + &tick_upper.to_string(),
-                                tick_idx: tick_upper.clone(),
-                                liquidity_net: 0.into(),
-                                pool_address: address,
-                            });
-                        }
+                    pool.liquidity_net
+                        .entry(tick_upper.clone())
+                        .and_modify(|tick| *tick += BigInt::from(burn.amount))
+                        .or_insert_with(|| BigInt::from(burn.amount));
 
-                        for tick in ticks {
-                            if tick.tick_idx == tick_lower {
-                                tick.liquidity_net -= BigInt::from(burn.amount);
-                            }
-                            if tick.tick_idx == tick_upper {
-                                tick.liquidity_net += BigInt::from(burn.amount);
-                            }
-                        }
+                    // remove 0 entries to save bandwidth
+                    if pool.liquidity_net[&tick_lower].is_zero() {
+                        pool.liquidity_net.remove(&tick_lower);
+                    }
+
+                    if pool.liquidity_net[&tick_upper].is_zero() {
+                        pool.liquidity_net.remove(&tick_upper);
                     }
                 }
                 UniswapV3Event::Mint(mint) => {
@@ -411,34 +397,23 @@ fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV
                         pool.liquidity += mint.amount.into();
                     }
 
-                    if let Some(ticks) = &mut pool.ticks {
-                        //todo optimize to map
-                        if ticks.iter().all(|tick| tick.tick_idx != tick_lower) {
-                            ticks.push(TickData {
-                                id: address.to_string() + "#" + &tick_lower.to_string(),
-                                tick_idx: tick_lower.clone(),
-                                liquidity_net: 0.into(),
-                                pool_address: address,
-                            });
-                        }
+                    pool.liquidity_net
+                        .entry(tick_lower.clone())
+                        .and_modify(|tick| *tick += BigInt::from(mint.amount))
+                        .or_insert_with(|| BigInt::from(mint.amount));
 
-                        if ticks.iter().all(|tick| tick.tick_idx != tick_upper) {
-                            ticks.push(TickData {
-                                id: address.to_string() + "#" + &tick_upper.to_string(),
-                                tick_idx: tick_upper.clone(),
-                                liquidity_net: 0.into(),
-                                pool_address: address,
-                            });
-                        }
+                    pool.liquidity_net
+                        .entry(tick_upper.clone())
+                        .and_modify(|tick| *tick -= BigInt::from(mint.amount))
+                        .or_insert_with(|| BigInt::from(mint.amount).neg());
 
-                        for tick in ticks {
-                            if tick.tick_idx == tick_lower {
-                                tick.liquidity_net += BigInt::from(mint.amount);
-                            }
-                            if tick.tick_idx == tick_upper {
-                                tick.liquidity_net -= BigInt::from(mint.amount);
-                            }
-                        }
+                    // remove 0 entries to save bandwidth
+                    if pool.liquidity_net[&tick_lower].is_zero() {
+                        pool.liquidity_net.remove(&tick_lower);
+                    }
+
+                    if pool.liquidity_net[&tick_upper].is_zero() {
+                        pool.liquidity_net.remove(&tick_upper);
                     }
                 }
                 UniswapV3Event::Swap(swap) => {
@@ -546,6 +521,15 @@ mod tests {
 
         assert_eq!(json, serialized);
         assert_eq!(pool, deserialized);
+    }
+
+    #[test]
+    fn append_events_test_empty() {
+        let pools = HashMap::from([(H160::from_low_u64_be(1), Default::default())]);
+        let mut new_pools = pools.clone();
+        let events = vec![];
+        append_events(&mut new_pools, events);
+        assert_eq!(new_pools, pools);
     }
 
     #[tokio::test]
