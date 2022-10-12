@@ -92,14 +92,12 @@ pub struct RecentEventsCache {
 impl RecentEventsCache {
     /// Removes all events up to the specified block, including specified block.
     pub fn remove_events_older_than_block(&mut self, delete_up_to_block_number: u64) {
-        self.events
-            .retain(|&block_number, _| block_number > delete_up_to_block_number);
+        self.events = self.events.split_off(&(delete_up_to_block_number + 1));
     }
 
     /// Removes all events from the specified block, including specified block.
     fn remove_events_newer_than_block(&mut self, delete_from_block_number: u64) {
-        self.events
-            .retain(|&block_number, _| block_number < delete_from_block_number);
+        self.events.split_off(&delete_from_block_number);
     }
 
     pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<Event<UniswapV3Event>> {
