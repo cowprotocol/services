@@ -315,6 +315,31 @@ fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
     Ok(pool)
 }
 
+pub mod test_util {
+    use std::collections::HashSet;
+
+    use anyhow::Result;
+    use model::TokenPair;
+
+    use crate::recent_block_cache::Block;
+
+    use super::{Pool, PoolFetching};
+
+    #[derive(Default)]
+    pub struct FakePoolFetcher(pub Vec<Pool>);
+    #[async_trait::async_trait]
+    impl PoolFetching for FakePoolFetcher {
+        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: Block) -> Result<Vec<Pool>> {
+            Ok(self
+                .0
+                .clone()
+                .into_iter()
+                .filter(|pool| token_pairs.contains(&pool.tokens))
+                .collect())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
