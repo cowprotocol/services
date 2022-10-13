@@ -118,9 +118,9 @@ impl Default for Order {
 
 pub async fn insert_pre_interactions(
     ex: &mut PgConnection,
-    uid_and_preinteraction: &[(OrderUid, Interaction)],
+    uid_and_pre_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
-    for (index, (order_uid, pre_interaction)) in uid_and_preinteraction.iter().enumerate() {
+    for (index, (order_uid, pre_interaction)) in uid_and_pre_interaction.iter().enumerate() {
         insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
     }
     Ok(())
