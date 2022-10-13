@@ -2,6 +2,7 @@
 
 use crate::{
     app_id::AppId,
+    interaction::InteractionData,
     quote::QuoteId,
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
     u256_decimal::{self, DecimalU256},
@@ -40,6 +41,7 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
+    pub pre_interactions: Vec<InteractionData>,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -73,6 +75,9 @@ impl Order {
             },
             signature: order.signature.clone(),
             data: order.data,
+            // Currenlty, we only support pre_interactions created
+            // via the on-chain order parsing
+            pre_interactions: Vec::new(),
         })
     }
 
@@ -674,6 +679,7 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
+            "preInteractions": [],
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -720,6 +726,7 @@ mod tests {
                 .unwrap(),
             }
             .to_signature(signing_scheme),
+            pre_interactions: Vec::new(),
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);
