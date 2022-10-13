@@ -50,6 +50,7 @@ pub struct Auction {
     /// CIP-14 risk adjusted solver rewards
     ///
     /// Some orders like liquidity orders do not have associated rewards.
+    #[serde(default)]
     pub rewards: BTreeMap<OrderUid, f64>,
 }
 
