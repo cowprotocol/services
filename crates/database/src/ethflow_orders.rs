@@ -61,7 +61,10 @@ pub async fn refundable_orders(
 
 #[cfg(test)]
 mod tests {
-    use crate::{byte_array::ByteArray, events::{Trade, EventIndex, insert_trade}};
+    use crate::{
+        byte_array::ByteArray,
+        events::{insert_trade, EventIndex, Trade},
+    };
 
     use super::*;
     use sqlx::Connection;
@@ -106,20 +109,40 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order_1 = EthOrderPlacement{ uid: ByteArray([1u8;56]), valid_to: 1, is_refunded: false };
-        let order_2 = EthOrderPlacement{ uid: ByteArray([2u8;56]), valid_to: 2, is_refunded: false };
-        let order_3 = EthOrderPlacement{ uid: ByteArray([3u8;56]), valid_to: 3, is_refunded: true };
+        let order_1 = EthOrderPlacement {
+            uid: ByteArray([1u8; 56]),
+            valid_to: 1,
+            is_refunded: false,
+        };
+        let order_2 = EthOrderPlacement {
+            uid: ByteArray([2u8; 56]),
+            valid_to: 2,
+            is_refunded: false,
+        };
+        let order_3 = EthOrderPlacement {
+            uid: ByteArray([3u8; 56]),
+            valid_to: 3,
+            is_refunded: true,
+        };
 
-        append(&mut db, vec![order_1.clone(), order_2.clone(), order_3].as_slice())
+        append(
+            &mut db,
+            vec![order_1.clone(), order_2.clone(), order_3].as_slice(),
+        )
+        .await
+        .unwrap();
+        let orders = refundable_orders(&mut db, 3).await.unwrap();
+        assert_eq!(orders, vec![order_1.clone(), order_2]);
+        let orders = refundable_orders(&mut db, 2).await.unwrap();
+        assert_eq!(orders, vec![order_1.clone()]);
+        let trade = Trade {
+            order_uid: ByteArray([2u8; 56]),
+            ..Default::default()
+        };
+        insert_trade(&mut db, &EventIndex::default(), &trade)
             .await
             .unwrap();
-        let orders = refundable_orders(&mut db,3 ).await.unwrap();
-        assert_eq!(orders, vec![order_1.clone(), order_2]);
-        let orders = refundable_orders(&mut db,2 ).await.unwrap();
-        assert_eq!(orders, vec![order_1.clone()]);
-        let trade = Trade { order_uid: ByteArray([2u8;56]),..Default::default()};
-        insert_trade(&mut db, &EventIndex::default(),&trade).await.unwrap();
-        let orders = refundable_orders(&mut db,3 ).await.unwrap();
+        let orders = refundable_orders(&mut db, 3).await.unwrap();
         assert_eq!(orders, vec![order_1]);
     }
 }
