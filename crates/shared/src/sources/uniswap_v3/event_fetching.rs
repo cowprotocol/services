@@ -86,24 +86,24 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
 #[derive(Debug, Default)]
 pub struct RecentEventsCache {
     /// Block number used as a Key
-    events: BTreeMap<u64, Vec<Event<UniswapV3Event>>>,
+    events: BTreeMap<(u64, usize), Event<UniswapV3Event>>,
 }
 
 impl RecentEventsCache {
     /// Removes all events up to the specified block, excluding the specified block.
     pub fn remove_events_older_than_block(&mut self, delete_up_to_block_number: u64) {
-        self.events = self.events.split_off(&delete_up_to_block_number);
+        self.events = self.events.split_off(&(delete_up_to_block_number, 0));
     }
 
     /// Removes all events from the specified block, including specified block.
     fn remove_events_newer_than_block(&mut self, delete_from_block_number: u64) {
-        self.events.split_off(&delete_from_block_number);
+        self.events.split_off(&(delete_from_block_number, 0));
     }
 
     pub fn get_events(&self, block_range: RangeInclusive<u64>) -> Vec<Event<UniswapV3Event>> {
         self.events
-            .range(block_range.start()..=block_range.end())
-            .flat_map(|(_, events)| events)
+            .range((*block_range.start(), 0)..=(*block_range.end(), usize::MAX))
+            .map(|(_, event)| event)
             .cloned()
             .collect()
     }
@@ -122,22 +122,20 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
 
     async fn append_events(&mut self, events: Vec<Event<UniswapV3Event>>) -> Result<()> {
         for event in events {
+            let event_meta = event.meta.as_ref().context("event meta is empty")?;
             self.events
-                .entry(
-                    event
-                        .meta
-                        .as_ref()
-                        .context("event meta is empty")?
-                        .block_number,
-                )
-                .or_default()
-                .push(event)
+                .insert((event_meta.block_number, event_meta.log_index), event);
         }
         Ok(())
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        self.events.keys().last().cloned().context("no events")
+        self.events
+            .keys()
+            .last()
+            .map(|(block_number, _)| block_number)
+            .cloned()
+            .context("no events")
     }
 }
 
@@ -147,11 +145,12 @@ mod tests {
 
     use super::*;
 
-    fn build_event(block_number: u64) -> Event<UniswapV3Event> {
+    fn build_event((block_number, log_index): (u64, usize)) -> Event<UniswapV3Event> {
         Event {
             data: UniswapV3Event::Swap(Swap::default()),
             meta: Some(EventMetadata {
                 block_number,
+                log_index,
                 ..Default::default()
             }),
         }
@@ -165,15 +164,16 @@ mod tests {
 
     #[test]
     fn remove_events_older_than_block_test() {
-        let events = BTreeMap::from([
-            (1u64, vec![build_event(1)]),
-            (2, vec![build_event(2)]),
-            (3, vec![build_event(3)]),
-        ]);
+        let keys = [(1, 0), (1, 1), (2, 0), (2, 1), (3, 0), (3, 1)];
+        let events = keys
+            .into_iter()
+            .map(|key| (key, build_event(key)))
+            .collect();
+
         let mut cache = RecentEventsCache { events };
         cache.remove_events_older_than_block(2);
 
-        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [2, 3]);
+        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), keys[2..]);
     }
 
     #[test]
@@ -184,15 +184,16 @@ mod tests {
 
     #[test]
     fn remove_events_newer_than_block_test() {
-        let events = BTreeMap::from([
-            (1u64, vec![build_event(1)]),
-            (2, vec![build_event(2)]),
-            (3, vec![build_event(3)]),
-        ]);
+        let keys = [(1, 0), (1, 1), (2, 0), (2, 1), (3, 0), (3, 1)];
+        let events = keys
+            .into_iter()
+            .map(|key| (key, build_event(key)))
+            .collect();
+
         let mut cache = RecentEventsCache { events };
         cache.remove_events_newer_than_block(2);
 
-        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), [1]);
+        assert_eq!(cache.events.keys().cloned().collect::<Vec<_>>(), keys[..2]);
     }
 
     #[test]
@@ -204,48 +205,61 @@ mod tests {
 
     #[test]
     fn get_events_test() {
-        let events = BTreeMap::from([
-            (1u64, vec![build_event(1), build_event(1)]),
-            (2, vec![build_event(2), build_event(2)]),
-            (3, vec![build_event(3), build_event(3)]),
-            (4, vec![build_event(4), build_event(4)]),
-        ]);
+        let keys = [
+            (1, 0),
+            (1, 1),
+            (2, 0),
+            (2, 1),
+            (3, 0),
+            (3, 1),
+            (4, 0),
+            (4, 1),
+        ];
+        let events = keys
+            .into_iter()
+            .map(|key| (key, build_event(key)))
+            .collect();
         let cache = RecentEventsCache { events };
 
         // test inside range
-        let expected_events = vec![
-            build_event(2),
-            build_event(2),
-            build_event(3),
-            build_event(3),
-        ];
+        let expected_events = keys[2..=5]
+            .into_iter()
+            .map(|key| build_event(*key))
+            .collect::<Vec<_>>();
         let events = cache.get_events(RangeInclusive::try_new(2u64, 3).unwrap());
         assert_eq!(events, expected_events);
 
         // test wide range
-        let expected_events = vec![
-            build_event(2),
-            build_event(2),
-            build_event(3),
-            build_event(3),
-            build_event(4),
-            build_event(4),
-        ];
+        let expected_events = keys[2..=7]
+            .into_iter()
+            .map(|key| build_event(*key))
+            .collect::<Vec<_>>();
         let events = cache.get_events(RangeInclusive::try_new(2u64, 7).unwrap());
         assert_eq!(events, expected_events);
     }
 
     #[tokio::test]
     async fn append_events_test() {
-        let events = BTreeMap::from([(1u64, vec![build_event(1), build_event(1)])]);
+        let events = BTreeMap::from([
+            ((1, 0), build_event((1, 0))),
+            ((1, 1), build_event((1, 1))),
+        ]);
         let mut cache = RecentEventsCache { events };
 
-        let appended_events = vec![build_event(1), build_event(2), build_event(2)];
-        let expected_events = BTreeMap::from([
-            (1u64, vec![build_event(1), build_event(1), build_event(1)]),
-            (2, vec![build_event(2), build_event(2)]),
-        ]);
+        let appended_events = vec![
+            build_event((1, 2)),
+            build_event((2, 0)),
+            build_event((2, 1)),
+        ];
         cache.append_events(appended_events).await.unwrap();
+
+        let expected_events = BTreeMap::from([
+            ((1, 0), build_event((1, 0))),
+            ((1, 1), build_event((1, 1))),
+            ((1, 2), build_event((1, 2))),
+            ((2, 0), build_event((2, 0))),
+            ((2, 1), build_event((2, 1))),
+        ]);
         assert_eq!(cache.events, expected_events);
     }
 
@@ -258,10 +272,11 @@ mod tests {
 
     #[tokio::test]
     async fn last_event_block_test() {
-        let events = BTreeMap::from([
-            (1u64, vec![build_event(1), build_event(1)]),
-            (2, vec![build_event(2), build_event(2)]),
-        ]);
+        let keys = [(1, 0), (1, 1), (2, 0), (2, 1)];
+        let events = keys
+            .into_iter()
+            .map(|key| (key, build_event(key)))
+            .collect();
         let cache = RecentEventsCache { events };
         let result = cache.last_event_block().await.unwrap();
         assert_eq!(result, 2);
