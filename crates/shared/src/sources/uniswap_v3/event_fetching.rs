@@ -223,7 +223,7 @@ mod tests {
 
         // test inside range
         let expected_events = keys[2..=5]
-            .into_iter()
+            .iter()
             .map(|key| build_event(*key))
             .collect::<Vec<_>>();
         let events = cache.get_events(RangeInclusive::try_new(2u64, 3).unwrap());
@@ -231,7 +231,7 @@ mod tests {
 
         // test wide range
         let expected_events = keys[2..=7]
-            .into_iter()
+            .iter()
             .map(|key| build_event(*key))
             .collect::<Vec<_>>();
         let events = cache.get_events(RangeInclusive::try_new(2u64, 7).unwrap());
