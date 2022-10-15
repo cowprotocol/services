@@ -240,10 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn append_events_test() {
-        let events = BTreeMap::from([
-            ((1, 0), build_event((1, 0))),
-            ((1, 1), build_event((1, 1))),
-        ]);
+        let events = BTreeMap::from([((1, 0), build_event((1, 0))), ((1, 1), build_event((1, 1)))]);
         let mut cache = RecentEventsCache { events };
 
         let appended_events = vec![
