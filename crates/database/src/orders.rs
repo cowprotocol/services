@@ -403,8 +403,7 @@ pub fn user_orders<'a>(
     const QUERY: &str = const_format::concatcp!(
 "SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
-" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE (o.owner = $1 OR onchain_o.sender = $1) ",
+" WHERE o.owner = $1 ",
 "ORDER BY o.creation_timestamp DESC ",
 "LIMIT $2 ",
 "OFFSET $3 ",
@@ -456,7 +455,6 @@ mod tests {
         byte_array::ByteArray,
         ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
-        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
@@ -790,7 +788,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
+        let owners: Vec<Address> = (0u8..2).map(|i| ByteArray([i; 20])).collect();
 
         fn datetime(offset: u32) -> DateTime<Utc> {
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
@@ -843,17 +841,6 @@ mod tests {
 
         let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
         assert_eq!(result, vec![]);
-
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(orders[0].0),
-            sender: owners[2],
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
-            .await
-            .unwrap();
-        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
-        assert_eq!(result, vec![orders[0]]);
     }
 
     #[tokio::test]

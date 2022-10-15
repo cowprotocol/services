@@ -328,24 +328,10 @@ mod tests {
         gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::single_estimate,
         rate_limiter::RateLimiter,
-        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+        sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
     };
     use gas_estimation::gas_price::GasPrice1559;
-    use std::{collections::HashSet, sync::Mutex};
-
-    #[derive(Default)]
-    struct FakePoolFetcher(Vec<Pool>);
-    #[async_trait::async_trait]
-    impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: Block) -> Result<Vec<Pool>> {
-            Ok(self
-                .0
-                .clone()
-                .into_iter()
-                .filter(|pool| token_pairs.contains(&pool.tokens))
-                .collect())
-        }
-    }
+    use std::sync::Mutex;
 
     fn default_rate_limiter() -> Arc<RateLimiter> {
         Arc::new(RateLimiter::from_strategy(

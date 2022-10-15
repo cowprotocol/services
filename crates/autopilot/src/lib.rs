@@ -1,6 +1,7 @@
 pub mod arguments;
 pub mod database;
 pub mod event_updater;
+pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
 use crate::{
@@ -25,28 +26,17 @@ use shared::{
         token_owner_finder,
         trace_call::TraceCallDetector,
     },
-    balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::Maintaining,
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
     order_quoting::OrderQuoter,
-    paraswap_api::DefaultParaswapApi,
-    price_estimation::{
-        balancer_sor::BalancerSor, baseline::BaselinePriceEstimator,
-        competition::CompetitionPriceEstimator, http::HttpPriceEstimator,
-        instrumented::InstrumentedPriceEstimator, native::NativePriceEstimator,
-        native_price_cache::CachingNativePriceEstimator, oneinch::OneInchPriceEstimator,
-        paraswap::ParaswapPriceEstimator, sanitized::SanitizedPriceEstimator,
-        zeroex::ZeroExPriceEstimator, PriceEstimating, PriceEstimatorType,
-    },
-    rate_limiter::RateLimiter,
+    price_estimation::factory::{self, PriceEstimatorFactory},
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
     sources::{
@@ -58,7 +48,7 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     zeroex_api::DefaultZeroExApi,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -145,7 +135,7 @@ pub async fn main(args: arguments::Arguments) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
+    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
         shared::sources::defaults_for_chain(chain_id)
             .expect("failed to get default baseline sources")
     });
@@ -225,6 +215,7 @@ pub async fn main(args: arguments::Arguments) {
         let factories = args
             .shared
             .balancer_factories
+            .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         let balancer_pool_fetcher = Arc::new(
@@ -236,7 +227,7 @@ pub async fn main(args: arguments::Arguments) {
                 http_factory.create(),
                 web3.clone(),
                 &contracts,
-                args.shared.balancer_pool_deny_list,
+                args.shared.balancer_pool_deny_list.clone(),
             )
             .await
             .expect("failed to create Balancer pool fetcher"),
@@ -272,132 +263,80 @@ pub async fn main(args: arguments::Arguments) {
         chain_id,
     )
     .map(Arc::new);
-    let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
-        InstrumentedPriceEstimator::new(inner, name)
+
+    let cow_token = match CowProtocolToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
     };
-    let balancer_sor_api = args.balancer_sor_url.map(|url| {
-        Arc::new(DefaultBalancerSorApi::new(http_factory.create(), url, chain_id).unwrap())
-    });
-    let native_token_price_estimation_amount = args
-        .amount_to_estimate_prices_with
-        .or_else(|| {
-            shared::price_estimation::native::default_amount_to_estimate_native_prices_with(
-                &network,
-            )
-        })
-        .expect("No amount to estimate prices with set.");
+    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
 
-    let create_base_estimator =
-        |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
-            let rate_limiter = |name| {
-                Arc::new(RateLimiter::from_strategy(
-                    args.price_estimation_rate_limiter
-                        .clone()
-                        .unwrap_or_default(),
-                    format!("{}_estimator", &name),
-                ))
-            };
-            let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
-                Box::new(HttpPriceEstimator::new(
-                    Arc::new(DefaultHttpSolverApi {
-                        name,
-                        network_name: network_name.to_string(),
-                        chain_id,
-                        base,
-                        client: http_factory.create(),
-                        config: SolverConfig {
-                            use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
-                            objective: Some(shared::http_solver::Objective::SurplusFeesCosts),
-                            ..Default::default()
-                        },
-                    }),
-                    pool_fetcher.clone(),
-                    balancer_pool_fetcher.clone(),
-                    uniswap_v3_pool_fetcher.clone(),
-                    token_info_fetcher.clone(),
-                    gas_price_estimator.clone(),
-                    native_token.address(),
-                    base_tokens.clone(),
-                    network_name.to_string(),
-                    rate_limiter(estimator.name()),
-                ))
-            };
-            let instance: Box<dyn PriceEstimating> = match estimator {
-                PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
-                    pool_fetcher.clone(),
-                    gas_price_estimator.clone(),
-                    base_tokens.clone(),
-                    native_token.address(),
-                    native_token_price_estimation_amount,
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
-                    Arc::new(DefaultParaswapApi {
-                        client: http_factory.create(),
-                        partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                        rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
-                            RateLimiter::from_strategy(strategy, "paraswap_api".into())
-                        }),
-                    }),
-                    token_info_fetcher.clone(),
-                    args.shared.disabled_paraswap_dexs.clone(),
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
-                    zeroex_api.clone(),
-                    args.shared.disabled_zeroex_sources.clone(),
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::Quasimodo => create_http_estimator(
-                    "quasimodo-price-estimator".to_string(),
-                    args.quasimodo_solver_url.clone().expect(
-                        "quasimodo solver url is required when using quasimodo price estimation",
-                    ),
-                ),
-                PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
-                    one_inch_api.as_ref().unwrap().clone(),
-                    args.shared.disabled_one_inch_protocols.clone(),
-                    rate_limiter(estimator.name()),
-                    args.shared.one_inch_referrer_address
-                )),
-                PriceEstimatorType::Yearn => create_http_estimator(
-                    "yearn-price-estimator".to_string(),
-                    args.yearn_solver_url
-                        .clone()
-                        .expect("yearn solver url is required when using yearn price estimation"),
-                ),
-                PriceEstimatorType::BalancerSor => Box::new(BalancerSor::new(
-                    balancer_sor_api.clone().expect("trying to create BalancerSor price estimator but didn't get balancer sor url"),
-                    rate_limiter(estimator.name()),
-                    gas_price_estimator.clone(),
-                )),
-            };
+    let mut price_estimator_factory = PriceEstimatorFactory::new(
+        &args.price_estimation,
+        &args.shared,
+        factory::Network {
+            name: network_name.to_string(),
+            chain_id,
+            native_token: native_token.address(),
+            base_tokens: base_tokens.clone(),
+        },
+        factory::Components {
+            http_factory: http_factory.clone(),
+            bad_token_detector: bad_token_detector.clone(),
+            uniswap_v2_pools: pool_fetcher.clone(),
+            balancer_pools: balancer_pool_fetcher.clone().map(|a| a as _),
+            uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
+            tokens: token_info_fetcher.clone(),
+            gas_price: gas_price_estimator.clone(),
+            zeroex: zeroex_api.clone(),
+            oneinch: one_inch_api.ok().map(|a| a as _),
+        },
+    );
 
-            (
-                estimator.name(),
-                Arc::new(instrumented(instance, estimator.name())),
-            )
+    let price_estimator = price_estimator_factory
+        .price_estimator(&args.order_quoting.price_estimators)
+        .unwrap();
+    let native_price_estimator = price_estimator_factory
+        .native_price_estimator(&args.native_price_estimators)
+        .unwrap();
+
+    let risk_adjusted_rewards = (|| {
+        if chain_id != 1 {
+            return None;
+        }
+        let cip_args = [
+            args.cip_14_beta,
+            args.cip_14_alpha1,
+            args.cip_14_alpha2,
+            args.cip_14_profit,
+            args.cip_14_gas_cap,
+            args.cip_14_reward_cap,
+        ];
+        match cip_args.iter().map(|arg| arg.is_some() as u32).sum::<u32>() {
+            0 => return None,
+            6 => (),
+            _ => panic!("need none or all cip_14 arguments"),
         };
-    let sanitized = |estimator| {
-        SanitizedPriceEstimator::new(
-            estimator,
-            native_token.address(),
-            bad_token_detector.clone(),
-        )
-    };
-    let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
-        Box::new(NativePriceEstimator::new(
-            Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-                args.native_price_estimators
-                    .iter()
-                    .map(|estimator| create_base_estimator(*estimator))
-                    .collect(),
-            )))),
-            native_token.address(),
-            native_token_price_estimation_amount,
-        )),
-        args.native_price_cache_max_age_secs,
-    ));
+        Some(risk_adjusted_rewards::Calculator {
+            config: risk_adjusted_rewards::Configuration {
+                beta: args.cip_14_beta.unwrap(),
+                alpha1: args.cip_14_alpha1.unwrap(),
+                alpha2: args.cip_14_alpha2.unwrap(),
+                profit: args.cip_14_profit.unwrap(),
+                gas_cap: args.cip_14_gas_cap.unwrap(),
+                reward_cap: args.cip_14_reward_cap.unwrap(),
+            },
+            database: db.clone(),
+            cow_token: cow_token
+                .as_ref()
+                .expect("no cow token on mainnet")
+                .address(),
+            gas_price: gas_price_estimator.clone(),
+            native_price: native_price_estimator.clone(),
+        })
+    })();
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -409,6 +348,7 @@ pub async fn main(args: arguments::Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         Duration::from_secs(2),
+        risk_adjusted_rewards,
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -455,14 +395,6 @@ pub async fn main(args: arguments::Arguments) {
             .await
             .expect("failed to create gas price estimator"),
         ));
-        let cow_token = match CowProtocolToken::deployed(&web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            other => Some(other.unwrap()),
-        };
-        let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            other => Some(other.unwrap()),
-        };
         let cow_tokens = match (cow_token, cow_vtoken) {
             (None, None) => None,
             (Some(token), Some(vtoken)) => Some((token, vtoken)),
@@ -499,20 +431,6 @@ pub async fn main(args: arguments::Arguments) {
             ])),
             None => fee_subsidy_config,
         };
-        let mut base_estimators_instances: HashMap<_, _> = Default::default();
-        let mut get_or_create_base_estimator = move |estimator| {
-            base_estimators_instances
-                .entry(estimator)
-                .or_insert_with(|| create_base_estimator(estimator))
-                .clone()
-        };
-        let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-            args.order_quoting
-                .price_estimators
-                .iter()
-                .map(|estimator| get_or_create_base_estimator(*estimator))
-                .collect(),
-        ))));
         let database = Arc::new(db.clone());
         let quoter = OrderQuoter::new(
             price_estimator,
