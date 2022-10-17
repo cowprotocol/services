@@ -288,10 +288,10 @@ impl Orderbook {
     pub async fn get_native_prices(
         &self,
         tokens: &[H160],
-    ) -> Result<Vec<f64>, PriceEstimationError> {
+    ) -> Result<Vec<(H160, f64)>, PriceEstimationError> {
         self.native_price_estimator
             .estimate_native_prices(tokens)
-            .map(|(_, price)| price)
+            .map(|(index, price)| price.map(|price| (tokens[index], price)))
             .collect::<Vec<_>>()
             .await
             .into_iter()
