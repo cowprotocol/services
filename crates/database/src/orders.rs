@@ -123,7 +123,6 @@ pub async fn insert_pre_interactions(
     for (order_uid, pre_interaction) in uid_and_preinteraction.iter() {
         match insert_pre_interaction(ex, pre_interaction, order_uid).await {
             Ok(_) => (),
-            Err(err) if is_duplicate_record_error(&err) => (),
             Err(err) => return Err(err),
         }
     }
