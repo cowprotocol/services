@@ -251,7 +251,7 @@ impl OrderbookServices {
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
-            native_price_estimator,
+            native_price_estimator.clone(),
             signature_validator.clone(),
             Duration::from_secs(1),
             None,
@@ -274,6 +274,7 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             api_db.as_ref().clone(),
             order_validator.clone(),
+            native_price_estimator,
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],

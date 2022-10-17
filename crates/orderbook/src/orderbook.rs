@@ -314,7 +314,9 @@ mod tests {
         order::{OrderData, OrderMetadata},
         signature::Signature,
     };
-    use shared::order_validation::MockOrderValidating;
+    use shared::{
+        order_validation::MockOrderValidating, price_estimation::native::MockNativePriceEstimating,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -368,11 +370,14 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
+        let native_price_estimator = Arc::new(MockNativePriceEstimating::new());
+
         let orderbook = Orderbook {
             database,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
+            native_price_estimator,
         };
 
         // App data does not encode cancellation.
