@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use ethcontract::{H160, U256};
+use model::u256_decimal;
 use num::BigInt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -182,8 +183,11 @@ pub struct PoolData {
     pub id: H160,
     pub token0: Token,
     pub token1: Token,
+    #[serde(with = "u256_decimal")]
     pub fee_tier: U256,
+    #[serde(with = "u256_decimal")]
     pub liquidity: U256,
+    #[serde(with = "u256_decimal")]
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
@@ -316,9 +320,9 @@ mod tests {
                             symbol: "WETH".to_string(),
                             decimals: 18,
                         },
-                        fee_tier: U256::from_str("10000").unwrap(),
-                        liquidity: U256::from_str("303015134493562686441").unwrap(),
-                        sqrt_price: U256::from_str("792216481398733702759960397").unwrap(),
+                        fee_tier: U256::from_dec_str("10000").unwrap(),
+                        liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
+                        sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
                         tick: BigInt::from(-92110),
                         ticks: None,
                     },
@@ -336,9 +340,9 @@ mod tests {
                             symbol: "ICHI".to_string(),
                             decimals: 9,
                         },
-                        fee_tier: U256::from_str("3000").unwrap(),
-                        liquidity: U256::from_str("3125586395511534995").unwrap(),
-                        sqrt_price: U256::from_str("5986323062404391218190509").unwrap(),
+                        fee_tier: U256::from_dec_str("3000").unwrap(),
+                        liquidity: U256::from_dec_str("3125586395511534995").unwrap(),
+                        sqrt_price: U256::from_dec_str("5986323062404391218190509").unwrap(),
                         tick: BigInt::from(-189822),
                         ticks: None,
                     },
