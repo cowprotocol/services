@@ -2,6 +2,7 @@ use crate::database::orders::{InsertionError, OrderStoring};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
+use futures::StreamExt;
 use model::{
     auction::AuctionWithId,
     order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
@@ -11,6 +12,7 @@ use primitive_types::H160;
 use shared::{
     metrics::LivenessChecking,
     order_validation::{OrderValidating, ValidationError},
+    price_estimation::native::NativePriceEstimating,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -120,6 +122,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 }
 
 impl Orderbook {
@@ -129,12 +132,14 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
+        native_price_estimator: Arc<dyn NativePriceEstimating>,
     ) -> Self {
         Self {
             domain_separator,
             settlement_contract,
             database,
             order_validator,
+            native_price_estimator,
         }
     }
 
@@ -278,6 +283,16 @@ impl Orderbook {
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
+    }
+
+    pub async fn get_native_prices(&self, tokens: &[H160]) -> Result<Vec<f64>> {
+        self.native_price_estimator
+            .estimate_native_prices(tokens)
+            .map(|(_, price)| price.context("missing estimation"))
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect()
     }
 }
 

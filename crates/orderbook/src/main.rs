@@ -387,6 +387,7 @@ async fn main() {
         settlement_contract.address(),
         database.as_ref().clone(),
         order_validator.clone(),
+        native_price_estimator.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![pool_fetcher],

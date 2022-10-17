@@ -4,6 +4,7 @@ mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
+mod get_native_prices;
 mod get_order_by_uid;
 mod get_orders_by_tx;
 mod get_solvable_orders;
@@ -92,6 +93,9 @@ pub fn handle_all_routes(
     let version = version::version()
         .map(|result| (result, "v1/version"))
         .boxed();
+    let get_native_prices = get_native_prices::get_native_prices(orderbook.clone())
+        .map(|result| (result, "v1/get_native_prices"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -127,6 +131,8 @@ pub fn handle_all_routes(
                 .or(post_solver_competition)
                 .unify()
                 .or(version)
+                .unify()
+                .or(get_native_prices)
                 .unify(),
         )
         .untuple_one()
