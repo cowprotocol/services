@@ -4,13 +4,11 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 //! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
 //! uses EIP 1559 gas prices.
+use crate::interaction::{EncodedInteraction, Interaction};
 use anyhow::{ensure, Result};
 use cached::{Cached, TimedCache};
 use ethcontract::{Bytes, H160, U256};
-use model::{
-    interaction::{EncodedInteraction, Interaction},
-    u256_decimal,
-};
+use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{de::DeserializeOwned, Deserialize};
 use std::{

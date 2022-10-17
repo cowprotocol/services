@@ -1,12 +1,13 @@
 use crate::{
     debug_bytes,
+    interaction::Interaction,
     rate_limiter::{back_off, RateLimiter, RateLimiterError},
     trade_finding::EncodedInteraction,
 };
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{Bytes, H160, U256};
-use model::{interaction::Interaction, u256_decimal};
+use model::u256_decimal;
 use reqwest::{Client, RequestBuilder, Url};
 use serde::{
     de::{DeserializeOwned, Error},

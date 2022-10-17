@@ -4,15 +4,16 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::{debug_bytes, http_client::HttpClientFactory};
+use crate::{
+    debug_bytes,
+    http_client::HttpClientFactory,
+    interaction::{EncodedInteraction, Interaction},
+};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
 use ethcontract::{Bytes, H160, H256, U256};
-use model::{
-    interaction::{EncodedInteraction, Interaction},
-    u256_decimal,
-};
+use model::u256_decimal;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, IntoUrl, Url,

@@ -207,8 +207,7 @@ pub mod tests {
     use super::*;
     use crate::interactions::allowances::Approval;
     use maplit::hashmap;
-    use model::interaction::Interaction;
-    use shared::zeroex_api::OrderMetadata;
+    use shared::{interaction::Interaction, zeroex_api::OrderMetadata};
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));

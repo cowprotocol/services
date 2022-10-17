@@ -7,8 +7,7 @@ use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashmap;
-use model::interaction::Interaction;
-use shared::{dummy_contract, Web3};
+use shared::{dummy_contract, interaction::Interaction, Web3};
 use std::{
     collections::{HashMap, HashSet},
     slice,

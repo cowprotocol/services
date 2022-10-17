@@ -226,7 +226,7 @@ impl LiquidityOrderTrade {
     }
 }
 #[cfg(test)]
-use model::interaction::{EncodedInteraction, Interaction};
+use shared::interaction::{EncodedInteraction, Interaction};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;

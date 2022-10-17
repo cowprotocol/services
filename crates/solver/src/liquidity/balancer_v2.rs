@@ -178,11 +178,12 @@ mod tests {
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
-    use model::{interaction::Interaction, TokenPair};
+    use model::TokenPair;
     use num::BigRational;
     use primitive_types::H160;
     use shared::{
         dummy_contract,
+        interaction::Interaction,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter, CommonPoolState, FetchedBalancerPools,
             MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,

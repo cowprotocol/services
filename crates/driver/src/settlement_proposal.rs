@@ -1,13 +1,11 @@
 use crate::commit_reveal::SettlementSummary;
 use anyhow::{Context, Result};
-use model::{
-    interaction::Interaction,
-    order::{Order, OrderKind},
-};
+use model::order::{Order, OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    conversions::U256Ext, http_solver::model::TokenAmount, price_estimation::gas::GAS_PER_ORDER,
+    conversions::U256Ext, http_solver::model::TokenAmount, interaction::Interaction,
+    price_estimation::gas::GAS_PER_ORDER,
 };
 use solver::settlement::{
     external_prices::ExternalPrices, trade_surplus_in_native_token, verify_executed_amount,

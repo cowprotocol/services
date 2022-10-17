@@ -2,7 +2,6 @@ use derivative::Derivative;
 use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
-    interaction::{EncodedInteraction, Interaction},
     order::OrderData,
     ratio_as_decimal,
     signature::Signature,
@@ -14,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
 
-use crate::sources::uniswap_v3::pool_fetching::PoolInfo;
+use crate::{
+    interaction::{EncodedInteraction, Interaction},
+    sources::uniswap_v3::pool_fetching::PoolInfo,
+};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {

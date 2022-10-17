@@ -1,7 +1,7 @@
 use crate::encoding::EncodedInteraction;
 use hex_literal::hex;
-use model::interaction::Interaction;
 use primitive_types::{H160, U256};
+use shared::interaction::Interaction;
 
 // vk: A simple contract I made with verified code on etherscan:
 // https://etherscan.io/address/0x5c2cD95CF750B8f8A4881d96F04bf571A07042B1

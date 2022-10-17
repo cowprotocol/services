@@ -3,8 +3,8 @@
 use crate::encoding::EncodedInteraction;
 use contracts::ERC20;
 use ethcontract::Bytes;
-use model::interaction::Interaction;
 use primitive_types::{H160, U256};
+use shared::interaction::Interaction;
 
 #[derive(Debug)]
 pub struct Erc20ApproveInteraction {
