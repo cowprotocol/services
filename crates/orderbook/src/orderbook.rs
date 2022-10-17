@@ -12,7 +12,7 @@ use primitive_types::H160;
 use shared::{
     metrics::LivenessChecking,
     order_validation::{OrderValidating, ValidationError},
-    price_estimation::native::NativePriceEstimating,
+    price_estimation::{native::NativePriceEstimating, PriceEstimationError},
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -285,10 +285,13 @@ impl Orderbook {
             .context("get_user_orders error")
     }
 
-    pub async fn get_native_prices(&self, tokens: &[H160]) -> Result<Vec<f64>> {
+    pub async fn get_native_prices(
+        &self,
+        tokens: &[H160],
+    ) -> Result<Vec<f64>, PriceEstimationError> {
         self.native_price_estimator
             .estimate_native_prices(tokens)
-            .map(|(_, price)| price.context("missing estimation"))
+            .map(|(_, price)| price)
             .collect::<Vec<_>>()
             .await
             .into_iter()

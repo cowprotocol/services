@@ -2,7 +2,7 @@ use crate::orderbook::Orderbook;
 use anyhow::Result;
 use ethcontract::H160;
 use serde::Deserialize;
-use shared::api::ApiReply;
+use shared::api::{ApiReply, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
@@ -28,10 +28,7 @@ pub fn get_native_prices(
             let result = orderbook.get_native_prices(&tokens.tokens).await;
             let reply = match result {
                 Ok(estimates) => with_status(warp::reply::json(&estimates), StatusCode::OK),
-                Err(_) => with_status(
-                    super::error("NotFound", "There is no estimate for all tokens"),
-                    StatusCode::NOT_FOUND,
-                ),
+                Err(err) => err.into_warp_reply(),
             };
             Result::<_, Infallible>::Ok(reply)
         }
