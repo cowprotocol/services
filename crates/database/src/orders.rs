@@ -401,12 +401,18 @@ pub fn user_orders<'a>(
     // queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-"SELECT ", ORDERS_SELECT,
+"(SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
-" WHERE o.owner = $1 ",
-"ORDER BY o.creation_timestamp DESC ",
-"LIMIT $2 ",
-"OFFSET $3 ",
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE o.owner = $1) ",
+" UNION ALL",
+" (SElECT ", ORDERS_SELECT,
+" FROM ", ORDERS_FROM,
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE onchain_o.sender = $1) ",
+" ORDER BY creation_timestamp DESC ",
+" LIMIT $2 ",
+" OFFSET $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(owner)
@@ -781,6 +787,58 @@ mod tests {
         assert!(get_order(&mut db, 2).await.is_some());
     }
 
+    // This test is only for the PR. Can be removed before merging...
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_user_orders_performance() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        type Data = ([u8; 56], Address, DateTime<Utc>);
+        async fn user_orders(
+            ex: &mut PgConnection,
+            owner: &Address,
+            offset: i64,
+            limit: Option<i64>,
+        ) -> Vec<Data> {
+            super::user_orders(ex, owner, offset, limit)
+                .map(|o| {
+                    let o = o.unwrap();
+                    (o.uid.0, o.owner, o.creation_timestamp)
+                })
+                .collect::<Vec<_>>()
+                .await
+        }
+
+        // fill the database
+        for i in 0..240u32 {
+            let mut owner_bytes = i.to_ne_bytes().to_vec();
+            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+            let owner = ByteArray(owner_bytes.try_into().unwrap());
+            for j in 0..1000u32 {
+                let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                order_uid_info.append(&mut j_as_bytes);
+                i_as_bytes.append(&mut order_uid_info);
+                let order = Order {
+                    owner,
+                    uid: ByteArray(i_as_bytes.try_into().unwrap()),
+                    creation_timestamp: Utc::now(),
+                    ..Default::default()
+                };
+                insert_order(&mut db, &order).await.unwrap();
+            }
+        }
+
+        let now = Utc::now();
+        let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
+        let time_diff = Utc::now() - now;
+        println!("{:?}", time_diff);
+        assert!(time_diff < chrono::Duration::seconds(1));
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_user_orders() {
@@ -788,7 +846,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let owners: Vec<Address> = (0u8..2).map(|i| ByteArray([i; 20])).collect();
+        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
 
         fn datetime(offset: u32) -> DateTime<Utc> {
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
@@ -841,6 +899,17 @@ mod tests {
 
         let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
         assert_eq!(result, vec![]);
+
+        let onchain_order = OnchainOrderPlacement {
+            order_uid: ByteArray(orders[0].0),
+            sender: owners[2],
+        };
+        let event_index = EventIndex::default();
+        insert_onchain_order(&mut db, &event_index, &onchain_order)
+            .await
+            .unwrap();
+        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
+        assert_eq!(result, vec![orders[0]]);
     }
 
     #[tokio::test]
