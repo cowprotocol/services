@@ -52,7 +52,7 @@ pub struct SettlementEncoder {
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
     execution_plan: Vec<MaybeInternalizableInteraction>,
-    pre_interactions: Vec<Arc<InteractionData>>,
+    pre_interactions: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -172,7 +172,7 @@ impl SettlementEncoder {
             .context("impossible trade execution")?;
 
         self.pre_interactions
-            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
+            .append(&mut order.interactions.pre.clone());
         self.order_trades.push(order_trade);
         Ok(execution)
     }
@@ -243,7 +243,7 @@ impl SettlementEncoder {
             .context("impossible trade execution")?;
 
         self.pre_interactions
-            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
+            .append(&mut order.interactions.pre.clone());
         self.liquidity_order_trades.push(liquidity_order_trade);
         Ok(execution)
     }
