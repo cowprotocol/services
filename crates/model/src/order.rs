@@ -680,7 +680,7 @@ mod tests {
             "signingScheme": "eip712",
             "status": "open",
             "settlementContract": "0x0000000000000000000000000000000000000002",
-            r#"sellTokenBalance"#: "external",
+            "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
             "interactions": {
