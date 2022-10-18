@@ -29,6 +29,12 @@ use web3::signing::{self, Key, SecretKeyRef};
 /// It is used in place of an actual buy token address in an order.
 pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Interactions {
+    pub pre: Vec<InteractionData>,
+    // later we can add here intra/post interactions
+}
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
@@ -41,7 +47,7 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
-    pub pre_interactions: Vec<InteractionData>,
+    pub interactions: Interactions,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -77,7 +83,7 @@ impl Order {
             data: order.data,
             // Currenlty, we only support pre_interactions created
             // via the on-chain order parsing
-            pre_interactions: Vec::new(),
+            interactions: Interactions::default(),
         })
     }
 
@@ -726,7 +732,7 @@ mod tests {
                 .unwrap(),
             }
             .to_signature(signing_scheme),
-            pre_interactions: Vec::new(),
+            interactions: Interactions::default(),
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);

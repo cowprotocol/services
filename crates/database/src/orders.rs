@@ -57,7 +57,7 @@ pub enum BuyTokenDestination {
 /// one row in the pre_interaction table
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct PreInteraction {
-    pub target_to: Address,
+    pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
 }
@@ -120,8 +120,8 @@ pub async fn insert_pre_interactions(
     ex: &mut PgConnection,
     uid_and_preinteraction: &[(OrderUid, PreInteraction)],
 ) -> Result<(), sqlx::Error> {
-    for (order_uid, pre_interaction) in uid_and_preinteraction.iter() {
-        match insert_pre_interaction(ex, pre_interaction, order_uid).await {
+    for (index, (order_uid, pre_interaction)) in uid_and_preinteraction.iter().enumerate() {
+        match insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await {
             Ok(_) => (),
             Err(err) => return Err(err),
         }
@@ -131,21 +131,24 @@ pub async fn insert_pre_interactions(
 
 pub async fn insert_pre_interaction(
     ex: &mut PgConnection,
+    index: i64,
     pre_interaction: &PreInteraction,
     order_uid: &OrderUid,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO pre_interactions (
+INSERT INTO interactions (
     order_uid,
-    target_to,
+    index,
+    target,
     value,
     data
 )
-VALUES ($1, $2, $3, $4) 
+VALUES ($1, $2, $3, $4, $5) 
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
-        .bind(&pre_interaction.target_to)
+        .bind(&index)
+        .bind(&pre_interaction.target)
         .bind(&pre_interaction.value)
         .bind(&pre_interaction.data)
         .execute(ex)
@@ -158,8 +161,9 @@ pub async fn read_order_pre_interactions(
     id: &OrderUid,
 ) -> Result<Vec<PreInteraction>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT * FROM pre_interactions
+SELECT * FROM interactions
 WHERE order_uid = $1
+ORDER BY index
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
 }
@@ -374,10 +378,10 @@ pub struct FullOrder {
 // to get a better idea of what indexes postgres *could* use even if it decides that with the
 // current amount of data this wouldn't be better.
 //
-// The pre_interactions are read as arrays of their fields: target_to, value, data. This is done
+// The pre_interactions are read as arrays of their fields: target, value, data. This is done
 // as sqlx does not support reading arrays of more complicated types than just one field.
-// The pre_interaction's data of target_to, value and data are composed to an array of
-// interactions later
+// The pre_interaction's data of target, value and data are composed to an array of
+// interactions later.
 const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -396,9 +400,9 @@ o.is_liquidity_order,
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
 ), true)) AS presignature_pending,
-array(Select target_to from pre_interactions p where p.order_uid = o.uid order by p.target_to, p.value, p.data) as pre_interactions_tos,
-array(Select value from pre_interactions p where p.order_uid = o.uid order by p.target_to, p.value, p.data) as pre_interactions_values,
-array(Select data from pre_interactions p where p.order_uid = o.uid order by p.target_to, p.value, p.data) as pre_interactions_data
+array(Select target from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions_tos,
+array(Select value from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions_values,
+array(Select data from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions_data
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -552,14 +556,14 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let pre_interaction_1 = PreInteraction::default();
         let pre_interaction_2 = PreInteraction {
-            target_to: ByteArray([1; 20]),
+            target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
         };
-        insert_pre_interaction(&mut db, &pre_interaction_1, &order.uid)
+        insert_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        insert_pre_interaction(&mut db, &pre_interaction_2, &order.uid)
+        insert_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)

@@ -12,7 +12,7 @@ use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
+        BuyTokenDestination, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
         SellTokenSource,
     },
     signature::{Signature, SigningScheme},
@@ -167,7 +167,9 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         metadata,
         data,
         signature,
-        pre_interactions,
+        interactions: Interactions {
+            pre: pre_interactions,
+        },
     })
 }
 

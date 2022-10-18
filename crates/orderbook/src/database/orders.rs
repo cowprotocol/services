@@ -9,7 +9,7 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
     signature::Signature,
 };
 use num::Zero;
@@ -325,7 +325,9 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         metadata,
         data,
         signature,
-        pre_interactions,
+        interactions: Interactions {
+            pre: pre_interactions,
+        },
     })
 }
 

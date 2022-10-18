@@ -24,25 +24,10 @@ pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionDa
     let mut pre_interactions = Vec::new();
     for i in 0..order.pre_interactions_tos.len() {
         pre_interactions.push(InteractionData {
-            to: H160(
-                order
-                    .pre_interactions_tos
-                    .get(i)
-                    .expect("invalid pre_interaction stored")
-                    .0,
-            ),
-            value: big_decimal_to_u256(
-                order
-                    .pre_interactions_values
-                    .get(i)
-                    .expect("invalid pre_interaction stored"),
-            )
-            .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
-            call_data: order
-                .pre_interactions_data
-                .get(i)
-                .unwrap_or(&Vec::new())
-                .to_vec(),
+            target: H160(order.pre_interactions_tos[i].0),
+            value: big_decimal_to_u256(&order.pre_interactions_values[i])
+                .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
+            call_data: order.pre_interactions_data[i].to_vec(),
         });
     }
     Ok(pre_interactions)
