@@ -347,7 +347,11 @@ impl PoolFetching for UniswapV3PoolFetcher {
             append_events(&mut checkpoint, events);
         }
 
-        Ok(checkpoint.into_values().collect())
+        // return only pools which current liquidity is positive
+        Ok(checkpoint
+            .into_values()
+            .filter(|pool| pool.state.liquidity > U256::zero())
+            .collect())
     }
 }
 
