@@ -85,7 +85,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
 
 #[derive(Debug, Default)]
 pub struct RecentEventsCache {
-    /// Block number used as a Key
+    /// (block number, event log index) used as a Key
     events: BTreeMap<(u64, usize), Event<UniswapV3Event>>,
 }
 

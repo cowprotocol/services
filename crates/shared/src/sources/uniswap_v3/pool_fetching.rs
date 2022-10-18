@@ -330,6 +330,8 @@ impl PoolFetching for UniswapV3PoolFetcher {
                 block_number,
                 last_handled_block
             );
+            // we call run_maintenance() here because that is the only way to update the event storage
+            // with the events from the block range last_handled_block..=block_number which are missing
             if let Err(err) = self.events.run_maintenance().await {
                 tracing::debug!("failed to update events on fetch because {}", err);
                 return Ok(Default::default());

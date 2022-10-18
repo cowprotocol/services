@@ -102,7 +102,10 @@ impl UniV3SubgraphClient {
         let pools = self
             .0
             .paginated_query(block_number, ALL_POOLS_QUERY)
-            .await?;
+            .await?
+            .into_iter()
+            .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())
+            .collect();
 
         Ok(RegisteredPools {
             fetched_block_number: block_number,
