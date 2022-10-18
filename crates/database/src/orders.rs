@@ -265,7 +265,7 @@ AND cancellation_timestamp IS NULL
 }
 
 /// Order with extra information from other tables. Has all the information needed to construct a model::Order.
-#[derive(sqlx::FromRow)]
+#[derive(Clone, sqlx::FromRow)]
 pub struct FullOrder {
     pub uid: OrderUid,
     pub owner: Address,

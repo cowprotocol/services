@@ -209,6 +209,7 @@ mod tests {
             auction: model::auction::Auction {
                 block: 1,
                 latest_settlement_block: 2,
+                orders_v1: Default::default(),
                 orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
                 prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
             },

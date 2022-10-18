@@ -680,7 +680,7 @@ components:
         but not provided by users when creating orders.
       type: object
       properties:
-        creationTime:
+        creationDate:
           description: Creation time of the order. Encoded as ISO 8601 UTC.
           type: string
           example: "2020-12-03T18:35:18.814523Z"
@@ -732,10 +732,46 @@ components:
         - executedBuyAmount
         - executedFeeAmount
         - invalidated
+    AuctionOrderMetaData:
+      description: |
+        Extra order data included for orders in the auction endpoint.
+      type: object
+      properties:
+        creationDate:
+          description: "see OrderMetaData::creationDate"
+          type: string
+        owner:
+          $ref: "#/components/schemas/Address"
+        UID:
+          $ref: "#/components/schemas/UID"
+        executedAmount:
+          description: "see OrderMetaData::executedAmount"
+          $ref: "#/components/schemas/BigUint"
+        fullFeeAmount:
+          description: "see OrderMetaData::fullFeeAmount"
+          $ref: "#/components/schemas/TokenAmount"
+        isLiquidityOrder:
+          description: "see OrderMetaData::isLiquidityOrder"
+          type: boolean
+        reward:
+          description: "The CIP-14 risk adjusted reward in COW base units."
+          type: number
+      required:
+        - creationDate
+        - owner
+        - UID
+        - executedAmount
+        - fullFeeAmount
+        - isLiquidityOrder
+        - reward
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
+    AuctionOrder:
+      allOf:
+        - $ref: "#/components/schemas/OrderCreation"
+        - $ref: "#/components/schemas/AuctionOrderMetaData"
     Auction:
       description: |
         A batch auction for solving.
@@ -761,6 +797,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
+          description: |
+            DEPRECATED
+
+            The solvable orders included in the auction.
+        orders_v2:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuctionOrder"
           description: |
             The solvable orders included in the auction.
         prices:

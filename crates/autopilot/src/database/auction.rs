@@ -1,5 +1,6 @@
 use super::Postgres;
 use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use database::{
     auction::AuctionId,
     orders::{
@@ -12,22 +13,25 @@ use model::{
     app_id::AppId,
     auction::{Auction, Order, OrderMetadata},
     order::{BuyTokenDestination, OrderData, OrderUid, SellTokenSource},
+    quote::QuoteId,
     signature::{Signature, SigningScheme},
 };
-use number_conversions::big_decimal_to_u256;
+use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256};
 use primitive_types::H160;
-
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub latest_settlement_block: u64,
-}
-use chrono::{DateTime, Utc};
-use model::quote::QuoteId;
 use shared::{
     db_order_conversions::order_kind_from,
     event_storing_helpers::{create_db_search_parameters, create_quote_row},
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
+
+// The order format has changed and while the old format is being deprecated we temporarily use
+// both formats.
+pub type SolvableOrder = (model::order::Order, Order);
+
+pub struct SolvableOrders {
+    pub orders: Vec<SolvableOrder>,
+    pub latest_settlement_block: u64,
+}
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
@@ -85,7 +89,10 @@ impl Postgres {
         let mut ex = self.0.begin().await?;
         let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
             .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
+                Ok(order) => Ok((
+                    full_order_into_model_order_v1(order.clone())?,
+                    full_order_into_model_order(order)?,
+                )),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect::<Vec<_>>()
@@ -111,6 +118,61 @@ impl Postgres {
         ex.commit().await?;
         Ok(id)
     }
+}
+
+fn full_order_into_model_order_v1(
+    order: database::orders::FullOrder,
+) -> Result<model::order::Order> {
+    let status = model::order::OrderStatus::Open;
+    let metadata = model::order::OrderMetadata {
+        creation_date: order.creation_timestamp,
+        owner: H160(order.owner.0),
+        uid: OrderUid(order.uid.0),
+        available_balance: Default::default(),
+        executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
+            .context("executed buy amount is not an unsigned integer")?,
+        executed_sell_amount: big_decimal_to_big_uint(&order.sum_sell)
+            .context("executed sell amount is not an unsigned integer")?,
+        // Executed fee amounts and sell amounts before fees are capped by
+        // order's fee and sell amounts, and thus can always fit in a `U256`
+        // - as it is limited by the order format.
+        executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
+            .context(
+            "executed sell amount before fees does not fit in a u256",
+        )?,
+        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
+            .context("executed fee amount is not a valid u256")?,
+        invalidated: order.invalidated,
+        status,
+        settlement_contract: H160(order.settlement_contract.0),
+        full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
+            .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
+        is_liquidity_order: order.is_liquidity_order,
+    };
+    let data = OrderData {
+        sell_token: H160(order.sell_token.0),
+        buy_token: H160(order.buy_token.0),
+        receiver: order.receiver.map(|address| H160(address.0)),
+        sell_amount: big_decimal_to_u256(&order.sell_amount)
+            .ok_or_else(|| anyhow!("sell_amount is not U256"))?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount)
+            .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
+        valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
+        app_data: AppId(order.app_data.0),
+        fee_amount: big_decimal_to_u256(&order.fee_amount)
+            .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
+        kind: order_kind_from(order.kind),
+        partially_fillable: order.partially_fillable,
+        sell_token_balance: sell_token_source_from(order.sell_token_balance),
+        buy_token_balance: buy_token_destination_from(order.buy_token_balance),
+    };
+    let signing_scheme = signing_scheme_from(order.signing_scheme);
+    let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
+    Ok(model::order::Order {
+        metadata,
+        data,
+        signature,
+    })
 }
 
 fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {

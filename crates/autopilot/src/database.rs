@@ -1,4 +1,4 @@
-mod auction;
+pub mod auction;
 mod events;
 pub mod onchain_order_events;
 mod quotes;

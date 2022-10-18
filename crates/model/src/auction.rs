@@ -88,6 +88,16 @@ pub struct Auction {
     pub latest_settlement_block: u64,
 
     /// The solvable orders included in the auction.
+    ///
+    /// v1 is included temporarily for backward compatibility.
+    #[serde(default, rename = "orders")]
+    pub orders_v1: Vec<crate::order::Order>,
+
+    /// The solvable orders included in the auction.
+    ///
+    /// These are the same orders as v1 but the type definition has changed. Some fields have been
+    /// removed and some added.
+    #[serde(default, rename = "orders_v2")]
     pub orders: Vec<Order>,
 
     /// The reference prices for all traded tokens in the auction.
@@ -122,6 +132,7 @@ mod tests {
         let auction = Auction {
             block: 42,
             latest_settlement_block: 40,
+            orders_v1: vec![],
             orders: vec![order(1), order(2)],
             prices: btreemap! {
                 H160([2; 20]) => U256::from(2),
@@ -136,7 +147,8 @@ mod tests {
                 "id": 0,
                 "block": 42,
                 "latestSettlementBlock": 40,
-                "orders": [
+                "orders": [],
+                "orders_v2": [
                     order(1),
                     order(2),
                 ],
@@ -177,6 +189,7 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
+            "reward": 2.,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {

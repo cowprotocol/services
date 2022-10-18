@@ -315,7 +315,14 @@ mod tests {
             )),
         };
         let min_valid_to = model::time::now_in_epoch_seconds();
-        let orders = db.solvable_orders(min_valid_to).await.unwrap().orders;
+        let orders = db
+            .solvable_orders(min_valid_to)
+            .await
+            .unwrap()
+            .orders
+            .into_iter()
+            .map(|order| order.1)
+            .collect::<Vec<_>>();
         let results = calc.calculate_many(&orders).await.unwrap();
         assert!(orders.len() == results.len());
         for (order, result) in orders.iter().zip(results) {
