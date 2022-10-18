@@ -630,7 +630,6 @@ mod tests {
                 "liquidity": "0",
                 "tick": "0",
                 "liquidity_net": {},
-                "fee": "0",
               },
               "gas_stats": {
                 "mean": "0",
