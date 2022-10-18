@@ -6,14 +6,14 @@ use crate::{
 };
 use anyhow::{bail, ensure, Context as _, Result};
 use itertools::Itertools;
-use model::order::{Order, OrderKind};
+use model::{
+    interaction::InteractionData,
+    order::{Order, OrderKind},
+};
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
-use shared::{
-    conversions::U256Ext,
-    interaction::{interaction_data_from_order, Interaction, InteractionData},
-};
+use shared::{conversions::U256Ext, interaction::Interaction};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     iter,
@@ -171,15 +171,8 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, *buy_price)
             .context("impossible trade execution")?;
 
-        self.pre_interactions.append(
-            &mut order
-                .interactions
-                .pre
-                .into_iter()
-                .map(interaction_data_from_order)
-                .map(Arc::new)
-                .collect(),
-        );
+        self.pre_interactions
+            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
         self.order_trades.push(order_trade);
         Ok(execution)
     }
@@ -249,15 +242,8 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, buy_price)
             .context("impossible trade execution")?;
 
-        self.pre_interactions.append(
-            &mut order
-                .interactions
-                .pre
-                .into_iter()
-                .map(interaction_data_from_order)
-                .map(Arc::new)
-                .collect(),
-        );
+        self.pre_interactions
+            .append(&mut order.interactions.pre.into_iter().map(Arc::new).collect());
         self.liquidity_order_trades.push(liquidity_order_trade);
         Ok(execution)
     }
