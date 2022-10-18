@@ -44,10 +44,12 @@ LEFT OUTER JOIN LATERAL (
 ) AS settlement ON true
 JOIN orders o
 ON o.uid = t.order_uid
+JOIN onchain_orders onchain_o
+ON onchain_o.uid = t.order_uid
 WHERE
     o.uid IS NOT null
 AND
-    ($1 IS NULL OR o.owner = $1)
+    ($1 IS NULL OR o.owner = $1 OR onchain_o.sender = $1)
 AND
     ($2 IS NULL OR o.uid = $2)
     "#;
@@ -65,7 +67,7 @@ mod tests {
         byte_array::ByteArray,
         events::{Event, EventIndex, Settlement, Trade},
         orders::Order,
-        PgTransaction,
+        PgTransaction, onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
     };
     use futures::TryStreamExt;
     use sqlx::Connection;
@@ -171,7 +173,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(3, 2).await;
+        let (owners, order_ids) = generate_owners_and_order_ids(4, 2).await;
 
         let event_index_0 = EventIndex {
             block_number: 0,
@@ -187,9 +189,19 @@ mod tests {
         let trade_1 =
             add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
 
-        assert_trades(&mut db, Some(&owners[0]), None, &[trade_0]).await;
+        assert_trades(&mut db, Some(&owners[0]), None, &[trade_0.clone()]).await;
         assert_trades(&mut db, Some(&owners[1]), None, &[trade_1]).await;
         assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
+
+        let onchain_order = OnchainOrderPlacement {
+            order_uid: ByteArray(order_ids[0].0),
+            sender: owners[3],
+        };
+        let event_index = EventIndex::default();
+        insert_onchain_order(&mut db, &event_index, &onchain_order)
+            .await
+            .unwrap();
+        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
     }
 
     #[tokio::test]
