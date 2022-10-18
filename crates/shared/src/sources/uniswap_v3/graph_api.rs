@@ -39,6 +39,7 @@ const ALL_POOLS_QUERY: &str = r#"
             liquidity
             sqrtPrice
             tick
+            totalValueLockedETH
         }
     }
 "#;
@@ -68,30 +69,13 @@ const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
             liquidity
             sqrtPrice
             tick
+            totalValueLockedETH
             ticks {
                 id
                 tickIdx
                 liquidityNet
                 poolAddress
             }
-        }
-    }
-"#;
-
-const TICKS_QUERY: &str = r#"
-    query Ticks($block: Int, $pageSize: Int, $lastId: ID) {
-        ticks(
-            block: { number: $block }
-            first: $pageSize
-            where: {
-                id_gt: $lastId
-                liquidityNet_not: "0"
-            }
-        ) {
-            id
-            tickIdx
-            liquidityNet
-            poolAddress
         }
     }
 "#;
@@ -118,7 +102,10 @@ impl UniV3SubgraphClient {
         let pools = self
             .0
             .paginated_query(block_number, ALL_POOLS_QUERY)
-            .await?;
+            .await?
+            .into_iter()
+            .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())
+            .collect();
 
         Ok(RegisteredPools {
             fetched_block_number: block_number,
@@ -127,8 +114,11 @@ impl UniV3SubgraphClient {
     }
 
     /// Retrieves the pools (including ticks) by ids from the subgraph.
-    pub async fn get_pools_with_ticks_by_ids(&self, ids: &[H160]) -> Result<Vec<PoolData>> {
-        let block_number = self.get_safe_block().await?;
+    pub async fn get_pools_with_ticks_by_ids(
+        &self,
+        ids: &[H160],
+        block_number: u64,
+    ) -> Result<Vec<PoolData>> {
         Ok(self
             .0
             .query::<Data<PoolData>>(
@@ -142,15 +132,9 @@ impl UniV3SubgraphClient {
             .inner)
     }
 
-    /// Retrieves the list of ticks from the subgraph.
-    pub async fn get_ticks(&self) -> Result<Vec<TickData>> {
-        let block_number = self.get_safe_block().await?;
-        self.0.paginated_query(block_number, TICKS_QUERY).await
-    }
-
     /// Retrieves a recent block number for which it is safe to assume no
     /// reorgs will happen.
-    async fn get_safe_block(&self) -> Result<u64> {
+    pub async fn get_safe_block(&self) -> Result<u64> {
         // Ideally we would want to use block hash here so that we can check
         // that there indeed is no reorg. However, it does not seem possible to
         // retrieve historic block hashes just from the subgraph (it always
@@ -167,7 +151,7 @@ impl UniV3SubgraphClient {
 }
 
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched
     pub fetched_block_number: u64,
@@ -177,7 +161,7 @@ pub struct RegisteredPools {
 
 /// Pool data from the Uniswap V3 subgraph.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub id: H160,
@@ -191,6 +175,9 @@ pub struct PoolData {
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(rename = "totalValueLockedETH")]
+    pub total_value_locked_eth: f64,
     pub ticks: Option<Vec<TickData>>,
 }
 
@@ -210,7 +197,6 @@ pub struct TickData {
     pub tick_idx: BigInt,
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity_net: BigInt,
-    pub pool_address: H160,
 }
 
 impl ContainsId for TickData {
@@ -224,7 +210,6 @@ impl ContainsId for TickData {
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub id: H160,
-    pub symbol: String,
     #[serde_as(as = "DisplayFromStr")]
     pub decimals: u8,
 }
@@ -282,6 +267,7 @@ mod tests {
                       "feeTier": "10000",
                       "liquidity": "303015134493562686441",
                       "tick": "-92110",
+                      "totalValueLockedETH": "1.0",
                       "sqrtPrice": "792216481398733702759960397"
                     },
                     {
@@ -299,6 +285,7 @@ mod tests {
                       "feeTier": "3000",
                       "liquidity": "3125586395511534995",
                       "tick": "-189822",
+                      "totalValueLockedETH": "1.0",
                       "sqrtPrice": "5986323062404391218190509"
                     }
                 ],
@@ -311,13 +298,11 @@ mod tests {
                         token0: Token {
                             id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f")
                                 .unwrap(),
-                            symbol: "BCZ".to_string(),
                             decimals: 18,
                         },
                         token1: Token {
                             id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
                                 .unwrap(),
-                            symbol: "WETH".to_string(),
                             decimals: 18,
                         },
                         fee_tier: U256::from_dec_str("10000").unwrap(),
@@ -325,19 +310,18 @@ mod tests {
                         sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
                         tick: BigInt::from(-92110),
                         ticks: None,
+                        total_value_locked_eth: 1.0
                     },
                     PoolData {
                         id: H160::from_str("0x0002e63328169d7feea121f1e32e4f620abf0352").unwrap(),
                         token0: Token {
                             id: H160::from_str("0x0d438f3b5175bebc262bf23753c1e53d03432bde")
                                 .unwrap(),
-                            symbol: "wNXM".to_string(),
                             decimals: 18,
                         },
                         token1: Token {
                             id: H160::from_str("0x903bef1736cddf2a537176cf3c64579c3867a881")
                                 .unwrap(),
-                            symbol: "ICHI".to_string(),
                             decimals: 9,
                         },
                         fee_tier: U256::from_dec_str("3000").unwrap(),
@@ -345,6 +329,7 @@ mod tests {
                         sqrt_price: U256::from_dec_str("5986323062404391218190509").unwrap(),
                         tick: BigInt::from(-189822),
                         ticks: None,
+                        total_value_locked_eth: 1.0
                     },
                 ],
             }
@@ -377,15 +362,11 @@ mod tests {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
                         tick_idx: BigInt::from(0),
                         liquidity_net: BigInt::from(-303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
                     },
                     TickData {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
                         tick_idx: BigInt::from(-92200),
                         liquidity_net: BigInt::from(303015134493562686441i128),
-                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
-                            .unwrap(),
                     },
                 ],
             }
@@ -450,19 +431,15 @@ mod tests {
             H160::from_str("0x00a151b39b43f6a79366f9129222b9370e30a702").unwrap(),
             H160::from_str("0x00a9205611cc32ec9c0d16fc58f31b9355ec7ade").unwrap(),
         ];
-        let result = client.get_pools_with_ticks_by_ids(&ids).await.unwrap();
+        let block_number = client.get_safe_block().await.unwrap();
+        let result = client
+            .get_pools_with_ticks_by_ids(&ids, block_number)
+            .await
+            .unwrap();
         println!(
             "Retrieved {} total pools out of {}",
             result.len(),
             ids.len()
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn uniswap_v3_subgraph_query_get_ticks() {
-        let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
-        let result = client.get_ticks().await.unwrap();
-        println!("Retrieved {} total ticks", result.len(),);
     }
 }
