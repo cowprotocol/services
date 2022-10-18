@@ -16,7 +16,7 @@ use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
 use num::{rational::Ratio, BigInt, Zero};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -36,7 +36,7 @@ pub trait PoolFetching: Send + Sync {
 }
 
 /// Pool data in a format prepared for solvers.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolInfo {
     pub address: H160,
     pub tokens: Vec<Token>,
@@ -46,7 +46,7 @@ pub struct PoolInfo {
 
 /// Pool state in a format prepared for solvers.
 #[serde_as]
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolState {
     #[serde(with = "u256_decimal")]
     pub sqrt_price: U256,
@@ -57,12 +57,12 @@ pub struct PoolState {
     // (tick_idx, liquidity_net)
     #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
     pub liquidity_net: BTreeMap<BigInt, BigInt>,
-    #[serde_as(as = "DisplayFromStr")]
+    #[serde(skip_serializing)]
     pub fee: Ratio<u32>,
 }
 
 /// Pool stats in a format prepared for solvers
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolStats {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "mean")]
@@ -188,12 +188,12 @@ impl PoolsCheckpointHandler {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
                 let (existing_pools, missing_pools): (HashMap<H160, PoolInfo>, Vec<H160>) =
                     pool_ids.partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
-                        Some(entry) => Either::Left((entry.address, entry.clone())),
+                        Some(entry) => Either::Left((*pool_id, entry.clone())),
                         _ => Either::Right(pool_id),
                     });
                 tracing::debug!(
                     "cache hit: {:?}, cache miss: {:?}",
-                    existing_pools,
+                    existing_pools.keys(),
                     missing_pools
                 );
                 pools_checkpoint
@@ -211,6 +211,7 @@ impl PoolsCheckpointHandler {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
             (checkpoint.missing_pools.clone(), checkpoint.block_number)
         };
+        tracing::debug!("currently missing pools are {:?}", missing_pools);
 
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
         let pools = self
@@ -222,6 +223,14 @@ impl PoolsCheckpointHandler {
         for pool in pools {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, pool.try_into()?);
+        }
+
+        tracing::debug!("number of cached pools is {}", checkpoint.pools.len());
+        if !checkpoint.missing_pools.is_empty() {
+            tracing::warn!(
+                "not all missing pools updated: {:?}",
+                checkpoint.missing_pools
+            );
         }
         Ok(())
     }
@@ -284,9 +293,13 @@ impl UniswapV3PoolFetcher {
                 let mut checkpoint = self.checkpoint.pools_checkpoint.lock().unwrap();
                 append_events(&mut checkpoint.pools, events);
                 checkpoint.block_number = new_checkpoint_block;
+                tracing::debug!(
+                    "checkpoint block number updated to {}",
+                    checkpoint.block_number
+                );
             }
 
-            // clear events before new_checkpoint_block
+            // clear events with block number lower than `new_checkpoint_block`
             self.events
                 .lock()
                 .await
@@ -479,7 +492,6 @@ mod tests {
                         "67260": "5812623076452005012674" ,
                     }
                 ,
-                "fee": "1/100",
             },
             "gas_stats": {
                 "mean": "300000",
@@ -523,11 +535,8 @@ mod tests {
             },
         };
 
-        let serialized = serde_json::to_value(pool.clone()).unwrap();
-        let deserialized = serde_json::from_value::<PoolInfo>(json.clone()).unwrap();
-
+        let serialized = serde_json::to_value(pool).unwrap();
         assert_eq!(json, serialized);
-        assert_eq!(pool, deserialized);
     }
 
     #[test]
