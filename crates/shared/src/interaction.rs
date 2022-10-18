@@ -39,7 +39,7 @@ impl Interaction for InteractionData {
 
 pub fn interaction_data_from_order(interaction: InteractionDataFromOrder) -> InteractionData {
     InteractionData {
-        to: interaction.to,
+        to: interaction.target,
         value: interaction.value,
         call_data: interaction.call_data,
     }
