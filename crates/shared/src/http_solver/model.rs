@@ -47,7 +47,7 @@ pub struct OrderModel {
     pub reward: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AmmModel {
     #[serde(flatten)]
     pub parameters: AmmParameters,
@@ -57,7 +57,7 @@ pub struct AmmModel {
     pub mandatory: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind")]
 pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
@@ -67,7 +67,7 @@ pub enum AmmParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConstantProductPoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -81,13 +81,13 @@ pub struct WeightedPoolTokenData {
     pub weight: BigRational,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct WeightedProductPoolParameters {
     pub reserves: BTreeMap<H160, WeightedPoolTokenData>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StablePoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -98,7 +98,7 @@ pub struct StablePoolParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
     pub pool: PoolInfo,
 }
