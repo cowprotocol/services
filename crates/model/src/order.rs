@@ -81,8 +81,6 @@ impl Order {
             },
             signature: order.signature.clone(),
             data: order.data,
-            // Currenlty, we only support pre_interactions created
-            // via the on-chain order parsing
             interactions: Interactions::default(),
         })
     }
@@ -682,10 +680,12 @@ mod tests {
             "signingScheme": "eip712",
             "status": "open",
             "settlementContract": "0x0000000000000000000000000000000000000002",
-            "sellTokenBalance": "external",
+            r#"sellTokenBalance"#: "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
-            "preInteractions": [],
+            "interactions": {
+                    "pre": []
+            }
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
