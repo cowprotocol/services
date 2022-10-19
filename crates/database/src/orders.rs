@@ -54,6 +54,14 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
+/// one row in the pre_interaction table
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+pub struct Interaction {
+    pub target: Address,
+    pub value: BigDecimal,
+    pub data: Vec<u8>,
+}
+
 /// One row in the `orders` table.
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
 pub struct Order {
@@ -106,6 +114,55 @@ impl Default for Order {
             cancellation_timestamp: Default::default(),
         }
     }
+}
+
+pub async fn insert_pre_interactions(
+    ex: &mut PgConnection,
+    uid_and_preinteraction: &[(OrderUid, Interaction)],
+) -> Result<(), sqlx::Error> {
+    for (index, (order_uid, pre_interaction)) in uid_and_preinteraction.iter().enumerate() {
+        insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
+    }
+    Ok(())
+}
+
+pub async fn insert_pre_interaction(
+    ex: &mut PgConnection,
+    index: i64,
+    pre_interaction: &Interaction,
+    order_uid: &OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO interactions (
+    order_uid,
+    index,
+    target,
+    value,
+    data
+)
+VALUES ($1, $2, $3, $4, $5) 
+    "#;
+    sqlx::query(QUERY)
+        .bind(&order_uid)
+        .bind(&index)
+        .bind(&pre_interaction.target)
+        .bind(&pre_interaction.value)
+        .bind(&pre_interaction.data)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn read_order_pre_interactions(
+    ex: &mut PgConnection,
+    id: &OrderUid,
+) -> Result<Vec<Interaction>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT * FROM interactions
+WHERE order_uid = $1
+ORDER BY index
+    "#;
+    sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
 }
 
 pub async fn insert_orders_and_ignore_conflicts(
@@ -292,6 +349,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
+    pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -314,6 +372,11 @@ pub struct FullOrder {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides that with the
 // current amount of data this wouldn't be better.
+//
+// The pre_interactions are read as arrays of their fields: target, value, data. This is done
+// as sqlx does not support reading arrays of more complicated types than just one field.
+// The pre_interaction's data of target, value and data are composed to an array of
+// interactions later.
 const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -331,7 +394,8 @@ o.is_liquidity_order,
     WHERE o.uid = p.order_uid
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
-), true)) AS presignature_pending
+), true)) AS presignature_pending,
+array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -472,6 +536,64 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_roundtrip_pre_interactions() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        let pre_interaction_1 = Interaction::default();
+        let pre_interaction_2 = Interaction {
+            target: ByteArray([1; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![0u8, 1u8],
+        };
+        insert_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+            .await
+            .unwrap();
+        insert_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+            .await
+            .unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            vec![ByteArray::default(), ByteArray([1; 20])],
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.0)
+                .collect::<Vec<ByteArray<20>>>(),
+        );
+        assert_eq!(
+            vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.1)
+                .collect::<Vec<BigDecimal>>()
+        );
+        assert_eq!(
+            vec![vec![], vec![0u8, 1u8]],
+            order_
+                .pre_interactions
+                .into_iter()
+                .map(|v| v.2)
+                .collect::<Vec<Vec<u8>>>()
+        );
+        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+            .await
+            .unwrap();
+        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
     }
 
     #[tokio::test]
