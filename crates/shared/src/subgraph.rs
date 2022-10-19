@@ -80,21 +80,21 @@ impl SubgraphClient {
         T: ContainsId + DeserializeOwned,
     {
         let mut result = Vec::new();
-        let mut last_id = String::default();
 
         // We do paging by last ID instead of using `skip`. This is the
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/en/developer/graphql-api/#pagination>
+        let mut variables = variables.unwrap_or_default();
+        variables.insert("pageSize".to_string(), json!(QUERY_PAGE_SIZE));
+        variables.insert("lastId".to_string(), json!(String::default()));
         loop {
-            let variables = variables.clone().map(|mut vars| {
-                vars.insert("lastId".to_string(), json!(last_id));
-                vars.insert("pageSize".to_string(), json!(QUERY_PAGE_SIZE));
-                vars
-            });
-            let page = self.query::<Data<T>>(query, variables).await?.inner;
+            let page = self
+                .query::<Data<T>>(query, Some(variables.clone()))
+                .await?
+                .inner;
             let no_more_pages = page.len() != QUERY_PAGE_SIZE;
             if let Some(last_elem) = page.last() {
-                last_id = last_elem.get_id();
+                variables.insert("lastId".to_string(), json!(last_elem.get_id()));
             }
 
             result.extend(page);
