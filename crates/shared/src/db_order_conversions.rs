@@ -13,21 +13,13 @@ use model::{
 use number_conversions::big_decimal_to_u256;
 
 pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionData>> {
-    anyhow::ensure!(
-        order.pre_interactions_tos.len() == order.pre_interactions_values.len(),
-        "invalid pre_interactions length"
-    );
-    anyhow::ensure!(
-        order.pre_interactions_tos.len() == order.pre_interactions_data.len(),
-        "invalid pre_interactions length"
-    );
     let mut pre_interactions = Vec::new();
-    for i in 0..order.pre_interactions_tos.len() {
+    for i in 0..order.pre_interactions.len() {
         pre_interactions.push(InteractionData {
-            target: H160(order.pre_interactions_tos[i].0),
-            value: big_decimal_to_u256(&order.pre_interactions_values[i])
+            target: H160(order.pre_interactions[i].0.0),
+            value: big_decimal_to_u256(&order.pre_interactions[i].1)
                 .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
-            call_data: order.pre_interactions_data[i].to_vec(),
+            call_data: order.pre_interactions[i].2.to_vec(),
         });
     }
     Ok(pre_interactions)

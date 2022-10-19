@@ -394,9 +394,7 @@ mod tests {
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
             is_liquidity_order: true,
-            pre_interactions_tos: Vec::new(),
-            pre_interactions_values: Vec::new(),
-            pre_interactions_data: Vec::new(),
+            pre_interactions: Vec::new(),
         };
 
         // Open - sell (filled - 0%)
