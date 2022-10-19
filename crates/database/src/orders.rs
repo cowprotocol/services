@@ -833,11 +833,11 @@ mod tests {
             }
         }
 
-        let now = Utc::now();
+        let now = std::time::Instant::now();
         let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
-        let time_diff = Utc::now() - now;
-        println!("{:?}", time_diff);
-        assert!(time_diff < chrono::Duration::seconds(1));
+        let time_diff = now.elapsed();
+        println!("{:?}", elapsed);
+        assert!(elapsed < std::time::Duration::from_secs(1));
     }
 
     #[tokio::test]
