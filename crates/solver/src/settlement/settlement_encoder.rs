@@ -18,7 +18,7 @@ use std::{
 
 /// An interaction paired with a flag indicating whether it can be omitted
 /// from the final execution plan
-type MaybeInternalizabelInteraction = (Arc<dyn Interaction>, bool);
+type MaybeInternalizableInteraction = (Arc<dyn Interaction>, bool);
 
 /// An intermediate settlement representation that can be incrementally
 /// constructed.
@@ -47,7 +47,7 @@ pub struct SettlementEncoder {
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
-    execution_plan: Vec<MaybeInternalizabelInteraction>,
+    execution_plan: Vec<MaybeInternalizableInteraction>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
