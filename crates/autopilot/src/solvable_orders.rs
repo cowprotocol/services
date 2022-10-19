@@ -1,4 +1,4 @@
-use crate::database::Postgres;
+use crate::{database::Postgres, risk_adjusted_rewards};
 use anyhow::{Context as _, Result};
 use futures::StreamExt;
 use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
@@ -58,6 +58,8 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
+    // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
+    reward_calculator: Option<risk_adjusted_rewards::Calculator>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -87,6 +89,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
+        reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -106,6 +109,7 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            reward_calculator,
         });
         tokio::task::spawn(update_task(
             Arc::downgrade(&self_),
@@ -170,11 +174,32 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
+        let rewards = if let Some(calculator) = &self.reward_calculator {
+            let rewards = calculator
+                .calculate_many(&orders)
+                .await
+                .context("rewards")?;
+            orders
+            .iter()
+            .zip(rewards)
+            .filter_map(|(order, reward)| match reward {
+                Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
+                Ok(_) => None,
+                Err(err) => {
+                    tracing::warn!(?order.metadata.uid, ?err, "error calculating risk adjusted reward");
+                    None
+                }
+            })
+            .collect()
+        } else {
+            Default::default()
+        };
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders.clone(),
             prices,
+            rewards,
         };
         let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {

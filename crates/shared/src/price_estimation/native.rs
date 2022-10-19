@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
 
-pub fn default_amount_to_estimate_native_prices_with(network_id: &str) -> Option<U256> {
-    match network_id {
+pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U256> {
+    match chain_id {
         // Mainnet, Rinkeby, Göŕli
-        "1" | "4" | "5" => Some(10u128.pow(18).into()),
+        1 | 4 | 5 => Some(10u128.pow(18).into()),
         // Xdai
-        "100" => Some(10u128.pow(21).into()),
+        100 => Some(10u128.pow(21).into()),
         _ => None,
     }
 }

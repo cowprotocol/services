@@ -58,9 +58,13 @@ impl AuctionConverting for AuctionConverter {
         let orders = auction
             .orders
             .into_iter()
-            .filter_map(
-                |order| match self.order_converter.normalize_limit_order(order) {
-                    Ok(order) if order.buy_amount != 0.into() && order.sell_amount != 0.into() => {
+            .filter_map(|order| {
+                let uid = order.metadata.uid;
+                match self.order_converter.normalize_limit_order(order) {
+                    Ok(mut order)
+                        if order.buy_amount != 0.into() && order.sell_amount != 0.into() =>
+                    {
+                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
                         Some(order)
                     }
                     Err(err) => {
@@ -76,8 +80,8 @@ impl AuctionConverting for AuctionConverter {
                         tracing::error!(?err, "error normalizing limit order");
                         None
                     }
-                },
-            )
+                }
+            })
             .collect::<Vec<_>>();
         anyhow::ensure!(
             orders.iter().any(|o| !o.is_liquidity_order),
@@ -210,6 +214,7 @@ mod tests {
                 latest_settlement_block: 2,
                 orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
                 prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+                rewards: Default::default(),
             },
         };
 

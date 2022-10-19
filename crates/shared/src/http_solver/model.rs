@@ -43,9 +43,11 @@ pub struct OrderModel {
     /// usual user provided orders because those can be batched together and it's only relevant if
     /// the pre- and post conditions are met after the complete batch got executed.
     pub has_atomic_execution: bool,
+    /// CIP-14 risk adjusted solver reward
+    pub reward: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AmmModel {
     #[serde(flatten)]
     pub parameters: AmmParameters,
@@ -55,7 +57,7 @@ pub struct AmmModel {
     pub mandatory: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind")]
 pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
@@ -65,7 +67,7 @@ pub enum AmmParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConstantProductPoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -79,13 +81,13 @@ pub struct WeightedPoolTokenData {
     pub weight: BigRational,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct WeightedProductPoolParameters {
     pub reserves: BTreeMap<H160, WeightedPoolTokenData>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StablePoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -96,7 +98,7 @@ pub struct StablePoolParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
     pub pool: PoolInfo,
 }
@@ -408,6 +410,7 @@ mod tests {
             is_liquidity_order: false,
             mandatory: false,
             has_atomic_execution: false,
+            reward: 3.,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -469,12 +472,10 @@ mod tests {
                     tokens: vec![
                         Token {
                             id: buy_token,
-                            symbol: "CAT".to_string(),
                             decimals: 6,
                         },
                         Token {
                             id: sell_token,
-                            symbol: "DOG".to_string(),
                             decimals: 18,
                         },
                     ],
@@ -555,7 +556,8 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
-              "has_atomic_execution": false
+              "has_atomic_execution": false,
+              "reward": 3.0
             },
           },
           "amms": {
@@ -616,12 +618,10 @@ mod tests {
                  "tokens": [
                 {
                   "id": "0x0000000000000000000000000000000000000539",
-                  "symbol": "CAT",
                   "decimals": "6",
                 },
                 {
                   "id": "0x000000000000000000000000000000000000a866",
-                  "symbol": "DOG",
                   "decimals": "18",
                 }
                 ],
@@ -630,7 +630,6 @@ mod tests {
                 "liquidity": "0",
                 "tick": "0",
                 "liquidity_net": {},
-                "fee": "0",
               },
               "gas_stats": {
                 "mean": "0",

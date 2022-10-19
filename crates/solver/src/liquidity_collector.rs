@@ -72,7 +72,7 @@ impl LiquidityCollecting for LiquidityCollector {
         if let Some(uniswap_v3_liquidity) = self.uniswap_v3_liquidity.as_ref() {
             amms.extend(
                 uniswap_v3_liquidity
-                    .get_liquidity(&user_orders)
+                    .get_liquidity(&user_orders, at_block)
                     .await
                     .context("failed to get UniswapV3 liquidity")?
                     .into_iter()
