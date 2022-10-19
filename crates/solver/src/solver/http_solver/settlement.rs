@@ -72,6 +72,7 @@ impl Execution {
         &self,
         settlement: &mut Settlement,
         slippage: &SlippageContext,
+        internalizable: bool,
     ) -> Result<()> {
         use Execution::*;
 
@@ -81,6 +82,7 @@ impl Execution {
                 let execution = AmmOrderExecution {
                     input_max: slippage.execution_input_max(executed_amm.input)?,
                     output: executed_amm.output,
+                    internalizable,
                 };
                 match &executed_amm.order {
                     Liquidity::ConstantProduct(liquidity) => {
@@ -100,9 +102,10 @@ impl Execution {
                 }
             }
             CustomInteraction(interaction_data) => {
-                settlement
-                    .encoder
-                    .append_to_execution_plan(*interaction_data.clone());
+                settlement.encoder.append_to_execution_plan_internalizable(
+                    *interaction_data.clone(),
+                    internalizable,
+                );
                 Ok(())
             }
         }
@@ -192,20 +195,11 @@ impl<'a> IntermediateSettlement<'a> {
         }
 
         for execution in &self.executions {
-            if let Some(ExecutionPlan::Internal) = execution.execution_plan() {
-                // This AMM execution or interaction should be internalized and
-                // replaced with buffer trading. Ideally, we would be able to
-                // log the interaction calldata that would be equivalent to the
-                // buffer swap, but that would require a larger refactor around
-                // how we build settlements. For now, just log the execution
-                // itself which is enough to manually recontruct what the actual
-                // calldata would have been.
-                tracing::debug!(?execution, "internalized AMM execution");
-
-                continue;
-            }
-
-            execution.add_to_settlement(&mut settlement, &self.slippage)?;
+            execution.add_to_settlement(
+                &mut settlement,
+                &self.slippage,
+                Some(&ExecutionPlan::Internal) == execution.execution_plan(),
+            )?;
         }
 
         Ok(settlement)
@@ -604,14 +598,23 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 9.into()),
                 output: (t1, 9.into()),
+                internalizable: false
             }]
         );
-        assert_eq!(internal_amm_handler.calls(), vec![]);
+        assert_eq!(
+            internal_amm_handler.calls(),
+            vec![AmmOrderExecution {
+                input_max: (t0, 2.into()),
+                output: (t1, 1.into()),
+                internalizable: true
+            }]
+        );
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
                 input_max: (t0, 2.into()),
                 output: (t1, 2.into()),
+                internalizable: false
             }]
         );
         assert_eq!(
@@ -619,6 +622,7 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 5.into()),
                 output: (t1, 6.into()),
+                internalizable: false
             }]
         );
     }

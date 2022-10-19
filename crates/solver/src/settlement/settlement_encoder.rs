@@ -16,6 +16,10 @@ use std::{
     sync::Arc,
 };
 
+/// An interaction paired with a flag indicating whether it can be omitted
+/// from the final execution plan
+type MaybeInternalizableInteraction = (Arc<dyn Interaction>, bool);
+
 /// An intermediate settlement representation that can be incrementally
 /// constructed.
 ///
@@ -43,7 +47,7 @@ pub struct SettlementEncoder {
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
-    execution_plan: Vec<Arc<dyn Interaction>>,
+    execution_plan: Vec<MaybeInternalizableInteraction>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -116,8 +120,10 @@ impl SettlementEncoder {
         &self.liquidity_order_trades
     }
 
-    pub fn execution_plan(&self) -> &Vec<Arc<dyn Interaction>> {
-        &self.execution_plan
+    pub fn has_interactions(&self) -> bool {
+        self.execution_plan
+            .iter()
+            .any(|(_, internalizable)| !internalizable)
     }
 
     // Fails if any used token doesn't have a price or if executed amount is impossible.
@@ -232,7 +238,16 @@ impl SettlementEncoder {
     }
 
     pub fn append_to_execution_plan(&mut self, interaction: impl Interaction + 'static) {
-        self.execution_plan.push(Arc::new(interaction));
+        self.append_to_execution_plan_internalizable(interaction, false)
+    }
+
+    pub fn append_to_execution_plan_internalizable(
+        &mut self,
+        interaction: impl Interaction + 'static,
+        internalizable: bool,
+    ) {
+        self.execution_plan
+            .push((Arc::new(interaction), internalizable));
     }
 
     pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
@@ -395,6 +410,13 @@ impl SettlementEncoder {
                     .chain(
                         self.execution_plan
                             .iter()
+                            .filter_map(|(interaction, internalizable)| {
+                                if *internalizable {
+                                    None
+                                } else {
+                                    Some(interaction)
+                                }
+                            })
                             .flat_map(|interaction| interaction.encode()),
                     )
                     .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))

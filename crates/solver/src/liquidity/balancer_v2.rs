@@ -147,20 +147,26 @@ impl SettlementHandler {
         let (asset_in, amount_in_max) = execution.input_max;
         let (asset_out, amount_out) = execution.output;
 
-        encoder.append_to_execution_plan(self.allowances.approve_token(asset_in, amount_in_max)?);
-        encoder.append_to_execution_plan(BalancerSwapGivenOutInteraction {
-            settlement: self.settlement.clone(),
-            vault: self.vault.clone(),
-            pool_id: self.pool_id,
-            asset_in,
-            asset_out,
-            amount_out,
-            amount_in_max,
-            // Balancer pools allow passing additional user data in order to
-            // control pool behaviour for swaps. That being said, weighted pools
-            // do not seem to make use of this at the moment so leave it empty.
-            user_data: Default::default(),
-        });
+        encoder.append_to_execution_plan_internalizable(
+            self.allowances.approve_token(asset_in, amount_in_max)?,
+            execution.internalizable,
+        );
+        encoder.append_to_execution_plan_internalizable(
+            BalancerSwapGivenOutInteraction {
+                settlement: self.settlement.clone(),
+                vault: self.vault.clone(),
+                pool_id: self.pool_id,
+                asset_in,
+                asset_out,
+                amount_out,
+                amount_in_max,
+                // Balancer pools allow passing additional user data in order to
+                // control pool behaviour for swaps. That being said, weighted pools
+                // do not seem to make use of this at the moment so leave it empty.
+                user_data: Default::default(),
+            },
+            execution.internalizable,
+        );
 
         Ok(())
     }
@@ -395,6 +401,7 @@ mod tests {
             AmmOrderExecution {
                 input_max: (H160([0x70; 20]), 10.into()),
                 output: (H160([0x71; 20]), 11.into()),
+                internalizable: false,
             },
             &mut encoder,
         )
@@ -404,6 +411,7 @@ mod tests {
             AmmOrderExecution {
                 input_max: (H160([0x71; 20]), 12.into()),
                 output: (H160([0x72; 20]), 13.into()),
+                internalizable: false,
             },
             &mut encoder,
         )
