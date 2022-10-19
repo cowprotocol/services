@@ -182,6 +182,7 @@ fn solve_with_uniswap(
                     .execution_input_max((uniswap_in_token, uniswap_in))
                     .ok()?,
                 output: (uniswap_out_token, uniswap_out_with_rounding),
+                internalizable: false,
             },
         )
         .ok()?;
@@ -1026,6 +1027,7 @@ mod tests {
                     token_b,
                     pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
                 ),
+                internalizable: false
             }],
         );
     }

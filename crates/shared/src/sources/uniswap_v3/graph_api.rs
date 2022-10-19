@@ -22,6 +22,7 @@ const ALL_POOLS_QUERY: &str = r#"
             where: {
                 id_gt: $lastId
                 tick_not: null
+                ticks_: { liquidityNet_not: "0" }
             }
         ) {
             id
@@ -99,9 +100,12 @@ impl UniV3SubgraphClient {
     /// Retrieves the list of registered pools from the subgraph.
     pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
         let block_number = self.get_safe_block().await?;
+        let variables = json_map! {
+            "block" => block_number,
+        };
         let pools = self
             .0
-            .paginated_query(block_number, ALL_POOLS_QUERY)
+            .paginated_query(ALL_POOLS_QUERY, variables)
             .await?
             .into_iter()
             .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())

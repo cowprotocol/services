@@ -491,10 +491,11 @@ impl Settlement {
 
     // Calculates the risk level for settlement to be reverted
     pub fn revertable(&self) -> Revertable {
-        if self.encoder.execution_plan().is_empty() {
-            return Revertable::NoRisk;
+        if self.encoder.has_interactions() {
+            Revertable::HighRisk
+        } else {
+            Revertable::NoRisk
         }
-        Revertable::HighRisk
     }
 }
 
