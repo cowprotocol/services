@@ -322,7 +322,7 @@ impl Driver {
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
                         fees: rated_settlement
-                            .unscaled_subsidized_fee
+                            .scaled_unsubsidized_fee
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()

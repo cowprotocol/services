@@ -1,9 +1,10 @@
 //! Module continaing ERC20 token interaction implementations.
 
-use crate::{encoding::EncodedInteraction, settlement::Interaction};
+use crate::encoding::EncodedInteraction;
 use contracts::ERC20;
 use ethcontract::Bytes;
 use primitive_types::{H160, U256};
+use shared::interaction::Interaction;
 
 #[derive(Debug)]
 pub struct Erc20ApproveInteraction {

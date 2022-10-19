@@ -50,6 +50,7 @@ include_contracts! {
     UniswapV2Factory;
     UniswapV2Router02;
     UniswapV3SwapRouter;
+    UniswapV3Pool;
     WETH9;
 }
 

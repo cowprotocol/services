@@ -99,6 +99,22 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_auction_age: Duration,
+
+    #[clap(long, env)]
+    pub cip_14_beta: Option<f64>,
+    #[clap(long, env)]
+    pub cip_14_alpha1: Option<f64>,
+    #[clap(long, env)]
+    pub cip_14_alpha2: Option<f64>,
+    /// in COW base units
+    #[clap(long, env)]
+    pub cip_14_profit: Option<f64>,
+    /// in gas units
+    #[clap(long, env)]
+    pub cip_14_gas_cap: Option<f64>,
+    /// in COW base units
+    #[clap(long, env)]
+    pub cip_14_reward_cap: Option<f64>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -134,6 +150,12 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
+        display_option(f, "cip_14_beta", &self.cip_14_beta)?;
+        display_option(f, "cip_14_alpha1", &self.cip_14_alpha1)?;
+        display_option(f, "cip_14_alpha2", &self.cip_14_alpha2)?;
+        display_option(f, "cip_14_profit", &self.cip_14_profit)?;
+        display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
+        display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
         Ok(())
     }
 }
