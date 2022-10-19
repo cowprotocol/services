@@ -22,6 +22,7 @@ const ALL_POOLS_QUERY: &str = r#"
             where: {
                 id_gt: $lastId
                 tick_not: null
+                ticks_: { liquidityNet_not: "0" }
             }
         ) {
             id
