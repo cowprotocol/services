@@ -70,7 +70,6 @@ mod tests {
         orders::Order,
         PgTransaction,
     };
-    use chrono::Utc;
     use futures::TryStreamExt;
     use sqlx::Connection;
 
@@ -178,7 +177,7 @@ mod tests {
             let mut owner_bytes = i.to_ne_bytes().to_vec();
             owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
             let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..1000u32 {
+            for j in 0..100u32 {
                 let mut i_as_bytes = i.to_ne_bytes().to_vec();
                 let mut j_as_bytes = j.to_ne_bytes().to_vec();
                 let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
@@ -188,24 +187,31 @@ mod tests {
                     block_number: 0,
                     log_index: 0,
                 };
-                add_order_and_trade(
+                let order_uid = ByteArray(i_as_bytes.try_into().unwrap());
+                insert_onchain_order(
                     &mut db,
-                    owner,
-                    ByteArray(i_as_bytes.try_into().unwrap()),
-                    event_index_0,
-                    None,
+                    &event_index_0.clone(),
+                    &OnchainOrderPlacement {
+                        order_uid,
+                        ..Default::default()
+                    },
                 )
-                .await;
+                .await
+                .unwrap();
+                add_order_and_trade(&mut db, owner, order_uid, event_index_0, None).await;
             }
         }
-        let now = Utc::now();
+
+        let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        let time_diff = Utc::now() - now;
-        println!("{:?}", time_diff);
+        let elapsed = now.elapsed();
+        println!("{:?}", elapsed);
+        assert!(elapsed < std::time::Duration::from_secs(1));
     }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter() {
