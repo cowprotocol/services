@@ -22,7 +22,7 @@ pub fn trades<'a>(
     owner_filter: Option<&'a Address>,
     order_uid_filter: Option<&'a OrderUid>,
 ) -> BoxStream<'a, Result<TradesQueryRow, sqlx::Error>> {
-    const QUERY: &str = r#"
+    const COMMON_QUERY: &str = r#"
 SELECT
     t.block_number,
     t.log_index,
@@ -43,16 +43,20 @@ LEFT OUTER JOIN LATERAL (
     LIMIT 1
 ) AS settlement ON true
 JOIN orders o
-ON o.uid = t.order_uid
-LEFT OUTER JOIN onchain_placed_orders onchain_o
-ON onchain_o.uid = t.order_uid
-WHERE
-    o.uid IS NOT null
-AND
-    ($1 IS NULL OR o.owner = $1 OR onchain_o.sender = $1)
-AND
-    ($2 IS NULL OR o.uid = $2)
-    "#;
+ON o.uid = t.order_uid"#;
+    const QUERY: &str = const_format::concatcp!(
+        COMMON_QUERY,
+        " WHERE o.uid IS NOT null ",
+        " AND ($1 IS NULL OR o.owner = $1)",
+        " AND ($2 IS NULL OR o.uid = $2)",
+        "UNION ALL",
+        COMMON_QUERY,
+        " LEFT OUTER JOIN onchain_placed_orders onchain_o",
+        " ON onchain_o.uid = t.order_uid",
+        " WHERE o.uid IS NOT null",
+        " AND onchain_o.sender = $1",
+        " AND ($2 IS NULL OR o.uid = $2)",
+    );
 
     sqlx::query_as(QUERY)
         .bind(owner_filter)
