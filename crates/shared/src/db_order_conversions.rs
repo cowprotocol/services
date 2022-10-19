@@ -16,7 +16,7 @@ pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionDa
     let mut pre_interactions = Vec::new();
     for i in 0..order.pre_interactions.len() {
         pre_interactions.push(InteractionData {
-            target: H160(order.pre_interactions[i].0.0),
+            target: H160(order.pre_interactions[i].0 .0),
             value: big_decimal_to_u256(&order.pre_interactions[i].1)
                 .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
             call_data: order.pre_interactions[i].2.to_vec(),

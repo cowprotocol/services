@@ -321,7 +321,6 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
-
 /// Order with extra information from other tables. Has all the information needed to construct a model::Order.
 #[derive(sqlx::FromRow)]
 pub struct FullOrder {
@@ -350,7 +349,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
-    pub pre_interactions: Vec<(Address,BigDecimal,Vec<u8>)>,
+    pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -566,13 +565,30 @@ mod tests {
             .unwrap();
         assert_eq!(
             vec![ByteArray::default(), ByteArray([1; 20])],
-            order_.pre_interactions.clone().into_iter().map(|v|v.0).collect::<Vec<ByteArray<20>>>(),
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.0)
+                .collect::<Vec<ByteArray<20>>>(),
         );
         assert_eq!(
             vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
-            order_.pre_interactions.clone().into_iter().map(|v|v.1).collect::<Vec<BigDecimal>>()
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.1)
+                .collect::<Vec<BigDecimal>>()
         );
-        assert_eq!(vec![vec![], vec![0u8, 1u8]], order_.pre_interactions.into_iter().map(|v|v.2).collect::<Vec<Vec<u8>>>());
+        assert_eq!(
+            vec![vec![], vec![0u8, 1u8]],
+            order_
+                .pre_interactions
+                .into_iter()
+                .map(|v| v.2)
+                .collect::<Vec<Vec<u8>>>()
+        );
         let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
             .await
             .unwrap();
