@@ -85,8 +85,10 @@ impl SubgraphClient {
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/en/developer/graphql-api/#pagination>
         let mut variables = variables.unwrap_or_default();
-        variables.insert("pageSize".to_string(), json!(QUERY_PAGE_SIZE));
-        variables.insert("lastId".to_string(), json!(String::default()));
+        variables.extend(json_map! {
+            "pageSize" => QUERY_PAGE_SIZE,
+            "lastId" => json!(String::default()),
+        });
         loop {
             let page = self
                 .query::<Data<T>>(query, Some(variables.clone()))
