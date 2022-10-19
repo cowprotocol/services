@@ -44,7 +44,7 @@ LEFT OUTER JOIN LATERAL (
 ) AS settlement ON true
 JOIN orders o
 ON o.uid = t.order_uid
-JOIN onchain_orders onchain_o
+LEFT OUTER JOIN onchain_placed_orders onchain_o
 ON onchain_o.uid = t.order_uid
 WHERE
     o.uid IS NOT null
@@ -66,9 +66,11 @@ mod tests {
     use crate::{
         byte_array::ByteArray,
         events::{Event, EventIndex, Settlement, Trade},
+        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         orders::Order,
-        PgTransaction, onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
+        PgTransaction,
     };
+    use chrono::Utc;
     use futures::TryStreamExt;
     use sqlx::Connection;
 
@@ -166,6 +168,44 @@ mod tests {
         assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_with_owner_filter_benchmark_test() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+        for i in 0..240u32 {
+            let mut owner_bytes = i.to_ne_bytes().to_vec();
+            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+            let owner = ByteArray(owner_bytes.try_into().unwrap());
+            for j in 0..1000u32 {
+                let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                order_uid_info.append(&mut j_as_bytes);
+                i_as_bytes.append(&mut order_uid_info);
+                let event_index_0 = EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                };
+                add_order_and_trade(
+                    &mut db,
+                    owner,
+                    ByteArray(i_as_bytes.try_into().unwrap()),
+                    event_index_0,
+                    None,
+                )
+                .await;
+            }
+        }
+        let now = Utc::now();
+        trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        let time_diff = Utc::now() - now;
+        println!("{:?}", time_diff);
+    }
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter() {
