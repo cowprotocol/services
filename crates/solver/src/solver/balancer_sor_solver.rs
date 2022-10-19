@@ -17,9 +17,10 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{Account, Bytes, I256, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
-use shared::balancer_sor_api::{BalancerSorApi, Query, Quote};
-
-use shared::interaction::{EncodedInteraction, Interaction};
+use shared::{
+    balancer_sor_api::{BalancerSorApi, Query, Quote},
+    interaction::{EncodedInteraction, Interaction},
+};
 use std::sync::Arc;
 
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
