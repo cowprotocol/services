@@ -56,7 +56,7 @@ pub enum BuyTokenDestination {
 
 /// one row in the pre_interaction table
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
-pub struct PreInteraction {
+pub struct Interaction {
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
@@ -118,13 +118,10 @@ impl Default for Order {
 
 pub async fn insert_pre_interactions(
     ex: &mut PgConnection,
-    uid_and_preinteraction: &[(OrderUid, PreInteraction)],
+    uid_and_preinteraction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
     for (index, (order_uid, pre_interaction)) in uid_and_preinteraction.iter().enumerate() {
-        match insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await {
-            Ok(_) => (),
-            Err(err) => return Err(err),
-        }
+        insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
     }
     Ok(())
 }
@@ -132,7 +129,7 @@ pub async fn insert_pre_interactions(
 pub async fn insert_pre_interaction(
     ex: &mut PgConnection,
     index: i64,
-    pre_interaction: &PreInteraction,
+    pre_interaction: &Interaction,
     order_uid: &OrderUid,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
@@ -159,7 +156,7 @@ VALUES ($1, $2, $3, $4, $5)
 pub async fn read_order_pre_interactions(
     ex: &mut PgConnection,
     id: &OrderUid,
-) -> Result<Vec<PreInteraction>, sqlx::Error> {
+) -> Result<Vec<Interaction>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT * FROM interactions
 WHERE order_uid = $1
@@ -554,8 +551,8 @@ mod tests {
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
-        let pre_interaction_1 = PreInteraction::default();
-        let pre_interaction_2 = PreInteraction {
+        let pre_interaction_1 = Interaction::default();
+        let pre_interaction_2 = Interaction {
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
