@@ -1,11 +1,29 @@
+use anyhow::{anyhow, Result};
 use database::orders::{
-    BuyTokenDestination as DbBuyTokenDestination, OrderKind as DbOrderKind,
-    SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
+    OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
+    SigningScheme as DbSigningScheme,
 };
+use ethcontract::H160;
 use model::{
+    interaction::InteractionData,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
 };
+use number_conversions::big_decimal_to_u256;
+
+pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionData>> {
+    let mut pre_interactions = Vec::new();
+    for i in 0..order.pre_interactions.len() {
+        pre_interactions.push(InteractionData {
+            target: H160(order.pre_interactions[i].0 .0),
+            value: big_decimal_to_u256(&order.pre_interactions[i].1)
+                .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
+            call_data: order.pre_interactions[i].2.to_vec(),
+        });
+    }
+    Ok(pre_interactions)
+}
 
 pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {
     match kind {

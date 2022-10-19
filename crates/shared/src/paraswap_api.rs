@@ -1,10 +1,12 @@
 use crate::{
     debug_bytes,
+    interaction::Interaction,
     rate_limiter::{back_off, RateLimiter, RateLimiterError},
+    trade_finding::EncodedInteraction,
 };
 use anyhow::Result;
 use derivative::Derivative;
-use ethcontract::{H160, U256};
+use ethcontract::{Bytes, H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, RequestBuilder, Url};
 use serde::{
@@ -355,6 +357,12 @@ pub struct TransactionBuilderResponse {
     /// the suggested gas price
     #[serde(with = "u256_decimal")]
     pub gas_price: U256,
+}
+
+impl Interaction for TransactionBuilderResponse {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![(self.to, self.value, Bytes(self.data.clone()))]
+    }
 }
 
 #[cfg(test)]
