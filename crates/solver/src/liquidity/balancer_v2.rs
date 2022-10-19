@@ -175,10 +175,7 @@ impl SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        settlement::Interaction,
-    };
+    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
@@ -186,6 +183,7 @@ mod tests {
     use primitive_types::H160;
     use shared::{
         dummy_contract,
+        interaction::Interaction,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter, CommonPoolState, FetchedBalancerPools,
             MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,

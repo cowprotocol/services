@@ -1,14 +1,12 @@
 use crate::{
-    encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
         Liquidity,
     },
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use ethcontract::Bytes;
 use model::order::{Interactions, Order, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
@@ -146,12 +144,6 @@ struct ExecutedAmm {
     output: (H160, U256),
     order: Liquidity,
     exec_plan: Option<ExecutionPlan>,
-}
-
-impl Interaction for InteractionData {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
-    }
 }
 
 impl<'a> IntermediateSettlement<'a> {
