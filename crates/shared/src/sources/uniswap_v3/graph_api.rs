@@ -100,9 +100,9 @@ impl UniV3SubgraphClient {
     /// Retrieves the list of registered pools from the subgraph.
     pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
         let block_number = self.get_safe_block().await?;
-        let variables = Some(json_map! {
+        let variables = json_map! {
             "block" => block_number,
-        });
+        };
         let pools = self
             .0
             .paginated_query(ALL_POOLS_QUERY, variables)

@@ -74,7 +74,7 @@ impl SubgraphClient {
     pub async fn paginated_query<T>(
         &self,
         query: &str,
-        variables: Option<Map<String, Value>>,
+        mut variables: Map<String, Value>,
     ) -> Result<Vec<T>>
     where
         T: ContainsId + DeserializeOwned,
@@ -84,7 +84,6 @@ impl SubgraphClient {
         // We do paging by last ID instead of using `skip`. This is the
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/en/developer/graphql-api/#pagination>
-        let mut variables = variables.unwrap_or_default();
         variables.extend(json_map! {
             "pageSize" => QUERY_PAGE_SIZE,
             "lastId" => json!(String::default()),
