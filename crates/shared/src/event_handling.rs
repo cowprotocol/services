@@ -116,6 +116,10 @@ where
         &self.store
     }
 
+    pub fn store_mut(&mut self) -> &mut S {
+        &mut self.store
+    }
+
     pub fn last_handled_block(&self) -> Option<BlockNumberHash> {
         self.last_handled_blocks.last().cloned()
     }

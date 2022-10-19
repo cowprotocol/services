@@ -306,6 +306,7 @@ fn main() {
             .add_network_str("1", "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str("5", "0xE592427A0AEce92De3Edee1F18E0157C05861564")
     });
+    generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
         builder
             .add_network_str("1", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
