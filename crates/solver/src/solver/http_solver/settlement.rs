@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context as _, Result};
 use ethcontract::Bytes;
-use model::order::{Order, OrderKind, OrderMetadata};
+use model::order::{Interactions, Order, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -252,6 +252,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
+                interactions: Interactions::default(),
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -582,6 +583,7 @@ mod tests {
                             ..Default::default()
                         },
                         signature: Signature::PreSign,
+                        ..Default::default()
                     },
                     sell_token_index: 1,
                     executed_amount: 101.into(),
