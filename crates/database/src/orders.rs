@@ -788,10 +788,11 @@ mod tests {
         assert!(get_order(&mut db, 2).await.is_some());
     }
 
-    // This test is only for the PR. Can be removed before merging...
     #[tokio::test]
     #[ignore]
     async fn postgres_user_orders_performance() {
+        //The following test can be used as performanc etest, if the values for
+        // i and j are increased ->i=240 and j=1000 are reasonable values
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -812,12 +813,11 @@ mod tests {
                 .await
         }
 
-        // fill the database
-        for i in 0..240u32 {
+        for i in 0..2u32 {
             let mut owner_bytes = i.to_ne_bytes().to_vec();
             owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
             let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..1000u32 {
+            for j in 0..1u32 {
                 let mut i_as_bytes = i.to_ne_bytes().to_vec();
                 let mut j_as_bytes = j.to_ne_bytes().to_vec();
                 let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
@@ -834,8 +834,7 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
-        let time_diff = now.elapsed();
+        let elapsed = now.elapsed();
         println!("{:?}", elapsed);
         assert!(elapsed < std::time::Duration::from_secs(1));
     }
