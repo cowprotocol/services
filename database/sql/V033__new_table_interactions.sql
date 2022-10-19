@@ -8,5 +8,3 @@ CREATE TABLE interactions (
     data bytea NOT NULL,
     PRIMARY KEY(order_uid, index)
 );
-
-CREATE INDEX uid ON interactions USING HASH (order_uid);
