@@ -3,22 +3,21 @@ use super::{
     Auction,
 };
 use crate::{
-    encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::{Account, Bytes, H160, U256};
+use ethcontract::{Account, H160, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::{
     paraswap_api::{
         DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
-        TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
+        TradeAmount, TransactionBuilderQuery,
     },
     rate_limiter::RateLimiter,
     token_info::{TokenInfo, TokenInfoFetching},
@@ -198,12 +197,6 @@ fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<u8> {
         .get(token)
         .and_then(|info| info.decimals)
         .ok_or_else(|| anyhow!("decimals for token {:?} not found", token))
-}
-
-impl Interaction for TransactionBuilderResponse {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.to, self.value, Bytes(self.data.clone()))]
-    }
 }
 
 #[cfg(test)]

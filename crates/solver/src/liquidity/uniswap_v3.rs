@@ -182,8 +182,8 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
             execution.output,
             self.fee.context("missing fee")?,
         );
-        encoder.append_to_execution_plan(approval);
-        encoder.append_to_execution_plan(swap);
+        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
 }
@@ -252,6 +252,7 @@ mod tests {
         let execution = AmmOrderExecution {
             input_max: (H160::default(), U256::zero()),
             output: (H160::default(), U256::zero()),
+            internalizable: false,
         };
         let mut encoder = SettlementEncoder::new(Default::default());
         let encoded = settlement_handler
