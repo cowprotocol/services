@@ -376,6 +376,8 @@ impl Driver {
             for trade in winning_settlement.settlement.encoder.order_trades() {
                 let uid = &trade.trade.order.metadata.uid;
                 let reward = rewards.get(uid).copied().unwrap_or(0.);
+                // Log in case something goes wrong with storing the rewards in the database.
+                tracing::debug!(%uid, %reward, "winning solution reward");
                 solver_competition.rewards.push((*uid, reward));
             }
 
