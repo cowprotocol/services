@@ -9,8 +9,8 @@ pub enum EthcontractErrorType {
 }
 
 impl EthcontractErrorType {
-    pub fn classify(err: &MethodError) -> Self {
-        match &err.inner {
+    pub fn classify(err: &impl AsExecutionError) -> Self {
+        match err.as_execution_error() {
             ExecutionError::Web3(_) => Self::Node,
             _ => Self::Contract,
         }
@@ -21,6 +21,22 @@ impl EthcontractErrorType {
     /// This is short hand for calling `classify` and checking it returns a `Contract` variant.
     pub fn is_contract_err(err: &MethodError) -> bool {
         matches!(Self::classify(err), Self::Contract)
+    }
+}
+
+pub trait AsExecutionError {
+    fn as_execution_error(&self) -> &ExecutionError;
+}
+
+impl AsExecutionError for MethodError {
+    fn as_execution_error(&self) -> &ExecutionError {
+        &self.inner
+    }
+}
+
+impl AsExecutionError for ExecutionError {
+    fn as_execution_error(&self) -> &ExecutionError {
+        self
     }
 }
 
