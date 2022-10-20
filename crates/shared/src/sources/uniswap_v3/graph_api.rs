@@ -1,9 +1,11 @@
 //! Module containing The Graph API client used for retrieving Uniswap V3
 //! data from the Uniswap V3 subgraph.
 
+use std::collections::HashMap;
+
 use crate::{
     event_handling::MAX_REORG_BLOCK_COUNT,
-    subgraph::{ContainsId, Data, SubgraphClient},
+    subgraph::{ContainsId, SubgraphClient},
 };
 use anyhow::{bail, Result};
 use ethcontract::{H160, U256};
@@ -11,7 +13,7 @@ use model::u256_decimal;
 use num::BigInt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Map, Value};
 use serde_with::{serde_as, DisplayFromStr};
 
 const ALL_POOLS_QUERY: &str = r#"
@@ -45,12 +47,14 @@ const ALL_POOLS_QUERY: &str = r#"
     }
 "#;
 
-const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
-    query Poolsbyidswithticks($block: Int, $ids: [ID]) {
+const POOLS_BY_IDS_QUERY: &str = r#"
+    query Pools($block: Int, $pool_ids: [ID], $pageSize: Int, $lastId: ID) {
         pools(
             block: { number: $block }
+            first: $pageSize
             where: {
-                id_in: $ids
+                id_in: $pool_ids
+                id_gt: $lastId
                 tick_not: null
                 ticks_: { liquidityNet_not: "0" }
             }
@@ -71,12 +75,25 @@ const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
             sqrtPrice
             tick
             totalValueLockedETH
-            ticks {
-                id
-                tickIdx
-                liquidityNet
-                poolAddress
+        }
+    }
+"#;
+
+const TICKS_BY_POOL_IDS_QUERY: &str = r#"
+    query Ticks($block: Int, $pool_ids: [ID], $pageSize: Int, $lastId: ID) {
+        ticks(
+            block: { number: $block }
+            first: $pageSize
+            where: {
+                id_gt: $lastId
+                liquidityNet_not: "0"
+                pool_: { id_in: $pool_ids }
             }
+        ) {
+            id
+            tickIdx
+            liquidityNet
+            poolAddress
         }
     }
 "#;
@@ -97,43 +114,89 @@ impl UniV3SubgraphClient {
         Ok(Self(SubgraphClient::new("uniswap", subgraph_name, client)?))
     }
 
-    /// Retrieves the list of registered pools from the subgraph.
+    async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
+        Ok(self
+            .0
+            .paginated_query(query, variables)
+            .await?
+            .into_iter()
+            .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())
+            .collect())
+    }
+
+    /// Retrieves the pool data for all existing pools from the subgraph.
     pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
         let block_number = self.get_safe_block().await?;
         let variables = json_map! {
             "block" => block_number,
         };
-        let pools = self
-            .0
-            .paginated_query(ALL_POOLS_QUERY, variables)
-            .await?
-            .into_iter()
-            .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())
-            .collect();
-
+        let pools = self.get_pools(ALL_POOLS_QUERY, variables).await?;
         Ok(RegisteredPools {
             fetched_block_number: block_number,
             pools,
         })
     }
 
-    /// Retrieves the pools (including ticks) by ids from the subgraph.
+    /// Retrieves the pool data for pools with given pool ids
+    async fn get_pools_by_pool_ids(
+        &self,
+        pool_ids: &[H160],
+        block_number: u64,
+    ) -> Result<Vec<PoolData>> {
+        let variables = json_map! {
+            "block" => block_number,
+            "pool_ids" => json!(pool_ids)
+        };
+        let pools = self.get_pools(POOLS_BY_IDS_QUERY, variables).await?;
+        Ok(pools)
+    }
+
+    /// Retrieves the ticks data for pools with given pool ids
+    async fn get_ticks_by_pools_ids(
+        &self,
+        pool_ids: &[H160],
+        block_number: u64,
+    ) -> Result<Vec<TickData>> {
+        let variables = json_map! {
+            "block" => block_number,
+            "pool_ids" => json!(pool_ids)
+        };
+        let result = self
+            .0
+            .paginated_query(TICKS_BY_POOL_IDS_QUERY, variables)
+            .await?;
+        Ok(result)
+    }
+
+    /// Retrieves the pool data and ticks data for pools with given pool ids
     pub async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[H160],
         block_number: u64,
     ) -> Result<Vec<PoolData>> {
-        Ok(self
-            .0
-            .query::<Data<PoolData>>(
-                POOLS_WITH_TICKS_BY_IDS_QUERY,
-                Some(json_map! {
-                    "block" => block_number,
-                    "ids" => json!(ids)
-                }),
-            )
-            .await?
-            .inner)
+        let (pools, ticks) = futures::try_join!(
+            self.get_pools_by_pool_ids(ids, block_number),
+            self.get_ticks_by_pools_ids(ids, block_number)
+        )?;
+
+        // group ticks by pool ids
+        let mut ticks_mapped = HashMap::new();
+        for tick in ticks {
+            ticks_mapped
+                .entry(tick.pool_address)
+                .or_insert(vec![])
+                .push(tick);
+        }
+
+        Ok(pools
+            .into_iter()
+            .filter_map(|mut pool| {
+                ticks_mapped.get(&pool.id).map(|ticks| {
+                    pool.ticks = Some(ticks.clone());
+                    pool
+                })
+            })
+            .collect())
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -201,6 +264,7 @@ pub struct TickData {
     pub tick_idx: BigInt,
     #[serde_as(as = "DisplayFromStr")]
     pub liquidity_net: BigInt,
+    pub pool_address: H160,
 }
 
 impl ContainsId for TickData {
@@ -247,7 +311,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subgraph::Data;
+    use crate::subgraph::{Data, QUERY_PAGE_SIZE};
     use serde_json::json;
     use std::str::FromStr;
 
@@ -366,11 +430,15 @@ mod tests {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
                         tick_idx: BigInt::from(0),
                         liquidity_net: BigInt::from(-303015134493562686441i128),
+                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
+                            .unwrap(),
                     },
                     TickData {
                         id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
                         tick_idx: BigInt::from(-92200),
                         liquidity_net: BigInt::from(303015134493562686441i128),
+                        pool_address: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
+                            .unwrap(),
                     },
                 ],
             }
@@ -400,7 +468,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn uniswap_v3_subgraph_query_get_pools() {
+    async fn get_registered_pools_test() {
         let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
         let result = client.get_registered_pools().await.unwrap();
         println!(
@@ -412,38 +480,57 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn uniswap_v3_subgraph_query_get_pools_by_ids() {
+    async fn get_pools_by_pool_ids_test() {
         let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
-        let ids = vec![
-            H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28").unwrap(),
-            H160::from_str("0x0002e63328169d7feea121f1e32e4f620abf0352").unwrap(),
-            H160::from_str("0x000ea4a83acefdd62b1b43e9ccc281f442651520").unwrap(),
-            H160::from_str("0x000f0c0b0b791e855dcc5ad6501c7529dea882e0").unwrap(),
-            H160::from_str("0x0025ade782cc2b2415d1e841a8d52ff5dce33dfe").unwrap(),
-            H160::from_str("0x002c0b78c8057636918b963cd26c07b7f2892bd8").unwrap(),
-            H160::from_str("0x00323a300261042dd5d697e3f92a06279cc7d15b").unwrap(),
-            H160::from_str("0x0041426a64a85ef884387dc3a69f9df1fbb7f9d1").unwrap(),
-            H160::from_str("0x005843e075e77ba46a26d24914db10a4d9ca0122").unwrap(),
-            H160::from_str("0x0059b4c53c85bb8159014bfd20700c14b29c4483").unwrap(),
-            H160::from_str("0x005b584315d7c47bb5fca504ac0d8df56aea40f9").unwrap(),
-            H160::from_str("0x005cd18887579ed785fb3e5e2c9356c31b78f89e").unwrap(),
-            H160::from_str("0x005e3dc62b7a269bef2a7d06e06cc0c991375c6f").unwrap(),
-            H160::from_str("0x0068bb604413dfee5c453907bb150d0312a0f257").unwrap(),
-            H160::from_str("0x006ac24a1f49e472673c82327bdf177a5c11491b").unwrap(),
-            H160::from_str("0x00953df8289165834539f5fdbc2bf40fa1538840").unwrap(),
-            H160::from_str("0x009b5d59ff6d7b5140b76fd0d25396f8014d5bd0").unwrap(),
-            H160::from_str("0x00a151b39b43f6a79366f9129222b9370e30a702").unwrap(),
-            H160::from_str("0x00a9205611cc32ec9c0d16fc58f31b9355ec7ade").unwrap(),
-        ];
-        let block_number = client.get_safe_block().await.unwrap();
+        let registered_pools = client.get_registered_pools().await.unwrap();
+        let pool_ids = registered_pools
+            .pools
+            .into_iter()
+            .map(|pool| pool.id)
+            .take(QUERY_PAGE_SIZE + 10)
+            .collect::<Vec<_>>();
+
+        let block_number = registered_pools.fetched_block_number;
         let result = client
-            .get_pools_with_ticks_by_ids(&ids, block_number)
+            .get_pools_by_pool_ids(&pool_ids, block_number)
             .await
             .unwrap();
-        println!(
-            "Retrieved {} total pools out of {}",
-            result.len(),
-            ids.len()
-        );
+        assert_eq!(result.len(), QUERY_PAGE_SIZE + 10);
+        assert_eq!(&result.last().unwrap().id, pool_ids.last().unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_ticks_by_pools_ids_test() {
+        let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
+        let block_number = client.get_safe_block().await.unwrap();
+        let pool_ids = vec![
+            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
+            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
+        ];
+        let result = client
+            .get_ticks_by_pools_ids(&pool_ids, block_number)
+            .await
+            .unwrap();
+        dbg!(result);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_pools_with_ticks_by_ids_test() {
+        let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
+        let block_number = client.get_safe_block().await.unwrap();
+        let pool_ids = vec![
+            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
+            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
+        ];
+        let result = client
+            .get_pools_with_ticks_by_ids(&pool_ids, block_number)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0].ticks.is_some());
+        assert!(result[1].ticks.is_some());
+        dbg!(result);
     }
 }
