@@ -4,13 +4,23 @@ use contracts::cowswap_onchain_orders::{
     event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
 };
 use database::{
-    ethflow_orders::EthOrderPlacement, events::EventIndex,
-    onchain_broadcasted_orders::OnchainOrderPlacement, orders::Order, PgTransaction,
+    byte_array::ByteArray,
+    ethflow_orders::EthOrderPlacement,
+    events::EventIndex,
+    onchain_broadcasted_orders::OnchainOrderPlacement,
+    orders::{Interaction, Order},
+    PgTransaction,
 };
 use ethcontract::Event as EthContractEvent;
+use hex_literal::hex;
+use sqlx::types::BigDecimal;
 use std::{collections::HashMap, convert::TryInto};
 
 use super::{OnchainOrderCustomData, OnchainOrderParsing};
+
+// 4c84c1c8 is the identifier of the following function:
+// https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
+const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
 
 pub struct EthFlowOnchainOrderParser;
 
@@ -19,8 +29,14 @@ pub struct EthFlowData {
     user_valid_to: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct EthFlowDataForDb {
+    eth_order_placement: EthOrderPlacement,
+    pre_interaction: Interaction,
+}
+
 #[async_trait::async_trait]
-impl OnchainOrderParsing<EthFlowData, EthOrderPlacement> for EthFlowOnchainOrderParser {
+impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderParser {
     fn parse_custom_event_data(
         &self,
         contract_events: &[EthContractEvent<ContractEvent>],
@@ -56,11 +72,26 @@ impl OnchainOrderParsing<EthFlowData, EthOrderPlacement> for EthFlowOnchainOrder
     async fn append_custom_order_info_to_db<'a>(
         &self,
         ex: &mut PgTransaction<'a>,
-        custom_onchain_data: Vec<EthOrderPlacement>,
+        custom_onchain_data: Vec<EthFlowDataForDb>,
     ) -> Result<()> {
-        database::ethflow_orders::append(ex, custom_onchain_data.as_slice())
+        let (eth_order_placements, pre_interactions_data): (
+            Vec<EthOrderPlacement>,
+            Vec<(database::OrderUid, Interaction)>,
+        ) = custom_onchain_data
+            .iter()
+            .map(|data| {
+                (
+                    data.eth_order_placement.clone(),
+                    (data.eth_order_placement.uid, data.pre_interaction.clone()),
+                )
+            })
+            .unzip();
+        database::ethflow_orders::append(ex, eth_order_placements.as_slice())
             .await
-            .context("append_ethflow_orders failed")
+            .context("append_ethflow_orders failed during appending eth order placement data")?;
+        database::orders::insert_pre_interactions(ex, pre_interactions_data.as_slice())
+            .await
+            .context("append_ethflow_orders failed during appending pre_interactions")
     }
 
     fn customized_event_data_for_event_index(
@@ -69,13 +100,24 @@ impl OnchainOrderParsing<EthFlowData, EthOrderPlacement> for EthFlowOnchainOrder
         order: &Order,
         hashmap: &HashMap<EventIndex, EthFlowData>,
         _onchain_order_placement: &OnchainOrderPlacement,
-    ) -> EthOrderPlacement {
-        EthOrderPlacement {
-            uid: order.uid,
-            // unwrap is allowed, as any missing event_index would have been filtered beforehand
-            // by the implementation of the function parse_custom_event_data
-            valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
-            is_refunded: false,
+    ) -> EthFlowDataForDb {
+        EthFlowDataForDb {
+            eth_order_placement: EthOrderPlacement {
+                uid: order.uid,
+                // unwrap is allowed, as any missing event_index would have been filtered beforehand
+                // by the implementation of the function parse_custom_event_data
+                valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
+                is_refunded: false,
+            },
+            // The following interaction calls the wrap_all() function on the ethflow contract
+            // in order to wrap all existing ether to weth, such that the eth can be used as
+            // WETH by the cow protocol
+            pre_interaction: Interaction {
+                // For ethflow orders, the owner is always the ethflow contract
+                target: ByteArray(order.owner.0),
+                value: BigDecimal::new(0.into(), 1),
+                data: WRAP_ALL_SELECTOR.to_vec(),
+            },
         }
     }
 }
