@@ -274,7 +274,6 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             api_db.as_ref().clone(),
             order_validator.clone(),
-            native_price_estimator,
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
@@ -288,6 +287,7 @@ impl OrderbookServices {
             pending(),
             api_db.clone(),
             None,
+            native_price_estimator,
         );
 
         Self {
