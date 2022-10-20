@@ -354,7 +354,6 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
-
         let orderbook = Orderbook {
             database,
             order_validator: Arc::new(order_validator),
