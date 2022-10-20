@@ -447,7 +447,8 @@ paths:
     get:
       summary: Get native price for the given token.
       description: |
-        Get native price for the given token.
+        Price is the exchange rate between the specified token and the network's native currency.
+        It represents the amount of native token atoms needed to buy 1 atom of the specified token.
       parameters:
         - name: token
           in: path
