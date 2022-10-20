@@ -443,6 +443,30 @@ paths:
                   $ref: "#/components/schemas/Order"
         400:
           description: Problem with parameters like limit being too large.
+  /api/v1/token/{token}/native_prices:
+    get:
+      summary: Get native price for the given token.
+      description: |
+        Get native price for the given token.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+      responses:
+        200:
+          description: the estimated native price
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NativePriceResponse"
+        400:
+          description: Error finding the price.
+        404:
+          description: No liquidity was found
+        500:
+          description: Unexpected error
   /api/v1/quote:
     post:
       summary: Quotes a price and fee for the specified order parameters.
@@ -1194,3 +1218,12 @@ components:
         version:
           type: string
           description: the git tagged version (if any) at the time of the build
+    NativePriceResponse:
+      description: |
+        The estimated native price for the token
+      type: object
+      properties:
+        price:
+          type: number
+          description: the estimated price of the token
+

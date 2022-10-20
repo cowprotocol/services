@@ -1,9 +1,21 @@
-use crate::orderbook::Orderbook;
-use anyhow::Result;
+use crate::{api::internal_error, orderbook::Orderbook};
+use anyhow::{anyhow, Result};
 use ethcontract::H160;
+use serde::Serialize;
 use shared::api::{ApiReply, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+
+#[derive(Serialize)]
+struct PriceResponse {
+    price: f64,
+}
+
+impl From<f64> for PriceResponse {
+    fn from(price: f64) -> Self {
+        Self { price }
+    }
+}
 
 fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
     warp::path!("token" / H160 / "native_prices").and(warp::get())
@@ -17,7 +29,16 @@ pub fn get_native_prices(
         async move {
             let result = orderbook.get_native_prices(&[token]).await;
             let reply = match result {
-                Ok(estimates) => with_status(warp::reply::json(&estimates), StatusCode::OK),
+                Ok(estimates) => match estimates.get(0) {
+                    Some((_, estimate)) => with_status(
+                        warp::reply::json(&PriceResponse::from(*estimate)),
+                        StatusCode::OK,
+                    ),
+                    None => with_status(
+                        internal_error(anyhow!("price_estimation")),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ),
+                },
                 Err(err) => err.into_warp_reply(),
             };
             Result::<_, Infallible>::Ok(reply)
