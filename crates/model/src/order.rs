@@ -47,6 +47,7 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
+    #[serde(default)]
     pub interactions: Interactions,
 }
 
