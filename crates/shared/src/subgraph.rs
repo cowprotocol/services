@@ -8,6 +8,7 @@ use serde_json::{json, Map, Value};
 use thiserror::Error;
 
 pub const QUERY_PAGE_SIZE: usize = 1000;
+const MAX_NUMBER_OF_RETRIES: usize = 10;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {
@@ -59,14 +60,25 @@ impl SubgraphClient {
     where
         T: DeserializeOwned,
     {
-        self.client
-            .post(self.subgraph_url.clone())
-            .json(&Query { query, variables })
-            .send()
-            .await?
-            .json::<QueryResponse<T>>()
-            .await?
-            .into_result()
+        for _ in 0..MAX_NUMBER_OF_RETRIES {
+            match self
+                .client
+                .post(self.subgraph_url.clone())
+                .json(&Query {
+                    query,
+                    variables: variables.clone(),
+                })
+                .send()
+                .await?
+                .json::<QueryResponse<T>>()
+                .await?
+                .into_result()
+            {
+                Ok(result) => return Ok(result),
+                Err(err) => tracing::warn!("failed to query subgraph: {}", err),
+            }
+        }
+        Err(anyhow::anyhow!("failed to execute query on subgraph"))
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
