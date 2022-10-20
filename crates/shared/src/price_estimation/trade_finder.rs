@@ -169,7 +169,8 @@ impl TradeVerifier {
             Err(SimulationError::Other(err)) => {
                 // In case we have a simulator error (network, service is down,
                 // etc.), we optimistically return the quote estimate without
-                // simulation. This is so we don't accidentally
+                // simulation. This is so we don't accidentally stop allowing
+                // all quotes because the API we use for simulations is down.
                 tracing::warn!(?err, "trade simulation error");
                 return Ok(Estimate {
                     out_amount: trade.out_amount,
