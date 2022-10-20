@@ -18,6 +18,10 @@ use std::{collections::HashMap, convert::TryInto};
 
 use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
+// 4c84c1c8 is the identifier of the following function:
+// https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
+const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
+
 pub struct EthFlowOnchainOrderParser;
 
 #[derive(Copy, Debug, Clone)]
@@ -104,13 +108,14 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 // by the implementation of the function parse_custom_event_data
                 valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
             },
+            // The following interaction calls the wrap_all() function on the ethflow contract
+            // in order to wrap all existing ether to weth, such that the eth can be used as
+            // WETH by the cow protocol
             pre_interaction: Interaction {
                 // For ethflow orders, the owner is always the ethflow contract
                 target: ByteArray(order.owner.0),
                 value: BigDecimal::new(0.into(), 1),
-                // 4c84c1c8 is the identifier of the following function:
-                // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
-                data: hex!("4c84c1c8").to_vec(),
+                data: WRAP_ALL_SELECTOR.to_vec(),
             },
         }
     }
