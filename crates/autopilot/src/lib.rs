@@ -238,9 +238,14 @@ pub async fn main(args: arguments::Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, http_factory.create(), web3.clone())
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in orderbook"),
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                http_factory.create(),
+                web3.clone(),
+                args.shared.max_pools_to_initialize_cache,
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in autopilot"),
         );
         Some(uniswap_v3_pool_fetcher)
     } else {
