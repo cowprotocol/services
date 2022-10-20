@@ -365,6 +365,7 @@ mod tests {
                         },
                         data: creation.data,
                         signature: creation.signature,
+                        ..Default::default()
                     },
                     Default::default(),
                 ))

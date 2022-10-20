@@ -375,9 +375,10 @@ impl Driver {
             // Note that order_trades doesn't include liquidity orders.
             for trade in winning_settlement.settlement.encoder.order_trades() {
                 let uid = &trade.trade.order.metadata.uid;
-                if let Some(reward) = rewards.get(uid) {
-                    solver_competition.rewards.push((*uid, *reward));
-                }
+                let reward = rewards.get(uid).copied().unwrap_or(0.);
+                // Log in case something goes wrong with storing the rewards in the database.
+                tracing::debug!(%uid, %reward, "winning solution reward");
+                solver_competition.rewards.push((*uid, reward));
             }
 
             // At this point we know that we are going to attempt to settle on chain. We store the

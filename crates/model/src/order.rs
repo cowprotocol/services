@@ -2,6 +2,7 @@
 
 use crate::{
     app_id::AppId,
+    interaction::InteractionData,
     quote::QuoteId,
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
     u256_decimal::{self, DecimalU256},
@@ -28,6 +29,12 @@ use web3::signing::{self, Key, SecretKeyRef};
 /// It is used in place of an actual buy token address in an order.
 pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Interactions {
+    pub pre: Vec<InteractionData>,
+    // later we can add here intra/post interactions
+}
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
@@ -40,6 +47,8 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
+    #[serde(default)]
+    pub interactions: Interactions,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -73,6 +82,7 @@ impl Order {
             },
             signature: order.signature.clone(),
             data: order.data,
+            interactions: Interactions::default(),
         })
     }
 
@@ -674,6 +684,9 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
+            "interactions": {
+                    "pre": []
+            }
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -720,6 +733,7 @@ mod tests {
                 .unwrap(),
             }
             .to_signature(signing_scheme),
+            interactions: Interactions::default(),
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);

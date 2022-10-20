@@ -1,5 +1,5 @@
 use derivative::Derivative;
-use ethcontract::H160;
+use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
     order::OrderData,
@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
 
-use crate::sources::uniswap_v3::pool_fetching::PoolInfo;
+use crate::{
+    interaction::{EncodedInteraction, Interaction},
+    sources::uniswap_v3::pool_fetching::PoolInfo,
+};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
@@ -47,7 +50,7 @@ pub struct OrderModel {
     pub reward: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AmmModel {
     #[serde(flatten)]
     pub parameters: AmmParameters,
@@ -57,7 +60,7 @@ pub struct AmmModel {
     pub mandatory: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind")]
 pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
@@ -67,7 +70,7 @@ pub enum AmmParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConstantProductPoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -81,13 +84,13 @@ pub struct WeightedPoolTokenData {
     pub weight: BigRational,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct WeightedProductPoolParameters {
     pub reserves: BTreeMap<H160, WeightedPoolTokenData>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StablePoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
@@ -98,7 +101,7 @@ pub struct StablePoolParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
     pub pool: PoolInfo,
 }
@@ -151,6 +154,12 @@ pub struct InteractionData {
     pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlan>,
     pub cost: Option<TokenAmount>,
+}
+
+impl Interaction for InteractionData {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
+    }
 }
 
 #[serde_as]
@@ -472,12 +481,10 @@ mod tests {
                     tokens: vec![
                         Token {
                             id: buy_token,
-                            symbol: "CAT".to_string(),
                             decimals: 6,
                         },
                         Token {
                             id: sell_token,
-                            symbol: "DOG".to_string(),
                             decimals: 18,
                         },
                     ],
@@ -620,12 +627,10 @@ mod tests {
                  "tokens": [
                 {
                   "id": "0x0000000000000000000000000000000000000539",
-                  "symbol": "CAT",
                   "decimals": "6",
                 },
                 {
                   "id": "0x000000000000000000000000000000000000a866",
-                  "symbol": "DOG",
                   "decimals": "18",
                 }
                 ],
@@ -634,7 +639,6 @@ mod tests {
                 "liquidity": "0",
                 "tick": "0",
                 "liquidity_net": {},
-                "fee": "0",
               },
               "gas_stats": {
                 "mean": "0",
