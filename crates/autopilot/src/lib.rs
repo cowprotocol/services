@@ -349,6 +349,7 @@ pub async fn main(args: arguments::Arguments) {
         signature_validator.clone(),
         Duration::from_secs(2),
         risk_adjusted_rewards,
+        args.ethflow_contract,
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
