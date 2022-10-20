@@ -1226,4 +1226,3 @@ components:
         price:
           type: number
           description: the estimated price of the token
-
