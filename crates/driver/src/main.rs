@@ -382,6 +382,7 @@ async fn build_auction_converter(
                 common.chain_id,
                 common.http_factory.create(),
                 common.web3.clone(),
+                args.max_pools_to_initialize_cache,
             )
             .await
             .expect("failed to create UniswapV3 pool fetcher in solver"),
