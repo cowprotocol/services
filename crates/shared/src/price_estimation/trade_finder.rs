@@ -6,13 +6,13 @@ use super::{
 };
 use crate::{
     code_fetching::CodeFetching,
-    code_simulation::CodeSimulating,
+    code_simulation::{CodeSimulating, SimulationError},
     rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     trade_finding::{Trade, TradeError, TradeFinding},
     transport::extensions::StateOverride,
 };
-use anyhow::{ensure, Context as _, Result};
+use anyhow::{bail, ensure, Context as _, Result};
 use contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader};
 use ethcontract::{tokens::Tokenize, H160, I256, U256};
 use futures::{
@@ -164,7 +164,21 @@ impl TradeVerifier {
             },
         };
 
-        let return_data = self.simulator.simulate(call, overrides).await?;
+        let return_data = match self.simulator.simulate(call, overrides).await {
+            Ok(data) => data,
+            Err(SimulationError::Other(err)) => {
+                // In case we have a simulator error (network, service is down,
+                // etc.), we optimistically return the quote estimate without
+                // simulation. This is so we don't accidentally stop allowing
+                // all quotes because the API we use for simulations is down.
+                tracing::warn!(?err, "trade simulation error");
+                return Ok(Estimate {
+                    out_amount: trade.out_amount,
+                    gas: trade.gas_estimate,
+                });
+            }
+            Err(err) => bail!(err),
+        };
         let output = SettleOutput::decode(&return_data)?;
 
         let trader_amounts = output
@@ -306,6 +320,7 @@ mod tests {
         zeroex_api::DefaultZeroExApi,
         Web3,
     };
+    use anyhow::anyhow;
     use hex_literal::hex;
     use mockall::predicate;
     use std::sync::Mutex;
@@ -626,6 +641,56 @@ mod tests {
             });
 
         let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test());
+
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
+
+        assert_eq!(
+            estimate,
+            Estimate {
+                out_amount: 2_000_000_u128.into(),
+                gas: 133_700,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn ignores_non_revert_simulation_errors() {
+        let query = Query {
+            from: Some(H160([0x1; 20])),
+            sell_token: H160([0x2; 20]),
+            buy_token: H160([0x3; 20]),
+            in_amount: 1_000_000_u128.into(),
+            kind: OrderKind::Sell,
+        };
+        let trade = Trade {
+            out_amount: 2_000_000_u128.into(),
+            gas_estimate: 133_700,
+            ..Default::default()
+        };
+
+        let mut finder = MockTradeFinding::new();
+        finder.expect_get_trade().returning({
+            let trade = trade.clone();
+            move |_| Ok(trade.clone())
+        });
+
+        let mut simulator = MockCodeSimulating::new();
+        simulator
+            .expect_simulate()
+            .returning(move |_, _| Err(SimulationError::Other(anyhow!("connection error"))));
+
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher
+            .expect_code()
+            .returning(|_| Ok(Default::default()));
+
+        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
+            TradeVerifier::new(
+                Arc::new(simulator),
+                Arc::new(code_fetcher),
+                Default::default(),
+            ),
+        );
 
         let estimate = single_estimate(&estimator, &query).await.unwrap();
 
