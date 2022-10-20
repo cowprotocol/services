@@ -1,6 +1,7 @@
 pub mod arguments;
 pub mod database;
 pub mod event_updater;
+pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
 use crate::{
@@ -237,13 +238,9 @@ pub async fn main(args: arguments::Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                args.shared.liquidity_fetcher_max_age_update,
-                http_factory.create(),
-            )
-            .await
-            .expect("failed to create UniswapV3 pool fetcher in orderbook"),
+            UniswapV3PoolFetcher::new(chain_id, http_factory.create(), web3.clone())
+                .await
+                .expect("failed to create UniswapV3 pool fetcher in orderbook"),
         );
         Some(uniswap_v3_pool_fetcher)
     } else {
@@ -266,6 +263,15 @@ pub async fn main(args: arguments::Arguments) {
         chain_id,
     )
     .map(Arc::new);
+
+    let cow_token = match CowProtocolToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -296,6 +302,42 @@ pub async fn main(args: arguments::Arguments) {
         .native_price_estimator(&args.native_price_estimators)
         .unwrap();
 
+    let risk_adjusted_rewards = (|| {
+        if chain_id != 1 {
+            return None;
+        }
+        let cip_args = [
+            args.cip_14_beta,
+            args.cip_14_alpha1,
+            args.cip_14_alpha2,
+            args.cip_14_profit,
+            args.cip_14_gas_cap,
+            args.cip_14_reward_cap,
+        ];
+        match cip_args.iter().map(|arg| arg.is_some() as u32).sum::<u32>() {
+            0 => return None,
+            6 => (),
+            _ => panic!("need none or all cip_14 arguments"),
+        };
+        Some(risk_adjusted_rewards::Calculator {
+            config: risk_adjusted_rewards::Configuration {
+                beta: args.cip_14_beta.unwrap(),
+                alpha1: args.cip_14_alpha1.unwrap(),
+                alpha2: args.cip_14_alpha2.unwrap(),
+                profit: args.cip_14_profit.unwrap(),
+                gas_cap: args.cip_14_gas_cap.unwrap(),
+                reward_cap: args.cip_14_reward_cap.unwrap(),
+            },
+            database: db.clone(),
+            cow_token: cow_token
+                .as_ref()
+                .expect("no cow token on mainnet")
+                .address(),
+            gas_price: gas_price_estimator.clone(),
+            native_price: native_price_estimator.clone(),
+        })
+    })();
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         db.clone(),
@@ -306,6 +348,7 @@ pub async fn main(args: arguments::Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         Duration::from_secs(2),
+        risk_adjusted_rewards,
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -352,14 +395,6 @@ pub async fn main(args: arguments::Arguments) {
             .await
             .expect("failed to create gas price estimator"),
         ));
-        let cow_token = match CowProtocolToken::deployed(&web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            other => Some(other.unwrap()),
-        };
-        let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            other => Some(other.unwrap()),
-        };
         let cow_tokens = match (cow_token, cow_vtoken) {
             (None, None) => None,
             (Some(token), Some(vtoken)) => Some((token, vtoken)),

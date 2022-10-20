@@ -110,6 +110,8 @@ impl HttpPriceEstimator {
                 is_liquidity_order: false,
                 mandatory: true,
                 has_atomic_execution: false,
+                // TODO: is it possible to set a more accurate reward?
+                reward: 35.,
             },
         };
 
@@ -255,7 +257,7 @@ impl HttpPriceEstimator {
     ) -> Result<Vec<AmmModel>> {
         let pools = match &self.uniswap_v3_pools {
             Some(uniswap_v3) => uniswap_v3
-                .fetch(&pairs)
+                .fetch(&pairs, Block::Recent)
                 .await
                 .context("no uniswap v3 pools")?,
             None => return Ok(Default::default()),
@@ -706,7 +708,7 @@ mod tests {
             .expect("failed to create Balancer pool fetcher"),
         );
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, Duration::from_secs(30), client.clone())
+            UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone())
                 .await
                 .expect("failed to create uniswap v3 pool fetcher"),
         );
