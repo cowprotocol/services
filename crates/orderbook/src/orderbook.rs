@@ -2,7 +2,6 @@ use crate::database::orders::{InsertionError, OrderStoring};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
-use futures::StreamExt;
 use model::{
     auction::AuctionWithId,
     order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
@@ -12,7 +11,6 @@ use primitive_types::H160;
 use shared::{
     metrics::LivenessChecking,
     order_validation::{OrderValidating, ValidationError},
-    price_estimation::{native::NativePriceEstimating, PriceEstimationError},
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -122,7 +120,6 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    native_price_estimator: Arc<dyn NativePriceEstimating>,
 }
 
 impl Orderbook {
@@ -132,14 +129,12 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        native_price_estimator: Arc<dyn NativePriceEstimating>,
     ) -> Self {
         Self {
             domain_separator,
             settlement_contract,
             database,
             order_validator,
-            native_price_estimator,
         }
     }
 
@@ -284,19 +279,6 @@ impl Orderbook {
             .await
             .context("get_user_orders error")
     }
-
-    pub async fn get_native_prices(
-        &self,
-        tokens: &[H160],
-    ) -> Result<Vec<(H160, f64)>, PriceEstimationError> {
-        self.native_price_estimator
-            .estimate_native_prices(tokens)
-            .map(|(index, price)| price.map(|price| (tokens[index], price)))
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect()
-    }
 }
 
 #[async_trait::async_trait]
@@ -317,9 +299,7 @@ mod tests {
         order::{OrderData, OrderMetadata},
         signature::Signature,
     };
-    use shared::{
-        order_validation::MockOrderValidating, price_estimation::native::MockNativePriceEstimating,
-    };
+    use shared::order_validation::MockOrderValidating;
 
     #[tokio::test]
     #[ignore]
@@ -374,14 +354,12 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
-        let native_price_estimator = Arc::new(MockNativePriceEstimating::new());
 
         let orderbook = Orderbook {
             database,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
-            native_price_estimator,
         };
 
         // App data does not encode cancellation.

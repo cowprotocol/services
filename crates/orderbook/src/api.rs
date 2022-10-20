@@ -24,6 +24,7 @@ use crate::{
 use shared::{
     api::{error, finalize_router, internal_error, ApiReply},
     order_quoting::QuoteHandler,
+    price_estimation::native::NativePriceEstimating,
 };
 use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
@@ -34,6 +35,7 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -93,7 +95,7 @@ pub fn handle_all_routes(
     let version = version::version()
         .map(|result| (result, "v1/version"))
         .boxed();
-    let get_native_prices = get_native_prices::get_native_prices(orderbook.clone())
+    let get_native_prices = get_native_prices::get_native_prices(native_price_estimator)
         .map(|result| (result, "v1/get_native_prices"))
         .boxed();
 

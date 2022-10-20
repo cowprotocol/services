@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use futures::Future;
 use model::DomainSeparator;
-use shared::order_quoting::QuoteHandler;
+use shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating};
 use solver_competition::SolverCompetitionStoring;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
@@ -24,6 +24,7 @@ pub fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
@@ -31,6 +32,7 @@ pub fn serve_api(
         quotes,
         solver_competition,
         solver_competition_auth,
+        native_price_estimator,
     )
     .boxed();
     tracing::info!(%address, "serving order book");

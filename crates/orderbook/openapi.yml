@@ -443,7 +443,7 @@ paths:
                   $ref: "#/components/schemas/Order"
         400:
           description: Problem with parameters like limit being too large.
-  /api/v1/token/{token}/native_prices:
+  /api/v1/token/{token}/native_price:
     get:
       summary: Get native price for the given token.
       description: |
