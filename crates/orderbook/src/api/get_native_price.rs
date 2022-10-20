@@ -24,7 +24,7 @@ fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejecti
     warp::path!("token" / H160 / "native_price").and(warp::get())
 }
 
-pub fn get_native_prices(
+pub fn get_native_price(
     estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_native_prices_request().and_then(move |token: H160| {
