@@ -7,7 +7,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use thiserror::Error;
 
-const QUERY_PAGE_SIZE: usize = 1000;
+pub const QUERY_PAGE_SIZE: usize = 1000;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {
