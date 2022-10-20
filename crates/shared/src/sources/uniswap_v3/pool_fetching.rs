@@ -24,8 +24,6 @@ use std::{
     sync::Mutex,
 };
 
-const MAX_POOLS_TO_INITIALIZE: usize = 100;
-
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
     async fn fetch(
@@ -123,7 +121,11 @@ struct PoolsCheckpointHandler {
 impl PoolsCheckpointHandler {
     /// Fetches the list of existing UniswapV3 pools and their metadata (without state/ticks).
     /// Then fetches state/ticks for the most deepest pools (subset of all existing pools)
-    pub async fn new(chain_id: u64, client: Client) -> Result<Self> {
+    pub async fn new(
+        chain_id: u64,
+        client: Client,
+        max_pools_to_initialize_cache: u64,
+    ) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
         let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
@@ -139,7 +141,7 @@ impl PoolsCheckpointHandler {
         }
 
         // can't fetch the state of all pools in constructor for performance reasons,
-        // so let's fetch the top MAX_POOLS_TO_INITIALIZE pools with the highest liquidity
+        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest liquidity
         registered_pools.pools.sort_unstable_by(|a, b| {
             a.total_value_locked_eth
                 .partial_cmp(&b.total_value_locked_eth)
@@ -151,7 +153,7 @@ impl PoolsCheckpointHandler {
             .into_iter()
             .map(|pool| pool.id)
             .rev()
-            .take(MAX_POOLS_TO_INITIALIZE)
+            .take(max_pools_to_initialize_cache as usize)
             .collect::<Vec<_>>();
         let pools = graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
@@ -244,8 +246,14 @@ pub struct UniswapV3PoolFetcher {
 }
 
 impl UniswapV3PoolFetcher {
-    pub async fn new(chain_id: u64, client: Client, web3: Web3) -> Result<Self> {
-        let checkpoint = PoolsCheckpointHandler::new(chain_id, client).await?;
+    pub async fn new(
+        chain_id: u64,
+        client: Client,
+        web3: Web3,
+        max_pools_to_initialize: u64,
+    ) -> Result<Self> {
+        let checkpoint =
+            PoolsCheckpointHandler::new(chain_id, client, max_pools_to_initialize).await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = web3
@@ -691,7 +699,7 @@ mod tests {
     async fn uniswap_v3_pool_fetcher_constructor_test() {
         let transport = transport::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3)
+        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3, 100)
             .await
             .unwrap();
 
@@ -710,7 +718,7 @@ mod tests {
     async fn fetch_test() {
         let transport = transport::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone())
+        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone(), 100)
             .await
             .unwrap();
         fetcher.run_maintenance().await.unwrap();
