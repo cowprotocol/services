@@ -134,15 +134,15 @@ mod tests {
         db: &mut PgConnection,
         owner_filter: Option<&Address>,
         order_uid_filter: Option<&OrderUid>,
-        expected: &[TradesQueryRow],
+        expected: &mut [TradesQueryRow],
     ) {
-        let filtered = trades(db, owner_filter, order_uid_filter)
+        let mut filtered = trades(db, owner_filter, order_uid_filter)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(
-            filtered.iter().collect::<HashSet<_>>(),
-            expected.iter().collect::<HashSet<_>>()
+            filtered.sort_by(|a, b| b.block_number.cmp(&a.block_number)),
+            expected.sort_by(|a, b| b.block_number.cmp(&a.block_number))
         );
     }
 
