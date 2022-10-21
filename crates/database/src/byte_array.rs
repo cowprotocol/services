@@ -9,6 +9,12 @@ use sqlx::{
 #[derive(Clone, Copy, Debug)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
 
+impl<const N: usize> std::hash::Hash for ByteArray<N> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 impl<const N: usize> Default for ByteArray<N> {
     fn default() -> Self {
         Self([0; N])

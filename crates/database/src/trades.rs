@@ -3,7 +3,7 @@ use bigdecimal::BigDecimal;
 use futures::stream::BoxStream;
 use sqlx::PgConnection;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, sqlx::FromRow)]
 pub struct TradesQueryRow {
     pub block_number: i64,
     pub log_index: i64,
@@ -46,15 +46,13 @@ JOIN orders o
 ON o.uid = t.order_uid"#;
     const QUERY: &str = const_format::concatcp!(
         COMMON_QUERY,
-        " WHERE o.uid IS NOT null ",
-        " AND ($1 IS NULL OR o.owner = $1)",
+        " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
-        "UNION ALL",
+        "UNION",
         COMMON_QUERY,
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
-        " WHERE o.uid IS NOT null",
-        " AND onchain_o.sender = $1",
+        " WHERE onchain_o.sender = $1",
         " AND ($2 IS NULL OR o.uid = $2)",
     );
 
@@ -76,6 +74,7 @@ mod tests {
     };
     use futures::TryStreamExt;
     use sqlx::Connection;
+    use std::collections::HashSet;
 
     async fn generate_owners_and_order_ids(
         num_owners: usize,
@@ -141,7 +140,10 @@ mod tests {
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        assert_eq!(filtered, expected);
+        assert_eq!(
+            filtered.iter().collect::<HashSet<_>>(),
+            expected.iter().collect::<HashSet<_>>()
+        );
     }
 
     // Testing trades without corresponding settlement events
@@ -174,14 +176,16 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter_benchmark_test() {
+        // This test can be used for benchmarking. With i in 0..240
+        // and j 0..100, the query should be less than 5 ms.
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
-        for i in 0..240u32 {
+        for i in 0..1u32 {
             let mut owner_bytes = i.to_ne_bytes().to_vec();
             owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
             let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..100u32 {
+            for j in 0..1u32 {
                 let mut i_as_bytes = i.to_ne_bytes().to_vec();
                 let mut j_as_bytes = j.to_ne_bytes().to_vec();
                 let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
