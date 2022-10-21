@@ -4,6 +4,7 @@ mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
+mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
 mod get_solvable_orders;
@@ -23,6 +24,7 @@ use crate::{
 use shared::{
     api::{error, finalize_router, internal_error, ApiReply},
     order_quoting::QuoteHandler,
+    price_estimation::native::NativePriceEstimating,
 };
 use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
@@ -33,6 +35,7 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -92,6 +95,9 @@ pub fn handle_all_routes(
     let version = version::version()
         .map(|result| (result, "v1/version"))
         .boxed();
+    let get_native_price = get_native_price::get_native_price(native_price_estimator)
+        .map(|result| (result, "v1/get_native_price"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -127,6 +133,8 @@ pub fn handle_all_routes(
                 .or(post_solver_competition)
                 .unify()
                 .or(version)
+                .unify()
+                .or(get_native_price)
                 .unify(),
         )
         .untuple_one()
