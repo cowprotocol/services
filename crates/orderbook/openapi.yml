@@ -560,9 +560,10 @@ components:
             refunded the order, in case it was not settled onchain
           type: boolean
         user_valid_to:
-          description: Describes the valid to of an order ethflow order.
-          Note that for ethflow orders, the valid_to encoded in the smart
-          contract is max(uint)
+          description: |
+           Describes the valid to of an order ethflow order.
+           Note that for ethflow orders, the valid_to encoded in the smart
+           contract is max(uint)
           type: integer
       required:
         - expiration
@@ -745,7 +746,13 @@ components:
           description: |
             For ethflow orders - order that are placed onchain with native eth -, this field
             contains a struct with two variables user_valid_to and is_refunded
-          $ref: "#/components/schmas/EthflowData"
+          $ref: "#/components/schemas/EthflowData"
+        onchain_user:
+          description: |
+            If orders are placed as onchain orders, the owner of the order might 
+            specific smart contracts, but not the user placing the order. The 
+            actual user will be provided in this field
+          ref: "#/components/schemas/Address"
       required:
         - creationTime
         - owner

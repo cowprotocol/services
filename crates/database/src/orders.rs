@@ -350,7 +350,8 @@ pub struct FullOrder {
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
-    pub ethflow_data: (Option<bool>, Option<i64>),
+    pub ethflow_data: Option<(bool, i64)>,
+    pub onchain_user: Option<Address>,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -397,12 +398,8 @@ o.is_liquidity_order,
     LIMIT 1
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
-(SELECT t.pair from (
-    SELECT (eth_o.is_refunded, eth_o.valid_to) as pair, 1 as sort_order from ethflow_orders eth_o where eth_o.uid = o.uid
-    UNION ALL
-    SELECT (null::bool, null::bigint) as pair, 2 as sort_order
-    ORDER BY sort_order
-    LIMIT 1) as t) as ethflow_data
+(SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -550,6 +547,61 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_onchain_user_order_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        let sender = ByteArray([3u8; 20]);
+        insert_onchain_order(
+            &mut db,
+            &EventIndex::default(),
+            &OnchainOrderPlacement {
+                order_uid: OrderUid::default(),
+                sender,
+            },
+        )
+        .await
+        .unwrap();
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(Some(sender), order_.onchain_user);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_ethflow_data_order_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        let user_valid_to = 4i64;
+        let is_refunded = true;
+        insert_ethflow_order(
+            &mut db,
+            &EthOrderPlacement {
+                uid: OrderUid::default(),
+                valid_to: user_valid_to,
+                is_refunded,
+            },
+        )
+        .await
+        .unwrap();
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(Some((is_refunded, user_valid_to)), order_.ethflow_data);
     }
 
     #[tokio::test]

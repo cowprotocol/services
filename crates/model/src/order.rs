@@ -422,8 +422,10 @@ pub struct OrderMetadata {
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
     pub is_liquidity_order: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain_user: Option<H160>,
 }
 
 impl Default for OrderMetadata {
@@ -443,6 +445,7 @@ impl Default for OrderMetadata {
             full_fee_amount: U256::default(),
             is_liquidity_order: false,
             ethflow_data: None,
+            onchain_user: None,
         }
     }
 }
