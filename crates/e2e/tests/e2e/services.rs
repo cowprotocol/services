@@ -251,7 +251,7 @@ impl OrderbookServices {
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
-            native_price_estimator,
+            native_price_estimator.clone(),
             signature_validator.clone(),
             Duration::from_secs(1),
             None,
@@ -288,6 +288,7 @@ impl OrderbookServices {
             pending(),
             api_db.clone(),
             None,
+            native_price_estimator,
         );
 
         Self {

@@ -412,6 +412,7 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
+        native_price_estimator,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
