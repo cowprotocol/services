@@ -288,38 +288,38 @@ mod tests {
         assert_eq!(r0, r1);
     }
 
-    // #[tokio::test]
-    // #[ignore]
-    // async fn mainnet() {
-    //     shared::tracing::initialize_for_tests("autopilot=trace");
-    //     let db = Postgres::new(&std::env::var("DB_URL").unwrap())
-    //         .await
-    //         .unwrap();
-    //     let calc = Calculator {
-    //         config: CONFIG,
-    //         database: db.clone(),
-    //         cow_token: testlib::tokens::COW,
-    //         gas_price: Arc::new(gas_estimation::GasNowGasStation::new(
-    //             shared::gas_price_estimation::Client(Default::default()),
-    //         )),
-    //         native_price: Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
-    //             Arc::new(shared::price_estimation::zeroex::ZeroExPriceEstimator::new(
-    //                 Arc::new(shared::zeroex_api::DefaultZeroExApi::with_default_url(
-    //                     Default::default(),
-    //                 )),
-    //                 Default::default(),
-    //                 shared::rate_limiter::RateLimiter::test(),
-    //             )),
-    //             testlib::tokens::WETH,
-    //             primitive_types::U256::from_f64_lossy(1e18),
-    //         )),
-    //     };
-    //     let min_valid_to = model::time::now_in_epoch_seconds();
-    //     let orders = db.solvable_orders(min_valid_to).await.unwrap().orders;
-    //     let results = calc.calculate_many(&orders).await.unwrap();
-    //     assert!(orders.len() == results.len());
-    //     for (order, result) in orders.iter().zip(results) {
-    //         println!("{} {:?}", order.metadata.uid, result);
-    //     }
-    // }
+    #[tokio::test]
+    #[ignore]
+    async fn mainnet() {
+        shared::tracing::initialize_for_tests("autopilot=trace");
+        let db = Postgres::new(&std::env::var("DB_URL").unwrap())
+            .await
+            .unwrap();
+        let calc = Calculator {
+            config: CONFIG,
+            database: db.clone(),
+            cow_token: testlib::tokens::COW,
+            gas_price: Arc::new(gas_estimation::GasNowGasStation::new(
+                shared::gas_price_estimation::Client(Default::default()),
+            )),
+            native_price: Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
+                Arc::new(shared::price_estimation::zeroex::ZeroExPriceEstimator::new(
+                    Arc::new(shared::zeroex_api::DefaultZeroExApi::with_default_url(
+                        Default::default(),
+                    )),
+                    Default::default(),
+                    shared::rate_limiter::RateLimiter::test(),
+                )),
+                testlib::tokens::WETH,
+                primitive_types::U256::from_f64_lossy(1e18),
+            )),
+        };
+        let min_valid_to = model::time::now_in_epoch_seconds();
+        let orders = db.solvable_orders(min_valid_to).await.unwrap().orders;
+        let results = calc.calculate_many(&orders).await.unwrap();
+        assert!(orders.len() == results.len());
+        for (order, result) in orders.iter().zip(results) {
+            println!("{} {:?}", order.metadata.uid, result);
+        }
+    }
 }
