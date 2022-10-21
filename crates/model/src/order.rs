@@ -389,6 +389,12 @@ impl OrderCancellation {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+pub struct EthflowData {
+    pub user_valid_to: i64,
+    pub is_refunded: bool,
+}
+
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
@@ -416,6 +422,8 @@ pub struct OrderMetadata {
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
     pub is_liquidity_order: bool,
+    #[serde(default)]
+    pub ethflow_data: Option<EthflowData>,
 }
 
 impl Default for OrderMetadata {
@@ -434,6 +442,7 @@ impl Default for OrderMetadata {
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
             is_liquidity_order: false,
+            ethflow_data: None,
         }
     }
 }
@@ -686,7 +695,8 @@ mod tests {
             "isLiquidityOrder": false,
             "interactions": {
                     "pre": []
-            }
+            },
+            "ethflowData": null
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -704,6 +714,7 @@ mod tests {
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
                 is_liquidity_order: false,
+                ..Default::default()
             },
             data: OrderData {
                 sell_token: H160::from_low_u64_be(10),

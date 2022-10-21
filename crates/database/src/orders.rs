@@ -350,6 +350,7 @@ pub struct FullOrder {
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
+    pub ethflow_data: (Option<bool>, Option<i64>),
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -395,7 +396,13 @@ o.is_liquidity_order,
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
 ), true)) AS presignature_pending,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions
+array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
+(SELECT t.pair from (
+    SELECT (eth_o.is_refunded, eth_o.valid_to) as pair, 1 as sort_order from ethflow_orders eth_o where eth_o.uid = o.uid
+    UNION ALL
+    SELECT (null::bool, null::bigint) as pair, 2 as sort_order
+    ORDER BY sort_order
+    LIMIT 1) as t) as ethflow_data
 "#;
 
 const ORDERS_FROM: &str = "orders o";
