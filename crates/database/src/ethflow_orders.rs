@@ -51,7 +51,7 @@ pub async fn refundable_orders(
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT * FROM ethflow_orders eo
-        left join trades t on eo.uid = t.order_uid
+        LEFT JOIN trades t on eo.uid = t.order_uid
         WHERE eo.valid_to < $1
         AND eo.is_refunded = false
         AND t.order_uid is null

@@ -236,9 +236,14 @@ async fn main() {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, http_factory.create(), web3.clone())
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in orderbook"),
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                http_factory.create(),
+                web3.clone(),
+                args.shared.max_pools_to_initialize_cache,
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in orderbook"),
         );
         Some(uniswap_v3_pool_fetcher)
     } else {
@@ -407,6 +412,7 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
+        native_price_estimator,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
