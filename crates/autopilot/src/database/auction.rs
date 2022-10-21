@@ -127,11 +127,7 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
     } else {
         None
     };
-    let onchain_user = if let Some(onchain_user) = order.onchain_user {
-        Some(H160(onchain_user.0))
-    } else {
-        None
-    };
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
