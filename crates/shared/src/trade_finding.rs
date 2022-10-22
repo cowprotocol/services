@@ -143,18 +143,32 @@ mod tests {
         assert_eq!(
             trade.encode(),
             [
-                vec![(
-                    H160([0xdd; 20]),
-                    U256::zero(),
-                    Bytes(
-                        hex!(
-                            "095ea7b3
+                vec![
+                    (
+                        H160([0xdd; 20]),
+                        U256::zero(),
+                        Bytes(
+                            hex!(
+                                "095ea7b3
+                             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+                             0000000000000000000000000000000000000000000000000000000000000000"
+                            )
+                            .to_vec()
+                        ),
+                    ),
+                    (
+                        H160([0xdd; 20]),
+                        U256::zero(),
+                        Bytes(
+                            hex!(
+                                "095ea7b3
                              000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
                              ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                        )
-                        .to_vec()
-                    ),
-                )],
+                            )
+                            .to_vec()
+                        ),
+                    )
+                ],
                 vec![(H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4]))],
                 vec![],
             ]
