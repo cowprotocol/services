@@ -277,11 +277,11 @@ impl Solution {
             let buy_amount = amm
                 .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculable");
-            let execution = AmmOrderExecution {
-                input_max: slippage.execution_input_max((sell_token, sell_amount))?,
+            let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
+                input_max: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
                 internalizable: false,
-            };
+            })?;
             match &amm.order {
                 AmmOrder::ConstantProduct(order) => settlement.with_liquidity(order, execution),
                 AmmOrder::WeightedProduct(order) => settlement.with_liquidity(order, execution),
@@ -422,23 +422,23 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((sell_token, 100_000.into()))
-                    .unwrap(),
-                output: (native_token, 98_715.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (sell_token, 100_000.into()),
+                    output: (native_token, 98_715.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((native_token, 98_715.into()))
-                    .unwrap(),
-                output: (buy_token, 97_459.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (native_token, 98_715.into()),
+                    output: (buy_token, 97_459.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
     }
 
@@ -535,23 +535,23 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((sell_token, 102_660.into()))
-                    .unwrap(),
-                output: (native_token, 101_315.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (sell_token, 102_660.into()),
+                    output: (native_token, 101_315.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((native_token, 101_315.into()))
-                    .unwrap(),
-                output: (buy_token, 100_000.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (native_token, 101_315.into()),
+                    output: (buy_token, 100_000.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
     }
 
