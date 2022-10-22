@@ -698,8 +698,7 @@ mod tests {
             "isLiquidityOrder": false,
             "interactions": {
                     "pre": []
-            },
-            "ethflowData": null
+            }
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
