@@ -74,7 +74,6 @@ mod tests {
     };
     use futures::TryStreamExt;
     use sqlx::Connection;
-    use std::collections::HashSet;
 
     async fn generate_owners_and_order_ids(
         num_owners: usize,
@@ -134,16 +133,13 @@ mod tests {
         db: &mut PgConnection,
         owner_filter: Option<&Address>,
         order_uid_filter: Option<&OrderUid>,
-        expected: &mut [TradesQueryRow],
+        expected: &[TradesQueryRow],
     ) {
-        let mut filtered = trades(db, owner_filter, order_uid_filter)
+        let filtered = trades(db, owner_filter, order_uid_filter)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
-        assert_eq!(
-            filtered.sort_by(|a, b| b.block_number.cmp(&a.block_number)),
-            expected.sort_by(|a, b| b.block_number.cmp(&a.block_number))
-        );
+        assert_eq!(filtered, expected);
     }
 
     // Testing trades without corresponding settlement events
@@ -170,7 +166,7 @@ mod tests {
         };
         let trade_b =
             add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None).await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        assert_trades(&mut db, None, None, &[trade_b, trade_a]).await;
     }
 
     #[tokio::test]
@@ -227,7 +223,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(4, 2).await;
+        let (owners, order_ids) = generate_owners_and_order_ids(4, 4).await;
 
         let event_index_0 = EventIndex {
             block_number: 0,
@@ -253,6 +249,16 @@ mod tests {
         };
         let event_index = EventIndex::default();
         insert_onchain_order(&mut db, &event_index, &onchain_order)
+            .await
+            .unwrap();
+        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0.clone()]).await;
+
+        add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None).await;
+        let onchain_order = OnchainOrderPlacement {
+            order_uid: ByteArray(order_ids[3].0),
+            sender: owners[3],
+        };
+        insert_onchain_order(&mut db, &event_index_1, &onchain_order)
             .await
             .unwrap();
         assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
