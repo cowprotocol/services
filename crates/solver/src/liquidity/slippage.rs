@@ -194,7 +194,13 @@ impl<'a> SlippageContext<'a> {
                     )?;
                     relative
                 }
-                None => Cow::Borrowed(&self.calculator.relative),
+                None => {
+                    tracing::warn!(
+                        sell_token = ?execution.input_max.0,
+                        "unable to compute capped slippage; falling back to relative slippage",
+                    );
+                    Cow::Borrowed(&self.calculator.relative)
+                }
             };
 
             let absolute = absolute_slippage_amount(
