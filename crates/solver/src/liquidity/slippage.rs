@@ -186,21 +186,18 @@ impl<'a> SlippageContext<'a> {
             // the slippage using the buy token and its external price for
             // capping the relative slippage, and fall back to using the
             // relative slippage without capping.
-            let relative = match self.prices.price(&execution.output.0) {
-                Some(price) => {
-                    let (relative, _) = self.calculator.compute_inner(
-                        Some(price),
-                        number_conversions::u256_to_big_int(&execution.output.1),
-                    )?;
-                    relative
-                }
-                None => {
-                    tracing::warn!(
-                        sell_token = ?execution.input_max.0,
-                        "unable to compute capped slippage; falling back to relative slippage",
-                    );
-                    Cow::Borrowed(&self.calculator.relative)
-                }
+            let relative = if let Some(price) = self.prices.price(&execution.output.0) {
+                let (relative, _) = self.calculator.compute_inner(
+                    Some(price),
+                    number_conversions::u256_to_big_int(&execution.output.1),
+                )?;
+                relative
+            } else {
+                tracing::warn!(
+                    sell_token = ?execution.input_max.0,
+                    "unable to compute capped slippage; falling back to relative slippage",
+                );
+                Cow::Borrowed(&self.calculator.relative)
             };
 
             let absolute = absolute_slippage_amount(
