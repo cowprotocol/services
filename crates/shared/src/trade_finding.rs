@@ -43,10 +43,13 @@ impl Trade {
         let pre_interactions = match self.approval {
             Some((token, spender)) => {
                 let token = dummy_contract!(ERC20, token);
-                vec![
-                    Interaction::from_call(token.methods().approve(spender, U256::max_value()))
-                        .encode(),
-                ]
+                let approve = |amount| {
+                    Interaction::from_call(token.methods().approve(spender, amount)).encode()
+                };
+
+                // For approvals, reset the approval completely. Some tokens
+                // require this such as Tether USD.
+                vec![approve(U256::zero()), approve(U256::max_value())]
             }
             None => vec![],
         };
