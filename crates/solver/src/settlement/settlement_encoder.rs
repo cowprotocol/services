@@ -373,7 +373,7 @@ impl SettlementEncoder {
         });
     }
 
-    pub fn finish(mut self) -> EncodedSettlement {
+    pub fn finish(mut self, internalize_interactions: bool) -> EncodedSettlement {
         self.drop_unnecessary_tokens_and_prices();
 
         let (mut liquidity_order_buy_tokens, mut liquidity_order_prices): (Vec<H160>, Vec<U256>) =
@@ -428,7 +428,7 @@ impl SettlementEncoder {
                         self.execution_plan
                             .iter()
                             .filter_map(|(interaction, internalizable)| {
-                                if *internalizable {
+                                if *internalizable && internalize_interactions {
                                     None
                                 } else {
                                     Some(interaction)
@@ -584,7 +584,7 @@ pub mod tests {
     use ethcontract::Bytes;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderData};
-    use shared::dummy_contract;
+    use shared::{dummy_contract, interaction::Interaction};
 
     #[test]
     pub fn encode_trades_finds_token_index() {
@@ -635,7 +635,7 @@ pub mod tests {
         });
 
         assert_eq!(
-            encoder.finish().interactions[1],
+            encoder.finish(true).interactions[1],
             UnwrapWethInteraction {
                 weth,
                 amount: 3.into(),
@@ -669,7 +669,7 @@ pub mod tests {
         assert!(settlement
             .add_liquidity_order_trade(order10, 20.into(), 0.into())
             .is_ok());
-        let finished_settlement = settlement.finish();
+        let finished_settlement = settlement.finish(true);
         assert_eq!(
             finished_settlement.tokens,
             vec![token(0), token(1), token(0)]
@@ -708,7 +708,7 @@ pub mod tests {
             settlement.liquidity_order_trades[0].trade.sell_token_index,
             0
         );
-        let finished_settlement = settlement.finish();
+        let finished_settlement = settlement.finish(true);
         // the initial price from:SettlementEncoder::new(maplit::hashmap! {
         //     token(1) => 9.into(),
         // });
@@ -763,7 +763,7 @@ pub mod tests {
         encoder.append_to_execution_plan(interaction.clone());
 
         assert_eq!(
-            encoder.finish().interactions[1],
+            encoder.finish(true).interactions[1],
             [interaction.encode(), unwrap.encode()].concat(),
         );
     }
@@ -1034,7 +1034,7 @@ pub mod tests {
             amount: 12.into(),
         });
 
-        let encoded = encoder.finish();
+        let encoded = encoder.finish(true);
 
         // only token 1 and 2 have been included in orders by traders
         let expected_tokens: Vec<_> = [1, 3].into_iter().map(token).collect();
@@ -1053,5 +1053,28 @@ pub mod tests {
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
         assert_eq!(updated_buy_token_index, 1.into());
+    }
+
+    #[derive(Debug)]
+    pub struct TestInteraction;
+    impl Interaction for TestInteraction {
+        fn encode(&self) -> Vec<EncodedInteraction> {
+            vec![(H160::zero(), U256::zero(), Bytes::default())]
+        }
+    }
+
+    #[test]
+    fn optionally_encodes_internalizable_transactions() {
+        let prices = hashmap! {token(1) => 7.into() };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        encoder.append_to_execution_plan_internalizable(TestInteraction, true);
+        encoder.append_to_execution_plan_internalizable(TestInteraction, false);
+
+        let encoded = encoder.clone().finish(true);
+        assert_eq!(encoded.interactions[1].len(), 1);
+
+        let encoded = encoder.finish(false);
+        assert_eq!(encoded.interactions[1].len(), 2);
     }
 }

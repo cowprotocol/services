@@ -488,7 +488,7 @@ impl Settlement {
 
 impl From<Settlement> for EncodedSettlement {
     fn from(settlement: Settlement) -> Self {
-        settlement.encoder.finish()
+        settlement.encoder.finish(true)
     }
 }
 
@@ -579,12 +579,12 @@ pub mod tests {
         let actual_settlement = {
             let mut encoder = SettlementEncoder::new(prices.clone());
             handler.encode(execution, &mut encoder).unwrap();
-            encoder.finish()
+            encoder.finish(true)
         };
         let expected_settlement = {
             let mut encoder = SettlementEncoder::new(prices);
             exec(&mut encoder);
-            encoder.finish()
+            encoder.finish(true)
         };
 
         assert_eq!(actual_settlement, expected_settlement);

@@ -346,7 +346,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish();
+            .finish(true);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
@@ -469,7 +469,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish();
+            .finish(true);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);

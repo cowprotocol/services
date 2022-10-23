@@ -352,7 +352,7 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder.finish(true).interactions;
         assert_eq!(
             interactions,
             [
@@ -389,7 +389,7 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder.finish(true).interactions;
         assert_eq!(
             interactions,
             [

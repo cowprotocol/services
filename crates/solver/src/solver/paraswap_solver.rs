@@ -415,7 +415,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 2);
+        assert_eq!(result.encoder.finish(true).interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -423,7 +423,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 1)
+        assert_eq!(result.encoder.finish(true).interactions[1].len(), 1)
     }
 
     #[tokio::test]

@@ -667,7 +667,7 @@ mod tests {
         .map(|settlement| vec![settlement])
         .unwrap();
         let settlement = settlements.get(0).unwrap();
-        let settlement_encoded = settlement.encoder.clone().finish();
+        let settlement_encoded = settlement.encoder.clone().finish(true);
         println!("Settlement_encoded: {:?}", settlement_encoded);
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(

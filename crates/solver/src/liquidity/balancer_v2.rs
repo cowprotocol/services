@@ -415,7 +415,7 @@ mod tests {
         )
         .unwrap();
 
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder.finish(true).interactions;
         assert_eq!(
             interactions,
             [
