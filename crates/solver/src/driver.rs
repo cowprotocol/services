@@ -288,7 +288,7 @@ impl Driver {
         let run_solver_results = self.run_solvers(auction).await;
         let (mut rated_settlements, errors) = self
             .settlement_ranker
-            .rank_legal_settlements(run_solver_results, &external_prices, gas_price)
+            .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
             .await?;
 
         // We don't know the exact block because simulation can happen over multiple blocks but

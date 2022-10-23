@@ -10,8 +10,10 @@ use crate::{
 };
 use anyhow::Result;
 use ethcontract::Account;
-use model::TokenPair;
+use model::{auction::AuctionId, TokenPair};
 use std::collections::HashMap;
+
+use super::AuctionResult;
 
 pub struct NaiveSolver {
     account: Account,
@@ -42,6 +44,9 @@ impl Solver for NaiveSolver {
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         Ok(settle(slippage, orders, uniswaps))
     }
+
+    // We don't care about callbacks
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     fn account(&self) -> &Account {
         &self.account

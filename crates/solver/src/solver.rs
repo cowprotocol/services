@@ -74,6 +74,10 @@ pub trait Solver: Send + Sync + 'static {
     /// id identifies this instance of solving by the driver in which it invokes all solvers.
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>>;
 
+    /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
+    /// Has to be non-blocking to not delay settling the actual solution
+    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult);
+
     /// Returns solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
 
@@ -81,6 +85,35 @@ pub trait Solver: Send + Sync + 'static {
     ///
     /// This method is used for logging and metrics collection.
     fn name(&self) -> &str;
+}
+
+/// The result a given solver achieved in the auction
+pub enum AuctionResult {
+    /// Solution was valid and was ranked at the given place
+    /// Rank 1 means the solver won the competition
+    Ranked(usize),
+
+    /// Solution was invalid for some reason
+    Rejected(SolverRejectionReason),
+}
+
+/// Reason for why a solution may have been invalid
+pub enum SolverRejectionReason {
+    /// The solver didn't return a successful response in time
+    RunError(SolverRunError),
+
+    /// The solution candidate didn't include any user orders
+    NoUserOrders,
+
+    /// The solution candidate didn't include any mature user orders
+    NoMatureOrders,
+
+    /// The solution violated a price constraint (ie. max deviation to external price vector)
+    PriceViolation,
+
+    /// The solution didn't pass simulation. Includes revert reason as well as the calldata
+    /// to re-create simulation locally
+    SimulationFailure(String, Vec<u8>),
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -519,6 +552,10 @@ impl Solver for SellVolumeFilteringSolver {
         self.inner.solve(auction).await
     }
 
+    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
+        self.inner.notify_auction_result(auction_id, result);
+    }
+
     fn account(&self) -> &Account {
         self.inner.account()
     }
@@ -539,6 +576,7 @@ impl Solver for DummySolver {
     fn account(&self) -> &ethcontract::Account {
         todo!()
     }
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
     fn name(&self) -> &'static str {
         "DummySolver"
     }
@@ -562,6 +600,8 @@ mod tests {
         async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
             Ok(Vec::new())
         }
+
+        fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
         fn account(&self) -> &Account {
             unimplemented!()

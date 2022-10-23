@@ -32,6 +32,8 @@ use std::{
     time::Instant,
 };
 
+use super::AuctionResult;
+
 /// Failure indicating the transaction reverted for some reason
 pub fn is_transaction_failure(error: &ExecutionError) -> bool {
     matches!(error, ExecutionError::Failure(_))
@@ -494,6 +496,10 @@ impl Solver for HttpSolver {
                 Err(err)
             }
         }
+    }
+
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {
+        //TODO: implement a non blocking (fire and forget) callback to the http solver
     }
 
     fn account(&self) -> &Account {

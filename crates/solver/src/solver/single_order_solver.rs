@@ -7,9 +7,12 @@ use crate::{
 };
 use anyhow::{Error, Result};
 use ethcontract::Account;
+use model::auction::AuctionId;
 use primitive_types::U256;
 use rand::prelude::SliceRandom;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
+
+use super::AuctionResult;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -108,6 +111,9 @@ impl Solver for SingleOrderSolver {
 
         Ok(settlements)
     }
+
+    // We don't care about callbacks
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     fn account(&self) -> &Account {
         self.inner.account()
