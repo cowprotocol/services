@@ -62,6 +62,12 @@ impl Default for SettlementEncoder {
     }
 }
 
+/// Whether or not internalizable interactions should be encoded as calldata
+pub enum InternalizationStrategy {
+    EncodeAllInteractions,
+    SkipInternalizableInteraction,
+}
+
 impl SettlementEncoder {
     /// Creates a new settlement encoder with the specified prices.
     ///
@@ -373,7 +379,10 @@ impl SettlementEncoder {
         });
     }
 
-    pub fn finish(mut self, internalize_interactions: bool) -> EncodedSettlement {
+    pub fn finish(
+        mut self,
+        internalization_strategy: InternalizationStrategy,
+    ) -> EncodedSettlement {
         self.drop_unnecessary_tokens_and_prices();
 
         let (mut liquidity_order_buy_tokens, mut liquidity_order_prices): (Vec<H160>, Vec<U256>) =
@@ -428,7 +437,12 @@ impl SettlementEncoder {
                         self.execution_plan
                             .iter()
                             .filter_map(|(interaction, internalizable)| {
-                                if *internalizable && internalize_interactions {
+                                if *internalizable
+                                    && matches!(
+                                        internalization_strategy,
+                                        InternalizationStrategy::SkipInternalizableInteraction
+                                    )
+                                {
                                     None
                                 } else {
                                     Some(interaction)
@@ -635,7 +649,9 @@ pub mod tests {
         });
 
         assert_eq!(
-            encoder.finish(true).interactions[1],
+            encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1],
             UnwrapWethInteraction {
                 weth,
                 amount: 3.into(),
@@ -669,7 +685,8 @@ pub mod tests {
         assert!(settlement
             .add_liquidity_order_trade(order10, 20.into(), 0.into())
             .is_ok());
-        let finished_settlement = settlement.finish(true);
+        let finished_settlement =
+            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         assert_eq!(
             finished_settlement.tokens,
             vec![token(0), token(1), token(0)]
@@ -708,7 +725,8 @@ pub mod tests {
             settlement.liquidity_order_trades[0].trade.sell_token_index,
             0
         );
-        let finished_settlement = settlement.finish(true);
+        let finished_settlement =
+            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         // the initial price from:SettlementEncoder::new(maplit::hashmap! {
         //     token(1) => 9.into(),
         // });
@@ -763,7 +781,9 @@ pub mod tests {
         encoder.append_to_execution_plan(interaction.clone());
 
         assert_eq!(
-            encoder.finish(true).interactions[1],
+            encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1],
             [interaction.encode(), unwrap.encode()].concat(),
         );
     }
@@ -1034,7 +1054,7 @@ pub mod tests {
             amount: 12.into(),
         });
 
-        let encoded = encoder.finish(true);
+        let encoded = encoder.finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         // only token 1 and 2 have been included in orders by traders
         let expected_tokens: Vec<_> = [1, 3].into_iter().map(token).collect();
@@ -1071,10 +1091,12 @@ pub mod tests {
         encoder.append_to_execution_plan_internalizable(TestInteraction, true);
         encoder.append_to_execution_plan_internalizable(TestInteraction, false);
 
-        let encoded = encoder.clone().finish(true);
+        let encoded = encoder
+            .clone()
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
         assert_eq!(encoded.interactions[1].len(), 1);
 
-        let encoded = encoder.finish(false);
+        let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(encoded.interactions[1].len(), 2);
     }
 }

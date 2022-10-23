@@ -227,7 +227,7 @@ impl Interaction for BatchSwap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging};
+    use crate::{interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging}, settlement::InternalizationStrategy};
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
     use model::order::{Order, OrderData};
@@ -346,7 +346,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish(true);
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
@@ -469,7 +469,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish(true);
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);

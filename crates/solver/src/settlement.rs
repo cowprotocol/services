@@ -2,7 +2,9 @@ pub mod external_prices;
 mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
-pub use self::settlement_encoder::{verify_executed_amount, SettlementEncoder};
+pub use self::settlement_encoder::{
+    verify_executed_amount, InternalizationStrategy, SettlementEncoder,
+};
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
@@ -488,7 +490,9 @@ impl Settlement {
 
 impl From<Settlement> for EncodedSettlement {
     fn from(settlement: Settlement) -> Self {
-        settlement.encoder.finish(true)
+        settlement
+            .encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
     }
 }
 
@@ -579,12 +583,12 @@ pub mod tests {
         let actual_settlement = {
             let mut encoder = SettlementEncoder::new(prices.clone());
             handler.encode(execution, &mut encoder).unwrap();
-            encoder.finish(true)
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
         let expected_settlement = {
             let mut encoder = SettlementEncoder::new(prices);
             exec(&mut encoder);
-            encoder.finish(true)
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
 
         assert_eq!(actual_settlement, expected_settlement);

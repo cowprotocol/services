@@ -1,7 +1,9 @@
 use crate::{
     driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+    settlement::{
+        external_prices::ExternalPrices, InternalizationStrategy, PriceCheckTokens, Settlement,
+    },
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
     solver::{SettlementWithError, Solver, SolverRunError},
@@ -124,7 +126,7 @@ impl SettlementRanker {
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
             tracing::debug!(
-                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(false))),
+                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(InternalizationStrategy::EncodeAllInteractions))),
                 "considering solution for solver competition",
             );
         }
