@@ -3,7 +3,7 @@ use bigdecimal::BigDecimal;
 use futures::stream::BoxStream;
 use sqlx::PgConnection;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, sqlx::FromRow)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct TradesQueryRow {
     pub block_number: i64,
     pub log_index: i64,
