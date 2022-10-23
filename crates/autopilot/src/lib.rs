@@ -449,7 +449,7 @@ pub async fn main(args: arguments::Arguments) {
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
                 .unwrap(),
         );
-        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser::new(web3.clone());
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
             Box::new(quoter),

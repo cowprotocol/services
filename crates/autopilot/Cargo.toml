@@ -23,6 +23,7 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
+ethcontract-mock = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
@@ -31,6 +32,7 @@ itertools = { workspace = true }
 maplit = { workspace = true }
 model = { path = "../model" }
 number-conversions = { path = "../number-conversions" }
+num = { workspace = true}
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

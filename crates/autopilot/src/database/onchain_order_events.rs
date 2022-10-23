@@ -106,13 +106,14 @@ where
 
     // This function allow to create the specific object that will be stored in
     // the database by the fn append_custo_order_info_to_db
-    fn customized_event_data_for_event_index(
+    async fn customized_event_data_for_event_index(
         &self,
         event_index: &EventIndex,
+        quote: &Quote,
         order: &Order,
         hashmap: &HashMap<EventIndex, EventData>,
         onchain_order_placement: &OnchainOrderPlacement,
-    ) -> EventRow;
+    ) -> Result<EventRow>;
 }
 
 #[async_trait::async_trait]
@@ -241,24 +242,40 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             self.settlement_contract,
         )
         .await;
-        let data_tuple =
-            onchain_order_data
-                .into_iter()
-                .map(|(event_index, onchain_order_placement, order)| {
-                    (
-                        self.custom_onchain_data_parser
-                            .customized_event_data_for_event_index(
-                                &event_index,
-                                &order,
-                                &custom_data_hashmap,
-                                &onchain_order_placement,
-                            ),
-                        (event_index, onchain_order_placement),
-                        order,
-                    )
-                });
+        let data_tuple_futures = onchain_order_data.into_iter().map(move |data| {
+            let custom_data_hashmap_clone = custom_data_hashmap.clone();
+            async move {
+                Ok((
+                    self.custom_onchain_data_parser
+                        .customized_event_data_for_event_index(
+                            &data.event_index.clone(),
+                            &data.quote.clone(),
+                            &data.order,
+                            &custom_data_hashmap_clone.clone(),
+                            &data.onchain_order_placement,
+                        )
+                        .await?,
+                    (data.event_index, data.onchain_order_placement),
+                    data.order,
+                ))
+            }
+        });
+        let data_tuple = stream::iter(data_tuple_futures)
+            .buffer_unordered(10)
+            .collect::<Vec<Result<(W, (EventIndex, OnchainOrderPlacement), Order)>>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<(W, (EventIndex, OnchainOrderPlacement), Order)>>>()?;
         Ok(multiunzip(data_tuple))
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct OnchainOrderPlacementData {
+    event_index: EventIndex,
+    quote: Quote,
+    onchain_order_placement: OnchainOrderPlacement,
+    order: Order,
 }
 
 async fn parse_general_onchain_order_placement_data(
@@ -266,7 +283,7 @@ async fn parse_general_onchain_order_placement_data(
     contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
-) -> Vec<(EventIndex, OnchainOrderPlacement, Order)> {
+) -> Vec<OnchainOrderPlacementData> {
     let futures = contract_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, quote_id)| async move {
             let meta = match meta {
@@ -279,17 +296,22 @@ async fn parse_general_onchain_order_placement_data(
             let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
             let order_data = convert_onchain_order_placement(
                 &event,
-                quote,
+                quote.clone(),
                 order_data,
                 signing_scheme,
                 order_uid,
                 owner,
                 settlement_contract,
             )?;
-            Ok((meta_to_event_index(&meta), order_data))
+            Ok(OnchainOrderPlacementData {
+                event_index: meta_to_event_index(&meta),
+                quote,
+                onchain_order_placement: order_data.0,
+                order: order_data.1,
+            })
         },
     );
-    let onchain_order_placement_data: Vec<Result<(EventIndex, (OnchainOrderPlacement, Order))>> =
+    let onchain_order_placement_data: Vec<Result<OnchainOrderPlacementData>> =
         stream::iter(futures).buffer_unordered(10).collect().await;
     onchain_order_placement_data
         .into_iter()
@@ -298,7 +320,7 @@ async fn parse_general_onchain_order_placement_data(
                 tracing::debug!("Error while parsing onchain orders: {:}", err);
                 None
             }
-            Ok((event, order_data)) => Some((event, order_data.0, order_data.1)),
+            Ok(data) => Some(data),
         })
         .collect()
 }
@@ -741,7 +763,7 @@ mod test {
         assert_eq!(result_vec.len(), 1);
         let first_element = result_vec.get(0).unwrap();
         assert_eq!(
-            first_element.0,
+            first_element.event_index,
             EventIndex {
                 block_number: 1,
                 log_index: 0i64
@@ -827,7 +849,7 @@ mod test {
             .returning(|_, _| Ok(()));
         custom_onchain_order_parser
             .expect_customized_event_data_for_event_index()
-            .returning(|_, _, _, _| 1u8);
+            .returning(|_, _, _, _, _| Ok(1u8));
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
             quoter: Box::new(order_quoter),

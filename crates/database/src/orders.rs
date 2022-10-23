@@ -904,6 +904,7 @@ mod tests {
             uid: order.uid,
             valid_to: 2,
             is_refunded: false,
+            ..Default::default()
         };
         insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
 

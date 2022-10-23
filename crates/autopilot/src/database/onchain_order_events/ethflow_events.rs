@@ -11,18 +11,40 @@ use database::{
     orders::{Interaction, Order},
     PgTransaction,
 };
-use ethcontract::Event as EthContractEvent;
+use ethcontract::{dyns::DynWeb3, BlockId, BlockNumber, Event as EthContractEvent};
 use hex_literal::hex;
+use num::{bigint::ToBigInt, BigRational, ToPrimitive};
+use shared::{conversions::U256Ext, Web3};
 use sqlx::types::BigDecimal;
 use std::{collections::HashMap, convert::TryInto};
 
 use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
+#[derive(Debug, Clone)]
+pub struct EthFlowOnchainOrderParser {
+    web3: Web3,
+}
+
+impl EthFlowOnchainOrderParser {
+    pub fn new(web3: DynWeb3) -> Self {
+        EthFlowOnchainOrderParser { web3 }
+    }
+
+    async fn get_unix_timestamp_of_block(&self, block_number: i64) -> Result<i64> {
+        self.web3
+            .eth()
+            .block(BlockId::Number(BlockNumber::Number(block_number.into())))
+            .await
+            .ok()
+            .flatten()
+            .map(|block| block.timestamp.as_u64() as i64)
+            .context("could not find block's timestamp")
+    }
+}
+
 // 4c84c1c8 is the identifier of the following function:
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
 const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
-
-pub struct EthFlowOnchainOrderParser;
 
 #[derive(Copy, Debug, Clone)]
 pub struct EthFlowData {
@@ -94,31 +116,46 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
             .context("append_ethflow_orders failed during appending pre_interactions")
     }
 
-    fn customized_event_data_for_event_index(
+    async fn customized_event_data_for_event_index(
         &self,
         event_index: &EventIndex,
+        quote: &shared::order_quoting::Quote,
         order: &Order,
         hashmap: &HashMap<EventIndex, EthFlowData>,
         _onchain_order_placement: &OnchainOrderPlacement,
-    ) -> EthFlowDataForDb {
-        EthFlowDataForDb {
+    ) -> Result<EthFlowDataForDb> {
+        let slippage = BigRational::new(
+            quote.data.quoted_buy_amount.to_big_int(),
+            order.buy_amount.to_bigint().unwrap(),
+        )
+        .to_f64()
+        .unwrap_or(f64::NAN);
+        let unix_timestamp_of_block = self
+            .get_unix_timestamp_of_block(event_index.block_number)
+            .await?;
+        // unwrap is allowed, as any missing event_index would have been
+        // filtered beforehand by the implementation of the function
+        // parse_custom_event_data
+        let valid_to = hashmap.get(event_index).unwrap().user_valid_to as i64;
+        let validity_duration = valid_to - unix_timestamp_of_block;
+        Ok(EthFlowDataForDb {
             eth_order_placement: EthOrderPlacement {
                 uid: order.uid,
-                // unwrap is allowed, as any missing event_index would have been filtered beforehand
-                // by the implementation of the function parse_custom_event_data
-                valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
+                valid_to,
                 is_refunded: false,
+                validity_duration,
+                slippage,
             },
-            // The following interaction calls the wrap_all() function on the ethflow contract
-            // in order to wrap all existing ether to weth, such that the eth can be used as
-            // WETH by the cow protocol
+            // The following interaction calls the wrap_all() function on the
+            // ethflow contract in order to wrap all existing ether to weth,
+            // such that the eth can be used as WETH by the cow protocol
             pre_interaction: Interaction {
                 // For ethflow orders, the owner is always the ethflow contract
                 target: ByteArray(order.owner.0),
                 value: BigDecimal::new(0.into(), 1),
                 data: WRAP_ALL_SELECTOR.to_vec(),
             },
-        }
+        })
     }
 }
 
@@ -135,6 +172,8 @@ fn convert_to_quote_id_and_user_valid_to(
 #[cfg(test)]
 mod test {
     use ethcontract::{Bytes, EventMetadata, H160, U256};
+
+    use ethcontract_mock::Mock;
     use model::order::{OrderData, OrderKind};
 
     use super::*;
@@ -195,7 +234,7 @@ mod test {
                 ..Default::default()
             }),
         };
-        let ethflow_onchain_order_parser = EthFlowOnchainOrderParser {};
+        let ethflow_onchain_order_parser = EthFlowOnchainOrderParser::new(Mock::new(1).web3());
         let result = ethflow_onchain_order_parser
             .parse_custom_event_data(vec![event_data].as_slice())
             .unwrap();

@@ -1,34 +1,40 @@
 use crate::{OrderUid, PgTransaction};
 use sqlx::PgConnection;
 
-#[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, sqlx::FromRow, PartialEq)]
 pub struct EthOrderPlacement {
     pub uid: OrderUid,
     pub valid_to: i64,
     pub is_refunded: bool,
+    pub validity_duration: i64,
+    pub slippage: f64,
 }
 
 pub async fn append(
     ex: &mut PgTransaction<'_>,
-    events: &[EthOrderPlacement],
+    placements: &[EthOrderPlacement],
 ) -> Result<(), sqlx::Error> {
-    for event in events {
-        insert_ethflow_order(ex, event).await?;
+    for placement in placements {
+        insert_ethflow_order(ex, placement).await?;
     }
     Ok(())
 }
 
 pub async fn insert_ethflow_order(
     ex: &mut PgConnection,
-    event: &EthOrderPlacement,
+    placement: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO ethflow_orders (uid, valid_to, is_refunded) VALUES ($1, $2, $3) \
-        ON CONFLICT (uid) DO UPDATE SET valid_to = $2, is_refunded = $3;";
+        INSERT INTO ethflow_orders (uid, valid_to, is_refunded, validity_duration, slippage)\
+        VALUES ($1, $2, $3, $4, $5) \
+        ON CONFLICT (uid) DO UPDATE SET valid_to = $2, is_refunded = $3,\
+        validity_duration = $4, slippage = $5;";
     sqlx::query(QUERY)
-        .bind(event.uid)
-        .bind(event.valid_to)
-        .bind(event.is_refunded)
+        .bind(placement.uid)
+        .bind(placement.valid_to)
+        .bind(placement.is_refunded)
+        .bind(placement.validity_duration)
+        .bind(placement.slippage)
         .execute(ex)
         .await?;
     Ok(())
@@ -47,16 +53,25 @@ pub async fn read_order(
 
 pub async fn refundable_orders(
     ex: &mut PgConnection,
-    id: i64,
+    max_valid_to: i64,
+    min_order_validity_duration: i64,
+    min_slippage: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT * FROM ethflow_orders eo
         LEFT JOIN trades t on eo.uid = t.order_uid
         WHERE eo.valid_to < $1
+        AND eo.validity_duration >= $2
+        AND eo.slippage >= $3
         AND eo.is_refunded = false
         AND t.order_uid is null
     "#;
-    sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(max_valid_to)
+        .bind(min_order_validity_duration)
+        .bind(min_slippage)
+        .fetch_all(ex)
+        .await
 }
 
 #[cfg(test)]
@@ -113,27 +128,40 @@ mod tests {
             uid: ByteArray([1u8; 56]),
             valid_to: 1,
             is_refunded: false,
+            validity_duration: 3,
+            slippage: 0.1f64,
         };
         let order_2 = EthOrderPlacement {
             uid: ByteArray([2u8; 56]),
             valid_to: 2,
             is_refunded: false,
+            validity_duration: 4,
+            slippage: 0.1f64,
         };
         let order_3 = EthOrderPlacement {
             uid: ByteArray([3u8; 56]),
             valid_to: 3,
             is_refunded: true,
+            validity_duration: 5,
+            slippage: 0.1f64,
+        };
+        let order_4 = EthOrderPlacement {
+            uid: ByteArray([4u8; 56]),
+            valid_to: 10,
+            is_refunded: true,
+            validity_duration: 11,
+            slippage: 0.0001f64,
         };
 
         append(
             &mut db,
-            vec![order_1.clone(), order_2.clone(), order_3].as_slice(),
+            vec![order_1.clone(), order_2.clone(), order_3, order_4].as_slice(),
         )
         .await
         .unwrap();
-        let orders = refundable_orders(&mut db, 3).await.unwrap();
+        let orders = refundable_orders(&mut db, 3, 3, 0.01f64).await.unwrap();
         assert_eq!(orders, vec![order_1.clone(), order_2]);
-        let orders = refundable_orders(&mut db, 2).await.unwrap();
+        let orders = refundable_orders(&mut db, 2, 3, 0.01f64).await.unwrap();
         assert_eq!(orders, vec![order_1.clone()]);
         let trade = Trade {
             order_uid: ByteArray([2u8; 56]),
@@ -142,7 +170,9 @@ mod tests {
         insert_trade(&mut db, &EventIndex::default(), &trade)
             .await
             .unwrap();
-        let orders = refundable_orders(&mut db, 3).await.unwrap();
+        let orders = refundable_orders(&mut db, 3, 3, 0.01f64).await.unwrap();
         assert_eq!(orders, vec![order_1]);
+        let orders = refundable_orders(&mut db, 3, 10, 0.01f64).await.unwrap();
+        assert_eq!(orders, Vec::new());
     }
 }
