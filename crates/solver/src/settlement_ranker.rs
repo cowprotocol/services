@@ -3,6 +3,7 @@ use crate::{
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
+    settlement_simulation::call_data,
     solver::{SettlementWithError, Solver, SolverRunError},
 };
 use anyhow::Result;
@@ -123,7 +124,7 @@ impl SettlementRanker {
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
             tracing::debug!(
-                solver_name = %solver.name(), ?settlement,
+                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(false))),
                 "considering solution for solver competition",
             );
         }
