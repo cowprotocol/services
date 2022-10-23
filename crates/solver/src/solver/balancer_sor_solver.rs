@@ -227,7 +227,10 @@ impl Interaction for BatchSwap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging}, settlement::InternalizationStrategy};
+    use crate::{
+        interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging},
+        settlement::InternalizationStrategy,
+    };
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
     use model::order::{Order, OrderData};

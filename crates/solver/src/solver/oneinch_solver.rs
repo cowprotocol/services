@@ -193,8 +193,9 @@ mod tests {
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
         liquidity::LimitOrder,
+        settlement::InternalizationStrategy,
         solver::ExternalPrices,
-        test::account, settlement::InternalizationStrategy,
+        test::account,
     };
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
