@@ -22,7 +22,6 @@ use shared::{
     },
     tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
-    token_list::{TokenList, TokenListConfiguration},
     zeroex_api::DefaultZeroExApi,
 };
 use solver::{
@@ -156,22 +155,6 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
         common.settlement_contract.address(),
     ));
     let http_solver_cache = InstanceCache::default();
-    let market_makable_token_list_configuration = TokenListConfiguration {
-        url: String::new(), // todo
-        chain_id: common.chain_id,
-        client: common.http_factory.create(),
-    };
-    let market_makable_token_list = match TokenList::from_configuration(
-        market_makable_token_list_configuration.clone(),
-    )
-    .await
-    {
-        Ok(token_list) => Some(Arc::new(token_list)),
-        Err(err) => {
-            tracing::error!("Couldn't fetch market makable token list: {}", err);
-            None
-        }
-    };
 
     args.solvers
         .iter()
@@ -197,7 +180,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 http_solver_cache.clone(),
                 false,
                 args.slippage.get_global_calculator(),
-                market_makable_token_list.clone(),
+                None,
             )) as Arc<dyn Solver>
         })
         .collect()
