@@ -1,24 +1,65 @@
 //! Abstraction for simulating calls with overrides.
 
 use crate::{
+    ethcontract_error::EthcontractErrorType,
     tenderly_api::{SimulationKind, SimulationRequest, TenderlyApi},
     transport::extensions::{EthExt as _, StateOverrides},
     Web3,
 };
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
+use ethcontract::errors::ExecutionError;
 use std::sync::Arc;
+use thiserror::Error;
 use web3::types::{BlockNumber, CallRequest};
 
 /// Simulate a call with state overrides.
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeSimulating: Send + Sync + 'static {
-    async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>>;
+    async fn simulate(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+    ) -> Result<Vec<u8>, SimulationError>;
+}
+
+#[derive(Debug, Error)]
+pub enum SimulationError {
+    #[error("simulation reverted {0:?}")]
+    Revert(Option<String>),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl Clone for SimulationError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Revert(message) => Self::Revert(message.clone()),
+            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+        }
+    }
+}
+
+impl From<web3::Error> for SimulationError {
+    fn from(err: web3::Error) -> Self {
+        let err = ExecutionError::from(err);
+        match EthcontractErrorType::classify(&err) {
+            EthcontractErrorType::Node => Self::Other(err.into()),
+            EthcontractErrorType::Contract => match err {
+                ExecutionError::Revert(message) => Self::Revert(message),
+                _ => Self::Revert(None),
+            },
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl CodeSimulating for Web3 {
-    async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>> {
+    async fn simulate(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+    ) -> Result<Vec<u8>, SimulationError> {
         Ok(self
             .eth()
             .call_with_state_overrides(call, BlockNumber::Latest.into(), overrides)
@@ -60,7 +101,11 @@ impl TenderlyCodeSimulator {
 
 #[async_trait::async_trait]
 impl CodeSimulating for TenderlyCodeSimulator {
-    async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>> {
+    async fn simulate(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+    ) -> Result<Vec<u8>, SimulationError> {
         let result = self
             .tenderly
             .simulate(SimulationRequest {
@@ -87,12 +132,14 @@ impl CodeSimulating for TenderlyCodeSimulator {
             .context("Tenderly simulation missing call trace")?;
 
         if let Some(err) = trace.error {
-            bail!("Tenderly simulation error: {err}");
+            return Err(SimulationError::Revert(Some(err)));
         }
 
-        trace
+        let output = trace
             .output
-            .context("Tenderly simulation missing transaction output")
+            .context("Tenderly simulation missing transaction output")?;
+
+        Ok(output)
     }
 }
 
@@ -191,7 +238,10 @@ mod tests {
                 )
                 .await;
 
-            assert!(result.is_err());
+            // Tenderly isn't extracting the revert bytes, so we just get some
+            // general revert message, so we can't assert the message is as
+            // expected.
+            assert!(matches!(result, Err(SimulationError::Revert(Some(_)))));
         }
     }
 }

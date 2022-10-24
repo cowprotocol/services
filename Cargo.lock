@@ -190,6 +190,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "global-metrics",
+ "hex-literal",
  "itertools",
  "maplit",
  "mockall",

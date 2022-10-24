@@ -112,7 +112,7 @@ async fn insert_invalidation(
     Ok(())
 }
 
-async fn insert_trade(
+pub async fn insert_trade(
     ex: &mut PgConnection,
     index: &EventIndex,
     event: &Trade,
