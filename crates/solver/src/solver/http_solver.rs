@@ -15,6 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
+use itertools::Itertools;
 use maplit::{btreemap, hashset};
 use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
@@ -24,6 +25,7 @@ use shared::{
     measure_time,
     sources::balancer_v2::pools::common::compute_scaling_rate,
     token_info::{TokenInfo, TokenInfoFetching},
+    token_list::{TokenList, TokenListConfiguration},
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -63,6 +65,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
+    market_makable_token_list: TokenListConfiguration,
 }
 
 impl HttpSolver {
@@ -78,6 +81,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
+        market_makable_token_list: TokenListConfiguration,
     ) -> Self {
         Self {
             solver,
@@ -90,6 +94,7 @@ impl HttpSolver {
             instance_cache,
             filter_non_fee_connected_orders,
             slippage_calculator,
+            market_makable_token_list,
         }
     }
 
@@ -102,7 +107,18 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let tokens = map_tokens_for_solver(&orders, &liquidity);
+        let all_bufferable_tokens =
+            TokenList::from_configuration(self.market_makable_token_list.clone())
+                .await
+                .map(|tokens| {
+                    tokens
+                        .all()
+                        .into_iter()
+                        .map(|token| token.address)
+                        .collect_vec()
+                })
+                .unwrap_or_default();
+        let tokens = map_tokens_for_solver(&orders, &liquidity, &all_bufferable_tokens);
         let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
@@ -180,7 +196,11 @@ impl HttpSolver {
     }
 }
 
-fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<H160> {
+fn map_tokens_for_solver(
+    orders: &[LimitOrder],
+    liquidity: &[Liquidity],
+    all_bufferable_tokens: &[H160],
+) -> Vec<H160> {
     let mut token_set = HashSet::new();
     token_set.extend(
         orders
@@ -196,6 +216,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
             Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
+    token_set.extend(all_bufferable_tokens);
 
     Vec::from_iter(token_set)
 }
@@ -578,6 +599,11 @@ mod tests {
             Default::default(),
             true,
             SlippageCalculator::default(),
+            TokenListConfiguration {
+                url: String::new(),
+                chain_id: 0,
+                client: Client::new(),
+            },
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {

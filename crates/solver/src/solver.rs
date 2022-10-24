@@ -31,6 +31,7 @@ use shared::{
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     token_info::TokenInfoFetching,
+    token_list::TokenListConfiguration,
     zeroex_api::ZeroExApi,
     Web3,
 };
@@ -270,6 +271,7 @@ pub fn create(
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
+    market_makable_token_list: String,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -294,6 +296,11 @@ pub fn create(
     let http_instance_with_all_orders = http_solver::InstanceCache::default();
 
     // Helper function to create http solver instances.
+    let market_makable_token_list = TokenListConfiguration {
+        url: market_makable_token_list,
+        chain_id,
+        client: http_factory.create(),
+    };
     let create_http_solver = |account: Account,
                               url: Url,
                               name: String,
@@ -323,6 +330,7 @@ pub fn create(
             },
             filter_non_fee_connected_orders,
             slippage_calculator,
+            market_makable_token_list.clone(),
         )
     };
 

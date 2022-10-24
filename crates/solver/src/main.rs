@@ -19,7 +19,7 @@ use shared::{
     },
     tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::TokenList,
+    token_list::{TokenList, TokenListConfiguration},
     zeroex_api::DefaultZeroExApi,
 };
 use solver::{
@@ -238,6 +238,7 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
+        args.market_makable_token_list.clone(),
     )
     .expect("failure creating solvers");
 
@@ -293,14 +294,16 @@ async fn main() {
         zeroex_liquidity,
         uniswap_v3_liquidity,
     };
-    let market_makable_token_list = TokenList::from_url(
-        &args.market_makable_token_list,
+    let market_makable_token_list_configuration = TokenListConfiguration {
+        url: args.market_makable_token_list,
         chain_id,
-        http_factory.create(),
-    )
-    .await
-    .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
-    .ok();
+        client: http_factory.create(),
+    };
+    let market_makable_token_list =
+        TokenList::from_configuration(market_makable_token_list_configuration)
+            .await
+            .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
+            .ok();
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()

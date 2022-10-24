@@ -2,8 +2,15 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use ethcontract::H160;
-use reqwest::{Client, IntoUrl};
+use reqwest::Client;
 use serde::Deserialize;
+
+#[derive(Clone, Debug)]
+pub struct TokenListConfiguration {
+    pub url: String,
+    pub chain_id: u64,
+    pub client: Client,
+}
 
 pub struct TokenList {
     tokens: HashMap<H160, Token>,
@@ -18,7 +25,13 @@ pub struct Token {
 }
 
 impl TokenList {
-    pub async fn from_url(url: impl IntoUrl, chain_id: u64, client: Client) -> Result<Self> {
+    pub async fn from_configuration(
+        TokenListConfiguration {
+            url,
+            chain_id,
+            client,
+        }: TokenListConfiguration,
+    ) -> Result<Self> {
         let model: TokenListModel = client.get(url).send().await?.json().await?;
         Ok(Self::from_tokens(model.tokens, chain_id))
     }
