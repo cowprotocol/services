@@ -115,7 +115,7 @@ pub struct TokenInfoModel {
     pub normalize_priority: Option<u64>,
     #[serde_as(as = "Option<DecimalU256>")]
     pub internal_buffer: Option<U256>,
-    /// Is it contained in the external bufferable list
+    /// Is token in the external list containing only safe tokens
     pub is_safe: bool,
 }
 
