@@ -93,7 +93,7 @@ impl TryFrom<PoolData> for PoolInfo {
                 fee: Ratio::new(pool.fee_tier.as_u32(), 1_000_000u32),
             },
             gas_stats: PoolStats {
-                mean_gas: U256::from(300_000), // todo: hardcoded for testing purposes
+                mean_gas: U256::from(108_163), // as estimated by https://dune.com/queries/1044812
             },
         })
     }
