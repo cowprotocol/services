@@ -21,6 +21,7 @@ pub mod gas_price;
 pub mod gas_price_estimation;
 pub mod http_client;
 pub mod http_solver;
+pub mod interaction;
 pub mod maintenance;
 pub mod metrics;
 pub mod network;

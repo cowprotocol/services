@@ -9,7 +9,7 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
     signature::Signature,
 };
 use num::Zero;
@@ -17,8 +17,9 @@ use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_b
 use primitive_types::H160;
 use shared::{
     db_order_conversions::{
-        buy_token_destination_from, buy_token_destination_into, order_kind_from, order_kind_into,
-        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
+        buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
+        order_kind_from, order_kind_into, sell_token_source_from, sell_token_source_into,
+        signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
 };
@@ -275,6 +276,7 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let status = calculate_status(&order);
+    let pre_interactions = extract_pre_interactions(&order)?;
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -323,6 +325,9 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         metadata,
         data,
         signature,
+        interactions: Interactions {
+            pre: pre_interactions,
+        },
     })
 }
 
@@ -346,10 +351,12 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use super::*;
     use chrono::Duration;
-    use database::byte_array::ByteArray;
-    use database::orders::{
-        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    use database::{
+        byte_array::ByteArray,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
+            SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+        },
     };
     use model::{
         order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
@@ -387,6 +394,7 @@ mod tests {
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
             is_liquidity_order: true,
+            pre_interactions: Vec::new(),
         };
 
         // Open - sell (filled - 0%)
@@ -681,6 +689,7 @@ mod tests {
                 ..Default::default()
             },
             signature: Signature::default_with(SigningScheme::PreSign),
+            ..Default::default()
         };
         db.insert_order(&order, None).await.unwrap();
 

@@ -1,5 +1,4 @@
-use ethcontract::jsonrpc::Call as RpcCall;
-use ethcontract::web3::RequestId;
+use ethcontract::{jsonrpc::Call as RpcCall, web3::RequestId};
 use serde_json::Value;
 use web3::{api::Web3, BatchTransport, Transport};
 

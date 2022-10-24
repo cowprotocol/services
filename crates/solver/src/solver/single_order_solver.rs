@@ -150,8 +150,7 @@ pub fn execution_respects_order(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::tests::CapturingSettlementHandler;
-    use crate::metrics::NoopMetrics;
+    use crate::{liquidity::tests::CapturingSettlementHandler, metrics::NoopMetrics};
     use anyhow::anyhow;
     use model::order::OrderKind;
     use std::sync::Arc;

@@ -368,18 +368,12 @@ impl<'a> Submitter<'a> {
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        tracing::debug!(
-            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
-        );
-
         let mut access_list: Option<AccessList> = None;
 
         // Try to find submitted transaction from previous submission attempt (with the same address and nonce)
         let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
         loop {
-            tracing::debug!("entered loop with submitter");
-
             let submission_status = self
                 .submit_api
                 .submission_status(&settlement, &params.network_id);
@@ -637,8 +631,7 @@ fn track_mined_transactions(submitter: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::submitter::flashbots_api::FlashbotsApi;
-    use super::*;
+    use super::{super::submitter::flashbots_api::FlashbotsApi, *};
     use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;

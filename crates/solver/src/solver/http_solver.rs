@@ -21,17 +21,15 @@ use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::{
     http_solver::{gas_model::GasModel, model::*, DefaultHttpSolverApi, HttpSolverApi},
-    sources::balancer_v2::pools::common::compute_scaling_rate,
-};
-use shared::{
     measure_time,
+    sources::balancer_v2::pools::common::compute_scaling_rate,
     token_info::{TokenInfo, TokenInfoFetching},
 };
-use std::time::Instant;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
     sync::Arc,
+    time::Instant,
 };
 
 /// Failure indicating the transaction reverted for some reason
@@ -279,6 +277,7 @@ fn order_models(
                     is_liquidity_order: order.is_liquidity_order,
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
+                    reward: order.reward,
                 },
             ))
         })
@@ -509,19 +508,21 @@ impl Solver for HttpSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::MockAllowanceManaging;
-    use crate::liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder};
-    use crate::solver::http_solver::buffers::MockBufferRetrieving;
+    use crate::{
+        interactions::allowances::MockAllowanceManaging,
+        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
+        solver::http_solver::buffers::MockBufferRetrieving,
+    };
     use ::model::TokenPair;
     use ethcontract::Address;
     use maplit::hashmap;
     use num::rational::Ratio;
     use reqwest::Client;
-    use shared::http_solver::SolverConfig;
-    use shared::token_info::MockTokenInfoFetching;
-    use shared::token_info::TokenInfo;
-    use std::sync::Arc;
-    use std::time::Duration;
+    use shared::{
+        http_solver::SolverConfig,
+        token_info::{MockTokenInfoFetching, TokenInfo},
+    };
+    use std::{sync::Arc, time::Duration};
 
     // cargo test real_solver -- --ignored --nocapture
     // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer

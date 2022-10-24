@@ -86,6 +86,7 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
+        solution_comparison_decimal_cutoff: u16,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -107,6 +108,7 @@ impl Driver {
             metrics: metrics.clone(),
             min_order_age,
             settlement_rater,
+            decimal_cutoff: solution_comparison_decimal_cutoff,
         };
 
         let logger = DriverLogger {
@@ -228,17 +230,21 @@ impl Driver {
         let orders = auction
             .orders
             .into_iter()
-            .filter_map(
-                |order| match self.order_converter.normalize_limit_order(order) {
-                    Ok(order) => Some(order),
+            .filter_map(|order| {
+                let uid = order.metadata.uid;
+                match self.order_converter.normalize_limit_order(order) {
+                    Ok(mut order) => {
+                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
+                        Some(order)
+                    }
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
                         tracing::error!(?err, "error normalizing limit order");
                         None
                     }
-                },
-            )
+                }
+            })
             .collect::<Vec<_>>();
         tracing::info!(?orders, "got {} orders", orders.len());
 
@@ -266,6 +272,7 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
+        let rewards = auction.rewards;
         let auction = Auction {
             id: auction_id,
             run: run_id,
@@ -296,7 +303,7 @@ impl Driver {
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
-        let mut solver_competition = SolverCompetition {
+        let solver_competition = SolverCompetition {
             auction_id,
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
@@ -315,7 +322,7 @@ impl Driver {
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
                         fees: rated_settlement
-                            .unscaled_subsidized_fee
+                            .scaled_unsubsidized_fee
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()
@@ -342,6 +349,11 @@ impl Driver {
                 })
                 .collect(),
         };
+        let mut solver_competition = model::solver_competition::Request {
+            auction: auction_id,
+            competition: solver_competition,
+            rewards: Vec::new(),
+        };
 
         if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
             winning_settlement.settlement = self
@@ -360,9 +372,23 @@ impl Driver {
                 winning_settlement
             );
 
+            // Note that order_trades doesn't include liquidity orders.
+            for trade in winning_settlement.settlement.encoder.order_trades() {
+                let uid = &trade.trade.order.metadata.uid;
+                let reward = rewards.get(uid).copied().unwrap_or(0.);
+                // Log in case something goes wrong with storing the rewards in the database.
+                tracing::debug!(%uid, %reward, "winning solution reward");
+                solver_competition.rewards.push((*uid, reward));
+            }
+
+            // At this point we know that we are going to attempt to settle on chain. We store the
+            // competition info immediately in case we don't find the mined transaction hash later
+            // for example because the driver got restarted. If we get a hash then we store the
+            // competition info again this time including the hash.
+            self.send_solver_competition(&solver_competition).await;
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
-            match submit_settlement(
+            let hash = match submit_settlement(
                 &self.solution_submitter,
                 &self.logger,
                 winning_solver.clone(),
@@ -374,12 +400,16 @@ impl Driver {
             {
                 Ok(receipt) => {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
-                    solver_competition.transaction_hash = Some(receipt.transaction_hash);
+                    Some(receipt.transaction_hash)
                 }
-                Err(SubmissionError::Revert(hash)) => {
-                    solver_competition.transaction_hash = Some(hash);
-                }
-                _ => (),
+                Err(SubmissionError::Revert(hash)) => Some(hash),
+                _ => None,
+            };
+            if let Some(hash) = hash {
+                // Rewards were already stored and don't change.
+                solver_competition.rewards.clear();
+                solver_competition.competition.transaction_hash = Some(hash);
+                self.send_solver_competition(&solver_competition).await;
             }
 
             self.logger.report_on_batch(
@@ -389,7 +419,6 @@ impl Driver {
                     .map(|(solver, settlement, _)| (solver, settlement))
                     .collect(),
             );
-            self.send_solver_competition(solver_competition).await;
         }
         // Happens after settlement submission so that we do not delay it.
         self.logger.report_simulation_errors(
@@ -418,10 +447,14 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(&self, body: SolverCompetition) {
-        match self.api.send_solver_competition(&body).await {
+    async fn send_solver_competition(&self, body: &model::solver_competition::Request) {
+        // For example shadow solver shouldn't store competition info.
+        if !self.api.is_authenticated() {
+            return;
+        }
+        match self.api.send_solver_competition(body).await {
             Ok(()) => tracing::debug!("stored solver competition"),
-            Err(err) => tracing::warn!(?err, "failed to send solver competition"),
+            Err(err) => tracing::error!(?err, "failed to send solver competition"),
         }
     }
 }

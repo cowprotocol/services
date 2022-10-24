@@ -5,8 +5,7 @@ use cached::{Cached, TimedSizedCache};
 use contracts::{CowProtocolToken, CowProtocolVirtualToken};
 use ethcontract::Web3;
 use primitive_types::{H160, U256};
-use std::collections::BTreeMap;
-use std::{sync::Mutex, time::Duration};
+use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
 const CACHE_SIZE: usize = 10_000;
 const CACHE_LIFESPAN: Duration = Duration::from_secs(60 * 60);

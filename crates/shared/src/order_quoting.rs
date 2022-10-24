@@ -691,8 +691,8 @@ fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee_subsidy::Subsidy;
     use crate::{
+        fee_subsidy::Subsidy,
         gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
     };

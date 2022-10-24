@@ -5,8 +5,7 @@
 
 use anyhow::{ensure, Result};
 use ethcontract::{H160, H256, U256};
-use model::order::OrderKind;
-use model::u256_decimal;
+use model::{order::OrderKind, u256_decimal};
 use num::BigInt;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{Deserialize, Serialize};

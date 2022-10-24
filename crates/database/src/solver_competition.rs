@@ -10,6 +10,8 @@ pub async fn save(
     const QUERY: &str = r#"
 INSERT INTO solver_competitions (id, json, tx_hash)
 VALUES ($1, $2, $3)
+ON CONFLICT (id) DO UPDATE
+SET json = EXCLUDED.json, tx_hash = EXCLUDED.tx_hash
     ;"#;
     sqlx::query(QUERY)
         .bind(id)
@@ -90,5 +92,24 @@ mod tests {
             .await
             .unwrap();
         assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_can_overwrite() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let value = JsonValue::Bool(true);
+        save(&mut db, 0, &value, None).await.unwrap();
+        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
+        assert_eq!(value, value_);
+
+        // overwrite id
+        let value = JsonValue::Bool(false);
+        save(&mut db, 0, &value, None).await.unwrap();
+        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
+        assert_eq!(value, value_);
     }
 }

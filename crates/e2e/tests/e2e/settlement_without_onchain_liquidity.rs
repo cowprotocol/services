@@ -10,8 +10,9 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
 use shared::{
+    http_client::HttpClientFactory,
+    maintenance::Maintaining,
     sources::uniswap_v2::pool_fetching::PoolFetcher,
     token_list::{Token, TokenList},
     Web3,
@@ -247,6 +248,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         None,
         None.into(),
         None,
+        0,
     );
     driver.single_run().await.unwrap();
 

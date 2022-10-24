@@ -14,8 +14,10 @@ use shared::{
     baseline_solver::BaseTokens, recent_block_cache::Block,
     sources::uniswap_v2::pool_fetching::PoolFetching, Web3,
 };
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
@@ -146,8 +148,8 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
     // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
-        encoder.append_to_execution_plan(approval);
-        encoder.append_to_execution_plan(swap);
+        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
 }

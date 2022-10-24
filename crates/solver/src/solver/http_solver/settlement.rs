@@ -1,15 +1,13 @@
 use crate::{
-    encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
         Liquidity,
     },
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use ethcontract::Bytes;
-use model::order::{Order, OrderKind, OrderMetadata};
+use model::order::{Interactions, Order, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -72,6 +70,7 @@ impl Execution {
         &self,
         settlement: &mut Settlement,
         slippage: &SlippageContext,
+        internalizable: bool,
     ) -> Result<()> {
         use Execution::*;
 
@@ -81,6 +80,7 @@ impl Execution {
                 let execution = AmmOrderExecution {
                     input_max: slippage.execution_input_max(executed_amm.input)?,
                     output: executed_amm.output,
+                    internalizable,
                 };
                 match &executed_amm.order {
                     Liquidity::ConstantProduct(liquidity) => {
@@ -100,9 +100,10 @@ impl Execution {
                 }
             }
             CustomInteraction(interaction_data) => {
-                settlement
-                    .encoder
-                    .append_to_execution_plan(*interaction_data.clone());
+                settlement.encoder.append_to_execution_plan_internalizable(
+                    *interaction_data.clone(),
+                    internalizable,
+                );
                 Ok(())
             }
         }
@@ -143,12 +144,6 @@ struct ExecutedAmm {
     output: (H160, U256),
     order: Liquidity,
     exec_plan: Option<ExecutionPlan>,
-}
-
-impl Interaction for InteractionData {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
-    }
 }
 
 impl<'a> IntermediateSettlement<'a> {
@@ -192,20 +187,11 @@ impl<'a> IntermediateSettlement<'a> {
         }
 
         for execution in &self.executions {
-            if let Some(ExecutionPlan::Internal) = execution.execution_plan() {
-                // This AMM execution or interaction should be internalized and
-                // replaced with buffer trading. Ideally, we would be able to
-                // log the interaction calldata that would be equivalent to the
-                // buffer swap, but that would require a larger refactor around
-                // how we build settlements. For now, just log the execution
-                // itself which is enough to manually recontruct what the actual
-                // calldata would have been.
-                tracing::debug!(?execution, "internalized AMM execution");
-
-                continue;
-            }
-
-            execution.add_to_settlement(&mut settlement, &self.slippage)?;
+            execution.add_to_settlement(
+                &mut settlement,
+                &self.slippage,
+                Some(&ExecutionPlan::Internal) == execution.execution_plan(),
+            )?;
         }
 
         Ok(settlement)
@@ -258,6 +244,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
+                interactions: Interactions::default(),
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -383,11 +370,9 @@ mod tests {
     use hex_literal::hex;
     use maplit::hashmap;
     use model::{order::OrderData, signature::Signature, TokenPair};
-    use num::rational::Ratio;
-    use num::BigRational;
+    use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
-        pool_fetching::AmplificationParameter,
-        pool_fetching::{TokenState, WeightedTokenState},
+        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
         swap::fixed_point::Bfp,
     };
 
@@ -590,6 +575,7 @@ mod tests {
                             ..Default::default()
                         },
                         signature: Signature::PreSign,
+                        ..Default::default()
                     },
                     sell_token_index: 1,
                     executed_amount: 101.into(),
@@ -606,14 +592,23 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 9.into()),
                 output: (t1, 9.into()),
+                internalizable: false
             }]
         );
-        assert_eq!(internal_amm_handler.calls(), vec![]);
+        assert_eq!(
+            internal_amm_handler.calls(),
+            vec![AmmOrderExecution {
+                input_max: (t0, 2.into()),
+                output: (t1, 1.into()),
+                internalizable: true
+            }]
+        );
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
                 input_max: (t0, 2.into()),
                 output: (t1, 2.into()),
+                internalizable: false
             }]
         );
         assert_eq!(
@@ -621,6 +616,7 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 5.into()),
                 output: (t1, 6.into()),
+                internalizable: false
             }]
         );
     }
@@ -926,6 +922,7 @@ mod tests {
                 sequence: 1u32,
                 position: 1u32,
             })),
+            cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
             order: Default::default(),

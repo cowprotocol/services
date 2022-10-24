@@ -280,6 +280,7 @@ impl Solution {
             let execution = AmmOrderExecution {
                 input_max: slippage.execution_input_max((sell_token, sell_amount))?,
                 output: (buy_token, buy_amount),
+                internalizable: false,
             };
             match &amm.order {
                 AmmOrder::ConstantProduct(order) => settlement.with_liquidity(order, execution),
@@ -311,16 +312,20 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{
-        tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
+    use crate::{
+        liquidity::{
+            tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
+        },
+        test::account,
     };
-    use crate::test::account;
     use model::order::OrderKind;
     use num::rational::Ratio;
-    use shared::sources::balancer_v2::swap::fixed_point::Bfp;
     use shared::{
         addr,
-        sources::balancer_v2::pool_fetching::{TokenState, WeightedTokenState},
+        sources::balancer_v2::{
+            pool_fetching::{TokenState, WeightedTokenState},
+            swap::fixed_point::Bfp,
+        },
     };
 
     #[test]
@@ -417,6 +422,7 @@ mod tests {
                     .execution_input_max((sell_token, 100_000.into()))
                     .unwrap(),
                 output: (native_token, 98_715.into()),
+                internalizable: false
             }
         );
         assert_eq!(
@@ -426,6 +432,7 @@ mod tests {
                     .execution_input_max((native_token, 98_715.into()))
                     .unwrap(),
                 output: (buy_token, 97_459.into()),
+                internalizable: false
             }
         );
     }
@@ -524,6 +531,7 @@ mod tests {
                     .execution_input_max((sell_token, 102_660.into()))
                     .unwrap(),
                 output: (native_token, 101_315.into()),
+                internalizable: false
             }
         );
         assert_eq!(
@@ -533,6 +541,7 @@ mod tests {
                     .execution_input_max((native_token, 101_315.into()))
                     .unwrap(),
                 output: (buy_token, 100_000.into()),
+                internalizable: false
             }
         );
     }

@@ -1,9 +1,6 @@
-use crate::{
-    liquidity::Liquidity,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, uniswap_v2::UniswapLikeLiquidity,
-        uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity, LimitOrder,
-    },
+use crate::liquidity::{
+    balancer_v2::BalancerV2Liquidity, uniswap_v2::UniswapLikeLiquidity,
+    uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity, LimitOrder, Liquidity,
 };
 use anyhow::{Context, Result};
 use shared::recent_block_cache::Block;
@@ -75,7 +72,7 @@ impl LiquidityCollecting for LiquidityCollector {
         if let Some(uniswap_v3_liquidity) = self.uniswap_v3_liquidity.as_ref() {
             amms.extend(
                 uniswap_v3_liquidity
-                    .get_liquidity(&user_orders)
+                    .get_liquidity(&user_orders, at_block)
                     .await
                     .context("failed to get UniswapV3 liquidity")?
                     .into_iter()

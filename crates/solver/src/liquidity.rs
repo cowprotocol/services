@@ -23,8 +23,7 @@ use shared::sources::{
     },
     uniswap_v3::pool_fetching::PoolInfo,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support
@@ -101,6 +100,9 @@ pub struct LimitOrder {
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
+    // TODO: decide how reward works for partially fillable orders
+    /// CIP-14 risk adjusted solver reward
+    pub reward: f64,
 }
 
 impl std::fmt::Debug for LimitOrder {
@@ -152,6 +154,7 @@ impl Default for LimitOrder {
             is_liquidity_order: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
+            reward: Default::default(),
         }
     }
 }
@@ -241,6 +244,7 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 pub struct AmmOrderExecution {
     pub input_max: (H160, U256),
     pub output: (H160, U256),
+    pub internalizable: bool,
 }
 
 impl ConstantProductOrder {

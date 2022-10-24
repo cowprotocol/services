@@ -380,8 +380,9 @@ async fn build_auction_converter(
         let uniswap_v3_pool_fetcher = Arc::new(
             UniswapV3PoolFetcher::new(
                 common.chain_id,
-                args.liquidity_fetcher_max_age_update,
                 common.http_factory.create(),
+                common.web3.clone(),
+                args.max_pools_to_initialize_cache,
             )
             .await
             .expect("failed to create UniswapV3 pool fetcher in solver"),
@@ -489,6 +490,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         min_order_age: std::time::Duration::from_secs(30),
         max_settlement_price_deviation: None,
         token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
+        decimal_cutoff: args.solution_comparison_decimal_cutoff,
     });
     let logger = Arc::new(DriverLogger {
         web3: common.web3.clone(),

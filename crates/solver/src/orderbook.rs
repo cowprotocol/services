@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use model::{auction::AuctionWithId, solver_competition::SolverCompetition};
+use model::auction::AuctionWithId;
 use reqwest::{Client, Url};
 
 pub struct OrderBookApi {
@@ -29,7 +29,15 @@ impl OrderBookApi {
         Ok(auction)
     }
 
-    pub async fn send_solver_competition(&self, body: &SolverCompetition) -> Result<()> {
+    /// If this is false then sending solver competition most likely fails.
+    pub fn is_authenticated(&self) -> bool {
+        self.competition_auth.is_some()
+    }
+
+    pub async fn send_solver_competition(
+        &self,
+        body: &model::solver_competition::Request,
+    ) -> Result<()> {
         let url = self.base.join("api/v1/solver_competition")?;
         let mut request = self.client.post(url);
         if let Some(auth) = &self.competition_auth {

@@ -1,8 +1,8 @@
 //! Dry run settlement submission strategy. I.e. just log!
 
 use crate::{
-    settlement::Settlement, settlement_simulation::settle_method_builder,
-    settlement_simulation::tenderly_link,
+    settlement::Settlement,
+    settlement_simulation::{settle_method_builder, tenderly_link},
 };
 use anyhow::Result;
 use contracts::GPv2Settlement;
