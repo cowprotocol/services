@@ -115,6 +115,8 @@ pub struct TokenInfoModel {
     pub normalize_priority: Option<u64>,
     #[serde_as(as = "Option<DecimalU256>")]
     pub internal_buffer: Option<U256>,
+    /// Is it contained in the external bufferable list
+    pub is_safe: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -500,20 +502,8 @@ mod tests {
         };
         let model = BatchAuctionModel {
             tokens: btreemap! {
-                buy_token => TokenInfoModel {
-                    decimals: Some(6),
-                    alias: Some("CAT".to_string()),
-                    external_price: Some(1.2),
-                    normalize_priority: Some(1),
-                    internal_buffer: Some(U256::from(1337)),
-                },
-                sell_token => TokenInfoModel {
-                    decimals: Some(18),
-                    alias: Some("DOG".to_string()),
-                    external_price: Some(2345.0),
-                    normalize_priority: Some(0),
-                    internal_buffer: Some(U256::from(42)),
-                }
+                buy_token => TokenInfoModel {decimals:Some(6),alias:Some("CAT".to_string()),external_price:Some(1.2),normalize_priority:Some(1),internal_buffer:Some(U256::from(1337)), is_safe: true },
+                sell_token => TokenInfoModel {decimals:Some(18),alias:Some("DOG".to_string()),external_price:Some(2345.0),normalize_priority:Some(0),internal_buffer:Some(U256::from(42)), is_safe: true }
             },
             orders: btreemap! { 0 => order_model },
             amms: btreemap! {

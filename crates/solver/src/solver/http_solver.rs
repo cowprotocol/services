@@ -15,7 +15,6 @@ use anyhow::{anyhow, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
-use itertools::Itertools;
 use maplit::{btreemap, hashset};
 use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
@@ -107,7 +106,7 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let all_bufferable_tokens =
+        let bufferable_token_list: HashSet<H160> =
             TokenList::from_configuration(self.market_makable_token_list.clone())
                 .await
                 .map(|tokens| {
@@ -115,10 +114,10 @@ impl HttpSolver {
                         .all()
                         .into_iter()
                         .map(|token| token.address)
-                        .collect_vec()
+                        .collect()
                 })
                 .unwrap_or_default();
-        let tokens = map_tokens_for_solver(&orders, &liquidity, &all_bufferable_tokens);
+        let tokens = map_tokens_for_solver(&orders, &liquidity, &bufferable_token_list);
         let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
@@ -177,7 +176,13 @@ impl HttpSolver {
             gas_price,
         };
 
-        let token_models = token_models(&token_infos, &price_estimates, &buffers, &gas_model);
+        let token_models = token_models(
+            &token_infos,
+            &price_estimates,
+            &buffers,
+            &gas_model,
+            &bufferable_token_list,
+        );
         let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
         let amm_models = amm_models(&liquidity, &gas_model);
         let model = BatchAuctionModel {
@@ -199,7 +204,7 @@ impl HttpSolver {
 fn map_tokens_for_solver(
     orders: &[LimitOrder],
     liquidity: &[Liquidity],
-    all_bufferable_tokens: &[H160],
+    all_bufferable_tokens: &HashSet<H160>,
 ) -> Vec<H160> {
     let mut token_set = HashSet::new();
     token_set.extend(
@@ -237,6 +242,7 @@ fn token_models(
     price_estimates: &HashMap<H160, f64>,
     buffers: &HashMap<H160, U256>,
     gas_model: &GasModel,
+    bufferable_token_list: &HashSet<H160>,
 ) -> BTreeMap<H160, TokenInfoModel> {
     token_infos
         .iter()
@@ -257,6 +263,7 @@ fn token_models(
                         0
                     }),
                     internal_buffer: buffers.get(address).copied(),
+                    is_safe: bufferable_token_list.contains(address),
                 },
             )
         })
