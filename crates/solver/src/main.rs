@@ -208,6 +208,23 @@ async fn main() {
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
     });
 
+    let market_makable_token_list_configuration = TokenListConfiguration {
+        url: args.market_makable_token_list,
+        chain_id,
+        client: http_factory.create(),
+    };
+    let market_makable_token_list = match TokenList::from_configuration(
+        market_makable_token_list_configuration.clone(),
+    )
+    .await
+    {
+        Ok(token_list) => Some(Arc::new(token_list)),
+        Err(err) => {
+            tracing::error!("Couldn't fetch market makable token list: {}", err);
+            None
+        }
+    };
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -238,7 +255,7 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
-        args.market_makable_token_list.clone(),
+        market_makable_token_list.clone(),
     )
     .expect("failure creating solvers");
 
@@ -294,16 +311,7 @@ async fn main() {
         zeroex_liquidity,
         uniswap_v3_liquidity,
     };
-    let market_makable_token_list_configuration = TokenListConfiguration {
-        url: args.market_makable_token_list,
-        chain_id,
-        client: http_factory.create(),
-    };
-    let market_makable_token_list =
-        TokenList::from_configuration(market_makable_token_list_configuration)
-            .await
-            .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
-            .ok();
+
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
@@ -425,7 +433,7 @@ async fn main() {
         web3,
         network_id,
         args.solver_time_limit,
-        market_makable_token_list,
+        market_makable_token_list.clone(),
         current_block_stream.clone(),
         solution_submitter,
         api,
@@ -446,6 +454,7 @@ async fn main() {
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
+            .chain(market_makable_token_list.map(|x| x as Arc<dyn Maintaining>))
             .collect(),
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));

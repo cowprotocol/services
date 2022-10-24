@@ -75,7 +75,7 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: Option<TokenList>,
+        market_makable_token_list: Option<Arc<TokenList>>,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,

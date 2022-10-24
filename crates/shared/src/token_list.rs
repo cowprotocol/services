@@ -1,19 +1,43 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Mutex};
 
 use anyhow::Result;
 use ethcontract::H160;
 use reqwest::Client;
 use serde::Deserialize;
 
-#[derive(Clone, Debug)]
+use crate::maintenance::Maintaining;
+
+#[derive(Clone, Debug, Default)]
 pub struct TokenListConfiguration {
     pub url: String,
     pub chain_id: u64,
     pub client: Client,
 }
 
+impl TokenListConfiguration {
+    async fn tokens(&self) -> Result<HashMap<H160, Token>> {
+        let model: TokenListModel = self
+            .client
+            .get(self.url.clone())
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(Self::from_tokens(model.tokens, self.chain_id))
+    }
+
+    fn from_tokens(tokens: Vec<TokenModel>, chain_id: u64) -> HashMap<H160, Token> {
+        tokens
+            .into_iter()
+            .filter(|token| token.chain_id == chain_id)
+            .map(|token| (token.token.address, token.token))
+            .collect()
+    }
+}
+
 pub struct TokenList {
-    tokens: HashMap<H160, Token>,
+    tokens: Mutex<HashMap<H160, Token>>,
+    configuration: TokenListConfiguration,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -25,37 +49,30 @@ pub struct Token {
 }
 
 impl TokenList {
-    pub async fn from_configuration(
-        TokenListConfiguration {
-            url,
-            chain_id,
-            client,
-        }: TokenListConfiguration,
-    ) -> Result<Self> {
-        let model: TokenListModel = client.get(url).send().await?.json().await?;
-        Ok(Self::from_tokens(model.tokens, chain_id))
-    }
-
-    fn from_tokens(tokens: Vec<TokenModel>, chain_id: u64) -> Self {
-        Self {
-            tokens: tokens
-                .into_iter()
-                .filter(|token| token.chain_id == chain_id)
-                .map(|token| (token.token.address, token.token))
-                .collect(),
-        }
+    pub async fn from_configuration(configuration: TokenListConfiguration) -> Result<Self> {
+        Ok(Self {
+            tokens: Mutex::new(configuration.tokens().await?),
+            configuration,
+        })
     }
 
     pub fn new(tokens: HashMap<H160, Token>) -> Self {
-        Self { tokens }
+        Self {
+            tokens: Mutex::new(tokens),
+            configuration: Default::default(),
+        }
     }
 
-    pub fn get(&self, address: &H160) -> Option<&Token> {
-        self.tokens.get(address)
+    pub fn get(&self, address: &H160) -> Option<Token> {
+        self.tokens.lock().unwrap().get(address).cloned()
     }
 
     pub fn all(&self) -> Vec<Token> {
-        self.tokens.values().cloned().collect()
+        self.tokens.lock().unwrap().values().cloned().collect()
+    }
+
+    pub fn addresses(&self) -> Vec<H160> {
+        self.tokens.lock().unwrap().keys().cloned().collect()
     }
 }
 
@@ -73,6 +90,14 @@ struct TokenModel {
     chain_id: u64,
     #[serde(flatten)]
     token: Token,
+}
+
+#[async_trait::async_trait]
+impl Maintaining for TokenList {
+    async fn run_maintenance(&self) -> Result<()> {
+        *self.tokens.lock().unwrap() = self.configuration.tokens().await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -165,7 +190,8 @@ pub mod tests {
     #[test]
     fn test_creation_with_chain_id() {
         let list = serde_json::from_str::<TokenListModel>(EXAMPLE_LIST).unwrap();
-        let instance = TokenList::from_tokens(list.tokens, 1);
+        let tokens = TokenListConfiguration::from_tokens(list.tokens, 1);
+        let instance = TokenList::new(tokens);
         assert!(instance.get(&testlib::tokens::USDC).is_some());
         // Chain ID 4
         assert!(instance

@@ -24,7 +24,7 @@ use shared::{
     measure_time,
     sources::balancer_v2::pools::common::compute_scaling_rate,
     token_info::{TokenInfo, TokenInfoFetching},
-    token_list::{TokenList, TokenListConfiguration},
+    token_list::TokenList,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -64,7 +64,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
-    market_makable_token_list: TokenListConfiguration,
+    market_makable_token_list: Option<Arc<TokenList>>,
 }
 
 impl HttpSolver {
@@ -80,7 +80,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
-        market_makable_token_list: TokenListConfiguration,
+        market_makable_token_list: Option<Arc<TokenList>>,
     ) -> Self {
         Self {
             solver,
@@ -106,17 +106,12 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let bufferable_token_list: HashSet<H160> =
-            TokenList::from_configuration(self.market_makable_token_list.clone())
-                .await
-                .map(|tokens| {
-                    tokens
-                        .all()
-                        .into_iter()
-                        .map(|token| token.address)
-                        .collect()
-                })
-                .unwrap_or_default();
+        let bufferable_token_list: HashSet<H160> = self
+            .market_makable_token_list
+            .as_ref()
+            .map(|tokens| tokens.addresses().into_iter().collect())
+            .unwrap_or_default();
+
         let tokens = map_tokens_for_solver(&orders, &liquidity, &bufferable_token_list);
         let (token_infos, buffers_result) = join!(
             measure_time(
@@ -606,11 +601,7 @@ mod tests {
             Default::default(),
             true,
             SlippageCalculator::default(),
-            TokenListConfiguration {
-                url: String::new(),
-                chain_id: 0,
-                client: Client::new(),
-            },
+            None,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
