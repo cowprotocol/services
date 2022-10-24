@@ -574,6 +574,25 @@ components:
       description: Amount of a token. uint256 encoded in decimal.
       type: string
       example: "1234567890"
+    EthflowData:
+      description: |
+        Provides the additional data for ethflow orders
+      type: object
+      properties:
+        is_refunded:
+          description: |
+            Provides a flag that shows whether the refunding service has 
+            refunded the order, in case it was not settled onchain
+          type: boolean
+        user_valid_to:
+          description: |
+           Describes the valid to of an order ethflow order.
+           Note that for ethflow orders, the valid_to encoded in the smart
+           contract is max(uint)
+          type: integer
+      required:
+        - expiration
+        - amount
     FeeInformation:
       description: |
         Provides the information to calculate the fees.
@@ -748,6 +767,17 @@ components:
             orders. They should not be expected to be traded otherwise and should not expect to get
             surplus.
           type: boolean
+        ethflowData:
+          description: |
+            For ethflow orders - order that are placed onchain with native eth -, this field
+            contains a struct with two variables user_valid_to and is_refunded
+          $ref: "#/components/schemas/EthflowData"
+        onchainUser:
+          description: |
+            If orders are placed as onchain orders, the owner of the order might 
+            specific smart contracts, but not the user placing the order. The 
+            actual user will be provided in this field
+          $ref: "#/components/schemas/Address"
       required:
         - creationTime
         - owner

@@ -12,8 +12,8 @@ use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
-        SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, Order, OrderData, OrderMetadata,
+        OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -119,6 +119,15 @@ impl Postgres {
 fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;
     let pre_interactions = extract_pre_interactions(&order)?;
+    let ethflow_data = if let Some((is_refunded, user_valid_to)) = order.ethflow_data {
+        Some(EthflowData {
+            user_valid_to,
+            is_refunded,
+        })
+    } else {
+        None
+    };
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -143,6 +152,8 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
         is_liquidity_order: order.is_liquidity_order,
+        ethflow_data,
+        onchain_user,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
