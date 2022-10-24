@@ -60,6 +60,9 @@ impl SubgraphClient {
     where
         T: DeserializeOwned,
     {
+        // for long lasting queries subgraph call might randomly fail
+        // introduced retry mechanism that should efficiently help since failures are quick
+        // and we need 1 or 2 retries to succeed.
         for _ in 0..MAX_NUMBER_OF_RETRIES {
             match self
                 .client
