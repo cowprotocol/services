@@ -528,6 +528,7 @@ mod tests {
               "external_price": 1.2,
               "normalize_priority": 1,
               "internal_buffer": "1337",
+              "is_safe": true,
             },
             "0x000000000000000000000000000000000000a866": {
               "decimals": 18,
@@ -535,6 +536,7 @@ mod tests {
               "external_price": 2345.0,
               "normalize_priority": 0,
               "internal_buffer": "42",
+              "is_safe": true,
             },
           },
           "orders": {
