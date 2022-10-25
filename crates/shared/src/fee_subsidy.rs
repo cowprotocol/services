@@ -142,11 +142,21 @@ impl Default for FeeParameters {
 
 impl FeeParameters {
     pub fn unsubsidized(&self) -> U256 {
-        dtou(self.gas_amount * self.gas_price / self.sell_token_price)
+        self.unsubsidized_with_additional_cost(0u64)
+    }
+
+    pub fn unsubsidized_with_additional_cost(&self, additional_cost: u64) -> U256 {
+        let fee_in_eth = (self.gas_amount + additional_cost as f64) * self.gas_price;
+
+        dtou(fee_in_eth / self.sell_token_price)
     }
 
     pub fn subsidized(&self, subsidy: &Subsidy) -> U256 {
-        let fee_in_eth = self.gas_amount * self.gas_price;
+        self.subsidized_with_additional_cost(subsidy, 0u64)
+    }
+
+    pub fn subsidized_with_additional_cost(&self, subsidy: &Subsidy, additional_cost: u64) -> U256 {
+        let fee_in_eth = (self.gas_amount + additional_cost as f64) * self.gas_price;
         let mut discounted_fee_in_eth = fee_in_eth - subsidy.discount;
         if discounted_fee_in_eth < subsidy.min_discounted {
             tracing::warn!(
