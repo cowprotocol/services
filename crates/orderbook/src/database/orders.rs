@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
-    orders::{FullOrder, OrderClass as DbOrderClass, OrderKind as DbOrderKind},
+    orders::{FullOrder, OrderKind as DbOrderKind},
 };
 use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
@@ -367,8 +367,9 @@ mod tests {
     use database::{
         byte_array::ByteArray,
         orders::{
-            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-            SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderClass as DbOrderClass,
+            OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
         },
     };
     use model::{
