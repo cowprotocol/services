@@ -210,6 +210,7 @@ async fn main() {
 
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: args.market_makable_token_list,
+        update_interval: args.market_makable_token_list_update_interval,
         chain_id,
         client: http_factory.create(),
     };

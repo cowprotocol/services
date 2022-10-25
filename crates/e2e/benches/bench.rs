@@ -16,6 +16,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         url: TOKEN_LIST.to_owned(),
         chain_id: 1,
         client: Client::new(),
+        update_interval: Default::default(),
     };
     let token_list = rt
         .block_on(TokenList::from_configuration(token_list_configuration))

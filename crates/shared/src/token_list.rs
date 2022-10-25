@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use ethcontract::H160;
@@ -12,6 +16,7 @@ pub struct TokenListConfiguration {
     pub url: String,
     pub chain_id: u64,
     pub client: Client,
+    pub update_interval: Duration,
 }
 
 impl TokenListConfiguration {
@@ -35,10 +40,25 @@ impl TokenListConfiguration {
     }
 }
 
+struct TokenCache {
+    tokens: HashMap<H160, Token>,
+    updated_at: Instant,
+}
+
+impl TokenCache {
+    pub fn new(tokens: HashMap<H160, Token>) -> Self {
+        Self {
+            tokens,
+            updated_at: Instant::now(),
+        }
+    }
+}
+
 pub struct TokenList {
-    tokens: Mutex<HashMap<H160, Token>>,
+    cache: Mutex<TokenCache>,
     configuration: TokenListConfiguration,
 }
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
@@ -51,28 +71,34 @@ pub struct Token {
 impl TokenList {
     pub async fn from_configuration(configuration: TokenListConfiguration) -> Result<Self> {
         Ok(Self {
-            tokens: Mutex::new(configuration.tokens().await?),
+            cache: Mutex::new(TokenCache::new(configuration.tokens().await?)),
             configuration,
         })
     }
 
     pub fn new(tokens: HashMap<H160, Token>) -> Self {
         Self {
-            tokens: Mutex::new(tokens),
+            cache: Mutex::new(TokenCache::new(tokens)),
             configuration: Default::default(),
         }
     }
 
     pub fn get(&self, address: &H160) -> Option<Token> {
-        self.tokens.lock().unwrap().get(address).cloned()
+        self.cache.lock().unwrap().tokens.get(address).cloned()
     }
 
     pub fn all(&self) -> Vec<Token> {
-        self.tokens.lock().unwrap().values().cloned().collect()
+        self.cache
+            .lock()
+            .unwrap()
+            .tokens
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn addresses(&self) -> Vec<H160> {
-        self.tokens.lock().unwrap().keys().cloned().collect()
+        self.cache.lock().unwrap().tokens.keys().cloned().collect()
     }
 }
 
@@ -95,7 +121,13 @@ struct TokenModel {
 #[async_trait::async_trait]
 impl Maintaining for TokenList {
     async fn run_maintenance(&self) -> Result<()> {
-        *self.tokens.lock().unwrap() = self.configuration.tokens().await?;
+        let now = Instant::now();
+        let duration_between_updates = now
+            .checked_duration_since(self.cache.lock().unwrap().updated_at)
+            .unwrap_or_default();
+        if duration_between_updates > self.configuration.update_interval {
+            *self.cache.lock().unwrap() = TokenCache::new(self.configuration.tokens().await?);
+        }
         Ok(())
     }
 }
