@@ -454,6 +454,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         let cpo_0 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     .parse()
@@ -476,6 +477,7 @@ mod tests {
         };
 
         let spo = StablePoolOrder {
+            address: H160::from_low_u64_be(1),
             reserves: hashmap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
                     balance: U256::from(46543572661097157184873466u128),

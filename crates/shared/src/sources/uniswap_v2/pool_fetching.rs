@@ -360,7 +360,11 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         // Even Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (100, 100));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(1),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (100, 100),
+        );
         assert_eq!(
             pool.get_amount_out(sell_token, 10.into()),
             Some((9.into(), buy_token))
@@ -375,7 +379,11 @@ mod tests {
         );
 
         //Uneven Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (200, 50));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(2),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (200, 50),
+        );
         assert_eq!(
             pool.get_amount_out(sell_token, 10.into()),
             Some((2.into(), buy_token))
@@ -391,6 +399,7 @@ mod tests {
 
         // Large Numbers
         let pool = Pool::uniswap(
+            H160::from_low_u64_be(3),
             TokenPair::new(sell_token, buy_token).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
@@ -409,7 +418,11 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         // Even Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (100, 100));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(1),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (100, 100),
+        );
         assert_eq!(
             pool.get_amount_in(buy_token, 10.into()),
             Some((12.into(), sell_token))
@@ -424,7 +437,11 @@ mod tests {
         assert_eq!(pool.get_amount_in(buy_token, 1000.into()), None);
 
         //Uneven Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (200, 50));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(2),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (200, 50),
+        );
         assert_eq!(
             pool.get_amount_in(buy_token, 10.into()),
             Some((51.into(), sell_token))
@@ -436,6 +453,7 @@ mod tests {
 
         // Large Numbers
         let pool = Pool::uniswap(
+            H160::from_low_u64_be(3),
             TokenPair::new(sell_token, buy_token).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
@@ -472,7 +490,8 @@ mod tests {
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
         };
-        assert!(handle_results(fetched_pool).is_err());
+        let pool_address = Default::default();
+        assert!(handle_results(fetched_pool, pool_address).is_err());
     }
 
     #[test]
@@ -483,6 +502,9 @@ mod tests {
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
         };
-        assert!(handle_results(fetched_pool).unwrap().is_none())
+        let pool_address = Default::default();
+        assert!(handle_results(fetched_pool, pool_address)
+            .unwrap()
+            .is_none())
     }
 }
