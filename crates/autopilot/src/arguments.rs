@@ -30,11 +30,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub enable_ethflow_orders: bool,
 
-    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
-    /// to be used exclusively for tracing calls.
-    #[clap(long, env)]
-    pub tracing_node_url: Option<Url>,
-
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
@@ -124,7 +119,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
-        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "ethflow contract: {}", self.ethflow_contract)?;
         writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;

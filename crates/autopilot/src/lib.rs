@@ -12,19 +12,14 @@ use crate::{
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
     solvable_orders::SolvableOrdersCache,
 };
-use contracts::{
-    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
-};
+use contracts::{BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, WETH9};
 use ethcontract::{errors::DeployError, BlockId, BlockNumber};
 use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
-        cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder,
-        trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
     fee_subsidy::{
@@ -97,10 +92,6 @@ pub async fn main(args: arguments::Arguments) {
         }
         Err(err) => panic!("failed to get balancer vault contract: {}", err),
     };
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
 
     let chain_id = web3
         .eth()
@@ -140,7 +131,7 @@ pub async fn main(args: arguments::Arguments) {
             .expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
+    let (_, pool_fetchers): (Vec<_>, Vec<_>) =
         shared::sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
             .await
             .expect("failed to load baseline source pair providers")
@@ -157,36 +148,11 @@ pub async fn main(args: arguments::Arguments) {
     allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let finder = token_owner_finder::init(
-        &args.token_owner_finder,
-        web3.clone(),
-        chain_id,
-        &http_factory,
-        &pair_providers,
-        vault.as_ref(),
-        uniswapv3_factory.as_ref(),
-        &base_tokens,
-    )
-    .await
-    .expect("failed to initialize token owner finders");
-
-    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        Box::new(CachingDetector::new(
-            Box::new(TraceCallDetector {
-                web3: shared::web3(&http_factory, tracing_node_url, "trace"),
-                finder,
-                settlement_contract: settlement_contract.address(),
-            }),
-            args.token_quality_cache_expiry,
-        ))
-    });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
             allowed_tokens,
             unsupported_tokens,
-            trace_call_detector
-                .map(|detector| UnknownTokenStrategy::Forward(detector))
-                .unwrap_or(UnknownTokenStrategy::Allow),
+            UnknownTokenStrategy::Allow,
         )
         .instrumented(),
     );
