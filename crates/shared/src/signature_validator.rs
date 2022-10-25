@@ -3,16 +3,14 @@ use contracts::ERC1271SignatureValidator;
 use ethcontract::{
     batch::CallBatch,
     errors::{ExecutionError, MethodError},
-    Bytes, U256,
+    Bytes,
 };
 use futures::future;
 use hex_literal::hex;
 use primitive_types::H160;
 use thiserror::Error;
 
-lazy_static::lazy_static! {
-    static ref TRANSACTION_INITIALIZATION_GAS_AMOUNT: U256 = U256::from_dec_str("21000").unwrap();
-}
+const TRANSACTION_INITIALIZATION_GAS_AMOUNT: u64 = 21_000u64;
 
 /// Structure used to represent a signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,7 +54,7 @@ pub trait SignatureValidating: Send + Sync {
     async fn validate_signature_and_get_additional_gas(
         &self,
         check: SignatureCheck,
-    ) -> Result<U256, SignatureValidationError>;
+    ) -> Result<u64, SignatureValidationError>;
 }
 
 pub struct Web3SignatureValidator {
@@ -108,7 +106,7 @@ impl SignatureValidating for Web3SignatureValidator {
     async fn validate_signature_and_get_additional_gas(
         &self,
         check: SignatureCheck,
-    ) -> Result<U256, SignatureValidationError> {
+    ) -> Result<u64, SignatureValidationError> {
         let instance = ERC1271SignatureValidator::at(&self.web3, check.signer);
         let is_valid_result = instance
             .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
@@ -123,9 +121,10 @@ impl SignatureValidating for Web3SignatureValidator {
             .await
             .map_err(SignatureValidationError::Execution)?;
 
-        let is_valid_gas_estimate = is_valid_gas_estimate_with_tx_initiation
-            .checked_sub(*TRANSACTION_INITIALIZATION_GAS_AMOUNT)
-            .unwrap_or(U256::zero());
+        // Since all gas amounts should be smaller the the blocksize of 15M,
+        // the following operation should never panic
+        let is_valid_gas_estimate = is_valid_gas_estimate_with_tx_initiation.as_u64()
+            - TRANSACTION_INITIALIZATION_GAS_AMOUNT;
 
         parse_is_valid_signature_result(is_valid_result).map(|_| is_valid_gas_estimate)
     }

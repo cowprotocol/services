@@ -342,7 +342,7 @@ impl OrderValidating for OrderValidator {
             {
                 tracing::debug!(?signature, "skipping EIP-1271 signature validation");
                 // We don't care! Because we are skipping validation anyway
-                0.into()
+                0u64
             } else {
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
@@ -354,7 +354,7 @@ impl OrderValidating for OrderValidator {
             }
         } else {
             // in any other case, just apply 0
-            0.into()
+            0u64
         };
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -620,7 +620,7 @@ pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quot
 pub fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
-    verification_gas_limit: U256,
+    verification_gas_limit: u64,
 ) -> Result<QuoteSigningScheme, ValidationError> {
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
@@ -1023,7 +1023,7 @@ mod tests {
                 hash: order_hash,
                 signature: vec![1, 2, 3],
             }))
-            .returning(|_| Ok(0.into()));
+            .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
             signature_validator: Arc::new(signature_validator),

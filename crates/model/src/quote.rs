@@ -2,8 +2,7 @@ use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
-    time,
-    u256_decimal::{self, DecimalU256},
+    time, u256_decimal,
 };
 use anyhow::bail;
 use chrono::{DateTime, Utc};
@@ -34,10 +33,9 @@ pub enum QuoteSigningScheme {
         onchain_order: bool,
         #[serde(
             rename = "verificationGasLimit",
-            default = "default_verification_gas_limit",
-            with = "u256_decimal"
+            default = "default_verification_gas_limit"
         )]
-        verification_gas_limit: U256,
+        verification_gas_limit: u64,
     },
     PreSign {
         #[serde(rename = "onchainOrder")]
@@ -61,16 +59,15 @@ struct QuoteSigningDeserializationData {
     #[serde(default)]
     signing_scheme: SigningScheme,
     #[serde(default)]
-    #[serde_as(as = "Option<DecimalU256>")]
-    verification_gas_limit: Option<U256>,
+    verification_gas_limit: Option<u64>,
     #[serde(default)]
     onchain_order: bool,
 }
 
-pub fn default_verification_gas_limit() -> U256 {
+pub fn default_verification_gas_limit() -> u64 {
     // default gas limit is based Ambire usecase. See here:
     // https://github.com/cowprotocol/services/pull/480#issuecomment-1273190380
-    27_000_u128.into()
+    27_000_u64
 }
 
 impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
@@ -342,7 +339,7 @@ mod tests {
                 "buyAmountAfterFee": "1",
                 "signingScheme": "eip1271",
                 "onchainOrder": true,
-                "verificationGasLimit": "1000000000000000000"
+                "verificationGasLimit": 10000000
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -390,7 +387,7 @@ mod tests {
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit: 1000000000000000000_u128.into(),
+                verification_gas_limit: 10000000u64,
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
