@@ -251,6 +251,7 @@ mod tests {
             slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
             StablePoolOrder,
         },
+        settlement::InternalizationStrategy,
         solver::http_solver::settlement::{convert_settlement, SettlementContext},
     };
     use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
@@ -667,7 +668,10 @@ mod tests {
         .map(|settlement| vec![settlement])
         .unwrap();
         let settlement = settlements.get(0).unwrap();
-        let settlement_encoded = settlement.encoder.clone().finish();
+        let settlement_encoded = settlement
+            .encoder
+            .clone()
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
         println!("Settlement_encoded: {:?}", settlement_encoded);
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(

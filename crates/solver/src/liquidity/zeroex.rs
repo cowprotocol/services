@@ -205,7 +205,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::interactions::allowances::Approval;
+    use crate::{interactions::allowances::Approval, settlement::InternalizationStrategy};
     use maplit::hashmap;
     use shared::{interaction::Interaction, zeroex_api::OrderMetadata};
 
@@ -352,7 +352,9 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
         assert_eq!(
             interactions,
             [
@@ -389,7 +391,9 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
         assert_eq!(
             interactions,
             [
