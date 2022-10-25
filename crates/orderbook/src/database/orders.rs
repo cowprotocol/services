@@ -9,10 +9,7 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{
-        EthflowData, Interactions, Order, OrderClass, OrderData, OrderMetadata, OrderStatus,
-        OrderUid,
-    },
+    order::{EthflowData, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
     signature::Signature,
 };
 use num::Zero;
@@ -21,8 +18,8 @@ use primitive_types::H160;
 use shared::{
     db_order_conversions::{
         buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
-        order_class_into, order_kind_from, order_kind_into, sell_token_source_from,
-        sell_token_source_into, signing_scheme_from, signing_scheme_into,
+        order_class_from, order_class_into, order_kind_from, order_kind_into,
+        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
 };
@@ -83,7 +80,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
-        class: order_class_into(order.data.class),
+        class: order_class_into(order.metadata.class),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
@@ -310,6 +307,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        class: order_class_from(order.class),
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
@@ -330,7 +328,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         fee_amount: big_decimal_to_u256(&order.fee_amount)
             .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
         kind: order_kind_from(order.kind),
-        class: OrderClass::Ordinary,
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
         buy_token_balance: buy_token_destination_from(order.buy_token_balance),

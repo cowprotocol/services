@@ -67,6 +67,7 @@ impl Order {
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
+        class: OrderClass,
     ) -> Result<Self, VerificationError> {
         let owner = order.verify_owner(domain)?;
         Ok(Self {
@@ -76,7 +77,8 @@ impl Order {
                 uid: order.data.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
-                is_liquidity_order: order.data.class == OrderClass::Liquidity,
+                class,
+                is_liquidity_order: class == OrderClass::Liquidity,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -224,7 +226,6 @@ pub struct OrderData {
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
-    pub class: OrderClass,
     pub partially_fillable: bool,
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
@@ -418,6 +419,7 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
+    pub class: OrderClass,
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
@@ -441,6 +443,7 @@ impl Default for OrderMetadata {
             executed_fee_amount: Default::default(),
             invalidated: Default::default(),
             status: OrderStatus::Open,
+            class: OrderClass::Ordinary,
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
             is_liquidity_order: false,
@@ -751,7 +754,6 @@ mod tests {
                 )),
                 fee_amount: U256::MAX,
                 kind: OrderKind::Buy,
-                class: OrderClass::Ordinary,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 buy_token_balance: BuyTokenDestination::Internal,
@@ -808,7 +810,6 @@ mod tests {
                     valid_to: 1337,
                     app_data: AppId([0x44; 32]),
                     fee_amount: 789.into(),
-                    class: OrderClass::Ordinary,
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     sell_token_balance: SellTokenSource::Erc20,
@@ -828,7 +829,6 @@ mod tests {
                 "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
                 "feeAmount": "789",
                 "kind": "sell",
-                "class": "ordinary",
                 "partiallyFillable": false,
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
@@ -882,7 +882,6 @@ mod tests {
                 )),
                 fee_amount: 0x0de0b6b3a7640000_u128.into(),
                 kind: OrderKind::Sell,
-                class: OrderClass::Ordinary,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,
@@ -917,7 +916,6 @@ mod tests {
             )),
             fee_amount: 0x0de0b6b3a7640000_u128.into(),
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,

@@ -6,15 +6,18 @@ use contracts::cowswap_onchain_orders::{
     event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
 };
 use database::{
-    byte_array::ByteArray, events::EventIndex, onchain_broadcasted_orders::OnchainOrderPlacement,
-    orders::Order, PgTransaction,
+    byte_array::ByteArray,
+    events::EventIndex,
+    onchain_broadcasted_orders::OnchainOrderPlacement,
+    orders::{Order, OrderClass},
+    PgTransaction,
 };
 use ethcontract::{Event as EthContractEvent, H160};
 use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
     app_id::AppId,
-    order::{BuyTokenDestination, OrderClass, OrderData, OrderKind, OrderUid, SellTokenSource},
+    order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
     signature::SigningScheme,
     DomainSeparator,
 };
@@ -22,8 +25,7 @@ use number_conversions::u256_to_big_decimal;
 use shared::{
     current_block::RangeInclusive,
     db_order_conversions::{
-        buy_token_destination_into, order_class_into, order_kind_into, sell_token_source_into,
-        signing_scheme_into,
+        buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
     },
     event_handling::EventStoring,
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
@@ -388,7 +390,6 @@ fn convert_onchain_order_placement(
         app_data: ByteArray(order_data.app_data.0),
         fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
-        class: order_class_into(order_data.class),
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.1 .0.clone(),
         signing_scheme: signing_scheme_into(signing_scheme),
@@ -398,6 +399,13 @@ fn convert_onchain_order_placement(
         full_fee_amount: u256_to_big_decimal(&full_fee_amount),
         is_liquidity_order,
         cancellation_timestamp: None,
+        // TODO #643: To properly determine the class, we have to check the liquidity owners just
+        // like we do during order creation.
+        class: if is_liquidity_order {
+            OrderClass::Liquidity
+        } else {
+            OrderClass::Ordinary
+        },
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -437,7 +445,6 @@ fn extract_order_data_from_onchain_order_placement_event(
         app_data: AppId(order_placement.order.6 .0),
         fee_amount: order_placement.order.7,
         kind: OrderKind::from_contract_bytes(order_placement.order.8 .0)?,
-        class: OrderClass::Ordinary,
         partially_fillable: order_placement.order.9,
         sell_token_balance: SellTokenSource::from_contract_bytes(order_placement.order.10 .0)?,
         buy_token_balance: BuyTokenDestination::from_contract_bytes(order_placement.order.11 .0)?,
@@ -518,7 +525,6 @@ mod test {
             app_data: AppId(app_data.0),
             fee_amount,
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: order_placement.order.9,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
@@ -565,7 +571,6 @@ mod test {
             app_data: AppId(app_data.0),
             fee_amount,
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: order_placement.order.9,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
@@ -597,7 +602,6 @@ mod test {
             app_data: AppId(app_data.0),
             fee_amount,
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
@@ -645,7 +649,6 @@ mod test {
             app_data: AppId(app_data.0),
             fee_amount,
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: order_placement.order.9,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
@@ -667,7 +670,7 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
-            class: order_class_into(expected_order_data.class),
+            class: OrderClass::Ordinary,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.1 .0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
@@ -870,7 +873,6 @@ mod test {
             app_data: AppId(app_data.0),
             fee_amount,
             kind: OrderKind::Sell,
-            class: OrderClass::Ordinary,
             partially_fillable: order_placement.order.9,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,

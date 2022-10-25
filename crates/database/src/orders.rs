@@ -87,7 +87,6 @@ pub struct Order {
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
-    pub class: OrderClass,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub signing_scheme: SigningScheme,
@@ -97,6 +96,7 @@ pub struct Order {
     pub full_fee_amount: BigDecimal,
     pub is_liquidity_order: bool,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
+    pub class: OrderClass,
 }
 
 impl Default for Order {
@@ -114,7 +114,6 @@ impl Default for Order {
             app_data: Default::default(),
             fee_amount: Default::default(),
             kind: Default::default(),
-            class: Default::default(),
             partially_fillable: Default::default(),
             signature: Default::default(),
             signing_scheme: Default::default(),
@@ -124,6 +123,7 @@ impl Default for Order {
             full_fee_amount: Default::default(),
             is_liquidity_order: Default::default(),
             cancellation_timestamp: Default::default(),
+            class: Default::default(),
         }
     }
 }

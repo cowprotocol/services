@@ -13,8 +13,8 @@ use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, EthflowData, Interactions, Order, OrderClass, OrderData,
-        OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, Order, OrderData, OrderMetadata,
+        OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -28,7 +28,7 @@ pub struct SolvableOrders {
 use chrono::{DateTime, Utc};
 use model::quote::QuoteId;
 use shared::{
-    db_order_conversions::{extract_pre_interactions, order_kind_from},
+    db_order_conversions::{extract_pre_interactions, order_class_from, order_kind_from},
     event_storing_helpers::{create_db_search_parameters, create_quote_row},
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
@@ -150,6 +150,7 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        class: order_class_from(order.class),
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
@@ -170,7 +171,6 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         fee_amount: big_decimal_to_u256(&order.fee_amount)
             .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
         kind: order_kind_from(order.kind),
-        class: OrderClass::Ordinary,
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
         buy_token_balance: buy_token_destination_from(order.buy_token_balance),

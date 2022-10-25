@@ -329,14 +329,10 @@ impl OrderValidating for OrderValidator {
 
     async fn validate_and_construct_order(
         &self,
-        mut order: OrderCreation,
+        order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
-        if order.data.class == OrderClass::Limit {
-            return Err(ValidationError::Other(anyhow!("not implemented yet")));
-        }
-
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
@@ -483,17 +479,10 @@ impl OrderValidating for OrderValidator {
             None => true,
         };
 
-        order.data.class = match (is_outside_market_price, order.data.class) {
-            // Ordinary orders that are placed and priced outside the market (i.e. buying
-            // more than the market can pay or selling less than the market wants)
-            // get "promoted" into liquidity orders.
-            (true, OrderClass::Ordinary) => OrderClass::Liquidity,
-            (true, OrderClass::Liquidity) => OrderClass::Liquidity,
-            (true, OrderClass::Limit) => OrderClass::Limit,
-            (false, OrderClass::Liquidity | OrderClass::Limit) => {
-                return Err(ValidationError::InvalidClass)
-            }
-            (false, OrderClass::Ordinary) => OrderClass::Ordinary,
+        let class = match (is_outside_market_price, liquidity_owner) {
+            (true, true) => OrderClass::Liquidity,
+            (true, false) => OrderClass::Limit,
+            _ => OrderClass::Ordinary,
         };
 
         let order = Order::from_order_creation(
@@ -501,6 +490,7 @@ impl OrderValidating for OrderValidator {
             domain_separator,
             settlement_contract,
             full_fee_amount,
+            class,
         )?;
         Ok((order, quote))
     }
