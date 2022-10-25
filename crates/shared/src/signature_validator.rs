@@ -51,7 +51,8 @@ pub trait SignatureValidating: Send + Sync {
         checks: Vec<SignatureCheck>,
     ) -> Vec<Result<(), SignatureValidationError>>;
 
-    /// Validates the signature and returns the `eth_estimateGas` of the call.
+    /// Validates the signature and returns the `eth_estimateGas` of the
+    /// isValidSignature call minus the tx initation gas amount of 21k.
     async fn validate_signature_and_get_additional_gas(
         &self,
         check: SignatureCheck,
