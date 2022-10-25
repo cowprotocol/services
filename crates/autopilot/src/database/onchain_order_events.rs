@@ -9,11 +9,10 @@ use database::{
     byte_array::ByteArray, events::EventIndex, onchain_broadcasted_orders::OnchainOrderPlacement,
     orders::Order, PgTransaction,
 };
-use ethcontract::{Event as EthContractEvent, H160};
+use ethcontract::{Event as EthContractEvent, H160, U256};
 use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
-    quote::default_verification_gas_limit,
     app_id::AppId,
     order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
     signature::SigningScheme,
@@ -315,7 +314,10 @@ async fn get_quote(
     let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
         signing_scheme,
         false,
-        default_verification_gas_limit(),
+        // Currently, only ethflow orders are indexed with this onchain
+        // parser. For ethflow orders, we are okay to subsidice the
+        // orderd and allow them to set the verfication limit to 0.
+        U256::zero(),
     )
     .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
 
@@ -707,7 +709,7 @@ mod test {
 
         let signing_scheme = QuoteSigningScheme::Eip1271 {
             onchain_order: true,
-            verification_gas_limit: default_verification_gas_limit(),
+            verification_gas_limit: U256::zero(),
         };
 
         let event_data_1 = EthContractEvent {

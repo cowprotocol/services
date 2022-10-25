@@ -68,8 +68,9 @@ struct QuoteSigningDeserializationData {
 }
 
 pub fn default_verification_gas_limit() -> U256 {
-    // todo: Add default gas limit based on GPv2 or Ambire
-    10_000_u128.into()
+    // default gas limit is based Ambire usecase. See here:
+    // https://github.com/cowprotocol/services/pull/480#issuecomment-1273190380
+    27_000_u128.into()
 }
 
 impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {

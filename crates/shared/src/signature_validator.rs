@@ -10,6 +10,10 @@ use hex_literal::hex;
 use primitive_types::H160;
 use thiserror::Error;
 
+lazy_static::lazy_static! {
+    static ref TRANSACTION_INITIALIZATION_GAS_AMOUNT: U256 = U256::from_dec_str("21000").unwrap();
+}
+
 /// Structure used to represent a signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignatureCheck {
@@ -110,13 +114,17 @@ impl SignatureValidating for Web3SignatureValidator {
             .call()
             .await;
 
-        let is_valid_gas_estimate = instance
+        let is_valid_gas_estimate_with_tx_initiation = instance
             .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
             .m
             .tx
             .estimate_gas()
             .await
             .map_err(SignatureValidationError::Execution)?;
+
+        let is_valid_gas_estimate = is_valid_gas_estimate_with_tx_initiation
+            .checked_sub(*TRANSACTION_INITIALIZATION_GAS_AMOUNT)
+            .unwrap_or(U256::zero());
 
         parse_is_valid_signature_result(is_valid_result).map(|_| is_valid_gas_estimate)
     }
