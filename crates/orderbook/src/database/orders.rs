@@ -9,7 +9,7 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{EthflowData, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
     signature::Signature,
 };
 use num::Zero;
@@ -277,6 +277,15 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let status = calculate_status(&order);
     let pre_interactions = extract_pre_interactions(&order)?;
+    let ethflow_data = if let Some((is_refunded, user_valid_to)) = order.ethflow_data {
+        Some(EthflowData {
+            user_valid_to,
+            is_refunded,
+        })
+    } else {
+        None
+    };
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -301,6 +310,8 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
         is_liquidity_order: order.is_liquidity_order,
+        ethflow_data,
+        onchain_user,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -395,6 +406,8 @@ mod tests {
             presignature_pending: false,
             is_liquidity_order: true,
             pre_interactions: Vec::new(),
+            ethflow_data: None,
+            onchain_user: None,
         };
 
         // Open - sell (filled - 0%)
