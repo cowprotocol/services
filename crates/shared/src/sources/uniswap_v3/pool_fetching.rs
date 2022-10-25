@@ -479,7 +479,6 @@ mod tests {
     #[test]
     fn encode_decode_pool_info() {
         let json = json!({
-            "address": "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28",
             "tokens": [
                 {
                     "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",
