@@ -296,6 +296,7 @@ impl Solution {
 
 fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
     Pool {
+        address: amm.address,
         tokens: amm.tokens,
         reserves: amm.reserves,
         fee: amm.fee,

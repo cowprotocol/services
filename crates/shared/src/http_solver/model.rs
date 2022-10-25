@@ -58,6 +58,7 @@ pub struct AmmModel {
     pub fee: BigRational,
     pub cost: TokenAmount,
     pub mandatory: bool,
+    pub address: H160,
 }
 
 #[derive(Clone, Debug, Serialize)]

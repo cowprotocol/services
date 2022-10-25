@@ -52,14 +52,16 @@ pub trait PoolReading: Sized + Send + Sync {
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub struct Pool {
+    pub address: H160,
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
 }
 
 impl Pool {
-    pub fn uniswap(tokens: TokenPair, reserves: (u128, u128)) -> Self {
+    pub fn uniswap(address: H160, tokens: TokenPair, reserves: (u128, u128)) -> Self {
         Self {
+            address,
             tokens,
             reserves,
             fee: Ratio::new(3, 1000),
@@ -264,12 +266,15 @@ impl PoolReading for DefaultPoolReader {
             .batch_call(batch);
 
         async move {
-            handle_results(FetchedPool {
-                pair,
-                reserves: reserves.await,
-                token0_balance: token0_balance.await,
-                token1_balance: token1_balance.await,
-            })
+            handle_results(
+                FetchedPool {
+                    pair,
+                    reserves: reserves.await,
+                    token0_balance: token0_balance.await,
+                    token1_balance: token1_balance.await,
+                },
+                pair_address,
+            )
         }
         .boxed()
     }
@@ -293,7 +298,7 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
     }
 }
 
-fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
+fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
     let reserves = handle_contract_error(fetched_pool.reserves)?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
@@ -309,7 +314,11 @@ fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
         if U256::from(reserves.0) > token0_balance? || U256::from(reserves.1) > token1_balance? {
             return None;
         }
-        Some(Pool::uniswap(fetched_pool.pair, (reserves.0, reserves.1)))
+        Some(Pool::uniswap(
+            address,
+            fetched_pool.pair,
+            (reserves.0, reserves.1),
+        ))
     });
 
     Ok(pool)
