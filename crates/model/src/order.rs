@@ -225,6 +225,7 @@ pub struct OrderData {
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
+    pub class: OrderClass,
     pub partially_fillable: bool,
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
@@ -568,6 +569,26 @@ pub enum OrderKind {
     Sell,
 }
 
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderClass {
+    /// The most common type of order which can be placed by any user. Expected to be fulfilled
+    /// immediately (in the next block).
+    #[default]
+    Ordinary,
+    /// Liquidity orders can only be placed by whitelisted users. These are zero-fee orders
+    /// used for matching coincidence of wants. Expected to be fulfilled immediately (in the next
+    /// block).
+    Liquidity,
+    /// Orders which are not expected to be fulfilled immediately, but potentially somewhere far in
+    /// the future. These are orders where users essentially want to say: "once the price is at least X in
+    /// the future, then fulfill my order". These orders have their fee set to zero, because it's
+    /// impossible to predict fees that far in the future. Instead, the fee is taken from the order
+    /// surplus once the order becomes fulfillable and the surplus is high enough.
+    Limit,
+}
+
 impl OrderKind {
     // keccak256("sell")
     pub const SELL: [u8; 32] =
@@ -688,6 +709,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
+            "class": "ordinary",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
@@ -730,6 +752,7 @@ mod tests {
                 )),
                 fee_amount: U256::MAX,
                 kind: OrderKind::Buy,
+                class: OrderClass::Ordinary,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 buy_token_balance: BuyTokenDestination::Internal,
@@ -786,6 +809,7 @@ mod tests {
                     valid_to: 1337,
                     app_data: AppId([0x44; 32]),
                     fee_amount: 789.into(),
+                    class: OrderClass::Ordinary,
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     sell_token_balance: SellTokenSource::Erc20,
@@ -805,6 +829,7 @@ mod tests {
                 "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
                 "feeAmount": "789",
                 "kind": "sell",
+                "class": "ordinary",
                 "partiallyFillable": false,
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
@@ -858,6 +883,7 @@ mod tests {
                 )),
                 fee_amount: 0x0de0b6b3a7640000_u128.into(),
                 kind: OrderKind::Sell,
+                class: OrderClass::Ordinary,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,
@@ -892,6 +918,7 @@ mod tests {
             )),
             fee_amount: 0x0de0b6b3a7640000_u128.into(),
             kind: OrderKind::Sell,
+            class: OrderClass::Ordinary,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,

@@ -9,7 +9,10 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{EthflowData, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{
+        EthflowData, Interactions, Order, OrderClass, OrderData, OrderMetadata, OrderStatus,
+        OrderUid,
+    },
     signature::Signature,
 };
 use num::Zero;
@@ -326,6 +329,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         fee_amount: big_decimal_to_u256(&order.fee_amount)
             .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
         kind: order_kind_from(order.kind),
+        class: OrderClass::Ordinary,
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
         buy_token_balance: buy_token_destination_from(order.buy_token_balance),

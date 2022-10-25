@@ -140,7 +140,7 @@ INSERT INTO interactions (
     value,
     data
 )
-VALUES ($1, $2, $3, $4, $5) 
+VALUES ($1, $2, $3, $4, $5)
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)

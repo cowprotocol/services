@@ -13,8 +13,8 @@ use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, EthflowData, Interactions, Order, OrderData, OrderMetadata,
-        OrderStatus, OrderUid, SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, Order, OrderClass, OrderData,
+        OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -170,6 +170,7 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         fee_amount: big_decimal_to_u256(&order.fee_amount)
             .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
         kind: order_kind_from(order.kind),
+        class: OrderClass::Ordinary,
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
         buy_token_balance: buy_token_destination_from(order.buy_token_balance),
