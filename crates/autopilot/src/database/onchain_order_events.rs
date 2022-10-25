@@ -315,8 +315,9 @@ async fn get_quote(
         signing_scheme,
         false,
         // Currently, only ethflow orders are indexed with this onchain
-        // parser. For ethflow orders, we are okay to subsidice the
-        // orderd and allow them to set the verfication limit to 0.
+        // parser. For ethflow orders, we are okay to subsidize the
+        // orders and allow them to set the verification limit to 0.
+        // For general orders, this could result in a too big subsidy.
         0u64,
     )
     .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;

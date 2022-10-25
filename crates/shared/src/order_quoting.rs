@@ -186,7 +186,7 @@ impl Quote {
                 verification_gas_limit,
                 ..
             } => *verification_gas_limit,
-            _ => Default::default(),
+            _ => 0u64,
         };
 
         // THIS CANNOT MODIFY `quote.data`.
