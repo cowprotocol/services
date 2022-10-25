@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
-    orders::{FullOrder, OrderKind as DbOrderKind},
+    orders::{FullOrder, OrderClass as DbOrderClass, OrderKind as DbOrderKind},
 };
 use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
@@ -21,8 +21,8 @@ use primitive_types::H160;
 use shared::{
     db_order_conversions::{
         buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
-        order_kind_from, order_kind_into, sell_token_source_from, sell_token_source_into,
-        signing_scheme_from, signing_scheme_into,
+        order_class_into, order_kind_from, order_kind_into, sell_token_source_from,
+        sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
 };
@@ -83,6 +83,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
+        class: order_class_into(order.data.class),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
@@ -396,6 +397,7 @@ mod tests {
             fee_amount: BigDecimal::default(),
             full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
+            class: DbOrderClass::Ordinary,
             partially_fillable: true,
             signature: vec![0; 65],
             receiver: None,

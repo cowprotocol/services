@@ -22,7 +22,8 @@ use number_conversions::u256_to_big_decimal;
 use shared::{
     current_block::RangeInclusive,
     db_order_conversions::{
-        buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
+        buy_token_destination_into, order_class_into, order_kind_into, sell_token_source_into,
+        signing_scheme_into,
     },
     event_handling::EventStoring,
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
@@ -387,6 +388,7 @@ fn convert_onchain_order_placement(
         app_data: ByteArray(order_data.app_data.0),
         fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
+        class: order_class_into(order_data.class),
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.1 .0.clone(),
         signing_scheme: signing_scheme_into(signing_scheme),
@@ -665,6 +667,7 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
+            class: order_class_into(expected_order_data.class),
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.1 .0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),

@@ -18,6 +18,16 @@ pub enum OrderKind {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "OrderClass")]
+#[sqlx(rename_all = "lowercase")]
+pub enum OrderClass {
+    #[default]
+    Ordinary,
+    Liquidity,
+    Limit,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -77,6 +87,7 @@ pub struct Order {
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
+    pub class: OrderClass,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub signing_scheme: SigningScheme,
@@ -103,6 +114,7 @@ impl Default for Order {
             app_data: Default::default(),
             fee_amount: Default::default(),
             kind: Default::default(),
+            class: Default::default(),
             partially_fillable: Default::default(),
             signature: Default::default(),
             signing_scheme: Default::default(),
@@ -202,9 +214,10 @@ INSERT INTO orders (
     buy_token_balance,
     full_fee_amount,
     is_liquidity_order,
-    cancellation_timestamp
+    cancellation_timestamp,
+    class
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
     "#;
     sqlx::query(QUERY)
         .bind(&order.uid)
@@ -228,6 +241,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
         .bind(&order.full_fee_amount)
         .bind(order.is_liquidity_order)
         .bind(order.cancellation_timestamp)
+        .bind(order.class)
         .execute(ex)
         .await?;
     Ok(())
@@ -336,6 +350,7 @@ pub struct FullOrder {
     pub fee_amount: BigDecimal,
     pub full_fee_amount: BigDecimal,
     pub kind: OrderKind,
+    pub class: OrderClass,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub sum_sell: BigDecimal,
@@ -383,7 +398,7 @@ const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.is_liquidity_order,
+o.is_liquidity_order, o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
