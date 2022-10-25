@@ -502,8 +502,22 @@ mod tests {
         };
         let model = BatchAuctionModel {
             tokens: btreemap! {
-                buy_token => TokenInfoModel {decimals:Some(6),alias:Some("CAT".to_string()),external_price:Some(1.2),normalize_priority:Some(1),internal_buffer:Some(U256::from(1337)), accepted_for_internalization: true },
-                sell_token => TokenInfoModel {decimals:Some(18),alias:Some("DOG".to_string()),external_price:Some(2345.0),normalize_priority:Some(0),internal_buffer:Some(U256::from(42)), accepted_for_internalization: true }
+                buy_token => TokenInfoModel {
+                    decimals: Some(6),
+                    alias: Some("CAT".to_string()),
+                    external_price: Some(1.2),
+                    normalize_priority: Some(1),
+                    internal_buffer: Some(U256::from(1337)),
+                    accepted_for_internalization: true,
+                },
+                sell_token => TokenInfoModel {
+                    decimals: Some(18),
+                    alias: Some("DOG".to_string()),
+                    external_price: Some(2345.0),
+                    normalize_priority: Some(0),
+                    internal_buffer: Some(U256::from(42)),
+                    accepted_for_internalization: true,
+                }
             },
             orders: btreemap! { 0 => order_model },
             amms: btreemap! {

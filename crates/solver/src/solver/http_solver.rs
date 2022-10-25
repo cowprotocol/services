@@ -106,13 +106,13 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let bufferable_token_list: HashSet<H160> = self
+        let market_makable_token_list: HashSet<H160> = self
             .market_makable_token_list
             .as_ref()
             .map(|tokens| tokens.addresses().into_iter().collect())
             .unwrap_or_default();
 
-        let tokens = map_tokens_for_solver(&orders, &liquidity, &bufferable_token_list);
+        let tokens = map_tokens_for_solver(&orders, &liquidity, &market_makable_token_list);
         let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
@@ -176,7 +176,7 @@ impl HttpSolver {
             &price_estimates,
             &buffers,
             &gas_model,
-            &bufferable_token_list,
+            &market_makable_token_list,
         );
         let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
         let amm_models = amm_models(&liquidity, &gas_model);
