@@ -258,7 +258,7 @@ fn token_models(
                         0
                     }),
                     internal_buffer: buffers.get(address).copied(),
-                    is_safe: bufferable_token_list.contains(address),
+                    accepted_for_internalization: bufferable_token_list.contains(address),
                 },
             )
         })
