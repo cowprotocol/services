@@ -99,7 +99,6 @@ pub enum ValidationError {
     WrongOwner(H160),
     ZeroAmount,
     IncompatibleSigningScheme,
-    InvalidClass,
     Other(anyhow::Error),
 }
 

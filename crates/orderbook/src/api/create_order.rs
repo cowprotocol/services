@@ -167,11 +167,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::InvalidClass => with_status(
-                error("InvalidClass", "The specified order class is invalid."),
-                StatusCode::BAD_REQUEST,
-            ),
-
             ValidationError::Other(err) => with_status(
                 internal_error(err.context("order_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
