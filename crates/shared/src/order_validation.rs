@@ -15,8 +15,8 @@ use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
-        BUY_ETH_ADDRESS,
+        BuyTokenDestination, Order, OrderClass, OrderCreation, OrderData, OrderKind,
+        SellTokenSource, BUY_ETH_ADDRESS,
     },
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
@@ -99,6 +99,7 @@ pub enum ValidationError {
     WrongOwner(H160),
     ZeroAmount,
     IncompatibleSigningScheme,
+    InvalidClass,
     Other(anyhow::Error),
 }
 
@@ -328,10 +329,14 @@ impl OrderValidating for OrderValidator {
 
     async fn validate_and_construct_order(
         &self,
-        order: OrderCreation,
+        mut order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
+        if order.data.class == OrderClass::Limit {
+            return Err(ValidationError::Other(anyhow!("not implemented yet")));
+        }
+
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
@@ -462,12 +467,7 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        // Orders that are placed and priced outside the market (i.e. buying
-        // more than the market can pay or selling less than the market wants)
-        // get flagged as liquidity orders. The reasoning is that these orders
-        // are not intended to be filled immediately and so need to be treated
-        // slightly differently by the protocol.
-        let is_liquidity_order = match &quote {
+        let is_outside_market_price = match &quote {
             Some(quote)
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
@@ -483,12 +483,24 @@ impl OrderValidating for OrderValidator {
             None => true,
         };
 
+        order.data.class = match (is_outside_market_price, order.data.class) {
+            // Ordinary orders that are placed and priced outside the market (i.e. buying
+            // more than the market can pay or selling less than the market wants)
+            // get "promoted" into liquidity orders.
+            (true, OrderClass::Ordinary) => OrderClass::Liquidity,
+            (true, OrderClass::Liquidity) => OrderClass::Liquidity,
+            (true, OrderClass::Limit) => OrderClass::Limit,
+            (false, OrderClass::Liquidity | OrderClass::Limit) => {
+                return Err(ValidationError::InvalidClass)
+            }
+            (false, OrderClass::Ordinary) => OrderClass::Ordinary,
+        };
+
         let order = Order::from_order_creation(
             &order,
             domain_separator,
             settlement_contract,
             full_fee_amount,
-            is_liquidity_order,
         )?;
         Ok((order, quote))
     }

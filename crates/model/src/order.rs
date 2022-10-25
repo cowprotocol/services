@@ -67,7 +67,6 @@ impl Order {
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
-        is_liquidity_order: bool,
     ) -> Result<Self, VerificationError> {
         let owner = order.verify_owner(domain)?;
         Ok(Self {
@@ -77,7 +76,7 @@ impl Order {
                 uid: order.data.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
-                is_liquidity_order,
+                is_liquidity_order: order.data.class == OrderClass::Liquidity,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -577,9 +576,9 @@ pub enum OrderClass {
     /// immediately (in the next block).
     #[default]
     Ordinary,
-    /// Liquidity orders can only be placed by whitelisted users. These are zero-fee orders
-    /// used for matching coincidence of wants. Expected to be fulfilled immediately (in the next
-    /// block).
+    /// Liquidity orders can only be placed by whitelisted users. These are
+    /// used for matching "coincidence of wants" trades. These are zero-fee orders which are
+    /// not expected to be fulfilled immediately and can potentially live for a long time.
     Liquidity,
     /// Orders which are not expected to be fulfilled immediately, but potentially somewhere far in
     /// the future. These are orders where users essentially want to say: "once the price is at least X in
