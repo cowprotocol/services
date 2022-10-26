@@ -162,14 +162,23 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for (solver, settlement, _, block_number, error) in &errors {
+        for SettlementWithError {
+            solver,
+            settlement,
+            error,
+            simulation,
+            ..
+        } in &errors
+        {
             solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
                     SimulationFailureParams {
                         message: error.to_string(),
-                        block_number: *block_number,
                         data: call_data(settlement.clone().into()),
+                        from: solver.account().address(),
+                        to: simulation.to,
+                        block_number: simulation.block_number,
                     },
                 )),
             );

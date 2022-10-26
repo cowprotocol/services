@@ -3,11 +3,11 @@ use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_access_list::AccessListEstimating,
     settlement_simulation::{settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithError, SettlementWithSolver, Solver},
+    solver::{SettlementWithError, SettlementWithSolver, SimulatedTransaction, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{errors::ExecutionError, BlockNumber};
+use ethcontract::{errors::ExecutionError, BlockNumber, H160};
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
@@ -30,6 +30,8 @@ pub struct SimulationDetails {
     pub gas_estimate: Result<U256, ExecutionError>,
     /// The simulation was done on top of all transactions from the given block number
     pub block_number: BlockNumber,
+    /// GPv2 settlement contract address
+    pub to: H160,
 }
 
 #[mockall::automock]
@@ -104,11 +106,11 @@ impl SettlementRating for SettlementRater {
         let settlements = self.append_access_lists(settlements, gas_price).await;
         let block_number = self.web3.eth().block_number().await?.into();
         let simulations = simulate_and_estimate_gas_at_current_block(
-            settlements.iter().map(|settlement| {
+            settlements.iter().map(|(solver, settlement, access_list)| {
                 (
-                    settlement.0.account().clone(),
-                    settlement.1.clone(),
-                    settlement.2.clone(),
+                    solver.account().clone(),
+                    settlement.clone(),
+                    access_list.clone(),
                 )
             }),
             &self.settlement_contract,
@@ -123,11 +125,12 @@ impl SettlementRating for SettlementRater {
             .zip(simulations.into_iter())
             .map(
                 |((solver, settlement, access_list), simulation_result)| SimulationDetails {
+                    to: self.settlement_contract.address(),
+                    block_number,
                     settlement,
                     solver,
                     access_list,
                     gas_estimate: simulation_result,
-                    block_number,
                 },
             )
             .collect();
@@ -168,13 +171,16 @@ impl SettlementRating for SettlementRater {
                         rate_settlement(i, details.settlement, gas_estimate),
                         details.access_list,
                     )),
-                    Err(err) => Either::Right((
-                        details.solver,
-                        details.settlement,
-                        details.access_list,
-                        details.block_number,
-                        err,
-                    )),
+                    Err(err) => Either::Right(SettlementWithError {
+                        solver: details.solver,
+                        settlement: details.settlement,
+                        access_list: details.access_list,
+                        error: err,
+                        simulation: SimulatedTransaction {
+                            block_number: details.block_number,
+                            to: details.to,
+                        },
+                    }),
                 }
             }),
         )

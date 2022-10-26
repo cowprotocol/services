@@ -100,11 +100,15 @@ pub enum AuctionResult {
 pub struct SimulationFailureParams {
     /// Error message from the simulator
     pub message: String,
+    /// Transaction input data
+    pub data: Vec<u8>,
     /// The simulation was done on top of all transactions from the given block number
     /// If block_number is to be used for tenderly simulation, it should be increased by 1
     pub block_number: BlockNumber,
-    /// Transaction input data
-    pub data: Vec<u8>,
+    /// Solver address
+    pub from: H160,
+    /// GPv2 settlement contract address
+    pub to: H160,
 }
 
 /// Reason for why a solution may have been invalid
@@ -196,14 +200,18 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
-pub type SettlementWithError = (
-    Arc<dyn Solver>,
-    Settlement,
-    Option<AccessList>,
-    BlockNumber,
-    ExecutionError,
-);
+pub struct SimulatedTransaction {
+    pub block_number: BlockNumber,
+    pub to: H160,
+}
 
+pub struct SettlementWithError {
+    pub solver: Arc<dyn Solver>,
+    pub settlement: Settlement,
+    pub access_list: Option<AccessList>,
+    pub error: ExecutionError,
+    pub simulation: SimulatedTransaction,
+}
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {
