@@ -218,7 +218,11 @@ async fn main() {
         client: http_factory.create(),
     };
     // updated in background task
-    let market_makable_token_list = Arc::new(RwLock::new(None));
+    let market_makable_token_list = Arc::new(RwLock::new(
+        TokenList::from_configuration(&market_makable_token_list_configuration)
+            .await
+            .ok(),
+    ));
 
     let solver = solver::solver::create(
         web3.clone(),
@@ -454,14 +458,14 @@ async fn main() {
 
     let periodic_update_token_list = async move {
         loop {
+            tokio::time::sleep(market_makable_token_list_configuration.update_interval).await;
+
             if let Ok(token_list) =
                 TokenList::from_configuration(&market_makable_token_list_configuration).await
             {
                 let mut w = market_makable_token_list.write().unwrap();
                 *w = Some(token_list);
             }
-
-            tokio::time::sleep(market_makable_token_list_configuration.update_interval).await;
         }
     };
     tokio::task::spawn(periodic_update_token_list);
