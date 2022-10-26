@@ -7,8 +7,8 @@ use crate::{
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
     solver::{
-        AuctionResult, SettlementWithError, SimulationFailureParams, Solver, SolverRejectionReason,
-        SolverRunError,
+        AuctionResult, Simulation, SimulationFailureParams, SimulationWithError, Solver,
+        SolverRejectionReason, SolverRunError,
     },
 };
 use anyhow::Result;
@@ -132,7 +132,7 @@ impl SettlementRanker {
         external_prices: &ExternalPrices,
         gas_price: GasPrice1559,
         auction_id: AuctionId,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
@@ -162,12 +162,14 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for SettlementWithError {
-            solver,
-            settlement,
+        for SimulationWithError {
+            simulation:
+                Simulation {
+                    solver,
+                    settlement,
+                    transaction,
+                },
             error,
-            simulation,
-            ..
         } in &errors
         {
             solver.notify_auction_result(
@@ -177,8 +179,8 @@ impl SettlementRanker {
                         message: error.to_string(),
                         data: call_data(settlement.clone().into()),
                         from: solver.account().address(),
-                        to: simulation.to,
-                        block_number: simulation.block_number,
+                        to: transaction.to,
+                        block_number: transaction.block_number,
                     },
                 )),
             );

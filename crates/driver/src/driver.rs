@@ -13,7 +13,7 @@ use solver::{
     driver::submit_settlement,
     driver_logger::DriverLogger,
     settlement::Settlement,
-    settlement_rater::{SettlementRating, SimulationDetails},
+    settlement_rater::{SettlementRating, SimulationWithResult},
     settlement_submission::{SolutionSubmitter, SubmissionError},
 };
 use std::{
@@ -104,7 +104,7 @@ impl Driver {
     }
 
     /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
-    async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationDetails> {
+    async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationWithResult> {
         let gas_price = self.gas_price_estimator.estimate().await?;
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
         let simulation_details = self
@@ -142,17 +142,17 @@ impl Driver {
     /// Tries to submit the `Settlement` on chain. Returns a transaction hash if it was successful.
     async fn submit_settlement(
         &self,
-        simulation_details: SimulationDetails,
+        simulation_details: SimulationWithResult,
     ) -> Result<H256, SubmissionError> {
         let gas_estimate = simulation_details
             .gas_estimate
             .expect("checked simulation gas_estimate during validation");
-        tracing::info!(?gas_estimate, settlement =? simulation_details.settlement, "start submitting settlement");
+        tracing::info!(?gas_estimate, settlement =? simulation_details.simulation.settlement, "start submitting settlement");
         submit_settlement(
             &self.submitter,
             &self.logger,
-            simulation_details.solver,
-            simulation_details.settlement,
+            simulation_details.simulation.solver,
+            simulation_details.simulation.settlement,
             gas_estimate,
             None, // the concept of a settlement_id does not make sense here
         )

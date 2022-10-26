@@ -201,16 +201,23 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
 pub struct SimulatedTransaction {
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
     pub access_list: Option<AccessList>,
+    /// The simulation was done on top of all transactions from the given block number
     pub block_number: BlockNumber,
+    /// GPv2 settlement contract address
     pub to: H160,
 }
-
-pub struct SettlementWithError {
-    pub solver: Arc<dyn Solver>,
+pub struct Simulation {
     pub settlement: Settlement,
+    pub solver: Arc<dyn Solver>,
+    pub transaction: SimulatedTransaction,
+}
+
+pub struct SimulationWithError {
+    pub simulation: Simulation,
     pub error: ExecutionError,
-    pub simulation: SimulatedTransaction,
 }
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]

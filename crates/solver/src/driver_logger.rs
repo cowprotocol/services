@@ -7,7 +7,7 @@ use crate::{
         simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
     },
     settlement_submission::SubmissionError,
-    solver::{SettlementWithError, Solver},
+    solver::{Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -136,7 +136,7 @@ impl DriverLogger {
     // the block has changed just as were were querying the node.
     pub fn report_simulation_errors(
         &self,
-        errors: Vec<SettlementWithError>,
+        errors: Vec<SimulationWithError>,
         current_block_during_liquidity_fetch: u64,
         gas_price: GasPrice1559,
     ) {
@@ -148,16 +148,20 @@ impl DriverLogger {
         let task = async move {
             let simulations = simulate_and_error_with_tenderly_link(
                 errors.iter().map(
-                    |SettlementWithError {
-                         solver,
-                         settlement,
-                         simulation,
+                    |SimulationWithError {
+                         simulation:
+                             Simulation {
+                                 solver,
+                                 settlement,
+                                 transaction,
+                                 ..
+                             },
                          ..
                      }| {
                         (
                             solver.account().clone(),
                             settlement.clone(),
-                            simulation.access_list.clone(),
+                            transaction.access_list.clone(),
                         )
                     },
                 ),
@@ -171,8 +175,12 @@ impl DriverLogger {
             .await;
 
             for (
-                SettlementWithError {
-                    solver, settlement, ..
+                SimulationWithError {
+                    simulation:
+                        Simulation {
+                            solver, settlement, ..
+                        },
+                    ..
                 },
                 result,
             ) in errors.iter().zip(simulations)
