@@ -40,7 +40,10 @@ use solver::{
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 #[tokio::main]
 async fn main() {
@@ -214,17 +217,8 @@ async fn main() {
         chain_id,
         client: http_factory.create(),
     };
-    let market_makable_token_list = match TokenList::from_configuration(
-        market_makable_token_list_configuration.clone(),
-    )
-    .await
-    {
-        Ok(token_list) => Some(Arc::new(token_list)),
-        Err(err) => {
-            tracing::error!("Couldn't fetch market makable token list: {}", err);
-            None
-        }
-    };
+    // updated in background task
+    let market_makable_token_list = Arc::new(RwLock::new(None));
 
     let solver = solver::solver::create(
         web3.clone(),
@@ -455,10 +449,23 @@ async fn main() {
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
-            .chain(market_makable_token_list.map(|x| x as Arc<dyn Maintaining>))
             .collect(),
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
+
+    let periodic_update_token_list = async move {
+        loop {
+            if let Ok(token_list) =
+                TokenList::from_configuration(&market_makable_token_list_configuration).await
+            {
+                let mut w = market_makable_token_list.write().unwrap();
+                *w = Some(token_list);
+            }
+
+            tokio::time::sleep(market_makable_token_list_configuration.update_interval).await;
+        }
+    };
+    tokio::task::spawn(periodic_update_token_list);
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await;

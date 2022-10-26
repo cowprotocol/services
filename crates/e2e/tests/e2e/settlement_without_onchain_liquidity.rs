@@ -27,7 +27,10 @@ use solver::{
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
@@ -212,7 +215,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        Some(Arc::new(market_makable_token_list)),
+        Arc::new(RwLock::new(Some(market_makable_token_list))),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),

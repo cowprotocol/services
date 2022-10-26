@@ -19,7 +19,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         update_interval: Default::default(),
     };
     let token_list = rt
-        .block_on(TokenList::from_configuration(token_list_configuration))
+        .block_on(TokenList::from_configuration(&token_list_configuration))
         .expect("Failed to fetch token list");
 
     let mut group = c.benchmark_group("e2e API requests");

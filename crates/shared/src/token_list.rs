@@ -1,15 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use ethcontract::H160;
 use reqwest::Client;
 use serde::Deserialize;
-
-use crate::maintenance::Maintaining;
 
 #[derive(Clone, Debug, Default)]
 pub struct TokenListConfiguration {
@@ -40,23 +34,8 @@ impl TokenListConfiguration {
     }
 }
 
-struct TokenCache {
-    tokens: HashMap<H160, Token>,
-    updated_at: Instant,
-}
-
-impl TokenCache {
-    pub fn new(tokens: HashMap<H160, Token>) -> Self {
-        Self {
-            tokens,
-            updated_at: Instant::now(),
-        }
-    }
-}
-
 pub struct TokenList {
-    cache: Mutex<TokenCache>,
-    configuration: TokenListConfiguration,
+    tokens: HashMap<H160, Token>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -69,36 +48,26 @@ pub struct Token {
 }
 
 impl TokenList {
-    pub async fn from_configuration(configuration: TokenListConfiguration) -> Result<Self> {
+    pub async fn from_configuration(configuration: &TokenListConfiguration) -> Result<Self> {
         Ok(Self {
-            cache: Mutex::new(TokenCache::new(configuration.tokens().await?)),
-            configuration,
+            tokens: configuration.tokens().await?,
         })
     }
 
     pub fn new(tokens: HashMap<H160, Token>) -> Self {
-        Self {
-            cache: Mutex::new(TokenCache::new(tokens)),
-            configuration: Default::default(),
-        }
+        Self { tokens }
     }
 
-    pub fn get(&self, address: &H160) -> Option<Token> {
-        self.cache.lock().unwrap().tokens.get(address).cloned()
+    pub fn get(&self, address: &H160) -> Option<&Token> {
+        self.tokens.get(address)
     }
 
     pub fn all(&self) -> Vec<Token> {
-        self.cache
-            .lock()
-            .unwrap()
-            .tokens
-            .values()
-            .cloned()
-            .collect()
+        self.tokens.values().cloned().collect()
     }
 
     pub fn addresses(&self) -> Vec<H160> {
-        self.cache.lock().unwrap().tokens.keys().cloned().collect()
+        self.tokens.keys().cloned().collect()
     }
 }
 
@@ -116,20 +85,6 @@ struct TokenModel {
     chain_id: u64,
     #[serde(flatten)]
     token: Token,
-}
-
-#[async_trait::async_trait]
-impl Maintaining for TokenList {
-    async fn run_maintenance(&self) -> Result<()> {
-        let now = Instant::now();
-        let duration_between_updates = now
-            .checked_duration_since(self.cache.lock().unwrap().updated_at)
-            .unwrap_or_default();
-        if duration_between_updates > self.configuration.update_interval {
-            *self.cache.lock().unwrap() = TokenCache::new(self.configuration.tokens().await?);
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]

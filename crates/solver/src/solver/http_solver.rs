@@ -29,7 +29,7 @@ use shared::{
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::Instant,
 };
 
@@ -64,7 +64,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
-    market_makable_token_list: Option<Arc<TokenList>>,
+    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
 }
 
 impl HttpSolver {
@@ -80,7 +80,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
-        market_makable_token_list: Option<Arc<TokenList>>,
+        market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
     ) -> Self {
         Self {
             solver,
@@ -108,6 +108,8 @@ impl HttpSolver {
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         let market_makable_token_list: HashSet<H160> = self
             .market_makable_token_list
+            .read()
+            .unwrap()
             .as_ref()
             .map(|tokens| tokens.addresses().into_iter().collect())
             .unwrap_or_default();
@@ -601,7 +603,7 @@ mod tests {
             Default::default(),
             true,
             SlippageCalculator::default(),
-            None,
+            Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {

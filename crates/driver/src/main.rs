@@ -180,7 +180,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 http_solver_cache.clone(),
                 false,
                 args.slippage.get_global_calculator(),
-                None,
+                Default::default(),
             )) as Arc<dyn Solver>
         })
         .collect()

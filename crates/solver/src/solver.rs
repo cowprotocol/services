@@ -38,7 +38,7 @@ use shared::{
 use std::{
     fmt::{self, Debug, Formatter},
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 use web3::types::AccessList;
@@ -271,7 +271,7 @@ pub fn create(
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
-    market_makable_token_list: Option<Arc<TokenList>>,
+    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.

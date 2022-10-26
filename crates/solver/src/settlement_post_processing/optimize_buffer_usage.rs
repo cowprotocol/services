@@ -1,16 +1,18 @@
 use super::SettlementSimulating;
 use crate::settlement::Settlement;
 use shared::token_list::TokenList;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// If a settlement only trades trusted tokens try to optimize it by trading with internal buffers.
 pub async fn optimize_buffer_usage(
     settlement: Settlement,
-    market_makable_token_list: &Option<Arc<TokenList>>,
+    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
     settlement_simulator: &impl SettlementSimulating,
 ) -> Settlement {
     // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
     if !market_makable_token_list
+        .read()
+        .unwrap()
         .as_ref()
         .map(|list| is_only_selling_trusted_tokens(&settlement, list))
         .unwrap_or(false)
