@@ -380,7 +380,7 @@ impl OrderValidating for OrderValidator {
             from: owner,
             app_data: order.data.app_data,
         };
-        let quote = if !liquidity_owner {
+        let quote = if !liquidity_owner && order.data.fee_amount > U256::zero() {
             Some(
                 get_quote_and_check_fee(
                     &*self.quoter,
@@ -1185,6 +1185,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()
