@@ -15,8 +15,8 @@ use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
-        BUY_ETH_ADDRESS,
+        BuyTokenDestination, Order, OrderClass, OrderCreation, OrderData, OrderKind,
+        SellTokenSource, BUY_ETH_ADDRESS,
     },
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
@@ -462,12 +462,7 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        // Orders that are placed and priced outside the market (i.e. buying
-        // more than the market can pay or selling less than the market wants)
-        // get flagged as liquidity orders. The reasoning is that these orders
-        // are not intended to be filled immediately and so need to be treated
-        // slightly differently by the protocol.
-        let is_liquidity_order = match &quote {
+        let is_outside_market_price = match &quote {
             Some(quote)
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
@@ -483,12 +478,18 @@ impl OrderValidating for OrderValidator {
             None => true,
         };
 
+        let class = match (is_outside_market_price, liquidity_owner) {
+            (true, true) => OrderClass::Liquidity,
+            (true, false) => OrderClass::Limit,
+            _ => OrderClass::Ordinary,
+        };
+
         let order = Order::from_order_creation(
             &order,
             domain_separator,
             settlement_contract,
             full_fee_amount,
-            is_liquidity_order,
+            class,
         )?;
         Ok((order, quote))
     }

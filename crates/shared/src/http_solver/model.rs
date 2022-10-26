@@ -832,6 +832,7 @@ mod tests {
                             "0x0303030303030303030303030303030303030303030303030303030303030303",
                         "feeAmount": "13",
                         "kind": "sell",
+                        "class": "ordinary",
                         "partiallyFillable": true,
                         "sellTokenBalance": "external",
                         "signingScheme": "eip1271",
