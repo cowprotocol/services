@@ -27,7 +27,7 @@ use shared::{
     event_handling::EventStoring,
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
     order_validation::{
-        convert_signing_scheme_into_quote_kind, get_quote_and_check_fee,
+        convert_signing_scheme_into_quote_signing_scheme, get_quote_and_check_fee,
         is_order_outside_market_price,
     },
 };
@@ -276,6 +276,7 @@ async fn parse_general_onchain_order_placement_data(
             let ContractEvent::OrderPlacement(event) = data;
             let (order_data, owner, signing_scheme, order_uid) =
                 extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
+
             let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
             let order_data = convert_onchain_order_placement(
                 &event,
@@ -310,8 +311,16 @@ async fn get_quote(
     order_placement: &ContractOrderPlacement,
     quote_id: &i64,
 ) -> Result<Quote> {
-    let quote_kind = convert_signing_scheme_into_quote_kind(signing_scheme, false)
-        .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
+    let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
+        signing_scheme,
+        false,
+        // Currently, only ethflow orders are indexed with this onchain
+        // parser. For ethflow orders, we are okay to subsidize the
+        // orders and allow them to set the verification limit to 0.
+        // For general orders, this could result in a too big subsidy.
+        0u64,
+    )
+    .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
 
     let parameters = QuoteSearchParameters {
         sell_token: H160::from(order_data.sell_token.0),
@@ -323,16 +332,13 @@ async fn get_quote(
         // Original quote was made from user account, and not necessarily from owner.
         from: order_placement.sender,
         app_data: order_data.app_data,
-        quote_kind,
     };
     get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id as i64),
         order_data.fee_amount,
-        model::quote::QuoteSigningScheme::Eip1271 {
-            onchain_order: true,
-        },
+        quote_signing_scheme,
     )
     .await
     .map_err(|err| {
@@ -447,6 +453,7 @@ mod test {
     use model::{
         app_id::AppId,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        quote::QuoteSigningScheme,
         signature::SigningScheme,
         DomainSeparator,
     };
@@ -701,6 +708,11 @@ mod test {
             ]),
         };
 
+        let signing_scheme = QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            verification_gas_limit: 0u64,
+        };
+
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
@@ -721,13 +733,14 @@ mod test {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_1)), always())
-            .returning(move |_, _| Ok(Quote::default()));
+            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
+            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
+            .returning(move |_, _, _| Ok(Quote::default()));
         let quote_id_2 = 6i64;
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_2)), always())
-            .returning(move |_, _| Err(FindQuoteError::NotFound(None)));
+            .with(eq(Some(quote_id_2)), always(), eq(signing_scheme))
+            .returning(move |_, _, _| Err(FindQuoteError::NotFound(None)));
         let result_vec = parse_general_onchain_order_placement_data(
             &order_quoter,
             vec![
@@ -806,7 +819,7 @@ mod test {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()
