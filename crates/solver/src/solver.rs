@@ -98,8 +98,12 @@ pub enum AuctionResult {
 }
 
 pub struct SimulationFailureParams {
+    /// Error message from the simulator
     pub message: String,
+    /// The simulation was done on top of all transactions from the given block number
+    /// If block_number is to be used for tenderly simulation, it should be increased by 1
     pub block_number: BlockNumber,
+    /// Transaction input data
     pub data: Vec<u8>,
 }
 
