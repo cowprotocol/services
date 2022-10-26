@@ -72,6 +72,7 @@ impl BalancerV2Liquidity {
             .weighted_pools
             .into_iter()
             .map(|pool| WeightedProductOrder {
+                address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee,
                 settlement_handling: Arc::new(SettlementHandler {
@@ -86,6 +87,7 @@ impl BalancerV2Liquidity {
             .stable_pools
             .into_iter()
             .map(|pool| StablePoolOrder {
+                address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee.into(),
                 amplification_parameter: pool.amplification_parameter,
