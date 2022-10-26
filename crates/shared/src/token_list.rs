@@ -37,7 +37,6 @@ impl TokenListConfiguration {
 pub struct TokenList {
     tokens: HashMap<H160, Token>,
 }
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {

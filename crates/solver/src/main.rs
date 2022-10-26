@@ -306,7 +306,6 @@ async fn main() {
         zeroex_liquidity,
         uniswap_v3_liquidity,
     };
-
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
