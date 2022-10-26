@@ -174,11 +174,11 @@ impl SettlementRating for SettlementRater {
                     Err(err) => Either::Right(SettlementWithError {
                         solver: details.solver,
                         settlement: details.settlement,
-                        access_list: details.access_list,
                         error: err,
                         simulation: SimulatedTransaction {
                             block_number: details.block_number,
                             to: details.to,
+                            access_list: details.access_list,
                         },
                     }),
                 }

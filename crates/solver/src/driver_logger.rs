@@ -151,13 +151,13 @@ impl DriverLogger {
                     |SettlementWithError {
                          solver,
                          settlement,
-                         access_list,
+                         simulation,
                          ..
                      }| {
                         (
                             solver.account().clone(),
                             settlement.clone(),
-                            access_list.clone(),
+                            simulation.access_list.clone(),
                         )
                     },
                 ),

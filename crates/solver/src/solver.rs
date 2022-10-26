@@ -201,6 +201,7 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
 pub struct SimulatedTransaction {
+    pub access_list: Option<AccessList>,
     pub block_number: BlockNumber,
     pub to: H160,
 }
@@ -208,7 +209,6 @@ pub struct SimulatedTransaction {
 pub struct SettlementWithError {
     pub solver: Arc<dyn Solver>,
     pub settlement: Settlement,
-    pub access_list: Option<AccessList>,
     pub error: ExecutionError,
     pub simulation: SimulatedTransaction,
 }
