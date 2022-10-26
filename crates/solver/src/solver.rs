@@ -102,13 +102,8 @@ pub struct SimulationFailureParams {
     pub message: String,
     /// Transaction input data
     pub data: Vec<u8>,
-    /// The simulation was done on top of all transactions from the given block number
-    /// If block_number is to be used for tenderly simulation, it should be increased by 1
-    pub block_number: BlockNumber,
-    /// Solver address
-    pub from: H160,
-    /// GPv2 settlement contract address
-    pub to: H160,
+    /// Data needed to reconstruct the simulation
+    pub transaction: SimulatedTransaction,
 }
 
 /// Reason for why a solution may have been invalid
@@ -200,12 +195,15 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
+#[derive(Clone)]
 pub struct SimulatedTransaction {
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
     pub access_list: Option<AccessList>,
     /// The simulation was done on top of all transactions from the given block number
     pub block_number: BlockNumber,
+    /// Solver address
+    pub from: H160,
     /// GPv2 settlement contract address
     pub to: H160,
 }

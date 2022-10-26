@@ -178,9 +178,7 @@ impl SettlementRanker {
                     SimulationFailureParams {
                         message: error.to_string(),
                         data: call_data(settlement.clone().into()),
-                        from: solver.account().address(),
-                        to: transaction.to,
-                        block_number: transaction.block_number,
+                        transaction: transaction.clone(),
                     },
                 )),
             );

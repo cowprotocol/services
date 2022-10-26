@@ -116,13 +116,14 @@ impl SettlementRating for SettlementRater {
             .map(
                 |((solver, settlement, access_list), simulation_result)| SimulationWithResult {
                     simulation: Simulation {
-                        settlement,
-                        solver,
                         transaction: SimulatedTransaction {
                             access_list,
                             block_number,
                             to: self.settlement_contract.address(),
+                            from: solver.account().address(),
                         },
+                        settlement,
+                        solver,
                     },
                     gas_estimate: simulation_result,
                 },
