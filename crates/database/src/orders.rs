@@ -264,7 +264,17 @@ pub struct Quote {
     pub buy_amount: BigDecimal,
 }
 
+pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
+    for quote in quotes {
+        insert_quote(ex, quote).await?;
+    }
+    Ok(())
+}
+
 pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
+    /// For ethflow orders, due to reorgs, different orders
+    /// might be inserted with the same uid. Hence, we need
+    /// to update quote entries in the database on conflicts
     const QUERY: &str = r#"
 INSERT INTO order_quotes (
     order_uid,
@@ -275,6 +285,10 @@ INSERT INTO order_quotes (
     buy_amount
 )
 VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (order_uid) DO UPDATE
+SET gas_amount = $2, gas_price = $3,
+sell_token_price = $4, sell_amount = $5,
+buy_amount = $6
     "#;
     sqlx::query(QUERY)
         .bind(&quote.order_uid)
