@@ -36,6 +36,7 @@ pub trait PoolFetching: Send + Sync {
 /// Pool data in a format prepared for solvers.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolInfo {
+    /// Skip serializing address since it's redundant (already serialized outside of this struct)
     #[serde(skip_serializing)]
     pub address: H160,
     pub tokens: Vec<Token>,
