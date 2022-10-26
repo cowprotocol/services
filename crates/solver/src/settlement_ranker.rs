@@ -7,8 +7,8 @@ use crate::{
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
     solver::{
-        AuctionResult, Simulation, SimulationFailureParams, SimulationWithError, Solver,
-        SolverRejectionReason, SolverRunError,
+        AuctionResult, SimulationWithError, Solver, SolverRejectionReason, SolverRunError,
+        TransactionWithMessage,
     },
 };
 use anyhow::Result;
@@ -162,23 +162,13 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for SimulationWithError {
-            simulation:
-                Simulation {
-                    solver,
-                    settlement,
-                    transaction,
-                },
-            error,
-        } in &errors
-        {
-            solver.notify_auction_result(
+        for error in &errors {
+            error.simulation.solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    SimulationFailureParams {
-                        message: error.to_string(),
-                        data: call_data(settlement.clone().into()),
-                        transaction: transaction.clone(),
+                    TransactionWithMessage {
+                        transaction: error.simulation.transaction.clone(),
+                        message: error.error.to_string(),
                     },
                 )),
             );

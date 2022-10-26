@@ -2,7 +2,7 @@ use crate::{
     driver::solver_settlements::RatedSettlement,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_access_list::AccessListEstimating,
-    settlement_simulation::{settle_method, simulate_and_estimate_gas_at_current_block},
+    settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
     solver::{SettlementWithSolver, SimulatedTransaction, Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
@@ -121,6 +121,7 @@ impl SettlementRating for SettlementRater {
                             block_number,
                             to: self.settlement_contract.address(),
                             from: solver.account().address(),
+                            data: call_data(settlement.clone().into()),
                         },
                         settlement,
                         solver,

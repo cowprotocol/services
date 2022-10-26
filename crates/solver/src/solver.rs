@@ -97,13 +97,11 @@ pub enum AuctionResult {
     Rejected(SolverRejectionReason),
 }
 
-pub struct SimulationFailureParams {
-    /// Error message from the simulator
-    pub message: String,
-    /// Transaction input data
-    pub data: Vec<u8>,
+pub struct TransactionWithMessage {
     /// Data needed to reconstruct the simulation
     pub transaction: SimulatedTransaction,
+    /// Error message from the simulator
+    pub message: String,
 }
 
 /// Reason for why a solution may have been invalid
@@ -120,9 +118,8 @@ pub enum SolverRejectionReason {
     /// The solution violated a price constraint (ie. max deviation to external price vector)
     PriceViolation,
 
-    /// The solution didn't pass simulation. Includes revert reason as well as the calldata
-    /// to re-create simulation locally
-    SimulationFailure(SimulationFailureParams),
+    /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
+    SimulationFailure(TransactionWithMessage),
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -197,22 +194,23 @@ pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>
 
 #[derive(Clone)]
 pub struct SimulatedTransaction {
+    /// The simulation was done on top of all transactions from the given block number
+    pub block_number: BlockNumber,
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
     pub access_list: Option<AccessList>,
-    /// The simulation was done on top of all transactions from the given block number
-    pub block_number: BlockNumber,
     /// Solver address
     pub from: H160,
     /// GPv2 settlement contract address
     pub to: H160,
+    /// Transaction input data
+    pub data: Vec<u8>,
 }
 pub struct Simulation {
     pub settlement: Settlement,
     pub solver: Arc<dyn Solver>,
     pub transaction: SimulatedTransaction,
 }
-
 pub struct SimulationWithError {
     pub simulation: Simulation,
     pub error: ExecutionError,
