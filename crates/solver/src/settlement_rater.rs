@@ -159,20 +159,26 @@ impl SettlementRating for SettlementRater {
             }
         };
 
-        Ok(
-            (simulations.into_iter().enumerate()).partition_map(|(i, details)| {
-                match details.gas_estimate {
+        Ok((simulations.into_iter().enumerate()).partition_map(
+            |(
+                i,
+                SimulationWithResult {
+                    simulation,
+                    gas_estimate,
+                },
+            )| {
+                match gas_estimate {
                     Ok(gas_estimate) => Either::Left((
-                        details.simulation.solver,
-                        rate_settlement(i, details.simulation.settlement, gas_estimate),
-                        details.simulation.transaction.access_list,
+                        simulation.solver,
+                        rate_settlement(i, simulation.settlement, gas_estimate),
+                        simulation.transaction.access_list,
                     )),
                     Err(err) => Either::Right(SimulationWithError {
-                        simulation: details.simulation,
+                        simulation,
                         error: err,
                     }),
                 }
-            }),
-        )
+            },
+        ))
     }
 }
