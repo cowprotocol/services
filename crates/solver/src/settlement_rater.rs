@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::errors::ExecutionError;
+use ethcontract::{errors::ExecutionError, BlockNumber};
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
@@ -28,6 +28,8 @@ pub struct SimulationDetails {
     /// The outcome of the simulation. Contains either how much gas the settlement used or the
     /// reason why the transaction reverted during the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
+    /// The simulation was done on top of all transactions from the given block number
+    pub block_number: BlockNumber,
 }
 
 #[mockall::automock]
@@ -100,6 +102,7 @@ impl SettlementRating for SettlementRater {
         gas_price: GasPrice1559,
     ) -> Result<Vec<SimulationDetails>> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
+        let block_number = self.web3.eth().block_number().await?.into();
         let simulations = simulate_and_estimate_gas_at_current_block(
             settlements.iter().map(|settlement| {
                 (
@@ -124,6 +127,7 @@ impl SettlementRating for SettlementRater {
                     solver,
                     access_list,
                     gas_estimate: simulation_result,
+                    block_number,
                 },
             )
             .collect();
@@ -168,6 +172,7 @@ impl SettlementRating for SettlementRater {
                         details.solver,
                         details.settlement,
                         details.access_list,
+                        details.block_number,
                         err,
                     )),
                 }

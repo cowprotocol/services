@@ -6,7 +6,10 @@ use crate::{
     },
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
-    solver::{AuctionResult, SettlementWithError, Solver, SolverRejectionReason, SolverRunError},
+    solver::{
+        AuctionResult, SettlementWithError, SimulationFailureParams, Solver, SolverRejectionReason,
+        SolverRunError,
+    },
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
@@ -159,12 +162,15 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for (solver, settlement, _, error) in &errors {
+        for (solver, settlement, _, block_number, error) in &errors {
             solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    error.to_string(),
-                    call_data(settlement.clone().into()),
+                    SimulationFailureParams {
+                        message: error.to_string(),
+                        block_number: *block_number,
+                        data: call_data(settlement.clone().into()),
+                    },
                 )),
             );
         }

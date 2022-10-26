@@ -147,13 +147,15 @@ impl DriverLogger {
         let simulation_gas_limit = self.simulation_gas_limit;
         let task = async move {
             let simulations = simulate_and_error_with_tenderly_link(
-                errors.iter().map(|(solver, settlement, access_list, _)| {
-                    (
-                        solver.account().clone(),
-                        settlement.clone(),
-                        access_list.clone(),
-                    )
-                }),
+                errors
+                    .iter()
+                    .map(|(solver, settlement, access_list, _, _)| {
+                        (
+                            solver.account().clone(),
+                            settlement.clone(),
+                            access_list.clone(),
+                        )
+                    }),
                 &contract,
                 &web3,
                 gas_price,
@@ -163,7 +165,7 @@ impl DriverLogger {
             )
             .await;
 
-            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
+            for ((solver, settlement, _, _, _), result) in errors.iter().zip(simulations) {
                 metrics
                     .settlement_simulation(solver.name(), SolverSimulationOutcome::FailureOnLatest);
                 if let Err(error_at_earlier_block) = result {

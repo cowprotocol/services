@@ -20,7 +20,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256};
+use ethcontract::{errors::ExecutionError, Account, BlockNumber, PrivateKey, H160, U256};
 use model::auction::AuctionId;
 use num::BigRational;
 use reqwest::Url;
@@ -97,6 +97,12 @@ pub enum AuctionResult {
     Rejected(SolverRejectionReason),
 }
 
+pub struct SimulationFailureParams {
+    pub message: String,
+    pub block_number: BlockNumber,
+    pub data: Vec<u8>,
+}
+
 /// Reason for why a solution may have been invalid
 pub enum SolverRejectionReason {
     /// The solver didn't return a successful response
@@ -113,7 +119,7 @@ pub enum SolverRejectionReason {
 
     /// The solution didn't pass simulation. Includes revert reason as well as the calldata
     /// to re-create simulation locally
-    SimulationFailure(String, Vec<u8>),
+    SimulationFailure(SimulationFailureParams),
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -190,6 +196,7 @@ pub type SettlementWithError = (
     Arc<dyn Solver>,
     Settlement,
     Option<AccessList>,
+    BlockNumber,
     ExecutionError,
 );
 
