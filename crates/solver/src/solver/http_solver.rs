@@ -199,7 +199,7 @@ impl HttpSolver {
 fn map_tokens_for_solver(
     orders: &[LimitOrder],
     liquidity: &[Liquidity],
-    all_bufferable_tokens: &HashSet<H160>,
+    market_makable_token_list: &HashSet<H160>,
 ) -> Vec<H160> {
     let mut token_set = HashSet::new();
     token_set.extend(
@@ -216,7 +216,7 @@ fn map_tokens_for_solver(
             Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
-    token_set.extend(all_bufferable_tokens);
+    token_set.extend(market_makable_token_list);
 
     Vec::from_iter(token_set)
 }
@@ -237,7 +237,7 @@ fn token_models(
     price_estimates: &HashMap<H160, f64>,
     buffers: &HashMap<H160, U256>,
     gas_model: &GasModel,
-    bufferable_token_list: &HashSet<H160>,
+    market_makable_token_list: &HashSet<H160>,
 ) -> BTreeMap<H160, TokenInfoModel> {
     token_infos
         .iter()
@@ -258,7 +258,7 @@ fn token_models(
                         0
                     }),
                     internal_buffer: buffers.get(address).copied(),
-                    accepted_for_internalization: bufferable_token_list.contains(address),
+                    accepted_for_internalization: market_makable_token_list.contains(address),
                 },
             )
         })
