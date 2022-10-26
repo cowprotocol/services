@@ -78,7 +78,6 @@ impl Order {
                 settlement_contract,
                 full_fee_amount,
                 class,
-                is_liquidity_order: class == OrderClass::Liquidity,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -423,11 +422,11 @@ pub struct OrderMetadata {
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
-    pub is_liquidity_order: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
+    pub is_liquidity_order: bool,
 }
 
 impl Default for OrderMetadata {
@@ -446,9 +445,9 @@ impl Default for OrderMetadata {
             class: OrderClass::Ordinary,
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
-            is_liquidity_order: false,
             ethflow_data: None,
             onchain_user: None,
+            is_liquidity_order: false,
         }
     }
 }
@@ -739,7 +738,6 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
-                is_liquidity_order: false,
                 ..Default::default()
             },
             data: OrderData {

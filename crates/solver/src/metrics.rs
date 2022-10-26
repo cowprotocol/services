@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use ethcontract::U256;
-use model::order::Order;
+use model::order::{Order, OrderClass};
 use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
@@ -324,9 +324,10 @@ impl SolverMetrics for Metrics {
     fn order_settled(&self, order: &Order, solver: &str) {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
-        let order_type = match order.metadata.is_liquidity_order {
-            true => "liquidity_order",
-            false => "user_order",
+        let order_type = match order.metadata.class {
+            OrderClass::Ordinary => "user_order",
+            OrderClass::Liquidity => "liquidity_order",
+            OrderClass::Limit => "limit_order",
         };
         self.trade_counter
             .with_label_values(&[solver, order_type])

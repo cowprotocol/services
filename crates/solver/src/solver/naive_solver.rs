@@ -124,7 +124,7 @@ mod tests {
     use crate::liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler};
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
+    use model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
     use num::rational::Ratio;
     use shared::addr;
 
@@ -244,7 +244,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -259,7 +259,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -310,7 +310,7 @@ mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        is_liquidity_order: true,
+                        class: OrderClass::Liquidity,
                         ..Default::default()
                     },
                     ..Default::default()

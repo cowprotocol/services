@@ -397,7 +397,6 @@ fn convert_onchain_order_placement(
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&full_fee_amount),
-        is_liquidity_order,
         cancellation_timestamp: None,
         // TODO #643: To properly determine the class, we have to check the liquidity owners just
         // like we do during order creation.
@@ -678,7 +677,6 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
-            is_liquidity_order: false,
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);

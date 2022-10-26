@@ -12,7 +12,7 @@ use anyhow::{ensure, Context, Result};
 use database::orders::Quote;
 use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
-use model::order::{Order, OrderUid};
+use model::order::{Order, OrderClass, OrderUid};
 use primitive_types::H160;
 use shared::price_estimation::native::NativePriceEstimating;
 
@@ -73,7 +73,7 @@ impl Calculator {
         tracing::trace!("gas_price={gas_price:.2e} cow_price={cow_price:.2e}");
         Ok(futures::stream::iter(orders)
             .then(|order| async {
-                if order.metadata.is_liquidity_order || order.data.partially_fillable {
+                if order.metadata.class == OrderClass::Liquidity || order.data.partially_fillable {
                     return Ok(0.);
                 }
                 let quote = self

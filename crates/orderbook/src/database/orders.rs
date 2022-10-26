@@ -9,7 +9,10 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{EthflowData, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{
+        EthflowData, Interactions, Order, OrderClass, OrderData, OrderMetadata, OrderStatus,
+        OrderUid,
+    },
     signature::Signature,
 };
 use num::Zero;
@@ -88,7 +91,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
-        is_liquidity_order: order.metadata.is_liquidity_order,
         cancellation_timestamp: None,
     };
     database::orders::insert_order(ex, &order)
@@ -287,6 +289,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         None
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let class = order_class_from(order.class);
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -307,13 +310,13 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
-        class: order_class_from(order.class),
+        class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
-        is_liquidity_order: order.is_liquidity_order,
         ethflow_data,
         onchain_user,
+        is_liquidity_order: class == OrderClass::Liquidity,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -395,7 +398,7 @@ mod tests {
             fee_amount: BigDecimal::default(),
             full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
-            class: DbOrderClass::Ordinary,
+            class: DbOrderClass::Liquidity,
             partially_fillable: true,
             signature: vec![0; 65],
             receiver: None,
@@ -408,7 +411,6 @@ mod tests {
             sell_token_balance: DbSellTokenSource::External,
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
-            is_liquidity_order: true,
             pre_interactions: Vec::new(),
             ethflow_data: None,
             onchain_user: None,
