@@ -246,6 +246,7 @@ impl HttpPriceEstimator {
                 )),
                 cost: gas_model.uniswap_cost(),
                 mandatory: false,
+                address: pool.address,
             })
             .collect())
     }
@@ -270,6 +271,7 @@ impl HttpPriceEstimator {
                     BigInt::from(*pool.state.fee.denom()),
                 )),
                 cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
+                address: pool.address,
                 parameters: AmmParameters::Concentrated(ConcentratedPoolParameters { pool }),
                 mandatory: false,
             })
@@ -310,6 +312,7 @@ impl HttpPriceEstimator {
             fee: pool.common.swap_fee.into(),
             cost: gas_model.balancer_cost(),
             mandatory: false,
+            address: pool.common.address,
         });
         let stable = pools
             .stable_pools
@@ -335,6 +338,7 @@ impl HttpPriceEstimator {
                     fee: pool.common.swap_fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: pool.common.address,
                 })
             });
         let mut models = Vec::from_iter(weighted);

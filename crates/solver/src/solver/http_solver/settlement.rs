@@ -401,18 +401,21 @@ mod tests {
         let sp_amm_handler = CapturingSettlementHandler::arc();
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (3, 4),
                 fee: 5.into(),
                 settlement_handling: cp_amm_handler.clone(),
             }),
             Liquidity::ConstantProduct(ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (6, 7),
                 fee: 8.into(),
                 settlement_handling: internal_amm_handler.clone(),
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
+                address: H160::from_low_u64_be(3),
                 reserves: hashmap! {
                     t0 => WeightedTokenState {
                         common: TokenState {
@@ -433,6 +436,7 @@ mod tests {
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
+                address: H160::from_low_u64_be(4),
                 reserves: hashmap! {
                     t0 => TokenState {
                         balance: U256::from(300),
@@ -628,12 +632,14 @@ mod tests {
         let token_c = H160::from_slice(&hex!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"));
 
         let cpo_0 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (597249810824827988770940, 225724246562756585230),
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         let cpo_1 = ConstantProductOrder {
+            address: H160::from_low_u64_be(2),
             tokens: TokenPair::new(token_b, token_c).unwrap(),
             reserves: (8488677530563931705, 75408146511005299032),
             fee: Ratio::new(3, 1000),
@@ -641,6 +647,7 @@ mod tests {
         };
 
         let wpo = WeightedProductOrder {
+            address: H160::from_low_u64_be(3),
             reserves: hashmap! {
                 token_c => WeightedTokenState {
                     common: TokenState {
@@ -662,6 +669,7 @@ mod tests {
         };
 
         let spo = StablePoolOrder {
+            address: H160::from_low_u64_be(4),
             reserves: hashmap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
@@ -898,6 +906,7 @@ mod tests {
         let token_b = H160::from_slice(&hex!("c778417e063141139fce010982780140aa0cd5ab"));
 
         let cpo_1 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (8488677530563931705, 75408146511005299032),
             fee: Ratio::new(3, 1000),

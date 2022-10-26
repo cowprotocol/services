@@ -305,6 +305,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     ),
                     cost: gas_model.uniswap_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::BalancerWeighted(amm) => AmmModel {
                     parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
@@ -325,6 +326,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     fee: amm.fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::BalancerStable(amm) => AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
@@ -348,6 +350,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     fee: amm.fee.clone(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
                 Liquidity::Concentrated(amm) => AmmModel {
@@ -360,6 +363,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     ),
                     cost: gas_model.cost_for_gas(amm.pool.gas_stats.mean_gas),
                     mandatory: false,
+                    address: amm.pool.address,
                 },
             })
         })
@@ -596,6 +600,7 @@ mod tests {
             ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(buy_token, sell_token).unwrap(),
             reserves: (base(100), base(100)),
             fee: Ratio::new(0, 1),
@@ -654,6 +659,7 @@ mod tests {
             .iter()
             .map(|tokens| {
                 Liquidity::ConstantProduct(ConstantProductOrder {
+                    address: H160::from_low_u64_be(1),
                     tokens: TokenPair::new(tokens.0, tokens.1).unwrap(),
                     reserves: (0, 0),
                     fee: 0.into(),

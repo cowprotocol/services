@@ -192,6 +192,7 @@ mod tests {
             })
             .returning(move |_, _| {
                 Ok(vec![ConstantProduct(ConstantProductOrder {
+                    address: H160::from_low_u64_be(1),
                     tokens: TokenPair::new(token(1), token(2)).unwrap(),
                     reserves: (1u128, 1u128),
                     fee: Ratio::<u32>::new(1, 1),

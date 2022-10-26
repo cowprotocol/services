@@ -251,6 +251,7 @@ mod tests {
             slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
             StablePoolOrder,
         },
+        settlement::InternalizationStrategy,
         solver::http_solver::settlement::{convert_settlement, SettlementContext},
     };
     use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
@@ -454,6 +455,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         let cpo_0 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     .parse()
@@ -476,6 +478,7 @@ mod tests {
         };
 
         let spo = StablePoolOrder {
+            address: H160::from_low_u64_be(1),
             reserves: hashmap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
                     balance: U256::from(46543572661097157184873466u128),
@@ -667,7 +670,10 @@ mod tests {
         .map(|settlement| vec![settlement])
         .unwrap();
         let settlement = settlements.get(0).unwrap();
-        let settlement_encoded = settlement.encoder.clone().finish();
+        let settlement_encoded = settlement
+            .encoder
+            .clone()
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
         println!("Settlement_encoded: {:?}", settlement_encoded);
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(

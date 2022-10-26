@@ -79,7 +79,7 @@ pub enum PartialValidationError {
 #[derive(Debug)]
 pub enum ValidationError {
     Partial(PartialValidationError),
-    /// The quote ID specifed with the order could not be found.
+    /// The quote ID specified with the order could not be found.
     QuoteNotFound,
     /// The quote specified by ID is invalid. Either it doesn't match the order
     /// or it has already expired.
@@ -136,7 +136,6 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
-
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up
@@ -152,7 +151,8 @@ impl From<SignatureValidationError> for ValidationError {
     fn from(err: SignatureValidationError) -> Self {
         match err {
             SignatureValidationError::Invalid => Self::InvalidSignature,
-            SignatureValidationError::Other(err) => Self::Other(err.into()),
+            SignatureValidationError::Method(err) => Self::Other(err.into()),
+            SignatureValidationError::Execution(err) => Self::Other(err.into()),
         }
     }
 }
@@ -335,22 +335,27 @@ impl OrderValidating for OrderValidator {
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
-        if let Signature::Eip1271(signature) = &order.signature {
+        let additional_gas = if let Signature::Eip1271(signature) = &order.signature {
             if self
                 .signature_configuration
                 .eip1271_skip_creation_validation
             {
                 tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+                // We don't care! Because we are skipping validation anyway
+                0u64
             } else {
                 self.signature_validator
-                    .validate_signature(SignatureCheck {
+                    .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
                         hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
                         signature: signature.to_owned(),
                     })
-                    .await?;
+                    .await?
             }
-        }
+        } else {
+            // in any other case, just apply 0
+            0u64
+        };
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -365,7 +370,6 @@ impl OrderValidating for OrderValidator {
         ))
         .await
         .map_err(ValidationError::Partial)?;
-        let quote_kind = convert_signing_scheme_into_quote_kind(order.signature.scheme(), true)?;
         let quote_parameters = QuoteSearchParameters {
             sell_token: order.data.sell_token,
             buy_token: order.data.buy_token,
@@ -375,7 +379,6 @@ impl OrderValidating for OrderValidator {
             kind: order.data.kind,
             from: owner,
             app_data: order.data.app_data,
-            quote_kind,
         };
         let quote = if !liquidity_owner {
             Some(
@@ -387,6 +390,7 @@ impl OrderValidating for OrderValidator {
                     convert_signing_scheme_into_quote_signing_scheme(
                         order.signature.scheme(),
                         true,
+                        additional_gas,
                     )?,
                 )
                 .await?,
@@ -403,7 +407,12 @@ impl OrderValidating for OrderValidator {
 
         let full_fee_amount = quote
             .as_ref()
-            .map(|quote| quote.data.fee_parameters.unsubsidized())
+            .map(|quote| {
+                quote
+                    .data
+                    .fee_parameters
+                    .unsubsidized_with_additional_cost(additional_gas)
+            })
             .unwrap_or_default();
 
         let min_balance = match minimum_balance(&order.data) {
@@ -557,7 +566,7 @@ pub async fn get_quote_and_check_fee(
     signing_scheme: QuoteSigningScheme,
 ) -> Result<Quote, ValidationError> {
     let quote = match quoter
-        .find_quote(quote_id, quote_search_parameters.clone())
+        .find_quote(quote_id, quote_search_parameters.clone(), &signing_scheme)
         .await
     {
         Ok(quote) => {
@@ -608,9 +617,10 @@ pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quot
     sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 
-fn convert_signing_scheme_into_quote_signing_scheme(
+pub fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
+    verification_gas_limit: u64,
 ) -> Result<QuoteSigningScheme, ValidationError> {
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
@@ -622,6 +632,7 @@ fn convert_signing_scheme_into_quote_signing_scheme(
         }),
         (order_placement_via_api, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271 {
             onchain_order: !order_placement_via_api,
+            verification_gas_limit,
         }),
     }
 }
@@ -657,7 +668,10 @@ mod tests {
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
+    use model::{
+        app_id::AppId, order::OrderBuilder, quote::default_verification_gas_limit,
+        signature::EcdsaSigningScheme,
+    };
     use secp256k1::ONE_KEY;
 
     #[test]
@@ -949,13 +963,18 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
 
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
@@ -968,7 +987,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
+            Arc::new(signature_validating),
         );
 
         let creation = OrderCreation {
@@ -998,13 +1017,13 @@ mod tests {
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
             }))
-            .returning(|_| Ok(()));
+            .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
             signature_validator: Arc::new(signature_validator),
@@ -1018,7 +1037,7 @@ mod tests {
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .with(eq(SignatureCheck {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
@@ -1048,7 +1067,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1093,7 +1112,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1138,7 +1157,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::Other(anyhow!("err"))));
+            .returning(|_, _, _| Err(FindQuoteError::Other(anyhow!("err"))));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1183,7 +1202,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector.expect_detect().returning(|_| {
             Ok(TokenQuality::Bad {
                 reason: Default::default(),
@@ -1235,7 +1254,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1281,7 +1300,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1327,7 +1346,7 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1335,7 +1354,7 @@ mod tests {
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
         signature_validator
-            .expect_validate_signature()
+            .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator::new(
@@ -1384,7 +1403,7 @@ mod tests {
                 let mut balance_fetcher = MockBalanceFetching::new();
                 order_quoter
                     .expect_find_quote()
-                    .returning(|_, _| Ok(Default::default()));
+                    .returning(|_, _, _| Ok(Default::default()));
                 bad_token_detector
                     .expect_detect()
                     .returning(|_| Ok(TokenQuality::Good));
@@ -1462,7 +1481,6 @@ mod tests {
             kind: OrderKind::Buy,
             from: H160([0xf0; 20]),
             app_data: AppId([5; 32]),
-            quote_kind: QuoteKind::Standard,
         };
         let quote_data = Quote {
             fee_amount: 6.into(),
@@ -1470,19 +1488,25 @@ mod tests {
         };
         let fee_amount = quote_data.fee_amount;
         let quote_id = Some(42);
+        let quote_signing_scheme = QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            verification_gas_limit: default_verification_gas_limit(),
+        };
         order_quoter
             .expect_find_quote()
-            .with(eq(quote_id), eq(quote_search_parameters.clone()))
-            .returning(move |_, _| Ok(quote_data.clone()));
+            .with(
+                eq(quote_id),
+                eq(quote_search_parameters.clone()),
+                eq(quote_signing_scheme),
+            )
+            .returning(move |_, _, _| Ok(quote_data.clone()));
 
         let quote = get_quote_and_check_fee(
             &order_quoter,
             &quote_search_parameters,
             quote_id,
             fee_amount,
-            QuoteSigningScheme::Eip1271 {
-                onchain_order: true,
-            },
+            quote_signing_scheme,
         )
         .await
         .unwrap();
@@ -1503,15 +1527,14 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .with(eq(None), always())
-            .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+            .with(eq(None), always(), eq(&QuoteSigningScheme::Eip712))
+            .returning(|_, _, _| Err(FindQuoteError::NotFound(None)));
         let quote_search_parameters = QuoteSearchParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             kind: OrderKind::Sell,
             from,
             app_data: AppId([5; 32]),
-            quote_kind: QuoteKind::Standard,
             ..Default::default()
         };
         let quote_data = Quote {
@@ -1563,7 +1586,7 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
+            .returning(|_, _, _| Err(FindQuoteError::NotFound(Some(0))));
 
         let err = get_quote_and_check_fee(
             &order_quoter,
@@ -1581,7 +1604,7 @@ mod tests {
     #[tokio::test]
     async fn get_quote_errors_on_insufficient_fees() {
         let mut order_quoter = MockOrderQuoting::new();
-        order_quoter.expect_find_quote().returning(|_, _| {
+        order_quoter.expect_find_quote().returning(|_, _, _| {
             Ok(Quote {
                 fee_amount: 2.into(),
                 ..Default::default()
@@ -1608,7 +1631,7 @@ mod tests {
                 let mut order_quoter = MockOrderQuoting::new();
                 order_quoter
                     .expect_find_quote()
-                    .returning(|_, _| Err($find_err));
+                    .returning(|_, _, _| Err($find_err));
                 let err = get_quote_and_check_fee(
                     &order_quoter,
                     &Default::default(),
@@ -1637,7 +1660,7 @@ mod tests {
                 let mut order_quoter = MockOrderQuoting::new();
                 order_quoter
                     .expect_find_quote()
-                    .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+                    .returning(|_, _, _| Err(FindQuoteError::NotFound(None)));
                 order_quoter
                     .expect_calculate_quote()
                     .returning(|_| Err($calc_err));

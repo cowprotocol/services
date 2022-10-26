@@ -219,7 +219,7 @@ impl<'a> Submitter<'a> {
         let nonce = self.nonce().await?;
         let name = self.submit_api.name();
 
-        tracing::debug!("starting solution submission at nonce {}", nonce);
+        tracing::debug!(address=?self.account.address(), ?nonce, "starting solution submission");
 
         self.submitted_transactions.remove_older_than(nonce);
 
