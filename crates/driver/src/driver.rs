@@ -132,8 +132,8 @@ impl Driver {
             Some(solution) => solution,
         };
         tracing::info!(?settlement, "received settlement from solver");
-        let simulation_details = self.validate_settlement(settlement).await?;
-        self.submit_settlement(simulation_details)
+        let simulation = self.validate_settlement(settlement).await?;
+        self.submit_settlement(simulation)
             .await
             // TODO correctly propagate specific errors to the end
             .map_err(|e| ExecuteError::from(e.into_anyhow()))
@@ -142,17 +142,18 @@ impl Driver {
     /// Tries to submit the `Settlement` on chain. Returns a transaction hash if it was successful.
     async fn submit_settlement(
         &self,
-        simulation_details: SimulationWithResult,
+        SimulationWithResult {
+            simulation,
+            gas_estimate,
+        }: SimulationWithResult,
     ) -> Result<H256, SubmissionError> {
-        let gas_estimate = simulation_details
-            .gas_estimate
-            .expect("checked simulation gas_estimate during validation");
-        tracing::info!(?gas_estimate, settlement =? simulation_details.simulation.settlement, "start submitting settlement");
+        let gas_estimate = gas_estimate.expect("checked simulation gas_estimate during validation");
+        tracing::info!(?gas_estimate, settlement =? simulation.settlement, "start submitting settlement");
         submit_settlement(
             &self.submitter,
             &self.logger,
-            simulation_details.simulation.solver,
-            simulation_details.simulation.settlement,
+            simulation.solver,
+            simulation.settlement,
             gas_estimate,
             None, // the concept of a settlement_id does not make sense here
         )
