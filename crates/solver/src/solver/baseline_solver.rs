@@ -10,14 +10,12 @@ use crate::{
 use anyhow::Result;
 use ethcontract::{Account, H160, U256};
 use maplit::hashmap;
-use model::{auction::AuctionId, TokenPair};
+use model::TokenPair;
 use shared::{
     baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
     sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
 };
 use std::{collections::HashMap, sync::Arc};
-
-use super::AuctionResult;
 
 pub struct BaselineSolver {
     account: Account,
@@ -39,9 +37,6 @@ impl Solver for BaselineSolver {
         let slippage = self.slippage_calculator.context(&external_prices);
         Ok(self.solve_(orders, liquidity, slippage))
     }
-
-    // We don't care about callbacks
-    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     fn account(&self) -> &Account {
         &self.account

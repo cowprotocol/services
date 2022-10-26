@@ -76,7 +76,7 @@ pub trait Solver: Send + Sync + 'static {
 
     /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
     /// Has to be non-blocking to not delay settling the actual solution
-    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult);
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     /// Returns solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
@@ -99,7 +99,7 @@ pub enum AuctionResult {
 
 /// Reason for why a solution may have been invalid
 pub enum SolverRejectionReason {
-    /// The solver didn't return a successful response in time
+    /// The solver didn't return a successful response
     RunError(SolverRunError),
 
     /// The solution candidate didn't include any user orders
