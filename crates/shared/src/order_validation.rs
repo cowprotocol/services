@@ -172,6 +172,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
+    enable_limit_orders: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -246,7 +247,13 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
+            enable_limit_orders: false,
         }
+    }
+
+    pub fn with_limit_orders(mut self, enable: bool) -> Self {
+        self.enable_limit_orders = enable;
+        self
     }
 }
 
@@ -380,7 +387,7 @@ impl OrderValidating for OrderValidator {
             from: owner,
             app_data: order.data.app_data,
         };
-        let quote = if !liquidity_owner {
+        let quote = if !liquidity_owner && order.data.fee_amount > U256::zero() {
             Some(
                 get_quote_and_check_fee(
                     &*self.quoter,
@@ -396,8 +403,8 @@ impl OrderValidating for OrderValidator {
                 .await?,
             )
         } else {
-            // We don't try to get quotes for orders created by liqudity order
-            // owners for two reasons:
+            // We don't try to get quotes for liquidity and limit orders
+            // for two reasons:
             // 1. They don't pay fees, meaning we don't need to know what the
             //    min fee amount is.
             // 2. We don't really care about the equivalent quote since they
@@ -480,7 +487,7 @@ impl OrderValidating for OrderValidator {
 
         let class = match (is_outside_market_price, liquidity_owner) {
             (true, true) => OrderClass::Liquidity,
-            (true, false) => OrderClass::Limit,
+            (true, false) if self.enable_limit_orders => OrderClass::Limit,
             _ => OrderClass::Ordinary,
         };
 
@@ -1059,6 +1066,21 @@ mod tests {
             .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await
             .is_ok());
+
+        let creation = OrderCreation {
+            data: OrderData {
+                fee_amount: U256::zero(),
+                ..creation.data
+            },
+            ..creation
+        };
+        let validator = validator.with_limit_orders(true);
+        let (order, quote) = validator
+            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(quote, None);
+        assert_eq!(order.metadata.class, OrderClass::Limit);
     }
 
     #[tokio::test]
@@ -1102,8 +1124,54 @@ mod tests {
         let result = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
-        dbg!(&result);
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
+    }
+
+    #[tokio::test]
+    async fn post_zero_fee_limit_orders_disabled() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+        );
+        let order = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                fee_amount: U256::zero(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let (order, quote) = validator
+            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .await
+            .unwrap();
+        assert_eq!(quote, None);
+        assert_eq!(order.metadata.class, OrderClass::Ordinary);
     }
 
     #[tokio::test]
@@ -1185,6 +1253,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()

@@ -121,10 +121,9 @@ impl QuoteParameters {
     fn to_price_query(&self) -> price_estimation::Query {
         let (kind, in_amount) = match self.side {
             OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: sell_amount },
-            }
-            | OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: sell_amount },
+                sell_amount:
+                    SellAmount::BeforeFee { value: sell_amount }
+                    | SellAmount::AfterFee { value: sell_amount },
             } => (OrderKind::Sell, sell_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee,
