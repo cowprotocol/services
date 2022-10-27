@@ -47,7 +47,7 @@ pub async fn read_order(
 
 pub async fn refundable_orders(
     ex: &mut PgConnection,
-    min_valid_to: i64,
+    since_valid_to: i64,
     min_validity_duration: i64,
     min_slippage: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
@@ -60,11 +60,12 @@ WHERE
 eo.is_refunded = false
 AND t.order_uid is null
 AND eo.valid_to < $1
-AND (1.0 - o.buy_amount * 1.0 / oq.buy_amount) > $3
+AND o.sell_amount = oq.sell_amount
+AND (1.0 - o.buy_amount / oq.buy_amount) > $3
 AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
     "#;
     sqlx::query_as(QUERY)
-        .bind(min_valid_to)
+        .bind(since_valid_to)
         .bind(min_validity_duration)
         .bind(min_slippage)
         .fetch_all(ex)
@@ -134,6 +135,7 @@ mod tests {
         let order_1 = Order {
             uid: order_uid_1,
             buy_amount: BigDecimal::from(1),
+            sell_amount: BigDecimal::from(100u32),
             creation_timestamp: Utc.timestamp(1, 0),
             ..Default::default()
         };
@@ -141,6 +143,7 @@ mod tests {
         let quote_1 = Quote {
             order_uid: order_uid_1,
             buy_amount: BigDecimal::from(2),
+            sell_amount: BigDecimal::from(100u32),
             ..Default::default()
         };
         insert_quote(&mut db, &quote_1).await.unwrap();
@@ -177,6 +180,7 @@ mod tests {
         let order_2 = Order {
             uid: order_uid_2,
             buy_amount: BigDecimal::from(1),
+            sell_amount: BigDecimal::from(100u32),
             creation_timestamp: Utc.timestamp(1, 0),
             ..Default::default()
         };
@@ -184,10 +188,36 @@ mod tests {
         let quote_2 = Quote {
             order_uid: order_uid_2,
             buy_amount: BigDecimal::from(2),
+            sell_amount: BigDecimal::from(100u32),
             ..Default::default()
         };
         insert_quote(&mut db, &quote_2).await.unwrap();
         // is_refunded is not fulfilled
+        let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        assert_eq!(orders, Vec::new());
+        let order_uid_3 = ByteArray([3u8; 56]);
+        let eth_order_3 = EthOrderPlacement {
+            uid: order_uid_3,
+            valid_to: 4,
+            is_refunded: false,
+        };
+        insert_ethflow_order(&mut db, &eth_order_3).await.unwrap();
+        let order_3 = Order {
+            uid: order_uid_3,
+            buy_amount: BigDecimal::from(1),
+            sell_amount: BigDecimal::from(99u32), // Single change here
+            creation_timestamp: Utc.timestamp(1, 0),
+            ..Default::default()
+        };
+        insert_order(&mut db, &order_3).await.unwrap();
+        let quote_3 = Quote {
+            order_uid: order_uid_3,
+            buy_amount: BigDecimal::from(2),
+            sell_amount: BigDecimal::from(100u32),
+            ..Default::default()
+        };
+        insert_quote(&mut db, &quote_3).await.unwrap();
+        // sell_amount is not fulfilled
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
         assert_eq!(orders, Vec::new());
     }
@@ -195,7 +225,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_refundable_orders_performance() {
-        // The following test can be used as performanc test,
+        // The following test can be used as performance test,
         // if the limit is set to->100000u32, the query should still finish
         // below 13 ms
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
@@ -231,12 +261,14 @@ mod tests {
                 owner,
                 creation_timestamp: Utc::now(),
                 buy_amount: BigDecimal::from(100u32),
+                sell_amount: BigDecimal::from(100u32),
                 ..Default::default()
             };
             insert_order(&mut db, &order).await.unwrap();
             let quote = Quote {
                 order_uid,
                 buy_amount: BigDecimal::from(100u32 - i % 3),
+                sell_amount: BigDecimal::from(100u32),
                 ..Default::default()
             };
             insert_quote(&mut db, &quote).await.unwrap();
