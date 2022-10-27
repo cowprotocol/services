@@ -418,6 +418,9 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
+    // TODO: This is needed to keep backwards compatibility in the shadow solver.
+    // Remove `serde(default)` before the next release.
+    #[serde(default)]
     pub class: OrderClass,
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
