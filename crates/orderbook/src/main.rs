@@ -390,6 +390,7 @@ async fn main() {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
+        args.enable_limit_orders,
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

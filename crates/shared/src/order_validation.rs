@@ -172,6 +172,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
+    enable_limit_orders: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -233,6 +234,7 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
+        enable_limit_orders: bool,
     ) -> Self {
         Self {
             code_fetcher,
@@ -246,6 +248,7 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
+            enable_limit_orders,
         }
     }
 }
@@ -480,7 +483,7 @@ impl OrderValidating for OrderValidator {
 
         let class = match (is_outside_market_price, liquidity_owner) {
             (true, true) => OrderClass::Liquidity,
-            (true, false) => OrderClass::Limit,
+            (true, false) if self.enable_limit_orders => OrderClass::Limit,
             _ => OrderClass::Ordinary,
         };
 
@@ -756,6 +759,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         assert!(matches!(
             validator
@@ -884,6 +888,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
 
         assert!(matches!(
@@ -926,6 +931,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = || PreOrderData {
             valid_to: model::time::now_in_epoch_seconds()
@@ -989,6 +995,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
+            false,
         );
 
         let creation = OrderCreation {
@@ -1087,6 +1094,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1132,6 +1140,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1177,6 +1186,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1225,6 +1235,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1275,6 +1286,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1321,6 +1333,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1371,6 +1384,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
+            false,
         );
 
         let creation = OrderCreation {
@@ -1424,6 +1438,7 @@ mod tests {
                     Arc::new(order_quoter),
                     Arc::new(balance_fetcher),
                     Arc::new(MockSignatureValidating::new()),
+                    false,
                 );
 
                 let order = OrderBuilder::default()
