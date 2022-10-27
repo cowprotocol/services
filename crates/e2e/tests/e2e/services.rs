@@ -269,7 +269,6 @@ impl OrderbookServices {
             quoter.clone(),
             balance_fetcher,
             signature_validator,
-            false,
         ));
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,

@@ -234,7 +234,6 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
-        enable_limit_orders: bool,
     ) -> Self {
         Self {
             code_fetcher,
@@ -248,8 +247,13 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
-            enable_limit_orders,
+            enable_limit_orders: false,
         }
+    }
+
+    pub fn with_limit_orders(mut self, enable: bool) -> Self {
+        self.enable_limit_orders = enable;
+        self
     }
 }
 
@@ -759,7 +763,6 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         assert!(matches!(
             validator
@@ -888,7 +891,6 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
 
         assert!(matches!(
@@ -931,7 +933,6 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = || PreOrderData {
             valid_to: model::time::now_in_epoch_seconds()
@@ -995,7 +996,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
-            false,
         );
 
         let creation = OrderCreation {
@@ -1066,6 +1066,22 @@ mod tests {
             .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await
             .is_ok());
+
+        let creation = OrderCreation {
+            data: OrderData {
+                fee_amount: U256::zero(),
+                ..creation.data
+            },
+            ..creation
+        };
+        let limit_order_enabled_validator = validator.with_limit_orders(true);
+        let result = limit_order_enabled_validator
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .await;
+        assert!(result.is_ok());
+        let (order, quote) = result.unwrap();
+        assert_eq!(quote, None);
+        assert_eq!(order.metadata.class, OrderClass::Limit);
     }
 
     #[tokio::test]
@@ -1094,7 +1110,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1112,6 +1127,55 @@ mod tests {
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
+    }
+
+    #[tokio::test]
+    async fn post_zero_fee_limit_orders_disabled() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+        );
+        let order = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                fee_amount: U256::zero(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(result.is_ok());
+        let (order, quote) = result.unwrap();
+        assert_eq!(quote, None);
+        assert_eq!(order.metadata.class, OrderClass::Ordinary);
     }
 
     #[tokio::test]
@@ -1140,7 +1204,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1186,7 +1249,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1235,7 +1297,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1286,7 +1347,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1333,7 +1393,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
-            false,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1384,7 +1443,6 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
-            false,
         );
 
         let creation = OrderCreation {
@@ -1438,7 +1496,6 @@ mod tests {
                     Arc::new(order_quoter),
                     Arc::new(balance_fetcher),
                     Arc::new(MockSignatureValidating::new()),
-                    false,
                 );
 
                 let order = OrderBuilder::default()
