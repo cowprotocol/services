@@ -1074,8 +1074,8 @@ mod tests {
             },
             ..creation
         };
-        let limit_order_enabled_validator = validator.with_limit_orders(true);
-        let result = limit_order_enabled_validator
+        let validator = validator.with_limit_orders(true);
+        let result = validator
             .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await;
         assert!(result.is_ok());
