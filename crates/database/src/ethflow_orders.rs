@@ -1,5 +1,5 @@
 use crate::{OrderUid, PgTransaction};
-use sqlx::PgConnection;
+use sqlx::{Executor, PgConnection};
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct EthOrderPlacement {
@@ -43,6 +43,30 @@ pub async fn read_order(
         WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
+pub async fn mark_eth_orders_as_refunded(
+    ex: &mut PgTransaction<'_>,
+    uids: &[OrderUid],
+) -> Result<(), sqlx::Error> {
+    for uid in uids.iter() {
+        mark_eth_order_as_refunded(ex, uid).await?;
+    }
+    Ok(())
+}
+
+pub async fn mark_eth_order_as_refunded(
+    ex: &mut PgTransaction<'_>,
+    uid: &OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+        UPDATE ethflow_orders
+        SET is_refunded = true
+        WHERE uid = $1
+    "#;
+
+    ex.execute(sqlx::query(QUERY).bind(uid)).await?;
+    Ok(())
 }
 
 pub async fn refundable_orders(
@@ -100,6 +124,69 @@ mod tests {
             .unwrap();
         let order_ = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
         assert_eq!(order_2, order_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_mark_eth_orders_as_refunded() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_1 = EthOrderPlacement {
+            uid: ByteArray([1u8; 56]),
+            valid_to: 1,
+            is_refunded: false,
+        };
+        let order_2 = EthOrderPlacement {
+            uid: ByteArray([2u8; 56]),
+            valid_to: 2,
+            is_refunded: false,
+        };
+
+        append(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
+            .await
+            .unwrap();
+        mark_eth_orders_as_refunded(&mut db, vec![order_1.uid, order_2.uid].as_slice())
+            .await
+            .unwrap();
+        // Check that "is_refunded" was changed
+        let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
+        assert_eq!(order_1.is_refunded, true);
+        let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
+        assert_eq!(order_2.is_refunded, true);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_mark_eth_order_as_refunded() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_1 = EthOrderPlacement {
+            uid: ByteArray([1u8; 56]),
+            valid_to: 1,
+            is_refunded: false,
+        };
+        let order_2 = EthOrderPlacement {
+            uid: ByteArray([2u8; 56]),
+            valid_to: 2,
+            is_refunded: false,
+        };
+
+        append(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
+            .await
+            .unwrap();
+        mark_eth_order_as_refunded(&mut db, &order_1.uid)
+            .await
+            .unwrap();
+        // Check that "is_refunded" was changed
+        let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
+        assert_eq!(order_1.is_refunded, true);
+        // Check that other orders are not affected from the change
+        let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
+        assert_eq!(order_2.is_refunded, false);
     }
 
     #[tokio::test]
