@@ -152,9 +152,9 @@ mod tests {
             .unwrap();
         // Check that "is_refunded" was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
-        assert_eq!(order_1.is_refunded, true);
+        assert!(order_1.is_refunded);
         let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
-        assert_eq!(order_2.is_refunded, true);
+        assert!(order_2.is_refunded);
     }
 
     #[tokio::test]
@@ -183,10 +183,10 @@ mod tests {
             .unwrap();
         // Check that "is_refunded" was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
-        assert_eq!(order_1.is_refunded, true);
+        assert!(order_1.is_refunded);
         // Check that other orders are not affected from the change
         let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
-        assert_eq!(order_2.is_refunded, false);
+        assert!(!order_2.is_refunded);
     }
 
     #[tokio::test]
