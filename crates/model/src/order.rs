@@ -1032,4 +1032,47 @@ mod tests {
     fn debug_order_data() {
         dbg!(Order::default());
     }
+
+    // TODO: remove when `class` field no longer has to be backwards compatible (i.e. right before
+    // the next release).
+    #[test]
+    fn order_class_is_backwards_compatible() {
+        let value = json!(
+         {
+             "creationDate": "1970-01-01T00:00:03Z",
+             "owner": "0x0000000000000000000000000000000000000001",
+             "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+             "availableBalance": "100",
+             "executedBuyAmount": "3",
+             "executedSellAmount": "5",
+             "executedSellAmountBeforeFees": "4",
+             "executedFeeAmount": "1",
+             "invalidated": true,
+             "sellToken": "0x000000000000000000000000000000000000000a",
+             "buyToken": "0x0000000000000000000000000000000000000009",
+             "receiver": "0x000000000000000000000000000000000000000b",
+             "sellAmount": "1",
+             "buyAmount": "0",
+             "validTo": 4294967295u32,
+             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
+             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+             "kind": "buy",
+             "partiallyFillable": false,
+             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
+             "signingScheme": "eip712",
+             "status": "open",
+             "settlementContract": "0x0000000000000000000000000000000000000002",
+             "sellTokenBalance": "external",
+             "buyTokenBalance": "internal",
+             "isLiquidityOrder": false,
+             "interactions": {
+                     "pre": []
+             }
+        // note that we don't have a `class` field in the json
+        //   "class": "ordinary",
+         });
+        let deserialized: Order = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized.metadata.class, OrderClass::Ordinary);
+    }
 }
