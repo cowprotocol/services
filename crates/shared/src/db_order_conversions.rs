@@ -1,13 +1,13 @@
 use anyhow::{anyhow, Result};
 use database::orders::{
     BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
-    OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
+    OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
     SigningScheme as DbSigningScheme,
 };
 use ethcontract::H160;
 use model::{
     interaction::InteractionData,
-    order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    order::{BuyTokenDestination, OrderClass, OrderKind, SellTokenSource},
     signature::SigningScheme,
 };
 use number_conversions::big_decimal_to_u256;
@@ -36,6 +36,22 @@ pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
     match kind {
         DbOrderKind::Buy => OrderKind::Buy,
         DbOrderKind::Sell => OrderKind::Sell,
+    }
+}
+
+pub fn order_class_into(class: OrderClass) -> DbOrderClass {
+    match class {
+        OrderClass::Ordinary => DbOrderClass::Ordinary,
+        OrderClass::Liquidity => DbOrderClass::Liquidity,
+        OrderClass::Limit => DbOrderClass::Limit,
+    }
+}
+
+pub fn order_class_from(class: DbOrderClass) -> OrderClass {
+    match class {
+        DbOrderClass::Ordinary => OrderClass::Ordinary,
+        DbOrderClass::Liquidity => OrderClass::Liquidity,
+        DbOrderClass::Limit => OrderClass::Limit,
     }
 }
 

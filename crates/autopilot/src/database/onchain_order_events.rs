@@ -9,7 +9,7 @@ use database::{
     byte_array::ByteArray,
     events::EventIndex,
     onchain_broadcasted_orders::OnchainOrderPlacement,
-    orders::{insert_quotes, Order},
+    orders::{insert_quotes, Order, OrderClass},
     PgTransaction,
 };
 use ethcontract::{Event as EthContractEvent, H160};
@@ -425,8 +425,14 @@ fn convert_onchain_order_placement(
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&full_fee_amount),
-        is_liquidity_order,
         cancellation_timestamp: None,
+        // TODO #643: To properly determine the class, we have to check the liquidity owners just
+        // like we do during order creation.
+        class: if is_liquidity_order {
+            OrderClass::Liquidity
+        } else {
+            OrderClass::Ordinary
+        },
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -692,6 +698,7 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
+            class: OrderClass::Ordinary,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.1 .0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
@@ -699,7 +706,6 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
-            is_liquidity_order: false,
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);

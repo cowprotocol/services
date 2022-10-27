@@ -9,7 +9,10 @@ use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{EthflowData, Interactions, Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    order::{
+        EthflowData, Interactions, Order, OrderClass, OrderData, OrderMetadata, OrderStatus,
+        OrderUid,
+    },
     signature::Signature,
 };
 use num::Zero;
@@ -18,8 +21,8 @@ use primitive_types::H160;
 use shared::{
     db_order_conversions::{
         buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
-        order_kind_from, order_kind_into, sell_token_source_from, sell_token_source_into,
-        signing_scheme_from, signing_scheme_into,
+        order_class_from, order_class_into, order_kind_from, order_kind_into,
+        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
 };
@@ -80,6 +83,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
+        class: order_class_into(order.metadata.class),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
@@ -87,7 +91,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
-        is_liquidity_order: order.metadata.is_liquidity_order,
         cancellation_timestamp: None,
     };
     database::orders::insert_order(ex, &order)
@@ -286,6 +289,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         None
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let class = order_class_from(order.class);
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -306,12 +310,13 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
-        is_liquidity_order: order.is_liquidity_order,
         ethflow_data,
         onchain_user,
+        is_liquidity_order: class == OrderClass::Liquidity,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -365,8 +370,9 @@ mod tests {
     use database::{
         byte_array::ByteArray,
         orders::{
-            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-            SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderClass as DbOrderClass,
+            OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
         },
     };
     use model::{
@@ -392,6 +398,7 @@ mod tests {
             fee_amount: BigDecimal::default(),
             full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
+            class: DbOrderClass::Liquidity,
             partially_fillable: true,
             signature: vec![0; 65],
             receiver: None,
@@ -404,7 +411,6 @@ mod tests {
             sell_token_balance: DbSellTokenSource::External,
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
-            is_liquidity_order: true,
             pre_interactions: Vec::new(),
             ethflow_data: None,
             onchain_user: None,

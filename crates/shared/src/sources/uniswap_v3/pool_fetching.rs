@@ -36,6 +36,8 @@ pub trait PoolFetching: Send + Sync {
 /// Pool data in a format prepared for solvers.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolInfo {
+    /// Skip serializing address since it's redundant (already serialized outside of this struct)
+    #[serde(skip_serializing)]
     pub address: H160,
     pub tokens: Vec<Token>,
     pub state: PoolState,
@@ -478,7 +480,6 @@ mod tests {
     #[test]
     fn encode_decode_pool_info() {
         let json = json!({
-            "address": "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28",
             "tokens": [
                 {
                     "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",
