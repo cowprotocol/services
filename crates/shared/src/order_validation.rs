@@ -403,8 +403,8 @@ impl OrderValidating for OrderValidator {
                 .await?,
             )
         } else {
-            // We don't try to get quotes for orders created by liqudity order
-            // owners for two reasons:
+            // We don't try to get quotes for liquidity and limit orders
+            // for two reasons:
             // 1. They don't pay fees, meaning we don't need to know what the
             //    min fee amount is.
             // 2. We don't really care about the equivalent quote since they
@@ -1075,11 +1075,10 @@ mod tests {
             ..creation
         };
         let validator = validator.with_limit_orders(true);
-        let result = validator
-            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
-            .await;
-        assert!(result.is_ok());
-        let (order, quote) = result.unwrap();
+        let (order, quote) = validator
+            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .await
+            .unwrap();
         assert_eq!(quote, None);
         assert_eq!(order.metadata.class, OrderClass::Limit);
     }
@@ -1125,7 +1124,6 @@ mod tests {
         let result = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
-        dbg!(&result);
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
     }
 
@@ -1168,12 +1166,10 @@ mod tests {
             },
             ..Default::default()
         };
-        let result = validator
+        let (order, quote) = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
-            .await;
-        dbg!(&result);
-        assert!(result.is_ok());
-        let (order, quote) = result.unwrap();
+            .await
+            .unwrap();
         assert_eq!(quote, None);
         assert_eq!(order.metadata.class, OrderClass::Ordinary);
     }
