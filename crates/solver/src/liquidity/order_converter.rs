@@ -3,7 +3,7 @@ use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::WETH9;
 use ethcontract::U256;
-use model::order::{Order, BUY_ETH_ADDRESS};
+use model::order::{Order, OrderClass, BUY_ETH_ADDRESS};
 use std::sync::Arc;
 
 pub struct OrderConverter {
@@ -41,7 +41,7 @@ impl OrderConverter {
                 .to_f64_lossy()
                 * self.fee_objective_scaling_factor,
         );
-        let is_liquidity_order = order.metadata.is_liquidity_order;
+        let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.data.sell_token,
