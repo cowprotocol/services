@@ -20,7 +20,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256};
+use ethcontract::{errors::ExecutionError, Account, BlockNumber, PrivateKey, H160, U256};
 use model::auction::AuctionId;
 use num::BigRational;
 use reqwest::Url;
@@ -97,6 +97,14 @@ pub enum AuctionResult {
     Rejected(SolverRejectionReason),
 }
 
+/// Contains all information about a failing settlement simulation
+pub struct TransactionWithError {
+    /// Transaction data used for simulation of the settlement
+    pub transaction: SimulatedTransaction,
+    /// Error message from the simulator
+    pub error: String,
+}
+
 /// Reason for why a solution may have been invalid
 pub enum SolverRejectionReason {
     /// The solver didn't return a successful response
@@ -111,9 +119,8 @@ pub enum SolverRejectionReason {
     /// The solution violated a price constraint (ie. max deviation to external price vector)
     PriceViolation,
 
-    /// The solution didn't pass simulation. Includes revert reason as well as the calldata
-    /// to re-create simulation locally
-    SimulationFailure(String, Vec<u8>),
+    /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
+    SimulationFailure(TransactionWithError),
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -186,12 +193,32 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
-pub type SettlementWithError = (
-    Arc<dyn Solver>,
-    Settlement,
-    Option<AccessList>,
-    ExecutionError,
-);
+/// Transaction data used for simulation of the settlement
+#[derive(Clone)]
+pub struct SimulatedTransaction {
+    /// The simulation was done on top of all transactions from the given block number
+    pub block_number: BlockNumber,
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
+    pub access_list: Option<AccessList>,
+    /// Solver address
+    pub from: H160,
+    /// GPv2 settlement contract address
+    pub to: H160,
+    /// Transaction input data
+    pub data: Vec<u8>,
+}
+
+pub struct Simulation {
+    pub settlement: Settlement,
+    pub solver: Arc<dyn Solver>,
+    pub transaction: SimulatedTransaction,
+}
+
+pub struct SimulationWithError {
+    pub simulation: Simulation,
+    pub error: ExecutionError,
+}
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
