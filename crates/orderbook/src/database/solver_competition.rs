@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
+    // TODO: change this to store account and nonce instead of tx_hash .
     async fn save_competition(&self, data: SolverCompetition) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -61,6 +62,8 @@ impl SolverCompetitionStoring for Postgres {
         let value = match id {
             Identifier::Id(id) => database::solver_competition::load_by_id(&mut ex, id).await,
             Identifier::Transaction(hash) => {
+                // TODO: change this query to use the auction_transaction and settlements tables to
+                // find the tx hash.
                 database::solver_competition::load_by_tx_hash(&mut ex, &ByteArray(hash.0)).await
             }
         }

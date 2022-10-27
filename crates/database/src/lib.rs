@@ -2,6 +2,7 @@
 #![allow(clippy::needless_borrow)]
 
 pub mod auction;
+pub mod auction_transaction;
 pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
@@ -48,6 +49,7 @@ pub const ALL_TABLES: &[&str] = &[
     "ethflow_orders",
     "order_rewards",
     "interactions",
+    "auction_transaction",
 ];
 
 /// Delete all data in the database. Only used by tests.
