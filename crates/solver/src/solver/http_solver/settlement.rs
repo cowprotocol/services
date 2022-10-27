@@ -7,7 +7,7 @@ use crate::{
     settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use model::order::{Interactions, Order, OrderKind, OrderMetadata};
+use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -234,7 +234,7 @@ fn convert_foreign_liquidity_orders(
                     full_fee_amount: liquidity.order.data.fee_amount,
                     // All foreign orders **MUST** be liquidity, this is
                     // important so they cannot be used to affect the objective.
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     // These fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
                     uid: Default::default(),
@@ -565,7 +565,7 @@ mod tests {
                         metadata: OrderMetadata {
                             owner: H160([99; 20]),
                             full_fee_amount: 42.into(),
-                            is_liquidity_order: true,
+                            class: OrderClass::Liquidity,
                             ..Default::default()
                         },
                         data: OrderData {

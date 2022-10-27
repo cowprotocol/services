@@ -2,8 +2,8 @@ use crate::{
     driver::solver_settlements::RatedSettlement,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_access_list::AccessListEstimating,
-    settlement_simulation::{settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithError, SettlementWithSolver, Solver},
+    settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
+    solver::{SettlementWithSolver, SimulatedTransaction, Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -19,12 +19,8 @@ use web3::types::AccessList;
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
-pub struct SimulationDetails {
-    pub settlement: Settlement,
-    pub solver: Arc<dyn Solver>,
-    /// Which storage the settlement tries to access. Contains `None` if some error happened while
-    /// estimating the access list.
-    pub access_list: Option<AccessList>,
+pub struct SimulationWithResult {
+    pub simulation: Simulation,
     /// The outcome of the simulation. Contains either how much gas the settlement used or the
     /// reason why the transaction reverted during the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
@@ -39,7 +35,7 @@ pub trait SettlementRating: Send + Sync {
         settlements: Vec<SolverSettlement>,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)>;
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)>;
 
     /// Simulates the settlements and returns the gas used (or reason for revert) as well as
     /// the access list for each settlement.
@@ -47,7 +43,7 @@ pub trait SettlementRating: Send + Sync {
         &self,
         settlements: Vec<SolverSettlement>,
         gas_price: GasPrice1559,
-    ) -> Result<Vec<SimulationDetails>>;
+    ) -> Result<Vec<SimulationWithResult>>;
 }
 
 pub struct SettlementRater {
@@ -98,14 +94,15 @@ impl SettlementRating for SettlementRater {
         &self,
         settlements: Vec<(Arc<dyn Solver>, Settlement)>,
         gas_price: GasPrice1559,
-    ) -> Result<Vec<SimulationDetails>> {
+    ) -> Result<Vec<SimulationWithResult>> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
+        let block_number = self.web3.eth().block_number().await?.into();
         let simulations = simulate_and_estimate_gas_at_current_block(
-            settlements.iter().map(|settlement| {
+            settlements.iter().map(|(solver, settlement, access_list)| {
                 (
-                    settlement.0.account().clone(),
-                    settlement.1.clone(),
-                    settlement.2.clone(),
+                    solver.account().clone(),
+                    settlement.clone(),
+                    access_list.clone(),
                 )
             }),
             &self.settlement_contract,
@@ -119,10 +116,18 @@ impl SettlementRating for SettlementRater {
             .into_iter()
             .zip(simulations.into_iter())
             .map(
-                |((solver, settlement, access_list), simulation_result)| SimulationDetails {
-                    settlement,
-                    solver,
-                    access_list,
+                |((solver, settlement, access_list), simulation_result)| SimulationWithResult {
+                    simulation: Simulation {
+                        transaction: SimulatedTransaction {
+                            access_list,
+                            block_number,
+                            to: self.settlement_contract.address(),
+                            from: solver.account().address(),
+                            data: call_data(settlement.clone().into()),
+                        },
+                        settlement,
+                        solver,
+                    },
                     gas_estimate: simulation_result,
                 },
             )
@@ -135,7 +140,7 @@ impl SettlementRating for SettlementRater {
         settlements: Vec<SolverSettlement>,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let simulations = self.simulate_settlements(settlements, gas_price).await?;
 
         let gas_price =
@@ -156,22 +161,26 @@ impl SettlementRating for SettlementRater {
             }
         };
 
-        Ok(
-            (simulations.into_iter().enumerate()).partition_map(|(i, details)| {
-                match details.gas_estimate {
+        Ok((simulations.into_iter().enumerate()).partition_map(
+            |(
+                i,
+                SimulationWithResult {
+                    simulation,
+                    gas_estimate,
+                },
+            )| {
+                match gas_estimate {
                     Ok(gas_estimate) => Either::Left((
-                        details.solver,
-                        rate_settlement(i, details.settlement, gas_estimate),
-                        details.access_list,
+                        simulation.solver,
+                        rate_settlement(i, simulation.settlement, gas_estimate),
+                        simulation.transaction.access_list,
                     )),
-                    Err(err) => Either::Right((
-                        details.solver,
-                        details.settlement,
-                        details.access_list,
-                        err,
-                    )),
+                    Err(err) => Either::Right(SimulationWithError {
+                        simulation,
+                        error: err,
+                    }),
                 }
-            }),
-        )
+            },
+        ))
     }
 }

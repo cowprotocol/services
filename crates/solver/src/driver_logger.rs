@@ -7,7 +7,7 @@ use crate::{
         simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
     },
     settlement_submission::SubmissionError,
-    solver::{SettlementWithError, Solver},
+    solver::{Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -136,7 +136,7 @@ impl DriverLogger {
     // the block has changed just as were were querying the node.
     pub fn report_simulation_errors(
         &self,
-        errors: Vec<SettlementWithError>,
+        errors: Vec<SimulationWithError>,
         current_block_during_liquidity_fetch: u64,
         gas_price: GasPrice1559,
     ) {
@@ -147,11 +147,12 @@ impl DriverLogger {
         let simulation_gas_limit = self.simulation_gas_limit;
         let task = async move {
             let simulations = simulate_and_error_with_tenderly_link(
-                errors.iter().map(|(solver, settlement, access_list, _)| {
+                errors.iter().map(|simulation_with_error| {
+                    let simulation = &simulation_with_error.simulation;
                     (
-                        solver.account().clone(),
-                        settlement.clone(),
-                        access_list.clone(),
+                        simulation.solver.account().clone(),
+                        simulation.settlement.clone(),
+                        simulation.transaction.access_list.clone(),
                     )
                 }),
                 &contract,
@@ -163,7 +164,17 @@ impl DriverLogger {
             )
             .await;
 
-            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
+            for (
+                SimulationWithError {
+                    simulation:
+                        Simulation {
+                            solver, settlement, ..
+                        },
+                    ..
+                },
+                result,
+            ) in errors.iter().zip(simulations)
+            {
                 metrics
                     .settlement_simulation(solver.name(), SolverSimulationOutcome::FailureOnLatest);
                 if let Err(error_at_earlier_block) = result {

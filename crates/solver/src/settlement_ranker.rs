@@ -6,7 +6,10 @@ use crate::{
     },
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
-    solver::{AuctionResult, SettlementWithError, Solver, SolverRejectionReason, SolverRunError},
+    solver::{
+        AuctionResult, SimulationWithError, Solver, SolverRejectionReason, SolverRunError,
+        TransactionWithError,
+    },
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
@@ -129,7 +132,7 @@ impl SettlementRanker {
         external_prices: &ExternalPrices,
         gas_price: GasPrice1559,
         auction_id: AuctionId,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
@@ -159,12 +162,14 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for (solver, settlement, _, error) in &errors {
-            solver.notify_auction_result(
+        for error in &errors {
+            error.simulation.solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    error.to_string(),
-                    call_data(settlement.clone().into()),
+                    TransactionWithError {
+                        transaction: error.simulation.transaction.clone(),
+                        error: error.error.to_string(),
+                    },
                 )),
             );
         }
