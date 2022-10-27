@@ -58,6 +58,7 @@ pub struct AmmModel {
     pub fee: BigRational,
     pub cost: TokenAmount,
     pub mandatory: bool,
+    pub address: H160,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -434,6 +435,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: false,
+            address: H160::from_low_u64_be(1),
         };
         let weighted_product_pool_model = AmmModel {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
@@ -454,6 +456,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: true,
+            address: H160::from_low_u64_be(2),
         };
         let stable_pool_model = AmmModel {
             parameters: AmmParameters::Stable(StablePoolParameters {
@@ -473,6 +476,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: true,
+            address: H160::from_low_u64_be(3),
         };
         let concentrated_pool_model = AmmModel {
             parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
@@ -497,6 +501,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: false,
+            address: H160::from_low_u64_be(4),
         };
         let model = BatchAuctionModel {
             tokens: btreemap! {
@@ -582,6 +587,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
+              "address": "0x0000000000000000000000000000000000000001",
             },
             "1": {
               "kind": "WeightedProduct",
@@ -601,6 +607,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+              "address": "0x0000000000000000000000000000000000000002",
             },
             "2": {
               "kind": "Stable",
@@ -619,11 +626,11 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+              "address": "0x0000000000000000000000000000000000000003",
             },
             "3": {
               "kind": "Concentrated",
               "pool": {
-                "address": "0x0000000000000000000000000000000000000001",
                  "tokens": [
                 {
                   "id": "0x0000000000000000000000000000000000000539",
@@ -650,6 +657,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
+              "address": "0x0000000000000000000000000000000000000004",
             },
           },
           "metadata": {
@@ -824,6 +832,7 @@ mod tests {
                             "0x0303030303030303030303030303030303030303030303030303030303030303",
                         "feeAmount": "13",
                         "kind": "sell",
+                        "class": "ordinary",
                         "partiallyFillable": true,
                         "sellTokenBalance": "external",
                         "signingScheme": "eip1271",

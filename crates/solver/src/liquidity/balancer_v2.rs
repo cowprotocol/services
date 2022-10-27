@@ -72,6 +72,7 @@ impl BalancerV2Liquidity {
             .weighted_pools
             .into_iter()
             .map(|pool| WeightedProductOrder {
+                address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee,
                 settlement_handling: Arc::new(SettlementHandler {
@@ -86,6 +87,7 @@ impl BalancerV2Liquidity {
             .stable_pools
             .into_iter()
             .map(|pool| StablePoolOrder {
+                address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee.into(),
                 amplification_parameter: pool.amplification_parameter,
@@ -175,7 +177,10 @@ impl SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        settlement::InternalizationStrategy,
+    };
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
@@ -415,7 +420,9 @@ mod tests {
         )
         .unwrap();
 
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
         assert_eq!(
             interactions,
             [

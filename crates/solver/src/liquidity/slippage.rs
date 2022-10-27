@@ -1,4 +1,4 @@
-//! Module defining slippage computation for AMM liquidiy.
+//! Module defining slippage computation for AMM liquidity.
 
 use super::LimitOrder;
 use crate::{

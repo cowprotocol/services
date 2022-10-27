@@ -52,14 +52,16 @@ pub trait PoolReading: Sized + Send + Sync {
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub struct Pool {
+    pub address: H160,
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
 }
 
 impl Pool {
-    pub fn uniswap(tokens: TokenPair, reserves: (u128, u128)) -> Self {
+    pub fn uniswap(address: H160, tokens: TokenPair, reserves: (u128, u128)) -> Self {
         Self {
+            address,
             tokens,
             reserves,
             fee: Ratio::new(3, 1000),
@@ -264,12 +266,15 @@ impl PoolReading for DefaultPoolReader {
             .batch_call(batch);
 
         async move {
-            handle_results(FetchedPool {
-                pair,
-                reserves: reserves.await,
-                token0_balance: token0_balance.await,
-                token1_balance: token1_balance.await,
-            })
+            handle_results(
+                FetchedPool {
+                    pair,
+                    reserves: reserves.await,
+                    token0_balance: token0_balance.await,
+                    token1_balance: token1_balance.await,
+                },
+                pair_address,
+            )
         }
         .boxed()
     }
@@ -293,7 +298,7 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
     }
 }
 
-fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
+fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Pool>> {
     let reserves = handle_contract_error(fetched_pool.reserves)?;
     let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
@@ -309,7 +314,11 @@ fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
         if U256::from(reserves.0) > token0_balance? || U256::from(reserves.1) > token1_balance? {
             return None;
         }
-        Some(Pool::uniswap(fetched_pool.pair, (reserves.0, reserves.1)))
+        Some(Pool::uniswap(
+            address,
+            fetched_pool.pair,
+            (reserves.0, reserves.1),
+        ))
     });
 
     Ok(pool)
@@ -351,7 +360,11 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         // Even Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (100, 100));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(1),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (100, 100),
+        );
         assert_eq!(
             pool.get_amount_out(sell_token, 10.into()),
             Some((9.into(), buy_token))
@@ -366,7 +379,11 @@ mod tests {
         );
 
         //Uneven Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (200, 50));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(2),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (200, 50),
+        );
         assert_eq!(
             pool.get_amount_out(sell_token, 10.into()),
             Some((2.into(), buy_token))
@@ -382,6 +399,7 @@ mod tests {
 
         // Large Numbers
         let pool = Pool::uniswap(
+            H160::from_low_u64_be(3),
             TokenPair::new(sell_token, buy_token).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
@@ -400,7 +418,11 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         // Even Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (100, 100));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(1),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (100, 100),
+        );
         assert_eq!(
             pool.get_amount_in(buy_token, 10.into()),
             Some((12.into(), sell_token))
@@ -415,7 +437,11 @@ mod tests {
         assert_eq!(pool.get_amount_in(buy_token, 1000.into()), None);
 
         //Uneven Pool
-        let pool = Pool::uniswap(TokenPair::new(sell_token, buy_token).unwrap(), (200, 50));
+        let pool = Pool::uniswap(
+            H160::from_low_u64_be(2),
+            TokenPair::new(sell_token, buy_token).unwrap(),
+            (200, 50),
+        );
         assert_eq!(
             pool.get_amount_in(buy_token, 10.into()),
             Some((51.into(), sell_token))
@@ -427,6 +453,7 @@ mod tests {
 
         // Large Numbers
         let pool = Pool::uniswap(
+            H160::from_low_u64_be(3),
             TokenPair::new(sell_token, buy_token).unwrap(),
             (1u128 << 90, 1u128 << 90),
         );
@@ -463,7 +490,8 @@ mod tests {
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
         };
-        assert!(handle_results(fetched_pool).is_err());
+        let pool_address = Default::default();
+        assert!(handle_results(fetched_pool, pool_address).is_err());
     }
 
     #[test]
@@ -474,6 +502,9 @@ mod tests {
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
         };
-        assert!(handle_results(fetched_pool).unwrap().is_none())
+        let pool_address = Default::default();
+        assert!(handle_results(fetched_pool, pool_address)
+            .unwrap()
+            .is_none())
     }
 }

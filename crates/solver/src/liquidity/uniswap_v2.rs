@@ -90,6 +90,7 @@ impl UniswapLikeLiquidity {
             tokens.insert(pool.tokens.get().1);
 
             result.push(ConstantProductOrder {
+                address: pool.address,
                 tokens: pool.tokens,
                 reserves: pool.reserves,
                 fee: pool.fee,

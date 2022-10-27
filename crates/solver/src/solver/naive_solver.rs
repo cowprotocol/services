@@ -124,7 +124,7 @@ mod tests {
     use crate::liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler};
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
+    use model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
     use num::rational::Ratio;
     use shared::addr;
 
@@ -138,6 +138,7 @@ mod tests {
         let liquidity = vec![
             // Deep pool
             ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: token_pair,
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -145,6 +146,7 @@ mod tests {
             },
             // Shallow pool
             ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: token_pair,
                 reserves: (100, 100),
                 fee: Ratio::new(3, 1000),
@@ -152,6 +154,7 @@ mod tests {
             },
             // unrelated pool
             ConstantProductOrder {
+                address: H160::from_low_u64_be(3),
                 tokens: unrelated_token_pair,
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -217,6 +220,7 @@ mod tests {
         .unwrap();
         let liquidity = hashmap! {
             tokens => ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens,
                 reserves: (58360914, 17856367410307570970),
                 fee: Ratio::new(3, 1000),
@@ -240,7 +244,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -255,7 +259,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -265,6 +269,7 @@ mod tests {
         let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
         let liquidity = hashmap! {
             tokens => ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens,
                 reserves: (1_000_000_000_000_000_000, 1_000_000_000_000_000_000),
                 fee: Ratio::new(3, 1000),
@@ -305,7 +310,7 @@ mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        is_liquidity_order: true,
+                        class: OrderClass::Liquidity,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -316,6 +321,7 @@ mod tests {
         let tokens = TokenPair::new(native_token, H160([2; 20])).unwrap();
         let liquidity = hashmap! {
             tokens => ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens,
                 reserves: (1_000_000_000_000_000_000, 1_000_000_000_000_000_000),
                 fee: Ratio::new(3, 1000),
