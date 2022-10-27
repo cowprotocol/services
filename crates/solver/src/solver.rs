@@ -97,11 +97,12 @@ pub enum AuctionResult {
     Rejected(SolverRejectionReason),
 }
 
-pub struct TransactionWithMessage {
-    /// Data needed to reconstruct the simulation
+/// Contains all information about a failing settlement simulation
+pub struct TransactionWithError {
+    /// Transaction data used for simulation of the settlement
     pub transaction: SimulatedTransaction,
     /// Error message from the simulator
-    pub message: String,
+    pub error: String,
 }
 
 /// Reason for why a solution may have been invalid
@@ -119,7 +120,7 @@ pub enum SolverRejectionReason {
     PriceViolation,
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
-    SimulationFailure(TransactionWithMessage),
+    SimulationFailure(TransactionWithError),
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -192,6 +193,7 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
+/// Transaction data used for simulation of the settlement
 #[derive(Clone)]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
@@ -206,15 +208,18 @@ pub struct SimulatedTransaction {
     /// Transaction input data
     pub data: Vec<u8>,
 }
+
 pub struct Simulation {
     pub settlement: Settlement,
     pub solver: Arc<dyn Solver>,
     pub transaction: SimulatedTransaction,
 }
+
 pub struct SimulationWithError {
     pub simulation: Simulation,
     pub error: ExecutionError,
 }
+
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {

@@ -8,7 +8,7 @@ use crate::{
     settlement_simulation::call_data,
     solver::{
         AuctionResult, SimulationWithError, Solver, SolverRejectionReason, SolverRunError,
-        TransactionWithMessage,
+        TransactionWithError,
     },
 };
 use anyhow::Result;
@@ -166,9 +166,9 @@ impl SettlementRanker {
             error.simulation.solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    TransactionWithMessage {
+                    TransactionWithError {
                         transaction: error.simulation.transaction.clone(),
-                        message: error.error.to_string(),
+                        error: error.error.to_string(),
                     },
                 )),
             );

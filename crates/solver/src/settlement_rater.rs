@@ -21,6 +21,8 @@ pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<Acces
 
 pub struct SimulationWithResult {
     pub simulation: Simulation,
+    /// The outcome of the simulation. Contains either how much gas the settlement used or the
+    /// reason why the transaction reverted during the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
 }
 
