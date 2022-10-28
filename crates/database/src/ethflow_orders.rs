@@ -1,5 +1,5 @@
 use crate::{OrderUid, PgTransaction};
-use sqlx::{Executor, PgConnection};
+use sqlx::{Connection, Executor, PgConnection};
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct EthOrderPlacement {
@@ -46,12 +46,14 @@ pub async fn read_order(
 }
 
 pub async fn mark_eth_orders_as_refunded(
-    ex: &mut PgTransaction<'_>,
+    db: &mut PgConnection,
     uids: &[OrderUid],
 ) -> Result<(), sqlx::Error> {
+    let mut transaction = db.begin().await?;
     for uid in uids.iter() {
-        mark_eth_order_as_refunded(ex, uid).await?;
+        mark_eth_order_as_refunded(&mut transaction, uid).await?;
     }
+    transaction.commit().await?;
     Ok(())
 }
 
