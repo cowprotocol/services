@@ -9,17 +9,19 @@ pub struct Arguments {
     #[clap(
         long,
         env,
+        default_value = "120",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub min_validity_duration: Duration,
 
     /// Minimum slippage an order must have, in order
     /// to be eligble for refunding
+    /// Front-end will place orders with a default slippage of 2% 
+    /// hence, we are requiring as a default 1.9%
     #[clap(
         long,
         env,
-        default_value = "1800",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "0.019",
     )]
     pub min_slippage: f64,
 

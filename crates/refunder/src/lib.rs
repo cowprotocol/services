@@ -6,8 +6,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 
 pub async fn main(args: arguments::Arguments) {
-    let pg_pool = PgPool::connect(args.db_url.as_str())
-        .await
+    let pg_pool = PgPool::connect_lazy(args.db_url.as_str())
         .expect("failed to create database");
     let refunder = RefundService::new(
         pg_pool,
@@ -15,6 +14,7 @@ pub async fn main(args: arguments::Arguments) {
         args.min_slippage,
     );
     loop {
+        tracing::info!("Staring a new refunding loop");
         match refunder.try_to_refund_all_eligble_orders().await {
             Ok(_) => (),
             Err(err) => tracing::error!("Error while refunding ethflow orders: {:?}", err),
