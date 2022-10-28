@@ -71,9 +71,10 @@ impl SettlementRanker {
                                     solver_name = %name,
                                     "settlement(s) filtered for violating maximum external price deviation",
                                 );
+
+                                solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::PriceViolation));
+                                return None;
                             }
-                            solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::PriceViolation));
-                            return None;
                     }
 
                     Some(settlement)
