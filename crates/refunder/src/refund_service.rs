@@ -109,19 +109,24 @@ impl RefundService {
                 async move {
                     let order_owner = match order.await {
                         Ok(order) => Some(order.0),
-                        Err(err) => return Err(err),
+                        Err(err) => {
+                            tracing::error!("Error while getting the current\
+                                            onchain status of orderhash {:?}, {:?}",order_hash, err);
+                            return None
+                        }
                     };
                     let is_refunded: bool = order_owner == Some(INVALIDATED_OWNER);
-                    Ok((eth_order_placement.uid, is_refunded))
+                    Some((eth_order_placement.uid, is_refunded))
                 }
             })
             .collect::<Vec<_>>();
 
         batch.execute_all(MAX_BATCH_SIZE).await;
-        let uid_with_latest_refundablility = futures::future::try_join_all(futures).await?;
+        let uid_with_latest_refundablility = futures::future::join_all(futures).await;
 
         Ok(uid_with_latest_refundablility
             .into_iter()
+            .flatten()
             .partition(|(_, is_refunded)| *is_refunded))
     }
 }
