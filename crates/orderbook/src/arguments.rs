@@ -120,6 +120,10 @@ pub struct Arguments {
     /// to get them errors and our liveness check fails.
     #[clap(long, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
+
+    /// Enable limit orders. Once the full limit order flow is implemented, this can be removed.
+    #[clap(long, env, default_value = "false")]
+    pub enable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -173,6 +177,7 @@ impl std::fmt::Display for Arguments {
             "fast_price_estimation_results_required: {}",
             self.fast_price_estimation_results_required
         )?;
+        writeln!(f, "enable_limit_orders: {}", self.enable_limit_orders)?;
 
         Ok(())
     }

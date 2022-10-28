@@ -374,23 +374,26 @@ async fn main() {
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
-    let order_validator = Arc::new(OrderValidator::new(
-        Box::new(web3.clone()),
-        native_token.clone(),
-        args.banned_users.iter().copied().collect(),
-        args.order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
-        args.min_order_validity_period,
-        args.max_order_validity_period,
-        signature_configuration,
-        bad_token_detector.clone(),
-        optimal_quoter.clone(),
-        balance_fetcher,
-        signature_validator,
-    ));
+    let order_validator = Arc::new(
+        OrderValidator::new(
+            Box::new(web3.clone()),
+            native_token.clone(),
+            args.banned_users.iter().copied().collect(),
+            args.order_quoting
+                .liquidity_order_owners
+                .iter()
+                .copied()
+                .collect(),
+            args.min_order_validity_period,
+            args.max_order_validity_period,
+            signature_configuration,
+            bad_token_detector.clone(),
+            optimal_quoter.clone(),
+            balance_fetcher,
+            signature_validator,
+        )
+        .with_limit_orders(args.enable_limit_orders),
+    );
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),

@@ -251,7 +251,7 @@ impl Driver {
 
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
-                .context("malformed acution prices")?;
+                .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
         let liquidity = self

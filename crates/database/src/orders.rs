@@ -274,8 +274,14 @@ pub struct Quote {
     pub buy_amount: BigDecimal,
 }
 
-pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
+pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
+    for quote in quotes {
+        insert_quote_and_update_on_conflict(ex, quote).await?;
+    }
+    Ok(())
+}
+
+const INSERT_ORDER_QUOTES_QUERY: &str = r#"
 INSERT INTO order_quotes (
     order_uid,
     gas_amount,
@@ -284,9 +290,37 @@ INSERT INTO order_quotes (
     sell_amount,
     buy_amount
 )
-VALUES ($1, $2, $3, $4, $5, $6)
-    "#;
+VALUES ($1, $2, $3, $4, $5, $6)"#;
+
+pub async fn insert_quote_and_update_on_conflict(
+    ex: &mut PgConnection,
+    quote: &Quote,
+) -> Result<(), sqlx::Error> {
+    /// For ethflow orders, due to reorgs, different orders
+    /// might be inserted with the same uid. Hence, we need
+    /// to update quote entries in the database on conflicts
+    const QUERY: &str = const_format::concatcp!(
+        INSERT_ORDER_QUOTES_QUERY,
+        " ON CONFLICT (order_uid) DO UPDATE
+SET gas_amount = $2, gas_price = $3,
+sell_token_price = $4, sell_amount = $5,
+buy_amount = $6
+    "
+    );
     sqlx::query(QUERY)
+        .bind(&quote.order_uid)
+        .bind(quote.gas_amount)
+        .bind(quote.gas_price)
+        .bind(quote.sell_token_price)
+        .bind(&quote.sell_amount)
+        .bind(&quote.buy_amount)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
+    sqlx::query(INSERT_ORDER_QUOTES_QUERY)
         .bind(&quote.order_uid)
         .bind(quote.gas_amount)
         .bind(quote.gas_price)
@@ -699,6 +733,42 @@ mod tests {
         insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_quote_roundtrip_updating_on_conflict() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote = Quote {
+            order_uid: Default::default(),
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+        };
+        insert_quote(&mut db, &quote).await.unwrap();
+        insert_quote_and_update_on_conflict(&mut db, &quote)
+            .await
+            .unwrap();
+        let quote_ = read_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote, quote_);
+        let mut quote2 = quote.clone();
+        quote2.gas_amount = 2.0;
+        insert_quote_and_update_on_conflict(&mut db, &quote2)
+            .await
+            .unwrap();
+        let quote_ = read_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote2, quote_);
     }
 
     #[tokio::test]
