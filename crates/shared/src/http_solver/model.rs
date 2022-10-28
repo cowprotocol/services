@@ -1,5 +1,5 @@
 use derivative::Derivative;
-use ethcontract::{Bytes, H160};
+use ethcontract::{BlockNumber, Bytes, H160};
 use model::{
     auction::AuctionId,
     order::OrderData,
@@ -12,6 +12,7 @@ use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
+use web3::types::AccessList;
 
 use crate::{
     interaction::{EncodedInteraction, Interaction},
@@ -323,6 +324,78 @@ mod execution_plan_internal {
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
+}
+
+/// The result a given solver achieved in the auction
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuctionResult {
+    /// Solution was valid and was ranked at the given place
+    /// Rank 1 means the solver won the competition
+    Ranked(usize),
+
+    /// Solution was invalid for some reason
+    Rejected(SolverRejectionReason),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverRejectionReason {
+    /// The solver didn't return a successful response
+    RunError(SolverRunError),
+
+    /// The solution candidate didn't include any user orders
+    NoUserOrders,
+
+    /// The solution candidate didn't include any mature user orders
+    NoMatureOrders,
+
+    /// The solution violated a price constraint (ie. max deviation to external price vector)
+    PriceViolation,
+
+    /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
+    SimulationFailure(TransactionWithError),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverRunError {
+    Timeout,
+    Solving(String),
+}
+
+impl From<anyhow::Error> for SolverRunError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Solving(err.to_string())
+    }
+}
+
+/// Contains all information about a failing settlement simulation
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionWithError {
+    /// Transaction data used for simulation of the settlement
+    #[serde(flatten)]
+    pub transaction: SimulatedTransaction,
+    /// Error message from the simulator
+    pub error: String,
+}
+
+/// Transaction data used for simulation of the settlement
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimulatedTransaction {
+    /// The simulation was done on top of all transactions from the given block number
+    pub block_number: BlockNumber,
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
+    pub access_list: Option<AccessList>,
+    /// Solver address
+    pub from: H160,
+    /// GPv2 settlement contract address
+    pub to: H160,
+    /// Transaction input data
+    pub data: Vec<u8>,
 }
 
 #[cfg(test)]
