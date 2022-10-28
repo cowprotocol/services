@@ -37,7 +37,6 @@ impl RefundService {
             min_slippage: min_slippage_bps as f64 / 10000f64,
         }
     }
-
     pub async fn try_to_refund_all_eligble_orders(&self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
@@ -110,9 +109,13 @@ impl RefundService {
                     let order_owner = match order.await {
                         Ok(order) => Some(order.0),
                         Err(err) => {
-                            tracing::error!("Error while getting the current\
-                                            onchain status of orderhash {:?}, {:?}",order_hash, err);
-                            return None
+                            tracing::error!(
+                                "Error while getting the current\
+                                            onchain status of orderhash {:?}, {:?}",
+                                order_hash,
+                                err
+                            );
+                            return None;
                         }
                     };
                     let is_refunded: bool = order_owner == Some(INVALIDATED_OWNER);

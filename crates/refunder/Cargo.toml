@@ -8,10 +8,10 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
-contracts  = { path = "../contracts" }
 clap = { workspace = true }
-ethcontract = { workspace = true }
+contracts  = { path = "../contracts" }
 database = { path = "../database" }
+ethcontract = { workspace = true }
 futures = {workspace = true}
 lazy_static = { workspace = true }
 primitive-types = { workspace = true }

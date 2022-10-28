@@ -8,6 +8,6 @@ async fn main() {
         tracing::Level::ERROR.into(),
     );
     shared::exit_process_on_panic::set_panic_hook();
-    tracing::info!("running refunder with validiated arguments:\n{}", args);
+    tracing::info!("running refunder with validated arguments:\n{}", args);
     refunder::main(args).await;
 }
