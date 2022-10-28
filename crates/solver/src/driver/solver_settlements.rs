@@ -1,11 +1,14 @@
 use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
-    solver::{AuctionResult, Solver, SolverRejectionReason},
+    solver::Solver,
 };
 use ethcontract::U256;
 use model::auction::AuctionId;
 use num::BigRational;
-use shared::conversions::U256Ext as _;
+use shared::{
+    conversions::U256Ext as _,
+    http_solver::model::{AuctionResult, SolverRejectionReason},
+};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {

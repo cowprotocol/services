@@ -3,7 +3,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_access_list::AccessListEstimating,
     settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithSolver, SimulatedTransaction, Simulation, SimulationWithError, Solver},
+    solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -12,7 +12,7 @@ use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
-use shared::Web3;
+use shared::{http_solver::model::SimulatedTransaction, Web3};
 use std::sync::Arc;
 use web3::types::AccessList;
 
