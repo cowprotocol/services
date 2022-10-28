@@ -59,11 +59,22 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
-        let quoter = match request.price_quality {
-            PriceQuality::Optimal => &self.optimal_quoter,
-            PriceQuality::Fast => &self.fast_quoter,
+        let quote = match request.price_quality {
+            PriceQuality::Optimal => {
+                let quote = self.optimal_quoter.calculate_quote(request.into()).await?;
+                self.optimal_quoter
+                    .store_quote(quote)
+                    .await
+                    .map_err(CalculateQuoteError::Other)?
+            }
+            PriceQuality::Fast => {
+                let mut quote = self.fast_quoter.calculate_quote(request.into()).await?;
+                // We maintain an API guarantee that fast quotes always have an expiry of zero, because
+                // they're not very accurate and can be considered to expire immediately.
+                quote.data.expiration = Utc.timestamp(0, 0);
+                quote
+            }
         };
-        let quote = quoter.calculate_quote(request.into()).await?;
 
         let response = OrderQuoteResponse {
             quote: OrderQuote {
@@ -290,11 +301,14 @@ impl TryFrom<QuoteRow> for QuoteData {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
-    /// Computes a quote for the specified order paramters.
+    /// Computes a quote for the specified order paramters. Doesn't store the quote.
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError>;
+
+    /// Stores a quote.
+    async fn store_quote(&self, quote: Quote) -> anyhow::Result<Quote>;
 
     /// Finds an existing quote.
     async fn find_quote(
@@ -382,32 +396,6 @@ pub trait QuoteStoring: Send + Sync {
         expiration: DateTime<Utc>,
         quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
-}
-
-/// A quote storing strategy that always forgets quotes.
-///
-/// This is used for the "fast" quoter, since those quotes cannot be used for
-/// determining minimum fee amounts.
-pub struct Forget;
-
-#[async_trait::async_trait]
-impl QuoteStoring for Forget {
-    async fn save(&self, _: QuoteData) -> Result<Option<QuoteId>> {
-        Ok(None)
-    }
-
-    async fn get(&self, _: QuoteId) -> Result<Option<QuoteData>> {
-        Ok(None)
-    }
-
-    async fn find(
-        &self,
-        _: QuoteSearchParameters,
-        _: DateTime<Utc>,
-        _: QuoteKind,
-    ) -> Result<Option<(QuoteId, QuoteData)>> {
-        Ok(None)
-    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -567,17 +555,14 @@ impl OrderQuoting for OrderQuoter {
             quote = quote.with_scaled_sell_amount(sell_amount);
         }
 
-        // Only save after we know the quote is valid.
-        quote.id = self.storage.save(quote.data.clone()).await?;
-        if quote.id.is_none() {
-            // Quote was not stored! Clear the expiration to signal to the
-            // caller that the quote is purely indicative and isn't valid for
-            // any period of time.
-            quote.data.expiration = Utc.timestamp(0, 0);
-        }
-
         tracing::debug!(?quote, ?subsidy, "computed quote");
         Ok(quote)
+    }
+
+    async fn store_quote(&self, quote: Quote) -> anyhow::Result<Quote> {
+        // TODO Does save need to be optional anymore?? Probably not, right?
+        let id = self.storage.save(quote.data.clone()).await?;
+        Ok(Quote { id, ..quote })
     }
 
     async fn find_quote(
@@ -817,8 +802,11 @@ mod tests {
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
+        let quote = quoter.calculate_quote(parameters).await.unwrap();
+        let quote = quoter.store_quote(quote).await.unwrap();
+
         assert_eq!(
-            quoter.calculate_quote(parameters).await.unwrap(),
+            quote,
             Quote {
                 id: Some(1337),
                 data: QuoteData {
@@ -933,8 +921,11 @@ mod tests {
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
+        let quote = quoter.calculate_quote(parameters).await.unwrap();
+        let quote = quoter.store_quote(quote).await.unwrap();
+
         assert_eq!(
-            quoter.calculate_quote(parameters).await.unwrap(),
+            quote,
             Quote {
                 id: Some(1337),
                 data: QuoteData {
@@ -1050,8 +1041,11 @@ mod tests {
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
+        let quote = quoter.calculate_quote(parameters).await.unwrap();
+        let quote = quoter.store_quote(quote).await.unwrap();
+
         assert_eq!(
-            quoter.calculate_quote(parameters).await.unwrap(),
+            quote,
             Quote {
                 id: Some(1337),
                 data: QuoteData {
@@ -1205,41 +1199,6 @@ mod tests {
             quoter.calculate_quote(parameters).await.unwrap_err(),
             CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
         ));
-    }
-
-    #[tokio::test]
-    async fn forgotten_quotes_are_expired() {
-        let now = Utc::now();
-        let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimates().returning(|_| {
-            futures::stream::iter([Ok(price_estimation::Estimate {
-                out_amount: 1.into(),
-                gas: 1,
-            })])
-            .enumerate()
-            .boxed()
-        });
-
-        let mut native_price_estimator = MockNativePriceEstimating::new();
-        native_price_estimator
-            .expect_estimate_native_prices()
-            .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
-
-        let quoter = OrderQuoter {
-            price_estimator: Arc::new(price_estimator),
-            native_price_estimator: Arc::new(native_price_estimator),
-            gas_estimator: Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-                Default::default(),
-            )))),
-            fee_subsidy: Arc::new(Subsidy::default()),
-            storage: Arc::new(Forget),
-            now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
-        };
-
-        let quote = quoter.calculate_quote(Default::default()).await.unwrap();
-        assert_eq!((quote.id, quote.data.expiration.timestamp()), (None, 0));
     }
 
     #[tokio::test]

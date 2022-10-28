@@ -34,11 +34,11 @@ use shared::{
         is_order_outside_market_price,
     },
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
-    quoter: Box<dyn OrderQuoting>,
+    quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
@@ -51,7 +51,7 @@ where
 {
     pub fn new(
         db: Postgres,
-        quoter: Box<dyn OrderQuoting>,
+        quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
@@ -364,7 +364,9 @@ async fn get_quote(
         from: order_placement.sender,
         app_data: order_data.app_data,
     };
-    get_quote_and_check_fee(
+    // TODO No need to save the quote here, as it's being looked up by ID, but double-check this
+    // TODO Yes
+    let quote = get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id as i64),
@@ -378,7 +380,8 @@ async fn get_quote(
             parameters,
             err
         )
-    })
+    })?;
+    Ok(quote)
 }
 
 fn convert_onchain_order_placement(
@@ -900,7 +903,7 @@ mod test {
             .returning(|_, _, _, _| 1u8);
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
-            quoter: Box::new(order_quoter),
+            quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,
             settlement_contract: H160::zero(),
