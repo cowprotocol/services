@@ -4,7 +4,7 @@ use url::Url;
 
 #[derive(Parser)]
 pub struct Arguments {
-    /// Minimum time an order must have been valid for, in order
+    /// Minimum time in seconds an order must have been valid for
     /// to be eligble for refunding
     #[clap(
         long,
