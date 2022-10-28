@@ -18,6 +18,18 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract_with_config("CoWSwapEthFlow", |builder| {
+        builder
+            .contract_mod_override("cowswap_eth_flow")
+            .add_network(
+                "5",
+                Network {
+                    address: addr("0x31172bb2b5f97e8e89cf3376495d7bc7252f5a53"),
+                    // <https://goerli.etherscan.io/tx/0x29724f6ae7b6ba815ba8ea8e12eb99287c63b735b1546ff32a9578248d73aea8>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7621348)),
+                },
+            )
+    });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
     });

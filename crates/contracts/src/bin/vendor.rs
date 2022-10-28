@@ -127,6 +127,11 @@ fn run() -> Result<()> {
             "cowprotocol/ethflowcontract/v0.0.0/\
             rc-artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
         )?
+        .github(
+            "CoWSwapEthFlow",
+            "cowprotocol/ethflowcontract/v0.0.0/\
+            rc-artifacts/artifacts/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+        )?
         .npm(
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",

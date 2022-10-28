@@ -28,6 +28,7 @@ include_contracts! {
     CowProtocolToken;
     CowProtocolVirtualToken;
     CoWSwapOnchainOrders;
+    CoWSwapEthFlow;
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;
