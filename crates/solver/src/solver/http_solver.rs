@@ -502,8 +502,8 @@ impl Solver for HttpSolver {
         }
     }
 
-    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {
-        //TODO: implement a non blocking (fire and forget) callback to the http solver
+    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
+        self.solver.notify_auction_result(auction_id, result);
     }
 
     fn account(&self) -> &Account {
