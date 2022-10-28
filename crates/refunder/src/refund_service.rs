@@ -10,11 +10,11 @@ pub struct RefundService {
 }
 
 impl RefundService {
-    pub fn new(db: PgPool, min_validity_duration: i64, min_slippage: f64) -> Self {
+    pub fn new(db: PgPool, min_validity_duration: i64, min_slippage_in_bps: u64) -> Self {
         RefundService {
             db,
             min_validity_duration,
-            min_slippage,
+            min_slippage: min_slippage_in_bps as f64 / 10000f64,
         }
     }
 

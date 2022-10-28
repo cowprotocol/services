@@ -8,12 +8,11 @@ use std::time::Duration;
 const SLEEP_TIME_BETWEEN_LOOPS: u64 = 30;
 
 pub async fn main(args: arguments::Arguments) {
-    let pg_pool = PgPool::connect_lazy(args.db_url.as_str())
-        .expect("failed to create database");
+    let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
     let refunder = RefundService::new(
         pg_pool,
         args.min_validity_duration.as_secs() as i64,
-        args.min_slippage,
+        args.min_slippage_bps,
     );
     loop {
         tracing::info!("Staring a new refunding loop");

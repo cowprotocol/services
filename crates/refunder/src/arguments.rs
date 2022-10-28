@@ -16,14 +16,10 @@ pub struct Arguments {
 
     /// Minimum slippage an order must have, in order
     /// to be eligble for refunding
-    /// Front-end will place orders with a default slippage of 2% 
-    /// hence, we are requiring as a default 1.9%
-    #[clap(
-        long,
-        env,
-        default_value = "0.019",
-    )]
-    pub min_slippage: f64,
+    /// Front-end will place orders with a default slippage of 2%
+    /// hence, we are requiring as a default 190 bps or 1.9 %
+    #[clap(long, env, default_value = "190")]
+    pub min_slippage_bps: u64,
 
     /// Url of the Postgres database. By default connects to locally running postgres.
     #[clap(long, env, default_value = "postgresql://")]
@@ -33,7 +29,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "min_validity_duration: {:?}", self.min_validity_duration)?;
-        writeln!(f, "min_slippage: {}", self.min_slippage)?;
+        writeln!(f, "min_slippage: {}", self.min_slippage_bps)?;
         writeln!(f, "db_url: SECRET")?;
         Ok(())
     }
