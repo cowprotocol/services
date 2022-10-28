@@ -327,7 +327,7 @@ pub struct ExecutionPlanCoordinatesModel {
 }
 
 /// The result a given solver achieved in the auction
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AuctionResult {
     /// Solution was valid and was ranked at the given place
@@ -338,7 +338,7 @@ pub enum AuctionResult {
     Rejected(SolverRejectionReason),
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SolverRejectionReason {
     /// The solver didn't return a successful response
@@ -371,7 +371,7 @@ impl From<anyhow::Error> for SolverRunError {
 }
 
 /// Contains all information about a failing settlement simulation
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionWithError {
     /// Transaction data used for simulation of the settlement
@@ -382,7 +382,7 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number

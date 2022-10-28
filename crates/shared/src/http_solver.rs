@@ -182,7 +182,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let mut url = match self.base.join("notify") {
             Ok(url) => url,
             Err(err) => {
-                tracing::warn!(?err, "failed to create notify url");
+                tracing::error!(?err, "failed to create notify url");
                 return;
             }
         };
@@ -204,6 +204,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 request = request.header("X-API-KEY", header);
             }
 
+            tracing::debug!(?result, "notify auction result");
             let _result = request.json(&json!(result)).send().await;
         };
         tokio::task::spawn(future);
