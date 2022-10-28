@@ -5,6 +5,8 @@ use refund_service::RefundService;
 use sqlx::PgPool;
 use std::time::Duration;
 
+const SLEEP_TIME_BETWEEN_LOOPS: u64 = 30;
+
 pub async fn main(args: arguments::Arguments) {
     let pg_pool = PgPool::connect_lazy(args.db_url.as_str())
         .expect("failed to create database");
@@ -19,6 +21,6 @@ pub async fn main(args: arguments::Arguments) {
             Ok(_) => (),
             Err(err) => tracing::error!("Error while refunding ethflow orders: {:?}", err),
         }
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(Duration::from_secs(SLEEP_TIME_BETWEEN_LOOPS)).await;
     }
 }
