@@ -29,7 +29,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "min_validity_duration: {:?}", self.min_validity_duration)?;
-        writeln!(f, "min_slippage: {}", self.min_slippage_bps)?;
+        writeln!(f, "min_slippage_bps: {}", self.min_slippage_bps)?;
         writeln!(f, "db_url: SECRET")?;
         Ok(())
     }
