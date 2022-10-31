@@ -24,7 +24,7 @@ use shared::{
     measure_time,
     sources::balancer_v2::pools::common::compute_scaling_rate,
     token_info::{TokenInfo, TokenInfoFetching},
-    token_list::TokenList,
+    token_list::AutoUpdatingTokenList,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -64,7 +64,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
-    market_makable_token_list: TokenList,
+    market_makable_token_list: AutoUpdatingTokenList,
 }
 
 impl HttpSolver {
@@ -80,7 +80,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
-        market_makable_token_list: TokenList,
+        market_makable_token_list: AutoUpdatingTokenList,
     ) -> Self {
         Self {
             solver,

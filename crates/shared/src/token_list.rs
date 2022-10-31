@@ -38,7 +38,7 @@ impl TokenListConfiguration {
     }
 }
 #[derive(Clone, Debug, Default)]
-pub struct TokenList {
+pub struct AutoUpdatingTokenList {
     tokens: Arc<RwLock<HashMap<H160, Token>>>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -50,11 +50,15 @@ pub struct Token {
     pub decimals: u8,
 }
 
-impl TokenList {
+impl AutoUpdatingTokenList {
     pub async fn from_configuration(configuration: TokenListConfiguration) -> Self {
-        let tokens = Arc::new(RwLock::new(
-            configuration.tokens().await.unwrap_or_default(),
-        ));
+        let tokens = Arc::new(RwLock::new(match configuration.tokens().await {
+            Ok(tokens) => tokens,
+            Err(err) => {
+                tracing::error!(?err, "failed to initialize token list");
+                Default::default()
+            }
+        }));
 
         // spawn a background task to regularly update token list
         {
@@ -63,9 +67,12 @@ impl TokenList {
                 loop {
                     tokio::time::sleep(configuration.update_interval).await;
 
-                    if let Ok(new_tokens) = configuration.tokens().await {
-                        let mut w = tokens.write().unwrap();
-                        *w = new_tokens;
+                    match configuration.tokens().await {
+                        Ok(new_tokens) => {
+                            let mut w = tokens.write().unwrap();
+                            *w = new_tokens;
+                        }
+                        Err(err) => tracing::warn!(?err, "failed to update token list"),
                     }
                 }
             };
@@ -94,7 +101,7 @@ impl TokenList {
     }
 }
 
-/// Relevant parts of TokenList schema as defined in https://uniswap.org/tokenlist.schema.json
+/// Relevant parts of AutoUpdatingTokenList schema as defined in https://uniswap.org/tokenlist.schema.json
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TokenListModel {
@@ -201,7 +208,7 @@ pub mod tests {
     fn test_creation_with_chain_id() {
         let list = serde_json::from_str::<TokenListModel>(EXAMPLE_LIST).unwrap();
         let tokens = TokenListConfiguration::from_tokens(list.tokens, 1);
-        let instance = TokenList::new(tokens);
+        let instance = AutoUpdatingTokenList::new(tokens);
         assert!(instance.get(&testlib::tokens::USDC).is_some());
         // Chain ID 4
         assert!(instance

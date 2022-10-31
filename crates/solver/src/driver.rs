@@ -32,7 +32,7 @@ use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
-    token_list::TokenList,
+    token_list::AutoUpdatingTokenList,
     Web3,
 };
 use std::{
@@ -75,7 +75,7 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: TokenList,
+        market_makable_token_list: AutoUpdatingTokenList,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,

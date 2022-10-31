@@ -19,7 +19,7 @@ use shared::{
     },
     tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::{TokenList, TokenListConfiguration},
+    token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     zeroex_api::DefaultZeroExApi,
 };
 use solver::{
@@ -216,7 +216,7 @@ async fn main() {
     };
     // updated in background task
     let market_makable_token_list =
-        TokenList::from_configuration(market_makable_token_list_configuration).await;
+        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let solver = solver::solver::create(
         web3.clone(),

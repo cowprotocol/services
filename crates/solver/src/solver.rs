@@ -31,7 +31,7 @@ use shared::{
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     token_info::TokenInfoFetching,
-    token_list::TokenList,
+    token_list::AutoUpdatingTokenList,
     zeroex_api::ZeroExApi,
     Web3,
 };
@@ -271,7 +271,7 @@ pub fn create(
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
-    market_makable_token_list: TokenList,
+    market_makable_token_list: AutoUpdatingTokenList,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
