@@ -28,7 +28,7 @@ use shared::{
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
-    order_quoting::{OrderQuoter, QuoteHandler, QuoteStoring},
+    order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
     price_estimation::{
         factory::{self, PriceEstimatorFactory},

@@ -925,16 +925,6 @@ mod tests {
             .with(eq(H160::from_low_u64_be(2)))
             .returning(|_| Ok(TokenQuality::Good));
 
-        let mut order_quoter = MockOrderQuoting::new();
-        /*
-        order_quoter.expect_store_quote().returning(|q| {
-            Ok(Quote {
-                id: Some(1337),
-                ..q
-            })
-        });
-        */
-
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -944,7 +934,7 @@ mod tests {
             max_order_validity_period,
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
         );
@@ -1339,7 +1329,7 @@ mod tests {
         order_quoter
             .expect_find_quote()
             .returning(|_, _, _| Ok(Default::default()));
-        order_quoter.expect_store_quote().returning(|q| Ok(q));
+        order_quoter.expect_store_quote().returning(Ok);
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
