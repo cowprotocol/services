@@ -60,6 +60,7 @@ pub struct Arguments {
     pub blockscout_http_timeout: Duration,
 
     /// The Ethplorer token holder API key.
+    #[clap(long, env)]
     pub ethplorer_api_key: Option<String>,
 
     /// Token owner finding rate limiting strategy. See --price-estimation-rate-limiter
