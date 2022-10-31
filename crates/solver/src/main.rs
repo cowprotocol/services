@@ -271,29 +271,34 @@ async fn main() {
         None
     };
 
-    let (uniswap_v3_liquidity, uniswap_v3_maintainer) =
+    let (uniswap_v3_maintainer, uniswap_v3_liquidity) =
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
-            let uniswap_v3_pool_fetcher = Arc::new(
-                UniswapV3PoolFetcher::new(
-                    chain_id,
-                    http_factory.create(),
-                    web3.clone(),
-                    args.shared.max_pools_to_initialize_cache,
-                )
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in solver"),
-            );
-
-            (
-                Some(UniswapV3Liquidity::new(
-                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-                    settlement_contract.clone(),
-                    base_tokens.clone(),
-                    web3.clone(),
-                    uniswap_v3_pool_fetcher.clone(),
-                )),
-                Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+            match UniswapV3PoolFetcher::new(
+                chain_id,
+                http_factory.create(),
+                web3.clone(),
+                args.shared.max_pools_to_initialize_cache,
             )
+            .await
+            {
+                Ok(uniswap_v3_pool_fetcher) => {
+                    let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
+                    (
+                        Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+                        Some(UniswapV3Liquidity::new(
+                            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+                            settlement_contract.clone(),
+                            base_tokens.clone(),
+                            web3.clone(),
+                            uniswap_v3_pool_fetcher,
+                        )),
+                    )
+                }
+                Err(err) => {
+                    tracing::error!("failed to create UniswapV3 pool fetcher in solver: {}", err);
+                    (None, None)
+                }
+            }
         } else {
             (None, None)
         };

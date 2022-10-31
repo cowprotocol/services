@@ -3,8 +3,12 @@ use crate::{
     solver::Solver,
 };
 use ethcontract::U256;
+use model::auction::AuctionId;
 use num::BigRational;
-use shared::conversions::U256Ext as _;
+use shared::{
+    conversions::U256Ext as _,
+    http_solver::model::{AuctionResult, SolverRejectionReason},
+};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
@@ -103,6 +107,7 @@ fn merge_at_most_settlements(
 pub fn retain_mature_settlements(
     min_order_age: Duration,
     settlements: Vec<(Arc<dyn Solver>, Settlement)>,
+    auction_id: AuctionId,
 ) -> Vec<(Arc<dyn Solver>, Settlement)> {
     fn find_mature_settlements(
         min_order_age: Duration,
@@ -155,6 +160,10 @@ pub fn retain_mature_settlements(
         tracing::debug!(
             solver_name = %solver.name(), ?settlement,
             "filtered settlement for not including any mature orders",
+        );
+        solver.notify_auction_result(
+            auction_id,
+            AuctionResult::Rejected(SolverRejectionReason::NoMatureOrders),
         );
     }
 
@@ -252,6 +261,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -276,6 +286,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -301,6 +312,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -324,6 +336,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
         assert_same_settlements(
             &solver_settlements_into_settlements(&mature_settlements),

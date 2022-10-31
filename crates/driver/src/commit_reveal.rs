@@ -1,17 +1,20 @@
 use anyhow::{Context, Result};
 use ethcontract::Account;
 use gas_estimation::GasPriceEstimating;
-use model::{order::OrderUid, u256_decimal};
+use model::{auction::AuctionId, order::OrderUid, u256_decimal};
 use num::ToPrimitive;
 use number_conversions::big_rational_to_u256;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
-use shared::conversions::U256Ext;
+use shared::{
+    conversions::U256Ext,
+    http_solver::model::{AuctionResult, SolverRunError},
+};
 use solver::{
     driver_logger::DriverLogger,
     settlement::Settlement,
     settlement_ranker::SettlementRanker,
-    solver::{Auction, Solver, SolverRunError},
+    solver::{Auction, Solver},
 };
 use std::sync::{Arc, Mutex};
 
@@ -87,14 +90,19 @@ impl CommitRevealSolver {
         )
         .await
         {
-            Ok(inner) => inner.map_err(SolverRunError::Solving),
+            Ok(inner) => inner.map_err(Into::into),
             Err(_timeout) => Err(SolverRunError::Timeout),
         };
 
         let gas_price = self.gas_estimator.estimate().await?;
         let (mut rated_settlements, errors) = self
             .settlement_ranker
-            .rank_legal_settlements(vec![(self.solver.clone(), solutions)], &prices, gas_price)
+            .rank_legal_settlements(
+                vec![(self.solver.clone(), solutions)],
+                &prices,
+                gas_price,
+                auction_id,
+            )
             .await?;
 
         self.logger
@@ -187,6 +195,13 @@ impl From<Arc<dyn CommitRevealSolving>> for CommitRevealSolverAdapter {
 #[async_trait::async_trait]
 impl Solver for CommitRevealSolverAdapter {
     async fn solve(&self, _auction: Auction) -> Result<Vec<Settlement>> {
+        panic!(
+            "A dyn Solver created from a dyn CommitRevealSolving\
+            is only supposed to be used for its account data and name."
+        )
+    }
+
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {
         panic!(
             "A dyn Solver created from a dyn CommitRevealSolving\
             is only supposed to be used for its account data and name."

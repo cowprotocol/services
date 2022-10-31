@@ -1,0 +1,44 @@
+version: '3.1'
+
+services:
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_USER: $USER
+      POSTGRES_PASSWORD: 123
+    command: -d postgres
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 7402:8080
+
+  migrations:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.migration
+    restart: on-failure
+    command: migrate
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db/?user=$USER&password=
+    volumes:
+      - type: bind
+        source: database/sql/
+        target: /flyway/sql
+
+  hardhat:
+    build: docker/hardhat
+    restart: always
+    command: npx hardhat node
+    ports:
+      - 8545:8545
+
+volumes:
+  postgres:

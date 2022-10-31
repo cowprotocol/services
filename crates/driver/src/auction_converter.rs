@@ -127,7 +127,7 @@ mod tests {
     use gas_estimation::GasPrice1559;
     use maplit::btreemap;
     use model::{
-        order::{Order, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+        order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
         TokenPair,
     };
     use num::rational::{BigRational, Ratio};
@@ -192,6 +192,7 @@ mod tests {
             })
             .returning(move |_, _| {
                 Ok(vec![ConstantProduct(ConstantProductOrder {
+                    address: H160::from_low_u64_be(1),
                     tokens: TokenPair::new(token(1), token(2)).unwrap(),
                     reserves: (1u128, 1u128),
                     fee: Ratio::<u32>::new(1, 1),
@@ -252,7 +253,7 @@ mod tests {
 
         // auction has to include at least 1 user order
         model.auction.orders = vec![order(1, 2, false)];
-        model.auction.orders[0].metadata.is_liquidity_order = true;
+        model.auction.orders[0].metadata.class = OrderClass::Liquidity;
         assert!(converter.convert_auction(model, 3).await.is_err());
     }
 }

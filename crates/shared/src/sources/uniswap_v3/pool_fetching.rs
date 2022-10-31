@@ -36,6 +36,8 @@ pub trait PoolFetching: Send + Sync {
 /// Pool data in a format prepared for solvers.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolInfo {
+    /// Skip serializing address since it's redundant (already serialized outside of this struct)
+    #[serde(skip_serializing)]
     pub address: H160,
     pub tokens: Vec<Token>,
     pub state: PoolState,
@@ -93,7 +95,7 @@ impl TryFrom<PoolData> for PoolInfo {
                 fee: Ratio::new(pool.fee_tier.as_u32(), 1_000_000u32),
             },
             gas_stats: PoolStats {
-                mean_gas: U256::from(300_000), // todo: hardcoded for testing purposes
+                mean_gas: U256::from(108_163), // as estimated by https://dune.com/queries/1044812
             },
         })
     }
@@ -478,7 +480,6 @@ mod tests {
     #[test]
     fn encode_decode_pool_info() {
         let json = json!({
-            "address": "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28",
             "tokens": [
                 {
                     "id": "0xbef81556ef066ec840a540595c8d12f516b6378f",

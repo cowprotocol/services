@@ -14,7 +14,7 @@ use crate::{
     settlement_rater::SettlementRater,
     settlement_simulation,
     settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, Solver, SolverRunError, Solvers},
+    solver::{Auction, Solver, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -30,6 +30,7 @@ use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
+    http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
     token_list::AutoUpdatingTokenList,
@@ -167,7 +168,7 @@ impl Driver {
                     match tokio::time::timeout_at(auction.deadline.into(), solver.solve(auction))
                         .await
                     {
-                        Ok(inner) => inner.map_err(SolverRunError::Solving),
+                        Ok(inner) => inner.map_err(Into::into),
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
                 metrics.settlement_computed(solver.name(), start_time);
@@ -250,7 +251,7 @@ impl Driver {
 
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
-                .context("malformed acution prices")?;
+                .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
         let liquidity = self
@@ -288,7 +289,7 @@ impl Driver {
         let run_solver_results = self.run_solvers(auction).await;
         let (mut rated_settlements, errors) = self
             .settlement_ranker
-            .rank_legal_settlements(run_solver_results, &external_prices, gas_price)
+            .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
             .await?;
 
         // We don't know the exact block because simulation can happen over multiple blocks but
