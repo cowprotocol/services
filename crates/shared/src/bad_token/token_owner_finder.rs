@@ -1,6 +1,7 @@
 pub mod blockscout;
 pub mod ethplorer;
 pub mod liquidity;
+pub mod seasolver;
 
 use self::{
     blockscout::BlockscoutTokenOwnerFinder,
@@ -8,16 +9,21 @@ use self::{
 };
 use crate::{
     arguments::duration_from_seconds,
-    bad_token::token_owner_finder::ethplorer::EthplorerTokenOwnerFinder,
-    baseline_solver::BaseTokens, ethcontract_error::EthcontractErrorType,
-    http_client::HttpClientFactory, rate_limiter::RateLimitingStrategy,
-    sources::uniswap_v2::pair_provider::PairProvider, transport::MAX_BATCH_SIZE, Web3,
-    Web3CallBatch,
+    bad_token::token_owner_finder::{
+        ethplorer::EthplorerTokenOwnerFinder, seasolver::SeasolverTokenOwnerFinder,
+    },
+    baseline_solver::BaseTokens,
+    ethcontract_error::EthcontractErrorType,
+    http_client::HttpClientFactory,
+    rate_limiter::RateLimitingStrategy,
+    sources::uniswap_v2::pair_provider::PairProvider,
+    transport::MAX_BATCH_SIZE,
+    Web3, Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
 use ethcontract::U256;
-use futures::{stream, Stream, StreamExt as _};
+use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
 use std::{
     fmt::{self, Display, Formatter},
@@ -70,7 +76,7 @@ pub struct Arguments {
 
     /// List of token addresses to be whitelisted as a potential token owners
     #[clap(long, env, use_value_delimiter = true)]
-    pub whitelisted_owners: Vec<H160>,
+    pub seasolver_whitelisted_owners: Vec<H160>,
 }
 
 /// Support token owner finding strategies.
@@ -183,11 +189,11 @@ pub async fn init(
         proposers.push(Arc::new(ethplorer));
     }
 
-    Ok(Arc::new(TokenOwnerFinder {
-        web3,
-        proposers,
-        whitelisted_owners: args.whitelisted_owners.clone(),
-    }))
+    proposers.push(Arc::new(SeasolverTokenOwnerFinder::new(
+        args.seasolver_whitelisted_owners.clone(),
+    )));
+
+    Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
 }
 
 /// A `TokenOwnerFinding` implementation that queries a node with proposed owner candidates from an
@@ -195,7 +201,6 @@ pub async fn init(
 pub struct TokenOwnerFinder {
     pub web3: Web3,
     pub proposers: Vec<Arc<dyn TokenOwnerProposing>>,
-    pub whitelisted_owners: Vec<H160>,
 }
 
 impl TokenOwnerFinder {
@@ -227,10 +232,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
         // We use a stream with ready_chunks so that we can start with the addresses of fast
         // TokenOwnerFinding implementations first without having to wait for slow ones.
-        let stream = self
-            .candidate_owners(token)
-            .chain(stream::iter(self.whitelisted_owners.clone()))
-            .ready_chunks(MAX_BATCH_SIZE);
+        let stream = self.candidate_owners(token).ready_chunks(MAX_BATCH_SIZE);
         futures::pin_mut!(stream);
 
         while let Some(chunk) = stream.next().await {

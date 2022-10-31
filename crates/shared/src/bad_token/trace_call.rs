@@ -592,7 +592,6 @@ mod tests {
                         .unwrap(),
                 ),
             ],
-            whitelisted_owners: Default::default(),
         });
         let token_cache = TraceCallDetector {
             web3,
@@ -630,7 +629,6 @@ mod tests {
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![univ3],
-            whitelisted_owners: Default::default(),
         });
         let token_cache = super::TraceCallDetector {
             web3,
