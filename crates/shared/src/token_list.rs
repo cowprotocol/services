@@ -72,7 +72,7 @@ impl AutoUpdatingTokenList {
                             let mut w = tokens.write().unwrap();
                             *w = new_tokens;
                         }
-                        Err(err) => tracing::warn!(?err, "failed to update token list"),
+                        Err(err) => tracing::error!(?err, "failed to update token list"),
                     }
                 }
             };
