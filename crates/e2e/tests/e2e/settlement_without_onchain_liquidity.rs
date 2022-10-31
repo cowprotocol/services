@@ -215,7 +215,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        Arc::new(RwLock::new(Some(market_makable_token_list))),
+        Arc::new(RwLock::new(market_makable_token_list)),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),

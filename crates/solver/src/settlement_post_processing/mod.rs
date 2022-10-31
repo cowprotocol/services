@@ -48,7 +48,7 @@ pub struct PostProcessingPipeline {
     unwrap_factor: f64,
     weth: WETH9,
     buffer_retriever: BufferRetriever,
-    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
+    market_makable_token_list: Arc<RwLock<TokenList>>,
 }
 
 impl PostProcessingPipeline {
@@ -57,7 +57,7 @@ impl PostProcessingPipeline {
         web3: Web3,
         unwrap_factor: f64,
         settlement_contract: GPv2Settlement,
-        market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
+        market_makable_token_list: Arc<RwLock<TokenList>>,
     ) -> Self {
         let weth = WETH9::at(&web3, native_token);
         let buffer_retriever = BufferRetriever::new(web3.clone(), settlement_contract.address());

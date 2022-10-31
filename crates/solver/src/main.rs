@@ -221,7 +221,7 @@ async fn main() {
     let market_makable_token_list = Arc::new(RwLock::new(
         TokenList::from_configuration(&market_makable_token_list_configuration)
             .await
-            .ok(),
+            .unwrap_or_default(),
     ));
 
     let solver = solver::solver::create(
@@ -464,7 +464,7 @@ async fn main() {
                 TokenList::from_configuration(&market_makable_token_list_configuration).await
             {
                 let mut w = market_makable_token_list.write().unwrap();
-                *w = Some(token_list);
+                *w = token_list;
             }
         }
     };

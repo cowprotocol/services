@@ -33,7 +33,7 @@ impl TokenListConfiguration {
             .collect()
     }
 }
-
+#[derive(Clone, Debug, Default)]
 pub struct TokenList {
     tokens: HashMap<H160, Token>,
 }

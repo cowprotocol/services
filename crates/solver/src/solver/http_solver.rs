@@ -64,7 +64,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
-    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
+    market_makable_token_list: Arc<RwLock<TokenList>>,
 }
 
 impl HttpSolver {
@@ -80,7 +80,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
-        market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
+        market_makable_token_list: Arc<RwLock<TokenList>>,
     ) -> Self {
         Self {
             solver,
@@ -110,9 +110,9 @@ impl HttpSolver {
             .market_makable_token_list
             .read()
             .unwrap()
-            .as_ref()
-            .map(|tokens| tokens.addresses().into_iter().collect())
-            .unwrap_or_default();
+            .addresses()
+            .into_iter()
+            .collect();
 
         let tokens = map_tokens_for_solver(&orders, &liquidity, &market_makable_token_list);
         let (token_infos, buffers_result) = join!(

@@ -271,7 +271,7 @@ pub fn create(
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
-    market_makable_token_list: Arc<RwLock<Option<TokenList>>>,
+    market_makable_token_list: Arc<RwLock<TokenList>>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
