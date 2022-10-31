@@ -1,5 +1,5 @@
 use derivative::Derivative;
-use ethcontract::{BlockNumber, Bytes, H160};
+use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
     order::OrderData,
@@ -386,7 +386,7 @@ pub struct TransactionWithError {
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
-    pub block_number: BlockNumber,
+    pub block_number: u64,
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
     pub access_list: Option<AccessList>,
@@ -395,20 +395,25 @@ pub struct SimulatedTransaction {
     /// GPv2 settlement contract address
     pub to: H160,
     /// Transaction input data
+    #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use crate::sources::uniswap_v3::graph_api::Token;
 
     use super::*;
+    use ethcontract::H256;
     use maplit::btreemap;
     use model::{
         app_id::AppId,
         order::{OrderKind, SellTokenSource},
     };
     use serde_json::json;
+    use web3::types::AccessListItem;
 
     #[test]
     fn updated_amm_model_is_non_trivial() {
@@ -938,6 +943,35 @@ mod tests {
                 exec_sell_amount: 50.into(),
                 exec_buy_amount: 51.into(),
             },
+        );
+    }
+
+    #[test]
+    fn serialize_simulated_transaction() {
+        assert_eq!(
+            serde_json::to_value(&SimulatedTransaction {
+                access_list: Some(vec![AccessListItem {
+                    address: H160::from_low_u64_be(1),
+                    storage_keys: vec![H256::from_low_u64_be(2)]
+                }]),
+                block_number: 15848799,
+                from: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
+                to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
+                data: vec![19, 250, 73],
+            })
+            .unwrap(),
+            json!({
+                "accessList": [{
+                    "address": "0x0000000000000000000000000000000000000001",
+                    "storageKeys": [
+                        "0x0000000000000000000000000000000000000000000000000000000000000002"
+                    ]
+                }],
+                "blockNumber": 15848799,
+                "data": "0x13fa49",
+                "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+                "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+            }),
         );
     }
 }

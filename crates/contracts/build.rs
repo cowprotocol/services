@@ -357,13 +357,13 @@ fn main() {
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str("1", "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
-            .add_network_str("5", "0x3430d04E42a722c5Ae52C5Bffbf1F230C2677600")
+            .add_network_str("5", "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str("100", "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
     });
     generate_contract_with_config("CowProtocolVirtualToken", |builder| {
         builder
             .add_network_str("1", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
-            .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
+            .add_network_str("5", "0x7B878668Cd1a3adF89764D3a331E0A7BB832192D")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 
