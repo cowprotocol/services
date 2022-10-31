@@ -117,6 +117,8 @@ pub struct TokenInfoModel {
     pub normalize_priority: Option<u64>,
     #[serde_as(as = "Option<DecimalU256>")]
     pub internal_buffer: Option<U256>,
+    /// Is token in the external list containing only safe tokens
+    pub accepted_for_internalization: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -589,6 +591,7 @@ mod tests {
                     external_price: Some(1.2),
                     normalize_priority: Some(1),
                     internal_buffer: Some(U256::from(1337)),
+                    accepted_for_internalization: true,
                 },
                 sell_token => TokenInfoModel {
                     decimals: Some(18),
@@ -596,6 +599,7 @@ mod tests {
                     external_price: Some(2345.0),
                     normalize_priority: Some(0),
                     internal_buffer: Some(U256::from(42)),
+                    accepted_for_internalization: true,
                 }
             },
             orders: btreemap! { 0 => order_model },
@@ -621,6 +625,7 @@ mod tests {
               "external_price": 1.2,
               "normalize_priority": 1,
               "internal_buffer": "1337",
+              "accepted_for_internalization": true,
             },
             "0x000000000000000000000000000000000000a866": {
               "decimals": 18,
@@ -628,6 +633,7 @@ mod tests {
               "external_price": 2345.0,
               "normalize_priority": 0,
               "internal_buffer": "42",
+              "accepted_for_internalization": true,
             },
           },
           "orders": {

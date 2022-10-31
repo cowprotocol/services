@@ -1,19 +1,15 @@
 use super::SettlementSimulating;
 use crate::settlement::Settlement;
-use shared::token_list::TokenList;
+use shared::token_list::AutoUpdatingTokenList;
 
 /// If a settlement only trades trusted tokens try to optimize it by trading with internal buffers.
 pub async fn optimize_buffer_usage(
     settlement: Settlement,
-    market_makable_token_list: &Option<TokenList>,
+    market_makable_token_list: AutoUpdatingTokenList,
     settlement_simulator: &impl SettlementSimulating,
 ) -> Settlement {
     // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
-    if !market_makable_token_list
-        .as_ref()
-        .map(|list| is_only_selling_trusted_tokens(&settlement, list))
-        .unwrap_or(false)
-    {
+    if !is_only_selling_trusted_tokens(&settlement, &market_makable_token_list) {
         return settlement;
     }
 
@@ -30,10 +26,14 @@ pub async fn optimize_buffer_usage(
     settlement
 }
 
-fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
+fn is_only_selling_trusted_tokens(
+    settlement: &Settlement,
+    market_makable_token_list: &AutoUpdatingTokenList,
+) -> bool {
+    let market_makable_token_list = market_makable_token_list.addresses();
     !settlement
         .traded_orders()
-        .any(|order| token_list.get(&order.data.sell_token).is_none())
+        .any(|order| !market_makable_token_list.contains(&order.data.sell_token))
 }
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ mod tests {
         let another_good_token = H160::from_low_u64_be(2);
         let bad_token = H160::from_low_u64_be(3);
 
-        let token_list = TokenList::new(hashmap! {
+        let token_list = AutoUpdatingTokenList::new(hashmap! {
             good_token => Token {
                 address: good_token,
                 symbol: "Foo".into(),
