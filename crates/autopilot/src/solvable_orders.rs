@@ -239,6 +239,8 @@ impl SolvableOrdersCache {
         self.cache.lock().unwrap().orders.update_time
     }
 
+    /// Quotes all limit orders and sets the fee_amount for each one to the fee returned by the
+    /// quoting process. If quoting fails, the corresponding order is filtered out.
     async fn set_limit_order_fees(&self, orders: Vec<Order>) -> Vec<Order> {
         stream::iter(orders.into_iter())
             .filter_map(|mut order| async {

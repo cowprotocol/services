@@ -364,9 +364,7 @@ async fn get_quote(
         from: order_placement.sender,
         app_data: order_data.app_data,
     };
-    // TODO No need to save the quote here, as it's being looked up by ID, but double-check this
-    // TODO Yes
-    let quote = get_quote_and_check_fee(
+    get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id as i64),
@@ -380,8 +378,7 @@ async fn get_quote(
             parameters,
             err
         )
-    })?;
-    Ok(quote)
+    })
 }
 
 fn convert_onchain_order_placement(

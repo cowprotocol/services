@@ -12,9 +12,6 @@ fn get_auction_request() -> impl Filter<Extract = (), Error = Rejection> + Clone
 pub fn get_auction(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    // TODO This is the code that fetches an auction, I just have to figure out where the code is
-    // that creates the auction
-    // I believe the DB call is replace_auction
     get_auction_request().and_then(move || {
         let orderbook = orderbook.clone();
         async move {

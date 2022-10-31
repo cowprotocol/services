@@ -384,7 +384,7 @@ pub trait QuoteStoring: Send + Sync {
     ///
     /// This storage implementation should return `None` to indicate that it
     /// will not store the quote.
-    async fn save(&self, data: QuoteData) -> Result<Option<QuoteId>>;
+    async fn save(&self, data: QuoteData) -> Result<QuoteId>;
 
     /// Retrieves an existing quote by ID.
     async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>>;
@@ -560,9 +560,11 @@ impl OrderQuoting for OrderQuoter {
     }
 
     async fn store_quote(&self, quote: Quote) -> anyhow::Result<Quote> {
-        // TODO Does save need to be optional anymore?? Probably not, right?
         let id = self.storage.save(quote.data.clone()).await?;
-        Ok(Quote { id, ..quote })
+        Ok(Quote {
+            id: Some(id),
+            ..quote
+        })
     }
 
     async fn find_quote(
@@ -789,7 +791,7 @@ mod tests {
                 expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
             }))
-            .returning(|_| Ok(Some(1337)));
+            .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
@@ -905,7 +907,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
             }))
-            .returning(|_| Ok(Some(1337)));
+            .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
@@ -1024,7 +1026,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
             }))
-            .returning(|_| Ok(Some(1337)));
+            .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
