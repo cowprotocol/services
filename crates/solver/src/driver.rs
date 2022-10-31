@@ -36,7 +36,7 @@ use shared::{
     Web3,
 };
 use std::{
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tracing::Instrument as _;
@@ -75,7 +75,7 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: Arc<RwLock<TokenList>>,
+        market_makable_token_list: TokenList,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,

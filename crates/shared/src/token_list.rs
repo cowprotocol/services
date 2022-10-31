@@ -1,4 +1,8 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use anyhow::Result;
 use ethcontract::H160;
@@ -35,7 +39,7 @@ impl TokenListConfiguration {
 }
 #[derive(Clone, Debug, Default)]
 pub struct TokenList {
-    tokens: HashMap<H160, Token>,
+    tokens: Arc<RwLock<HashMap<H160, Token>>>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -47,26 +51,46 @@ pub struct Token {
 }
 
 impl TokenList {
-    pub async fn from_configuration(configuration: &TokenListConfiguration) -> Result<Self> {
-        Ok(Self {
-            tokens: configuration.tokens().await?,
-        })
-    }
+    pub async fn from_configuration(configuration: TokenListConfiguration) -> Self {
+        let tokens = Arc::new(RwLock::new(
+            configuration.tokens().await.unwrap_or_default(),
+        ));
 
-    pub fn new(tokens: HashMap<H160, Token>) -> Self {
+        // spawn a background task to regularly update token list
+        {
+            let tokens = tokens.clone();
+            let updater = async move {
+                loop {
+                    tokio::time::sleep(configuration.update_interval).await;
+
+                    if let Ok(new_tokens) = configuration.tokens().await {
+                        let mut w = tokens.write().unwrap();
+                        *w = new_tokens;
+                    }
+                }
+            };
+            tokio::task::spawn(updater);
+        }
+
         Self { tokens }
     }
 
-    pub fn get(&self, address: &H160) -> Option<&Token> {
-        self.tokens.get(address)
+    pub fn new(tokens: HashMap<H160, Token>) -> Self {
+        Self {
+            tokens: Arc::new(RwLock::new(tokens)),
+        }
+    }
+
+    pub fn get(&self, address: &H160) -> Option<Token> {
+        self.tokens.read().unwrap().get(address).cloned()
     }
 
     pub fn all(&self) -> Vec<Token> {
-        self.tokens.values().cloned().collect()
+        self.tokens.read().unwrap().values().cloned().collect()
     }
 
-    pub fn addresses(&self) -> Vec<H160> {
-        self.tokens.keys().cloned().collect()
+    pub fn addresses(&self) -> HashSet<H160> {
+        self.tokens.read().unwrap().keys().cloned().collect()
     }
 }
 

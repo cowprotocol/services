@@ -29,7 +29,7 @@ use shared::{
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::Instant,
 };
 
@@ -64,7 +64,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
-    market_makable_token_list: Arc<RwLock<TokenList>>,
+    market_makable_token_list: TokenList,
 }
 
 impl HttpSolver {
@@ -80,7 +80,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
-        market_makable_token_list: Arc<RwLock<TokenList>>,
+        market_makable_token_list: TokenList,
     ) -> Self {
         Self {
             solver,
@@ -106,13 +106,7 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let market_makable_token_list: HashSet<H160> = self
-            .market_makable_token_list
-            .read()
-            .unwrap()
-            .addresses()
-            .into_iter()
-            .collect();
+        let market_makable_token_list = self.market_makable_token_list.addresses();
 
         let tokens = map_tokens_for_solver(&orders, &liquidity, &market_makable_token_list);
         let (token_infos, buffers_result) = join!(
