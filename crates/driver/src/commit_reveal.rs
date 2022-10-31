@@ -6,12 +6,15 @@ use num::ToPrimitive;
 use number_conversions::big_rational_to_u256;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
-use shared::conversions::U256Ext;
+use shared::{
+    conversions::U256Ext,
+    http_solver::model::{AuctionResult, SolverRunError},
+};
 use solver::{
     driver_logger::DriverLogger,
     settlement::Settlement,
     settlement_ranker::SettlementRanker,
-    solver::{Auction, AuctionResult, Solver, SolverRunError},
+    solver::{Auction, Solver},
 };
 use std::sync::{Arc, Mutex};
 
@@ -87,7 +90,7 @@ impl CommitRevealSolver {
         )
         .await
         {
-            Ok(inner) => inner.map_err(SolverRunError::Solving),
+            Ok(inner) => inner.map_err(Into::into),
             Err(_timeout) => Err(SolverRunError::Timeout),
         };
 

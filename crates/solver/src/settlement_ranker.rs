@@ -6,10 +6,7 @@ use crate::{
     },
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
-    solver::{
-        AuctionResult, SimulationWithError, Solver, SolverRejectionReason, SolverRunError,
-        TransactionWithError,
-    },
+    solver::{SimulationWithError, Solver},
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
@@ -17,6 +14,9 @@ use itertools::enumerate;
 use model::auction::AuctionId;
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
 use rand::prelude::SliceRandom;
+use shared::http_solver::model::{
+    AuctionResult, SolverRejectionReason, SolverRunError, TransactionWithError,
+};
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
@@ -71,9 +71,10 @@ impl SettlementRanker {
                                     solver_name = %name,
                                     "settlement(s) filtered for violating maximum external price deviation",
                                 );
+
+                                solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::PriceViolation));
+                                return None;
                             }
-                            solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::PriceViolation));
-                            return None;
                     }
 
                     Some(settlement)

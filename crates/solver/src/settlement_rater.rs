@@ -3,7 +3,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_access_list::AccessListEstimating,
     settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithSolver, SimulatedTransaction, Simulation, SimulationWithError, Solver},
+    solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -12,7 +12,7 @@ use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
-use shared::Web3;
+use shared::{http_solver::model::SimulatedTransaction, Web3};
 use std::sync::Arc;
 use web3::types::AccessList;
 
@@ -96,7 +96,7 @@ impl SettlementRating for SettlementRater {
         gas_price: GasPrice1559,
     ) -> Result<Vec<SimulationWithResult>> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
-        let block_number = self.web3.eth().block_number().await?.into();
+        let block_number = self.web3.eth().block_number().await?.as_u64();
         let simulations = simulate_and_estimate_gas_at_current_block(
             settlements.iter().map(|(solver, settlement, access_list)| {
                 (
