@@ -427,6 +427,8 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
+    #[serde(default, with = "u256_decimal")]
+    pub surplus_fee: U256,
 }
 
 impl Default for OrderMetadata {
@@ -448,6 +450,7 @@ impl Default for OrderMetadata {
             ethflow_data: None,
             onchain_user: None,
             is_liquidity_order: false,
+            surplus_fee: Default::default(),
         }
     }
 }
@@ -708,6 +711,7 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "ordinary",
@@ -738,6 +742,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
+                surplus_fee: U256::MAX,
                 ..Default::default()
             },
             data: OrderData {

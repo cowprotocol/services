@@ -280,7 +280,7 @@ impl SolvableOrdersCache {
                     .await
                 {
                     Ok(quote) => {
-                        order.data.fee_amount = quote.fee_amount;
+                        order.metadata.surplus_fee = quote.fee_amount;
                         Some(order)
                     }
                     Err(err) => {
