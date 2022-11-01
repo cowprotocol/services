@@ -92,7 +92,7 @@ impl HttpPriceEstimator {
         };
 
         let orders = maplit::btreemap! {
-            0 => OrderModel {
+            Default::default() => OrderModel {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 sell_amount,

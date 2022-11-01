@@ -16,7 +16,10 @@ use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
-use model::{auction::AuctionId, order::OrderKind};
+use model::{
+    auction::AuctionId,
+    order::{OrderKind, OrderUid},
+};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::{
@@ -29,6 +32,7 @@ use shared::{
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
+    str::FromStr,
     sync::Arc,
     time::Instant,
 };
@@ -267,11 +271,10 @@ fn order_models(
     orders: &[LimitOrder],
     fee_connected_tokens: &HashSet<H160>,
     gas_model: &GasModel,
-) -> BTreeMap<usize, OrderModel> {
+) -> BTreeMap<OrderUid, OrderModel> {
     orders
         .iter()
-        .enumerate()
-        .filter_map(|(index, order)| {
+        .filter_map(|order| {
             if ![order.sell_token, order.buy_token]
                 .iter()
                 .any(|token| fee_connected_tokens.contains(token))
@@ -285,7 +288,7 @@ fn order_models(
             };
 
             Some((
-                index,
+                OrderUid::from_str(&order.id).expect("failed conversion back to OrderUid"),
                 OrderModel {
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
@@ -703,11 +706,13 @@ mod tests {
             (tokens[3], tokens[2]),
         ]
         .iter()
-        .map(|tokens| LimitOrder {
+        .enumerate()
+        .map(|(index, tokens)| LimitOrder {
             sell_token: tokens.0,
             buy_token: tokens.1,
             kind: OrderKind::Sell,
             settlement_handling: limit_handling.clone(),
+            id: OrderUid::from_integer(index as u32).to_string(),
             ..Default::default()
         })
         .collect::<Vec<_>>();

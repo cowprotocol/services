@@ -2,7 +2,7 @@ use derivative::Derivative;
 use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
-    order::OrderData,
+    order::{OrderData, OrderUid},
     ratio_as_decimal,
     signature::Signature,
     u256_decimal::{self, DecimalU256},
@@ -22,7 +22,7 @@ use crate::{
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
     pub tokens: BTreeMap<H160, TokenInfoModel>,
-    pub orders: BTreeMap<usize, OrderModel>,
+    pub orders: BTreeMap<OrderUid, OrderModel>,
     pub amms: BTreeMap<usize, AmmModel>,
     pub metadata: Option<MetadataModel>,
 }
@@ -602,7 +602,7 @@ mod tests {
                     accepted_for_internalization: true,
                 }
             },
-            orders: btreemap! { 0 => order_model },
+            orders: btreemap! { Default::default() => order_model },
             amms: btreemap! {
                 0 => constant_product_pool_model,
                 1 => weighted_product_pool_model,
@@ -637,7 +637,7 @@ mod tests {
             },
           },
           "orders": {
-            "0": {
+            "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000": {
               "sell_token": "0x000000000000000000000000000000000000a866",
               "buy_token": "0x0000000000000000000000000000000000000539",
               "sell_amount": "1",
