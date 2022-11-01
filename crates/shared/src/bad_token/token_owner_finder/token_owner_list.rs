@@ -1,21 +1,26 @@
+use std::collections::HashMap;
+
 use super::TokenOwnerProposing;
 use anyhow::Result;
 use ethcontract::H160;
 
+type Token = H160;
+type Owner = H160;
+
 pub struct TokenOwnerList {
-    owners: Vec<H160>,
+    owners: HashMap<Token, Vec<Owner>>,
 }
 
 impl TokenOwnerList {
-    pub fn new(owners: Vec<H160>) -> Self {
+    pub fn new(owners: HashMap<Token, Vec<Owner>>) -> Self {
         Self { owners }
     }
 }
 
 #[async_trait::async_trait]
 impl TokenOwnerProposing for TokenOwnerList {
-    async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(self.owners.clone())
+    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<Owner>> {
+        Ok(self.owners.get(&token).cloned().unwrap_or_default())
     }
 }
 
@@ -25,7 +30,7 @@ mod tests {
 
     #[tokio::test]
     async fn seasolver_finder_constructor_empty() {
-        let finder = TokenOwnerList::new(vec![]);
+        let finder = TokenOwnerList::new(Default::default());
         let candidate_owners = finder
             .find_candidate_owners(H160::from_low_u64_be(10))
             .await;
@@ -34,10 +39,11 @@ mod tests {
 
     #[tokio::test]
     async fn seasolver_finder_constructor() {
-        let owners = vec![H160::from_low_u64_be(1), H160::from_low_u64_be(2)];
-        let finder = TokenOwnerList::new(owners.clone());
+        let token = H160::from_low_u64_be(1);
+        let owners = vec![H160::from_low_u64_be(2), H160::from_low_u64_be(3)];
+        let finder = TokenOwnerList::new(HashMap::from([(token, owners.clone())]));
         let candidate_owners = finder
-            .find_candidate_owners(H160::from_low_u64_be(10))
+            .find_candidate_owners(H160::from_low_u64_be(1))
             .await
             .unwrap();
         assert_eq!(owners, candidate_owners);

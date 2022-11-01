@@ -20,12 +20,13 @@ use crate::{
     transport::MAX_BATCH_SIZE,
     Web3, Web3CallBatch,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
 use ethcontract::U256;
 use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
 use std::{
+    collections::HashMap,
     fmt::{self, Display, Formatter},
     sync::Arc,
     time::Duration,
@@ -75,8 +76,44 @@ pub struct Arguments {
     pub token_owner_finder_rate_limiter: Option<RateLimitingStrategy>,
 
     /// List of token addresses to be whitelisted as a potential token owners
-    #[clap(long, env, use_value_delimiter = true)]
-    pub seasolver_whitelisted_owners: Vec<H160>,
+    /// For each token a list of owners is defined.
+    #[clap(
+        long,
+        env,
+        value_parser = parse_owners,
+    )]
+    pub whitelisted_owners: HashMap<H160, Vec<H160>>,
+}
+
+fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
+    let mut res = Default::default();
+    if s.is_empty() {
+        return Ok(res);
+    }
+    for pair_str in s.split(';') {
+        let mut split = pair_str.trim().split(':');
+        let key = split
+            .next()
+            .context("missing token address")?
+            .trim()
+            .parse()
+            .context("failed to parse address")?;
+        let values = split.next().context("missing value")?.trim();
+        let mut values_parsed = vec![];
+        for value in values.split(',') {
+            values_parsed.push(
+                value
+                    .trim()
+                    .parse()
+                    .context("failed to parse token owner")?,
+            );
+        }
+        if split.next().is_some() {
+            return Err(anyhow::anyhow!("Invalid format"));
+        }
+        res.insert(key, values_parsed);
+    }
+    Ok(res)
 }
 
 /// Support token owner finding strategies.
@@ -190,7 +227,7 @@ pub async fn init(
     }
 
     proposers.push(Arc::new(TokenOwnerList::new(
-        args.seasolver_whitelisted_owners.clone(),
+        args.whitelisted_owners.clone(),
     )));
 
     Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
@@ -266,5 +303,73 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const TOKEN1: H160 = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+    const TOKEN2: H160 = addr!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
+    const OWNER1: H160 = addr!("06920c9fc643de77b99cb7670a944ad31eaaa260");
+    const OWNER2: H160 = addr!("06601571aa9d3e8f5f7cdd5b993192618964bab5");
+
+    #[test]
+    fn parse_owners_empty() {
+        assert_eq!(parse_owners("").unwrap(), Default::default());
+    }
+
+    #[test]
+    fn parse_owners_one_owner() {
+        let mut expected = HashMap::new();
+        expected.insert(TOKEN1, vec![OWNER1]);
+        let parsed = parse_owners(
+            "
+            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2:
+                0x06920c9fc643de77b99cb7670a944ad31eaaa260
+        ",
+        )
+        .unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_owners_two_owners() {
+        let mut expected = HashMap::new();
+        expected.insert(TOKEN1, vec![OWNER1, OWNER2]);
+        let parsed = parse_owners(
+            "
+            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2:
+                0x06920c9fc643de77b99cb7670a944ad31eaaa260,
+                0x06601571aa9d3e8f5f7cdd5b993192618964bab5
+        ",
+        )
+        .unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_owners_two_tokens_with_one_owners() {
+        let mut expected = HashMap::new();
+        expected.insert(TOKEN1, vec![OWNER1]);
+        expected.insert(TOKEN2, vec![OWNER2]);
+        let parsed = parse_owners(
+            "
+            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2:
+                0x06920c9fc643de77b99cb7670a944ad31eaaa260;
+            0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9:
+                0x06601571aa9d3e8f5f7cdd5b993192618964bab5
+        ",
+        )
+        .unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_owners_err() {
+        assert!(parse_owners("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2:").is_err());
+        assert!(parse_owners("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").is_err());
+        assert!(parse_owners(":0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").is_err());
     }
 }
