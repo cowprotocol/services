@@ -7,11 +7,12 @@ use crate::{
     settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
+use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata, OrderUid};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
     collections::{hash_map::Entry, HashMap},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -154,8 +155,13 @@ impl<'a> IntermediateSettlement<'a> {
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
     ) -> Result<IntermediateSettlement<'a>> {
+        let prepared_orders = context
+            .orders
+            .into_iter()
+            .filter_map(|order| Some((OrderUid::from_str(&order.id).ok()?, order)))
+            .collect();
         let executed_limit_orders =
-            match_prepared_and_settled_orders(context.orders, settled.orders)?;
+            match_prepared_and_settled_orders(prepared_orders, settled.orders)?;
         let foreign_liquidity_orders =
             convert_foreign_liquidity_orders(order_converter, settled.foreign_liquidity_orders)?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
@@ -199,18 +205,16 @@ impl<'a> IntermediateSettlement<'a> {
 }
 
 fn match_prepared_and_settled_orders(
-    prepared_orders: Vec<LimitOrder>,
-    settled_orders: HashMap<usize, ExecutedOrderModel>,
+    prepared_orders: HashMap<OrderUid, LimitOrder>,
+    settled_orders: HashMap<OrderUid, ExecutedOrderModel>,
 ) -> Result<Vec<ExecutedLimitOrder>> {
     settled_orders
         .into_iter()
         .filter(|(_, settled)| {
             !(settled.exec_sell_amount.is_zero() && settled.exec_buy_amount.is_zero())
         })
-        .map(|(index, settled)| {
-            let prepared = prepared_orders
-                .get(index)
-                .ok_or_else(|| anyhow!("invalid order {}", index))?;
+        .map(|(uid, settled)| {
+            let prepared = prepared_orders.get(&uid).context("invalid order")?;
             Ok(ExecutedLimitOrder {
                 order: prepared.clone(),
                 executed_buy_amount: settled.exec_buy_amount,
@@ -369,7 +373,11 @@ mod tests {
     };
     use hex_literal::hex;
     use maplit::hashmap;
-    use model::{order::OrderData, signature::Signature, TokenPair};
+    use model::{
+        order::{OrderData, OrderUid},
+        signature::Signature,
+        TokenPair,
+    };
     use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
@@ -384,6 +392,7 @@ mod tests {
         let t1 = H160::from_low_u64_be(1);
 
         let limit_handler = CapturingSettlementHandler::arc();
+        let order_uid = OrderUid::default();
         let orders = vec![LimitOrder {
             sell_token: t0,
             buy_token: t1,
@@ -391,7 +400,7 @@ mod tests {
             buy_amount: 2.into(),
             kind: OrderKind::Sell,
             settlement_handling: limit_handler.clone(),
-            id: "0".to_string(),
+            id: order_uid.to_string(),
             ..Default::default()
         }];
 
@@ -528,7 +537,7 @@ mod tests {
             cost: Default::default(),
         };
         let settled = SettledBatchAuctionModel {
-            orders: hashmap! { 0 => executed_order },
+            orders: hashmap! { order_uid => executed_order },
             foreign_liquidity_orders: vec![foreign_liquidity_order],
             amms: hashmap! {
                 0 => updated_uniswap,
@@ -717,7 +726,7 @@ mod tests {
                 "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353": "355227837551346618"
             },
             "orders": {
-                "0": {
+                "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000": {
                     "sell_token": "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353",
                     "buy_token": "0xa7d1c04faf998f9161fc9f800a99a809b84cfc9d",
                     "sell_amount": "996570293625199060",

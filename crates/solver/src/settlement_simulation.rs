@@ -574,7 +574,7 @@ mod tests {
                 "total_runtime": 0.247607875
             },
             "orders": {
-                "0": {
+                "0x721f9c5c4bbadeff130c4b0279951a2703c91ccc440cd64acb6b11caba0c64e9295a0bc540f3d9a9bd67a777ca9da9fb5619d3a961be1c03": {
                     "allow_partial_fill": false,
                     "buy_amount": "2377438739352985079",
                     "buy_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -594,7 +594,7 @@ mod tests {
                     "sell_amount": "9413614019",
                     "sell_token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
                 },
-                "1": {
+                "0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542": {
                     "allow_partial_fill": false,
                     "buy_amount": "11727881818",
                     "buy_token": "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -614,7 +614,7 @@ mod tests {
                     "sell_amount": "11722136152",
                     "sell_token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
                 },
-                "2": {
+                "0x9a6986670e989c0bd4049d983ad574c2a8e8bdd6dd91473e197c2539caf8e025f105e7d4dc8b1592e806a36c3b351a8b63b5c07c61be1776": {
                     "allow_partial_fill": false,
                     "buy_amount": "1475587283",
                     "buy_token": "0xdac17f958d2ee523a2206206994597c13d831ec7",

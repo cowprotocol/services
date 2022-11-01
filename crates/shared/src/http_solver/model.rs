@@ -169,7 +169,7 @@ impl Interaction for InteractionData {
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
-    pub orders: HashMap<usize, ExecutedOrderModel>,
+    pub orders: HashMap<OrderUid, ExecutedOrderModel>,
     #[serde(default)]
     pub foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
     #[serde(default)]

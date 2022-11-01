@@ -287,8 +287,16 @@ fn order_models(
                 Exchange::ZeroEx => gas_model.zeroex_order_cost(),
             };
 
+            let uid = match OrderUid::from_str(&order.id) {
+                Ok(uid) => uid,
+                Err(err) => {
+                    tracing::error!(?err, "failed to convert back to order uid");
+                    return None;
+                }
+            };
+
             Some((
-                OrderUid::from_str(&order.id).expect("failed conversion back to OrderUid"),
+                uid,
                 OrderModel {
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
@@ -733,7 +741,7 @@ mod tests {
             {
               "extra_crap": ["Hello"],
               "orders": {
-                "0": {
+                "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000": {
                   "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                   "buy_token": "0xba100000625a3754423978a60c9317c58a424e3d",
                   "sell_amount": "195160000000000000",
@@ -751,7 +759,7 @@ mod tests {
                   "exec_buy_amount": "18689825362370811941",
                   "exec_sell_amount": "195160000000000000"
                 },
-                "1": {
+                "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001": {
                   "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                   "buy_token": "0xba100000625a3754423978a60c9317c58a424e3d",
                   "sell_amount": "395160000000000000",

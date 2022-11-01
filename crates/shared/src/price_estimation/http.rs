@@ -91,8 +91,9 @@ impl HttpPriceEstimator {
             OrderKind::Sell => (query.in_amount, U256::one()),
         };
 
+        let order_uid = Default::default();
         let orders = maplit::btreemap! {
-            Default::default() => OrderModel {
+            order_uid => OrderModel {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 sell_amount,
@@ -196,11 +197,11 @@ impl HttpPriceEstimator {
             .shared(*query, settlement_future.boxed())
             .await?;
 
-        if !settlement.orders.contains_key(&0) {
+        if !settlement.orders.contains_key(&order_uid) {
             return Err(PriceEstimationError::NoLiquidity);
         }
 
-        let mut cost = self.extract_cost(&settlement.orders[&0].cost)?;
+        let mut cost = self.extract_cost(&settlement.orders[&order_uid].cost)?;
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
@@ -214,8 +215,8 @@ impl HttpPriceEstimator {
 
         Ok(Estimate {
             out_amount: match query.kind {
-                OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
-                OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
+                OrderKind::Buy => settlement.orders[&order_uid].exec_sell_amount,
+                OrderKind::Sell => settlement.orders[&order_uid].exec_buy_amount,
             },
             gas,
         })
@@ -420,7 +421,7 @@ mod tests {
         api.expect_solve().returning(move |_, _| {
             Ok(SettledBatchAuctionModel {
                 orders: hashmap! {
-                    0 => ExecutedOrderModel {
+                    Default::default() => ExecutedOrderModel {
                         exec_sell_amount: 50.into(),
                         exec_buy_amount: 200.into(),
                         cost: None,
@@ -567,7 +568,7 @@ mod tests {
         api.expect_solve().returning(move |_, _| {
             Ok(SettledBatchAuctionModel {
                 orders: hashmap! {
-                    0 => ExecutedOrderModel {
+                    Default::default() => ExecutedOrderModel {
                         exec_sell_amount: 100.into(),
                         exec_buy_amount: 100.into(),
                         cost: Some(TokenAmount {
