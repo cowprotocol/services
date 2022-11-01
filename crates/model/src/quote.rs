@@ -209,8 +209,7 @@ pub struct OrderQuote {
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    #[serde(flatten)]
-    pub signing_scheme: QuoteSigningScheme,
+    pub signing_scheme: SigningScheme,
 }
 
 pub type QuoteId = i64;
