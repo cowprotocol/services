@@ -1,5 +1,5 @@
 use clap::Parser;
-use shared::http_client;
+use shared::{ethrpc, http_client};
 use std::time::Duration;
 use url::Url;
 
@@ -7,6 +7,9 @@ use url::Url;
 pub struct Arguments {
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub ethrpc: ethrpc::Arguments,
 
     /// Minimum time in seconds an order must have been valid for
     /// to be eligible for refunding
@@ -36,9 +39,12 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.ethrpc)?;
         writeln!(f, "min_validity_duration: {:?}", self.min_validity_duration)?;
         writeln!(f, "min_slippage_bps: {}", self.min_slippage_bps)?;
         writeln!(f, "db_url: SECRET")?;
+        writeln!(f, "node_url: {}", self.node_url)?;
         Ok(())
     }
 }

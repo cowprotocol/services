@@ -1,5 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
+    ethrpc,
     fee_subsidy::cow_token::SubsidyTiers,
     gas_price_estimation::GasEstimatorType,
     price_estimation::PriceEstimatorType,
@@ -12,7 +13,7 @@ use ethcontract::{H160, H256, U256};
 use model::app_id::AppId;
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter},
+    fmt::{self, Display, Formatter},
     num::{NonZeroU64, ParseFloatError},
     str::FromStr,
     time::Duration,
@@ -110,6 +111,9 @@ pub struct OrderQuotingArguments {
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
+    #[clap(flatten)]
+    pub ethrpc: ethrpc::Arguments,
+
     #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
@@ -333,7 +337,8 @@ impl Display for OrderQuotingArguments {
 // We have a custom Display implementation so that we can log the arguments on start up without
 // leaking any potentially secret values.
 impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
