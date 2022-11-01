@@ -177,13 +177,13 @@ fn solve_with_uniswap(
     settlement
         .with_liquidity(
             pool,
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((uniswap_in_token, uniswap_in))
-                    .ok()?,
-                output: (uniswap_out_token, uniswap_out_with_rounding),
-                internalizable: false,
-            },
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (uniswap_in_token, uniswap_in),
+                    output: (uniswap_out_token, uniswap_out_with_rounding),
+                    internalizable: false,
+                })
+                .ok()?,
         )
         .ok()?;
 
@@ -1033,14 +1033,16 @@ mod tests {
 
         assert_eq!(
             amm_handler.calls(),
-            vec![AmmOrderExecution {
-                input_max: slippage.execution_input_max((token_a, to_wei(40))).unwrap(),
-                output: (
-                    token_b,
-                    pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
-                ),
-                internalizable: false
-            }],
+            vec![slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (token_a, to_wei(40)),
+                    output: (
+                        token_b,
+                        pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
+                    ),
+                    internalizable: false
+                })
+                .unwrap()],
         );
     }
 }

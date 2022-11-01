@@ -6,7 +6,7 @@ use crate::{
 use primitive_types::H160;
 use reqwest::Url;
 use shared::{
-    arguments::{display_list, display_option, display_secret_option},
+    arguments::{display_list, display_option},
     http_client,
 };
 use std::time::Duration;
@@ -172,18 +172,6 @@ pub struct Arguments {
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The Tenderly user associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_user: Option<String>,
-
-    /// The Tenderly project associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_project: Option<String>,
-
-    /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
-    #[clap(long, env)]
-    pub tenderly_api_key: Option<String>,
-
     /// The API endpoint of the Eden network for transaction submission.
     #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
     pub eden_api_url: Url,
@@ -343,9 +331,6 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             &self.access_list_estimators
         )?;
-        display_option(f, "tenderly_user", &self.tenderly_user)?;
-        display_option(f, "tenderly_project", &self.tenderly_project)?;
-        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
         writeln!(

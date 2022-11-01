@@ -5,6 +5,7 @@ use crate::{
     price_estimation::PriceEstimatorType,
     rate_limiter::RateLimitingStrategy,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+    tenderly_api,
 };
 use anyhow::{anyhow, ensure, Context, Result};
 use ethcontract::{H160, H256, U256};
@@ -109,6 +110,9 @@ pub struct OrderQuotingArguments {
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
+    #[clap(flatten)]
+    pub tenderly: tenderly_api::Arguments,
+
     #[clap(
         long,
         env,
@@ -330,6 +334,7 @@ impl Display for OrderQuotingArguments {
 // leaking any potentially secret values.
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.tenderly)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "node_url: {}", self.node_url)?;

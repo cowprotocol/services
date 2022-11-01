@@ -171,7 +171,13 @@ impl Driver {
                         Ok(inner) => inner.map_err(Into::into),
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
-                metrics.settlement_computed(solver.name(), start_time);
+                let response = match &result {
+                    Err(SolverRunError::Timeout) => "timeout",
+                    Err(_) => "error",
+                    Ok(solutions) if solutions.is_empty() => "none",
+                    Ok(_) => "solution",
+                };
+                metrics.settlement_computed(solver.name(), response, start_time);
                 (solver.clone(), result)
             }
         }))

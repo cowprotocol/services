@@ -17,7 +17,6 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
-    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     zeroex_api::DefaultZeroExApi,
@@ -381,17 +380,11 @@ async fn main() {
             }
         }
     }
-    let tenderly_api = Some(()).and_then(|_| {
-        Some(Arc::new(
-            TenderlyHttpApi::new(
-                &http_factory,
-                args.tenderly_user.as_deref()?,
-                args.tenderly_project.as_deref()?,
-                args.tenderly_api_key.as_deref()?,
-            )
-            .expect("failed to create Tenderly API"),
-        ) as Arc<dyn TenderlyApi>)
-    });
+    let tenderly_api = args
+        .shared
+        .tenderly
+        .get_api_instance(&http_factory)
+        .expect("failed to create Tenderly API");
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
             &web3,

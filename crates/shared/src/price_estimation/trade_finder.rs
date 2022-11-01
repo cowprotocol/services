@@ -216,6 +216,16 @@ impl TradeVerifier {
     }
 }
 
+impl Clone for TradeEstimator {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            sharing: Default::default(),
+            rate_limiter: self.rate_limiter.clone(),
+        }
+    }
+}
+
 impl PriceEstimating for TradeEstimator {
     fn estimates<'a>(
         &'a self,
