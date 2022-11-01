@@ -77,11 +77,11 @@ impl Execution {
         match self {
             LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
             Amm(executed_amm) => {
-                let execution = AmmOrderExecution {
-                    input_max: slippage.execution_input_max(executed_amm.input)?,
+                let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
+                    input_max: executed_amm.input,
                     output: executed_amm.output,
                     internalizable,
-                };
+                })?;
                 match &executed_amm.order {
                     Liquidity::ConstantProduct(liquidity) => {
                         settlement.with_liquidity(liquidity, execution)
