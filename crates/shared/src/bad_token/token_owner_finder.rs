@@ -86,34 +86,24 @@ pub struct Arguments {
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
-    let mut res = Default::default();
     if s.is_empty() {
-        return Ok(res);
+        return Ok(Default::default());
     }
-    for pair_str in s.split(';') {
-        let mut split = pair_str.trim().split(':');
-        let key = split
-            .next()
-            .context("missing token address")?
-            .trim()
-            .parse()
-            .context("failed to parse address")?;
-        let values = split.next().context("missing value")?.trim();
-        let mut values_parsed = vec![];
-        for value in values.split(',') {
-            values_parsed.push(
-                value
-                    .trim()
-                    .parse()
-                    .context("failed to parse token owner")?,
-            );
-        }
-        if split.next().is_some() {
-            return Err(anyhow::anyhow!("Invalid format"));
-        }
-        res.insert(key, values_parsed);
-    }
-    Ok(res)
+    s.split(';')
+        .into_iter()
+        .map(|pair_str| {
+            let (key, values) = pair_str
+                .split_once(':')
+                .context("missing token and owners")?;
+            let key = key.trim().parse()?;
+            let values = values
+                .trim()
+                .split(',')
+                .map(|value| value.trim().parse().context("failed to parse token owner"))
+                .collect::<Result<_>>()?;
+            Ok((key, values))
+        })
+        .collect()
 }
 
 /// Support token owner finding strategies.
