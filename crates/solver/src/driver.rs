@@ -171,9 +171,9 @@ impl Driver {
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
                 let response = match &result {
-                    Err(SolverRunError::Timeout) => "solution",
-                    Ok(solutions) if solutions.is_empty() => "none",
+                    Err(SolverRunError::Timeout) => "timeout",
                     Err(_) => "error",
+                    Ok(solutions) if solutions.is_empty() => "none",
                     Ok(_) => "solution",
                 };
                 metrics.settlement_computed(solver.name(), response, start_time);
