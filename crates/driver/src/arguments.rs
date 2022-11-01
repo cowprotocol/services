@@ -5,6 +5,7 @@ use shared::{
     gas_price_estimation::GasEstimatorType,
     http_client,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+    tenderly_api,
 };
 use solver::{
     arguments::TransactionStrategyArg, liquidity::slippage,
@@ -20,6 +21,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
+
+    #[clap(flatten)]
+    pub tenderly: tenderly_api::Arguments,
 
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
@@ -124,18 +128,6 @@ pub struct Arguments {
     /// `Web3`: supports every network.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
-
-    /// The Tenderly user associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_user: Option<String>,
-
-    /// The Tenderly project associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_project: Option<String>,
-
-    /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
-    #[clap(long, env)]
-    pub tenderly_api_key: Option<String>,
 
     /// Gas limit for simulations. This parameter is important to set correctly, such that
     /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
@@ -275,6 +267,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.slippage)?;
+        write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
@@ -319,9 +312,6 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             self.access_list_estimators
         )?;
-        display_option(f, "tenderly_user", &self.tenderly_project)?;
-        display_option(f, "tenderly_project", &self.tenderly_project)?;
-        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(

@@ -277,9 +277,15 @@ async fn main() {
         &args.price_estimation,
         &args.shared,
         factory::Network {
+            web3: web3.clone(),
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
+            authenticator: settlement_contract
+                .authenticator()
+                .call()
+                .await
+                .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
         },
         factory::Components {
@@ -293,7 +299,8 @@ async fn main() {
             zeroex: zeroex_api.clone(),
             oneinch: one_inch_api.ok().map(|a| a as _),
         },
-    );
+    )
+    .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
         .price_estimator(&args.order_quoting.price_estimators)

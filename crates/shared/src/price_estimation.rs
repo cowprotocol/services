@@ -20,6 +20,7 @@ use crate::{
     rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
 };
 use anyhow::Result;
+use clap::ValueEnum;
 use ethcontract::{H160, U256};
 use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
@@ -35,7 +36,7 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum PriceEstimatorType {
     Baseline,
@@ -52,6 +53,13 @@ impl PriceEstimatorType {
     pub fn name(&self) -> String {
         format!("{:?}", self)
     }
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ValueEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum TradeValidatorKind {
+    Web3,
+    Tenderly,
 }
 
 /// Shared price estimation configuration arguments.
@@ -106,6 +114,18 @@ pub struct Arguments {
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
+
+    /// The trade simulation strategy to use for supported price estimators. This ensures that
+    /// the proposed trade calldata gets simulated, thus avoiding invalid calldata mistakenly
+    /// advertising unachievable prices when quoting, as well as more robustly identifying
+    /// unsupported tokens.
+    #[clap(long, env)]
+    pub trade_simulator: Option<TradeValidatorKind>,
+
+    /// Flag to enable saving Tenderly simulations in the dashboard for failed trade simulations.
+    /// This helps debugging reverted quote simulations.
+    #[clap(long, env)]
+    pub tenderly_save_failed_trade_simulations: bool,
 }
 
 impl Display for Arguments {
@@ -138,6 +158,19 @@ impl Display for Arguments {
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(
+            f,
+            "trade_simulator",
+            &self
+                .trade_simulator
+                .as_ref()
+                .map(|value| format!("{value:?}")),
+        )?;
+        writeln!(
+            f,
+            "tenderly_save_failed_trade_simulations: {}",
+            self.tenderly_save_failed_trade_simulations
+        )?;
 
         Ok(())
     }
