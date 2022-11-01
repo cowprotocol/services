@@ -180,6 +180,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 http_solver_cache.clone(),
                 false,
                 args.slippage.get_global_calculator(),
+                Default::default(),
             )) as Arc<dyn Solver>
         })
         .collect()
@@ -376,33 +377,44 @@ async fn build_auction_converter(
         None
     };
 
-    let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
+    let (uniswap_v3_maintainer, uniswap_v3_liquidity) =
+        if baseline_sources.contains(&BaselineSource::UniswapV3) {
+            match UniswapV3PoolFetcher::new(
                 common.chain_id,
-                args.liquidity_fetcher_max_age_update,
                 common.http_factory.create(),
+                common.web3.clone(),
+                args.max_pools_to_initialize_cache,
             )
             .await
-            .expect("failed to create UniswapV3 pool fetcher in solver"),
-        );
-
-        Some(UniswapV3Liquidity::new(
-            UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
-            common.settlement_contract.clone(),
-            base_tokens.clone(),
-            common.web3.clone(),
-            uniswap_v3_pool_fetcher,
-        ))
-    } else {
-        None
-    };
+            {
+                Ok(uniswap_v3_pool_fetcher) => {
+                    let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
+                    (
+                        Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+                        Some(UniswapV3Liquidity::new(
+                            UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
+                            common.settlement_contract.clone(),
+                            base_tokens.clone(),
+                            common.web3.clone(),
+                            uniswap_v3_pool_fetcher,
+                        )),
+                    )
+                }
+                Err(err) => {
+                    tracing::error!("failed to create UniswapV3 pool fetcher in driver: {}", err);
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
 
     let maintainer = ServiceMaintenance {
         maintainers: pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
+            .chain(uniswap_v3_maintainer)
             .collect(),
     };
     tokio::task::spawn(

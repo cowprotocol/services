@@ -1,14 +1,15 @@
 use crate::commit_reveal::SettlementSummary;
 use anyhow::{Context, Result};
-use model::order::{Order, OrderKind};
+use model::order::{Order, OrderClass, OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    conversions::U256Ext, http_solver::model::TokenAmount, price_estimation::gas::GAS_PER_ORDER,
+    conversions::U256Ext, http_solver::model::TokenAmount, interaction::Interaction,
+    price_estimation::gas::GAS_PER_ORDER,
 };
 use solver::settlement::{
     external_prices::ExternalPrices, trade_surplus_in_native_token, verify_executed_amount,
-    Interaction, Settlement, SettlementEncoder, TradeExecution,
+    Settlement, SettlementEncoder, TradeExecution,
 };
 use std::{
     collections::hash_map::{Entry, HashMap},
@@ -46,13 +47,12 @@ impl TradedOrder {
     /// User orders are allowed to get surplus and therefore return the clearing price of the
     /// buy_token whereas liquidity orders must not get surplus so they return their limit price.
     fn buy_token_price(&self, clearing_prices: &HashMap<H160, U256>) -> Option<U256> {
-        match self.order.metadata.is_liquidity_order {
-            // liquidity orders have to be settled at their limit price
-            true => clearing_prices
+        match self.order.metadata.class {
+            OrderClass::Ordinary => clearing_prices.get(&self.order.data.buy_token).cloned(),
+            OrderClass::Liquidity | OrderClass::Limit => clearing_prices
                 .get(&self.order.data.sell_token)?
                 .checked_mul(self.order.data.sell_amount)?
                 .checked_div(self.order.data.buy_amount),
-            false => clearing_prices.get(&self.order.data.buy_token).cloned(),
         }
     }
 
@@ -156,7 +156,7 @@ impl SettlementProposal {
             let remaining = shared::remaining_amounts::Remaining::from_order(&trade.order)?;
             let remaining_fee = remaining.remaining(trade.order.data.fee_amount)?;
 
-            if trade.order.metadata.is_liquidity_order {
+            if trade.order.metadata.class == OrderClass::Liquidity {
                 encoder.add_liquidity_order_trade(
                     trade.order,
                     trade.executed_amount,

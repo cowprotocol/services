@@ -7,7 +7,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use thiserror::Error;
 
-const QUERY_PAGE_SIZE: usize = 1000;
+pub const QUERY_PAGE_SIZE: usize = 1000;
+const MAX_NUMBER_OF_RETRIES: usize = 10;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {
@@ -59,43 +60,57 @@ impl SubgraphClient {
     where
         T: DeserializeOwned,
     {
-        self.client
-            .post(self.subgraph_url.clone())
-            .json(&Query { query, variables })
-            .send()
-            .await?
-            .json::<QueryResponse<T>>()
-            .await?
-            .into_result()
+        // for long lasting queries subgraph call might randomly fail
+        // introduced retry mechanism that should efficiently help since failures are quick
+        // and we need 1 or 2 retries to succeed.
+        for _ in 0..MAX_NUMBER_OF_RETRIES {
+            match self
+                .client
+                .post(self.subgraph_url.clone())
+                .json(&Query {
+                    query,
+                    variables: variables.clone(),
+                })
+                .send()
+                .await?
+                .json::<QueryResponse<T>>()
+                .await?
+                .into_result()
+            {
+                Ok(result) => return Ok(result),
+                Err(err) => tracing::warn!("failed to query subgraph: {}", err),
+            }
+        }
+        Err(anyhow::anyhow!("failed to execute query on subgraph"))
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
     /// This function should be called for queries that return very long(paginated) result.
-    pub async fn paginated_query<T>(&self, block_number: u64, query: &str) -> Result<Vec<T>>
+    pub async fn paginated_query<T>(
+        &self,
+        query: &str,
+        mut variables: Map<String, Value>,
+    ) -> Result<Vec<T>>
     where
         T: ContainsId + DeserializeOwned,
     {
         let mut result = Vec::new();
-        let mut last_id = String::default();
 
         // We do paging by last ID instead of using `skip`. This is the
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/en/developer/graphql-api/#pagination>
+        variables.extend(json_map! {
+            "pageSize" => QUERY_PAGE_SIZE,
+            "lastId" => json!(String::default()),
+        });
         loop {
             let page = self
-                .query::<Data<T>>(
-                    query,
-                    Some(json_map! {
-                        "block" => block_number,
-                        "pageSize" => QUERY_PAGE_SIZE,
-                        "lastId" => json!(last_id),
-                    }),
-                )
+                .query::<Data<T>>(query, Some(variables.clone()))
                 .await?
                 .inner;
             let no_more_pages = page.len() != QUERY_PAGE_SIZE;
-            if let Some(last_pool) = page.last() {
-                last_id = last_pool.get_id();
+            if let Some(last_elem) = page.last() {
+                variables.insert("lastId".to_string(), json!(last_elem.get_id()));
             }
 
             result.extend(page);

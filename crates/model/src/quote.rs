@@ -8,6 +8,7 @@ use anyhow::bail;
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
 use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde_with::serde_as;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -30,6 +31,11 @@ pub enum QuoteSigningScheme {
     Eip1271 {
         #[serde(rename = "onchainOrder")]
         onchain_order: bool,
+        #[serde(
+            rename = "verificationGasLimit",
+            default = "default_verification_gas_limit"
+        )]
+        verification_gas_limit: u64,
     },
     PreSign {
         #[serde(rename = "onchainOrder")]
@@ -37,27 +43,56 @@ pub enum QuoteSigningScheme {
     },
 }
 
+impl QuoteSigningScheme {
+    pub fn new_eip1271_with_default_gas(onchain_order: bool) -> Self {
+        QuoteSigningScheme::Eip1271 {
+            onchain_order,
+            verification_gas_limit: default_verification_gas_limit(),
+        }
+    }
+}
+
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QuoteSigningDeserializationData {
     #[serde(default)]
     signing_scheme: SigningScheme,
     #[serde(default)]
+    verification_gas_limit: Option<u64>,
+    #[serde(default)]
     onchain_order: bool,
+}
+
+pub fn default_verification_gas_limit() -> u64 {
+    // default gas limit is based Ambire usecase. See here:
+    // https://github.com/cowprotocol/services/pull/480#issuecomment-1273190380
+    27_000_u64
 }
 
 impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
     type Error = anyhow::Error;
 
     fn try_from(data: QuoteSigningDeserializationData) -> Result<Self, Self::Error> {
-        match (data.signing_scheme, data.onchain_order) {
-            (scheme, true) if scheme.is_ecdsa_scheme() => {
+        match (
+            data.signing_scheme,
+            data.onchain_order,
+            data.verification_gas_limit,
+        ) {
+            (scheme, true, None) if scheme.is_ecdsa_scheme() => {
                 bail!("ECDSA-signed orders cannot be on-chain")
             }
-            (SigningScheme::Eip712, _) => Ok(Self::Eip712),
-            (SigningScheme::EthSign, _) => Ok(Self::EthSign),
-            (SigningScheme::Eip1271, onchain_order) => Ok(Self::Eip1271 { onchain_order }),
-            (SigningScheme::PreSign, onchain_order) => Ok(Self::PreSign { onchain_order }),
+            (SigningScheme::Eip712, _, None) => Ok(Self::Eip712),
+            (SigningScheme::EthSign, _, None) => Ok(Self::EthSign),
+            (SigningScheme::Eip1271, onchain_order, verification_gas_limit) => Ok(Self::Eip1271 {
+                onchain_order,
+                verification_gas_limit: verification_gas_limit
+                    .unwrap_or_else(default_verification_gas_limit),
+            }),
+            (SigningScheme::PreSign, onchain_order, None) => Ok(Self::PreSign { onchain_order }),
+            (_, _, Some(_)) => {
+                bail!("Only EIP-1271 signatures should have a verification_gas_limit!")
+            }
         }
     }
 }
@@ -303,7 +338,17 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "signingScheme":  "eip1271",
+                "signingScheme": "eip1271",
+                "onchainOrder": true,
+                "verificationGasLimit": 10000000
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "eip1271",
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -339,9 +384,15 @@ mod tests {
             modify_signing_scheme(QuoteSigningScheme::EthSign),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
+                verification_gas_limit: default_verification_gas_limit(),
+            }),
+            modify_signing_scheme(QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+                verification_gas_limit: 10000000u64,
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
+                verification_gas_limit: default_verification_gas_limit(),
             }),
             modify_signing_scheme(QuoteSigningScheme::PreSign {
                 onchain_order: true,

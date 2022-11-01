@@ -328,24 +328,10 @@ mod tests {
         gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::single_estimate,
         rate_limiter::RateLimiter,
-        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+        sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
     };
     use gas_estimation::gas_price::GasPrice1559;
-    use std::{collections::HashSet, sync::Mutex};
-
-    #[derive(Default)]
-    struct FakePoolFetcher(Vec<Pool>);
-    #[async_trait::async_trait]
-    impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: Block) -> Result<Vec<Pool>> {
-            Ok(self
-                .0
-                .clone()
-                .into_iter()
-                .filter(|pool| token_pairs.contains(&pool.tokens))
-                .collect())
-        }
-    }
+    use std::sync::Mutex;
 
     fn default_rate_limiter() -> Arc<RateLimiter> {
         Arc::new(RateLimiter::from_strategy(
@@ -390,7 +376,12 @@ mod tests {
     async fn return_error_if_invalid_reserves() {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
-        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 10));
+        let pool_address = H160::from_low_u64_be(1);
+        let pool = Pool::uniswap(
+            pool_address,
+            TokenPair::new(token_a, token_b).unwrap(),
+            (0, 10),
+        );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
         let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
@@ -424,11 +415,13 @@ mod tests {
     async fn price_estimate_containing_valid_and_invalid_paths() {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
+        let address = H160::from_low_u64_be(1);
 
         // The path via the base token does not exist (making it an invalid path)
         let base_token = H160::from_low_u64_be(3);
 
         let pool = Pool::uniswap(
+            address,
             TokenPair::new(token_a, token_b).unwrap(),
             (10u128.pow(28), 10u128.pow(27)),
         );
@@ -496,10 +489,15 @@ mod tests {
 
         let pools = vec![
             Pool::uniswap(
+                H160::from_low_u64_be(1),
                 TokenPair::new(token_a, token_b).unwrap(),
                 (100_000, 100_000),
             ),
-            Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100_000, 90_000)),
+            Pool::uniswap(
+                H160::from_low_u64_be(2),
+                TokenPair::new(token_a, token_b).unwrap(),
+                (100_000, 90_000),
+            ),
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
@@ -553,9 +551,21 @@ mod tests {
 
         // Direct trade is better when selling token_b
         let pools = vec![
-            Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (1000, 1000)),
-            Pool::uniswap(TokenPair::new(token_a, intermediate).unwrap(), (900, 1000)),
-            Pool::uniswap(TokenPair::new(intermediate, token_b).unwrap(), (900, 1000)),
+            Pool::uniswap(
+                H160::from_low_u64_be(1),
+                TokenPair::new(token_a, token_b).unwrap(),
+                (1000, 1000),
+            ),
+            Pool::uniswap(
+                H160::from_low_u64_be(2),
+                TokenPair::new(token_a, intermediate).unwrap(),
+                (900, 1000),
+            ),
+            Pool::uniswap(
+                H160::from_low_u64_be(3),
+                TokenPair::new(intermediate, token_b).unwrap(),
+                (900, 1000),
+            ),
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools));
@@ -617,18 +627,32 @@ mod tests {
             // worse than the pools between 1, 2, 3 so that it is not used for the trade, just for
             // gas price.
             Pool::uniswap(
+                H160::from_low_u64_be(1),
                 TokenPair::new(native, sell).unwrap(),
                 (100_000_000_000, 2_000),
             ),
             Pool::uniswap(
+                H160::from_low_u64_be(2),
                 TokenPair::new(native, buy).unwrap(),
                 (100_000_000_000, 1_000),
             ),
             // Direct connection 1 to 3.
-            Pool::uniswap(TokenPair::new(sell, buy).unwrap(), (1000, 800)),
+            Pool::uniswap(
+                H160::from_low_u64_be(3),
+                TokenPair::new(sell, buy).unwrap(),
+                (1000, 800),
+            ),
             // Intermediate from 1 to 2 to 2, cheaper than direct.
-            Pool::uniswap(TokenPair::new(sell, intermediate).unwrap(), (1000, 1000)),
-            Pool::uniswap(TokenPair::new(intermediate, buy).unwrap(), (1000, 1000)),
+            Pool::uniswap(
+                H160::from_low_u64_be(4),
+                TokenPair::new(sell, intermediate).unwrap(),
+                (1000, 1000),
+            ),
+            Pool::uniswap(
+                H160::from_low_u64_be(5),
+                TokenPair::new(intermediate, buy).unwrap(),
+                (1000, 1000),
+            ),
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
@@ -705,14 +729,17 @@ mod tests {
         // A->C prices buy token to 1.007 but costs G.
 
         let pool_ab = Pool::uniswap(
+            H160::from_low_u64_be(1),
             TokenPair::new(token_a, token_b).unwrap(),
             (10u128.pow(28), 10u128.pow(28)),
         );
         let pool_bc = Pool::uniswap(
+            H160::from_low_u64_be(2),
             TokenPair::new(token_b, token_c).unwrap(),
             (10u128.pow(28), 10u128.pow(28)),
         );
         let pool_ac = Pool::uniswap(
+            H160::from_low_u64_be(3),
             TokenPair::new(token_a, token_c).unwrap(),
             (1004 * 10u128.pow(25), 10u128.pow(28)),
         );

@@ -1,20 +1,28 @@
-use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
+use super::{ExternalPrices, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
 use crate::{
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
     settlement::trade_surplus_in_native_token,
 };
 use anyhow::{bail, ensure, Context as _, Result};
-use model::order::{Order, OrderKind};
+use itertools::Itertools;
+use model::{
+    interaction::InteractionData,
+    order::{Order, OrderKind},
+};
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
-use shared::conversions::U256Ext;
+use shared::{conversions::U256Ext, interaction::Interaction};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     iter,
     sync::Arc,
 };
+
+/// An interaction paired with a flag indicating whether it can be omitted
+/// from the final execution plan
+type MaybeInternalizableInteraction = (Arc<dyn Interaction>, bool);
 
 /// An intermediate settlement representation that can be incrementally
 /// constructed.
@@ -43,7 +51,8 @@ pub struct SettlementEncoder {
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
-    execution_plan: Vec<Arc<dyn Interaction>>,
+    execution_plan: Vec<MaybeInternalizableInteraction>,
+    pre_interactions: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -51,6 +60,12 @@ impl Default for SettlementEncoder {
     fn default() -> Self {
         Self::new(Default::default())
     }
+}
+
+/// Whether or not internalizable interactions should be encoded as calldata
+pub enum InternalizationStrategy {
+    EncodeAllInteractions,
+    SkipInternalizableInteraction,
 }
 
 impl SettlementEncoder {
@@ -76,6 +91,7 @@ impl SettlementEncoder {
             order_trades: Vec::new(),
             liquidity_order_trades: Vec::new(),
             execution_plan: Vec::new(),
+            pre_interactions: Vec::new(),
             unwraps: Vec::new(),
         }
     }
@@ -100,6 +116,7 @@ impl SettlementEncoder {
             order_trades: self.order_trades.clone(),
             liquidity_order_trades: self.liquidity_order_trades.clone(),
             execution_plan: Vec::new(),
+            pre_interactions: self.pre_interactions.clone(),
             unwraps: self.unwraps.clone(),
         }
     }
@@ -116,8 +133,10 @@ impl SettlementEncoder {
         &self.liquidity_order_trades
     }
 
-    pub fn execution_plan(&self) -> &Vec<Arc<dyn Interaction>> {
-        &self.execution_plan
+    pub fn has_interactions(&self) -> bool {
+        self.execution_plan
+            .iter()
+            .any(|(_, internalizable)| !internalizable)
     }
 
     // Fails if any used token doesn't have a price or if executed amount is impossible.
@@ -146,7 +165,7 @@ impl SettlementEncoder {
 
         let order_trade = OrderTrade {
             trade: Trade {
-                order,
+                order: order.clone(),
                 sell_token_index,
                 executed_amount,
                 scaled_unsubsidized_fee,
@@ -158,6 +177,8 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, *buy_price)
             .context("impossible trade execution")?;
 
+        self.pre_interactions
+            .append(&mut order.interactions.pre.clone());
         self.order_trades.push(order_trade);
         Ok(execution)
     }
@@ -212,7 +233,7 @@ impl SettlementEncoder {
             .checked_div(order.data.buy_amount)
             .context("buy_price calculation failed")?;
         let trade = Trade {
-            order,
+            order: order.clone(),
             sell_token_index,
             executed_amount,
             scaled_unsubsidized_fee,
@@ -227,12 +248,23 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, buy_price)
             .context("impossible trade execution")?;
 
+        self.pre_interactions
+            .append(&mut order.interactions.pre.clone());
         self.liquidity_order_trades.push(liquidity_order_trade);
         Ok(execution)
     }
 
     pub fn append_to_execution_plan(&mut self, interaction: impl Interaction + 'static) {
-        self.execution_plan.push(Arc::new(interaction));
+        self.append_to_execution_plan_internalizable(interaction, false)
+    }
+
+    pub fn append_to_execution_plan_internalizable(
+        &mut self,
+        interaction: impl Interaction + 'static,
+        internalizable: bool,
+    ) {
+        self.execution_plan
+            .push((Arc::new(interaction), internalizable));
     }
 
     pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
@@ -347,7 +379,10 @@ impl SettlementEncoder {
         });
     }
 
-    pub fn finish(mut self) -> EncodedSettlement {
+    pub fn finish(
+        mut self,
+        internalization_strategy: InternalizationStrategy,
+    ) -> EncodedSettlement {
         self.drop_unnecessary_tokens_and_prices();
 
         let (mut liquidity_order_buy_tokens, mut liquidity_order_prices): (Vec<H160>, Vec<U256>) =
@@ -390,11 +425,29 @@ impl SettlementEncoder {
             clearing_prices,
             trades,
             interactions: [
-                Vec::new(),
+                // In the following it is assumed that all different interactions
+                // are only required once to be executed.
+                self.pre_interactions
+                    .into_iter()
+                    .unique()
+                    .flat_map(|interaction| interaction.encode())
+                    .collect(),
                 iter::empty()
                     .chain(
                         self.execution_plan
                             .iter()
+                            .filter_map(|(interaction, internalizable)| {
+                                if *internalizable
+                                    && matches!(
+                                        internalization_strategy,
+                                        InternalizationStrategy::SkipInternalizableInteraction
+                                    )
+                                {
+                                    None
+                                } else {
+                                    Some(interaction)
+                                }
+                            })
                             .flat_map(|interaction| interaction.encode()),
                     )
                     .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
@@ -545,7 +598,7 @@ pub mod tests {
     use ethcontract::Bytes;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderData};
-    use shared::dummy_contract;
+    use shared::{dummy_contract, interaction::Interaction};
 
     #[test]
     pub fn encode_trades_finds_token_index() {
@@ -596,7 +649,9 @@ pub mod tests {
         });
 
         assert_eq!(
-            encoder.finish().interactions[1],
+            encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1],
             UnwrapWethInteraction {
                 weth,
                 amount: 3.into(),
@@ -630,7 +685,8 @@ pub mod tests {
         assert!(settlement
             .add_liquidity_order_trade(order10, 20.into(), 0.into())
             .is_ok());
-        let finished_settlement = settlement.finish();
+        let finished_settlement =
+            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         assert_eq!(
             finished_settlement.tokens,
             vec![token(0), token(1), token(0)]
@@ -669,7 +725,8 @@ pub mod tests {
             settlement.liquidity_order_trades[0].trade.sell_token_index,
             0
         );
-        let finished_settlement = settlement.finish();
+        let finished_settlement =
+            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         // the initial price from:SettlementEncoder::new(maplit::hashmap! {
         //     token(1) => 9.into(),
         // });
@@ -724,7 +781,9 @@ pub mod tests {
         encoder.append_to_execution_plan(interaction.clone());
 
         assert_eq!(
-            encoder.finish().interactions[1],
+            encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1],
             [interaction.encode(), unwrap.encode()].concat(),
         );
     }
@@ -995,7 +1054,7 @@ pub mod tests {
             amount: 12.into(),
         });
 
-        let encoded = encoder.finish();
+        let encoded = encoder.finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         // only token 1 and 2 have been included in orders by traders
         let expected_tokens: Vec<_> = [1, 3].into_iter().map(token).collect();
@@ -1014,5 +1073,30 @@ pub mod tests {
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
         assert_eq!(updated_buy_token_index, 1.into());
+    }
+
+    #[derive(Debug)]
+    pub struct TestInteraction;
+    impl Interaction for TestInteraction {
+        fn encode(&self) -> Vec<EncodedInteraction> {
+            vec![(H160::zero(), U256::zero(), Bytes::default())]
+        }
+    }
+
+    #[test]
+    fn optionally_encodes_internalizable_transactions() {
+        let prices = hashmap! {token(1) => 7.into() };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        encoder.append_to_execution_plan_internalizable(TestInteraction, true);
+        encoder.append_to_execution_plan_internalizable(TestInteraction, false);
+
+        let encoded = encoder
+            .clone()
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
+        assert_eq!(encoded.interactions[1].len(), 1);
+
+        let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
+        assert_eq!(encoded.interactions[1].len(), 2);
     }
 }

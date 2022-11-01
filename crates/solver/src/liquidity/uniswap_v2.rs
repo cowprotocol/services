@@ -90,6 +90,7 @@ impl UniswapLikeLiquidity {
             tokens.insert(pool.tokens.get().1);
 
             result.push(ConstantProductOrder {
+                address: pool.address,
                 tokens: pool.tokens,
                 reserves: pool.reserves,
                 fee: pool.fee,
@@ -148,8 +149,8 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
     // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
-        encoder.append_to_execution_plan(approval);
-        encoder.append_to_execution_plan(swap);
+        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
 }

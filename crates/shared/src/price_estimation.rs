@@ -1,6 +1,7 @@
 pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
+pub mod factory;
 pub mod gas;
 pub mod http;
 pub mod instrumented;
@@ -13,17 +14,20 @@ pub mod trade_finder;
 pub mod zeroex;
 
 use crate::{
+    arguments::display_option,
     bad_token::BadTokenDetecting,
     conversions::U256Ext,
-    rate_limiter::{RateLimiter, RateLimiterError},
+    rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
 };
 use anyhow::Result;
 use ethcontract::{H160, U256};
 use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
 use num::BigRational;
+use reqwest::Url;
 use std::{
     cmp::{Eq, PartialEq},
+    fmt::{self, Display, Formatter},
     future::Future,
     hash::Hash,
     sync::Arc,
@@ -47,6 +51,95 @@ impl PriceEstimatorType {
     /// Returns the name of this price estimator type.
     pub fn name(&self) -> String {
         format!("{:?}", self)
+    }
+}
+
+/// Shared price estimation configuration arguments.
+#[derive(clap::Parser)]
+#[group(skip)]
+pub struct Arguments {
+    /// Configures the back off strategy for price estimators when requests take too long.
+    /// Requests issued while back off is active get dropped entirely.
+    /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
+    /// back_off_growth_factor: f64 >= 1.0
+    /// min_back_off: f64 in seconds
+    /// max_back_off: f64 in seconds
+    #[clap(long, env, verbatim_doc_comment)]
+    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
+
+    /// How often the native price estimator should refresh its cache.
+    #[clap(
+        long,
+        env,
+        default_value = "1",
+        value_parser = crate::arguments::duration_from_seconds,
+    )]
+    pub native_price_cache_refresh_secs: Duration,
+
+    /// How long cached native prices stay valid.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = crate::arguments::duration_from_seconds,
+    )]
+    pub native_price_cache_max_age_secs: Duration,
+
+    /// How many cached native token prices can be updated at most in one maintenance cycle.
+    #[clap(long, env, default_value = "3")]
+    pub native_price_cache_max_update_size: usize,
+
+    /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
+    /// that small pools do not influence the prices. If not set a reasonable default is used based
+    /// on network id.
+    #[clap(long, env, value_parser = U256::from_dec_str)]
+    pub amount_to_estimate_prices_with: Option<U256>,
+
+    /// The API endpoint to call the mip v2 solver for price estimation
+    #[clap(long, env)]
+    pub quasimodo_solver_url: Option<Url>,
+
+    /// The API endpoint to call the yearn solver for price estimation
+    #[clap(long, env)]
+    pub yearn_solver_url: Option<Url>,
+
+    /// The API endpoint for the Balancer SOR API for solving.
+    #[clap(long, env)]
+    pub balancer_sor_url: Option<Url>,
+}
+
+impl Display for Arguments {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        display_option(
+            f,
+            "price_estimation_rate_limites",
+            &self.price_estimation_rate_limiter,
+        )?;
+        writeln!(
+            f,
+            "native_price_cache_refresh_secs: {:?}",
+            self.native_price_cache_refresh_secs
+        )?;
+        writeln!(
+            f,
+            "native_price_cache_max_age_secs: {:?}",
+            self.native_price_cache_max_age_secs
+        )?;
+        writeln!(
+            f,
+            "native_price_cache_max_update_size: {}",
+            self.native_price_cache_max_update_size
+        )?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+
+        Ok(())
     }
 }
 

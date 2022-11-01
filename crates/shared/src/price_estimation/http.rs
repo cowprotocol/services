@@ -18,11 +18,9 @@ use crate::{
     recent_block_cache::Block,
     request_sharing::RequestSharing,
     sources::{
-        balancer_v2::{
-            pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
-        },
-        uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetching},
-        uniswap_v3::pool_fetching::{PoolFetching as UniswapV3PoolFetching, UniswapV3PoolFetcher},
+        balancer_v2::{pools::common::compute_scaling_rate, BalancerPoolFetching},
+        uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
+        uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
     },
     token_info::TokenInfoFetching,
 };
@@ -44,9 +42,9 @@ pub struct HttpPriceEstimator {
         Query,
         BoxFuture<'static, Result<SettledBatchAuctionModel, PriceEstimationError>>,
     >,
-    pools: Arc<PoolCache>,
-    balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-    uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
+    pools: Arc<dyn UniswapV2PoolFetching>,
+    balancer_pools: Option<Arc<dyn BalancerPoolFetching>>,
+    uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     token_info: Arc<dyn TokenInfoFetching>,
     gas_info: Arc<dyn GasPriceEstimating>,
     native_token: H160,
@@ -59,9 +57,9 @@ impl HttpPriceEstimator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: Arc<dyn HttpSolverApi>,
-        pools: Arc<PoolCache>,
-        balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-        uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
+        pools: Arc<dyn UniswapV2PoolFetching>,
+        balancer_pools: Option<Arc<dyn BalancerPoolFetching>>,
+        uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
         token_info: Arc<dyn TokenInfoFetching>,
         gas_info: Arc<dyn GasPriceEstimating>,
         native_token: H160,
@@ -85,7 +83,8 @@ impl HttpPriceEstimator {
     }
 
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price());
+        let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price())
+            .max(1.into()); // flooring at 1 to avoid division by zero error
 
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (U256::max_value(), query.in_amount),
@@ -111,6 +110,8 @@ impl HttpPriceEstimator {
                 is_liquidity_order: false,
                 mandatory: true,
                 has_atomic_execution: false,
+                // TODO: is it possible to set a more accurate reward?
+                reward: 35.,
             },
         };
 
@@ -245,6 +246,7 @@ impl HttpPriceEstimator {
                 )),
                 cost: gas_model.uniswap_cost(),
                 mandatory: false,
+                address: pool.address,
             })
             .collect())
     }
@@ -256,7 +258,7 @@ impl HttpPriceEstimator {
     ) -> Result<Vec<AmmModel>> {
         let pools = match &self.uniswap_v3_pools {
             Some(uniswap_v3) => uniswap_v3
-                .fetch(&pairs)
+                .fetch(&pairs, Block::Recent)
                 .await
                 .context("no uniswap v3 pools")?,
             None => return Ok(Default::default()),
@@ -269,6 +271,7 @@ impl HttpPriceEstimator {
                     BigInt::from(*pool.state.fee.denom()),
                 )),
                 cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
+                address: pool.address,
                 parameters: AmmParameters::Concentrated(ConcentratedPoolParameters { pool }),
                 mandatory: false,
             })
@@ -309,6 +312,7 @@ impl HttpPriceEstimator {
             fee: pool.common.swap_fee.into(),
             cost: gas_model.balancer_cost(),
             mandatory: false,
+            address: pool.common.address,
         });
         let stable = pools
             .stable_pools
@@ -334,6 +338,7 @@ impl HttpPriceEstimator {
                     fee: pool.common.swap_fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: pool.common.address,
                 })
             });
         let mut models = Vec::from_iter(weighted);
@@ -379,48 +384,274 @@ mod tests {
     use super::*;
     use crate::{
         current_block::current_block_stream,
-        http_solver::{DefaultHttpSolverApi, SolverConfig},
+        gas_price_estimation::FakeGasPriceEstimator,
+        http_solver::{
+            model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
+            DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig,
+        },
         price_estimation::Query,
         recent_block_cache::CacheConfig,
         sources::{
-            balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind},
+            balancer_v2::{
+                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+            },
             uniswap_v2,
+            uniswap_v2::{pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher},
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         },
-        token_info::TokenInfoFetcher,
+        token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         transport::http::HttpTransport,
         Web3,
     };
+    use anyhow::bail;
     use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
+    use gas_estimation::GasPrice1559;
+    use maplit::hashmap;
     use model::order::OrderKind;
     use reqwest::Client;
+    use std::collections::HashMap;
     use url::Url;
 
-    // TODO: to implement these tests, we'll need to make HTTP solver API mockable.
+    #[tokio::test]
+    async fn test_estimate() {
+        let native_token = H160::zero();
+        let mut api = MockHttpSolverApi::new();
+        api.expect_solve().returning(move |_, _| {
+            Ok(SettledBatchAuctionModel {
+                orders: hashmap! {
+                    0 => ExecutedOrderModel {
+                        exec_sell_amount: 50.into(),
+                        exec_buy_amount: 200.into(),
+                        cost: None,
+                        fee: None,
+                        exec_plan: None,
+                    }
+                },
+                ..Default::default()
+            })
+        });
+
+        let mut token_info_fetching = MockTokenInfoFetching::new();
+        token_info_fetching
+            .expect_get_token_infos()
+            .returning(move |_| HashMap::new());
+
+        let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
+
+        let estimator = HttpPriceEstimator::new(
+            Arc::new(api),
+            Arc::new(FakePoolFetcher(vec![])),
+            None,
+            None,
+            Arc::new(token_info_fetching),
+            gas_price_estimating,
+            native_token,
+            Arc::new(BaseTokens::new(native_token, &[])),
+            "test".into(),
+            RateLimiter::test(),
+        );
+
+        let sell_order = estimator
+            .estimate(&Query {
+                from: None,
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                in_amount: 100.into(),
+                kind: OrderKind::Sell,
+            })
+            .await
+            .unwrap();
+        assert_eq!(sell_order.out_amount, 200.into());
+
+        let buy_order = estimator
+            .estimate(&Query {
+                from: None,
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                in_amount: 100.into(),
+                kind: OrderKind::Buy,
+            })
+            .await
+            .unwrap();
+        assert_eq!(buy_order.out_amount, 50.into());
+    }
 
     #[tokio::test]
-    async fn estimate_sell() {}
+    async fn test_api_error() {
+        let native_token = H160::zero();
+        let mut api = MockHttpSolverApi::new();
+        api.expect_solve()
+            .returning(move |_, _| bail!("solver error"));
+
+        let mut token_info_fetching = MockTokenInfoFetching::new();
+        token_info_fetching
+            .expect_get_token_infos()
+            .returning(move |_| HashMap::new());
+
+        let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
+
+        let estimator = HttpPriceEstimator::new(
+            Arc::new(api),
+            Arc::new(FakePoolFetcher(vec![])),
+            None,
+            None,
+            Arc::new(token_info_fetching),
+            gas_price_estimating,
+            native_token,
+            Arc::new(BaseTokens::new(native_token, &[])),
+            "test".into(),
+            RateLimiter::test(),
+        );
+        let err = estimator
+            .estimate(&Query {
+                from: None,
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                in_amount: 100.into(),
+                kind: OrderKind::Sell,
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PriceEstimationError::Other(_)));
+    }
 
     #[tokio::test]
-    async fn estimate_buy() {}
+    async fn test_no_liquidity() {
+        let native_token = H160::zero();
+        let mut api = MockHttpSolverApi::new();
+        api.expect_solve().returning(move |_, _| {
+            Ok(SettledBatchAuctionModel {
+                orders: HashMap::new(), // no matched order
+                ..Default::default()
+            })
+        });
+
+        let mut token_info_fetching = MockTokenInfoFetching::new();
+        token_info_fetching
+            .expect_get_token_infos()
+            .returning(move |_| HashMap::new());
+
+        let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
+
+        let estimator = HttpPriceEstimator::new(
+            Arc::new(api),
+            Arc::new(FakePoolFetcher(vec![])),
+            None,
+            None,
+            Arc::new(token_info_fetching),
+            gas_price_estimating,
+            native_token,
+            Arc::new(BaseTokens::new(native_token, &[])),
+            "test".into(),
+            RateLimiter::test(),
+        );
+
+        let err = estimator
+            .estimate(&Query {
+                from: None,
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                in_amount: 100.into(),
+                kind: OrderKind::Sell,
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PriceEstimationError::NoLiquidity));
+    }
 
     #[tokio::test]
-    async fn quasimodo_error() {}
+    async fn test_gas_estimate() {
+        let native_token = H160::zero();
+        let mut api = MockHttpSolverApi::new();
+        api.expect_solve().returning(move |_, _| {
+            Ok(SettledBatchAuctionModel {
+                orders: hashmap! {
+                    0 => ExecutedOrderModel {
+                        exec_sell_amount: 100.into(),
+                        exec_buy_amount: 100.into(),
+                        cost: Some(TokenAmount {
+                            amount: 100_000.into(),
+                            token: native_token
+                        }),
+                        fee: None,
+                        exec_plan: None,
+                    }
+                },
+                amms: hashmap! {
+                    0 => UpdatedAmmModel {
+                        execution: vec![ExecutedAmmModel {
+                            sell_token: H160::from_low_u64_be(0),
+                            buy_token: H160::from_low_u64_be(1),
+                            exec_sell_amount: 100.into(),
+                            exec_buy_amount: 100.into(),
+                            exec_plan: None
+                        },ExecutedAmmModel {
+                            sell_token: H160::from_low_u64_be(1),
+                            buy_token: H160::from_low_u64_be(0),
+                            exec_sell_amount: 100.into(),
+                            exec_buy_amount: 100.into(),
+                            exec_plan: None
+                        }],
+                        cost: Some(TokenAmount {
+                            amount: 200_000.into(),
+                            token: native_token
+                        }
+                        ),
+                    }
+                },
+                interaction_data: vec![InteractionData {
+                    target: H160::zero(),
+                    value: U256::zero(),
+                    call_data: vec![],
+                    inputs: vec![],
+                    outputs: vec![],
+                    exec_plan: None,
+                    cost: Some(TokenAmount {
+                        amount: 300_000.into(),
+                        token: native_token,
+                    }),
+                }],
+                ..Default::default()
+            })
+        });
 
-    #[tokio::test]
-    async fn quasimodo_hard_error() {}
+        let mut token_info_fetching = MockTokenInfoFetching::new();
+        token_info_fetching
+            .expect_get_token_infos()
+            .returning(move |_| HashMap::new());
 
-    #[tokio::test]
-    async fn quasimodo_no_liquidity() {}
+        let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
+            max_fee_per_gas: 1.0,
+            max_priority_fee_per_gas: 1.0,
+            ..Default::default()
+        }));
 
-    #[tokio::test]
-    async fn quasimodo_infeasible() {}
+        let estimator = HttpPriceEstimator::new(
+            Arc::new(api),
+            Arc::new(FakePoolFetcher(vec![])),
+            None,
+            None,
+            Arc::new(token_info_fetching),
+            gas_price_estimating,
+            native_token,
+            Arc::new(BaseTokens::new(native_token, &[])),
+            "test".into(),
+            RateLimiter::test(),
+        );
 
-    #[tokio::test]
-    async fn same_token() {}
+        let query = Query {
+            from: None,
+            sell_token: H160::from_low_u64_be(0),
+            buy_token: H160::from_low_u64_be(1),
+            in_amount: 100.into(),
+            kind: OrderKind::Sell,
+        };
+        let result = estimator.estimate(&query).await.unwrap();
 
-    #[tokio::test]
-    async fn unsupported_token() {}
+        // 94391 base cost + 100k order cost + 200k AMM cost (x2) + 300k interaction cost
+        assert_eq!(result.gas, 894391);
+    }
 
     #[tokio::test]
     #[ignore]
@@ -481,7 +712,7 @@ mod tests {
             .expect("failed to create Balancer pool fetcher"),
         );
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, Duration::from_secs(30), client.clone())
+            UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone(), 100)
                 .await
                 .expect("failed to create uniswap v3 pool fetcher"),
         );

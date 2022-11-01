@@ -4,7 +4,7 @@ use chrono::Utc;
 use ethcontract::H256;
 use model::{
     auction::AuctionWithId,
-    order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
+    order::{Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid},
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -32,10 +32,10 @@ impl Metrics {
     fn on_order_operation(order: &Order, operation: OrderOperation) {
         let metrics = Self::instance(global_metrics::get_metric_storage_registry())
             .expect("unexpected error getting metrics instance");
-
-        let kind = match order.metadata.is_liquidity_order {
-            true => "liquidity",
-            false => "user",
+        let kind = match order.metadata.class {
+            OrderClass::Ordinary => "user",
+            OrderClass::Liquidity => "liquidity",
+            OrderClass::Limit => "limit",
         };
         let op = match operation {
             OrderOperation::Created => "created",
@@ -345,6 +345,7 @@ mod tests {
                         },
                         data: creation.data,
                         signature: creation.signature,
+                        ..Default::default()
                     },
                     Default::default(),
                 ))

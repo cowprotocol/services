@@ -224,7 +224,7 @@ async fn onchain_settlement(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        None,
+        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),

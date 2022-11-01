@@ -5,20 +5,22 @@ use super::{
     Auction,
 };
 use crate::{
-    encoding::EncodedInteraction,
     interactions::{
         allowances::{AllowanceManaging, ApprovalRequest},
         balancer_v2::{self, SwapKind},
     },
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{Account, Bytes, I256, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
-use shared::balancer_sor_api::{BalancerSorApi, Query, Quote};
+use shared::{
+    balancer_sor_api::{BalancerSorApi, Query, Quote},
+    interaction::{EncodedInteraction, Interaction},
+};
 use std::sync::Arc;
 
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
@@ -225,7 +227,10 @@ impl Interaction for BatchSwap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging};
+    use crate::{
+        interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging},
+        settlement::InternalizationStrategy,
+    };
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
     use model::order::{Order, OrderData};
@@ -344,7 +349,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish();
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
@@ -467,7 +472,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .encoder
-            .finish();
+            .finish(InternalizationStrategy::SkipInternalizableInteraction);
 
         assert_eq!(result.tokens, [buy_token, sell_token]);
         assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);

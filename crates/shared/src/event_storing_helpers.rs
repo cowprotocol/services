@@ -5,7 +5,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
-    quotes::{Quote as DbQuote, QuoteSearchParameters as DbQuoteSearchParameters},
+    quotes::{Quote as DbQuote, QuoteKind, QuoteSearchParameters as DbQuoteSearchParameters},
 };
 use number_conversions::u256_to_big_decimal;
 
@@ -28,6 +28,7 @@ pub fn create_quote_row(data: QuoteData) -> DbQuote {
 pub fn create_db_search_parameters(
     params: QuoteSearchParameters,
     expiration: DateTime<Utc>,
+    quote_kind: QuoteKind,
 ) -> DbQuoteSearchParameters {
     DbQuoteSearchParameters {
         sell_token: ByteArray(params.sell_token.0),
@@ -37,6 +38,6 @@ pub fn create_db_search_parameters(
         buy_amount: u256_to_big_decimal(&params.buy_amount),
         kind: order_kind_into(params.kind),
         expiration,
-        quote_kind: params.quote_kind,
+        quote_kind,
     }
 }

@@ -8,6 +8,19 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::BTreeMap;
 
+/// As a temporary measure the driver informs the api about per competition data that should be
+/// stored in the database. This goes to the api through an unlisted and authenticated http endpoint
+/// because we do not want the driver to have a database connection.
+/// Once autopilot is handling the competition this will no longer be needed.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Request {
+    pub auction: AuctionId,
+    pub competition: SolverCompetition,
+    pub rewards: Vec<(OrderUid, f64)>,
+}
+
+/// This struct is stored directly in the database and returned through the solver_competition
+/// endpoint.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverCompetition {

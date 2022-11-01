@@ -2,6 +2,7 @@
 
 use crate::{
     app_id::AppId,
+    interaction::InteractionData,
     quote::QuoteId,
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
     u256_decimal::{self, DecimalU256},
@@ -28,6 +29,12 @@ use web3::signing::{self, Key, SecretKeyRef};
 /// It is used in place of an actual buy token address in an order.
 pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Interactions {
+    pub pre: Vec<InteractionData>,
+    // later we can add here intra/post interactions
+}
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
@@ -40,6 +47,8 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
+    #[serde(default)]
+    pub interactions: Interactions,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -58,7 +67,7 @@ impl Order {
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
-        is_liquidity_order: bool,
+        class: OrderClass,
     ) -> Result<Self, VerificationError> {
         let owner = order.verify_owner(domain)?;
         Ok(Self {
@@ -68,11 +77,12 @@ impl Order {
                 uid: order.data.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
-                is_liquidity_order,
+                class,
                 ..Default::default()
             },
             signature: order.signature.clone(),
             data: order.data,
+            interactions: Interactions::default(),
         })
     }
 
@@ -379,6 +389,12 @@ impl OrderCancellation {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+pub struct EthflowData {
+    pub user_valid_to: i64,
+    pub is_refunded: bool,
+}
+
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
@@ -402,9 +418,17 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
+    // TODO: This is needed to keep backwards compatibility in the shadow solver.
+    // Remove `serde(default)` before the next release.
+    #[serde(default)]
+    pub class: OrderClass,
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ethflow_data: Option<EthflowData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
 }
 
@@ -421,15 +445,18 @@ impl Default for OrderMetadata {
             executed_fee_amount: Default::default(),
             invalidated: Default::default(),
             status: OrderStatus::Open,
+            class: OrderClass::Ordinary,
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
+            ethflow_data: None,
+            onchain_user: None,
             is_liquidity_order: false,
         }
     }
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
@@ -544,6 +571,26 @@ pub enum OrderKind {
     #[default]
     Buy,
     Sell,
+}
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderClass {
+    /// The most common type of order which can be placed by any user. Expected to be fulfilled
+    /// immediately (in the next block).
+    #[default]
+    Ordinary,
+    /// Liquidity orders can only be placed by whitelisted users. These are
+    /// used for matching "coincidence of wants" trades. These are zero-fee orders which are
+    /// not expected to be fulfilled immediately and can potentially live for a long time.
+    Liquidity,
+    /// Orders which are not expected to be fulfilled immediately, but potentially somewhere far in
+    /// the future. These are orders where users essentially want to say: "once the price is at least X in
+    /// the future, then fulfill my order". These orders have their fee set to zero, because it's
+    /// impossible to predict fees that far in the future. Instead, the fee is taken from the order
+    /// surplus once the order becomes fulfillable and the surplus is high enough.
+    Limit,
 }
 
 impl OrderKind {
@@ -666,6 +713,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
+            "class": "ordinary",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
@@ -674,6 +722,9 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
+            "interactions": {
+                    "pre": []
+            }
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -690,7 +741,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
-                is_liquidity_order: false,
+                ..Default::default()
             },
             data: OrderData {
                 sell_token: H160::from_low_u64_be(10),
@@ -720,6 +771,7 @@ mod tests {
                 .unwrap(),
             }
             .to_signature(signing_scheme),
+            interactions: Interactions::default(),
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);
@@ -979,5 +1031,48 @@ mod tests {
     #[test]
     fn debug_order_data() {
         dbg!(Order::default());
+    }
+
+    // TODO: remove when `class` field no longer has to be backwards compatible (i.e. right before
+    // the next release).
+    #[test]
+    fn order_class_is_backwards_compatible() {
+        let value = json!(
+         {
+             "creationDate": "1970-01-01T00:00:03Z",
+             "owner": "0x0000000000000000000000000000000000000001",
+             "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+             "availableBalance": "100",
+             "executedBuyAmount": "3",
+             "executedSellAmount": "5",
+             "executedSellAmountBeforeFees": "4",
+             "executedFeeAmount": "1",
+             "invalidated": true,
+             "sellToken": "0x000000000000000000000000000000000000000a",
+             "buyToken": "0x0000000000000000000000000000000000000009",
+             "receiver": "0x000000000000000000000000000000000000000b",
+             "sellAmount": "1",
+             "buyAmount": "0",
+             "validTo": 4294967295u32,
+             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
+             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+             "kind": "buy",
+             "partiallyFillable": false,
+             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
+             "signingScheme": "eip712",
+             "status": "open",
+             "settlementContract": "0x0000000000000000000000000000000000000002",
+             "sellTokenBalance": "external",
+             "buyTokenBalance": "internal",
+             "isLiquidityOrder": false,
+             "interactions": {
+                     "pre": []
+             }
+        // note that we don't have a `class` field in the json
+        //   "class": "ordinary",
+         });
+        let deserialized: Order = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized.metadata.class, OrderClass::Ordinary);
     }
 }

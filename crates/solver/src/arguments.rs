@@ -134,6 +134,14 @@ pub struct Arguments {
     )]
     pub market_makable_token_list: String,
 
+    /// Time interval after which market makable list needs to be updated
+    #[clap(
+        long,
+        default_value = "3600",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub market_makable_token_list_update_interval: Duration,
+
     /// The maximum gas price in Gwei the solver is willing to pay in a settlement.
     #[clap(
         long,

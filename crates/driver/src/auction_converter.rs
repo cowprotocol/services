@@ -58,9 +58,13 @@ impl AuctionConverting for AuctionConverter {
         let orders = auction
             .orders
             .into_iter()
-            .filter_map(
-                |order| match self.order_converter.normalize_limit_order(order) {
-                    Ok(order) if order.buy_amount != 0.into() && order.sell_amount != 0.into() => {
+            .filter_map(|order| {
+                let uid = order.metadata.uid;
+                match self.order_converter.normalize_limit_order(order) {
+                    Ok(mut order)
+                        if order.buy_amount != 0.into() && order.sell_amount != 0.into() =>
+                    {
+                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
                         Some(order)
                     }
                     Err(err) => {
@@ -76,8 +80,8 @@ impl AuctionConverting for AuctionConverter {
                         tracing::error!(?err, "error normalizing limit order");
                         None
                     }
-                },
-            )
+                }
+            })
             .collect::<Vec<_>>();
         anyhow::ensure!(
             orders.iter().any(|o| !o.is_liquidity_order),
@@ -123,7 +127,7 @@ mod tests {
     use gas_estimation::GasPrice1559;
     use maplit::btreemap;
     use model::{
-        order::{Order, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+        order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
         TokenPair,
     };
     use num::rational::{BigRational, Ratio};
@@ -188,6 +192,7 @@ mod tests {
             })
             .returning(move |_, _| {
                 Ok(vec![ConstantProduct(ConstantProductOrder {
+                    address: H160::from_low_u64_be(1),
                     tokens: TokenPair::new(token(1), token(2)).unwrap(),
                     reserves: (1u128, 1u128),
                     fee: Ratio::<u32>::new(1, 1),
@@ -210,6 +215,7 @@ mod tests {
                 latest_settlement_block: 2,
                 orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
                 prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+                rewards: Default::default(),
             },
         };
 
@@ -247,7 +253,7 @@ mod tests {
 
         // auction has to include at least 1 user order
         model.auction.orders = vec![order(1, 2, false)];
-        model.auction.orders[0].metadata.is_liquidity_order = true;
+        model.auction.orders[0].metadata.class = OrderClass::Liquidity;
         assert!(converter.convert_auction(model, 3).await.is_err());
     }
 }
