@@ -90,7 +90,6 @@ fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
         return Ok(Default::default());
     }
     s.split(';')
-        .into_iter()
         .map(|pair_str| {
             let (key, values) = pair_str
                 .split_once(':')
