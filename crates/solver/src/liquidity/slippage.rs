@@ -170,43 +170,82 @@ pub struct SlippageContext<'a> {
 }
 
 impl<'a> SlippageContext<'a> {
+    /// Computes the slippage amount for the specified token amount.
+    pub fn slippage(&self, token: H160, amount: U256) -> Result<SlippageAmount> {
+        let (relative, absolute) = self.calculator.compute(
+            self.prices.price(&token),
+            number_conversions::u256_to_big_int(&amount),
+        )?;
+        let slippage = SlippageAmount::from_num(&relative, &absolute)?;
+
+        if *relative < self.calculator.relative {
+            tracing::debug!(
+                ?token,
+                %amount,
+                relative = ?slippage.relative,
+                absolute = %slippage.absolute,
+                "reducing relative to respect maximum absolute slippage",
+            );
+        }
+
+        Ok(slippage)
+    }
+
     /// Applies slippage to the specified AMM execution.
     pub fn apply_to_amm_execution(
         &self,
         mut execution: AmmOrderExecution,
     ) -> Result<AmmOrderExecution> {
-        let slippage = if let Ok(slippage) =
-            self.calculator
-                .compute(self.prices, execution.input_max.0, execution.input_max.1)
-        {
-            slippage
-        } else {
-            // It is possible for AMMs to use tokens that don't have external
-            // prices. In order to handle these cases, we first try and compute
-            // the slippage using the buy token and its external price for
-            // capping the relative slippage, and fall back to using the
-            // relative slippage without capping.
-            let relative = if let Some(price) = self.prices.price(&execution.output.0) {
-                let (relative, _) = self.calculator.compute_inner(
-                    Some(price),
-                    number_conversions::u256_to_big_int(&execution.output.1),
-                )?;
-                relative
-            } else {
-                tracing::warn!(
-                    sell_token = ?execution.input_max.0,
-                    "unable to compute capped slippage; falling back to relative slippage",
-                );
-                Cow::Borrowed(&self.calculator.relative)
-            };
-
-            let absolute = absolute_slippage_amount(
-                &relative,
-                &number_conversions::u256_to_big_int(&execution.input_max.1),
-            );
-
-            SlippageAmount::from_num(&relative, &absolute)?
+        let relative_ratio = |(token, amount): &(H160, U256)| -> Result<Cow<BigRational>> {
+            let (relative, _) = self.calculator.compute(
+                self.prices.price(token),
+                number_conversions::u256_to_big_int(amount),
+            )?;
+            Ok(relative)
         };
+
+        // It is possible for AMMs to use tokens that don't have external
+        // prices. In order to handle these cases, we do in order:
+        // 1. Compute the capped slippage using the sell token amount
+        // 2. If no sell token price is available, compute the capped slippage
+        //    using the buy token amount
+        // 3. Fall back to using the default relative slippage without capping
+        let relative = if let Ok(relative) = relative_ratio(&execution.input_max) {
+            tracing::debug!(
+                input_token = ?execution.input_max.0,
+                "using AMM input token for capped surplus",
+            );
+            relative
+        } else if let Ok(relative) = relative_ratio(&execution.output) {
+            tracing::debug!(
+                output_token = ?execution.output.0,
+                "using AMM output token for capped surplus",
+            );
+            relative
+        } else {
+            tracing::warn!(
+                input_token = ?execution.input_max.0,
+                output_token = ?execution.output.0,
+                "unable to compute capped slippage; falling back to relative slippage",
+            );
+            Cow::Borrowed(&self.calculator.relative)
+        };
+
+        let absolute = absolute_slippage_amount(
+            &relative,
+            &number_conversions::u256_to_big_int(&execution.input_max.1),
+        );
+        let slippage = SlippageAmount::from_num(&relative, &absolute)?;
+
+        if *relative < self.calculator.relative {
+            tracing::debug!(
+                input_token = ?execution.input_max.0,
+                input_amount = ?execution.input_max.1,
+                relative = ?slippage.relative,
+                absolute = %slippage.absolute,
+                "capping AMM slippage to respect maximum absolute amount",
+            );
+        }
 
         execution.input_max.1 = slippage.add_to_amount(execution.input_max.1);
         Ok(execution)
@@ -214,18 +253,12 @@ impl<'a> SlippageContext<'a> {
 
     /// Applies slippage to an input amount.
     pub fn apply_to_amount_in(&self, token: H160, amount: U256) -> Result<U256> {
-        Ok(self
-            .calculator
-            .compute(self.prices, token, amount)?
-            .add_to_amount(amount))
+        Ok(self.slippage(token, amount)?.add_to_amount(amount))
     }
 
     /// Applies slippage to an output amount.
     pub fn apply_to_amount_out(&self, token: H160, amount: U256) -> Result<U256> {
-        Ok(self
-            .calculator
-            .compute(self.prices, token, amount)?
-            .sub_from_amount(amount))
+        Ok(self.slippage(token, amount)?.sub_from_amount(amount))
     }
 
     /// Computes the relative slippage for a limit order.
@@ -244,10 +277,7 @@ impl<'a> SlippageContext<'a> {
 
     /// Computes the relative slippage for a token and amount.
     pub fn relative(&self, token: H160, amount: U256) -> Result<RelativeSlippage> {
-        Ok(self
-            .calculator
-            .compute(self.prices, token, amount)?
-            .relative())
+        Ok(self.slippage(token, amount)?.relative())
     }
 }
 
@@ -287,32 +317,9 @@ impl SlippageCalculator {
         self.context(&auction.external_prices)
     }
 
+    /// Computes the capped slippage amount for the specified token price and
+    /// amount.
     pub fn compute(
-        &self,
-        external_prices: &ExternalPrices,
-        token: H160,
-        amount: U256,
-    ) -> Result<SlippageAmount> {
-        let (relative, absolute) = self.compute_inner(
-            external_prices.price(&token),
-            number_conversions::u256_to_big_int(&amount),
-        )?;
-        let slippage = SlippageAmount::from_num(&relative, &absolute)?;
-
-        if *relative < self.relative {
-            tracing::debug!(
-                ?token,
-                %amount,
-                relative = ?slippage.relative,
-                absolute = %slippage.absolute,
-                "reducing relative to respect maximum absolute slippage",
-            );
-        }
-
-        Ok(slippage)
-    }
-
-    fn compute_inner(
         &self,
         price: Option<&BigRational>,
         amount: BigInt,
@@ -438,11 +445,8 @@ mod tests {
     fn errors_on_missing_token_price() {
         let calculator = SlippageCalculator::from_bps(10, Some(1_000.into()));
         assert!(calculator
-            .compute(
-                &externalprices! { native_token: WETH, },
-                USDC,
-                1_000_000.into(),
-            )
+            .context(&externalprices! { native_token: WETH, })
+            .slippage(USDC, 1_000_000.into(),)
             .is_err());
     }
 
