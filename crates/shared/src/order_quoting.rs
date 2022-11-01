@@ -301,14 +301,14 @@ impl TryFrom<QuoteRow> for QuoteData {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
-    /// Computes a quote for the specified order paramters. Doesn't store the quote.
+    /// Computes a quote for the specified order parameters. Doesn't store the quote.
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError>;
 
     /// Stores a quote.
-    async fn store_quote(&self, quote: Quote) -> anyhow::Result<Quote>;
+    async fn store_quote(&self, quote: Quote) -> Result<Quote>;
 
     /// Finds an existing quote.
     async fn find_quote(
@@ -559,7 +559,7 @@ impl OrderQuoting for OrderQuoter {
         Ok(quote)
     }
 
-    async fn store_quote(&self, quote: Quote) -> anyhow::Result<Quote> {
+    async fn store_quote(&self, quote: Quote) -> Result<Quote> {
         let id = self.storage.save(quote.data.clone()).await?;
         Ok(Quote {
             id: Some(id),

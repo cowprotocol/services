@@ -284,7 +284,7 @@ impl SolvableOrdersCache {
                         Some(order)
                     }
                     Err(err) => {
-                        tracing::error!(
+                        tracing::warn!(
                             order_uid =% order.metadata.uid, ?err,
                             "filtered limit order due to quoting error"
                         );
