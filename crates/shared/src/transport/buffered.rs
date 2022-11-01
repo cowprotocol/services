@@ -14,6 +14,7 @@ use futures::{
 use serde_json::Value;
 use std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
+use tracing::Instrument as _;
 
 /// Buffered transport configuration.
 pub struct Configuration {
@@ -134,9 +135,19 @@ where
         let this = self.clone();
 
         async move {
+            let method = match &request {
+                Call::MethodCall(call) => call.method.as_str(),
+                _ => "none",
+            };
+            tracing::trace!(%id, %method, "queueing call");
+
             let response = this.queue_call(id, request);
-            response.await.expect("worker task unexpectedly dropped")
+            let result = response.await.expect("worker task unexpectedly dropped");
+
+            tracing::trace!(%id, ok = %result.is_ok(), "received response");
+            result
         }
+        .in_current_span()
         .boxed()
     }
 }
