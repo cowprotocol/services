@@ -11,7 +11,7 @@ use gas_estimation::GasPrice1559;
 use optimize_buffer_usage::optimize_buffer_usage;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
-use shared::{token_list::TokenList, Web3};
+use shared::{token_list::AutoUpdatingTokenList, Web3};
 
 /// Determines whether a settlement would be executed successfully.
 #[cfg_attr(test, mockall::automock)]
@@ -47,7 +47,7 @@ pub struct PostProcessingPipeline {
     unwrap_factor: f64,
     weth: WETH9,
     buffer_retriever: BufferRetriever,
-    market_makable_token_list: Option<TokenList>,
+    market_makable_token_list: AutoUpdatingTokenList,
 }
 
 impl PostProcessingPipeline {
@@ -56,7 +56,7 @@ impl PostProcessingPipeline {
         web3: Web3,
         unwrap_factor: f64,
         settlement_contract: GPv2Settlement,
-        market_makable_token_list: Option<TokenList>,
+        market_makable_token_list: AutoUpdatingTokenList,
     ) -> Self {
         let weth = WETH9::at(&web3, native_token);
         let buffer_retriever = BufferRetriever::new(web3.clone(), settlement_contract.address());
@@ -84,8 +84,12 @@ impl PostProcessingPipeline {
             solver_account,
         };
 
-        let optimized_solution =
-            optimize_buffer_usage(settlement, &self.market_makable_token_list, &simulator).await;
+        let optimized_solution = optimize_buffer_usage(
+            settlement,
+            self.market_makable_token_list.clone(),
+            &simulator,
+        )
+        .await;
 
         // an error will leave the settlement unmodified
         optimize_unwrapping(

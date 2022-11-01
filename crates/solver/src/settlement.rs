@@ -2,9 +2,11 @@ pub mod external_prices;
 mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
-pub use self::settlement_encoder::{verify_executed_amount, SettlementEncoder};
+pub use self::settlement_encoder::{
+    verify_executed_amount, InternalizationStrategy, SettlementEncoder,
+};
 use crate::{
-    encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
+    encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
 };
 use anyhow::Result;
@@ -225,21 +227,8 @@ impl LiquidityOrderTrade {
         )
     }
 }
-
-pub trait Interaction: std::fmt::Debug + Send + Sync {
-    // TODO: not sure if this should return a result.
-    // Write::write returns a result but we know we write to a vector in memory so we know it will
-    // never fail. Then the question becomes whether interactions should be allowed to fail encoding
-    // for other reasons.
-    fn encode(&self) -> Vec<EncodedInteraction>;
-}
-
-impl Interaction for EncodedInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.clone()]
-    }
-}
-
+#[cfg(test)]
+use shared::interaction::{EncodedInteraction, Interaction};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -491,16 +480,19 @@ impl Settlement {
 
     // Calculates the risk level for settlement to be reverted
     pub fn revertable(&self) -> Revertable {
-        if self.encoder.execution_plan().is_empty() {
-            return Revertable::NoRisk;
+        if self.encoder.has_interactions() {
+            Revertable::HighRisk
+        } else {
+            Revertable::NoRisk
         }
-        Revertable::HighRisk
     }
 }
 
 impl From<Settlement> for EncodedSettlement {
     fn from(settlement: Settlement) -> Self {
-        settlement.encoder.finish()
+        settlement
+            .encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
     }
 }
 
@@ -591,12 +583,12 @@ pub mod tests {
         let actual_settlement = {
             let mut encoder = SettlementEncoder::new(prices.clone());
             handler.encode(execution, &mut encoder).unwrap();
-            encoder.finish()
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
         let expected_settlement = {
             let mut encoder = SettlementEncoder::new(prices);
             exec(&mut encoder);
-            encoder.finish()
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
 
         assert_eq!(actual_settlement, expected_settlement);

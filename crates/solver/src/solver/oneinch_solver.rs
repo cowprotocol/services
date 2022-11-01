@@ -8,22 +8,21 @@ use super::{
     Auction,
 };
 use crate::{
-    encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::{Account, Bytes};
+use ethcontract::Account;
 use maplit::hashmap;
 use model::order::OrderKind;
 use primitive_types::H160;
 use reqwest::{Client, Url};
 use shared::{
     oneinch_api::{
-        OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, Swap, SwapQuery,
+        OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, SwapQuery,
     },
     Web3,
 };
@@ -138,12 +137,6 @@ impl OneInchSolver {
     }
 }
 
-impl Interaction for Swap {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.tx.to, self.tx.value, Bytes(self.tx.data.clone()))]
-    }
-}
-
 #[async_trait::async_trait]
 impl SingleOrderSolving for OneInchSolver {
     async fn try_settle_order(
@@ -200,6 +193,7 @@ mod tests {
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
         liquidity::LimitOrder,
+        settlement::InternalizationStrategy,
         solver::ExternalPrices,
         test::account,
     };
@@ -211,7 +205,7 @@ mod tests {
     use shared::{
         conversions::U256Ext as _,
         dummy_contract,
-        oneinch_api::{MockOneInchClient, Protocols, Spender},
+        oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
         transport::create_env_test_transport,
     };
 
@@ -472,7 +466,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 2);
+        assert_eq!(
+            result
+                .encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1]
+                .len(),
+            2
+        );
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -480,7 +481,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 1)
+        assert_eq!(
+            result
+                .encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1]
+                .len(),
+            1
+        )
     }
 
     #[tokio::test]

@@ -28,6 +28,7 @@ include_contracts! {
     CowProtocolToken;
     CowProtocolVirtualToken;
     CoWSwapOnchainOrders;
+    CoWSwapEthFlow;
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;
@@ -50,6 +51,7 @@ include_contracts! {
     UniswapV2Factory;
     UniswapV2Router02;
     UniswapV3SwapRouter;
+    UniswapV3Pool;
     WETH9;
 }
 

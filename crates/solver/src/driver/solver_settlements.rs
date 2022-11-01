@@ -3,8 +3,12 @@ use crate::{
     solver::Solver,
 };
 use ethcontract::U256;
+use model::auction::AuctionId;
 use num::BigRational;
-use shared::conversions::U256Ext as _;
+use shared::{
+    conversions::U256Ext as _,
+    http_solver::model::{AuctionResult, SolverRejectionReason},
+};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
@@ -103,6 +107,7 @@ fn merge_at_most_settlements(
 pub fn retain_mature_settlements(
     min_order_age: Duration,
     settlements: Vec<(Arc<dyn Solver>, Settlement)>,
+    auction_id: AuctionId,
 ) -> Vec<(Arc<dyn Solver>, Settlement)> {
     fn find_mature_settlements(
         min_order_age: Duration,
@@ -156,6 +161,10 @@ pub fn retain_mature_settlements(
             solver_name = %solver.name(), ?settlement,
             "filtered settlement for not including any mature orders",
         );
+        solver.notify_auction_result(
+            auction_id,
+            AuctionResult::Rejected(SolverRejectionReason::NoMatureOrders),
+        );
     }
 
     settlements
@@ -169,16 +178,16 @@ pub fn retain_mature_settlements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::external_prices::externalprices;
-    use crate::settlement::{LiquidityOrderTrade, OrderTrade, Trade};
-    use crate::solver::dummy_arc_solver;
+    use crate::{
+        settlement::{external_prices::externalprices, LiquidityOrderTrade, OrderTrade, Trade},
+        solver::dummy_arc_solver,
+    };
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
     use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
     use num::{BigRational, One as _};
     use primitive_types::{H160, U256};
-    use std::collections::HashSet;
-    use std::ops::Sub;
+    use std::{collections::HashSet, ops::Sub};
 
     fn trade(created_at: DateTime<Utc>, uid: u8) -> OrderTrade {
         OrderTrade {
@@ -252,6 +261,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -276,6 +286,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -301,6 +312,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
 
         assert_same_settlements(
@@ -324,6 +336,7 @@ mod tests {
         let mature_settlements = retain_mature_settlements(
             min_age,
             settlements_into_dummy_solver_settlements(settlements),
+            0,
         );
         assert_same_settlements(
             &solver_settlements_into_settlements(&mature_settlements),

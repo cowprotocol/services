@@ -26,10 +26,17 @@ use num::BigRational;
 use reqwest::Url;
 use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
+    baseline_solver::BaseTokens,
+    conversions::U256Ext,
     http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    http_solver::{
+        model::{AuctionResult, SimulatedTransaction},
+        DefaultHttpSolverApi, SolverConfig,
+    },
+    token_info::TokenInfoFetching,
+    token_list::AutoUpdatingTokenList,
     zeroex_api::ZeroExApi,
-    {baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3},
+    Web3,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -49,12 +56,6 @@ mod single_order_solver;
 pub mod uni_v3_router_solver;
 mod zeroex_solver;
 
-#[derive(Debug)]
-pub enum SolverRunError {
-    Timeout,
-    Solving(anyhow::Error),
-}
-
 /// Interface that all solvers must implement.
 ///
 /// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
@@ -70,6 +71,10 @@ pub trait Solver: Send + Sync + 'static {
     ///
     /// id identifies this instance of solving by the driver in which it invokes all solvers.
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>>;
+
+    /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
+    /// Has to be non-blocking to not delay settling the actual solution
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     /// Returns solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
@@ -150,12 +155,16 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
-pub type SettlementWithError = (
-    Arc<dyn Solver>,
-    Settlement,
-    Option<AccessList>,
-    ExecutionError,
-);
+pub struct Simulation {
+    pub settlement: Settlement,
+    pub solver: Arc<dyn Solver>,
+    pub transaction: SimulatedTransaction,
+}
+
+pub struct SimulationWithError {
+    pub simulation: Simulation,
+    pub error: ExecutionError,
+}
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
@@ -267,6 +276,7 @@ pub fn create(
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
+    market_makable_token_list: AutoUpdatingTokenList,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -320,6 +330,7 @@ pub fn create(
             },
             filter_non_fee_connected_orders,
             slippage_calculator,
+            market_makable_token_list.clone(),
         )
     };
 
@@ -516,6 +527,10 @@ impl Solver for SellVolumeFilteringSolver {
         self.inner.solve(auction).await
     }
 
+    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
+        self.inner.notify_auction_result(auction_id, result);
+    }
+
     fn account(&self) -> &Account {
         self.inner.account()
     }
@@ -536,6 +551,7 @@ impl Solver for DummySolver {
     fn account(&self) -> &ethcontract::Account {
         todo!()
     }
+    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
     fn name(&self) -> &'static str {
         "DummySolver"
     }
@@ -559,6 +575,8 @@ mod tests {
         async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
             Ok(Vec::new())
         }
+
+        fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
         fn account(&self) -> &Account {
             unimplemented!()

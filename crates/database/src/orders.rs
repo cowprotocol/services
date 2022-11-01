@@ -18,6 +18,16 @@ pub enum OrderKind {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "OrderClass")]
+#[sqlx(rename_all = "lowercase")]
+pub enum OrderClass {
+    #[default]
+    Ordinary,
+    Liquidity,
+    Limit,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -54,6 +64,14 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
+/// one row in the pre_interaction table
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+pub struct Interaction {
+    pub target: Address,
+    pub value: BigDecimal,
+    pub data: Vec<u8>,
+}
+
 /// One row in the `orders` table.
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
 pub struct Order {
@@ -76,8 +94,8 @@ pub struct Order {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub full_fee_amount: BigDecimal,
-    pub is_liquidity_order: bool,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
+    pub class: OrderClass,
 }
 
 impl Default for Order {
@@ -102,10 +120,59 @@ impl Default for Order {
             sell_token_balance: Default::default(),
             buy_token_balance: Default::default(),
             full_fee_amount: Default::default(),
-            is_liquidity_order: Default::default(),
             cancellation_timestamp: Default::default(),
+            class: Default::default(),
         }
     }
+}
+
+pub async fn insert_pre_interactions(
+    ex: &mut PgConnection,
+    uid_and_pre_interaction: &[(OrderUid, Interaction)],
+) -> Result<(), sqlx::Error> {
+    for (index, (order_uid, pre_interaction)) in uid_and_pre_interaction.iter().enumerate() {
+        insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
+    }
+    Ok(())
+}
+
+pub async fn insert_pre_interaction(
+    ex: &mut PgConnection,
+    index: i64,
+    pre_interaction: &Interaction,
+    order_uid: &OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO interactions (
+    order_uid,
+    index,
+    target,
+    value,
+    data
+)
+VALUES ($1, $2, $3, $4, $5)
+    "#;
+    sqlx::query(QUERY)
+        .bind(&order_uid)
+        .bind(&index)
+        .bind(&pre_interaction.target)
+        .bind(&pre_interaction.value)
+        .bind(&pre_interaction.data)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn read_order_pre_interactions(
+    ex: &mut PgConnection,
+    id: &OrderUid,
+) -> Result<Vec<Interaction>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT * FROM interactions
+WHERE order_uid = $1
+ORDER BY index
+    "#;
+    sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
 }
 
 pub async fn insert_orders_and_ignore_conflicts(
@@ -144,8 +211,8 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     full_fee_amount,
-    is_liquidity_order,
-    cancellation_timestamp
+    cancellation_timestamp,
+    class
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     "#;
@@ -169,8 +236,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
         .bind(&order.full_fee_amount)
-        .bind(order.is_liquidity_order)
         .bind(order.cancellation_timestamp)
+        .bind(order.class)
         .execute(ex)
         .await?;
     Ok(())
@@ -207,8 +274,14 @@ pub struct Quote {
     pub buy_amount: BigDecimal,
 }
 
-pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
+pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
+    for quote in quotes {
+        insert_quote_and_update_on_conflict(ex, quote).await?;
+    }
+    Ok(())
+}
+
+const INSERT_ORDER_QUOTES_QUERY: &str = r#"
 INSERT INTO order_quotes (
     order_uid,
     gas_amount,
@@ -217,9 +290,37 @@ INSERT INTO order_quotes (
     sell_amount,
     buy_amount
 )
-VALUES ($1, $2, $3, $4, $5, $6)
-    "#;
+VALUES ($1, $2, $3, $4, $5, $6)"#;
+
+pub async fn insert_quote_and_update_on_conflict(
+    ex: &mut PgConnection,
+    quote: &Quote,
+) -> Result<(), sqlx::Error> {
+    /// For ethflow orders, due to reorgs, different orders
+    /// might be inserted with the same uid. Hence, we need
+    /// to update quote entries in the database on conflicts
+    const QUERY: &str = const_format::concatcp!(
+        INSERT_ORDER_QUOTES_QUERY,
+        " ON CONFLICT (order_uid) DO UPDATE
+SET gas_amount = $2, gas_price = $3,
+sell_token_price = $4, sell_amount = $5,
+buy_amount = $6
+    "
+    );
     sqlx::query(QUERY)
+        .bind(&quote.order_uid)
+        .bind(quote.gas_amount)
+        .bind(quote.gas_price)
+        .bind(quote.sell_token_price)
+        .bind(&quote.sell_amount)
+        .bind(&quote.buy_amount)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
+    sqlx::query(INSERT_ORDER_QUOTES_QUERY)
         .bind(&quote.order_uid)
         .bind(quote.gas_amount)
         .bind(quote.gas_price)
@@ -279,6 +380,7 @@ pub struct FullOrder {
     pub fee_amount: BigDecimal,
     pub full_fee_amount: BigDecimal,
     pub kind: OrderKind,
+    pub class: OrderClass,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub sum_sell: BigDecimal,
@@ -291,7 +393,9 @@ pub struct FullOrder {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
-    pub is_liquidity_order: bool,
+    pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
+    pub ethflow_data: Option<(bool, i64)>,
+    pub onchain_user: Option<Address>,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -314,11 +418,16 @@ pub struct FullOrder {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides that with the
 // current amount of data this wouldn't be better.
+//
+// The pre_interactions are read as arrays of their fields: target, value, data. This is done
+// as sqlx does not support reading arrays of more complicated types than just one field.
+// The pre_interaction's data of target, value and data are composed to an array of
+// interactions later.
 const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.is_liquidity_order,
+o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -331,7 +440,10 @@ o.is_liquidity_order,
     WHERE o.uid = p.order_uid
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
-), true)) AS presignature_pending
+), true)) AS presignature_pending,
+array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
+(SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -401,13 +513,18 @@ pub fn user_orders<'a>(
     // queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-"SELECT ", ORDERS_SELECT,
+"(SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE (o.owner = $1 OR onchain_o.sender = $1) ",
-"ORDER BY o.creation_timestamp DESC ",
-"LIMIT $2 ",
-"OFFSET $3 ",
+" WHERE o.owner = $1) ",
+" UNION ALL",
+" (SElECT ", ORDERS_SELECT,
+" FROM ", ORDERS_FROM,
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE onchain_o.sender = $1) ",
+" ORDER BY creation_timestamp DESC ",
+" LIMIT $2 ",
+" OFFSET $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(owner)
@@ -478,6 +595,119 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn postgres_onchain_user_order_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        let sender = ByteArray([3u8; 20]);
+        insert_onchain_order(
+            &mut db,
+            &EventIndex::default(),
+            &OnchainOrderPlacement {
+                order_uid: OrderUid::default(),
+                sender,
+            },
+        )
+        .await
+        .unwrap();
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(Some(sender), order_.onchain_user);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_ethflow_data_order_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        let user_valid_to = 4i64;
+        let is_refunded = true;
+        insert_ethflow_order(
+            &mut db,
+            &EthOrderPlacement {
+                uid: OrderUid::default(),
+                valid_to: user_valid_to,
+                is_refunded,
+            },
+        )
+        .await
+        .unwrap();
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(Some((is_refunded, user_valid_to)), order_.ethflow_data);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_roundtrip_pre_interactions() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        let pre_interaction_1 = Interaction::default();
+        let pre_interaction_2 = Interaction {
+            target: ByteArray([1; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![0u8, 1u8],
+        };
+        insert_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+            .await
+            .unwrap();
+        insert_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+            .await
+            .unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            vec![ByteArray::default(), ByteArray([1; 20])],
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.0)
+                .collect::<Vec<ByteArray<20>>>(),
+        );
+        assert_eq!(
+            vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
+            order_
+                .pre_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.1)
+                .collect::<Vec<BigDecimal>>()
+        );
+        assert_eq!(
+            vec![vec![], vec![0u8, 1u8]],
+            order_
+                .pre_interactions
+                .into_iter()
+                .map(|v| v.2)
+                .collect::<Vec<Vec<u8>>>()
+        );
+        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+            .await
+            .unwrap();
+        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn postgres_insert_same_order_twice_fails() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
@@ -503,6 +733,42 @@ mod tests {
         insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_quote_roundtrip_updating_on_conflict() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote = Quote {
+            order_uid: Default::default(),
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+        };
+        insert_quote(&mut db, &quote).await.unwrap();
+        insert_quote_and_update_on_conflict(&mut db, &quote)
+            .await
+            .unwrap();
+        let quote_ = read_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote, quote_);
+        let mut quote2 = quote.clone();
+        quote2.gas_amount = 2.0;
+        insert_quote_and_update_on_conflict(&mut db, &quote2)
+            .await
+            .unwrap();
+        let quote_ = read_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quote2, quote_);
     }
 
     #[tokio::test]
@@ -776,11 +1042,63 @@ mod tests {
         let ethflow_order = EthOrderPlacement {
             uid: order.uid,
             valid_to: 2,
+            is_refunded: false,
         };
         insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
 
         assert!(get_order(&mut db, 3).await.is_none());
         assert!(get_order(&mut db, 2).await.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_user_orders_performance() {
+        //The following test can be used as performanc etest, if the values for
+        // i and j are increased ->i=240 and j=1000 are reasonable values
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        type Data = ([u8; 56], Address, DateTime<Utc>);
+        async fn user_orders(
+            ex: &mut PgConnection,
+            owner: &Address,
+            offset: i64,
+            limit: Option<i64>,
+        ) -> Vec<Data> {
+            super::user_orders(ex, owner, offset, limit)
+                .map(|o| {
+                    let o = o.unwrap();
+                    (o.uid.0, o.owner, o.creation_timestamp)
+                })
+                .collect::<Vec<_>>()
+                .await
+        }
+
+        for i in 0..2u32 {
+            let mut owner_bytes = i.to_ne_bytes().to_vec();
+            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+            let owner = ByteArray(owner_bytes.try_into().unwrap());
+            for j in 0..1u32 {
+                let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                order_uid_info.append(&mut j_as_bytes);
+                i_as_bytes.append(&mut order_uid_info);
+                let order = Order {
+                    owner,
+                    uid: ByteArray(i_as_bytes.try_into().unwrap()),
+                    creation_timestamp: Utc::now(),
+                    ..Default::default()
+                };
+                insert_order(&mut db, &order).await.unwrap();
+            }
+        }
+
+        let now = std::time::Instant::now();
+        let elapsed = now.elapsed();
+        println!("{:?}", elapsed);
+        assert!(elapsed < std::time::Duration::from_secs(1));
     }
 
     #[tokio::test]

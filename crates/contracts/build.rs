@@ -18,6 +18,18 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract_with_config("CoWSwapEthFlow", |builder| {
+        builder
+            .contract_mod_override("cowswap_eth_flow")
+            .add_network(
+                "5",
+                Network {
+                    address: addr("0x31172bb2b5f97e8e89cf3376495d7bc7252f5a53"),
+                    // <https://goerli.etherscan.io/tx/0x29724f6ae7b6ba815ba8ea8e12eb99287c63b735b1546ff32a9578248d73aea8>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7621348)),
+                },
+            )
+    });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
     });
@@ -306,6 +318,7 @@ fn main() {
             .add_network_str("1", "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str("5", "0xE592427A0AEce92De3Edee1F18E0157C05861564")
     });
+    generate_contract("UniswapV3Pool");
     generate_contract_with_config("WETH9", |builder| {
         builder
             .add_network_str("1", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
@@ -344,13 +357,13 @@ fn main() {
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str("1", "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
-            .add_network_str("5", "0x3430d04E42a722c5Ae52C5Bffbf1F230C2677600")
+            .add_network_str("5", "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str("100", "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
     });
     generate_contract_with_config("CowProtocolVirtualToken", |builder| {
         builder
             .add_network_str("1", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
-            .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
+            .add_network_str("5", "0x7B878668Cd1a3adF89764D3a331E0A7BB832192D")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 

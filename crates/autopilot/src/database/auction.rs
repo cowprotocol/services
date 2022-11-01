@@ -6,14 +6,15 @@ use database::{
         BuyTokenDestination as DbBuyTokenDestination, SellTokenSource as DbSellTokenSource,
         SigningScheme as DbSigningScheme,
     },
+    quotes::QuoteKind,
 };
 use futures::{StreamExt, TryStreamExt};
 use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
-        SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, Order, OrderClass, OrderData,
+        OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -27,7 +28,7 @@ pub struct SolvableOrders {
 use chrono::{DateTime, Utc};
 use model::quote::QuoteId;
 use shared::{
-    db_order_conversions::order_kind_from,
+    db_order_conversions::{extract_pre_interactions, order_class_from, order_kind_from},
     event_storing_helpers::{create_db_search_parameters, create_quote_row},
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
@@ -61,6 +62,7 @@ impl QuoteStoring for Postgres {
         &self,
         params: QuoteSearchParameters,
         expiration: DateTime<Utc>,
+        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -68,7 +70,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.0.acquire().await?;
-        let params = create_db_search_parameters(params, expiration);
+        let params = create_db_search_parameters(params, expiration, quote_kind);
         let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;
@@ -118,6 +120,17 @@ impl Postgres {
 
 fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;
+    let pre_interactions = extract_pre_interactions(&order)?;
+    let ethflow_data = if let Some((is_refunded, user_valid_to)) = order.ethflow_data {
+        Some(EthflowData {
+            user_valid_to,
+            is_refunded,
+        })
+    } else {
+        None
+    };
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
+    let class = order_class_from(order.class);
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -138,10 +151,13 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
-        is_liquidity_order: order.is_liquidity_order,
+        ethflow_data,
+        onchain_user,
+        is_liquidity_order: class == OrderClass::Liquidity,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -166,6 +182,9 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         metadata,
         data,
         signature,
+        interactions: Interactions {
+            pre: pre_interactions,
+        },
     })
 }
 

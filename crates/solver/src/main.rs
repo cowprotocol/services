@@ -19,7 +19,7 @@ use shared::{
     },
     tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::TokenList,
+    token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     zeroex_api::DefaultZeroExApi,
 };
 use solver::{
@@ -208,6 +208,16 @@ async fn main() {
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
     });
 
+    let market_makable_token_list_configuration = TokenListConfiguration {
+        url: args.market_makable_token_list,
+        update_interval: args.market_makable_token_list_update_interval,
+        chain_id,
+        client: http_factory.create(),
+    };
+    // updated in background task
+    let market_makable_token_list =
+        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -238,6 +248,7 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
+        market_makable_token_list.clone(),
     )
     .expect("failure creating solvers");
 
@@ -260,28 +271,34 @@ async fn main() {
         None
     };
 
-    let (uniswap_v3_liquidity, uniswap_v3_maintainer) =
+    let (uniswap_v3_maintainer, uniswap_v3_liquidity) =
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
-            let uniswap_v3_pool_fetcher = Arc::new(
-                UniswapV3PoolFetcher::new(
-                    chain_id,
-                    args.shared.liquidity_fetcher_max_age_update,
-                    http_factory.create(),
-                )
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in solver"),
-            );
-
-            (
-                Some(UniswapV3Liquidity::new(
-                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-                    settlement_contract.clone(),
-                    base_tokens.clone(),
-                    web3.clone(),
-                    uniswap_v3_pool_fetcher.clone(),
-                )),
-                Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+            match UniswapV3PoolFetcher::new(
+                chain_id,
+                http_factory.create(),
+                web3.clone(),
+                args.shared.max_pools_to_initialize_cache,
             )
+            .await
+            {
+                Ok(uniswap_v3_pool_fetcher) => {
+                    let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
+                    (
+                        Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+                        Some(UniswapV3Liquidity::new(
+                            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+                            settlement_contract.clone(),
+                            base_tokens.clone(),
+                            web3.clone(),
+                            uniswap_v3_pool_fetcher,
+                        )),
+                    )
+                }
+                Err(err) => {
+                    tracing::error!("failed to create UniswapV3 pool fetcher in solver: {}", err);
+                    (None, None)
+                }
+            }
         } else {
             (None, None)
         };
@@ -292,14 +309,6 @@ async fn main() {
         zeroex_liquidity,
         uniswap_v3_liquidity,
     };
-    let market_makable_token_list = TokenList::from_url(
-        &args.market_makable_token_list,
-        chain_id,
-        http_factory.create(),
-    )
-    .await
-    .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
-    .ok();
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
@@ -421,7 +430,7 @@ async fn main() {
         web3,
         network_id,
         args.solver_time_limit,
-        market_makable_token_list,
+        market_makable_token_list.clone(),
         current_block_stream.clone(),
         solution_submitter,
         api,

@@ -23,8 +23,7 @@ use shared::sources::{
     },
     uniswap_v3::pool_fetching::PoolInfo,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support
@@ -101,6 +100,9 @@ pub struct LimitOrder {
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
+    // TODO: decide how reward works for partially fillable orders
+    /// CIP-14 risk adjusted solver reward
+    pub reward: f64,
 }
 
 impl std::fmt::Debug for LimitOrder {
@@ -152,6 +154,7 @@ impl Default for LimitOrder {
             is_liquidity_order: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
+            reward: Default::default(),
         }
     }
 }
@@ -161,6 +164,7 @@ impl Default for LimitOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct ConstantProductOrder {
+    pub address: H160,
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
@@ -178,6 +182,7 @@ impl std::fmt::Debug for ConstantProductOrder {
 impl From<Pool> for ConstantProductOrder {
     fn from(pool: Pool) -> Self {
         Self {
+            address: pool.address,
             tokens: pool.tokens,
             reserves: pool.reserves,
             fee: pool.fee,
@@ -191,6 +196,7 @@ impl From<Pool> for ConstantProductOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct WeightedProductOrder {
+    pub address: H160,
     pub reserves: HashMap<H160, WeightedTokenState>,
     pub fee: Bfp,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
@@ -207,6 +213,7 @@ impl std::fmt::Debug for WeightedProductOrder {
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct StablePoolOrder {
+    pub address: H160,
     pub reserves: HashMap<H160, TokenState>,
     pub fee: BigRational,
     pub amplification_parameter: AmplificationParameter,
@@ -241,6 +248,7 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 pub struct AmmOrderExecution {
     pub input_max: (H160, U256),
     pub output: (H160, U256),
+    pub internalizable: bool,
 }
 
 impl ConstantProductOrder {
@@ -302,6 +310,7 @@ impl Settleable for ConcentratedLiquidity {
 impl Default for ConstantProductOrder {
     fn default() -> Self {
         ConstantProductOrder {
+            address: Default::default(),
             tokens: Default::default(),
             reserves: Default::default(),
             fee: num::Zero::zero(),
@@ -314,6 +323,7 @@ impl Default for ConstantProductOrder {
 impl Default for WeightedProductOrder {
     fn default() -> Self {
         WeightedProductOrder {
+            address: Default::default(),
             reserves: Default::default(),
             fee: Bfp::zero(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
@@ -325,6 +335,7 @@ impl Default for WeightedProductOrder {
 impl Default for StablePoolOrder {
     fn default() -> Self {
         StablePoolOrder {
+            address: Default::default(),
             reserves: Default::default(),
             fee: num::Zero::zero(),
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),

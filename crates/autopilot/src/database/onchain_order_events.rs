@@ -1,4 +1,4 @@
-mod ethflow_events;
+pub mod ethflow_events;
 
 use super::{events::meta_to_event_index, Metrics, Postgres};
 use anyhow::{anyhow, bail, Context, Result};
@@ -6,17 +6,20 @@ use contracts::cowswap_onchain_orders::{
     event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
 };
 use database::{
-    byte_array::ByteArray, events::EventIndex, onchain_broadcasted_orders::OnchainOrderPlacement,
-    orders::Order, PgTransaction,
+    byte_array::ByteArray,
+    events::EventIndex,
+    onchain_broadcasted_orders::OnchainOrderPlacement,
+    orders::{insert_quotes, Order, OrderClass},
+    PgTransaction,
 };
 use ethcontract::{Event as EthContractEvent, H160};
 use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
-    order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
+    app_id::AppId,
+    order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
     signature::SigningScheme,
     DomainSeparator,
-    {app_id::AppId, order::OrderData},
 };
 use number_conversions::u256_to_big_decimal;
 use shared::{
@@ -27,7 +30,7 @@ use shared::{
     event_handling::EventStoring,
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
     order_validation::{
-        convert_signing_scheme_into_quote_kind, get_quote_and_check_fee,
+        convert_signing_scheme_into_quote_signing_scheme, get_quote_and_check_fee,
         is_order_outside_market_price,
     },
 };
@@ -124,7 +127,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         events: Vec<EthContractEvent<ContractEvent>>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
-        let (custom_onchain_data, broadcasted_order_data, orders) =
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders) =
             self.extract_custom_and_general_order_data(events).await?;
 
         let _timer = Metrics::get()
@@ -153,6 +156,10 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .await
         .context("append_onchain_orders failed")?;
 
+        insert_quotes(&mut transaction, quotes.as_slice())
+            .await
+            .context("appending quotes for onchain orders failed")?;
+
         database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
@@ -161,7 +168,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let (custom_order_data, broadcasted_order_data, orders) =
+        let (custom_order_data, quotes, broadcasted_order_data, orders) =
             self.extract_custom_and_general_order_data(events).await?;
 
         let _timer = Metrics::get()
@@ -181,6 +188,10 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .append_custom_order_info_to_db(&mut transaction, custom_order_data)
             .await
             .context("append_custom_onchain_orders failed")?;
+
+        insert_quotes(&mut transaction, quotes.as_slice())
+            .await
+            .context("appending quotes for onchain orders failed")?;
 
         database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
@@ -210,6 +221,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         events: Vec<EthContractEvent<ContractEvent>>,
     ) -> Result<(
         Vec<W>,
+        Vec<database::orders::Quote>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
     )> {
@@ -241,32 +253,38 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             self.settlement_contract,
         )
         .await;
-        let data_tuple =
-            onchain_order_data
-                .into_iter()
-                .map(|(event_index, onchain_order_placement, order)| {
-                    (
-                        self.custom_onchain_data_parser
-                            .customized_event_data_for_event_index(
-                                &event_index,
-                                &order,
-                                &custom_data_hashmap,
-                                &onchain_order_placement,
-                            ),
-                        (event_index, onchain_order_placement),
-                        order,
-                    )
-                });
+        let data_tuple = onchain_order_data.into_iter().map(
+            |(event_index, quote, onchain_order_placement, order)| {
+                (
+                    self.custom_onchain_data_parser
+                        .customized_event_data_for_event_index(
+                            &event_index,
+                            &order,
+                            &custom_data_hashmap,
+                            &onchain_order_placement,
+                        ),
+                    quote,
+                    (event_index, onchain_order_placement),
+                    order,
+                )
+            },
+        );
         Ok(multiunzip(data_tuple))
     }
 }
 
+type GeneralOnchainOrderPlacementData = (
+    EventIndex,
+    database::orders::Quote,
+    OnchainOrderPlacement,
+    Order,
+);
 async fn parse_general_onchain_order_placement_data(
     quoter: &dyn OrderQuoting,
     contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
-) -> Vec<(EventIndex, OnchainOrderPlacement, Order)> {
+) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = contract_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, quote_id)| async move {
             let meta = match meta {
@@ -276,20 +294,34 @@ async fn parse_general_onchain_order_placement_data(
             let ContractEvent::OrderPlacement(event) = data;
             let (order_data, owner, signing_scheme, order_uid) =
                 extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
+
             let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
             let order_data = convert_onchain_order_placement(
                 &event,
-                quote,
+                quote.clone(),
                 order_data,
                 signing_scheme,
                 order_uid,
                 owner,
                 settlement_contract,
             )?;
-            Ok((meta_to_event_index(&meta), order_data))
+            let quote = database::orders::Quote {
+                order_uid: order_data.1.uid,
+                gas_amount: quote.data.fee_parameters.gas_amount,
+                gas_price: quote.data.fee_parameters.gas_price,
+                sell_token_price: quote.data.fee_parameters.sell_token_price,
+                sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                buy_amount: u256_to_big_decimal(&quote.buy_amount),
+            };
+            Ok((
+                meta_to_event_index(&meta),
+                quote,
+                order_data.0,
+                order_data.1,
+            ))
         },
     );
-    let onchain_order_placement_data: Vec<Result<(EventIndex, (OnchainOrderPlacement, Order))>> =
+    let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =
         stream::iter(futures).buffer_unordered(10).collect().await;
     onchain_order_placement_data
         .into_iter()
@@ -298,7 +330,7 @@ async fn parse_general_onchain_order_placement_data(
                 tracing::debug!("Error while parsing onchain orders: {:}", err);
                 None
             }
-            Ok((event, order_data)) => Some((event, order_data.0, order_data.1)),
+            Ok(data) => Some(data),
         })
         .collect()
 }
@@ -310,8 +342,16 @@ async fn get_quote(
     order_placement: &ContractOrderPlacement,
     quote_id: &i64,
 ) -> Result<Quote> {
-    let quote_kind = convert_signing_scheme_into_quote_kind(signing_scheme, false)
-        .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
+    let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
+        signing_scheme,
+        false,
+        // Currently, only ethflow orders are indexed with this onchain
+        // parser. For ethflow orders, we are okay to subsidize the
+        // orders and allow them to set the verification limit to 0.
+        // For general orders, this could result in a too big subsidy.
+        0u64,
+    )
+    .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
 
     let parameters = QuoteSearchParameters {
         sell_token: H160::from(order_data.sell_token.0),
@@ -323,16 +363,13 @@ async fn get_quote(
         // Original quote was made from user account, and not necessarily from owner.
         from: order_placement.sender,
         app_data: order_data.app_data,
-        quote_kind,
     };
     get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
         Some(*quote_id as i64),
         order_data.fee_amount,
-        model::quote::QuoteSigningScheme::Eip1271 {
-            onchain_order: true,
-        },
+        quote_signing_scheme,
     )
     .await
     .map_err(|err| {
@@ -388,8 +425,14 @@ fn convert_onchain_order_placement(
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&full_fee_amount),
-        is_liquidity_order,
         cancellation_timestamp: None,
+        // TODO #643: To properly determine the class, we have to check the liquidity owners just
+        // like we do during order creation.
+        class: if is_liquidity_order {
+            OrderClass::Liquidity
+        } else {
+            OrderClass::Ordinary
+        },
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -447,6 +490,7 @@ mod test {
     use model::{
         app_id::AppId,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        quote::QuoteSigningScheme,
         signature::SigningScheme,
         DomainSeparator,
     };
@@ -456,7 +500,8 @@ mod test {
             buy_token_destination_into, order_kind_into, sell_token_source_into,
             signing_scheme_into,
         },
-        order_quoting::{FindQuoteError, MockOrderQuoting, Quote},
+        fee_subsidy::FeeParameters,
+        order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
     };
     use sqlx::PgPool;
 
@@ -653,6 +698,7 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
+            class: OrderClass::Ordinary,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.1 .0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
@@ -660,7 +706,6 @@ mod test {
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
-            is_liquidity_order: false,
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
@@ -701,6 +746,11 @@ mod test {
             ]),
         };
 
+        let signing_scheme = QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            verification_gas_limit: 0u64,
+        };
+
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
@@ -721,13 +771,14 @@ mod test {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_1)), always())
-            .returning(move |_, _| Ok(Quote::default()));
+            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
+            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
+            .returning(move |_, _, _| Ok(Quote::default()));
         let quote_id_2 = 6i64;
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_2)), always())
-            .returning(move |_, _| Err(FindQuoteError::NotFound(None)));
+            .with(eq(Some(quote_id_2)), always(), eq(signing_scheme))
+            .returning(move |_, _, _| Err(FindQuoteError::NotFound(None)));
         let result_vec = parse_general_onchain_order_placement_data(
             &order_quoter,
             vec![
@@ -804,9 +855,28 @@ mod test {
         };
         let domain_separator = DomainSeparator([7u8; 32]);
         let mut order_quoter = MockOrderQuoting::new();
+        let quote = Quote {
+            id: Some(0i64),
+            data: QuoteData {
+                sell_token,
+                buy_token,
+                quoted_sell_amount: sell_amount.checked_sub(1.into()).unwrap(),
+                quoted_buy_amount: buy_amount.checked_sub(1.into()).unwrap(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 2.0f64,
+                    gas_price: 3.0f64,
+                    sell_token_price: 4.0f64,
+                },
+                ..Default::default()
+            },
+            sell_amount,
+            buy_amount,
+            fee_amount,
+        };
+        let cloned_quote = quote.clone();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(move |_, _, _| Ok(cloned_quote.clone()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()
@@ -858,14 +928,23 @@ mod test {
             block_number: 1,
             log_index: 0,
         };
+        let expected_quote = database::orders::Quote {
+            order_uid: ByteArray(expected_uid.0),
+            gas_amount: quote.data.fee_parameters.gas_amount,
+            gas_price: quote.data.fee_parameters.gas_price,
+            sell_token_price: quote.data.fee_parameters.sell_token_price,
+            sell_amount: u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: u256_to_big_decimal(&quote.buy_amount),
+        };
+        assert_eq!(result.1, vec![expected_quote]);
         assert_eq!(
-            result.1,
+            result.2,
             vec![(
                 expected_event_index,
                 OnchainOrderPlacement {
                     order_uid: ByteArray(expected_uid.0),
                     sender: ByteArray(sender.0),
-                }
+                },
             )]
         );
     }

@@ -22,21 +22,17 @@ use super::{
     Auction,
 };
 use crate::{
-    encoding::EncodedInteraction,
-    liquidity::LimitOrder,
-    settlement::{Interaction, Settlement},
-};
-use crate::{
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::slippage::SlippageCalculator,
+    liquidity::{slippage::SlippageCalculator, LimitOrder},
+    settlement::Settlement,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{Account, Bytes};
+use ethcontract::Account;
 use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
-    zeroex_api::{Slippage, SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
+    zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
     Web3,
 };
 use std::{
@@ -152,12 +148,6 @@ impl From<ZeroExResponseError> for SettlementError {
     }
 }
 
-impl Interaction for SwapResponse {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.to, self.value, Bytes(self.data.clone()))]
-    }
-}
-
 impl Display for ZeroExSolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "ZeroExSolver")
@@ -167,18 +157,20 @@ impl Display for ZeroExSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use crate::liquidity::tests::CapturingSettlementHandler;
-    use crate::liquidity::LimitOrder;
-    use crate::test::account;
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        liquidity::{tests::CapturingSettlementHandler, LimitOrder},
+        settlement::InternalizationStrategy,
+        test::account,
+    };
     use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::futures::FutureExt as _;
-    use ethcontract::{Web3, H160, U256};
-    use mockall::predicate::*;
-    use mockall::Sequence;
+    use ethcontract::{futures::FutureExt as _, Web3, H160, U256};
+    use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
-    use shared::transport::{create_env_test_transport, create_test_transport};
-    use shared::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse};
+    use shared::{
+        transport::{create_env_test_transport, create_test_transport},
+        zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+    };
 
     #[tokio::test]
     #[ignore]
@@ -479,7 +471,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 2);
+        assert_eq!(
+            result
+                .encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1]
+                .len(),
+            2
+        );
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -487,7 +486,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.encoder.finish().interactions[1].len(), 1)
+        assert_eq!(
+            result
+                .encoder
+                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .interactions[1]
+                .len(),
+            1
+        )
     }
 
     #[tokio::test]

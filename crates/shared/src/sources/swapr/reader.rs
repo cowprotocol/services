@@ -70,9 +70,11 @@ mod tests {
     #[test]
     fn sets_fee() {
         let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let address = H160::from_low_u64_be(1);
         assert_eq!(
             handle_results(
                 Ok(Some(Pool {
+                    address,
                     tokens,
                     reserves: (13, 37),
                     fee: Ratio::new(3, 1000),
@@ -82,6 +84,7 @@ mod tests {
             .unwrap()
             .unwrap(),
             Pool {
+                address,
                 tokens,
                 reserves: (13, 37),
                 fee: Ratio::new(42, 10000),
@@ -92,8 +95,9 @@ mod tests {
     #[test]
     fn ignores_contract_errors_when_reading_fee() {
         let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let address = H160::from_low_u64_be(1);
         assert!(handle_results(
-            Ok(Some(Pool::uniswap(tokens, (0, 0)))),
+            Ok(Some(Pool::uniswap(address, tokens, (0, 0)))),
             Err(ethcontract_error::testing_contract_error()),
         )
         .unwrap()

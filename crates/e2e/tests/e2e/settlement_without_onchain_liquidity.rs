@@ -10,10 +10,11 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
 use shared::{
+    http_client::HttpClientFactory,
+    maintenance::Maintaining,
     sources::uniswap_v2::pool_fetching::PoolFetcher,
-    token_list::{Token, TokenList},
+    token_list::{AutoUpdatingTokenList, Token},
     Web3,
 };
 use solver::{
@@ -190,7 +191,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         uniswap_v3_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
-    let market_makable_token_list = TokenList::new(maplit::hashmap! {
+    let market_makable_token_list = AutoUpdatingTokenList::new(maplit::hashmap! {
         token_a.address() => Token {
             address: token_a.address(),
             name: "Test Coin".into(),
@@ -211,7 +212,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        Some(market_makable_token_list),
+        market_makable_token_list,
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),

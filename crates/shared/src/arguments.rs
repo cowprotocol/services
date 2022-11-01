@@ -251,6 +251,10 @@ pub struct Arguments {
         value_parser = duration_from_seconds,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
+
+    /// The number of pools to initially populate the UniswapV3 cache
+    #[clap(long, env, default_value = "100")]
+    pub max_pools_to_initialize_cache: u64,
 }
 
 pub fn display_secret_option<T>(
@@ -388,6 +392,7 @@ impl Display for Arguments {
             self.balancer_pool_deny_list
         )?;
         display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+
         Ok(())
     }
 }

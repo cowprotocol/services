@@ -41,6 +41,10 @@ pub const ALL_TABLES: &[&str] = &[
     "order_quotes",
     "solver_competitions",
     "auctions",
+    "onchain_placed_orders",
+    "ethflow_orders",
+    "order_rewards",
+    "interactions",
 ];
 
 /// Delete all data in the database. Only used by tests.

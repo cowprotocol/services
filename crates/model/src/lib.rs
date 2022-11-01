@@ -3,6 +3,7 @@
 pub mod app_id;
 pub mod auction;
 pub mod bytes_hex;
+pub mod interaction;
 pub mod order;
 pub mod quote;
 pub mod ratio_as_decimal;
@@ -149,8 +150,7 @@ pub struct SolvableOrders {
 mod tests {
     use super::*;
     use hex_literal::hex;
-    use std::cmp::Ordering;
-    use std::str::FromStr;
+    use std::{cmp::Ordering, str::FromStr};
 
     #[test]
     fn domain_separator_from_str() {

@@ -1,4 +1,4 @@
-use super::create_order::PartialValidationErrorWrapper;
+use super::post_order::PartialValidationErrorWrapper;
 use anyhow::Result;
 use model::quote::OrderQuoteRequest;
 use reqwest::StatusCode;

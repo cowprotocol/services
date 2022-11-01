@@ -32,6 +32,9 @@ impl TransactionSubmitting for PublicMempoolApi {
     ) -> Result<TransactionHandle> {
         tracing::debug!("public mempool submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
+        if let Transaction::Raw { hash, .. } = &transaction_request {
+            tracing::debug!(?hash, "creating transaction");
+        }
         let mut futures = self
             .nodes
             .iter()

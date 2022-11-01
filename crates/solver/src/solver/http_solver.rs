@@ -21,18 +21,19 @@ use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::{
     http_solver::{gas_model::GasModel, model::*, DefaultHttpSolverApi, HttpSolverApi},
-    sources::balancer_v2::pools::common::compute_scaling_rate,
-};
-use shared::{
     measure_time,
+    sources::balancer_v2::pools::common::compute_scaling_rate,
     token_info::{TokenInfo, TokenInfoFetching},
+    token_list::AutoUpdatingTokenList,
 };
-use std::time::Instant;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
     sync::Arc,
+    time::Instant,
 };
+
+use super::AuctionResult;
 
 /// Failure indicating the transaction reverted for some reason
 pub fn is_transaction_failure(error: &ExecutionError) -> bool {
@@ -65,6 +66,7 @@ pub struct HttpSolver {
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
+    market_makable_token_list: AutoUpdatingTokenList,
 }
 
 impl HttpSolver {
@@ -80,6 +82,7 @@ impl HttpSolver {
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
+        market_makable_token_list: AutoUpdatingTokenList,
     ) -> Self {
         Self {
             solver,
@@ -92,6 +95,7 @@ impl HttpSolver {
             instance_cache,
             filter_non_fee_connected_orders,
             slippage_calculator,
+            market_makable_token_list,
         }
     }
 
@@ -104,7 +108,9 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
-        let tokens = map_tokens_for_solver(&orders, &liquidity);
+        let market_makable_token_list = self.market_makable_token_list.addresses();
+
+        let tokens = map_tokens_for_solver(&orders, &liquidity, &market_makable_token_list);
         let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
@@ -163,7 +169,13 @@ impl HttpSolver {
             gas_price,
         };
 
-        let token_models = token_models(&token_infos, &price_estimates, &buffers, &gas_model);
+        let token_models = token_models(
+            &token_infos,
+            &price_estimates,
+            &buffers,
+            &gas_model,
+            &market_makable_token_list,
+        );
         let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
         let amm_models = amm_models(&liquidity, &gas_model);
         let model = BatchAuctionModel {
@@ -182,7 +194,11 @@ impl HttpSolver {
     }
 }
 
-fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<H160> {
+fn map_tokens_for_solver(
+    orders: &[LimitOrder],
+    liquidity: &[Liquidity],
+    market_makable_token_list: &HashSet<H160>,
+) -> Vec<H160> {
     let mut token_set = HashSet::new();
     token_set.extend(
         orders
@@ -198,6 +214,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
             Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
+    token_set.extend(market_makable_token_list);
 
     Vec::from_iter(token_set)
 }
@@ -218,6 +235,7 @@ fn token_models(
     price_estimates: &HashMap<H160, f64>,
     buffers: &HashMap<H160, U256>,
     gas_model: &GasModel,
+    market_makable_token_list: &HashSet<H160>,
 ) -> BTreeMap<H160, TokenInfoModel> {
     token_infos
         .iter()
@@ -238,6 +256,7 @@ fn token_models(
                         0
                     }),
                     internal_buffer: buffers.get(address).copied(),
+                    accepted_for_internalization: market_makable_token_list.contains(address),
                 },
             )
         })
@@ -279,6 +298,7 @@ fn order_models(
                     is_liquidity_order: order.is_liquidity_order,
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
+                    reward: order.reward,
                 },
             ))
         })
@@ -304,6 +324,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     ),
                     cost: gas_model.uniswap_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::BalancerWeighted(amm) => AmmModel {
                     parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
@@ -324,6 +345,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     fee: amm.fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::BalancerStable(amm) => AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
@@ -347,6 +369,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     fee: amm.fee.clone(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
+                    address: amm.address,
                 },
                 Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
                 Liquidity::Concentrated(amm) => AmmModel {
@@ -359,6 +382,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     ),
                     cost: gas_model.cost_for_gas(amm.pool.gas_stats.mean_gas),
                     mandatory: false,
+                    address: amm.pool.address,
                 },
             })
         })
@@ -501,6 +525,10 @@ impl Solver for HttpSolver {
         }
     }
 
+    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
+        self.solver.notify_auction_result(auction_id, result);
+    }
+
     fn account(&self) -> &Account {
         &self.account
     }
@@ -513,19 +541,21 @@ impl Solver for HttpSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::MockAllowanceManaging;
-    use crate::liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder};
-    use crate::solver::http_solver::buffers::MockBufferRetrieving;
+    use crate::{
+        interactions::allowances::MockAllowanceManaging,
+        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
+        solver::http_solver::buffers::MockBufferRetrieving,
+    };
     use ::model::TokenPair;
     use ethcontract::Address;
     use maplit::hashmap;
     use num::rational::Ratio;
     use reqwest::Client;
-    use shared::http_solver::SolverConfig;
-    use shared::token_info::MockTokenInfoFetching;
-    use shared::token_info::TokenInfo;
-    use std::sync::Arc;
-    use std::time::Duration;
+    use shared::{
+        http_solver::SolverConfig,
+        token_info::{MockTokenInfoFetching, TokenInfo},
+    };
+    use std::{sync::Arc, time::Duration};
 
     // cargo test real_solver -- --ignored --nocapture
     // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer
@@ -581,6 +611,7 @@ mod tests {
             Default::default(),
             true,
             SlippageCalculator::default(),
+            Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
@@ -593,6 +624,7 @@ mod tests {
             ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(buy_token, sell_token).unwrap(),
             reserves: (base(100), base(100)),
             fee: Ratio::new(0, 1),
@@ -651,6 +683,7 @@ mod tests {
             .iter()
             .map(|tokens| {
                 Liquidity::ConstantProduct(ConstantProductOrder {
+                    address: H160::from_low_u64_be(1),
                     tokens: TokenPair::new(tokens.0, tokens.1).unwrap(),
                     reserves: (0, 0),
                     fee: 0.into(),

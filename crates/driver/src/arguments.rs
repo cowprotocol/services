@@ -265,6 +265,10 @@ pub struct Arguments {
     /// value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
     pub solution_comparison_decimal_cutoff: u16,
+
+    /// The number of pools to initially populate the UniswapV3 cache
+    #[clap(long, env, default_value = "100")]
+    pub max_pools_to_initialize_cache: u64,
 }
 
 impl std::fmt::Display for Arguments {

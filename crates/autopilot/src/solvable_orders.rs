@@ -1,4 +1,4 @@
-use crate::database::Postgres;
+use crate::{database::Postgres, risk_adjusted_rewards};
 use anyhow::{Context as _, Result};
 use futures::StreamExt;
 use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
@@ -58,6 +58,9 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
+    // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
+    reward_calculator: Option<risk_adjusted_rewards::Calculator>,
+    ethflow_contract_address: H160,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -87,6 +90,8 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
+        reward_calculator: Option<risk_adjusted_rewards::Calculator>,
+        ethflow_contract_address: H160,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -106,6 +111,8 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            reward_calculator,
+            ethflow_contract_address,
         });
         tokio::task::spawn(update_task(
             Arc::downgrade(&self_),
@@ -156,7 +163,7 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let mut orders = solvable_orders(orders, &new_balances);
+        let mut orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
         for order in &mut orders {
             let query = Query::from_order(order);
             order.metadata.available_balance = new_balances.get(&query).copied();
@@ -170,11 +177,32 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
+        let rewards = if let Some(calculator) = &self.reward_calculator {
+            let rewards = calculator
+                .calculate_many(&orders)
+                .await
+                .context("rewards")?;
+            orders
+            .iter()
+            .zip(rewards)
+            .filter_map(|(order, reward)| match reward {
+                Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
+                Ok(_) => None,
+                Err(err) => {
+                    tracing::warn!(?order.metadata.uid, ?err, "error calculating risk adjusted reward");
+                    None
+                }
+            })
+            .collect()
+        } else {
+            Default::default()
+        };
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders.clone(),
             prices,
+            rewards,
         };
         let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {
@@ -274,7 +302,11 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 // The order book has to make a choice for which orders to include when a user has multiple orders
 // selling the same token but not enough balance for all of them.
 // Assumes balance fetcher is already tracking all balances.
-fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+fn solvable_orders(
+    mut orders: Vec<Order>,
+    balances: &Balances,
+    ethflow_contract: H160,
+) -> Vec<Order> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     for order in orders {
@@ -289,6 +321,13 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             None => continue,
         };
         for order in orders {
+            // For ethflow orders, there is no need to check the balance. The contract
+            // ensures that there will always be sufficient balance, after the wrapAll
+            // pre_interaction has been called.
+            if order.metadata.owner == ethflow_contract {
+                result.push(order);
+                continue;
+            }
             // TODO: This is overly pessimistic for partially filled orders where the needed balance
             // is lower. For partially fillable orders that cannot be fully filled because of the
             // balance we could also give them as much balance as possible instead of skipping. For
@@ -541,13 +580,35 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances);
+        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
         orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
-        let orders_ = solvable_orders(orders.clone(), &balances);
+        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
         assert_eq!(orders_, orders[1..]);
+    }
+
+    #[tokio::test]
+    async fn do_not_filters_insufficient_balances_for_ethflow_orders() {
+        let ethflow_address = H160([3u8; 20]);
+        let orders = vec![Order {
+            data: OrderData {
+                sell_amount: 3.into(),
+                fee_amount: 3.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
+                owner: ethflow_address,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+
+        let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
+        let orders_ = solvable_orders(orders.clone(), &balances, ethflow_address);
+        assert_eq!(orders_, orders);
     }
 
     #[test]
@@ -858,7 +919,7 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances);
+        let mut filtered_orders = solvable_orders(orders, &balances, H160([1u8; 20]));
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
         assert_eq!(expected_result, filtered_orders);

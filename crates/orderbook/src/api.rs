@@ -1,9 +1,9 @@
 mod cancel_order;
-mod create_order;
 mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
+mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
 mod get_solvable_orders;
@@ -11,15 +11,21 @@ mod get_solvable_orders_v2;
 mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
+mod post_order;
 mod post_quote;
 pub mod post_solver_competition;
 mod replace_order;
 mod version;
 
-use crate::solver_competition::SolverCompetitionStoring;
-use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
-use shared::api::{error, finalize_router, internal_error, ApiReply};
-use shared::order_quoting::QuoteHandler;
+use crate::{
+    database::trades::TradeRetrieving, orderbook::Orderbook,
+    solver_competition::SolverCompetitionStoring,
+};
+use shared::{
+    api::{error, finalize_router, internal_error, ApiReply},
+    order_quoting::QuoteHandler,
+    price_estimation::native::NativePriceEstimating,
+};
 use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
 
@@ -29,6 +35,7 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -36,7 +43,7 @@ pub fn handle_all_routes(
     // This string will be used later to report metrics.
     // It is not used to form the actual server response.
 
-    let create_order = create_order::create_order(orderbook.clone())
+    let post_order = post_order::post_order(orderbook.clone())
         .map(|result| (result, "v1/create_order"))
         .boxed();
     let fee_info = get_fee_info::get_fee_info(quotes.clone())
@@ -88,10 +95,13 @@ pub fn handle_all_routes(
     let version = version::version()
         .map(|result| (result, "v1/version"))
         .boxed();
+    let get_native_price = get_native_price::get_native_price(native_price_estimator)
+        .map(|result| (result, "v1/get_native_price"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
-            create_order
+            post_order
                 .or(fee_info)
                 .unify()
                 .or(get_order)
@@ -123,6 +133,8 @@ pub fn handle_all_routes(
                 .or(post_solver_competition)
                 .unify()
                 .or(version)
+                .unify()
+                .or(get_native_price)
                 .unify(),
         )
         .untuple_one()

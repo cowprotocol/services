@@ -1,8 +1,11 @@
 use crate::http_client::response_body_with_size_limit;
 use ::model::auction::AuctionId;
 use anyhow::{anyhow, ensure, Context, Result};
-use reqwest::header::{self, HeaderValue};
-use reqwest::{Client, Url};
+use reqwest::{
+    header::{self, HeaderValue},
+    Client, Url,
+};
+use serde_json::json;
 use std::time::Duration;
 
 pub mod gas_model;
@@ -20,6 +23,9 @@ pub trait HttpSolverApi: Send + Sync {
         model: &model::BatchAuctionModel,
         timeout: Duration,
     ) -> Result<model::SettledBatchAuctionModel>;
+
+    /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
+    fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult);
 }
 
 /// Default implementation for HTTP solver API that uses the reqwest client.
@@ -170,6 +176,38 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         );
         serde_json::from_str(text)
             .with_context(|| format!("failed to decode response json, {}", context()))
+    }
+
+    fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult) {
+        let mut url = match self.base.join("notify") {
+            Ok(url) => url,
+            Err(err) => {
+                tracing::error!(?err, "failed to create notify url");
+                return;
+            }
+        };
+
+        let client = self.client.clone();
+        let config_api_key = self.config.api_key.clone();
+        let future = async move {
+            url.query_pairs_mut()
+                .append_pair("auction_id", auction_id.to_string().as_str());
+
+            let mut request = client
+                .post(url)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json");
+
+            if let Some(api_key) = config_api_key {
+                let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
+                header.set_sensitive(true);
+                request = request.header("X-API-KEY", header);
+            }
+
+            tracing::debug!(?result, "notify auction result");
+            let _result = request.json(&json!(result)).send().await;
+        };
+        tokio::task::spawn(future);
     }
 }
 

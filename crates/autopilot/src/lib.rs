@@ -1,13 +1,22 @@
 pub mod arguments;
 pub mod database;
 pub mod event_updater;
+pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
 use crate::{
-    database::Postgres, event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache,
+    database::{
+        onchain_order_events::{ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser},
+        Postgres,
+    },
+    event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
+    solvable_orders::SolvableOrdersCache,
 };
-use contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9};
+use contracts::{
+    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
+};
 use ethcontract::{errors::DeployError, BlockId, BlockNumber};
+use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -17,22 +26,17 @@ use shared::{
         token_owner_finder,
         trace_call::TraceCallDetector,
     },
-    balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
+    fee_subsidy::{
+        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
+    },
+    gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    maintenance::Maintaining,
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
-    paraswap_api::DefaultParaswapApi,
-    price_estimation::{
-        balancer_sor::BalancerSor, baseline::BaselinePriceEstimator,
-        competition::CompetitionPriceEstimator, http::HttpPriceEstimator,
-        instrumented::InstrumentedPriceEstimator, native::NativePriceEstimator,
-        native_price_cache::CachingNativePriceEstimator, oneinch::OneInchPriceEstimator,
-        paraswap::ParaswapPriceEstimator, sanitized::SanitizedPriceEstimator,
-        zeroex::ZeroExPriceEstimator, PriceEstimating, PriceEstimatorType,
-    },
-    rate_limiter::RateLimiter,
+    order_quoting::OrderQuoter,
+    price_estimation::factory::{self, PriceEstimatorFactory},
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
     sources::{
@@ -131,7 +135,7 @@ pub async fn main(args: arguments::Arguments) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
+    let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
         shared::sources::defaults_for_chain(chain_id)
             .expect("failed to get default baseline sources")
     });
@@ -211,6 +215,7 @@ pub async fn main(args: arguments::Arguments) {
         let factories = args
             .shared
             .balancer_factories
+            .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         let balancer_pool_fetcher = Arc::new(
@@ -222,7 +227,7 @@ pub async fn main(args: arguments::Arguments) {
                 http_factory.create(),
                 web3.clone(),
                 &contracts,
-                args.shared.balancer_pool_deny_list,
+                args.shared.balancer_pool_deny_list.clone(),
             )
             .await
             .expect("failed to create Balancer pool fetcher"),
@@ -232,16 +237,23 @@ pub async fn main(args: arguments::Arguments) {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                args.shared.liquidity_fetcher_max_age_update,
-                http_factory.create(),
-            )
-            .await
-            .expect("failed to create UniswapV3 pool fetcher in orderbook"),
-        );
-        Some(uniswap_v3_pool_fetcher)
+        match UniswapV3PoolFetcher::new(
+            chain_id,
+            http_factory.create(),
+            web3.clone(),
+            args.shared.max_pools_to_initialize_cache,
+        )
+        .await
+        {
+            Ok(uniswap_v3_pool_fetcher) => Some(Arc::new(uniswap_v3_pool_fetcher)),
+            Err(err) => {
+                tracing::error!(
+                    "failed to create UniswapV3 pool fetcher in autopilot: {}",
+                    err,
+                );
+                None
+            }
+        }
     } else {
         None
     };
@@ -262,132 +274,80 @@ pub async fn main(args: arguments::Arguments) {
         chain_id,
     )
     .map(Arc::new);
-    let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
-        InstrumentedPriceEstimator::new(inner, name)
+
+    let cow_token = match CowProtocolToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
     };
-    let balancer_sor_api = args.balancer_sor_url.map(|url| {
-        Arc::new(DefaultBalancerSorApi::new(http_factory.create(), url, chain_id).unwrap())
-    });
-    let native_token_price_estimation_amount = args
-        .amount_to_estimate_prices_with
-        .or_else(|| {
-            shared::price_estimation::native::default_amount_to_estimate_native_prices_with(
-                &network,
-            )
-        })
-        .expect("No amount to estimate prices with set.");
+    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
 
-    let create_base_estimator =
-        |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
-            let rate_limiter = |name| {
-                Arc::new(RateLimiter::from_strategy(
-                    args.price_estimation_rate_limiter
-                        .clone()
-                        .unwrap_or_default(),
-                    format!("{}_estimator", &name),
-                ))
-            };
-            let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
-                Box::new(HttpPriceEstimator::new(
-                    Arc::new(DefaultHttpSolverApi {
-                        name,
-                        network_name: network_name.to_string(),
-                        chain_id,
-                        base,
-                        client: http_factory.create(),
-                        config: SolverConfig {
-                            use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
-                            objective: Some(shared::http_solver::Objective::SurplusFeesCosts),
-                            ..Default::default()
-                        },
-                    }),
-                    pool_fetcher.clone(),
-                    balancer_pool_fetcher.clone(),
-                    uniswap_v3_pool_fetcher.clone(),
-                    token_info_fetcher.clone(),
-                    gas_price_estimator.clone(),
-                    native_token.address(),
-                    base_tokens.clone(),
-                    network_name.to_string(),
-                    rate_limiter(estimator.name()),
-                ))
-            };
-            let instance: Box<dyn PriceEstimating> = match estimator {
-                PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
-                    pool_fetcher.clone(),
-                    gas_price_estimator.clone(),
-                    base_tokens.clone(),
-                    native_token.address(),
-                    native_token_price_estimation_amount,
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
-                    Arc::new(DefaultParaswapApi {
-                        client: http_factory.create(),
-                        partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                        rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
-                            RateLimiter::from_strategy(strategy, "paraswap_api".into())
-                        }),
-                    }),
-                    token_info_fetcher.clone(),
-                    args.shared.disabled_paraswap_dexs.clone(),
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
-                    zeroex_api.clone(),
-                    args.shared.disabled_zeroex_sources.clone(),
-                    rate_limiter(estimator.name()),
-                )),
-                PriceEstimatorType::Quasimodo => create_http_estimator(
-                    "quasimodo-price-estimator".to_string(),
-                    args.quasimodo_solver_url.clone().expect(
-                        "quasimodo solver url is required when using quasimodo price estimation",
-                    ),
-                ),
-                PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
-                    one_inch_api.as_ref().unwrap().clone(),
-                    args.shared.disabled_one_inch_protocols.clone(),
-                    rate_limiter(estimator.name()),
-                    args.shared.one_inch_referrer_address
-                )),
-                PriceEstimatorType::Yearn => create_http_estimator(
-                    "yearn-price-estimator".to_string(),
-                    args.yearn_solver_url
-                        .clone()
-                        .expect("yearn solver url is required when using yearn price estimation"),
-                ),
-                PriceEstimatorType::BalancerSor => Box::new(BalancerSor::new(
-                    balancer_sor_api.clone().expect("trying to create BalancerSor price estimator but didn't get balancer sor url"),
-                    rate_limiter(estimator.name()),
-                    gas_price_estimator.clone(),
-                )),
-            };
+    let mut price_estimator_factory = PriceEstimatorFactory::new(
+        &args.price_estimation,
+        &args.shared,
+        factory::Network {
+            name: network_name.to_string(),
+            chain_id,
+            native_token: native_token.address(),
+            base_tokens: base_tokens.clone(),
+        },
+        factory::Components {
+            http_factory: http_factory.clone(),
+            bad_token_detector: bad_token_detector.clone(),
+            uniswap_v2_pools: pool_fetcher.clone(),
+            balancer_pools: balancer_pool_fetcher.clone().map(|a| a as _),
+            uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
+            tokens: token_info_fetcher.clone(),
+            gas_price: gas_price_estimator.clone(),
+            zeroex: zeroex_api.clone(),
+            oneinch: one_inch_api.ok().map(|a| a as _),
+        },
+    );
 
-            (
-                estimator.name(),
-                Arc::new(instrumented(instance, estimator.name())),
-            )
+    let price_estimator = price_estimator_factory
+        .price_estimator(&args.order_quoting.price_estimators)
+        .unwrap();
+    let native_price_estimator = price_estimator_factory
+        .native_price_estimator(&args.native_price_estimators)
+        .unwrap();
+
+    let risk_adjusted_rewards = (|| {
+        if chain_id != 1 {
+            return None;
+        }
+        let cip_args = [
+            args.cip_14_beta,
+            args.cip_14_alpha1,
+            args.cip_14_alpha2,
+            args.cip_14_profit,
+            args.cip_14_gas_cap,
+            args.cip_14_reward_cap,
+        ];
+        match cip_args.iter().map(|arg| arg.is_some() as u32).sum::<u32>() {
+            0 => return None,
+            6 => (),
+            _ => panic!("need none or all cip_14 arguments"),
         };
-    let sanitized = |estimator| {
-        SanitizedPriceEstimator::new(
-            estimator,
-            native_token.address(),
-            bad_token_detector.clone(),
-        )
-    };
-    let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
-        Box::new(NativePriceEstimator::new(
-            Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-                args.native_price_estimators
-                    .iter()
-                    .map(|estimator| create_base_estimator(*estimator))
-                    .collect(),
-            )))),
-            native_token.address(),
-            native_token_price_estimation_amount,
-        )),
-        args.native_price_cache_max_age_secs,
-    ));
+        Some(risk_adjusted_rewards::Calculator {
+            config: risk_adjusted_rewards::Configuration {
+                beta: args.cip_14_beta.unwrap(),
+                alpha1: args.cip_14_alpha1.unwrap(),
+                alpha2: args.cip_14_alpha2.unwrap(),
+                profit: args.cip_14_profit.unwrap(),
+                gas_cap: args.cip_14_gas_cap.unwrap(),
+                reward_cap: args.cip_14_reward_cap.unwrap(),
+            },
+            database: db.clone(),
+            cow_token: cow_token
+                .as_ref()
+                .expect("no cow token on mainnet")
+                .address(),
+            gas_price: gas_price_estimator.clone(),
+            native_price: native_price_estimator.clone(),
+        })
+    })();
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -399,6 +359,8 @@ pub async fn main(args: arguments::Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         Duration::from_secs(2),
+        risk_adjusted_rewards,
+        args.ethflow_contract,
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -421,16 +383,99 @@ pub async fn main(args: arguments::Arguments) {
     } else {
         None
     };
-    let event_updater = Arc::new(event_updater::EventUpdater::new(
+    let event_updater = Arc::new(EventUpdater::new(
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
         settlement_contract.clone().raw_instance().web3(),
         sync_start,
     ));
+    let mut maintainers: Vec<Arc<dyn Maintaining>> =
+        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
 
-    let mut service_maintainer = shared::maintenance::ServiceMaintenance {
-        maintainers: vec![pool_fetcher, event_updater, Arc::new(db.clone())],
-    };
+    if args.enable_ethflow_orders {
+        // The events from the ethflow contract are read with the more generic contract
+        // interface called CoWSwapOnchainOrders.
+        let cowswap_onchain_order_contract_for_eth_flow =
+            contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
+        let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+            shared::gas_price_estimation::create_priority_estimator(
+                &http_factory,
+                &web3,
+                args.shared.gas_estimators.as_slice(),
+                args.shared.blocknative_api_key.clone(),
+            )
+            .await
+            .expect("failed to create gas price estimator"),
+        ));
+        let cow_tokens = match (cow_token, cow_vtoken) {
+            (None, None) => None,
+            (Some(token), Some(vtoken)) => Some((token, vtoken)),
+            _ => panic!("should either have both cow token contracts or none"),
+        };
+        let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
+            tracing::debug!("using cow token contracts for subsidy");
+            CowSubsidy::new(
+                token,
+                vtoken,
+                args.order_quoting.cow_fee_factors.unwrap_or_default(),
+            )
+        });
+        let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+            fee_discount: args.order_quoting.fee_discount,
+            min_discounted_fee: args.order_quoting.min_discounted_fee,
+            fee_factor: args.order_quoting.fee_factor,
+            liquidity_order_owners: args
+                .order_quoting
+                .liquidity_order_owners
+                .iter()
+                .copied()
+                .collect(),
+            partner_additional_fee_factors: args
+                .order_quoting
+                .partner_additional_fee_factors
+                .clone(),
+        }) as Arc<dyn FeeSubsidizing>;
+
+        let fee_subsidy = match cow_subsidy {
+            Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
+                fee_subsidy_config,
+                Arc::new(cow_subsidy),
+            ])),
+            None => fee_subsidy_config,
+        };
+        let database = Arc::new(db.clone());
+        let quoter = OrderQuoter::new(
+            price_estimator,
+            native_price_estimator.clone(),
+            gas_price_estimator,
+            fee_subsidy,
+            database,
+            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+                .unwrap(),
+            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+                .unwrap(),
+        );
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let onchain_order_event_parser = OnchainOrderParser::new(
+            db.clone(),
+            Box::new(quoter),
+            Box::new(custom_ethflow_order_parser),
+            DomainSeparator::new(chain_id, settlement_contract.address()),
+            settlement_contract.address(),
+        );
+        let broadcaster_event_updater = Arc::new(EventUpdater::new(
+            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
+            onchain_order_event_parser,
+            cowswap_onchain_order_contract_for_eth_flow
+                .clone()
+                .raw_instance()
+                .web3(),
+            sync_start,
+        ));
+        maintainers.push(broadcaster_event_updater);
+    }
+    let mut service_maintainer = shared::maintenance::ServiceMaintenance { maintainers };
+
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
     }

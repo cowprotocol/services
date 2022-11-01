@@ -1,20 +1,25 @@
 use super::SettlementHandling;
-use crate::interactions::{
-    allowances::{AllowanceManager, AllowanceManaging, Allowances},
-    ZeroExInteraction,
+use crate::{
+    interactions::{
+        allowances::{AllowanceManager, AllowanceManaging, Allowances},
+        ZeroExInteraction,
+    },
+    liquidity::{Exchange, LimitOrder, Liquidity},
+    settlement::SettlementEncoder,
 };
-use crate::liquidity::{Exchange, LimitOrder, Liquidity};
-use crate::settlement::SettlementEncoder;
 use anyhow::Result;
 use contracts::{GPv2Settlement, IZeroEx};
-use model::order::OrderKind;
-use model::TokenPair;
+use model::{order::OrderKind, TokenPair};
 use primitive_types::{H160, U256};
-use shared::baseline_solver::BaseTokens;
-use shared::zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi};
-use shared::Web3;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use shared::{
+    baseline_solver::BaseTokens,
+    zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
+    Web3,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 pub struct ZeroExLiquidity {
     pub api: Arc<dyn ZeroExApi>,
@@ -122,6 +127,7 @@ impl ZeroExLiquidity {
                 allowances,
             }),
             exchange: Exchange::ZeroEx,
+            reward: 0.,
         };
         Some(Liquidity::LimitOrder(limit_order))
     }
@@ -199,9 +205,9 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{interactions::allowances::Approval, settlement::Interaction};
+    use crate::{interactions::allowances::Approval, settlement::InternalizationStrategy};
     use maplit::hashmap;
-    use shared::zeroex_api::OrderMetadata;
+    use shared::{interaction::Interaction, zeroex_api::OrderMetadata};
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
@@ -346,7 +352,9 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
         assert_eq!(
             interactions,
             [
@@ -383,7 +391,9 @@ pub mod tests {
         };
         let mut encoder = SettlementEncoder::default();
         handler.encode(100.into(), &mut encoder).unwrap();
-        let [_, interactions, _] = encoder.finish().interactions;
+        let [_, interactions, _] = encoder
+            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .interactions;
         assert_eq!(
             interactions,
             [

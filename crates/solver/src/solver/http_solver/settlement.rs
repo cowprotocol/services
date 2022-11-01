@@ -1,15 +1,13 @@
 use crate::{
-    encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
         Liquidity,
     },
-    settlement::{Interaction, Settlement},
+    settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use ethcontract::Bytes;
-use model::order::{Order, OrderKind, OrderMetadata};
+use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -72,16 +70,18 @@ impl Execution {
         &self,
         settlement: &mut Settlement,
         slippage: &SlippageContext,
+        internalizable: bool,
     ) -> Result<()> {
         use Execution::*;
 
         match self {
             LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
             Amm(executed_amm) => {
-                let execution = AmmOrderExecution {
-                    input_max: slippage.execution_input_max(executed_amm.input)?,
+                let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
+                    input_max: executed_amm.input,
                     output: executed_amm.output,
-                };
+                    internalizable,
+                })?;
                 match &executed_amm.order {
                     Liquidity::ConstantProduct(liquidity) => {
                         settlement.with_liquidity(liquidity, execution)
@@ -100,9 +100,10 @@ impl Execution {
                 }
             }
             CustomInteraction(interaction_data) => {
-                settlement
-                    .encoder
-                    .append_to_execution_plan(*interaction_data.clone());
+                settlement.encoder.append_to_execution_plan_internalizable(
+                    *interaction_data.clone(),
+                    internalizable,
+                );
                 Ok(())
             }
         }
@@ -143,12 +144,6 @@ struct ExecutedAmm {
     output: (H160, U256),
     order: Liquidity,
     exec_plan: Option<ExecutionPlan>,
-}
-
-impl Interaction for InteractionData {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
-    }
 }
 
 impl<'a> IntermediateSettlement<'a> {
@@ -192,20 +187,11 @@ impl<'a> IntermediateSettlement<'a> {
         }
 
         for execution in &self.executions {
-            if let Some(ExecutionPlan::Internal) = execution.execution_plan() {
-                // This AMM execution or interaction should be internalized and
-                // replaced with buffer trading. Ideally, we would be able to
-                // log the interaction calldata that would be equivalent to the
-                // buffer swap, but that would require a larger refactor around
-                // how we build settlements. For now, just log the execution
-                // itself which is enough to manually recontruct what the actual
-                // calldata would have been.
-                tracing::debug!(?execution, "internalized AMM execution");
-
-                continue;
-            }
-
-            execution.add_to_settlement(&mut settlement, &self.slippage)?;
+            execution.add_to_settlement(
+                &mut settlement,
+                &self.slippage,
+                Some(&ExecutionPlan::Internal) == execution.execution_plan(),
+            )?;
         }
 
         Ok(settlement)
@@ -248,7 +234,7 @@ fn convert_foreign_liquidity_orders(
                     full_fee_amount: liquidity.order.data.fee_amount,
                     // All foreign orders **MUST** be liquidity, this is
                     // important so they cannot be used to affect the objective.
-                    is_liquidity_order: true,
+                    class: OrderClass::Liquidity,
                     // These fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
                     uid: Default::default(),
@@ -258,6 +244,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
+                interactions: Interactions::default(),
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -383,11 +370,9 @@ mod tests {
     use hex_literal::hex;
     use maplit::hashmap;
     use model::{order::OrderData, signature::Signature, TokenPair};
-    use num::rational::Ratio;
-    use num::BigRational;
+    use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
-        pool_fetching::AmplificationParameter,
-        pool_fetching::{TokenState, WeightedTokenState},
+        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
         swap::fixed_point::Bfp,
     };
 
@@ -416,18 +401,21 @@ mod tests {
         let sp_amm_handler = CapturingSettlementHandler::arc();
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (3, 4),
                 fee: 5.into(),
                 settlement_handling: cp_amm_handler.clone(),
             }),
             Liquidity::ConstantProduct(ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (6, 7),
                 fee: 8.into(),
                 settlement_handling: internal_amm_handler.clone(),
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
+                address: H160::from_low_u64_be(3),
                 reserves: hashmap! {
                     t0 => WeightedTokenState {
                         common: TokenState {
@@ -448,6 +436,7 @@ mod tests {
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
+                address: H160::from_low_u64_be(4),
                 reserves: hashmap! {
                     t0 => TokenState {
                         balance: U256::from(300),
@@ -576,7 +565,7 @@ mod tests {
                         metadata: OrderMetadata {
                             owner: H160([99; 20]),
                             full_fee_amount: 42.into(),
-                            is_liquidity_order: true,
+                            class: OrderClass::Liquidity,
                             ..Default::default()
                         },
                         data: OrderData {
@@ -590,6 +579,7 @@ mod tests {
                             ..Default::default()
                         },
                         signature: Signature::PreSign,
+                        ..Default::default()
                     },
                     sell_token_index: 1,
                     executed_amount: 101.into(),
@@ -606,14 +596,23 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 9.into()),
                 output: (t1, 9.into()),
+                internalizable: false
             }]
         );
-        assert_eq!(internal_amm_handler.calls(), vec![]);
+        assert_eq!(
+            internal_amm_handler.calls(),
+            vec![AmmOrderExecution {
+                input_max: (t0, 2.into()),
+                output: (t1, 1.into()),
+                internalizable: true
+            }]
+        );
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
                 input_max: (t0, 2.into()),
                 output: (t1, 2.into()),
+                internalizable: false
             }]
         );
         assert_eq!(
@@ -621,6 +620,7 @@ mod tests {
             vec![AmmOrderExecution {
                 input_max: (t0, 5.into()),
                 output: (t1, 6.into()),
+                internalizable: false
             }]
         );
     }
@@ -632,12 +632,14 @@ mod tests {
         let token_c = H160::from_slice(&hex!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"));
 
         let cpo_0 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (597249810824827988770940, 225724246562756585230),
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         let cpo_1 = ConstantProductOrder {
+            address: H160::from_low_u64_be(2),
             tokens: TokenPair::new(token_b, token_c).unwrap(),
             reserves: (8488677530563931705, 75408146511005299032),
             fee: Ratio::new(3, 1000),
@@ -645,6 +647,7 @@ mod tests {
         };
 
         let wpo = WeightedProductOrder {
+            address: H160::from_low_u64_be(3),
             reserves: hashmap! {
                 token_c => WeightedTokenState {
                     common: TokenState {
@@ -666,6 +669,7 @@ mod tests {
         };
 
         let spo = StablePoolOrder {
+            address: H160::from_low_u64_be(4),
             reserves: hashmap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
@@ -902,6 +906,7 @@ mod tests {
         let token_b = H160::from_slice(&hex!("c778417e063141139fce010982780140aa0cd5ab"));
 
         let cpo_1 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (8488677530563931705, 75408146511005299032),
             fee: Ratio::new(3, 1000),
