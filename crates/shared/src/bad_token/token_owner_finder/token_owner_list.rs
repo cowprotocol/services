@@ -29,7 +29,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn seasolver_finder_constructor_empty() {
+    async fn token_owner_list_constructor_empty() {
         let finder = TokenOwnerList::new(Default::default());
         let candidate_owners = finder
             .find_candidate_owners(H160::from_low_u64_be(10))
@@ -38,7 +38,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn seasolver_finder_constructor() {
+    async fn token_owner_list_constructor() {
         let token = H160::from_low_u64_be(1);
         let owners = vec![H160::from_low_u64_be(2), H160::from_low_u64_be(3)];
         let finder = TokenOwnerList::new(HashMap::from([(token, owners.clone())]));
