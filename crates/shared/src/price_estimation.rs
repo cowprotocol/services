@@ -166,6 +166,11 @@ impl Display for Arguments {
                 .as_ref()
                 .map(|value| format!("{value:?}")),
         )?;
+        writeln!(
+            f,
+            "tenderly_save_failed_trade_simulations: {}",
+            self.tenderly_save_failed_trade_simulations
+        )?;
 
         Ok(())
     }
