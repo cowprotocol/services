@@ -2,18 +2,18 @@ use super::TokenOwnerProposing;
 use anyhow::Result;
 use ethcontract::H160;
 
-pub struct SeasolverTokenOwnerFinder {
+pub struct TokenOwnerList {
     owners: Vec<H160>,
 }
 
-impl SeasolverTokenOwnerFinder {
+impl TokenOwnerList {
     pub fn new(owners: Vec<H160>) -> Self {
         Self { owners }
     }
 }
 
 #[async_trait::async_trait]
-impl TokenOwnerProposing for SeasolverTokenOwnerFinder {
+impl TokenOwnerProposing for TokenOwnerList {
     async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
         Ok(self.owners.clone())
     }
@@ -25,7 +25,7 @@ mod tests {
 
     #[tokio::test]
     async fn seasolver_finder_constructor_empty() {
-        let finder = SeasolverTokenOwnerFinder::new(vec![]);
+        let finder = TokenOwnerList::new(vec![]);
         let candidate_owners = finder
             .find_candidate_owners(H160::from_low_u64_be(10))
             .await;
@@ -35,7 +35,7 @@ mod tests {
     #[tokio::test]
     async fn seasolver_finder_constructor() {
         let owners = vec![H160::from_low_u64_be(1), H160::from_low_u64_be(2)];
-        let finder = SeasolverTokenOwnerFinder::new(owners.clone());
+        let finder = TokenOwnerList::new(owners.clone());
         let candidate_owners = finder
             .find_candidate_owners(H160::from_low_u64_be(10))
             .await

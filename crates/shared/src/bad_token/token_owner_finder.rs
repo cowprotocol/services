@@ -1,7 +1,7 @@
 pub mod blockscout;
 pub mod ethplorer;
 pub mod liquidity;
-pub mod seasolver;
+pub mod token_owner_list;
 
 use self::{
     blockscout::BlockscoutTokenOwnerFinder,
@@ -10,7 +10,7 @@ use self::{
 use crate::{
     arguments::duration_from_seconds,
     bad_token::token_owner_finder::{
-        ethplorer::EthplorerTokenOwnerFinder, seasolver::SeasolverTokenOwnerFinder,
+        ethplorer::EthplorerTokenOwnerFinder, token_owner_list::TokenOwnerList,
     },
     baseline_solver::BaseTokens,
     ethcontract_error::EthcontractErrorType,
@@ -189,7 +189,7 @@ pub async fn init(
         proposers.push(Arc::new(ethplorer));
     }
 
-    proposers.push(Arc::new(SeasolverTokenOwnerFinder::new(
+    proposers.push(Arc::new(TokenOwnerList::new(
         args.seasolver_whitelisted_owners.clone(),
     )));
 
