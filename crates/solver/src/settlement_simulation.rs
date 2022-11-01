@@ -39,34 +39,19 @@ const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 pub async fn simulate_and_estimate_gas_at_current_block(
     settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
-    web3: &Web3,
     gas_price: GasPrice1559,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
     // Collect into Vec to not rely on Itertools::chunk which would make this future !Send.
     let settlements: Vec<_> = settlements.collect();
 
-    // Needed because sending an empty batch request gets an empty response which doesn't
-    // deserialize correctly.
-    if settlements.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let web3 = web3::Web3::new(shared::transport::buffered::Buffered::new(
-        web3.transport().clone(),
-    ));
-    let contract_with_buffered_transport = GPv2Settlement::at(&web3, contract.address());
+    // Force settlement simulations to be done in smaller batches. They can be
+    // quite large and exert significant node pressure.
     let mut results = Vec::new();
     for chunk in settlements.chunks(SIMULATE_BATCH_SIZE) {
         let calls = chunk
             .iter()
             .map(|(account, settlement, access_list)| {
-                let tx = settle_method(
-                    gas_price,
-                    &contract_with_buffered_transport,
-                    settlement.clone(),
-                    account.clone(),
-                )
-                .tx;
+                let tx = settle_method(gas_price, contract, settlement.clone(), account.clone()).tx;
                 let tx = match access_list {
                     Some(access_list) => tx.access_list(access_list.clone()),
                     None => tx,
@@ -77,6 +62,7 @@ pub async fn simulate_and_estimate_gas_at_current_block(
         let chuck_results = futures::future::join_all(calls).await;
         results.extend(chuck_results);
     }
+
     Ok(results)
 }
 
@@ -307,7 +293,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,
-            &web3,
             Default::default(),
         )
         .await
@@ -317,7 +302,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::empty(),
             &contract,
-            &web3,
             Default::default(),
         )
         .await
@@ -700,7 +684,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,
-            &web3,
             GasPrice1559::default(),
         )
         .await

@@ -106,7 +106,6 @@ impl SettlementRating for SettlementRater {
                 )
             }),
             &self.settlement_contract,
-            &self.web3,
             gas_price,
         )
         .await

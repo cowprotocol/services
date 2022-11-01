@@ -21,7 +21,6 @@ pub trait SettlementSimulating: Send + Sync {
 }
 
 pub struct SettlementSimulator {
-    web3: Web3,
     settlement_contract: GPv2Settlement,
     gas_price: GasPrice1559,
     solver_account: Account,
@@ -33,7 +32,6 @@ impl SettlementSimulating for SettlementSimulator {
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
-            &self.web3,
             self.gas_price,
         )
         .await;
@@ -42,7 +40,6 @@ impl SettlementSimulating for SettlementSimulator {
 }
 
 pub struct PostProcessingPipeline {
-    web3: Web3,
     settlement_contract: GPv2Settlement,
     unwrap_factor: f64,
     weth: WETH9,
@@ -59,10 +56,9 @@ impl PostProcessingPipeline {
         market_makable_token_list: AutoUpdatingTokenList,
     ) -> Self {
         let weth = WETH9::at(&web3, native_token);
-        let buffer_retriever = BufferRetriever::new(web3.clone(), settlement_contract.address());
+        let buffer_retriever = BufferRetriever::new(web3, settlement_contract.address());
 
         Self {
-            web3,
             settlement_contract,
             unwrap_factor,
             weth,
@@ -78,7 +74,6 @@ impl PostProcessingPipeline {
         gas_price: GasPrice1559,
     ) -> Settlement {
         let simulator = SettlementSimulator {
-            web3: self.web3.clone(),
             settlement_contract: self.settlement_contract.clone(),
             gas_price,
             solver_account,
