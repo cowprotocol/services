@@ -11,13 +11,15 @@ use super::{
     sanitized::SanitizedPriceEstimator,
     trade_finder::TradeVerifier,
     zeroex::ZeroExPriceEstimator,
-    Arguments, PriceEstimating, PriceEstimatorType,
+    Arguments, PriceEstimating, PriceEstimatorType, TradeValidatorKind,
 };
 use crate::{
     arguments,
     bad_token::BadTokenDetecting,
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
+    code_fetching::CachedCodeFetcher,
+    code_simulation::{CodeSimulating, TenderlyCodeSimulator},
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     oneinch_api::OneInchClient,
@@ -30,6 +32,7 @@ use crate::{
     },
     token_info::TokenInfoFetching,
     zeroex_api::ZeroExApi,
+    Web3,
 };
 use anyhow::{Context as _, Result};
 use ethcontract::{H160, U256};
@@ -56,9 +59,11 @@ struct EstimatorEntry {
 
 /// Network options needed for creating price estimators.
 pub struct Network {
+    pub web3: Web3,
     pub name: String,
     pub chain_id: u64,
     pub native_token: H160,
+    pub authenticator: H160,
     pub base_tokens: Arc<BaseTokens>,
 }
 
@@ -81,15 +86,43 @@ impl<'a> PriceEstimatorFactory<'a> {
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let trade_verifier = args
+            .trade_simulator
+            .map(|kind| -> Result<TradeVerifier> {
+                let simulator = match kind {
+                    TradeValidatorKind::Web3 => {
+                        Arc::new(network.web3.clone()) as Arc<dyn CodeSimulating>
+                    }
+                    TradeValidatorKind::Tenderly => {
+                        let tenderly_api = shared_args
+                            .tenderly
+                            .get_api_instance(&components.http_factory)?
+                            .context("missing Tenderly configuration")?;
+                        let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id)
+                            .save(false, args.tenderly_save_failed_trade_simulations);
+
+                        Arc::new(simulator)
+                    }
+                };
+                let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(network.web3.clone())));
+
+                Ok(TradeVerifier::new(
+                    simulator,
+                    code_fetcher,
+                    network.authenticator,
+                ))
+            })
+            .transpose()?;
+
+        Ok(Self {
             args,
             shared_args,
             network,
             components,
-            trade_verifier: None,
+            trade_verifier,
             estimators: HashMap::new(),
-        }
+        })
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<U256> {
