@@ -1,6 +1,7 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use database::quotes::QuoteKind;
 use model::quote::QuoteId;
 use shared::{
     event_storing_helpers::{create_db_search_parameters, create_quote_row},
@@ -36,6 +37,7 @@ impl QuoteStoring for Postgres {
         &self,
         params: QuoteSearchParameters,
         expiration: DateTime<Utc>,
+        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -43,7 +45,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let params = create_db_search_parameters(params, expiration);
+        let params = create_db_search_parameters(params, expiration, quote_kind);
         let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;

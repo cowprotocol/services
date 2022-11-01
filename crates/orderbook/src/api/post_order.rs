@@ -198,7 +198,7 @@ pub fn create_order_response(result: Result<OrderUid, AddOrderError>) -> ApiRepl
     }
 }
 
-pub fn create_order(
+pub fn post_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     create_order_request().and_then(move |order_payload: OrderCreation| {

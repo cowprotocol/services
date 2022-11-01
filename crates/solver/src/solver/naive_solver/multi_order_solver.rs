@@ -177,13 +177,13 @@ fn solve_with_uniswap(
     settlement
         .with_liquidity(
             pool,
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((uniswap_in_token, uniswap_in))
-                    .ok()?,
-                output: (uniswap_out_token, uniswap_out_with_rounding),
-                internalizable: false,
-            },
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (uniswap_in_token, uniswap_in),
+                    output: (uniswap_out_token, uniswap_out_with_rounding),
+                    internalizable: false,
+                })
+                .ok()?,
         )
         .ok()?;
 
@@ -332,6 +332,7 @@ mod tests {
     use crate::{
         liquidity::slippage::SlippageCalculator, settlement::external_prices::ExternalPrices,
     };
+    use ethcontract::H160;
     use liquidity::tests::CapturingSettlementHandler;
     use maplit::hashmap;
     use model::{
@@ -380,6 +381,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -436,6 +438,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -488,6 +491,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -544,6 +548,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -604,6 +609,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -685,6 +691,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -731,6 +738,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -863,6 +871,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (u128::MAX, u128::MAX),
             fee: Ratio::new(3, 1000),
@@ -906,6 +915,7 @@ mod tests {
         ];
         // Reserves are much smaller than buy amount
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (25000075, 2500007500),
             fee: Ratio::new(3, 1000),
@@ -954,6 +964,7 @@ mod tests {
         ];
 
         let pool = Pool::uniswap(
+            H160::from_low_u64_be(1),
             TokenPair::new(token_a, token_b).unwrap(),
             (1_000_000_000_000_000_000, 1_000_000_000_000_000_000),
         );
@@ -1011,6 +1022,7 @@ mod tests {
 
         let amm_handler = CapturingSettlementHandler::arc();
         let pool = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -1021,14 +1033,16 @@ mod tests {
 
         assert_eq!(
             amm_handler.calls(),
-            vec![AmmOrderExecution {
-                input_max: slippage.execution_input_max((token_a, to_wei(40))).unwrap(),
-                output: (
-                    token_b,
-                    pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
-                ),
-                internalizable: false
-            }],
+            vec![slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (token_a, to_wei(40)),
+                    output: (
+                        token_b,
+                        pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
+                    ),
+                    internalizable: false
+                })
+                .unwrap()],
         );
     }
 }

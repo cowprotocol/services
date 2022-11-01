@@ -1,14 +1,22 @@
 use crate::{
     driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+    settlement::{
+        external_prices::ExternalPrices, InternalizationStrategy, PriceCheckTokens, Settlement,
+    },
     settlement_rater::{RatedSolverSettlement, SettlementRating},
-    solver::{SettlementWithError, Solver, SolverRunError},
+    settlement_simulation::call_data,
+    solver::{SimulationWithError, Solver},
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
+use itertools::enumerate;
+use model::auction::AuctionId;
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
 use rand::prelude::SliceRandom;
+use shared::http_solver::model::{
+    AuctionResult, SolverRejectionReason, SolverRunError, TransactionWithError,
+};
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
@@ -32,49 +40,52 @@ impl SettlementRanker {
         solver: &Arc<dyn Solver>,
         settlements: Result<Vec<Settlement>, SolverRunError>,
         external_prices: &ExternalPrices,
+        auction_id: AuctionId,
     ) -> Vec<Settlement> {
         let name = solver.name();
         match settlements {
-            Ok(mut settlement) => {
-                for settlement in &settlement {
+            Ok(settlements) => {
+                let settlements: Vec<_> = settlements.into_iter().filter_map(|settlement| {
                     tracing::debug!(solver_name = %name, ?settlement, "found solution");
-                }
 
-                // Do not continue with settlements that are empty or only liquidity orders.
-                let settlement_count = settlement.len();
-                settlement.retain(solver_settlements::has_user_order);
-                if settlement_count != settlement.len() {
-                    tracing::debug!(
-                        solver_name = %name,
-                        "settlement(s) filtered containing only liquidity orders",
-                    );
-                }
-
-                if let Some(max_settlement_price_deviation) = &self.max_settlement_price_deviation {
-                    let settlement_count = settlement.len();
-                    settlement.retain(|settlement| {
-                        settlement.satisfies_price_checks(
-                            solver.name(),
-                            external_prices,
-                            max_settlement_price_deviation,
-                            &self.token_list_restriction_for_price_checks,
-                        )
-                    });
-                    if settlement_count != settlement.len() {
+                    // Do not continue with settlements that are empty or only liquidity orders.
+                    if !solver_settlements::has_user_order(&settlement) {
                         tracing::debug!(
                             solver_name = %name,
-                            "settlement(s) filtered for violating maximum external price deviation",
+                            "settlement(s) filtered containing only liquidity orders",
                         );
+                        solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::NoUserOrders));
+                        return None;
                     }
-                }
 
-                let outcome = match settlement.is_empty() {
+                    if let Some(max_settlement_price_deviation) = &self.max_settlement_price_deviation {
+                        if !
+                            settlement.satisfies_price_checks(
+                                solver.name(),
+                                external_prices,
+                                max_settlement_price_deviation,
+                                &self.token_list_restriction_for_price_checks,
+                            ) {
+
+                                tracing::debug!(
+                                    solver_name = %name,
+                                    "settlement(s) filtered for violating maximum external price deviation",
+                                );
+
+                                solver.notify_auction_result(auction_id, AuctionResult::Rejected(SolverRejectionReason::PriceViolation));
+                                return None;
+                            }
+                    }
+
+                    Some(settlement)
+                }).collect();
+
+                let outcome = match settlements.is_empty() {
                     true => SolverRunOutcome::Empty,
                     false => SolverRunOutcome::Success,
                 };
                 self.metrics.solver_run(outcome, name);
-
-                settlement
+                settlements
             }
             Err(err) => {
                 let outcome = match err {
@@ -83,6 +94,10 @@ impl SettlementRanker {
                 };
                 self.metrics.solver_run(outcome, name);
                 tracing::warn!(solver_name = %name, ?err, "solver error");
+                solver.notify_auction_result(
+                    auction_id,
+                    AuctionResult::Rejected(SolverRejectionReason::RunError(err)),
+                );
                 vec![]
             }
         }
@@ -93,10 +108,12 @@ impl SettlementRanker {
         &self,
         settlements: Vec<SolverResult>,
         prices: &ExternalPrices,
+        auction_id: AuctionId,
     ) -> Vec<(Arc<dyn Solver>, Settlement)> {
         let mut solver_settlements = vec![];
         for (solver, settlements) in settlements {
-            let settlements = self.discard_illegal_settlements(&solver, settlements, prices);
+            let settlements =
+                self.discard_illegal_settlements(&solver, settlements, prices, auction_id);
             for settlement in settlements {
                 solver_settlements.push((solver.clone(), settlement));
             }
@@ -104,7 +121,7 @@ impl SettlementRanker {
 
         // TODO this needs to move into the autopilot eventually.
         // filters out all non-mature settlements
-        retain_mature_settlements(self.min_order_age, solver_settlements)
+        retain_mature_settlements(self.min_order_age, solver_settlements, auction_id)
     }
 
     /// Determines legal settlements and ranks them by simulating them.
@@ -115,15 +132,17 @@ impl SettlementRanker {
         settlements: Vec<SolverResult>,
         external_prices: &ExternalPrices,
         gas_price: GasPrice1559,
-    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
-        let solver_settlements = self.get_legal_settlements(settlements, external_prices);
+        auction_id: AuctionId,
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
+        let solver_settlements =
+            self.get_legal_settlements(settlements, external_prices, auction_id);
 
         // log considered settlements. While we already log all found settlements, this additonal
         // statement allows us to figure out which settlements were filtered out and which ones are
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
             tracing::debug!(
-                solver_name = %solver.name(), ?settlement,
+                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(InternalizationStrategy::EncodeAllInteractions))),
                 "considering solution for solver competition",
             );
         }
@@ -144,7 +163,20 @@ impl SettlementRanker {
             rated_settlements.len(),
             errors.len(),
         );
-        for (solver, _, _) in &rated_settlements {
+        for error in &errors {
+            error.simulation.solver.notify_auction_result(
+                auction_id,
+                AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
+                    TransactionWithError {
+                        transaction: error.simulation.transaction.clone(),
+                        error: error.error.to_string(),
+                    },
+                )),
+            );
+        }
+        for (i, (solver, _, _)) in enumerate(&rated_settlements) {
+            let rank = rated_settlements.len() - i;
+            solver.notify_auction_result(auction_id, AuctionResult::Ranked(rank));
             self.metrics
                 .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
         }

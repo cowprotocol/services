@@ -277,11 +277,11 @@ impl Solution {
             let buy_amount = amm
                 .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculable");
-            let execution = AmmOrderExecution {
-                input_max: slippage.execution_input_max((sell_token, sell_amount))?,
+            let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
+                input_max: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
                 internalizable: false,
-            };
+            })?;
             match &amm.order {
                 AmmOrder::ConstantProduct(order) => settlement.with_liquidity(order, execution),
                 AmmOrder::WeightedProduct(order) => settlement.with_liquidity(order, execution),
@@ -296,6 +296,7 @@ impl Solution {
 
 fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
     Pool {
+        address: amm.address,
         tokens: amm.tokens,
         reserves: amm.reserves,
         fee: amm.fee,
@@ -369,6 +370,7 @@ mod tests {
         ];
         let amms = vec![
             ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(buy_token, sell_token).unwrap(),
                 reserves: (1_000_000, 1_000_000),
                 fee: Ratio::new(3, 1000),
@@ -376,6 +378,7 @@ mod tests {
             },
             // Path via native token has more liquidity
             ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: TokenPair::new(sell_token, native_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -383,12 +386,14 @@ mod tests {
             },
             // Second native token pool has a worse price despite larger k
             ConstantProductOrder {
+                address: H160::from_low_u64_be(3),
                 tokens: TokenPair::new(sell_token, native_token).unwrap(),
                 reserves: (11_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: amm_handler[1].clone(),
             },
             ConstantProductOrder {
+                address: H160::from_low_u64_be(4),
                 tokens: TokenPair::new(native_token, buy_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -417,23 +422,23 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((sell_token, 100_000.into()))
-                    .unwrap(),
-                output: (native_token, 98_715.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (sell_token, 100_000.into()),
+                    output: (native_token, 98_715.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((native_token, 98_715.into()))
-                    .unwrap(),
-                output: (buy_token, 97_459.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (native_token, 98_715.into()),
+                    output: (buy_token, 97_459.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
     }
 
@@ -478,6 +483,7 @@ mod tests {
         ];
         let amms = vec![
             ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(buy_token, sell_token).unwrap(),
                 reserves: (1_000_000, 1_000_000),
                 fee: Ratio::new(3, 1000),
@@ -485,6 +491,7 @@ mod tests {
             },
             // Path via native token has more liquidity
             ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: TokenPair::new(sell_token, native_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -492,12 +499,14 @@ mod tests {
             },
             // Second native token pool has a worse price despite larger k
             ConstantProductOrder {
+                address: H160::from_low_u64_be(3),
                 tokens: TokenPair::new(sell_token, native_token).unwrap(),
                 reserves: (11_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: amm_handler[1].clone(),
             },
             ConstantProductOrder {
+                address: H160::from_low_u64_be(4),
                 tokens: TokenPair::new(native_token, buy_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -526,23 +535,23 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((sell_token, 102_660.into()))
-                    .unwrap(),
-                output: (native_token, 101_315.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (sell_token, 102_660.into()),
+                    output: (native_token, 101_315.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmOrderExecution {
-                input_max: slippage
-                    .execution_input_max((native_token, 101_315.into()))
-                    .unwrap(),
-                output: (buy_token, 100_000.into()),
-                internalizable: false
-            }
+            slippage
+                .apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (native_token, 101_315.into()),
+                    output: (buy_token, 100_000.into()),
+                    internalizable: false
+                })
+                .unwrap(),
         );
     }
 
@@ -564,6 +573,7 @@ mod tests {
 
         let amms = vec![
             ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(buy_token, sell_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -571,6 +581,7 @@ mod tests {
             },
             // Other direct pool has not enough liquidity to compute a valid estimate
             ConstantProductOrder {
+                address: H160::from_low_u64_be(2),
                 tokens: TokenPair::new(buy_token, sell_token).unwrap(),
                 reserves: (0, 0),
                 fee: Ratio::new(3, 1000),
@@ -603,6 +614,7 @@ mod tests {
         };
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(
                     addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
                     addr!("c778417e063141139fce010982780140aa0cd5ab"),
@@ -613,6 +625,7 @@ mod tests {
                 settlement_handling: CapturingSettlementHandler::arc(),
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
+                address: H160::from_low_u64_be(2),
                 reserves: hashmap! {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         common: TokenState {
@@ -660,12 +673,14 @@ mod tests {
             ..Default::default()
         };
         let pool_0 = ConstantProductOrder {
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(tokens[1], tokens[2]).unwrap(),
             reserves: (10, 12),
             fee: Ratio::new(0, 1),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         let pool_1 = WeightedProductOrder {
+            address: H160::from_low_u64_be(2),
             reserves: [
                 (
                     tokens[0],

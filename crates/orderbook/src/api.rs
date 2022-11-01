@@ -1,5 +1,4 @@
 mod cancel_order;
-mod create_order;
 mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
@@ -12,6 +11,7 @@ mod get_solvable_orders_v2;
 mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
+mod post_order;
 mod post_quote;
 pub mod post_solver_competition;
 mod replace_order;
@@ -43,7 +43,7 @@ pub fn handle_all_routes(
     // This string will be used later to report metrics.
     // It is not used to form the actual server response.
 
-    let create_order = create_order::create_order(orderbook.clone())
+    let post_order = post_order::post_order(orderbook.clone())
         .map(|result| (result, "v1/create_order"))
         .boxed();
     let fee_info = get_fee_info::get_fee_info(quotes.clone())
@@ -101,7 +101,7 @@ pub fn handle_all_routes(
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
-            create_order
+            post_order
                 .or(fee_info)
                 .unify()
                 .or(get_order)

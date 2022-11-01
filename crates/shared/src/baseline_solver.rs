@@ -315,6 +315,7 @@ mod tests {
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [Pool::uniswap(
+            H160::from_low_u64_be(1),
             TokenPair::new(path[0], path[1]).unwrap(),
             (100, 100),
         )];
@@ -334,8 +335,16 @@ mod tests {
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [
-            Pool::uniswap(TokenPair::new(path[0], path[1]).unwrap(), (100, 100)),
-            Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
+            Pool::uniswap(
+                H160::from_low_u64_be(1),
+                TokenPair::new(path[0], path[1]).unwrap(),
+                (100, 100),
+            ),
+            Pool::uniswap(
+                H160::from_low_u64_be(2),
+                TokenPair::new(path[1], path[2]).unwrap(),
+                (200, 50),
+            ),
         ];
         let pools = hashmap! {
             pools[0].tokens => vec![pools[0]],
@@ -363,8 +372,16 @@ mod tests {
 
         let path = vec![sell_token, intermediate, buy_token];
         let pools = [
-            Pool::uniswap(TokenPair::new(path[0], path[1]).unwrap(), (100, 100)),
-            Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
+            Pool::uniswap(
+                H160::from_low_u64_be(1),
+                TokenPair::new(path[0], path[1]).unwrap(),
+                (100, 100),
+            ),
+            Pool::uniswap(
+                H160::from_low_u64_be(2),
+                TokenPair::new(path[1], path[2]).unwrap(),
+                (200, 50),
+            ),
         ];
         let pools = hashmap! {
             pools[0].tokens => vec![pools[0]],
@@ -384,10 +401,17 @@ mod tests {
         let first_pair = TokenPair::new(path[0], path[1]).unwrap();
         let second_pair = TokenPair::new(path[1], path[2]).unwrap();
 
-        let first_hop_high_price = Pool::uniswap(first_pair, (101_000, 100_000));
-        let first_hop_low_price = Pool::uniswap(first_pair, (100_000, 101_000));
-        let second_hop_high_slippage = Pool::uniswap(second_pair, (200_000, 50_000));
-        let second_hop_low_slippage = Pool::uniswap(second_pair, (200_000_000, 50_000_000));
+        let first_hop_high_price =
+            Pool::uniswap(H160::from_low_u64_be(1), first_pair, (101_000, 100_000));
+        let first_hop_low_price =
+            Pool::uniswap(H160::from_low_u64_be(1), first_pair, (100_000, 101_000));
+        let second_hop_high_slippage =
+            Pool::uniswap(H160::from_low_u64_be(2), second_pair, (200_000, 50_000));
+        let second_hop_low_slippage = Pool::uniswap(
+            H160::from_low_u64_be(2),
+            second_pair,
+            (200_000_000, 50_000_000),
+        );
         let pools = hashmap! {
             first_pair => vec![first_hop_high_price, first_hop_low_price],
             second_pair => vec![second_hop_high_slippage, second_hop_low_slippage],
@@ -427,8 +451,8 @@ mod tests {
         let pair = TokenPair::new(sell_token, buy_token).unwrap();
 
         let path = vec![sell_token, buy_token];
-        let valid_pool = Pool::uniswap(pair, (100_000, 100_000));
-        let invalid_pool = Pool::uniswap(pair, (0, 0));
+        let valid_pool = Pool::uniswap(H160::from_low_u64_be(1), pair, (100_000, 100_000));
+        let invalid_pool = Pool::uniswap(H160::default(), pair, (0, 0));
         let pools = hashmap! {
             pair => vec![valid_pool, invalid_pool],
         };

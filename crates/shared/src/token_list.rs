@@ -1,12 +1,45 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use anyhow::Result;
 use ethcontract::H160;
-use reqwest::{Client, IntoUrl};
+use reqwest::Client;
 use serde::Deserialize;
 
-pub struct TokenList {
-    tokens: HashMap<H160, Token>,
+#[derive(Clone, Debug, Default)]
+pub struct TokenListConfiguration {
+    pub url: String,
+    pub chain_id: u64,
+    pub client: Client,
+    pub update_interval: Duration,
+}
+
+impl TokenListConfiguration {
+    async fn tokens(&self) -> Result<HashMap<H160, Token>> {
+        let model: TokenListModel = self
+            .client
+            .get(self.url.clone())
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(Self::from_tokens(model.tokens, self.chain_id))
+    }
+
+    fn from_tokens(tokens: Vec<TokenModel>, chain_id: u64) -> HashMap<H160, Token> {
+        tokens
+            .into_iter()
+            .filter(|token| token.chain_id == chain_id)
+            .map(|token| (token.token.address, token.token))
+            .collect()
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct AutoUpdatingTokenList {
+    tokens: Arc<RwLock<HashMap<H160, Token>>>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -17,36 +50,58 @@ pub struct Token {
     pub decimals: u8,
 }
 
-impl TokenList {
-    pub async fn from_url(url: impl IntoUrl, chain_id: u64, client: Client) -> Result<Self> {
-        let model: TokenListModel = client.get(url).send().await?.json().await?;
-        Ok(Self::from_tokens(model.tokens, chain_id))
-    }
+impl AutoUpdatingTokenList {
+    pub async fn from_configuration(configuration: TokenListConfiguration) -> Self {
+        let tokens = Arc::new(RwLock::new(match configuration.tokens().await {
+            Ok(tokens) => tokens,
+            Err(err) => {
+                tracing::error!(?err, "failed to initialize token list");
+                Default::default()
+            }
+        }));
 
-    fn from_tokens(tokens: Vec<TokenModel>, chain_id: u64) -> Self {
-        Self {
-            tokens: tokens
-                .into_iter()
-                .filter(|token| token.chain_id == chain_id)
-                .map(|token| (token.token.address, token.token))
-                .collect(),
+        // spawn a background task to regularly update token list
+        {
+            let tokens = tokens.clone();
+            let updater = async move {
+                loop {
+                    tokio::time::sleep(configuration.update_interval).await;
+
+                    match configuration.tokens().await {
+                        Ok(new_tokens) => {
+                            let mut w = tokens.write().unwrap();
+                            *w = new_tokens;
+                        }
+                        Err(err) => tracing::error!(?err, "failed to update token list"),
+                    }
+                }
+            };
+            tokio::task::spawn(updater);
         }
-    }
 
-    pub fn new(tokens: HashMap<H160, Token>) -> Self {
         Self { tokens }
     }
 
-    pub fn get(&self, address: &H160) -> Option<&Token> {
-        self.tokens.get(address)
+    pub fn new(tokens: HashMap<H160, Token>) -> Self {
+        Self {
+            tokens: Arc::new(RwLock::new(tokens)),
+        }
+    }
+
+    pub fn get(&self, address: &H160) -> Option<Token> {
+        self.tokens.read().unwrap().get(address).cloned()
     }
 
     pub fn all(&self) -> Vec<Token> {
-        self.tokens.values().cloned().collect()
+        self.tokens.read().unwrap().values().cloned().collect()
+    }
+
+    pub fn addresses(&self) -> HashSet<H160> {
+        self.tokens.read().unwrap().keys().cloned().collect()
     }
 }
 
-/// Relevant parts of TokenList schema as defined in https://uniswap.org/tokenlist.schema.json
+/// Relevant parts of AutoUpdatingTokenList schema as defined in https://uniswap.org/tokenlist.schema.json
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TokenListModel {
@@ -152,7 +207,8 @@ pub mod tests {
     #[test]
     fn test_creation_with_chain_id() {
         let list = serde_json::from_str::<TokenListModel>(EXAMPLE_LIST).unwrap();
-        let instance = TokenList::from_tokens(list.tokens, 1);
+        let tokens = TokenListConfiguration::from_tokens(list.tokens, 1);
+        let instance = AutoUpdatingTokenList::new(tokens);
         assert!(instance.get(&testlib::tokens::USDC).is_some());
         // Chain ID 4
         assert!(instance

@@ -12,6 +12,7 @@ use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
+use web3::types::AccessList;
 
 use crate::{
     interaction::{EncodedInteraction, Interaction},
@@ -58,6 +59,7 @@ pub struct AmmModel {
     pub fee: BigRational,
     pub cost: TokenAmount,
     pub mandatory: bool,
+    pub address: H160,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -115,6 +117,8 @@ pub struct TokenInfoModel {
     pub normalize_priority: Option<u64>,
     #[serde_as(as = "Option<DecimalU256>")]
     pub internal_buffer: Option<U256>,
+    /// Is token in the external list containing only safe tokens
+    pub accepted_for_internalization: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -324,17 +328,94 @@ pub struct ExecutionPlanCoordinatesModel {
     pub position: u32,
 }
 
+/// The result a given solver achieved in the auction
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuctionResult {
+    /// Solution was valid and was ranked at the given place
+    /// Rank 1 means the solver won the competition
+    Ranked(usize),
+
+    /// Solution was invalid for some reason
+    Rejected(SolverRejectionReason),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverRejectionReason {
+    /// The solver didn't return a successful response
+    RunError(SolverRunError),
+
+    /// The solution candidate didn't include any user orders
+    NoUserOrders,
+
+    /// The solution candidate didn't include any mature user orders
+    NoMatureOrders,
+
+    /// The solution violated a price constraint (ie. max deviation to external price vector)
+    PriceViolation,
+
+    /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
+    SimulationFailure(TransactionWithError),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverRunError {
+    Timeout,
+    Solving(String),
+}
+
+impl From<anyhow::Error> for SolverRunError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Solving(err.to_string())
+    }
+}
+
+/// Contains all information about a failing settlement simulation
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionWithError {
+    /// Transaction data used for simulation of the settlement
+    #[serde(flatten)]
+    pub transaction: SimulatedTransaction,
+    /// Error message from the simulator
+    pub error: String,
+}
+
+/// Transaction data used for simulation of the settlement
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimulatedTransaction {
+    /// The simulation was done on top of all transactions from the given block number
+    pub block_number: u64,
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
+    pub access_list: Option<AccessList>,
+    /// Solver address
+    pub from: H160,
+    /// GPv2 settlement contract address
+    pub to: H160,
+    /// Transaction input data
+    #[serde(with = "model::bytes_hex")]
+    pub data: Vec<u8>,
+}
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use crate::sources::uniswap_v3::graph_api::Token;
 
     use super::*;
+    use ethcontract::H256;
     use maplit::btreemap;
     use model::{
         app_id::AppId,
         order::{OrderKind, SellTokenSource},
     };
     use serde_json::json;
+    use web3::types::AccessListItem;
 
     #[test]
     fn updated_amm_model_is_non_trivial() {
@@ -434,6 +515,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: false,
+            address: H160::from_low_u64_be(1),
         };
         let weighted_product_pool_model = AmmModel {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
@@ -454,6 +536,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: true,
+            address: H160::from_low_u64_be(2),
         };
         let stable_pool_model = AmmModel {
             parameters: AmmParameters::Stable(StablePoolParameters {
@@ -473,6 +556,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: true,
+            address: H160::from_low_u64_be(3),
         };
         let concentrated_pool_model = AmmModel {
             parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
@@ -497,6 +581,7 @@ mod tests {
                 token: native_token,
             },
             mandatory: false,
+            address: H160::from_low_u64_be(4),
         };
         let model = BatchAuctionModel {
             tokens: btreemap! {
@@ -506,6 +591,7 @@ mod tests {
                     external_price: Some(1.2),
                     normalize_priority: Some(1),
                     internal_buffer: Some(U256::from(1337)),
+                    accepted_for_internalization: true,
                 },
                 sell_token => TokenInfoModel {
                     decimals: Some(18),
@@ -513,6 +599,7 @@ mod tests {
                     external_price: Some(2345.0),
                     normalize_priority: Some(0),
                     internal_buffer: Some(U256::from(42)),
+                    accepted_for_internalization: true,
                 }
             },
             orders: btreemap! { 0 => order_model },
@@ -538,6 +625,7 @@ mod tests {
               "external_price": 1.2,
               "normalize_priority": 1,
               "internal_buffer": "1337",
+              "accepted_for_internalization": true,
             },
             "0x000000000000000000000000000000000000a866": {
               "decimals": 18,
@@ -545,6 +633,7 @@ mod tests {
               "external_price": 2345.0,
               "normalize_priority": 0,
               "internal_buffer": "42",
+              "accepted_for_internalization": true,
             },
           },
           "orders": {
@@ -582,6 +671,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
+              "address": "0x0000000000000000000000000000000000000001",
             },
             "1": {
               "kind": "WeightedProduct",
@@ -601,6 +691,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+              "address": "0x0000000000000000000000000000000000000002",
             },
             "2": {
               "kind": "Stable",
@@ -619,11 +710,11 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+              "address": "0x0000000000000000000000000000000000000003",
             },
             "3": {
               "kind": "Concentrated",
               "pool": {
-                "address": "0x0000000000000000000000000000000000000001",
                  "tokens": [
                 {
                   "id": "0x0000000000000000000000000000000000000539",
@@ -650,6 +741,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
+              "address": "0x0000000000000000000000000000000000000004",
             },
           },
           "metadata": {
@@ -824,6 +916,7 @@ mod tests {
                             "0x0303030303030303030303030303030303030303030303030303030303030303",
                         "feeAmount": "13",
                         "kind": "sell",
+                        "class": "ordinary",
                         "partiallyFillable": true,
                         "sellTokenBalance": "external",
                         "signingScheme": "eip1271",
@@ -856,6 +949,35 @@ mod tests {
                 exec_sell_amount: 50.into(),
                 exec_buy_amount: 51.into(),
             },
+        );
+    }
+
+    #[test]
+    fn serialize_simulated_transaction() {
+        assert_eq!(
+            serde_json::to_value(&SimulatedTransaction {
+                access_list: Some(vec![AccessListItem {
+                    address: H160::from_low_u64_be(1),
+                    storage_keys: vec![H256::from_low_u64_be(2)]
+                }]),
+                block_number: 15848799,
+                from: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
+                to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
+                data: vec![19, 250, 73],
+            })
+            .unwrap(),
+            json!({
+                "accessList": [{
+                    "address": "0x0000000000000000000000000000000000000001",
+                    "storageKeys": [
+                        "0x0000000000000000000000000000000000000000000000000000000000000002"
+                    ]
+                }],
+                "blockNumber": 15848799,
+                "data": "0x13fa49",
+                "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+                "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+            }),
         );
     }
 }
