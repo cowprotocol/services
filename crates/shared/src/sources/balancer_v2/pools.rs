@@ -15,7 +15,7 @@ pub mod weighted;
 pub mod weighted_2token;
 
 use super::graph_api::PoolData;
-use crate::Web3CallBatch;
+use crate::ethrpc::Web3CallBatch;
 use anyhow::Result;
 use ethcontract::{BlockId, H256};
 use futures::future::BoxFuture;

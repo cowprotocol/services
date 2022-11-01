@@ -1,4 +1,4 @@
-use crate::{http_client::HttpClientFactory, Web3};
+use crate::{ethrpc::Web3, http_client::HttpClientFactory};
 use anyhow::{ensure, Context, Result};
 use gas_estimation::{
     blocknative::BlockNative, nativegasestimator::NativeGasEstimator, EthGasStation,

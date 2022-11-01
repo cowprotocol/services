@@ -13,8 +13,8 @@ use futures::FutureExt;
 use gas_estimation::GasPrice1559;
 use primitive_types::{H160, H256, U256};
 use shared::{
+    ethrpc::Web3,
     tenderly_api::{SimulationRequest, TenderlyApi},
-    Web3,
 };
 use web3::types::{AccessList, BlockId};
 
@@ -194,7 +194,7 @@ pub fn settle_method_builder(
 
 /// The call data of a settle call with this settlement.
 pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&shared::transport::dummy::web3(), H160::default());
+    let contract = GPv2Settlement::at(&shared::ethrpc::dummy::web3(), H160::default());
     let method = contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
@@ -247,10 +247,10 @@ mod tests {
     use num::{rational::Ratio, BigRational};
     use serde_json::json;
     use shared::{
+        ethrpc::create_env_test_transport,
         http_solver::model::SettledBatchAuctionModel,
         sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
         tenderly_api::TenderlyHttpApi,
-        transport::create_env_test_transport,
     };
     use std::{
         str::FromStr,

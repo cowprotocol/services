@@ -13,8 +13,8 @@ use model::{order::OrderKind, TokenPair};
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::BaseTokens,
+    ethrpc::Web3,
     zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
-    Web3,
 };
 use std::{
     collections::{HashMap, HashSet},

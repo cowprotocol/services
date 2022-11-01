@@ -32,8 +32,8 @@ use ethcontract::Account;
 use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
+    ethrpc::Web3,
     zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
-    Web3,
 };
 use std::{
     fmt::{self, Display, Formatter},
@@ -168,7 +168,7 @@ mod tests {
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
     use shared::{
-        transport::{create_env_test_transport, create_test_transport},
+        ethrpc::{create_env_test_transport, create_test_transport},
         zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
     };
 

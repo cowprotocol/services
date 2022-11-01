@@ -11,11 +11,11 @@ use model::{
 };
 use secp256k1::SecretKey;
 use shared::{
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     maintenance::Maintaining,
     sources::uniswap_v2::pool_fetching::PoolFetcher,
     token_list::{AutoUpdatingTokenList, Token},
-    Web3,
 };
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,

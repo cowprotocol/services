@@ -1,9 +1,9 @@
 use crate::{
     current_block::RangeInclusive,
+    ethrpc::Web3,
     event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
     maintenance::Maintaining,
     recent_block_cache::Block,
-    Web3,
 };
 
 use super::{
@@ -469,9 +469,8 @@ impl Maintaining for UniswapV3PoolFetcher {
 
 #[cfg(test)]
 mod tests {
-    use crate::transport;
-
     use super::*;
+    use crate::ethrpc;
     use contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap};
     use ethcontract::EventMetadata;
     use serde_json::json;
@@ -698,7 +697,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn uniswap_v3_pool_fetcher_constructor_test() {
-        let transport = transport::create_env_test_transport();
+        let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3, 100)
             .await
@@ -717,7 +716,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn fetch_test() {
-        let transport = transport::create_env_test_transport();
+        let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone(), 100)
             .await

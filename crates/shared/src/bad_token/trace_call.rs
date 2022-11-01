@@ -1,5 +1,5 @@
 use super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality};
-use crate::{trace_many, Web3};
+use crate::{ethrpc::Web3, trace_many};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey};
@@ -251,8 +251,8 @@ mod tests {
             },
             TokenOwnerFinder,
         },
+        ethrpc::create_env_test_transport,
         sources::{sushiswap, uniswap_v2},
-        transport::create_env_test_transport,
     };
     use contracts::{BalancerV2Vault, IUniswapV3Factory};
     use hex_literal::hex;

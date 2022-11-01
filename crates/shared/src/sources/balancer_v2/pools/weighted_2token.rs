@@ -2,7 +2,7 @@
 
 pub use super::weighted::{PoolInfo, PoolState};
 use super::{common, FactoryIndexing};
-use crate::Web3CallBatch;
+use crate::ethrpc::Web3CallBatch;
 use anyhow::Result;
 use contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory};
 use ethcontract::BlockId;

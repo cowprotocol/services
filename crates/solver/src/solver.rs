@@ -28,6 +28,7 @@ use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     conversions::U256Ext,
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     http_solver::{
         model::{AuctionResult, SimulatedTransaction},
@@ -36,7 +37,6 @@ use shared::{
     token_info::TokenInfoFetching,
     token_list::AutoUpdatingTokenList,
     zeroex_api::ZeroExApi,
-    Web3,
 };
 use std::{
     fmt::{self, Debug, Formatter},

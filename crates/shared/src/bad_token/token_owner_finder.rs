@@ -14,11 +14,10 @@ use crate::{
     },
     baseline_solver::BaseTokens,
     ethcontract_error::EthcontractErrorType,
+    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
     http_client::HttpClientFactory,
     rate_limiter::RateLimitingStrategy,
     sources::uniswap_v2::pair_provider::PairProvider,
-    transport::MAX_BATCH_SIZE,
-    Web3, Web3CallBatch,
 };
 use anyhow::{Context, Result};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};

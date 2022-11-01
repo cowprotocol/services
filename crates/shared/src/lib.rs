@@ -13,6 +13,7 @@ pub mod conversions;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod ethcontract_error;
+pub mod ethrpc;
 pub mod event_handling;
 pub mod event_storing_helpers;
 pub mod exit_process_on_panic;
@@ -43,37 +44,13 @@ pub mod token_list;
 pub mod trace_many;
 pub mod tracing;
 pub mod trade_finding;
-pub mod transport;
 pub mod univ3_router_api;
 pub mod zeroex_api;
 
-use self::{
-    http_client::HttpClientFactory,
-    transport::{buffered::Buffered, http::HttpTransport},
-};
-use ethcontract::{
-    batch::CallBatch,
-    dyns::{DynTransport, DynWeb3},
-};
-use reqwest::Url;
 use std::{
     future::Future,
     time::{Duration, Instant},
 };
-
-pub type Web3Transport = DynTransport;
-pub type Web3 = DynWeb3;
-pub type Web3CallBatch = CallBatch<Web3Transport>;
-
-/// Create a Web3 instance.
-pub fn web3(http_factory: &HttpClientFactory, url: &Url, name: impl ToString) -> Web3 {
-    let transport = Web3Transport::new(Buffered::new(HttpTransport::new(
-        http_factory.configure(|builder| builder.cookie_store(true)),
-        url.clone(),
-        name.to_string(),
-    )));
-    Web3::new(transport)
-}
 
 /// Run a future and callback with the time the future took. The call back can for example log the
 /// time.

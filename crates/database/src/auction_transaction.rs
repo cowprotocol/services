@@ -1,6 +1,5 @@
-use sqlx::{postgres::PgQueryResult, PgConnection};
-
 use crate::{auction::AuctionId, Address, TransactionHash};
+use sqlx::{postgres::PgQueryResult, PgConnection};
 
 /// "upsert" because we might have previously unsuccessfully attempted to settle an auction with the
 /// same address-nonce.

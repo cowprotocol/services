@@ -30,11 +30,11 @@ use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
+    ethrpc::Web3,
     http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
     token_list::AutoUpdatingTokenList,
-    Web3,
 };
 use std::{
     sync::Arc,

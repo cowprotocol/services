@@ -7,7 +7,7 @@ use super::{
 use anyhow::Result;
 use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
-use shared::{Web3, Web3Transport};
+use shared::ethrpc::{Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct PublicMempoolApi {

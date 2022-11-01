@@ -1,4 +1,4 @@
-use crate::Web3;
+use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::{
@@ -214,7 +214,7 @@ fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{create_env_test_transport, create_test_transport};
+    use crate::ethrpc::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
     use num::Saturating;
 

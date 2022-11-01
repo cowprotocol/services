@@ -239,8 +239,7 @@ mod tests {
         addr,
         balancer_sor_api::{DefaultBalancerSorApi, MockBalancerSorApi, Swap},
         dummy_contract,
-        transport::create_env_test_transport,
-        Web3,
+        ethrpc::{create_env_test_transport, Web3},
     };
     use std::env;
 

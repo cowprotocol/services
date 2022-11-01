@@ -9,6 +9,7 @@ use gas_estimation::GasPriceEstimating;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::{Maintaining, ServiceMaintenance},
@@ -53,7 +54,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 struct CommonComponents {
     http_factory: HttpClientFactory,
-    web3: shared::Web3,
+    web3: Web3,
     network_id: String,
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
@@ -68,7 +69,7 @@ struct CommonComponents {
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::web3(&http_factory, &args.node_url, "base");
+    let web3 = shared::ethrpc::web3(&http_factory, &args.node_url, "base");
     let network_id = web3
         .net()
         .version()
@@ -187,7 +188,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         .transaction_submission_nodes
         .iter()
         .enumerate()
-        .map(|(index, url)| (shared::web3(&common.http_factory, url, index), url))
+        .map(|(index, url)| (shared::ethrpc::web3(&common.http_factory, url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
@@ -431,7 +432,7 @@ async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: Arc<BaseTokens>,
-    web3: shared::Web3,
+    web3: Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
     for (source, pool_cache) in sources {

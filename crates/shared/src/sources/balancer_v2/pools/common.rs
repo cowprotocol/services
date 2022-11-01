@@ -2,12 +2,12 @@
 
 use super::{FactoryIndexing, Pool, PoolIndexing as _, PoolStatus};
 use crate::{
+    ethrpc::Web3CallBatch,
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
     token_info::TokenInfoFetching,
-    Web3CallBatch,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::{BalancerV2BasePool, BalancerV2Vault};

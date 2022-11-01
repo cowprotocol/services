@@ -45,8 +45,10 @@ impl PriceEstimating for ParaswapPriceEstimator {
 mod tests {
     use super::*;
     use crate::{
-        paraswap_api::DefaultParaswapApi, price_estimation::single_estimate,
-        token_info::TokenInfoFetcher, transport::create_env_test_transport, Web3,
+        ethrpc::{create_env_test_transport, Web3},
+        paraswap_api::DefaultParaswapApi,
+        price_estimation::single_estimate,
+        token_info::TokenInfoFetcher,
     };
     use model::order::OrderKind;
     use reqwest::Client;

@@ -2,9 +2,11 @@
 
 use crate::{
     ethcontract_error::EthcontractErrorType,
+    ethrpc::{
+        extensions::{EthExt as _, StateOverride, StateOverrides},
+        Web3,
+    },
     tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
-    transport::extensions::{EthExt as _, StateOverride, StateOverrides},
-    Web3,
 };
 use anyhow::{ensure, Context as _, Result};
 use ethcontract::{errors::ExecutionError, H256};
@@ -177,7 +179,7 @@ impl TryFrom<StateOverride> for StateObject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{tenderly_api::TenderlyHttpApi, transport::create_env_test_transport};
+    use crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi};
     use hex_literal::hex;
     use maplit::hashmap;
 

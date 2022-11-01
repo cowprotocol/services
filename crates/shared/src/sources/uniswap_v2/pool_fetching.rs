@@ -1,7 +1,9 @@
 use super::pair_provider::PairProvider;
 use crate::{
-    baseline_solver::BaselineSolvable, ethcontract_error::EthcontractErrorType,
-    recent_block_cache::Block, transport::MAX_BATCH_SIZE, Web3, Web3CallBatch,
+    baseline_solver::BaselineSolvable,
+    ethcontract_error::EthcontractErrorType,
+    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+    recent_block_cache::Block,
 };
 use anyhow::Result;
 use contracts::{IUniswapLikePair, ERC20};

@@ -11,7 +11,7 @@ use crate::{
 use ethcontract::{Account, Bytes};
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
-use shared::{addr, univ3_router_api, Web3};
+use shared::{addr, ethrpc::Web3, univ3_router_api};
 
 pub struct UniV3RouterSolver {
     api: univ3_router_api::Api,
@@ -113,7 +113,7 @@ mod tests {
     #[ignore]
     async fn real() {
         shared::tracing::initialize_for_tests("solver=debug");
-        let transport = shared::transport::create_env_test_transport();
+        let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let api = univ3_router_api::Api::new(
             Default::default(),

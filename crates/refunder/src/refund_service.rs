@@ -5,7 +5,7 @@ use database::{
     OrderUid,
 };
 use primitive_types::H160;
-use shared::{transport::MAX_BATCH_SIZE, Web3, Web3CallBatch};
+use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
 use std::time::SystemTime;
 

@@ -7,10 +7,10 @@ use super::{
 use crate::{
     code_fetching::CodeFetching,
     code_simulation::{CodeSimulating, SimulationError},
+    ethrpc::extensions::StateOverride,
     rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     trade_finding::{Trade, TradeError, TradeFinding},
-    transport::extensions::StateOverride,
 };
 use anyhow::{bail, ensure, Context as _, Result};
 use contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader};
@@ -323,12 +323,11 @@ mod tests {
     use crate::{
         code_fetching::MockCodeFetching,
         code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
+        ethrpc::{create_env_test_transport, Web3},
         price_estimation::single_estimate,
         tenderly_api::TenderlyHttpApi,
         trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding, Quote},
-        transport::create_env_test_transport,
         zeroex_api::DefaultZeroExApi,
-        Web3,
     };
     use anyhow::anyhow;
     use hex_literal::hex;
