@@ -244,6 +244,7 @@ pub struct OrderQuote {
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
+    pub signing_scheme: SigningScheme,
 }
 
 pub type QuoteId = i64;
