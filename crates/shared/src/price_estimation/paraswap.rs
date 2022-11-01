@@ -1,4 +1,7 @@
-use super::{trade_finder::TradeEstimator, PriceEstimateResult, PriceEstimating, Query};
+use super::{
+    trade_finder::{TradeEstimator, TradeVerifier},
+    PriceEstimateResult, PriceEstimating, Query,
+};
 use crate::{
     paraswap_api::ParaswapApi, rate_limiter::RateLimiter, token_info::TokenInfoFetching,
     trade_finding::paraswap::ParaswapTradeFinder,
@@ -22,6 +25,10 @@ impl ParaswapPriceEstimator {
             )),
             rate_limiter,
         ))
+    }
+
+    pub fn verified(&self, verifier: TradeVerifier) -> Self {
+        Self(self.0.clone().with_verifier(verifier))
     }
 }
 
