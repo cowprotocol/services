@@ -467,7 +467,8 @@ impl Solver for HttpSolver {
                             external_prices.clone(),
                         )
                         .await?;
-                    tracing::debug!(
+                    // This can be a large log message so we don't want to log it by default.
+                    tracing::trace!(
                         "Problem sent to http solvers (json):\n{}",
                         serde_json::to_string_pretty(&model).unwrap()
                     );
