@@ -356,25 +356,6 @@ pub async fn main(args: arguments::Arguments) {
         })
     })();
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
-        db.clone(),
-        args.banned_users.iter().copied().collect(),
-        balance_fetcher.clone(),
-        bad_token_detector.clone(),
-        current_block_stream.clone(),
-        native_price_estimator.clone(),
-        signature_validator.clone(),
-        Duration::from_secs(2),
-        risk_adjusted_rewards,
-        args.ethflow_contract,
-    );
-    let block = current_block_stream.borrow().number.unwrap().as_u64();
-    solvable_orders_cache
-        .update(block)
-        .await
-        .expect("failed to perform initial solvable orders update");
-
     let sync_start = if args.skip_event_sync {
         web3.eth()
             .block(BlockId::Number(BlockNumber::Latest))
@@ -399,73 +380,71 @@ pub async fn main(args: arguments::Arguments) {
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
 
+    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            &http_factory,
+            &web3,
+            args.shared.gas_estimators.as_slice(),
+            args.shared.blocknative_api_key.clone(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    ));
+    let cow_tokens = match (cow_token, cow_vtoken) {
+        (None, None) => None,
+        (Some(token), Some(vtoken)) => Some((token, vtoken)),
+        _ => panic!("should either have both cow token contracts or none"),
+    };
+    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
+        tracing::debug!("using cow token contracts for subsidy");
+        CowSubsidy::new(
+            token,
+            vtoken,
+            args.order_quoting.cow_fee_factors.unwrap_or_default(),
+        )
+    });
+    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+        fee_discount: args.order_quoting.fee_discount,
+        min_discounted_fee: args.order_quoting.min_discounted_fee,
+        fee_factor: args.order_quoting.fee_factor,
+        liquidity_order_owners: args
+            .order_quoting
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
+    }) as Arc<dyn FeeSubsidizing>;
+
+    let fee_subsidy = match cow_subsidy {
+        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
+            fee_subsidy_config,
+            Arc::new(cow_subsidy),
+        ])),
+        None => fee_subsidy_config,
+    };
+    let database = Arc::new(db.clone());
+    let quoter = Arc::new(OrderQuoter::new(
+        price_estimator,
+        native_price_estimator.clone(),
+        gas_price_estimator,
+        fee_subsidy,
+        database,
+        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+            .unwrap(),
+        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            .unwrap(),
+    ));
+
     if args.enable_ethflow_orders {
         // The events from the ethflow contract are read with the more generic contract
         // interface called CoWSwapOnchainOrders.
         let cowswap_onchain_order_contract_for_eth_flow =
             contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
-        let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-            shared::gas_price_estimation::create_priority_estimator(
-                &http_factory,
-                &web3,
-                args.shared.gas_estimators.as_slice(),
-                args.shared.blocknative_api_key.clone(),
-            )
-            .await
-            .expect("failed to create gas price estimator"),
-        ));
-        let cow_tokens = match (cow_token, cow_vtoken) {
-            (None, None) => None,
-            (Some(token), Some(vtoken)) => Some((token, vtoken)),
-            _ => panic!("should either have both cow token contracts or none"),
-        };
-        let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-            tracing::debug!("using cow token contracts for subsidy");
-            CowSubsidy::new(
-                token,
-                vtoken,
-                args.order_quoting.cow_fee_factors.unwrap_or_default(),
-            )
-        });
-        let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-            fee_discount: args.order_quoting.fee_discount,
-            min_discounted_fee: args.order_quoting.min_discounted_fee,
-            fee_factor: args.order_quoting.fee_factor,
-            liquidity_order_owners: args
-                .order_quoting
-                .liquidity_order_owners
-                .iter()
-                .copied()
-                .collect(),
-            partner_additional_fee_factors: args
-                .order_quoting
-                .partner_additional_fee_factors
-                .clone(),
-        }) as Arc<dyn FeeSubsidizing>;
-
-        let fee_subsidy = match cow_subsidy {
-            Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-                fee_subsidy_config,
-                Arc::new(cow_subsidy),
-            ])),
-            None => fee_subsidy_config,
-        };
-        let database = Arc::new(db.clone());
-        let quoter = OrderQuoter::new(
-            price_estimator,
-            native_price_estimator.clone(),
-            gas_price_estimator,
-            fee_subsidy,
-            database,
-            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
-                .unwrap(),
-            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
-                .unwrap(),
-        );
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
-            Box::new(quoter),
+            quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, settlement_contract.address()),
             settlement_contract.address(),
@@ -474,7 +453,6 @@ pub async fn main(args: arguments::Arguments) {
             CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
             onchain_order_event_parser,
             cowswap_onchain_order_contract_for_eth_flow
-                .clone()
                 .raw_instance()
                 .web3(),
             sync_start,
@@ -489,9 +467,29 @@ pub async fn main(args: arguments::Arguments) {
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
         service_maintainer.maintainers.push(uniswap_v3);
     }
-    let maintenance_task =
-        tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
+    let maintenance_task = tokio::task::spawn(
+        service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
+    );
 
+    let block = current_block_stream.borrow().number.unwrap().as_u64();
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        args.min_order_validity_period,
+        db.clone(),
+        args.banned_users.iter().copied().collect(),
+        balance_fetcher.clone(),
+        bad_token_detector.clone(),
+        current_block_stream.clone(),
+        native_price_estimator.clone(),
+        signature_validator.clone(),
+        Duration::from_secs(2),
+        risk_adjusted_rewards,
+        args.ethflow_contract,
+        quoter,
+    );
+    solvable_orders_cache
+        .update(block)
+        .await
+        .expect("failed to perform initial solvable orders update");
     let liveness = Liveness {
         max_auction_age: args.max_auction_age,
         solvable_orders_cache,
