@@ -52,7 +52,7 @@ impl AuctionTransactionUpdater {
             .current_block
             .borrow()
             .number
-            .expect("no block number")
+            .context("no block number")?
             .as_u64();
         let reorg_safe_block: u64 = current_block
             .checked_sub(MAX_REORG_BLOCK_COUNT)
@@ -78,7 +78,7 @@ impl AuctionTransactionUpdater {
             .transaction(TransactionId::Hash(hash))
             .await
             .with_context(|| format!("get tx {hash:?}"))?
-            .with_context(|| "no tx {hash:?}")?;
+            .with_context(|| format!("no tx {hash:?}"))?;
         let from: database::Address = ByteArray(
             transaction
                 .from
