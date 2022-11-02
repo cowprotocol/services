@@ -101,7 +101,7 @@ impl Inner {
     }
 
     // Default to 1% slippage - same as the ParaSwap UI.
-    const DEFAULT_SLIPPAGE: u32 = 10_000;
+    const DEFAULT_SLIPPAGE: u32 = 100;
     // Use a default non-zero user address, otherwise the API will return an
     // error.
     const DEFAULT_USER: H160 = addr!("BEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef");
