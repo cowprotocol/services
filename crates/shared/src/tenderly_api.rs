@@ -246,7 +246,6 @@ impl Display for Arguments {
 mod tests {
     use super::*;
     use hex_literal::hex;
-    use maplit::hashmap;
     use serde_json::json;
 
     #[test]
