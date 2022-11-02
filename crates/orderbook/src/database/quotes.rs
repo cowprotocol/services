@@ -10,7 +10,7 @@ use shared::{
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
-    async fn save(&self, data: QuoteData) -> Result<Option<QuoteId>> {
+    async fn save(&self, data: QuoteData) -> Result<QuoteId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_quote"])
@@ -19,7 +19,7 @@ impl QuoteStoring for Postgres {
         let mut ex = self.pool.acquire().await?;
         let row = create_quote_row(data);
         let id = database::quotes::save(&mut ex, &row).await?;
-        Ok(Some(id))
+        Ok(id)
     }
 
     async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {

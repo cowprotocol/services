@@ -28,7 +28,7 @@ use shared::{
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
-    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
+    order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
     price_estimation::{
         factory::{self, PriceEstimatorFactory},
@@ -364,22 +364,21 @@ async fn main() {
         presign: args.enable_presign_orders,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
-                         storage: Arc<dyn QuoteStoring>| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
-            storage,
+            database.clone(),
             chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
                 .unwrap(),
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
                 .unwrap(),
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
-    let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
+    let optimal_quoter = create_quoter(price_estimator.clone());
+    let fast_quoter = create_quoter(fast_price_estimator.clone());
 
     let order_validator = Arc::new(
         OrderValidator::new(

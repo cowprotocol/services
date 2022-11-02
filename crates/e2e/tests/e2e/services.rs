@@ -256,6 +256,7 @@ impl OrderbookServices {
             Duration::from_secs(1),
             None,
             H160::zero(),
+            quoter.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),

@@ -317,6 +317,9 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         ethflow_data,
         onchain_user,
         is_liquidity_order: class == OrderClass::Liquidity,
+        // TODO #643 when we add surplus fee caching, this will be properly stored
+        // in the db
+        surplus_fee: Default::default(),
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

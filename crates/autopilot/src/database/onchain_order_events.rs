@@ -34,11 +34,11 @@ use shared::{
         is_order_outside_market_price,
     },
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
-    quoter: Box<dyn OrderQuoting>,
+    quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
@@ -51,7 +51,7 @@ where
 {
     pub fn new(
         db: Postgres,
-        quoter: Box<dyn OrderQuoting>,
+        quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
@@ -900,7 +900,7 @@ mod test {
             .returning(|_, _, _, _| 1u8);
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
-            quoter: Box::new(order_quoter),
+            quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,
             settlement_contract: H160::zero(),
