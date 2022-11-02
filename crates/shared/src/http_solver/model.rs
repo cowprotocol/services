@@ -22,6 +22,9 @@ use crate::{
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
     pub tokens: BTreeMap<H160, TokenInfoModel>,
+    /// Note that orders can contain 0x limit orders that are not sent to solvers as liquidity (`amms` field)
+    /// but as an order. Since 0x sets OrderUid externally (in their own format), these orders (Uid wise)
+    /// are not expected to be matched to orders from orderbook
     pub orders: BTreeMap<OrderUid, OrderModel>,
     pub amms: BTreeMap<usize, AmmModel>,
     pub metadata: Option<MetadataModel>,
