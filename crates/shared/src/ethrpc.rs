@@ -5,12 +5,13 @@ pub mod http;
 pub mod mock;
 
 use self::{buffered::BufferedTransport, http::HttpTransport};
-use crate::http_client::HttpClientFactory;
+use crate::{arguments::duration_from_seconds, http_client::HttpClientFactory};
 use ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport};
 use reqwest::{Client, Url};
 use std::{
     fmt::{self, Display, Formatter},
     num::NonZeroUsize,
+    time::Duration,
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
@@ -31,6 +32,11 @@ pub struct Arguments {
     /// no limit on concurrency.
     #[clap(long, default_value = "1")]
     pub ethrpc_max_concurrent_requests: usize,
+
+    /// Buffering "nagle" delay to wait for additional requests before sending out
+    /// an incomplete batch.
+    #[clap(long, value_parser = duration_from_seconds, default_value = "0")]
+    pub ethrpc_batch_delay: Duration,
 }
 
 impl Arguments {
@@ -45,7 +51,7 @@ impl Arguments {
             _ => Some(buffered::Configuration {
                 max_concurrent_requests: NonZeroUsize::new(self.ethrpc_max_concurrent_requests),
                 max_batch_len: self.ethrpc_max_batch_size.max(1),
-                ..Default::default()
+                batch_delay: self.ethrpc_batch_delay,
             }),
         }
     }

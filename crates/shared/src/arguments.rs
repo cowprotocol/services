@@ -420,7 +420,7 @@ pub fn parse_percentage_factor(s: &str) -> Result<f64> {
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f32(s.parse()?))
+    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
