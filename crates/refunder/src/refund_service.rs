@@ -19,7 +19,10 @@ pub struct RefundService {
     pub min_slippage: f64,
 }
 
-type SplittedOrderUids = (Vec<(OrderUid, bool)>, Vec<(OrderUid, bool)>);
+struct SplittedOrderUids {
+    refunded: Vec<OrderUid>,
+    _to_be_refunded: Vec<OrderUid>,
+}
 
 impl RefundService {
     pub fn new(
@@ -40,11 +43,12 @@ impl RefundService {
     pub async fn try_to_refund_all_eligble_orders(&self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
-        let (refunded, _to_be_refunded) = self
+        let order_uids_per_status = self
             .identify_already_refunded_order_uids_via_web3_calls(refundable_order_uids)
             .await?;
 
-        self.update_already_refunded_orders_in_db(refunded).await?;
+        self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
+            .await?;
 
         // Send out tx to deleteOrders, and wait for 5 block for the tx
         // to be mined
@@ -55,10 +59,8 @@ impl RefundService {
 
     async fn update_already_refunded_orders_in_db(
         &self,
-        refunded: Vec<(OrderUid, bool)>,
+        refunded_uids: Vec<OrderUid>,
     ) -> Result<()> {
-        let refunded_uids: Vec<OrderUid> = refunded.into_iter().map(|(uid, _)| uid).collect();
-
         let mut transaction = self.db.begin().await?;
         mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
             .await
@@ -129,10 +131,21 @@ impl RefundService {
 
         batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
-
-        Ok(uid_with_latest_refundablility
+        type TupleWithRefundStatus = (Vec<(OrderUid, bool)>, Vec<(OrderUid, bool)>);
+        let (refunded_uids, to_be_refunded_uids): TupleWithRefundStatus =
+            uid_with_latest_refundablility
+                .into_iter()
+                .flatten()
+                .partition(|(_, is_refunded)| *is_refunded);
+        let refunded_uids: Vec<OrderUid> = refunded_uids.into_iter().map(|(uid, _)| uid).collect();
+        let to_be_refunded_uids: Vec<OrderUid> = to_be_refunded_uids
             .into_iter()
-            .flatten()
-            .partition(|(_, is_refunded)| *is_refunded))
+            .map(|(uid, _)| uid)
+            .collect();
+        let result = SplittedOrderUids {
+            refunded: refunded_uids,
+            _to_be_refunded: to_be_refunded_uids,
+        };
+        Ok(result)
     }
 }
