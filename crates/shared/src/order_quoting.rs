@@ -131,7 +131,10 @@ pub struct QuoteParameters {
 
 impl QuoteParameters {
     fn to_price_query(&self) -> price_estimation::Query {
-        let from = if self.from != H160::default() {
+        // Treat quotes with `from: 0` as if they didn't specify a `from` address
+        // for price quotes. This is because the 0 address typically has special
+        // semantics and causes issues with trade simulations.
+        let from = if self.from != H160::zero() {
             Some(self.from)
         } else {
             None
