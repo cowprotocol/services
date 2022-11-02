@@ -1,4 +1,7 @@
-use super::{trade_finder::TradeEstimator, PriceEstimateResult, PriceEstimating, Query};
+use super::{
+    trade_finder::{TradeEstimator, TradeVerifier},
+    PriceEstimateResult, PriceEstimating, Query,
+};
 use crate::{
     oneinch_api::OneInchClient, rate_limiter::RateLimiter,
     trade_finding::oneinch::OneInchTradeFinder,
@@ -23,6 +26,10 @@ impl OneInchPriceEstimator {
             )),
             rate_limiter,
         ))
+    }
+
+    pub fn verified(&self, verifier: TradeVerifier) -> Self {
+        Self(self.0.clone().with_verifier(verifier))
     }
 }
 

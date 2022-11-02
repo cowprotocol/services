@@ -96,7 +96,7 @@ impl SettlementRating for SettlementRater {
         gas_price: GasPrice1559,
     ) -> Result<Vec<SimulationWithResult>> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
-        let block_number = self.web3.eth().block_number().await?.into();
+        let block_number = self.web3.eth().block_number().await?.as_u64();
         let simulations = simulate_and_estimate_gas_at_current_block(
             settlements.iter().map(|(solver, settlement, access_list)| {
                 (

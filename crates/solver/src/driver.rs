@@ -33,7 +33,7 @@ use shared::{
     http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
-    token_list::TokenList,
+    token_list::AutoUpdatingTokenList,
     Web3,
 };
 use std::{
@@ -76,7 +76,7 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: Option<TokenList>,
+        market_makable_token_list: AutoUpdatingTokenList,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -171,7 +171,13 @@ impl Driver {
                         Ok(inner) => inner.map_err(Into::into),
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
-                metrics.settlement_computed(solver.name(), start_time);
+                let response = match &result {
+                    Err(SolverRunError::Timeout) => "timeout",
+                    Err(_) => "error",
+                    Ok(solutions) if solutions.is_empty() => "none",
+                    Ok(_) => "solution",
+                };
+                metrics.settlement_computed(solver.name(), response, start_time);
                 (solver.clone(), result)
             }
         }))

@@ -20,7 +20,7 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
-    tenderly_api::{TenderlyApi, TenderlyHttpApi},
+    tenderly_api::TenderlyApi,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
     zeroex_api::DefaultZeroExApi,
 };
@@ -86,17 +86,10 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
-    let tenderly_api = Some(()).and_then(|_| {
-        Some(Arc::new(
-            TenderlyHttpApi::new(
-                &http_factory,
-                args.tenderly_user.as_deref()?,
-                args.tenderly_project.as_deref()?,
-                args.tenderly_api_key.as_deref()?,
-            )
-            .expect("failed to create Tenderly API"),
-        ) as Arc<dyn TenderlyApi>)
-    });
+    let tenderly_api = args
+        .tenderly
+        .get_api_instance(&http_factory)
+        .expect("failed to create Tenderly API");
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
             &web3,
@@ -180,6 +173,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 http_solver_cache.clone(),
                 false,
                 args.slippage.get_global_calculator(),
+                Default::default(),
             )) as Arc<dyn Solver>
         })
         .collect()

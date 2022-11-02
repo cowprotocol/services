@@ -1,4 +1,7 @@
-use super::{trade_finder::TradeEstimator, PriceEstimateResult, PriceEstimating, Query};
+use super::{
+    trade_finder::{TradeEstimator, TradeVerifier},
+    PriceEstimateResult, PriceEstimating, Query,
+};
 use crate::{
     rate_limiter::RateLimiter, trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi,
 };
@@ -16,6 +19,10 @@ impl ZeroExPriceEstimator {
             Arc::new(ZeroExTradeFinder::new(api, excluded_sources)),
             rate_limiter,
         ))
+    }
+
+    pub fn verified(&self, verifier: TradeVerifier) -> Self {
+        Self(self.0.clone().with_verifier(verifier))
     }
 }
 

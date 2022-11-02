@@ -1,14 +1,22 @@
 //! Module containing Tenderly API implementation.
 
-use crate::{http_client::HttpClientFactory, transport::extensions::StateOverrides};
+use crate::{
+    arguments::{display_option, display_secret_option},
+    http_client::HttpClientFactory,
+    transport::extensions::StateOverrides,
+};
 use anyhow::Result;
+use clap::Parser;
 use model::bytes_hex::BytesHex;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::Arc,
+};
 use web3::types::{H160, H256, U256};
 
 /// Trait for abstracting Tenderly API.
@@ -167,6 +175,54 @@ impl From<AccessListItem> for web3::types::AccessListItem {
             address: item.address,
             storage_keys: item.storage_keys,
         }
+    }
+}
+
+/// Tenderly API arguments.
+#[derive(Debug, Parser)]
+#[group(skip)]
+pub struct Arguments {
+    /// The Tenderly user associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
+
+    /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
+    #[clap(long, env)]
+    pub tenderly_api_key: Option<String>,
+}
+
+impl Arguments {
+    pub fn get_api_instance(
+        &self,
+        http_factory: &HttpClientFactory,
+    ) -> Result<Option<Arc<dyn TenderlyApi>>> {
+        Some(())
+            .and_then(|_| {
+                Some(
+                    TenderlyHttpApi::new(
+                        http_factory,
+                        self.tenderly_user.as_deref()?,
+                        self.tenderly_project.as_deref()?,
+                        self.tenderly_api_key.as_deref()?,
+                    )
+                    .map(|api| Arc::new(api) as _),
+                )
+            })
+            .transpose()
+    }
+}
+
+impl Display for Arguments {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        display_option(f, "tenderly_user", &self.tenderly_user)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
+        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
+
+        Ok(())
     }
 }
 
