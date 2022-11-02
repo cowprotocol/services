@@ -2,12 +2,13 @@ mod auction;
 pub mod auction_transaction;
 mod events;
 pub mod onchain_order_events;
+mod orders;
 mod quotes;
 
 use sqlx::{PgConnection, PgPool};
 use std::time::Duration;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Postgres(pub PgPool);
 
 impl Postgres {
