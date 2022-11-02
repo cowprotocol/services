@@ -131,6 +131,12 @@ pub struct QuoteParameters {
 
 impl QuoteParameters {
     fn to_price_query(&self) -> price_estimation::Query {
+        let from = if self.from != H160::default() {
+            Some(self.from)
+        } else {
+            None
+        };
+
         let (kind, in_amount) = match self.side {
             OrderQuoteSide::Sell {
                 sell_amount:
@@ -143,7 +149,7 @@ impl QuoteParameters {
         };
 
         price_estimation::Query {
-            from: Some(self.from),
+            from,
             sell_token: self.sell_token,
             buy_token: self.buy_token,
             in_amount,
