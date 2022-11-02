@@ -388,20 +388,24 @@ impl OrderValidating for OrderValidator {
             app_data: order.data.app_data,
         };
         let quote = if !liquidity_owner && order.data.fee_amount > U256::zero() {
-            Some(
-                get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    order.data.fee_amount,
-                    convert_signing_scheme_into_quote_signing_scheme(
-                        order.signature.scheme(),
-                        true,
-                        additional_gas,
-                    )?,
-                )
-                .await?,
+            let quote = get_quote_and_check_fee(
+                &*self.quoter,
+                &quote_parameters,
+                order.quote_id,
+                order.data.fee_amount,
+                convert_signing_scheme_into_quote_signing_scheme(
+                    order.signature.scheme(),
+                    true,
+                    additional_gas,
+                )?,
             )
+            .await?;
+            let quote = self
+                .quoter
+                .store_quote(quote)
+                .await
+                .map_err(ValidationError::Other)?;
+            Some(quote)
         } else {
             // We don't try to get quotes for liquidity and limit orders
             // for two reasons:
@@ -1325,6 +1329,7 @@ mod tests {
         order_quoter
             .expect_find_quote()
             .returning(|_, _, _| Ok(Default::default()));
+        order_quoter.expect_store_quote().returning(Ok);
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
