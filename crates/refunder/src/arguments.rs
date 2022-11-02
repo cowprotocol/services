@@ -1,11 +1,15 @@
 use clap::Parser;
+use shared::http_client;
 use std::time::Duration;
 use url::Url;
 
 #[derive(Parser)]
 pub struct Arguments {
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
+
     /// Minimum time in seconds an order must have been valid for
-    /// to be eligble for refunding
+    /// to be eligible for refunding
     #[clap(
         long,
         env,
@@ -24,6 +28,10 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
+
+    /// The Ethereum node URL to connect to.
+    #[clap(long, env, default_value = "http://localhost:8545")]
+    pub node_url: Url,
 }
 
 impl std::fmt::Display for Arguments {

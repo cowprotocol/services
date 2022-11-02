@@ -9,7 +9,12 @@ license = "MIT OR Apache-2.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+contracts  = { path = "../contracts" }
 database = { path = "../database" }
+ethcontract = { workspace = true }
+futures = {workspace = true}
+lazy_static = { workspace = true }
+primitive-types = { workspace = true }
 prometheus = { workspace = true }
 shared = { path = "../shared" }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
