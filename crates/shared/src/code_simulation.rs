@@ -2,12 +2,12 @@
 
 use crate::{
     ethcontract_error::EthcontractErrorType,
-    tenderly_api::{SimulationKind, SimulationRequest, TenderlyApi},
-    transport::extensions::{EthExt as _, StateOverrides},
+    tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
+    transport::extensions::{EthExt as _, StateOverride, StateOverrides},
     Web3,
 };
-use anyhow::{Context as _, Result};
-use ethcontract::errors::ExecutionError;
+use anyhow::{ensure, Context as _, Result};
+use ethcontract::{errors::ExecutionError, H256};
 use std::sync::Arc;
 use thiserror::Error;
 use web3::types::{BlockNumber, CallRequest};
@@ -117,7 +117,12 @@ impl CodeSimulating for TenderlyCodeSimulator {
                 gas_price: call.gas_price.map(|p| p.as_u64()),
                 value: call.value,
                 simulation_kind: Some(SimulationKind::Quick),
-                state_objects: Some(overrides),
+                state_objects: Some(
+                    overrides
+                        .into_iter()
+                        .map(|(key, value)| Ok((key, value.try_into()?)))
+                        .collect::<Result<_>>()?,
+                ),
                 save: Some(self.save.on_success),
                 save_if_fails: Some(self.save.on_failure),
                 ..Default::default()
@@ -143,13 +148,37 @@ impl CodeSimulating for TenderlyCodeSimulator {
     }
 }
 
+impl TryFrom<StateOverride> for StateObject {
+    type Error = anyhow::Error;
+
+    fn try_from(value: StateOverride) -> Result<Self, Self::Error> {
+        ensure!(
+            value.nonce.is_none() && value.state.is_none(),
+            "full state and nonce overrides not supported on Tenderly",
+        );
+
+        Ok(StateObject {
+            balance: value.balance,
+            code: value.code,
+            storage: value.state_diff.map(|state_diff| {
+                state_diff
+                    .into_iter()
+                    .map(|(key, uint)| {
+                        let mut value = H256::default();
+                        uint.to_big_endian(&mut value.0);
+                        (key, value)
+                    })
+                    .collect()
+            }),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        tenderly_api::TenderlyHttpApi,
-        transport::{create_env_test_transport, extensions::StateOverride},
-    };
+    use crate::{tenderly_api::TenderlyHttpApi, transport::create_env_test_transport};
+    use hex_literal::hex;
     use maplit::hashmap;
 
     #[ignore]
@@ -243,5 +272,40 @@ mod tests {
             // expected.
             assert!(matches!(result, Err(SimulationError::Revert(Some(_)))));
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn tenderly_state_override_conversion() {
+        let web3 = Web3::new(create_env_test_transport());
+        let network_id = web3.net().version().await.unwrap();
+        let tenderly = TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id)
+            .save(true, true);
+
+        let balance_slot = hex!("73bd07999de6b89204eec9e8f51c59f3b7dc1c94710ccdaf6f1f8e10e6391b56");
+        let result = tenderly
+            .simulate(
+                CallRequest {
+                    to: Some(addr!("D533a949740bb3306d119CC777fa900bA034cd52")),
+                    from: Some(addr!("4242424242424242424242424242424242424242")),
+                    data: Some(bytes!(
+                        "a9059cbb
+                         0000000000000000000000001337133713371337133713371337133713371337
+                         0000000000000000000000000000000000000000000000000000000000000001"
+                    )),
+                    ..Default::default()
+                },
+                hashmap! {
+                    addr!("D533a949740bb3306d119CC777fa900bA034cd52") => StateOverride {
+                        state_diff: Some(hashmap! {
+                            H256(balance_slot) => 1.into()
+                        }),
+                        ..Default::default()
+                    },
+                },
+            )
+            .await;
+
+        assert!(result.is_ok());
     }
 }
