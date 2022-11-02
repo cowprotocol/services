@@ -57,16 +57,19 @@ impl RefundService {
         &self,
         refunded: Vec<(OrderUid, bool)>,
     ) -> Result<()> {
-        let mut ex = self.db.acquire().await?;
         let refunded_uids: Vec<OrderUid> = refunded.into_iter().map(|(uid, _)| uid).collect();
-        mark_eth_orders_as_refunded(&mut ex, refunded_uids.as_slice())
+
+        let mut transaction = self.db.begin().await?;
+        mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
             .await
             .map_err(|err| {
                 anyhow!(
                     "Error while retrieving updating the already refunded orders:{:?}",
                     err
                 )
-            })
+            })?;
+
+        Ok(transaction.commit().await?)
     }
 
     async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
