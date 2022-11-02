@@ -81,6 +81,7 @@ pub struct Arguments {
         long,
         env,
         value_parser = parse_owners,
+        default_value = "",
     )]
     pub whitelisted_owners: HashMap<H160, Vec<H160>>,
 }
