@@ -1,4 +1,4 @@
-use super::{ExternalPrices, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
+use super::{CustomPriceTrade, ExternalPrices, OrderTrade, Trade, TradeExecution};
 use crate::{
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
@@ -8,7 +8,7 @@ use anyhow::{bail, ensure, Context as _, Result};
 use itertools::Itertools;
 use model::{
     interaction::InteractionData,
-    order::{Order, OrderKind},
+    order::{Order, OrderClass, OrderKind},
 };
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
@@ -43,11 +43,7 @@ pub struct SettlementEncoder {
     // uniform clearing prices. Hence, every trade's buy and sell token has an entry
     // in clearing_prices
     order_trades: Vec<OrderTrade>,
-    // Liquidity orders will be settled at their limit prices.
-    // In order to represent the limit price, the sell_price is taken from the uniform
-    // clearing price vector and the buy_price is a custom buy_price defined in the
-    // struct LiquidityOrderTrade
-    liquidity_order_trades: Vec<LiquidityOrderTrade>,
+    custom_price_trades: Vec<CustomPriceTrade>,
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.
     // TODO: Can we fix this in a better way?
@@ -89,7 +85,7 @@ impl SettlementEncoder {
             tokens,
             clearing_prices,
             order_trades: Vec::new(),
-            liquidity_order_trades: Vec::new(),
+            custom_price_trades: Vec::new(),
             execution_plan: Vec::new(),
             pre_interactions: Vec::new(),
             unwraps: Vec::new(),
@@ -100,11 +96,11 @@ impl SettlementEncoder {
     pub fn with_trades(
         clearing_prices: HashMap<H160, U256>,
         trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<LiquidityOrderTrade>,
+        liquidity_order_trades: Vec<CustomPriceTrade>,
     ) -> Self {
         let mut result = Self::new(clearing_prices);
         result.order_trades = trades;
-        result.liquidity_order_trades = liquidity_order_trades;
+        result.custom_price_trades = liquidity_order_trades;
         result
     }
 
@@ -114,7 +110,7 @@ impl SettlementEncoder {
             tokens: self.tokens.clone(),
             clearing_prices: self.clearing_prices.clone(),
             order_trades: self.order_trades.clone(),
-            liquidity_order_trades: self.liquidity_order_trades.clone(),
+            custom_price_trades: self.custom_price_trades.clone(),
             execution_plan: Vec::new(),
             pre_interactions: self.pre_interactions.clone(),
             unwraps: self.unwraps.clone(),
@@ -129,8 +125,8 @@ impl SettlementEncoder {
         &self.order_trades
     }
 
-    pub fn liquidity_order_trades(&self) -> &[LiquidityOrderTrade] {
-        &self.liquidity_order_trades
+    pub fn liquidity_order_trades(&self) -> &[CustomPriceTrade] {
+        &self.custom_price_trades
     }
 
     pub fn has_interactions(&self) -> bool {
@@ -139,14 +135,14 @@ impl SettlementEncoder {
             .any(|(_, internalizable)| !internalizable)
     }
 
-    // Fails if any used token doesn't have a price or if executed amount is impossible.
-    pub fn add_trade(
+    /// Adds an order trade using the uniform clearing prices for sell and buy token.
+    /// Fails if any used token doesn't have a price or if executed amount is impossible.
+    fn add_ucp_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
-        verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
             .clearing_prices
             .get(&order.data.sell_token)
@@ -177,25 +173,81 @@ impl SettlementEncoder {
             .executed_amounts(*sell_price, *buy_price)
             .context("impossible trade execution")?;
 
-        self.pre_interactions
-            .append(&mut order.interactions.pre.clone());
         self.order_trades.push(order_trade);
         Ok(execution)
     }
 
-    // Fails if any used sell-token doesn't have a price. or if executed amount is impossible.
-    pub fn add_liquidity_order_trade(
+    /// Adds the passed trade to the execution plan. Handles specifics of ordinary, limit and
+    /// liquidity orders internally.
+    pub fn add_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
         verify_executed_amount(&order, executed_amount)?;
-        // For the encoding strategy of liquidity orders, the sell prices are taken from
+        let execution = match order.metadata.class {
+            OrderClass::Ordinary => {
+                self.add_ucp_trade(order.clone(), executed_amount, scaled_unsubsidized_fee)?
+            }
+            OrderClass::Liquidity => {
+                let buy_price = self.compute_limit_buy_price(&order)?;
+                self.add_custom_price_trade(
+                    order.clone(),
+                    executed_amount,
+                    scaled_unsubsidized_fee,
+                    buy_price,
+                )?
+            }
+            OrderClass::Limit => {
+                todo!()
+            }
+        };
+        self.pre_interactions
+            .extend(order.interactions.pre.into_iter());
+        Ok(execution)
+    }
+
+    /// Uses either the existing UCP for the sell token or the sell price within the order to
+    /// compute the price of the buy token right at the limit price of the passed order.
+    /// This is needed to settle liquidity orders in a way that gives them no surplus.
+    fn compute_limit_buy_price(&self, order: &Order) -> Result<U256> {
+        // Liquidity orders are settled at their limit price. We set:
+        // buy_price = sell_price * order.sellAmount / order.buyAmount, where sell_price is given from uniform clearing prices
+
+        // Rounding error checks:
+        // Following limit price constraint is checked in the smart contract:
+        // order.sellAmount.mul(sellPrice) >= order.buyAmount.mul(buyPrice),
+
+        // This equation will always be true, as the following equivalence is showing
+        // order.sellAmount.mul(sellPrice)  >= order.sellAmount.mul(sellPrice) holds, as the left and ride side are equal.
+        // Dividing first and then multiplying by order.buyAmount can only make the right side smaller
+        // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(sell_price * order.sellAmount / order.buyAmount)
+        // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(buyPrice)
+        // <=> equation from smart contract
+        //
+        self.clearing_prices
+            .get(&order.data.sell_token)
+            .unwrap_or(&order.data.buy_amount)
+            .checked_mul(order.data.sell_amount)
+            .context("buy_price calculation failed")?
+            .checked_div(order.data.buy_amount)
+            .context("buy_price calculation failed")
+    }
+
+    fn add_custom_price_trade(
+        &mut self,
+        order: Order,
+        executed_amount: U256,
+        scaled_unsubsidized_fee: U256,
+        buy_price: U256,
+    ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
+        // For the encoding strategy of liquidity and limit orders, the sell prices are taken from
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
         // if the sell token price is not yet available
-        if self.token_index(order.data.sell_token).is_none() {
+        if self.token_index(order.data.sell_token) == None {
             let sell_token = order.data.sell_token;
             let sell_price = order.data.buy_amount;
             self.tokens.push(sell_token);
@@ -210,47 +262,23 @@ impl SettlementEncoder {
             .token_index(order.data.sell_token)
             .context("settlement missing sell token")?;
 
-        // Liquidity orders are settled at their limit price. We set:
-        // buy_price = sell_price * order.sellAmount / order.buyAmount, where sell_price is given from uniform clearing prices
-
-        // Rounding error checks:
-        // Following limit price constraint is checked in the smart contract:
-        // order.sellAmount.mul(sellPrice) >= order.buyAmount.mul(buyPrice),
-
-        // This equation will always be true, as the following equivalence is showing
-        // order.sellAmount.mul(sellPrice)  >= order.sellAmount.mul(sellPrice) holds, as the left and ride side are equal.
-        // Dividing first and then multiplying by order.buyAmount can only make the right side smaller
-        // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(sell_price * order.sellAmount / order.buyAmount)
-        // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(buyPrice)
-        // <=> equation from smart contract
-
-        let buy_price = self
-            .clearing_prices
-            .get(&order.data.sell_token)
-            .context("settlement missing sell token")?
-            .checked_mul(order.data.sell_amount)
-            .context("buy_price calculation failed")?
-            .checked_div(order.data.buy_amount)
-            .context("buy_price calculation failed")?;
         let trade = Trade {
             order: order.clone(),
             sell_token_index,
             executed_amount,
             scaled_unsubsidized_fee,
         };
-        let liquidity_order_trade = LiquidityOrderTrade {
+        let custom_price_trade = CustomPriceTrade {
             trade,
-            buy_token_offset_index: self.liquidity_order_trades.len(),
+            buy_token_offset_index: self.custom_price_trades.len(),
             buy_token_price: buy_price,
         };
-        let execution = liquidity_order_trade
+        let execution = custom_price_trade
             .trade
             .executed_amounts(*sell_price, buy_price)
             .context("impossible trade execution")?;
 
-        self.pre_interactions
-            .append(&mut order.interactions.pre.clone());
-        self.liquidity_order_trades.push(liquidity_order_trade);
+        self.custom_price_trades.push(custom_price_trade);
         Ok(execution)
     }
 
@@ -320,15 +348,15 @@ impl SettlementEncoder {
                 .token_index(self.order_trades[i].trade.order.data.buy_token)
                 .expect("missing buy token for existing trade");
         }
-        for i in 0..self.liquidity_order_trades.len() {
-            self.liquidity_order_trades[i].trade.sell_token_index = self
-                .token_index(self.liquidity_order_trades[i].trade.order.data.sell_token)
+        for i in 0..self.custom_price_trades.len() {
+            self.custom_price_trades[i].trade.sell_token_index = self
+                .token_index(self.custom_price_trades[i].trade.order.data.sell_token)
                 .expect("missing sell token for existing trade");
         }
     }
     fn modify_token_index_for_liquidity_orders_after_change(&mut self, offset: usize) {
-        for i in 0..self.liquidity_order_trades.len() {
-            self.liquidity_order_trades[i].buy_token_offset_index += offset;
+        for i in 0..self.custom_price_trades.len() {
+            self.custom_price_trades[i].buy_token_offset_index += offset;
         }
     }
 
@@ -365,7 +393,7 @@ impl SettlementEncoder {
             .collect();
 
         let liquidity_traded_sell_tokens: HashSet<_> = self
-            .liquidity_order_trades
+            .custom_price_trades
             .iter()
             .map(|liquidity_order_trade| liquidity_order_trade.trade.order.data.sell_token)
             .collect();
@@ -386,7 +414,7 @@ impl SettlementEncoder {
         self.drop_unnecessary_tokens_and_prices();
 
         let (mut liquidity_order_buy_tokens, mut liquidity_order_prices): (Vec<H160>, Vec<U256>) =
-            self.liquidity_order_trades
+            self.custom_price_trades
                 .iter()
                 .map(|liquidity_order_trade| {
                     (
@@ -415,7 +443,7 @@ impl SettlementEncoder {
             .map(|trade| trade.encode())
             .collect();
         let mut liquidity_order_trades: Vec<EncodedTrade> = self
-            .liquidity_order_trades
+            .custom_price_trades
             .into_iter()
             .map(|trade| trade.encode(uniform_clearing_price_vec_length))
             .collect();
@@ -480,21 +508,21 @@ impl SettlementEncoder {
                 }
             }
         }
-        other.liquidity_order_trades = other
-            .liquidity_order_trades
+        other.custom_price_trades = other
+            .custom_price_trades
             .iter()
             .map(|liquidity_order| {
                 let buy_token_price = big_rational_to_u256(
                     &(liquidity_order.buy_token_price.to_big_rational() * &scaling_factor),
                 )
                 .context("Invalid price scaling factor")?;
-                Ok(LiquidityOrderTrade {
+                Ok(CustomPriceTrade {
                     trade: liquidity_order.trade.clone(),
                     buy_token_offset_index: liquidity_order.buy_token_offset_index,
                     buy_token_price,
                 })
             })
-            .collect::<Result<Vec<LiquidityOrderTrade>>>()?;
+            .collect::<Result<Vec<CustomPriceTrade>>>()?;
 
         for other_order_trade in other.order_trades.iter() {
             ensure!(
@@ -506,9 +534,9 @@ impl SettlementEncoder {
             );
         }
 
-        for other_liquidity_order_trade in other.liquidity_order_trades.iter() {
+        for other_liquidity_order_trade in other.custom_price_trades.iter() {
             ensure!(
-                self.liquidity_order_trades
+                self.custom_price_trades
                     .iter()
                     .all(|self_liquidity_order_trade| self_liquidity_order_trade
                         .trade
@@ -520,11 +548,9 @@ impl SettlementEncoder {
             );
         }
 
-        other.modify_token_index_for_liquidity_orders_after_change(
-            self.liquidity_order_trades.len(),
-        );
-        self.liquidity_order_trades
-            .append(&mut other.liquidity_order_trades);
+        other.modify_token_index_for_liquidity_orders_after_change(self.custom_price_trades.len());
+        self.custom_price_trades
+            .append(&mut other.custom_price_trades);
         self.order_trades.append(&mut other.order_trades);
         self.sort_tokens_and_update_indices();
 
@@ -679,12 +705,11 @@ pub mod tests {
             .with_sell_amount(10.into())
             .with_buy_token(token(0))
             .with_buy_amount(20.into())
+            .with_class(OrderClass::Liquidity)
             .build();
 
         assert!(settlement.add_trade(order01, 10.into(), 0.into()).is_ok());
-        assert!(settlement
-            .add_liquidity_order_trade(order10, 20.into(), 0.into())
-            .is_ok());
+        assert!(settlement.add_trade(order10, 20.into(), 0.into()).is_ok());
         let finished_settlement =
             settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         assert_eq!(
@@ -715,16 +740,14 @@ pub mod tests {
             .with_sell_amount(30.into())
             .with_buy_token(token(1))
             .with_buy_amount(10.into())
+            .with_class(OrderClass::Liquidity)
             .build();
         assert!(settlement
-            .add_liquidity_order_trade(order01.clone(), 10.into(), 0.into())
+            .add_trade(order01.clone(), 10.into(), 0.into())
             .is_ok());
         // ensures that the output of add_liquidity_order is sorted
         assert_eq!(settlement.tokens, vec![token(0), token(1)]);
-        assert_eq!(
-            settlement.liquidity_order_trades[0].trade.sell_token_index,
-            0
-        );
+        assert_eq!(settlement.custom_price_trades[0].trade.sell_token_index, 0);
         let finished_settlement =
             settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
         // the initial price from:SettlementEncoder::new(maplit::hashmap! {
@@ -868,12 +891,13 @@ pub mod tests {
             .with_sell_amount(23.into())
             .with_buy_token(token(2))
             .with_buy_amount(11.into())
+            .with_class(OrderClass::Liquidity)
             .build();
         order13.metadata.uid.0[0] = 0;
         order12.metadata.uid.0[0] = 2;
         encoder0.add_trade(order13, 11.into(), 0.into()).unwrap();
         encoder0
-            .add_liquidity_order_trade(order12.clone(), 11.into(), 0.into())
+            .add_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
         encoder0.append_to_execution_plan(NoopInteraction {});
         encoder0.add_unwrap(UnwrapWethInteraction {
@@ -894,12 +918,13 @@ pub mod tests {
             .with_sell_amount(19.into())
             .with_buy_token(token(3))
             .with_buy_amount(11.into())
+            .with_class(OrderClass::Liquidity)
             .build();
         order24.metadata.uid.0[0] = 1;
         order23.metadata.uid.0[0] = 4;
         encoder1.add_trade(order24, 22.into(), 0.into()).unwrap();
         encoder1
-            .add_liquidity_order_trade(order23.clone(), 11.into(), 0.into())
+            .add_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
         encoder1.append_to_execution_plan(NoopInteraction {});
         encoder1.add_unwrap(UnwrapWethInteraction {
@@ -915,9 +940,9 @@ pub mod tests {
         assert_eq!(merged.clearing_prices, prices);
         assert_eq!(merged.tokens, [token(1), token(2), token(3), token(4)]);
         assert_eq!(
-            merged.liquidity_order_trades,
+            merged.custom_price_trades,
             vec![
-                LiquidityOrderTrade {
+                CustomPriceTrade {
                     trade: Trade {
                         order: order12,
                         sell_token_index: 0,
@@ -927,7 +952,7 @@ pub mod tests {
                     buy_token_offset_index: 0,
                     buy_token_price: 2.into(),
                 },
-                LiquidityOrderTrade {
+                CustomPriceTrade {
                     trade: Trade {
                         order: order23,
                         sell_token_index: 1,
@@ -941,7 +966,7 @@ pub mod tests {
         );
 
         assert_eq!(merged.order_trades.len(), 2);
-        assert_eq!(merged.liquidity_order_trades.len(), 2);
+        assert_eq!(merged.custom_price_trades.len(), 2);
         assert_eq!(merged.execution_plan.len(), 2);
         assert_eq!(merged.unwraps[0].amount, 3.into());
     }
@@ -965,7 +990,7 @@ pub mod tests {
         order.data.buy_token = token(1);
         order.data.sell_token = token(3);
 
-        encoder1.liquidity_order_trades = vec![LiquidityOrderTrade {
+        encoder1.custom_price_trades = vec![CustomPriceTrade {
             trade: Trade {
                 order: order.clone(),
                 ..Default::default()
@@ -981,8 +1006,8 @@ pub mod tests {
         };
         assert_eq!(merged.clearing_prices, prices);
         assert_eq!(
-            merged.liquidity_order_trades,
-            vec![LiquidityOrderTrade {
+            merged.custom_price_trades,
+            vec![CustomPriceTrade {
                 trade: Trade {
                     order,
                     sell_token_index: 2,

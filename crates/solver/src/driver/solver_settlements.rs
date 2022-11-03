@@ -179,7 +179,7 @@ pub fn retain_mature_settlements(
 mod tests {
     use super::*;
     use crate::{
-        settlement::{external_prices::externalprices, LiquidityOrderTrade, OrderTrade, Trade},
+        settlement::{external_prices::externalprices, CustomPriceTrade, OrderTrade, Trade},
         solver::dummy_arc_solver,
     };
     use chrono::{offset::Utc, DateTime, Duration, Local};
@@ -206,8 +206,8 @@ mod tests {
         }
     }
 
-    fn liquidity_trade(created_at: DateTime<Utc>, uid: u8) -> LiquidityOrderTrade {
-        LiquidityOrderTrade {
+    fn liquidity_trade(created_at: DateTime<Utc>, uid: u8) -> CustomPriceTrade {
+        CustomPriceTrade {
             trade: Trade {
                 order: Order {
                     metadata: OrderMetadata {
@@ -528,7 +528,7 @@ mod tests {
         let settlement = Settlement::with_trades(
             Default::default(),
             vec![],
-            vec![LiquidityOrderTrade::default()],
+            vec![CustomPriceTrade::default()],
         );
         assert!(!has_user_order(&settlement));
 
@@ -541,7 +541,7 @@ mod tests {
             vec![OrderTrade {
                 ..Default::default()
             }],
-            vec![LiquidityOrderTrade::default()],
+            vec![CustomPriceTrade::default()],
         );
         assert!(has_user_order(&settlement));
     }
