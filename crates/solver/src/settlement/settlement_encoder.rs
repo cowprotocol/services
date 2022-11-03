@@ -201,7 +201,7 @@ impl SettlementEncoder {
                 )?
             }
             OrderClass::Limit => {
-                todo!()
+                anyhow::bail!("limit orders are not supported by the SettlementEncoder");
             }
         };
         self.pre_interactions.extend(interactions.pre.into_iter());
