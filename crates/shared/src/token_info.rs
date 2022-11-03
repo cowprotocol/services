@@ -162,7 +162,7 @@ mod tests {
 
         // Fetching an item that is unavailable should work.
         let token_infos = cached_token_info_fetcher.get_token_infos(&[address1]).await;
-        assert!(token_infos.contains_key(&address1) && token_infos[&address1].decimals == None);
+        assert!(token_infos.contains_key(&address1) && token_infos[&address1].decimals.is_none());
 
         // Should try to refetch the item thus satisfying the times(2) constraint above.
         cached_token_info_fetcher.get_token_infos(&[address1]).await;

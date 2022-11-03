@@ -292,7 +292,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&*body).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
             json!({
                 "errorType": "foo",
                 "description": "bar",

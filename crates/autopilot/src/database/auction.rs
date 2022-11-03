@@ -109,7 +109,7 @@ impl Postgres {
             .with_label_values(&["save_auction"])
             .start_timer();
 
-        let data = serde_json::to_value(&auction)?;
+        let data = serde_json::to_value(auction)?;
         let mut ex = self.0.begin().await?;
         database::auction::delete_all_auctions(&mut ex).await?;
         let id = database::auction::save(&mut ex, &data).await?;

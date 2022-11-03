@@ -1,3 +1,5 @@
+#![allow(clippy::needless_borrow)]
+
 pub mod auction;
 pub mod byte_array;
 pub mod ethflow_orders;

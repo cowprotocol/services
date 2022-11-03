@@ -184,7 +184,7 @@ impl UniV3SubgraphClient {
         for tick in ticks {
             ticks_mapped
                 .entry(tick.pool_address)
-                .or_insert(vec![])
+                .or_insert_with(Vec::new)
                 .push(tick);
         }
 
