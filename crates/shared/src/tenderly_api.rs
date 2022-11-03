@@ -3,7 +3,6 @@
 use crate::{
     arguments::{display_option, display_secret_option},
     http_client::HttpClientFactory,
-    transport::extensions::StateOverrides,
 };
 use anyhow::Result;
 use clap::Parser;
@@ -14,10 +13,11 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fmt::{self, Display, Formatter},
     sync::Arc,
 };
-use web3::types::{H160, H256, U256};
+use web3::types::{Bytes, H160, H256, U256};
 
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
@@ -126,7 +126,7 @@ pub struct SimulationRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate_access_list: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_objects: Option<StateOverrides>,
+    pub state_objects: Option<HashMap<H160, StateObject>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -134,6 +134,22 @@ pub struct SimulationRequest {
 pub enum SimulationKind {
     Full,
     Quick,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub struct StateObject {
+    /// Fake balance to set for the account before executing the call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance: Option<U256>,
+
+    /// Fake EVM bytecode to inject into the account before executing the call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<Bytes>,
+
+    /// Fake key-value mapping to override **individual** slots in the account
+    /// storage before executing the call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<HashMap<H256, H256>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
