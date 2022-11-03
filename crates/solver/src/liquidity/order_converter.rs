@@ -24,7 +24,6 @@ impl OrderConverter {
 
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
     pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
-        let order = build_synthetic_order_if_limit_order(order)?;
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -43,15 +42,18 @@ impl OrderConverter {
                 * self.fee_objective_scaling_factor,
         );
         let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
+
+        let (sell_amount, fee_amount) = compute_synthetic_order_amounts_if_limit_order(&order)?;
+
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.data.sell_token,
             buy_token,
-            sell_amount: remaining.remaining(order.data.sell_amount)?,
+            sell_amount: remaining.remaining(sell_amount)?,
             buy_amount: remaining.remaining(order.data.buy_amount)?,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            unscaled_subsidized_fee: remaining.remaining(order.data.fee_amount)?,
+            unscaled_subsidized_fee: remaining.remaining(fee_amount)?,
             scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
@@ -66,34 +68,31 @@ impl OrderConverter {
     }
 }
 
-/// Builds a "synthetic" order with adjusted `sell_amount` and `fee_amount` in case the order
-/// is a limit order. Returns the original order for other order classes.
-fn build_synthetic_order_if_limit_order(mut order: Order) -> Result<Order> {
-    if order.metadata.class != OrderClass::Limit {
-        // it's not a limit order so we don't have to adjust anything
-        return Ok(order);
-    }
-    anyhow::ensure!(
-        !order.data.partially_fillable,
-        "partially fillable limit orders are not supported"
-    );
-    order.data.sell_amount = order
-        .data
-        .sell_amount
-        .checked_sub(order.metadata.surplus_fee)
-        .context("surplus_fee adjustment would underflow sell_amount")?;
-    order.data.fee_amount = order
-        .data
-        .fee_amount
-        .checked_add(order.metadata.surplus_fee)
-        .context("surplus_fee adjustment would overflow U256 in fee_amount")?;
-    Ok(order)
-}
-
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
     scaled_unsubsidized_fee_amount: U256,
+}
+
+/// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the values accordingly
+/// for limit orders.
+fn compute_synthetic_order_amounts_if_limit_order(order: &Order) -> Result<(U256, U256)> {
+    if order.metadata.class == OrderClass::Liquidity {
+        // adjust amounts to account for `surplus_fee`
+        let sell_amount = order
+            .data
+            .sell_amount
+            .checked_sub(order.metadata.surplus_fee)
+            .context("surplus_fee adjustment would underflow sell_amount")?;
+        let fee_amount = order
+            .data
+            .fee_amount
+            .checked_add(order.metadata.surplus_fee)
+            .context("surplus_fee adjustment would overflow U256 in fee_amount")?;
+        return Ok((sell_amount, fee_amount));
+    }
+
+    Ok((order.data.sell_amount, order.data.fee_amount))
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {

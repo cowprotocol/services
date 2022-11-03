@@ -201,8 +201,9 @@ impl SettlementEncoder {
                 )?
             }
             OrderClass::Limit => {
-                // Limit orders are fill-or-kill so we have to execute the total amount.
-                let executed_amount = order.data.sell_amount + order.data.fee_amount;
+                // Solvers calculate with slightly adjusted amounts compared to this order but because
+                // limit orders are fill-or-kill we can simply use the total original `sell_amount`.
+                let executed_amount = order.data.sell_amount;
                 let buy_price = self.custom_price_for_limit_order(&order)?;
 
                 self.add_custom_price_trade(
@@ -218,34 +219,32 @@ impl SettlementEncoder {
     }
 
     /// Uses the uniform clearing prices to compute the individual buy token price to satisfy the
-    /// original limit order with was adjusted to account for the `surplus_fee` (see
-    /// `build_synthetic_order_if_limit_order()`).
+    /// original limit order which was adjusted to account for the `surplus_fee` (see
+    /// `compute_synthetic_order_amounts_if_limit_order()`).
     /// Returns an error if the UCP doesn't contain the `sell_token` or if under- or overflows
     /// happen during the computation.
     fn custom_price_for_limit_order(&self, order: &Order) -> Result<U256> {
-        // This is the equation the solver tried to satisfy:
-        // uniform_sell_price * sell_amount = uniform_buy_price * buy_amount
+        // The order passed into this function is the original order signed by the user.
+        // But the solver actually computated a solution for an order with `sell_amount -= surplus_fee.
+        // That means this is the equation the solver tried to satisfy:
+        // uniform_sell_price * (sell_amount - surplus_fee) = uniform_buy_price * buy_amount
         //
-        // And this is what the solution actually has to satisfy:
-        // uniform_sell_price * (sell_amount + surplus_fee) = custom_buy_price * buy_amount
+        // But actually this is the equation the solution has to satisfy:
+        // uniform_sell_price * sell_amount = custom_buy_price * buy_amount
         // That means we can solve for the custom_buy_price like this:
-        // custom_buy_price = (uniform_sell_price * (sell_amount + surplus_fee)) / buy_amount
+        // custom_buy_price = (uniform_sell_price * sell_amount) / buy_amount
 
         let uniform_sell_price = self
             .clearing_prices()
             .get(&order.data.sell_token)
             .context("missing sell token price")?;
 
-        let sell_amount_with_surplus_fees = order
+        order
             .data
             .sell_amount
-            .checked_add(order.metadata.surplus_fee)
-            .context("adjusting for surplus_fee would overflow sell_amount")?;
-
-        sell_amount_with_surplus_fees
             .checked_mul(*uniform_sell_price)
             .context("buy_price calculation failed")?
-            .checked_ceil_div(&order.data.buy_amount)
+            .checked_div(order.data.buy_amount)
             .context("buy price calculation failed")
     }
 
