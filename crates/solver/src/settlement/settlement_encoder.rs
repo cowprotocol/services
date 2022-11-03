@@ -186,14 +186,15 @@ impl SettlementEncoder {
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
         verify_executed_amount(&order, executed_amount)?;
+        let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
             OrderClass::Ordinary => {
-                self.add_ucp_trade(order.clone(), executed_amount, scaled_unsubsidized_fee)?
+                self.add_ucp_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
             OrderClass::Liquidity => {
                 let buy_price = self.compute_limit_buy_price(&order)?;
                 self.add_custom_price_trade(
-                    order.clone(),
+                    order,
                     executed_amount,
                     scaled_unsubsidized_fee,
                     buy_price,
@@ -203,8 +204,7 @@ impl SettlementEncoder {
                 todo!()
             }
         };
-        self.pre_interactions
-            .extend(order.interactions.pre.into_iter());
+        self.pre_interactions.extend(interactions.pre.into_iter());
         Ok(execution)
     }
 
