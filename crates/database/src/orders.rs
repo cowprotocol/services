@@ -1103,10 +1103,16 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
+        let number_of_query_executions = 100;
+        for _ in 0..100 {
+            let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
+        }
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
-        assert!(elapsed < std::time::Duration::from_secs(1));
+        println!(
+            "Time per execution {:?}",
+            elapsed / number_of_query_executions
+        );
+        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
     }
 
     #[tokio::test]
@@ -1140,10 +1146,16 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
+        let number_of_query_executions = 100;
+        for _ in 0..100 {
+            let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
+        }
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
-        assert!(elapsed < std::time::Duration::from_secs(1));
+        println!(
+            "Time per execution {:?}",
+            elapsed / number_of_query_executions
+        );
+        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
     }
 
     #[tokio::test]
