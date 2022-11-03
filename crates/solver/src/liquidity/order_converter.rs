@@ -1,6 +1,6 @@
 use super::{Exchange, LimitOrder, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use contracts::WETH9;
 use ethcontract::U256;
 use model::order::{Order, OrderClass, BUY_ETH_ADDRESS};
@@ -24,6 +24,7 @@ impl OrderConverter {
 
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
     pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
+        let order = build_synthetic_order_if_limit_order(order)?;
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -65,6 +66,30 @@ impl OrderConverter {
     }
 }
 
+/// Builds a "synthetic" order with adjusted `sell_amount` and `fee_amount` in case the order
+/// is a limit order. Returns the original order for other order classes.
+fn build_synthetic_order_if_limit_order(mut order: Order) -> Result<Order> {
+    if order.metadata.class != OrderClass::Limit {
+        // it's not a limit order so we don't have to adjust anything
+        return Ok(order);
+    }
+    anyhow::ensure!(
+        !order.data.partially_fillable,
+        "partially fillable limit orders are not supported"
+    );
+    order.data.sell_amount = order
+        .data
+        .sell_amount
+        .checked_sub(order.metadata.surplus_fee)
+        .context("surplus_fee adjustment would underflow sell_amount")?;
+    order.data.fee_amount = order
+        .data
+        .fee_amount
+        .checked_add(order.metadata.surplus_fee)
+        .context("surplus_fee adjustment would overflow U256 in fee_amount")?;
+    Ok(order)
+}
+
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
@@ -75,10 +100,10 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
 
-        if self.order.metadata.class != OrderClass::Liquidity && is_native_token_buy_order {
-            // liquidity orders don't need an additional token equivalency, as the buy tokens
-            // clearing prices are not stored in the clearing prices vector, but in the
-            // LiquidityOrderTrade
+        if self.order.metadata.class == OrderClass::Ordinary && is_native_token_buy_order {
+            // Only ordinary orders need an additional token equivalency, as the buy token's
+            // clearing price is stored in the clearing prices vector instad of the
+            // `CustomPriceTrade` as we do for limit and liquidity orders.
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
