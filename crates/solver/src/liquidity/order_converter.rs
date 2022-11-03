@@ -57,7 +57,6 @@ impl OrderConverter {
                 order,
                 native_token,
                 scaled_unsubsidized_fee_amount: scaled_fee_amount,
-                is_liquidity_order,
             }),
             exchange: Exchange::GnosisProtocol,
             // TODO: It would be nicer to set this here too but we need #529 first.
@@ -70,21 +69,21 @@ struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
     scaled_unsubsidized_fee_amount: U256,
-    is_liquidity_order: bool,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
 
-        if !self.is_liquidity_order && is_native_token_buy_order {
+        let is_liquidity_order = self.order.metadata.class == OrderClass::Liquidity;
+        if !is_liquidity_order && is_native_token_buy_order {
             // liquidity orders don't need an additional token equivalency, as the buy tokens
             // clearing prices are not stored in the clearing prices vector, but in the
             // LiquidityOrderTrade
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = match self.is_liquidity_order {
+        let trade = match is_liquidity_order {
             true => encoder.add_liquidity_order_trade(
                 self.order.clone(),
                 executed_amount,
@@ -227,7 +226,6 @@ pub mod tests {
             order: order.clone(),
             native_token: native_token.clone(),
             scaled_unsubsidized_fee_amount: scaled_fee_amount,
-            is_liquidity_order: false,
         };
 
         assert_settlement_encoded_with(
@@ -275,7 +273,6 @@ pub mod tests {
             order: order.clone(),
             native_token: native_token.clone(),
             scaled_unsubsidized_fee_amount: 0.into(),
-            is_liquidity_order: false,
         };
 
         assert_settlement_encoded_with(
@@ -323,7 +320,6 @@ pub mod tests {
             order: order.clone(),
             native_token,
             scaled_unsubsidized_fee_amount: 0.into(),
-            is_liquidity_order: false,
         };
 
         assert_settlement_encoded_with(
