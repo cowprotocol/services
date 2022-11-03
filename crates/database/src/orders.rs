@@ -1104,7 +1104,7 @@ mod tests {
 
         let now = std::time::Instant::now();
         let number_of_query_executions = 100;
-        for _ in 0..100 {
+        for _ in 0..number_of_query_executions {
             let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
         }
         let elapsed = now.elapsed();
@@ -1147,7 +1147,7 @@ mod tests {
 
         let now = std::time::Instant::now();
         let number_of_query_executions = 100;
-        for _ in 0..100 {
+        for _ in 0..number_of_query_executions {
             let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
         }
         let elapsed = now.elapsed();
