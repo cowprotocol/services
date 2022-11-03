@@ -558,7 +558,7 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.liquidity_order_trades(),
+            settlement.encoder.custom_price_trades(),
             [CustomPriceTrade {
                 trade: Trade {
                     order: Order {

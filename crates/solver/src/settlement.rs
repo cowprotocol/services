@@ -324,12 +324,12 @@ impl Settlement {
             .order_trades()
             .iter()
             .map(|trade| &trade.trade.order);
-        let liquidity_orders = self
+        let custom_trades = self
             .encoder
-            .liquidity_order_trades()
+            .custom_price_trades()
             .iter()
             .map(|trade| &trade.trade.order);
-        user_orders.chain(liquidity_orders)
+        user_orders.chain(custom_trades)
     }
 
     /// Returns an iterator of all executed trades.
@@ -344,23 +344,23 @@ impl Settlement {
                 )
                 .map(|execution| (&order_trade.trade, execution))
         });
-        let liquidity_order_trades =
+        let custom_price_trades =
             self.encoder
-                .liquidity_order_trades()
+                .custom_price_trades()
                 .iter()
-                .map(move |liquidity_order_trade| {
-                    let order = &liquidity_order_trade.trade.order.data;
-                    liquidity_order_trade
+                .map(move |custom_price_trade| {
+                    let order = &custom_price_trade.trade.order.data;
+                    custom_price_trade
                         .trade
                         .executed_amounts(
                             self.clearing_price(order.sell_token)?,
-                            liquidity_order_trade.buy_token_price,
+                            custom_price_trade.buy_token_price,
                         )
-                        .map(|execution| (&liquidity_order_trade.trade, execution))
+                        .map(|execution| (&custom_price_trade.trade, execution))
                 });
 
         order_trades
-            .chain(liquidity_order_trades)
+            .chain(custom_price_trades)
             .map(|execution| execution.expect("invalid trade was added to encoder"))
     }
 

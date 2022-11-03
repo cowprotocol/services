@@ -96,11 +96,11 @@ impl SettlementEncoder {
     pub fn with_trades(
         clearing_prices: HashMap<H160, U256>,
         trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<CustomPriceTrade>,
+        custom_price_trades: Vec<CustomPriceTrade>,
     ) -> Self {
         let mut result = Self::new(clearing_prices);
         result.order_trades = trades;
-        result.custom_price_trades = liquidity_order_trades;
+        result.custom_price_trades = custom_price_trades;
         result
     }
 
@@ -125,7 +125,7 @@ impl SettlementEncoder {
         &self.order_trades
     }
 
-    pub fn liquidity_order_trades(&self) -> &[CustomPriceTrade] {
+    pub fn custom_price_trades(&self) -> &[CustomPriceTrade] {
         &self.custom_price_trades
     }
 
