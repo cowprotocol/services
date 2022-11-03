@@ -225,7 +225,7 @@ impl SettlementEncoder {
         // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(sell_price * order.sellAmount / order.buyAmount)
         // <=> order.sellAmount.mul(sellPrice)  >= order.buyAmount.mul(buyPrice)
         // <=> equation from smart contract
-        //
+
         self.clearing_prices
             .get(&order.data.sell_token)
             .unwrap_or(&order.data.buy_amount)
