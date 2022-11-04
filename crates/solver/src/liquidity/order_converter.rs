@@ -77,7 +77,7 @@ struct OrderSettlementHandler {
 /// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the values accordingly
 /// for limit orders.
 fn compute_synthetic_order_amounts_if_limit_order(order: &Order) -> Result<(U256, U256)> {
-    if order.metadata.class == OrderClass::Liquidity {
+    if order.metadata.class == OrderClass::Limit {
         // adjust amounts to account for `surplus_fee`
         let sell_amount = order
             .data
@@ -126,7 +126,7 @@ pub mod tests {
     use crate::settlement::tests::assert_settlement_encoded_with;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{OrderData, OrderKind, OrderMetadata};
+    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata};
     use shared::dummy_contract;
 
     #[test]
@@ -374,5 +374,22 @@ pub mod tests {
         assert_eq!(order.buy_amount, 10.into());
         assert_eq!(order.unscaled_subsidized_fee, 15.into());
         assert_eq!(order.scaled_unsubsidized_fee, 30.into());
+    }
+
+    #[test]
+    fn limit_orders_get_adjusted_for_surplus_fee() {
+        let converter = OrderConverter::test(Default::default());
+        let order = OrderBuilder::default()
+            .with_class(OrderClass::Limit)
+            .with_sell_amount(1_000.into())
+            .with_fee_amount(200.into())
+            .with_surplus_fee(100.into())
+            .build();
+        let solver_order = converter.normalize_limit_order(order.clone()).unwrap();
+
+        // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
+        assert_eq!(solver_order.sell_amount, 1_100.into());
+        // simply the `surplus_fee`
+        assert_eq!(solver_order.unscaled_subsidized_fee, 100.into());
     }
 }
