@@ -645,10 +645,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn flashbots_mainnet_settlement() {
-        shared::tracing::initialize(
-            "solver=debug,shared=debug,shared::transport::http=info",
-            LevelFilter::OFF,
-        );
+        shared::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
 
         let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
