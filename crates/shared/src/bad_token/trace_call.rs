@@ -40,7 +40,6 @@ impl TraceCallDetector {
         // block propagation delays may cause the trace_call to be exectued on an
         // earlier block than the one used for fetching token owner balances. As a
         // work-around, retry a few times.
-        //
         const MAX_RETRIES: usize = 3;
         for _ in 0..MAX_RETRIES {
             match self.detect_impl(token).await {
@@ -136,9 +135,13 @@ impl TraceCallDetector {
         }
 
         match decode_u256(&traces[0]) {
-            Ok(balance) if balance >= amount => (),
-            Ok(_) => return Err(DetectError::BalanceChanged),
-            Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
+            Ok(balance) if balance < amount => return Err(DetectError::BalanceChanged),
+            Ok(_) => (),
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode initial token owner balance",
+                ))
+            }
         }
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[2])? {
