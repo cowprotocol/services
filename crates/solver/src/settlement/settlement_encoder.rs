@@ -137,7 +137,7 @@ impl SettlementEncoder {
 
     /// Adds an order trade using the uniform clearing prices for sell and buy token.
     /// Fails if any used token doesn't have a price or if executed amount is impossible.
-    fn add_ucp_trade(
+    fn add_market_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
@@ -189,7 +189,7 @@ impl SettlementEncoder {
         let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
             OrderClass::Ordinary => {
-                self.add_ucp_trade(order, executed_amount, scaled_unsubsidized_fee)?
+                self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
             OrderClass::Liquidity => {
                 let buy_price = self.compute_limit_buy_price(&order)?;
