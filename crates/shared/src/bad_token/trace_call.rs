@@ -5,6 +5,7 @@ use contracts::ERC20;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey};
 use primitive_types::{H160, U256};
 use std::sync::Arc;
+use thiserror::Error;
 use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
@@ -26,14 +27,33 @@ pub struct TraceCallDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for TraceCallDetector {
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
-        let quality = self.detect_impl(token).await?;
+        let quality = self.detect_with_retries(token).await?;
         tracing::debug!("token {:?} quality {:?}", token, quality);
         Ok(quality)
     }
 }
 
 impl TraceCallDetector {
-    pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
+    async fn detect_with_retries(&self, token: H160) -> Result<TokenQuality> {
+        // It is possible, because of race conditions, for the token owner balance
+        // to change between fetching it, and executing the trace call. Additionally,
+        // block propagation delays may cause the trace_call to be exectued on an
+        // earlier block than the one used for fetching token owner balances. As a
+        // work-around, retry a few times.
+        //
+        const MAX_RETRIES: usize = 3;
+        for _ in 0..MAX_RETRIES {
+            match self.detect_impl(token).await {
+                Ok(quality) => return Ok(quality),
+                Err(DetectError::BalanceChanged) => continue,
+                Err(DetectError::Other(err)) => return Err(err),
+            }
+        }
+
+        Err(DetectError::BalanceChanged.into())
+    }
+
+    async fn detect_impl(&self, token: H160) -> Result<TokenQuality, DetectError> {
         // Arbitrary amount that is large enough that small relative fees should be visible.
         const MIN_AMOUNT: u64 = 100_000;
         let (take_from, amount) = match self.finder.find_owner(token, MIN_AMOUNT.into()).await? {
@@ -58,7 +78,9 @@ impl TraceCallDetector {
         let traces = trace_many::trace_many(request, &self.web3)
             .await
             .context("failed to trace for bad token detection")?;
-        Self::handle_response(&traces, amount)
+        let response = Self::handle_response(&traces, amount)?;
+
+        Ok(response)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect tokens that
@@ -76,39 +98,50 @@ impl TraceCallDetector {
         let mut requests = Vec::new();
 
         // 0
-        let tx = instance.balance_of(self.settlement_contract).m.tx;
+        let tx = instance.balance_of(take_from).m.tx;
         requests.push(call_request(None, token, tx));
         // 1
-        let tx = instance.transfer(self.settlement_contract, amount).tx;
-        requests.push(call_request(Some(take_from), token, tx));
-        // 2
         let tx = instance.balance_of(self.settlement_contract).m.tx;
         requests.push(call_request(None, token, tx));
+        // 2
+        let tx = instance.transfer(self.settlement_contract, amount).tx;
+        requests.push(call_request(Some(take_from), token, tx));
         // 3
+        let tx = instance.balance_of(self.settlement_contract).m.tx;
+        requests.push(call_request(None, token, tx));
+        // 4
         let recipient = Self::arbitrary_recipient();
         let tx = instance.balance_of(recipient).m.tx;
         requests.push(call_request(None, token, tx));
-        // 4
+        // 5
         let tx = instance.transfer(recipient, amount).tx;
         requests.push(call_request(Some(self.settlement_contract), token, tx));
-        // 5
+        // 6
         let tx = instance.balance_of(self.settlement_contract).m.tx;
         requests.push(call_request(None, token, tx));
-        // 6
+        // 7
         let tx = instance.balance_of(recipient).m.tx;
         requests.push(call_request(None, token, tx));
 
-        // 7
+        // 8
         let tx = instance.approve(recipient, U256::MAX).tx;
         requests.push(call_request(Some(self.settlement_contract), token, tx));
 
         requests
     }
 
-    fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality> {
-        ensure!(traces.len() == 8, "unexpected number of traces");
+    fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality, DetectError> {
+        if traces.len() != 9 {
+            return Err(anyhow!("unexpected number of traces").into());
+        }
 
-        let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
+        match decode_u256(&traces[0]) {
+            Ok(balance) if balance >= amount => (),
+            Ok(_) => return Err(DetectError::BalanceChanged),
+            Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
+        }
+
+        let gas_in = match ensure_transaction_ok_and_get_gas(&traces[2])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
@@ -116,7 +149,7 @@ impl TraceCallDetector {
                 )))
             }
         };
-        let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
+        let gas_out = match ensure_transaction_ok_and_get_gas(&traces[5])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
@@ -125,25 +158,25 @@ impl TraceCallDetector {
             }
         };
 
-        let balance_before_in = match decode_u256(&traces[0]) {
+        let balance_before_in = match decode_u256(&traces[1]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
-        let balance_after_in = match decode_u256(&traces[2]) {
+        let balance_after_in = match decode_u256(&traces[3]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode middle settlement balance")),
         };
-        let balance_after_out = match decode_u256(&traces[5]) {
+        let balance_after_out = match decode_u256(&traces[6]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
         };
 
-        let balance_recipient_before = match decode_u256(&traces[3]) {
+        let balance_recipient_before = match decode_u256(&traces[4]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
         };
 
-        let balance_recipient_after = match decode_u256(&traces[6]) {
+        let balance_recipient_after = match decode_u256(&traces[7]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance after")),
         };
@@ -183,7 +216,7 @@ impl TraceCallDetector {
             return Ok(TokenQuality::bad("balance of recipient does not match"));
         }
 
-        if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
+        if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[8])? {
             return Ok(TokenQuality::bad(format!(
                 "can't approve max amount: {}",
                 err
@@ -233,6 +266,15 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
         _ => bail!("no error but also no call result"),
     };
     Ok(Ok(call_result.gas_used))
+}
+
+// Trace call detection error.
+#[derive(Debug, Error)]
+enum DetectError {
+    #[error("token owner balance changed")]
+    BalanceChanged,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[cfg(test)]
@@ -615,7 +657,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_univ3() {
-        crate::tracing::initialize_for_tests("shared=debug");
+        //crate::tracing::initialize_for_tests("shared=debug");
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let base_tokens = vec![testlib::tokens::WETH];
