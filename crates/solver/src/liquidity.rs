@@ -96,7 +96,7 @@ impl LimitOrderUid {
     pub fn order_uid(&self) -> Option<OrderUid> {
         match self {
             LimitOrderUid::OrderUid(uid) => Some(*uid),
-            LimitOrderUid::ZeroEx(_) => None,
+            _ => None,
         }
     }
 }
