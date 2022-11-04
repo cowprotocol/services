@@ -1,6 +1,7 @@
 pub mod blockscout;
 pub mod ethplorer;
 pub mod liquidity;
+pub mod seasolver;
 pub mod token_owner_list;
 
 use self::{
@@ -10,7 +11,9 @@ use self::{
 use crate::{
     arguments::duration_from_seconds,
     bad_token::token_owner_finder::{
-        ethplorer::EthplorerTokenOwnerFinder, token_owner_list::TokenOwnerList,
+        ethplorer::EthplorerTokenOwnerFinder,
+        seasolver::{AutoUpdatingSeaSolverTokenOwnerFinder, SeaSolverConfiguration},
+        token_owner_list::TokenOwnerList,
     },
     baseline_solver::BaseTokens,
     ethcontract_error::EthcontractErrorType,
@@ -25,6 +28,7 @@ use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
 use ethcontract::U256;
 use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
+use reqwest::Url;
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
@@ -84,6 +88,14 @@ pub struct Arguments {
         default_value = "",
     )]
     pub whitelisted_owners: HashMap<H160, Vec<H160>>,
+
+    /// The SeaSolver url to query the token owner pairs.
+    #[clap(long, env, default_value = "https://seasolver.dev/token_holders")]
+    pub seasolver_token_owners_url: Url,
+
+    /// The SeaSolver url to query the token owner pairs.
+    #[clap(long, env, default_value = "300", value_parser = duration_from_seconds)]
+    pub seasolver_token_owners_cache_update_interval: Duration,
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
@@ -120,13 +132,21 @@ pub enum TokenOwnerFindingStrategy {
 
     /// Use the Ethplorer token holder API.
     Ethplorer,
+
+    /// Use list provided by the external solver team - SeaSolver
+    SeaSolver,
 }
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
     pub fn defaults_for_chain(chain_id: u64) -> &'static [Self] {
         match chain_id {
-            1 => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            1 => &[
+                Self::Liquidity,
+                Self::Blockscout,
+                Self::Ethplorer,
+                Self::SeaSolver,
+            ],
             100 => &[Self::Liquidity, Self::Blockscout],
             _ => &[Self::Liquidity],
         }
@@ -214,6 +234,16 @@ pub async fn init(
             ethplorer.with_rate_limiter(strategy);
         }
         proposers.push(Arc::new(ethplorer));
+    }
+
+    if finders.contains(&TokenOwnerFindingStrategy::SeaSolver) {
+        let configuration = SeaSolverConfiguration {
+            url: args.seasolver_token_owners_url.clone(),
+            client: http_factory.create(),
+            update_interval: args.seasolver_token_owners_cache_update_interval,
+        };
+        let seasolver = AutoUpdatingSeaSolverTokenOwnerFinder::new(configuration);
+        proposers.push(Arc::new(seasolver));
     }
 
     proposers.push(Arc::new(TokenOwnerList::new(
