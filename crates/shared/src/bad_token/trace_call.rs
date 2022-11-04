@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey};
 use primitive_types::{H160, U256};
-use std::sync::Arc;
+use std::{cmp, sync::Arc};
 use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
@@ -38,13 +38,18 @@ impl TraceCallDetector {
         const MIN_AMOUNT: u64 = 100_000;
         let (take_from, amount) = match self.finder.find_owner(token, MIN_AMOUNT.into()).await? {
             Some((address, balance)) => {
-                tracing::debug!(
-                    "testing token {:?} with pool {:?} amount {}",
-                    token,
-                    address,
-                    balance
-                );
-                (address, balance)
+                // Don't use the full balance, but instead a portion of it. This
+                // makes the trace call less racy and prone to the transfer
+                // failing because of a balance change from one block to the
+                // next. This can happen because of either:
+                // - Block propagation - the trace_callMany is handled by a node
+                //   that is 1 block in the past
+                // - New block observed - the trace_callMany is executed on a
+                //   block that came in since we read the balance
+                let amount = cmp::max(balance / 2, MIN_AMOUNT.into());
+
+                tracing::debug!(?token, ?address, ?amount, "found owner");
+                (address, amount)
             }
             None => return Ok(TokenQuality::bad("no pool")),
         };
