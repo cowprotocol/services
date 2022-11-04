@@ -27,7 +27,7 @@ pub struct Bfp(U256);
 
 lazy_static! {
     static ref ONE_18: U256 = U256::exp10(18);
-    static ref ONE_18_BIGINT: BigInt = u256_to_big_int(&*ONE_18);
+    static ref ONE_18_BIGINT: BigInt = u256_to_big_int(&ONE_18);
     static ref ZERO: Bfp = Bfp(U256::zero());
     static ref EPSILON: Bfp = Bfp(U256::one());
     static ref ONE: Bfp = Bfp(*ONE_18);
@@ -42,10 +42,7 @@ impl From<usize> for Bfp {
 
 impl From<Bfp> for BigRational {
     fn from(num: Bfp) -> Self {
-        BigRational::new(
-            u256_to_big_int(&num.as_uint256()),
-            u256_to_big_int(&*ONE_18),
-        )
+        BigRational::new(u256_to_big_int(&num.as_uint256()), u256_to_big_int(&ONE_18))
     }
 }
 

@@ -76,7 +76,7 @@ mod tests {
             amount: 1000000000000000000u64.into(),
             recipient: addr!("0000000000000000000000000000000000000000"),
         };
-        let serialized = serde_json::to_value(&request).unwrap();
+        let serialized = serde_json::to_value(request).unwrap();
         let expected = serde_json::json!({
             "type": "sell",
             "token_in": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
