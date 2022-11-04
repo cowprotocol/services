@@ -203,7 +203,7 @@ impl SettlementEncoder {
             OrderClass::Limit => {
                 // Solvers calculate with slightly adjusted amounts compared to this order but because
                 // limit orders are fill-or-kill we can simply use the total original `sell_amount`.
-                let executed_amount = match order.kind {
+                let executed_amount = match order.data.kind {
                     OrderKind::Sell => order.data.sell_amount,
                     OrderKind::Buy => order.data.buy_amount,
                 };
