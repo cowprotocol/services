@@ -31,7 +31,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "warn,driver=debug,solver=debug,shared=debug,shared::transport::http=info"
+        default_value = "warn,driver=debug,solver=debug,shared=debug"
     )]
     pub log_filter: String,
 
