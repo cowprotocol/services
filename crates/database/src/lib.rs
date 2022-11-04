@@ -1,3 +1,4 @@
+// https://github.com/rust-lang/rust-clippy/issues/9782
 #![allow(clippy::needless_borrow)]
 
 pub mod auction;
