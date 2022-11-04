@@ -78,6 +78,8 @@ pub enum Exchange {
     ZeroEx,
 }
 
+/// Used to differentiate between different types of orders that can be sent to solvers.
+/// User orders containing OrderUid are the orders from the orderbook.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
