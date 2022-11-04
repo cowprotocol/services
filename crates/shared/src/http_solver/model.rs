@@ -29,6 +29,7 @@ pub struct BatchAuctionModel {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct OrderModel {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<OrderUid>,
     pub sell_token: H160,
     pub buy_token: H160,
