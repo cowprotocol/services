@@ -16,7 +16,6 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use database::byte_array::ByteArray;
 use primitive_types::H256;
 use shared::{current_block::CurrentBlockStream, event_handling::MAX_REORG_BLOCK_COUNT, Web3};
 use web3::types::TransactionId;
@@ -30,7 +29,6 @@ pub struct AuctionTransactionUpdater {
 }
 
 impl AuctionTransactionUpdater {
-    // TODO: spawn this in autopilot
     pub async fn run_forever(self) -> ! {
         loop {
             match self.update().await {
@@ -58,13 +56,11 @@ impl AuctionTransactionUpdater {
             .checked_sub(MAX_REORG_BLOCK_COUNT)
             .context("no reorg safe block")?;
         let reorg_safe_block: i64 = reorg_safe_block.try_into().context("convert block")?;
-        let mut ex = self.db.0.acquire().await?;
-        let event = match database::auction_transaction::get_settlement_event_without_tx_info(
-            &mut ex,
-            reorg_safe_block,
-        )
-        .await
-        .context("get_settlement_event_without_tx_info")?
+        let event = match self
+            .db
+            .get_settlement_event_without_tx_info(reorg_safe_block)
+            .await
+            .context("get_settlement_event_without_tx_info")?
         {
             Some(event) => event,
             None => return Ok(false),
@@ -79,37 +75,28 @@ impl AuctionTransactionUpdater {
             .await
             .with_context(|| format!("get tx {hash:?}"))?
             .with_context(|| format!("no tx {hash:?}"))?;
-        let from: database::Address = ByteArray(
-            transaction
-                .from
-                .with_context(|| format!("no from {hash:?}"))?
-                .0,
-        );
+        let from = transaction
+            .from
+            .with_context(|| format!("no from {hash:?}"))?;
         let nonce: i64 = transaction
             .nonce
             .try_into()
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        database::auction_transaction::insert_settlement_tx_info(
-            &mut ex,
-            event.block_number,
-            event.log_index,
-            &from,
-            nonce,
-        )
-        .await
-        .with_context(|| format!("insert_settlement_tx_info {hash:?}"))?;
+        self.db
+            .insert_settlement_tx_info(event.block_number, event.log_index, &from, nonce)
+            .await
+            .with_context(|| format!("insert_settlement_tx_info {hash:?}"))?;
 
         // Auctions that were stored before the auction_transaction table existed need to be
         // inserted into it.
         // This code can be removed when all old auctions have been processed this way.
-        let auction_id = match database::auction_transaction::get_auction_id_from_tx_hash(
-            &mut ex,
-            &event.tx_hash,
-        )
-        .await
-        .with_context(|| format!("get_auction_id_from_tx_hash {hash:?}"))?
+        let auction_id = match self
+            .db
+            .get_auction_id_from_tx_hash(&hash)
+            .await
+            .with_context(|| format!("get_auction_id_from_tx_hash {hash:?}"))?
         {
             Some(auction_id) => auction_id,
             None => return Ok(true),
@@ -122,11 +109,10 @@ impl AuctionTransactionUpdater {
         // constraint to find out whether the error is benign.
         // Because this insert does not error there is no need for the check. If our insert changed
         // any column we would correctly error.
-        database::auction_transaction::upsert_auction_transaction(
-            &mut ex, auction_id, &from, nonce,
-        )
-        .await
-        .with_context(|| format!("upsert_auction_transaction {hash:?} {auction_id}"))?;
+        self.db
+            .upsert_auction_transaction(auction_id, &from, nonce)
+            .await
+            .with_context(|| format!("upsert_auction_transaction {hash:?} {auction_id}"))?;
 
         Ok(true)
     }
@@ -163,6 +149,13 @@ INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_n
 VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a', NULL, NULL)
     ;"#;
         updater.db.0.execute(query).await.unwrap();
+
+        let query = r#"
+INSERT INTO solver_competitions (id, tx_hash)
+VALUES (0, '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a')
+    ;"#;
+        updater.db.0.execute(query).await.unwrap();
+
         assert!(updater.update().await.unwrap());
 
         let query = r#"
@@ -179,5 +172,22 @@ WHERE block_number = 15875801 AND log_index = 405
             hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
         );
         assert_eq!(tx_nonce, 4701);
+
+        let query = r#"
+SELECT auction_id, tx_from, tx_nonce
+FROM auction_transaction
+        ;"#;
+        let (auction_id, tx_from, tx_nonce): (i64, Vec<u8>, i64) = sqlx::query_as(query)
+            .fetch_one(&updater.db.0)
+            .await
+            .unwrap();
+        assert_eq!(auction_id, 0);
+        assert_eq!(
+            tx_from,
+            hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
+        );
+        assert_eq!(tx_nonce, 4701);
+
+        assert!(!updater.update().await.unwrap());
     }
 }
