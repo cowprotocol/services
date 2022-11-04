@@ -21,6 +21,8 @@ pub struct SeaSolverConfiguration {
 }
 
 impl SeaSolverConfiguration {
+    /// Return type is `Token, Option<Owner>` because there are
+    /// entries containing `Null` instead of owner address.
     async fn query(&self) -> Result<HashMap<Token, Option<Owner>>> {
         Ok(self
             .client
