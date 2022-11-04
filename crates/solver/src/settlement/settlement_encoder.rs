@@ -221,31 +221,64 @@ impl SettlementEncoder {
     /// Uses the uniform clearing prices to compute the individual buy token price to satisfy the
     /// original limit order which was adjusted to account for the `surplus_fee` (see
     /// `compute_synthetic_order_amounts_if_limit_order()`).
-    /// Returns an error if the UCP doesn't contain the `sell_token` or if under- or overflows
+    /// Returns an error if the UCP doesn't contain the traded tokens or if under- or overflows
     /// happen during the computation.
     fn custom_price_for_limit_order(&self, order: &Order) -> Result<U256> {
         // The order passed into this function is the original order signed by the user.
-        // But the solver actually computated a solution for an order with `sell_amount -= surplus_fee.
-        // That means this is the equation the solver tried to satisfy:
-        // uniform_sell_price * (sell_amount - surplus_fee) = uniform_buy_price * buy_amount
-        //
-        // But actually this is the equation the solution has to satisfy:
-        // uniform_sell_price * sell_amount = custom_buy_price * buy_amount
-        // That means we can solve for the custom_buy_price like this:
-        // custom_buy_price = (uniform_sell_price * sell_amount) / buy_amount
-
-        let uniform_sell_price = self
-            .clearing_prices()
+        // But the solver actually computed a solution for an order with `sell_amount -= surplus_fee`.
+        // To account for the `surplus_fee` we first have to compute the expected `sell_amount` and
+        // `buy_amount` adjusted for the order kind and `surplus_fee`.
+        // Afterwards we compute a slightly worse `buy_price` that allows us to buy the expected number
+        // of `buy_token`s while pocketing the `surplus_fee` from the `sell_token`s.
+        let uniform_buy_price = *self
+            .clearing_prices
+            .get(&order.data.buy_token)
+            .context("buy token price is missing")?;
+        let uniform_sell_price = *self
+            .clearing_prices
             .get(&order.data.sell_token)
-            .context("missing sell token price")?;
+            .context("sell token price is missing")?;
 
-        order
-            .data
-            .sell_amount
-            .checked_mul(*uniform_sell_price)
-            .context("buy_price calculation failed")?
-            .checked_div(order.data.buy_amount)
-            .context("buy price calculation failed")
+        let (sell_amount, buy_amount) = match order.data.kind {
+            // This means sell as much `sell_token` as needed to buy exactly the expected
+            // `buy_amount`. Therefore we need to solve for `sell_amount`.
+            OrderKind::Buy => {
+                let sell_amount = order
+                    .data
+                    .buy_amount
+                    .checked_mul(uniform_buy_price)
+                    .context("sell_amount computation failed")?
+                    .checked_div(uniform_sell_price)
+                    .context("sell_amount computation failed")?;
+                // We have to sell slightly more `sell_token` to capture the `surplus_fee`
+                let sell_amount_adjusted_for_fees = sell_amount
+                    .checked_add(order.metadata.surplus_fee)
+                    .context("sell_amount computation failed")?;
+                (sell_amount_adjusted_for_fees, order.data.buy_amount)
+            }
+            // This means sell ALL the `sell_token` and get as much `buy_token` as possible.
+            // Therefore we need to solve for `buy_amount`.
+            OrderKind::Sell => {
+                // Solver actually used this `sell_amount` to compute prices.
+                let sell_amount = order
+                    .data
+                    .sell_amount
+                    .checked_sub(order.metadata.surplus_fee)
+                    .context("buy_amount computation failed")?;
+                let buy_amount = sell_amount
+                    .checked_mul(uniform_sell_price)
+                    .context("buy_amount computation failed")?
+                    .checked_div(uniform_buy_price)
+                    .context("buy_amount computation failed")?;
+                (order.data.sell_amount, buy_amount)
+            }
+        };
+
+        sell_amount
+            .checked_mul(uniform_sell_price)
+            .context("custom_buy_price computation failed")?
+            .checked_div(buy_amount)
+            .context("custom_buy_price computation failed")
     }
 
     /// Uses either the existing UCP for the sell token or the sell price within the order to
