@@ -2,7 +2,7 @@ use derivative::Derivative;
 use ethcontract::{Bytes, H160};
 use model::{
     auction::AuctionId,
-    order::OrderData,
+    order::{OrderData, OrderUid},
     ratio_as_decimal,
     signature::Signature,
     u256_decimal::{self, DecimalU256},
@@ -29,6 +29,7 @@ pub struct BatchAuctionModel {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct OrderModel {
+    pub id: Option<OrderUid>,
     pub sell_token: H160,
     pub buy_token: H160,
     #[serde(with = "u256_decimal")]
@@ -483,6 +484,7 @@ mod tests {
         let buy_token = H160::from_low_u64_be(1337);
         let sell_token = H160::from_low_u64_be(43110);
         let order_model = OrderModel {
+            id: Some(OrderUid::default()),
             sell_token,
             buy_token,
             sell_amount: U256::from(1),
@@ -638,6 +640,7 @@ mod tests {
           },
           "orders": {
             "0": {
+              "id": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
               "sell_token": "0x000000000000000000000000000000000000a866",
               "buy_token": "0x0000000000000000000000000000000000000539",
               "sell_amount": "1",

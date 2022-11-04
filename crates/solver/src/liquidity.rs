@@ -11,7 +11,10 @@ use anyhow::Result;
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
-use model::{order::OrderKind, TokenPair};
+use model::{
+    order::{OrderKind, OrderUid},
+    TokenPair,
+};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
 #[cfg(test)]
@@ -75,13 +78,49 @@ pub enum Exchange {
     ZeroEx,
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
+pub enum LimitOrderUid {
+    OrderUid(OrderUid),
+    ZeroEx(String),
+}
+
+impl Default for LimitOrderUid {
+    fn default() -> Self {
+        Self::OrderUid(Default::default())
+    }
+}
+
+impl LimitOrderUid {
+    pub fn order_uid(&self) -> Option<OrderUid> {
+        match self {
+            LimitOrderUid::OrderUid(uid) => Some(*uid),
+            LimitOrderUid::ZeroEx(_) => None,
+        }
+    }
+}
+
+impl From<OrderUid> for LimitOrderUid {
+    fn from(uid: OrderUid) -> Self {
+        Self::OrderUid(uid)
+    }
+}
+
+#[cfg(test)]
+impl From<u32> for LimitOrderUid {
+    fn from(uid: u32) -> Self {
+        Self::OrderUid(OrderUid::from_integer(uid))
+    }
+}
+
 /// Basic limit sell and buy orders
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
-    pub id: String,
+    pub id: LimitOrderUid,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -107,7 +146,7 @@ pub struct LimitOrder {
 
 impl std::fmt::Debug for LimitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Limit Order {}", self.id)
+        write!(f, "Limit Order {:?}", self.id)
     }
 }
 

@@ -181,11 +181,11 @@ mod tests {
         };
         let orders = vec![
             LimitOrder {
-                id: 0.to_string(),
+                id: 0.into(),
                 ..order.clone()
             },
             LimitOrder {
-                id: 1.to_string(),
+                id: 1.into(),
                 ..order.clone()
             },
         ];
