@@ -50,6 +50,7 @@ use shared::{
     zeroex_api::DefaultZeroExApi,
 };
 use std::{sync::Arc, time::Duration};
+use tracing::Instrument;
 
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -67,7 +68,7 @@ impl LivenessChecking for Liveness {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn main(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    let db_metrics = crate::database::database_metrics(db.clone());
+    let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
@@ -497,9 +498,21 @@ pub async fn main(args: arguments::Arguments) {
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
+    let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
+        web3,
+        db,
+        current_block: current_block_stream,
+    };
+    let auction_transaction = tokio::task::spawn(
+        auction_transaction_updater
+            .run_forever()
+            .instrument(tracing::info_span!("AuctionTransactionUpdater")),
+    );
+
     tokio::select! {
-        result = serve_metrics => tracing::error!(?result, "serve_metrics exited"),
-        _ = db_metrics => unreachable!(),
-        _ = maintenance_task => unreachable!(),
+        result = serve_metrics => panic!("serve_metrics exited {:?}", result),
+        result = db_metrics => panic!("db_metrics exited {:?}", result),
+        result = maintenance_task => panic!("maintenance exited {:?}", result),
+        result = auction_transaction => panic!("auction_transaction exited {:?}", result),
     };
 }

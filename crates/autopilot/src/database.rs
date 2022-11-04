@@ -1,4 +1,5 @@
 mod auction;
+pub mod auction_transaction;
 mod events;
 pub mod onchain_order_events;
 mod quotes;
