@@ -195,7 +195,7 @@ impl SettlementEncoder {
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
         // if the sell token price is not yet available
-        if self.token_index(order.data.sell_token) == None {
+        if self.token_index(order.data.sell_token).is_none() {
             let sell_token = order.data.sell_token;
             let sell_price = order.data.buy_amount;
             self.tokens.push(sell_token);

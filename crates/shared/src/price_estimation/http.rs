@@ -159,7 +159,7 @@ impl HttpPriceEstimator {
                     TokenInfoModel {
                         decimals: info.decimals,
                         alias: info.symbol,
-                        normalize_priority: Some(if *token == self.native_token { 1 } else { 0 }),
+                        normalize_priority: Some(u64::from(*token == self.native_token)),
                         ..Default::default()
                     },
                 )

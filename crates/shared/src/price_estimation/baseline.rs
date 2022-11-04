@@ -223,7 +223,7 @@ impl BaselinePriceEstimator {
             sell_amount,
             |amount, path, pools| {
                 estimate_buy_amount(amount, path, pools)
-                    .map(&path_comparison)
+                    .map(path_comparison)
                     .unwrap_or_else(|| -U256::max_value().to_big_rational())
             },
             |amount, path, pools| {

@@ -42,7 +42,7 @@ where
     D: Deserializer<'de>,
 {
     let big_decimal =
-        BigDecimal::from_str(&*Cow::<str>::deserialize(deserializer)?).map_err(|err| {
+        BigDecimal::from_str(&Cow::<str>::deserialize(deserializer)?).map_err(|err| {
             de::Error::custom(format!("failed to decode decimal BigDecimal: {}", err))
         })?;
     let (x, exp) = big_decimal.into_bigint_and_exponent();

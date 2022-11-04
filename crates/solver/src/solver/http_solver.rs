@@ -250,11 +250,7 @@ fn token_models(
                     decimals: token_info.decimals,
                     alias: token_info.symbol.clone(),
                     external_price,
-                    normalize_priority: Some(if &gas_model.native_token == address {
-                        1
-                    } else {
-                        0
-                    }),
+                    normalize_priority: Some(u64::from(&gas_model.native_token == address)),
                     internal_buffer: buffers.get(address).copied(),
                     accepted_for_internalization: market_makable_token_list.contains(address),
                 },
