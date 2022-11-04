@@ -412,7 +412,8 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
 (o.cancellation_timestamp IS NOT NULL OR
-    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0
+    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
+    (SELECT COUNT(*) FROM onchain_order_cancellations onchain_c where onchain_c.uid = o.uid AND onchain_c.is_reorged = false limit 1) > 0
 ) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
@@ -594,6 +595,7 @@ mod tests {
         ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+        onchain_invalidations::insert_onchain_invalidation,
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
@@ -972,6 +974,38 @@ mod tests {
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
         assert!(get_order(&mut db).await.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_onchain_invalidated_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: 3,
+            partially_fillable: true,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+        let result = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!result.invalidated);
+        insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
+            .await
+            .unwrap();
+        let result = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result.invalidated);
     }
 
     #[tokio::test]
