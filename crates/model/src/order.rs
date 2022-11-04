@@ -200,6 +200,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_class(mut self, class: OrderClass) -> Self {
+        self.0.metadata.class = class;
+        self
+    }
+
     pub fn build(self) -> Order {
         self.0
     }

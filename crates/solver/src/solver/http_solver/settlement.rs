@@ -365,7 +365,7 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
-        settlement::{LiquidityOrderTrade, Trade},
+        settlement::{CustomPriceTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -558,8 +558,8 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.liquidity_order_trades(),
-            [LiquidityOrderTrade {
+            settlement.encoder.custom_price_trades(),
+            [CustomPriceTrade {
                 trade: Trade {
                     order: Order {
                         metadata: OrderMetadata {

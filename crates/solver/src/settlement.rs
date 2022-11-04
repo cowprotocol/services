@@ -34,8 +34,13 @@ pub struct OrderTrade {
     pub buy_token_index: usize,
 }
 
+/// Contains a trade for an order with a price that can be different from the uniform clearing
+/// price. This is required for liquidity orders and limit orders.
+/// Liquidity orders are not allowed to get surplus and therefore have to be settled at their limit
+/// price.
+/// Prices for limit orders have to be adjusted slightly to account for the `surplus_fee` mark up.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LiquidityOrderTrade {
+pub struct CustomPriceTrade {
     pub trade: Trade,
     pub buy_token_offset_index: usize,
     pub buy_token_price: U256,
@@ -212,7 +217,7 @@ impl OrderTrade {
     }
 }
 
-impl LiquidityOrderTrade {
+impl CustomPriceTrade {
     /// Encodes the settlement's liquidity_order_trade as a tuple, as expected by the smart
     /// contract.
     pub fn encode(&self, clearing_price_vec_length: usize) -> EncodedTrade {
@@ -293,7 +298,7 @@ impl Settlement {
     pub fn with_trades(
         clearing_prices: HashMap<H160, U256>,
         trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<LiquidityOrderTrade>,
+        liquidity_order_trades: Vec<CustomPriceTrade>,
     ) -> Self {
         let encoder =
             SettlementEncoder::with_trades(clearing_prices, trades, liquidity_order_trades);
@@ -319,12 +324,12 @@ impl Settlement {
             .order_trades()
             .iter()
             .map(|trade| &trade.trade.order);
-        let liquidity_orders = self
+        let custom_trades = self
             .encoder
-            .liquidity_order_trades()
+            .custom_price_trades()
             .iter()
             .map(|trade| &trade.trade.order);
-        user_orders.chain(liquidity_orders)
+        user_orders.chain(custom_trades)
     }
 
     /// Returns an iterator of all executed trades.
@@ -339,23 +344,23 @@ impl Settlement {
                 )
                 .map(|execution| (&order_trade.trade, execution))
         });
-        let liquidity_order_trades =
+        let custom_price_trades =
             self.encoder
-                .liquidity_order_trades()
+                .custom_price_trades()
                 .iter()
-                .map(move |liquidity_order_trade| {
-                    let order = &liquidity_order_trade.trade.order.data;
-                    liquidity_order_trade
+                .map(move |custom_price_trade| {
+                    let order = &custom_price_trade.trade.order.data;
+                    custom_price_trade
                         .trade
                         .executed_amounts(
                             self.clearing_price(order.sell_token)?,
-                            liquidity_order_trade.buy_token_price,
+                            custom_price_trade.buy_token_price,
                         )
-                        .map(|execution| (&liquidity_order_trade.trade, execution))
+                        .map(|execution| (&custom_price_trade.trade, execution))
                 });
 
         order_trades
-            .chain(liquidity_order_trades)
+            .chain(custom_price_trades)
             .map(|execution| execution.expect("invalid trade was added to encoder"))
     }
 
@@ -604,7 +609,7 @@ pub mod tests {
     fn test_settlement(
         prices: HashMap<H160, U256>,
         trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<LiquidityOrderTrade>,
+        liquidity_order_trades: Vec<CustomPriceTrade>,
     ) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades, liquidity_order_trades),
@@ -1321,7 +1326,7 @@ pub mod tests {
                 },
                 ..Default::default()
             }],
-            vec![LiquidityOrderTrade {
+            vec![CustomPriceTrade {
                 trade: Trade {
                     order: Order {
                         data: OrderData {
@@ -1405,7 +1410,7 @@ pub mod tests {
                 },
                 ..Default::default()
             }],
-            vec![LiquidityOrderTrade {
+            vec![CustomPriceTrade {
                 trade: Trade {
                     order: Order {
                         data: OrderData {

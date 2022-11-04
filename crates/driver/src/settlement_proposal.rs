@@ -155,16 +155,7 @@ impl SettlementProposal {
         for trade in self.trades {
             let remaining = shared::remaining_amounts::Remaining::from_order(&trade.order)?;
             let remaining_fee = remaining.remaining(trade.order.data.fee_amount)?;
-
-            if trade.order.metadata.class == OrderClass::Liquidity {
-                encoder.add_liquidity_order_trade(
-                    trade.order,
-                    trade.executed_amount,
-                    remaining_fee,
-                )?;
-            } else {
-                encoder.add_trade(trade.order, trade.executed_amount, remaining_fee)?;
-            }
+            encoder.add_trade(trade.order, trade.executed_amount, remaining_fee)?;
         }
 
         let futures = self
