@@ -355,8 +355,8 @@ impl SettlementEncoder {
         }
     }
     fn modify_token_index_for_liquidity_orders_after_change(&mut self, offset: usize) {
-        for i in 0..self.custom_price_trades.len() {
-            self.custom_price_trades[i].buy_token_offset_index += offset;
+        for custom_price_trade in &mut self.custom_price_trades {
+            custom_price_trade.buy_token_offset_index += offset;
         }
     }
 
