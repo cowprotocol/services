@@ -22,14 +22,13 @@ pub struct SeaSolverConfiguration {
 
 impl SeaSolverConfiguration {
     async fn query(&self) -> Result<HashMap<Token, Option<Owner>>> {
-        let token_owner_pairs = self
+        Ok(self
             .client
             .get(self.url.clone())
             .send()
             .await?
             .json()
-            .await?;
-        Ok(token_owner_pairs)
+            .await?)
     }
 }
 

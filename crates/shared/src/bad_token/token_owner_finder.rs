@@ -93,7 +93,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "https://seasolver.dev/token_holders")]
     pub seasolver_token_owners_url: Url,
 
-    /// The SeaSolver url to query the token owner pairs.
+    /// Interval between consecutive queries to update the SeaSolver token owner pairs.
     #[clap(long, env, default_value = "300", value_parser = duration_from_seconds)]
     pub seasolver_token_owners_cache_update_interval: Duration,
 }
