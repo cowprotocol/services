@@ -391,7 +391,7 @@ mod tests {
             buy_amount: 2.into(),
             kind: OrderKind::Sell,
             settlement_handling: limit_handler.clone(),
-            id: "0".to_string(),
+            id: 0.into(),
             ..Default::default()
         }];
 

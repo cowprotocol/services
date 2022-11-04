@@ -283,6 +283,7 @@ fn order_models(
             Some((
                 index,
                 OrderModel {
+                    id: order.id.order_uid(),
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
                     sell_amount: order.sell_amount,
@@ -617,7 +618,7 @@ mod tests {
             buy_amount: base(1).into(),
             sell_amount: base(2).into(),
             kind: OrderKind::Sell,
-            id: "0".to_string(),
+            id: 0.into(),
             ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {

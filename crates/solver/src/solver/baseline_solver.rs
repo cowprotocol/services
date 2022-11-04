@@ -347,7 +347,7 @@ mod tests {
                 buy_token,
                 kind: OrderKind::Sell,
                 settlement_handling: order_handler[0].clone(),
-                id: "0".into(),
+                id: 0.into(),
                 ..Default::default()
             },
             // Second order has a more lax limit
@@ -358,7 +358,7 @@ mod tests {
                 sell_token,
                 kind: OrderKind::Sell,
                 settlement_handling: order_handler[1].clone(),
-                id: "1".into(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -460,7 +460,7 @@ mod tests {
                 buy_token,
                 kind: OrderKind::Buy,
                 settlement_handling: order_handler[0].clone(),
-                id: "0".into(),
+                id: 0.into(),
                 ..Default::default()
             },
             // Second order has a more lax limit
@@ -471,7 +471,7 @@ mod tests {
                 sell_token,
                 kind: OrderKind::Buy,
                 settlement_handling: order_handler[1].clone(),
-                id: "1".into(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -567,7 +567,7 @@ mod tests {
             sell_token,
             buy_token,
             kind: OrderKind::Buy,
-            id: "0".into(),
+            id: 0.into(),
             ..Default::default()
         }];
 
@@ -609,7 +609,7 @@ mod tests {
             sell_amount: 1_741_103_528_769_588_955_u128.into(),
             buy_amount: 500_000_000_000_000_000_000_u128.into(),
             kind: OrderKind::Buy,
-            id: "Crash Bandicoot".to_string(),
+            id: 0.into(),
             ..Default::default()
         };
         let liquidity = vec![
@@ -664,7 +664,7 @@ mod tests {
     fn does_not_panic_for_asymmetrical_pool() {
         let tokens: Vec<H160> = (0..3).map(H160::from_low_u64_be).collect();
         let order = LimitOrder {
-            id: "".to_string(),
+            id: 0.into(),
             sell_token: tokens[0],
             buy_token: tokens[2],
             sell_amount: 7999613.into(),

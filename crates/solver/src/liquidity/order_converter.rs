@@ -43,7 +43,7 @@ impl OrderConverter {
         );
         let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
         Ok(LimitOrder {
-            id: order.metadata.uid.to_string(),
+            id: order.metadata.uid.into(),
             sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.remaining(order.data.sell_amount)?,
