@@ -614,7 +614,7 @@ components:
            Describes the error, if the order placement was not 
            successful. This could happen, for example, if the 
            valid_to is too high, or no valid quote was found or generated
-          type: String
+          type: string
           enum:
             [
               InvalidQuoteId,
