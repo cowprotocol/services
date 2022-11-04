@@ -75,26 +75,18 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
 
-        let is_liquidity_order = self.order.metadata.class == OrderClass::Liquidity;
-        if !is_liquidity_order && is_native_token_buy_order {
+        if self.order.metadata.class != OrderClass::Liquidity && is_native_token_buy_order {
             // liquidity orders don't need an additional token equivalency, as the buy tokens
             // clearing prices are not stored in the clearing prices vector, but in the
             // LiquidityOrderTrade
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = match is_liquidity_order {
-            true => encoder.add_liquidity_order_trade(
-                self.order.clone(),
-                executed_amount,
-                self.scaled_unsubsidized_fee_amount,
-            )?,
-            false => encoder.add_trade(
-                self.order.clone(),
-                executed_amount,
-                self.scaled_unsubsidized_fee_amount,
-            )?,
-        };
+        let trade = encoder.add_trade(
+            self.order.clone(),
+            executed_amount,
+            self.scaled_unsubsidized_fee_amount,
+        )?;
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {

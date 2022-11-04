@@ -112,7 +112,7 @@ impl InFlightOrders {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::{LiquidityOrderTrade, OrderTrade, SettlementEncoder, Trade};
+    use crate::settlement::{CustomPriceTrade, OrderTrade, SettlementEncoder, Trade};
     use maplit::hashmap;
     use model::order::{Order, OrderData, OrderKind, OrderMetadata};
     use primitive_types::H160;
@@ -162,7 +162,7 @@ mod tests {
 
         let liquidity_trades = vec![
             // This order uses some of the remaining executable amount of partially_fillable_1
-            LiquidityOrderTrade {
+            CustomPriceTrade {
                 trade: Trade {
                     order: partially_fillable_2.clone(),
                     executed_amount: 20u8.into(),
@@ -172,7 +172,7 @@ mod tests {
                 ..Default::default()
             },
             // Following orders use remaining executable amount of partially_fillable_2
-            LiquidityOrderTrade {
+            CustomPriceTrade {
                 trade: Trade {
                     order: partially_fillable_1.clone(),
                     executed_amount: 50u8.into(),
@@ -181,7 +181,7 @@ mod tests {
                 buy_token_price: 1u8.into(),
                 ..Default::default()
             },
-            LiquidityOrderTrade {
+            CustomPriceTrade {
                 trade: Trade {
                     order: partially_fillable_1.clone(),
                     executed_amount: 20u8.into(),
