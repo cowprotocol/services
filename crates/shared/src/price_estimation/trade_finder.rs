@@ -27,13 +27,14 @@ use web3::{ethabi::Token, types::CallRequest};
 /// A `TradeFinding`-based price estimator with request sharing and rate
 /// limiting.
 pub struct TradeEstimator {
-    inner: Inner,
+    inner: Arc<Inner>,
     sharing: RequestSharing<Query, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
 }
 
 #[derive(Clone)]
 struct Inner {
+    settlement: H160,
     finder: Arc<dyn TradeFinding>,
     verifier: Option<TradeVerifier>,
 }
@@ -47,19 +48,27 @@ pub struct TradeVerifier {
 }
 
 impl TradeEstimator {
-    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        settlement: H160,
+        finder: Arc<dyn TradeFinding>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         Self {
-            inner: Inner {
+            inner: Arc::new(Inner {
+                settlement,
                 finder,
                 verifier: None,
-            },
+            }),
             sharing: Default::default(),
             rate_limiter,
         }
     }
 
     pub fn with_verifier(mut self, verifier: TradeVerifier) -> Self {
-        self.inner.verifier = Some(verifier);
+        self.inner = Arc::new(Inner {
+            verifier: Some(verifier),
+            ..arc_unwrap_or_clone(self.inner)
+        });
         self
     }
 
@@ -73,17 +82,27 @@ impl TradeEstimator {
 }
 
 impl Inner {
-    async fn estimate(self, query: Query) -> Result<Estimate, PriceEstimationError> {
-        match self.verifier {
+    async fn estimate(self: Arc<Self>, query: Query) -> Result<Estimate, PriceEstimationError> {
+        // Trades are simulated from the settlement contract, so when finding
+        // trades and quotes make sure to use the settlement contract as the
+        // `from` address. This is important as some trade finders (1Inch for
+        // example) encode the `from` address as the recipient of the swap and
+        // don't use `msg.sender`.
+        let finder_query = Query {
+            from: Some(self.settlement),
+            ..query
+        };
+
+        match &self.verifier {
             Some(verifier) => {
-                let trade = self.finder.get_trade(&query).await?;
+                let trade = self.finder.get_trade(&finder_query).await?;
                 verifier
                     .verify(query, trade)
                     .await
                     .map_err(PriceEstimationError::Other)
             }
             None => {
-                let quote = self.finder.get_quote(&query).await?;
+                let quote = self.finder.get_quote(&finder_query).await?;
                 Ok(Estimate {
                     out_amount: quote.out_amount,
                     gas: quote.gas_estimate,
@@ -317,6 +336,13 @@ mod slippage {
     }
 }
 
+fn arc_unwrap_or_clone<T>(arc: Arc<T>) -> T
+where
+    T: Clone,
+{
+    Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,9 +350,13 @@ mod tests {
         code_fetching::MockCodeFetching,
         code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
         ethrpc::{create_env_test_transport, Web3},
+        oneinch_api::OneInchClientImpl,
         price_estimation::single_estimate,
         tenderly_api::TenderlyHttpApi,
-        trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding, Quote},
+        trade_finding::{
+            oneinch::OneInchTradeFinder, zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding,
+            Quote,
+        },
         zeroex_api::DefaultZeroExApi,
     };
     use anyhow::anyhow;
@@ -382,7 +412,8 @@ mod tests {
 
     #[tokio::test]
     async fn simulates_trades() {
-        let authenticator = H160([0xa; 20]);
+        let settlement = H160([0xa; 20]);
+        let authenticator = H160([0xb; 20]);
         let query = Query {
             from: Some(H160([0x1; 20])),
             sell_token: H160([0x2; 20]),
@@ -482,7 +513,10 @@ mod tests {
         let mut finder = MockTradeFinding::new();
         finder
             .expect_get_trade()
-            .with(predicate::eq(query))
+            .with(predicate::eq(Query {
+                from: Some(settlement),
+                ..query
+            }))
             .returning({
                 let trade = trade.clone();
                 move |_| Ok(trade.clone())
@@ -503,9 +537,10 @@ mod tests {
                 move |_| Ok(code.clone())
             });
 
-        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
-            TradeVerifier::new(Arc::new(simulator), Arc::new(code_fetcher), authenticator),
-        );
+        let estimator =
+            TradeEstimator::new(settlement, Arc::new(finder), RateLimiter::test()).with_verifier(
+                TradeVerifier::new(Arc::new(simulator), Arc::new(code_fetcher), authenticator),
+            );
 
         let estimate = single_estimate(&estimator, &query).await.unwrap();
 
@@ -607,13 +642,13 @@ mod tests {
             .expect_code()
             .returning(|_| Ok(Default::default()));
 
-        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
-            TradeVerifier::new(
-                Arc::new(simulator),
-                Arc::new(code_fetcher),
-                Default::default(),
-            ),
-        );
+        let estimator =
+            TradeEstimator::new(Default::default(), Arc::new(finder), RateLimiter::test())
+                .with_verifier(TradeVerifier::new(
+                    Arc::new(simulator),
+                    Arc::new(code_fetcher),
+                    Default::default(),
+                ));
 
         let estimate = single_estimate(&estimator, &query).await.unwrap();
 
@@ -628,6 +663,7 @@ mod tests {
 
     #[tokio::test]
     async fn estimates_with_quote_without_verifier() {
+        let settlement = H160([0xa; 20]);
         let query = Query {
             from: Some(H160([0x1; 20])),
             sell_token: H160([0x2; 20]),
@@ -643,13 +679,16 @@ mod tests {
         let mut finder = MockTradeFinding::new();
         finder
             .expect_get_quote()
-            .with(predicate::eq(query))
+            .with(predicate::eq(Query {
+                from: Some(settlement),
+                ..query
+            }))
             .returning({
                 let quote = quote.clone();
                 move |_| Ok(quote.clone())
             });
 
-        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test());
+        let estimator = TradeEstimator::new(settlement, Arc::new(finder), RateLimiter::test());
 
         let estimate = single_estimate(&estimator, &query).await.unwrap();
 
@@ -693,13 +732,13 @@ mod tests {
             .expect_code()
             .returning(|_| Ok(Default::default()));
 
-        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
-            TradeVerifier::new(
-                Arc::new(simulator),
-                Arc::new(code_fetcher),
-                Default::default(),
-            ),
-        );
+        let estimator =
+            TradeEstimator::new(Default::default(), Arc::new(finder), RateLimiter::test())
+                .with_verifier(TradeVerifier::new(
+                    Arc::new(simulator),
+                    Arc::new(code_fetcher),
+                    Default::default(),
+                ));
 
         let estimate = single_estimate(&estimator, &query).await.unwrap();
 
@@ -742,13 +781,13 @@ mod tests {
         let mut code_fetcher = MockCodeFetching::new();
         code_fetcher.expect_code().returning(|_| Ok(bytes!("")));
 
-        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
-            TradeVerifier::new(
-                Arc::new(simulator),
-                Arc::new(code_fetcher),
-                Default::default(),
-            ),
-        );
+        let estimator =
+            TradeEstimator::new(Default::default(), Arc::new(finder), RateLimiter::test())
+                .with_verifier(TradeVerifier::new(
+                    Arc::new(simulator),
+                    Arc::new(code_fetcher),
+                    Default::default(),
+                ));
 
         macro_rules! assert_output {
             ($check:ident: $x:literal) => {
@@ -911,14 +950,18 @@ mod tests {
         let verifier = TradeVerifier::new(
             Arc::new(simulator),
             Arc::new(web3),
-            addr!("2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+            testlib::protocol::AUTHENTICATOR,
         );
 
         let zeroex_api = DefaultZeroExApi::test();
         let finder = ZeroExTradeFinder::new(Arc::new(zeroex_api), vec![]);
 
-        let estimator =
-            TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(verifier);
+        let estimator = TradeEstimator::new(
+            testlib::protocol::SETTLEMENT,
+            Arc::new(finder),
+            RateLimiter::test(),
+        )
+        .with_verifier(verifier);
 
         let estimate = single_estimate(
             &estimator,
@@ -935,6 +978,53 @@ mod tests {
 
         println!(
             "1.0 WETH buys {} COW, costing {} gas",
+            estimate.out_amount.to_f64_lossy() / 1e18,
+            estimate.gas,
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn verified_oneinch_trade() {
+        let web3 = Web3::new(create_env_test_transport());
+
+        let tenderly_api = TenderlyHttpApi::test_from_env();
+        let simulator = TenderlyCodeSimulator::new(tenderly_api, 1).save(true, true);
+        let verifier = TradeVerifier::new(
+            Arc::new(simulator),
+            Arc::new(web3),
+            testlib::protocol::AUTHENTICATOR,
+        );
+
+        let oneinch_api = OneInchClientImpl::test();
+        let finder = OneInchTradeFinder::new(
+            Arc::new(oneinch_api),
+            vec![],
+            Some(testlib::protocol::SETTLEMENT),
+        );
+
+        let estimator = TradeEstimator::new(
+            testlib::protocol::SETTLEMENT,
+            Arc::new(finder),
+            RateLimiter::test(),
+        )
+        .with_verifier(verifier);
+
+        let estimate = single_estimate(
+            &estimator,
+            &Query {
+                from: Some(addr!("A03be496e67Ec29bC62F01a428683D7F9c204930")),
+                sell_token: testlib::tokens::WETH,
+                buy_token: testlib::tokens::DAI,
+                in_amount: 10u128.pow(2 + 18).into(),
+                kind: OrderKind::Sell,
+            },
+        )
+        .await
+        .unwrap();
+
+        println!(
+            "100.0 WETH buys {} DAI, costing {} gas",
             estimate.out_amount.to_f64_lossy() / 1e18,
             estimate.gas,
         );

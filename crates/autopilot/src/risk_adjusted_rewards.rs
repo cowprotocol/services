@@ -309,6 +309,7 @@ mod tests {
                     )),
                     Default::default(),
                     shared::rate_limiter::RateLimiter::test(),
+                    testlib::protocol::SETTLEMENT,
                 )),
                 testlib::tokens::WETH,
                 primitive_types::U256::from_f64_lossy(1e18),

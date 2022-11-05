@@ -2,4 +2,5 @@
 
 pub use ethcontract_mock::utils::*;
 
+pub mod protocol;
 pub mod tokens;

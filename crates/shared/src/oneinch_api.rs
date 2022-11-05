@@ -527,6 +527,11 @@ impl OneInchClientImpl {
             chain_id,
         })
     }
+
+    #[cfg(test)]
+    pub fn test() -> Self {
+        OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap()
+    }
 }
 
 #[async_trait::async_trait]
@@ -883,8 +888,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_swap() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
+        let swap = OneInchClientImpl::test()
             .get_swap(SwapQuery {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
                 slippage: Slippage::ONE_PERCENT,
@@ -908,8 +912,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_swap_fully_parameterized() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
+        let swap = OneInchClientImpl::test()
             .get_swap(SwapQuery {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
                 slippage: Slippage::percentage(1.2345678).unwrap(),
@@ -945,8 +948,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_liquidity_sources() {
-        let protocols = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
+        let protocols = OneInchClientImpl::test()
             .get_liquidity_sources()
             .await
             .unwrap();
