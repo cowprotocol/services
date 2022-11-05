@@ -262,7 +262,10 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         // Create some bogus settlements to see that the simulation returns an error.
-        shared::tracing::initialize("solver=debug,shared=debug", tracing::Level::ERROR.into());
+        shared::tracing::initialize(
+            "info,solver=debug,shared=debug,shared::transport=trace",
+            tracing::Level::ERROR.into(),
+        );
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let block = web3.eth().block_number().await.unwrap().as_u64();
@@ -367,6 +370,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
+            "class": "ordinary",
         });
         let order0: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -398,6 +402,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": true,
+            "class": "liquidity",
         });
         let order1: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -429,6 +434,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
+            "class": "ordinary",
         });
         let order2: Order = serde_json::from_value(value).unwrap();
 
@@ -670,7 +676,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_chunked() {
-        shared::tracing::initialize("solver=debug,shared=debug", tracing::Level::ERROR.into());
+        shared::tracing::initialize(
+            "info,solver=debug,shared=debug,shared::transport=trace",
+            tracing::Level::ERROR.into(),
+        );
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
