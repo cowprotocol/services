@@ -63,7 +63,12 @@ async fn main() {
 
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let web3 = shared::ethrpc::web3(&http_factory, &args.shared.node_url, "base");
+    let web3 = shared::ethrpc::web3(
+        &args.shared.ethrpc,
+        &http_factory,
+        &args.shared.node_url,
+        "base",
+    );
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -166,7 +171,12 @@ async fn main() {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         Box::new(CachingDetector::new(
             Box::new(TraceCallDetector {
-                web3: shared::ethrpc::web3(&http_factory, tracing_node_url, "trace"),
+                web3: shared::ethrpc::web3(
+                    &args.shared.ethrpc,
+                    &http_factory,
+                    tracing_node_url,
+                    "trace",
+                ),
                 finder,
                 settlement_contract: settlement_contract.address(),
             }),

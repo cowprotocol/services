@@ -12,7 +12,7 @@ const SLEEP_TIME_BETWEEN_LOOPS: u64 = 30;
 pub async fn main(args: arguments::Arguments) {
     let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&http_factory, &args.node_url, "base");
+    let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     let ethflow_contract = CoWSwapEthFlow::deployed(&web3)
         .await
         .expect("Could not find the CoWSwapEthFlow contract");
