@@ -20,6 +20,7 @@ use crate::{
     baseline_solver::BaseTokens,
     code_fetching::CachedCodeFetcher,
     code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     oneinch_api::OneInchClient,
@@ -32,7 +33,6 @@ use crate::{
     },
     token_info::TokenInfoFetching,
     zeroex_api::ZeroExApi,
-    Web3,
 };
 use anyhow::{Context as _, Result};
 use ethcontract::{H160, U256};

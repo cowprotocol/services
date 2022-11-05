@@ -11,7 +11,7 @@ use gas_estimation::GasPrice1559;
 use optimize_buffer_usage::optimize_buffer_usage;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
-use shared::{token_list::AutoUpdatingTokenList, Web3};
+use shared::{ethrpc::Web3, token_list::AutoUpdatingTokenList};
 
 /// Determines whether a settlement would be executed successfully.
 #[cfg_attr(test, mockall::automock)]

@@ -114,14 +114,14 @@ impl FeeSubsidizing for CowSubsidy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Web3;
+    use crate::ethrpc::Web3;
     use hex_literal::hex;
 
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
         crate::tracing::initialize_for_tests("orderbook=debug");
-        let transport = crate::transport::create_env_test_transport();
+        let transport = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
         let vtoken = CowProtocolVirtualToken::deployed(&web3).await.unwrap();

@@ -5,7 +5,7 @@ use contracts::{
 };
 use ethcontract::{Address, U256};
 use model::DomainSeparator;
-use shared::Web3;
+use shared::ethrpc::Web3;
 
 pub struct Contracts {
     pub balancer_vault: BalancerV2Vault,

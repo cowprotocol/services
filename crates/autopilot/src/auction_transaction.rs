@@ -17,7 +17,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use primitive_types::H256;
-use shared::{current_block::CurrentBlockStream, event_handling::MAX_REORG_BLOCK_COUNT, Web3};
+use shared::{
+    current_block::CurrentBlockStream, ethrpc::Web3, event_handling::MAX_REORG_BLOCK_COUNT,
+};
 use web3::types::TransactionId;
 
 use crate::database::Postgres;
@@ -130,7 +132,7 @@ mod tests {
         shared::tracing::initialize_for_tests("autopilot=trace");
         let db = Postgres::new("postgresql://").await.unwrap();
         database::clear_DANGER(&db.0).await.unwrap();
-        let transport = shared::transport::create_env_test_transport();
+        let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let current_block =
             shared::current_block::current_block_stream(web3.clone(), Duration::from_secs(1))

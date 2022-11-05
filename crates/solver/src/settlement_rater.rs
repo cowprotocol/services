@@ -12,7 +12,7 @@ use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
-use shared::{http_solver::model::SimulatedTransaction, Web3};
+use shared::{ethrpc::Web3, http_solver::model::SimulatedTransaction};
 use std::sync::Arc;
 use web3::types::AccessList;
 

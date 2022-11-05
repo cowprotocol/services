@@ -29,7 +29,7 @@ use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Acco
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::{Web3, Web3Transport};
+use shared::ethrpc::{Web3, Web3Transport};
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -636,9 +636,7 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
-    use shared::{
-        gas_price_estimation::FakeGasPriceEstimator, transport::create_env_test_transport,
-    };
+    use shared::{ethrpc::create_env_test_transport, gas_price_estimation::FakeGasPriceEstimator};
     use std::sync::Arc;
     use tracing::level_filters::LevelFilter;
 

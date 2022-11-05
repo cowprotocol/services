@@ -71,7 +71,7 @@ pub async fn main(args: arguments::Arguments) {
     let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
+    let web3 = shared::ethrpc::web3(&http_factory, &args.shared.node_url, "base");
 
     let current_block_stream = shared::current_block::current_block_stream(
         web3.clone(),
@@ -175,7 +175,7 @@ pub async fn main(args: arguments::Arguments) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         Box::new(CachingDetector::new(
             Box::new(TraceCallDetector {
-                web3: shared::web3(&http_factory, tracing_node_url, "trace"),
+                web3: shared::ethrpc::web3(&http_factory, tracing_node_url, "trace"),
                 finder,
                 settlement_contract: settlement_contract.address(),
             }),

@@ -8,7 +8,7 @@ use super::{
 use anyhow::{Context, Result};
 use ethcontract::transaction::TransactionBuilder;
 use reqwest::{Client, IntoUrl};
-use shared::{transport::http::HttpTransport, Web3, Web3Transport};
+use shared::ethrpc::{http::HttpTransport, Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct FlashbotsApi {

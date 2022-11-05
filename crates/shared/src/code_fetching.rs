@@ -1,7 +1,7 @@
 //! Module containing traits for abstracting Web3 operations so components can
 //! more easily be tested with mocked versions of these behaviours.
 
-use crate::Web3;
+use crate::ethrpc::Web3;
 use anyhow::Result;
 use cached::{Cached, SizedCache};
 use std::sync::{Arc, Mutex};

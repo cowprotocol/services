@@ -1,4 +1,4 @@
-use crate::Web3;
+use crate::ethrpc::Web3;
 use anyhow::{anyhow, Context, Result};
 use web3::{
     types::{BlockNumber, BlockTrace, CallRequest, TraceType},

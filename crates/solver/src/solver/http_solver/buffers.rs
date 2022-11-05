@@ -2,7 +2,7 @@ use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::MethodError, H160, U256};
 use futures::{future::join_all, join};
 use model::order::BUY_ETH_ADDRESS;
-use shared::Web3;
+use shared::ethrpc::Web3;
 use std::collections::HashMap;
 
 const MAX_BATCH_SIZE: usize = 100;
@@ -96,7 +96,7 @@ mod test {
     use super::*;
     use contracts::GPv2Settlement;
     use hex_literal::hex;
-    use shared::transport::create_test_transport;
+    use shared::ethrpc::create_test_transport;
 
     #[tokio::test]
     #[ignore]

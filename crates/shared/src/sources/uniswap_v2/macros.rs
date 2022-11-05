@@ -21,7 +21,7 @@ macro_rules! impl_uniswap_like_liquidity {
         /// Creates the pair provider and pool fetcher for the specified Web3
         /// instance.
         pub async fn get_liquidity_source(
-            web3: &$crate::Web3,
+            web3: &$crate::ethrpc::Web3,
         ) -> ::anyhow::Result<(
             $crate::sources::uniswap_v2::pair_provider::PairProvider,
             ::std::sync::Arc<dyn $crate::sources::uniswap_v2::pool_fetching::PoolFetching>,

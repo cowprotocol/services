@@ -3,10 +3,10 @@ use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use ethcontract::dyns::DynWeb3;
 use shared::{
     current_block::BlockNumberHash,
+    ethrpc::Web3,
     event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
-    Web3,
 };
 use tokio::sync::Mutex;
 

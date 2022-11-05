@@ -5,13 +5,12 @@ use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
 use crate::{
     current_block::BlockNumberHash,
     ethcontract_error::EthcontractErrorType,
+    ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
     event_handling::EventHandler,
     impl_event_retrieving,
     maintenance::Maintaining,
     recent_block_cache::Block,
     sources::balancer_v2::pools::{common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus},
-    transport::MAX_BATCH_SIZE,
-    Web3, Web3CallBatch, Web3Transport,
 };
 use anyhow::Result;
 use contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory};

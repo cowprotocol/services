@@ -23,10 +23,10 @@ use super::{
 };
 use crate::{
     current_block::CurrentBlockStream,
+    ethrpc::{Web3, Web3Transport},
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig},
     token_info::TokenInfoFetching,
-    Web3, Web3Transport,
 };
 use anyhow::{Context, Result};
 use clap::ValueEnum;
@@ -409,18 +409,17 @@ fn pool_address_from_id(pool_id: H256) -> H160 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
     use crate::{
+        ethrpc,
         sources::balancer_v2::{
             graph_api::{BalancerSubgraphClient, PoolData, PoolType},
             pool_init::EmptyPoolInitializer,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-        transport,
     };
     use hex_literal::hex;
+    use std::time::Duration;
 
     #[test]
     fn can_extract_address_from_pool_id() {
@@ -435,7 +434,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_pool_fetcher_print() {
-        let transport = transport::create_env_test_transport();
+        let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let contracts =
@@ -485,7 +484,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_fetched_pools_match_subgraph() {
-        let transport = transport::create_env_test_transport();
+        let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
