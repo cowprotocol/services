@@ -47,7 +47,10 @@ pub mod transport;
 pub mod univ3_router_api;
 pub mod zeroex_api;
 
-use self::{http_client::HttpClientFactory, transport::http::HttpTransport};
+use self::{
+    http_client::HttpClientFactory,
+    transport::{buffered::Buffered, http::HttpTransport},
+};
 use ethcontract::{
     batch::CallBatch,
     dyns::{DynTransport, DynWeb3},
@@ -64,11 +67,11 @@ pub type Web3CallBatch = CallBatch<Web3Transport>;
 
 /// Create a Web3 instance.
 pub fn web3(http_factory: &HttpClientFactory, url: &Url, name: impl ToString) -> Web3 {
-    let transport = Web3Transport::new(HttpTransport::new(
+    let transport = Web3Transport::new(Buffered::new(HttpTransport::new(
         http_factory.configure(|builder| builder.cookie_store(true)),
         url.clone(),
         name.to_string(),
-    ));
+    )));
     Web3::new(transport)
 }
 

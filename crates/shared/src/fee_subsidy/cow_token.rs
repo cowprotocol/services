@@ -1,9 +1,7 @@
 use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
-use crate::transport::buffered::{Buffered, Configuration};
 use anyhow::{Context, Result};
 use cached::{Cached, TimedSizedCache};
 use contracts::{CowProtocolToken, CowProtocolVirtualToken};
-use ethcontract::Web3;
 use primitive_types::{H160, U256};
 use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
@@ -71,20 +69,6 @@ impl CowSubsidy {
             CACHE_LIFESPAN.as_secs(),
             false,
         );
-
-        // Create buffered transport to do the two calls we make per user in one batch.
-        let transport = token.raw_instance().web3().transport().clone();
-        let buffered = Buffered::with_config(
-            transport,
-            Configuration {
-                max_concurrent_requests: None,
-                max_batch_len: 2,
-                batch_delay: Duration::from_secs(1),
-            },
-        );
-        let web3 = Web3::new(buffered);
-        let token = CowProtocolToken::at(&web3, token.address());
-        let vtoken = CowProtocolVirtualToken::at(&web3, vtoken.address());
 
         Self {
             token,
