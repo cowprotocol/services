@@ -25,17 +25,17 @@ pub type Web3CallBatch = CallBatch<Web3Transport>;
 #[group(skip)]
 pub struct Arguments {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable batching.
-    #[clap(long, default_value = "100")]
+    #[clap(long, env, default_value = "100")]
     pub ethrpc_max_batch_size: usize,
 
     /// Maximum number of concurrent requests to send to the node. Use '0' for
     /// no limit on concurrency.
-    #[clap(long, default_value = "10")]
+    #[clap(long, env, default_value = "10")]
     pub ethrpc_max_concurrent_requests: usize,
 
     /// Buffering "nagle" delay to wait for additional requests before sending out
     /// an incomplete batch.
-    #[clap(long, value_parser = duration_from_seconds, default_value = "0")]
+    #[clap(long, env, value_parser = duration_from_seconds, default_value = "0")]
     pub ethrpc_batch_delay: Duration,
 }
 
