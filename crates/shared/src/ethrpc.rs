@@ -30,7 +30,7 @@ pub struct Arguments {
 
     /// Maximum number of concurrent requests to send to the node. Use '0' for
     /// no limit on concurrency.
-    #[clap(long, default_value = "1")]
+    #[clap(long, default_value = "10")]
     pub ethrpc_max_concurrent_requests: usize,
 
     /// Buffering "nagle" delay to wait for additional requests before sending out
