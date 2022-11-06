@@ -255,6 +255,7 @@ pub struct Arguments {
     /// to be before updating
     #[clap(
         long,
+        env,
         default_value = "30",
         value_parser = duration_from_seconds,
     )]

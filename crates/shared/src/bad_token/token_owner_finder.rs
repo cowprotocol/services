@@ -62,7 +62,7 @@ pub struct Arguments {
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
     /// Override the Blockscout token owner finder-specific timeout configuration.
-    #[clap(long, value_parser = duration_from_seconds, default_value = "45")]
+    #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
     /// The Ethplorer token holder API key.

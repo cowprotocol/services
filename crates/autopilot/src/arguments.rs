@@ -43,7 +43,7 @@ pub struct Arguments {
     pub db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
-    #[clap(long)]
+    #[clap(long, env)]
     pub skip_event_sync: bool,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector

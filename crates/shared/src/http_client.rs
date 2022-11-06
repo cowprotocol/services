@@ -59,6 +59,7 @@ pub struct Arguments {
     /// Default timeout in seconds for http requests.
     #[clap(
         long,
+        env,
         default_value = "10",
         value_parser = duration_from_seconds,
     )]
