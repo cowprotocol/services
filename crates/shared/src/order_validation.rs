@@ -927,6 +927,20 @@ mod tests {
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to
+                        + validity_configuration.max_limit.as_secs() as u32
+                        + 1,
+                    class: OrderClass::Limit,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::Validity(
+                OrderValidityError::ExcessiveValidTo,
+            ))
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
                     buy_token: H160::from_low_u64_be(2),
                     sell_token: H160::from_low_u64_be(2),
@@ -1054,6 +1068,17 @@ mod tests {
             .partial_validate(PreOrderData {
                 valid_to: u32::MAX,
                 signing_scheme: SigningScheme::PreSign,
+                ..order()
+            })
+            .await
+            .is_ok());
+        assert!(validator
+            .partial_validate(PreOrderData {
+                class: OrderClass::Limit,
+                owner: liquidity_order_owner,
+                valid_to: model::time::now_in_epoch_seconds()
+                    + validity_configuration.max_market.as_secs() as u32
+                    + 2,
                 ..order()
             })
             .await
