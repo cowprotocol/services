@@ -26,7 +26,7 @@ pub fn response(result: Result<(), OrderCancellationError>) -> super::ApiReply {
     convert_json_response(result.map(|_| "Cancelled"))
 }
 
-pub fn delete(
+pub fn filter(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     request().and_then(move |cancellations| {

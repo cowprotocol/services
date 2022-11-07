@@ -62,7 +62,7 @@ pub fn handle_all_routes(
     let cancel_order = cancel_order::cancel_order(orderbook.clone())
         .map(|result| (result, "v1/cancel_order"))
         .boxed();
-    let cancel_orders = cancel_orders::delete(orderbook.clone())
+    let cancel_orders = cancel_orders::filter(orderbook.clone())
         .map(|result| (result, "v1/cancel_orders"))
         .boxed();
     let replace_order = replace_order::filter(orderbook.clone())
