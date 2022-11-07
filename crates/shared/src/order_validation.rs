@@ -509,18 +509,15 @@ impl OrderValidating for OrderValidator {
             _ => OrderClass::Ordinary,
         };
 
-        let num_limit_orders = self
-            .limit_order_counter
-            .count(owner)
-            .await
-            .map_err(ValidationError::Other)?;
-        let num_limit_orders = if class == OrderClass::Limit {
-            num_limit_orders + 1
-        } else {
-            num_limit_orders
-        };
-        if num_limit_orders > self.max_limit_orders_per_user {
-            return Err(ValidationError::TooManyLimitOrders);
+        if class == OrderClass::Limit {
+            let num_limit_orders = self
+                .limit_order_counter
+                .count(owner)
+                .await
+                .map_err(ValidationError::Other)?;
+            if num_limit_orders >= self.max_limit_orders_per_user {
+                return Err(ValidationError::TooManyLimitOrders);
+            }
         }
 
         let order = Order::from_order_creation(
