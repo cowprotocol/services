@@ -143,6 +143,7 @@ impl SettlementEncoder {
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
             .clearing_prices
             .get(&order.data.sell_token)
@@ -185,7 +186,6 @@ impl SettlementEncoder {
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
-        verify_executed_amount(&order, executed_amount)?;
         let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
             OrderClass::Ordinary => {
@@ -318,6 +318,7 @@ impl SettlementEncoder {
         scaled_unsubsidized_fee: U256,
         buy_price: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         // For the encoding strategy of liquidity and limit orders, the sell prices are taken from
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
