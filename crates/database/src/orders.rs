@@ -2,7 +2,7 @@ use crate::{Address, AppId, OrderUid, TransactionHash};
 use futures::stream::BoxStream;
 use sqlx::{
     types::{
-        chrono::{DateTime, NaiveDateTime, Utc},
+        chrono::{DateTime, Utc},
         BigDecimal,
     },
     PgConnection,
@@ -73,7 +73,7 @@ pub struct Interaction {
 }
 
 /// One row in the `orders` table.
-#[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Order {
     pub uid: OrderUid,
     pub owner: Address,
@@ -98,36 +98,6 @@ pub struct Order {
     pub class: OrderClass,
     pub surplus_fee: BigDecimal,
     pub surplus_fee_timestamp: DateTime<Utc>,
-}
-
-impl Default for Order {
-    fn default() -> Self {
-        Self {
-            uid: Default::default(),
-            owner: Default::default(),
-            creation_timestamp: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            receiver: Default::default(),
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            valid_to: Default::default(),
-            app_data: Default::default(),
-            fee_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: Default::default(),
-            signature: Default::default(),
-            signing_scheme: Default::default(),
-            settlement_contract: Default::default(),
-            sell_token_balance: Default::default(),
-            buy_token_balance: Default::default(),
-            full_fee_amount: Default::default(),
-            cancellation_timestamp: Default::default(),
-            class: Default::default(),
-            surplus_fee: Default::default(),
-            surplus_fee_timestamp: Default::default(),
-        }
-    }
 }
 
 pub async fn insert_pre_interactions(
@@ -627,6 +597,7 @@ mod tests {
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
+    use chrono::NaiveDateTime;
     use futures::{StreamExt, TryStreamExt};
     use sqlx::Connection;
 
