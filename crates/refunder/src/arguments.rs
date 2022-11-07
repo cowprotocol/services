@@ -1,6 +1,6 @@
 use clap::Parser;
-use shared::{ethrpc, http_client};
 use ethcontract::H160;
+use shared::{ethrpc, http_client};
 use std::time::Duration;
 use url::Url;
 
