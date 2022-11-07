@@ -100,9 +100,6 @@ pub struct Order {
     pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
-// TODO A query to count valid limit orders that belong to a user.
-// Look at the existing query for the quoter as inspiration.
-
 pub async fn insert_pre_interactions(
     ex: &mut PgConnection,
     uid_and_pre_interaction: &[(OrderUid, Interaction)],

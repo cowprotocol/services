@@ -168,7 +168,7 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 StatusCode::BAD_REQUEST,
             ),
             ValidationError::TooManyLimitOrders => with_status(
-                error("TooManyLimitOrders", format!("Too many limit orders")),
+                error("TooManyLimitOrders", "Too many limit orders"),
                 StatusCode::BAD_REQUEST,
             ),
             ValidationError::Other(err) => with_status(
