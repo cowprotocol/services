@@ -78,10 +78,6 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 error("UnsupportedToken", format!("Token address {token:?}")),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::TooManyLimitOrders => with_status(
-                error("TooManyLimitOrders", format!("Too many limit orders")),
-                StatusCode::BAD_REQUEST,
-            ),
             PartialValidationError::Other(err) => with_status(
                 internal_error(err.context("partial_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -169,6 +165,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                     "IncompatibleSigningScheme",
                     "Signing scheme is not compatible with order placement method.",
                 ),
+                StatusCode::BAD_REQUEST,
+            ),
+            ValidationError::TooManyLimitOrders => with_status(
+                error("TooManyLimitOrders", format!("Too many limit orders")),
                 StatusCode::BAD_REQUEST,
             ),
             ValidationError::Other(err) => with_status(

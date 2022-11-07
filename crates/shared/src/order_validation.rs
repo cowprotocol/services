@@ -74,7 +74,6 @@ pub enum PartialValidationError {
     UnsupportedOrderType,
     UnsupportedSignature,
     UnsupportedToken(H160),
-    TooManyLimitOrders,
     Other(anyhow::Error),
 }
 
@@ -101,6 +100,7 @@ pub enum ValidationError {
     WrongOwner(H160),
     ZeroAmount,
     IncompatibleSigningScheme,
+    TooManyLimitOrders,
     Other(anyhow::Error),
 }
 
@@ -344,15 +344,6 @@ impl OrderValidating for OrderValidator {
             }
         }
 
-        let num_limit_orders = self
-            .limit_order_counter
-            .count(order.owner)
-            .await
-            .map_err(PartialValidationError::Other)?;
-        if num_limit_orders > self.max_limit_orders_per_user {
-            return Err(PartialValidationError::TooManyLimitOrders);
-        }
-
         Ok(())
     }
 
@@ -517,6 +508,20 @@ impl OrderValidating for OrderValidator {
             (true, false) if self.enable_limit_orders => OrderClass::Limit,
             _ => OrderClass::Ordinary,
         };
+
+        let num_limit_orders = self
+            .limit_order_counter
+            .count(owner)
+            .await
+            .map_err(ValidationError::Other)?;
+        let num_limit_orders = if class == OrderClass::Limit {
+            num_limit_orders + 1
+        } else {
+            num_limit_orders
+        };
+        if num_limit_orders > self.max_limit_orders_per_user {
+            return Err(ValidationError::TooManyLimitOrders);
+        }
 
         let order = Order::from_order_creation(
             &order,
@@ -1023,6 +1028,8 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .never();
 
+        let max_limit_orders_per_user = 1;
+
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1038,7 +1045,7 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
             Arc::new(limit_order_counter),
-            0,
+            max_limit_orders_per_user,
         );
 
         let creation = OrderCreation {
@@ -1124,6 +1131,67 @@ mod tests {
             .unwrap();
         assert_eq!(quote, None);
         assert_eq!(order.metadata.class, OrderClass::Limit);
+    }
+
+    #[tokio::test]
+    async fn post_validate_too_many_limit_orders() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+
+        const MAX_LIMIT_ORDERS_PER_USER: u64 = 2;
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter
+            .expect_count()
+            .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
+
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            Arc::new(limit_order_counter),
+            MAX_LIMIT_ORDERS_PER_USER,
+        )
+        .with_limit_orders(true);
+
+        let creation = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let res = validator
+            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
+            .await;
+        assert!(matches!(res, Err(ValidationError::TooManyLimitOrders)));
     }
 
     #[tokio::test]
