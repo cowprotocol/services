@@ -126,7 +126,7 @@ pub struct Arguments {
     pub enable_limit_orders: bool,
 
     /// Max number of limit orders per user.
-    #[clap(long, env)]
+    #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
 }
 
