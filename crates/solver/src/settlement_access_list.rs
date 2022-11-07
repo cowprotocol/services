@@ -247,9 +247,7 @@ pub fn create_priority_estimator(
             }
             AccessListEstimatorType::Tenderly => {
                 estimators.push(Box::new(TenderlyAccessList::new(
-                    tenderly_api
-                        .clone()
-                        .ok_or_else(|| anyhow!("Tenderly API missing"))?,
+                    tenderly_api.clone().context("Tenderly API missing")?,
                     network_id.clone(),
                 )));
             }

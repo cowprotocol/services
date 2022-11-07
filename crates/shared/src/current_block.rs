@@ -56,10 +56,8 @@ pub async fn current_block_stream(
     poll_interval: Duration,
 ) -> Result<watch::Receiver<Block>> {
     let first_block = web3.current_block().await?;
-    let first_hash = first_block.hash.ok_or_else(|| anyhow!("missing hash"))?;
-    let first_number = first_block
-        .number
-        .ok_or_else(|| anyhow!("missing number"))?;
+    let first_hash = first_block.hash.context("missing hash")?;
+    let first_number = first_block.number.context("missing number")?;
 
     let current_block_number = Arc::new(AtomicU64::new(first_number.as_u64()));
 
@@ -129,7 +127,7 @@ pub fn block_number(block: &Block) -> Result<u64> {
     block
         .number
         .map(|number| number.as_u64())
-        .ok_or_else(|| anyhow!("no block number"))
+        .context("no block number")
 }
 
 /// Trait for abstracting the retrieval of the block information such as the
@@ -147,7 +145,7 @@ impl BlockRetrieving for Web3 {
             .block(BlockId::Number(BlockNumber::Latest))
             .await
             .context("failed to get current block")?
-            .ok_or_else(|| anyhow!("no current block"))
+            .context("no current block")
     }
 
     /// get blocks defined by the range (inclusive)

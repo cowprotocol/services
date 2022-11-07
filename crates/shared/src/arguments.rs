@@ -438,15 +438,9 @@ impl FromStr for RateLimitingStrategy {
 
     fn from_str(config: &str) -> Result<Self> {
         let mut parts = config.split(',');
-        let back_off_growth_factor = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing back_off_growth_factor"))?;
-        let min_back_off = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing min_back_off"))?;
-        let max_back_off = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing max_back_off"))?;
+        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
+        let min_back_off = parts.next().context("missing min_back_off")?;
+        let max_back_off = parts.next().context("missing max_back_off")?;
         ensure!(
             parts.next().is_none(),
             "extraneous rate limiting parameters"
@@ -470,13 +464,13 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
         let mut split = pair_str.trim().split(':');
         let key = split
             .next()
-            .ok_or_else(|| anyhow!("missing AppId"))?
+            .context("missing AppId")?
             .trim()
             .parse()
             .context("failed to parse address")?;
         let value = split
             .next()
-            .ok_or_else(|| anyhow!("missing value"))?
+            .context("missing value")?
             .trim()
             .parse::<f64>()
             .context("failed to parse fee factor")?;

@@ -11,7 +11,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
@@ -481,7 +481,7 @@ impl Solver for HttpSolver {
 
         let timeout = deadline
             .checked_duration_since(Instant::now())
-            .ok_or_else(|| anyhow!("no time left to send request"))?;
+            .context("no time left to send request")?;
         let settled = self.solver.solve(&model, timeout).await?;
 
         if !settled.has_execution_plan() {

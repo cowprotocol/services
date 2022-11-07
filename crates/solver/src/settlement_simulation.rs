@@ -155,9 +155,9 @@ pub async fn simulate_before_after_access_list(
         .eth()
         .transaction_receipt(transaction_hash)
         .await?
-        .ok_or_else(|| anyhow!("no transaction receipt"))?
+        .context("no transaction receipt")?
         .gas_used
-        .ok_or_else(|| anyhow!("no gas used field"))?;
+        .context("no gas used field")?;
 
     Ok(gas_used_without_access_list as f64 - gas_used_with_access_list.to_f64_lossy())
 }
