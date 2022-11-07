@@ -95,7 +95,7 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub solver_token_owners_urls: Vec<Url>,
 
-    /// Interval between consecutive queries to update the solver token owner pairs.
+    /// Interval in seconds between consecutive queries to update the solver token owner pairs.
     /// Values should be in pair with `solver_token_owners_urls`
     #[clap(long, env, use_value_delimiter = true, value_parser = duration_from_seconds)]
     pub solver_token_owners_cache_update_intervals: Vec<Duration>,
