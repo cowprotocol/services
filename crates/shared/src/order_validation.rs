@@ -21,7 +21,7 @@ use model::{
     },
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
-    DomainSeparator,
+    time, DomainSeparator,
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -541,12 +541,12 @@ pub struct OrderValidityConfiguration {
 impl OrderValidityConfiguration {
     /// Validates an order's timestamp based on additional data.
     fn validate_period(&self, order: &PreOrderData) -> Result<(), OrderValidityError> {
-        let now = model::time::now_in_epoch_seconds();
-        if order.valid_to < timestamp_after_duration(now, self.min) {
+        let now = time::now_in_epoch_seconds();
+        if order.valid_to < time::timestamp_after_duration(now, self.min) {
             return Err(OrderValidityError::InsufficientValidTo);
         }
         if let Some(max) = self.max(order) {
-            if order.valid_to > timestamp_after_duration(now, max) {
+            if order.valid_to > time::timestamp_after_duration(now, max) {
                 return Err(OrderValidityError::ExcessiveValidTo);
             }
         }
@@ -569,12 +569,6 @@ impl OrderValidityConfiguration {
             OrderClass::Liquidity => None,
         }
     }
-}
-
-/// Adds a `std::time::Duration` to a `u32` timestamp. This function uses
-/// saturating semantics and can't panic.
-fn timestamp_after_duration(timestamp: u32, duration: Duration) -> u32 {
-    timestamp.saturating_add(duration.as_secs().try_into().unwrap_or(u32::MAX))
 }
 
 #[derive(Debug)]
@@ -830,7 +824,7 @@ mod tests {
         };
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
-            model::time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
+            time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
         code_fetcher
             .expect_code_size()
             .times(1)
@@ -1055,7 +1049,7 @@ mod tests {
             0,
         );
         let order = || PreOrderData {
-            valid_to: model::time::now_in_epoch_seconds()
+            valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
                 + 2,
             sell_token: H160::from_low_u64_be(1),
@@ -1076,7 +1070,7 @@ mod tests {
             .partial_validate(PreOrderData {
                 class: OrderClass::Limit,
                 owner: liquidity_order_owner,
-                valid_to: model::time::now_in_epoch_seconds()
+                valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32
                     + 2,
                 ..order()
@@ -1140,7 +1134,7 @@ mod tests {
 
         let creation = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1320,7 +1314,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(0),
@@ -1371,7 +1365,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1425,7 +1419,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1477,7 +1471,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1532,7 +1526,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1590,7 +1584,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1643,7 +1637,7 @@ mod tests {
         );
         let order = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
@@ -1701,7 +1695,7 @@ mod tests {
 
         let creation = OrderCreation {
             data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
+                valid_to: time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
