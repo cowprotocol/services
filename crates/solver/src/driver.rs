@@ -23,7 +23,7 @@ use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
     solver_competition::{
-        self, CompetitionAuction, Objective, SolverCompetition, SolverSettlement,
+        self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
@@ -310,13 +310,11 @@ impl Driver {
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
-        let solver_competition = SolverCompetition {
-            auction_id,
+        let solver_competition = SolverCompetitionDB {
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
             liquidity_collected_block: current_block_during_liquidity_fetch,
             competition_simulation_block: block_during_simulation,
-            transaction_hash: None,
             auction: competition_auction,
             solutions: rated_settlements
                 .iter()
@@ -358,6 +356,7 @@ impl Driver {
         };
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
+            transaction_hash: None,
             competition: solver_competition,
             rewards: Vec::new(),
         };
@@ -415,7 +414,7 @@ impl Driver {
             if let Some(hash) = hash {
                 // Rewards were already stored and don't change.
                 solver_competition.rewards.clear();
-                solver_competition.competition.transaction_hash = Some(hash);
+                solver_competition.transaction_hash = Some(hash);
                 self.send_solver_competition(&solver_competition).await;
             }
 

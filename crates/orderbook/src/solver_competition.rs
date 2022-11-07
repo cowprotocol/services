@@ -2,9 +2,8 @@
 
 use anyhow::Result;
 use database::auction::AuctionId;
-use model::{order::OrderUid, solver_competition::SolverCompetition};
+use model::solver_competition::SolverCompetitionAPI;
 use primitive_types::H256;
-use std::collections::HashMap;
 use thiserror::Error;
 
 pub enum Identifier {
@@ -17,11 +16,7 @@ pub enum Identifier {
 #[async_trait::async_trait]
 pub trait SolverCompetitionStoring: Send + Sync {
     /// Saves a new solver competition entry.
-    async fn save_competition(&self, competition: SolverCompetition) -> Result<()>;
-
-    /// Saves the risk adjusted solver rewards.
-    async fn save_rewards(&self, auction: AuctionId, rewards: HashMap<OrderUid, f64>)
-        -> Result<()>;
+    async fn handle_request(&self, request: model::solver_competition::Request) -> Result<()>;
 
     /// Retrieves a solver competition entry by ID.
     ///
@@ -30,7 +25,7 @@ pub trait SolverCompetitionStoring: Send + Sync {
     async fn load_competition(
         &self,
         identifier: Identifier,
-    ) -> Result<SolverCompetition, LoadSolverCompetitionError>;
+    ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError>;
 }
 
 /// Possible errors when loading a solver competition by ID.
