@@ -1,4 +1,4 @@
-use crate::Web3;
+use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::{
@@ -56,10 +56,8 @@ pub async fn current_block_stream(
     poll_interval: Duration,
 ) -> Result<watch::Receiver<Block>> {
     let first_block = web3.current_block().await?;
-    let first_hash = first_block.hash.ok_or_else(|| anyhow!("missing hash"))?;
-    let first_number = first_block
-        .number
-        .ok_or_else(|| anyhow!("missing number"))?;
+    let first_hash = first_block.hash.context("missing hash")?;
+    let first_number = first_block.number.context("missing number")?;
 
     let current_block_number = Arc::new(AtomicU64::new(first_number.as_u64()));
 
@@ -129,7 +127,7 @@ pub fn block_number(block: &Block) -> Result<u64> {
     block
         .number
         .map(|number| number.as_u64())
-        .ok_or_else(|| anyhow!("no block number"))
+        .context("no block number")
 }
 
 /// Trait for abstracting the retrieval of the block information such as the
@@ -147,7 +145,7 @@ impl BlockRetrieving for Web3 {
             .block(BlockId::Number(BlockNumber::Latest))
             .await
             .context("failed to get current block")?
-            .ok_or_else(|| anyhow!("no current block"))
+            .context("no current block")
     }
 
     /// get blocks defined by the range (inclusive)
@@ -214,7 +212,7 @@ fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{create_env_test_transport, create_test_transport};
+    use crate::ethrpc::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
     use num::Saturating;
 

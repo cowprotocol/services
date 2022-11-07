@@ -93,6 +93,7 @@ impl HttpPriceEstimator {
 
         let orders = maplit::btreemap! {
             0 => OrderModel {
+                id: Default::default(),
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 sell_amount,
@@ -384,6 +385,7 @@ mod tests {
     use super::*;
     use crate::{
         current_block::current_block_stream,
+        ethrpc::{http::HttpTransport, Web3},
         gas_price_estimation::FakeGasPriceEstimator,
         http_solver::{
             model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
@@ -400,8 +402,6 @@ mod tests {
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         },
         token_info::{MockTokenInfoFetching, TokenInfoFetcher},
-        transport::http::HttpTransport,
-        Web3,
     };
     use anyhow::bail;
     use clap::ValueEnum;

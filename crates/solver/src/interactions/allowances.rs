@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashmap;
-use shared::{dummy_contract, interaction::Interaction, Web3};
+use shared::{dummy_contract, ethrpc::Web3, interaction::Interaction};
 use std::{
     collections::{HashMap, HashSet},
     slice,
@@ -257,7 +257,7 @@ mod tests {
     };
     use maplit::{hashmap, hashset};
     use serde_json::{json, Value};
-    use shared::{addr, transport::mock};
+    use shared::{addr, ethrpc::mock};
 
     #[test]
     fn approval_when_allowance_is_sufficient() {

@@ -9,7 +9,7 @@ use crate::{
     DomainSeparator, TokenPair,
 };
 use anyhow::{anyhow, Result};
-use chrono::{offset::Utc, DateTime, NaiveDateTime};
+use chrono::{offset::Utc, DateTime};
 use derivative::Derivative;
 use hex_literal::hex;
 use num::BigUint;
@@ -51,10 +51,11 @@ pub struct Order {
     pub interactions: Interactions,
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum OrderStatus {
     PresignaturePending,
+    #[default]
     Open,
     Fulfilled,
     Cancelled,
@@ -407,7 +408,7 @@ pub struct EthflowData {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
@@ -439,30 +440,7 @@ pub struct OrderMetadata {
     pub is_liquidity_order: bool,
     #[serde(default, with = "u256_decimal")]
     pub surplus_fee: U256,
-}
-
-impl Default for OrderMetadata {
-    fn default() -> Self {
-        Self {
-            creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-            owner: Default::default(),
-            uid: Default::default(),
-            available_balance: Default::default(),
-            executed_buy_amount: Default::default(),
-            executed_sell_amount: Default::default(),
-            executed_sell_amount_before_fees: Default::default(),
-            executed_fee_amount: Default::default(),
-            invalidated: Default::default(),
-            status: OrderStatus::Open,
-            class: OrderClass::Ordinary,
-            settlement_contract: H160::default(),
-            full_fee_amount: U256::default(),
-            ethflow_data: None,
-            onchain_user: None,
-            is_liquidity_order: false,
-            surplus_fee: Default::default(),
-        }
-    }
+    pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -722,6 +700,7 @@ mod tests {
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "ordinary",

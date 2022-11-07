@@ -2,8 +2,8 @@
 //! in order to determine whether or not it is valid.
 
 use crate::{
+    ethrpc::extensions::{StateOverride, StateOverrides},
     trade_finding::{convert_interactions, Interaction},
-    transport::extensions::{StateOverride, StateOverrides},
 };
 use anyhow::Result;
 use contracts::support::Trader;

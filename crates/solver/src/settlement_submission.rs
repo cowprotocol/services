@@ -14,7 +14,7 @@ use ethcontract::{
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::Web3;
+use shared::ethrpc::Web3;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

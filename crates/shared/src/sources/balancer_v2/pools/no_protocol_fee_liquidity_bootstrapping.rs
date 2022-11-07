@@ -3,7 +3,7 @@
 
 pub use super::liquidity_bootstrapping::{PoolInfo, PoolState};
 use super::{common, FactoryIndexing};
-use crate::Web3CallBatch;
+use crate::ethrpc::Web3CallBatch;
 use anyhow::Result;
 use contracts::{
     BalancerV2LiquidityBootstrappingPoolFactory,

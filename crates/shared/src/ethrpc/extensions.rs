@@ -77,7 +77,7 @@ pub struct StateOverride {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{transport::create_env_test_transport, Web3};
+    use crate::ethrpc::{create_env_test_transport, Web3};
     use maplit::hashmap;
     use web3::types::BlockNumber;
 

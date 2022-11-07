@@ -43,7 +43,7 @@ pub struct Arguments {
     pub db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
-    #[clap(long)]
+    #[clap(long, env)]
     pub skip_event_sync: bool,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
@@ -92,6 +92,7 @@ pub struct Arguments {
     pub banned_users: Vec<H160>,
 
     /// If the auction hasn't been updated in this amount of time the pod fails the liveness check.
+    /// Expects a value in seconds.
     #[clap(
         long,
         env,
@@ -99,6 +100,16 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_auction_age: Duration,
+
+    /// If a limit order surplus fee is older than this, it will get refreshed. Expects a value in
+    /// seconds.
+    #[clap(
+        long,
+        env,
+        default_value = "180",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_surplus_fee_age: Duration,
 
     #[clap(long, env)]
     pub cip_14_beta: Option<f64>,

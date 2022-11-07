@@ -1,4 +1,4 @@
-use crate::{Web3, Web3Transport};
+use crate::ethrpc::{Web3, Web3Transport};
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, ERC20};
 use ethcontract::{batch::CallBatch, Account};
@@ -285,7 +285,7 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::create_env_test_transport;
+    use crate::ethrpc::create_env_test_transport;
     use contracts::{vault, BalancerV2Authorizer, ERC20Mintable};
     use hex_literal::hex;
 

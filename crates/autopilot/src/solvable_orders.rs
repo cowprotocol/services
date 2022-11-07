@@ -1,20 +1,14 @@
 use crate::{database::Postgres, risk_adjusted_rewards};
 use anyhow::{Context as _, Result};
-use futures::{stream, StreamExt};
-use model::{
-    auction::Auction,
-    order::{Order, OrderClass, OrderKind},
-    quote::{default_verification_gas_limit, OrderQuoteSide, QuoteSigningScheme, SellAmount},
-    signature::Signature,
-    time::now_in_epoch_seconds,
-};
+use chrono::Utc;
+use futures::StreamExt;
+use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
 use primitive_types::{H160, H256, U256};
 use prometheus::{IntCounter, IntGauge};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
     current_block::CurrentBlockStream,
-    order_quoting::{OrderQuoting, QuoteParameters},
     price_estimation::native::NativePriceEstimating,
     signature_validator::{SignatureCheck, SignatureValidating},
 };
@@ -68,7 +62,7 @@ pub struct SolvableOrdersCache {
     // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
     reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ethflow_contract_address: H160,
-    quoter: Arc<dyn OrderQuoting>,
+    surplus_fee_age: Duration,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -100,7 +94,7 @@ impl SolvableOrdersCache {
         update_interval: Duration,
         reward_calculator: Option<risk_adjusted_rewards::Calculator>,
         ethflow_contract_address: H160,
-        quoter: Arc<dyn OrderQuoting>,
+        surplus_fee_age: Duration,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -122,7 +116,7 @@ impl SolvableOrdersCache {
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
             reward_calculator,
             ethflow_contract_address,
-            quoter,
+            surplus_fee_age,
         });
         tokio::task::spawn(update_task(
             Arc::downgrade(&self_),
@@ -138,7 +132,13 @@ impl SolvableOrdersCache {
     /// then concurrent calls might overwrite eachother's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
+        let db_solvable_orders = self
+            .database
+            .solvable_orders(
+                min_valid_to,
+                Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
+            )
+            .await?;
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let orders =
@@ -178,8 +178,6 @@ impl SolvableOrdersCache {
             let query = Query::from_order(order);
             order.metadata.available_balance = new_balances.get(&query).copied();
         }
-
-        let orders = self.set_limit_order_fees(orders).await;
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -237,63 +235,6 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
-    }
-
-    /// Quotes all limit orders and sets the fee_amount for each one to the fee returned by the
-    /// quoting process. If quoting fails, the corresponding order is filtered out.
-    async fn set_limit_order_fees(&self, orders: Vec<Order>) -> Vec<Order> {
-        stream::iter(orders.into_iter())
-            .filter_map(|mut order| async {
-                if order.metadata.class != OrderClass::Limit {
-                    return Some(order);
-                }
-
-                match self
-                    .quoter
-                    .calculate_quote(QuoteParameters {
-                        sell_token: order.data.sell_token,
-                        buy_token: order.data.buy_token,
-                        side: match order.data.kind {
-                            OrderKind::Buy => OrderQuoteSide::Buy {
-                                buy_amount_after_fee: order.data.buy_amount,
-                            },
-                            OrderKind::Sell => OrderQuoteSide::Sell {
-                                sell_amount: SellAmount::AfterFee {
-                                    value: order.data.sell_amount,
-                                },
-                            },
-                        },
-                        from: order.metadata.owner,
-                        app_data: order.data.app_data,
-                        signing_scheme: match order.signature {
-                            Signature::Eip712(_) => QuoteSigningScheme::Eip712,
-                            Signature::EthSign(_) => QuoteSigningScheme::EthSign,
-                            Signature::Eip1271(_) => QuoteSigningScheme::Eip1271 {
-                                onchain_order: false,
-                                verification_gas_limit: default_verification_gas_limit(),
-                            },
-                            Signature::PreSign => QuoteSigningScheme::PreSign {
-                                onchain_order: false,
-                            },
-                        },
-                    })
-                    .await
-                {
-                    Ok(quote) => {
-                        order.metadata.surplus_fee = quote.fee_amount;
-                        Some(order)
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            order_uid =% order.metadata.uid, ?err,
-                            "filtered limit order due to quoting error"
-                        );
-                        None
-                    }
-                }
-            })
-            .collect()
-            .await
     }
 }
 

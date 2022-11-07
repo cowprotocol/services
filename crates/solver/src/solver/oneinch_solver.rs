@@ -21,10 +21,10 @@ use model::order::OrderKind;
 use primitive_types::H160;
 use reqwest::{Client, Url};
 use shared::{
+    ethrpc::Web3,
     oneinch_api::{
         OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, SwapQuery,
     },
-    Web3,
 };
 use std::fmt::{self, Display, Formatter};
 
@@ -205,8 +205,8 @@ mod tests {
     use shared::{
         conversions::U256Ext as _,
         dummy_contract,
+        ethrpc::create_env_test_transport,
         oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
-        transport::create_env_test_transport,
     };
 
     fn dummy_solver(

@@ -46,7 +46,7 @@ impl OrderConverter {
         let (sell_amount, fee_amount) = compute_synthetic_order_amounts_if_limit_order(&order)?;
 
         Ok(LimitOrder {
-            id: order.metadata.uid.to_string(),
+            id: order.metadata.uid.into(),
             sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.remaining(sell_amount)?,

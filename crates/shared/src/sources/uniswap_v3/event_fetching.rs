@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::{
     current_block::RangeInclusive,
+    ethrpc::Web3,
     event_handling::{EventRetrieving, EventStoring},
-    Web3,
 };
 use hex_literal::hex;
 

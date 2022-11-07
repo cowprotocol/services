@@ -14,6 +14,7 @@ use futures::{
 use serde_json::Value;
 use std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
+use tracing::Instrument as _;
 
 /// Buffered transport configuration.
 pub struct Configuration {
@@ -43,7 +44,7 @@ impl Default for Configuration {
 /// Buffered `Transport` implementation that implements automatic batching of
 /// JSONRPC requests.
 #[derive(Clone, Debug)]
-pub struct Buffered<Inner> {
+pub struct BufferedTransport<Inner> {
     inner: Arc<Inner>,
     calls: mpsc::UnboundedSender<CallContext>,
 }
@@ -52,7 +53,7 @@ type RpcResult = Result<Value, Web3Error>;
 
 type CallContext = (RequestId, Call, oneshot::Sender<RpcResult>);
 
-impl<Inner> Buffered<Inner>
+impl<Inner> BufferedTransport<Inner>
 where
     Inner: BatchTransport + Send + Sync + 'static,
     Inner::Out: Send,
@@ -118,7 +119,7 @@ where
     }
 }
 
-impl<Inner> Transport for Buffered<Inner>
+impl<Inner> Transport for BufferedTransport<Inner>
 where
     Inner: BatchTransport + Send + Sync + 'static,
     Inner::Out: Send,
@@ -134,14 +135,24 @@ where
         let this = self.clone();
 
         async move {
+            let method = match &request {
+                Call::MethodCall(call) => call.method.as_str(),
+                _ => "none",
+            };
+            tracing::trace!(%id, %method, "queueing call");
+
             let response = this.queue_call(id, request);
-            response.await.expect("worker task unexpectedly dropped")
+            let result = response.await.expect("worker task unexpectedly dropped");
+
+            tracing::trace!(%id, ok = %result.is_ok(), "received response");
+            result
         }
+        .in_current_span()
         .boxed()
     }
 }
 
-impl<Inner> BatchTransport for Buffered<Inner>
+impl<Inner> BatchTransport for BufferedTransport<Inner>
 where
     Inner: BatchTransport + Send + Sync + 'static,
     Inner::Out: Send,
@@ -211,7 +222,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::mock::MockTransport;
+    use crate::ethrpc::mock::MockTransport;
     use ethcontract::{Web3, U256};
     use mockall::predicate;
     use serde_json::json;
@@ -228,7 +239,7 @@ mod tests {
             ]))
             .returning(|_| Ok(vec![Ok(json!("hello")), Ok(json!("world"))]));
 
-        let transport = Buffered::new(transport);
+        let transport = BufferedTransport::new(transport);
 
         let (foo, bar) = futures::join!(
             transport.execute("foo", vec![json!(true), json!("stuff")]),
@@ -250,7 +261,7 @@ mod tests {
             )
             .returning(|_, _| Ok(json!(42)));
 
-        let transport = Buffered::new(transport);
+        let transport = BufferedTransport::new(transport);
 
         let response = transport
             .execute("single", vec![json!("request")])
@@ -278,7 +289,7 @@ mod tests {
                 ])
             });
 
-        let web3 = Web3::new(Buffered::new(transport));
+        let web3 = Web3::new(BufferedTransport::new(transport));
 
         let chain_ids = future::try_join_all(vec![
             web3.clone().eth().chain_id(),
@@ -300,7 +311,7 @@ mod tests {
             .with(predicate::eq("used".to_owned()), predicate::eq(vec![]))
             .returning(|_, _| Ok(json!(1337)));
 
-        let transport = Buffered::new(transport);
+        let transport = BufferedTransport::new(transport);
 
         let unused = transport.execute("unused", vec![]);
         let unpolled = transport.execute("unpolled", vec![]);

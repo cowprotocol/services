@@ -3,11 +3,11 @@
 use super::{common, FactoryIndexing, PoolIndexing};
 use crate::{
     conversions::U256Ext as _,
+    ethrpc::Web3CallBatch,
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
-    Web3CallBatch,
 };
 use anyhow::{ensure, Result};
 use contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory, BalancerV2StablePoolFactoryV2};

@@ -1,6 +1,8 @@
 pub mod arguments;
+pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
+mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
@@ -10,6 +12,7 @@ use crate::{
         Postgres,
     },
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
+    limit_order_quoter::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
@@ -48,7 +51,8 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     zeroex_api::DefaultZeroExApi,
 };
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
+use tracing::Instrument;
 
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -66,10 +70,15 @@ impl LivenessChecking for Liveness {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn main(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    let db_metrics = crate::database::database_metrics(db.clone());
+    let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
+    let web3 = shared::ethrpc::web3(
+        &args.shared.ethrpc,
+        &http_factory,
+        &args.shared.node_url,
+        "base",
+    );
 
     let current_block_stream = shared::current_block::current_block_stream(
         web3.clone(),
@@ -173,7 +182,12 @@ pub async fn main(args: arguments::Arguments) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         Box::new(CachingDetector::new(
             Box::new(TraceCallDetector {
-                web3: shared::web3(&http_factory, tracing_node_url, "trace"),
+                web3: shared::ethrpc::web3(
+                    &args.shared.ethrpc,
+                    &http_factory,
+                    tracing_node_url,
+                    "trace",
+                ),
                 finder,
                 settlement_contract: settlement_contract.address(),
             }),
@@ -292,6 +306,7 @@ pub async fn main(args: arguments::Arguments) {
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
+            settlement: settlement_contract.address(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
@@ -403,16 +418,17 @@ pub async fn main(args: arguments::Arguments) {
             args.order_quoting.cow_fee_factors.unwrap_or_default(),
         )
     });
+    let liquidity_order_owners: HashSet<_> = args
+        .order_quoting
+        .liquidity_order_owners
+        .iter()
+        .copied()
+        .collect();
     let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: args
-            .order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
+        liquidity_order_owners: liquidity_order_owners.clone(),
         partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
@@ -423,13 +439,12 @@ pub async fn main(args: arguments::Arguments) {
         ])),
         None => fee_subsidy_config,
     };
-    let database = Arc::new(db.clone());
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
         fee_subsidy,
-        database,
+        Arc::new(db.clone()),
         chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
             .unwrap(),
         chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
@@ -448,6 +463,7 @@ pub async fn main(args: arguments::Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, settlement_contract.address()),
             settlement_contract.address(),
+            liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(EventUpdater::new(
             CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
@@ -484,7 +500,7 @@ pub async fn main(args: arguments::Arguments) {
         Duration::from_secs(2),
         risk_adjusted_rewards,
         args.ethflow_contract,
-        quoter,
+        args.max_surplus_fee_age * 2,
     );
     solvable_orders_cache
         .update(block)
@@ -496,9 +512,29 @@ pub async fn main(args: arguments::Arguments) {
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
+    let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
+        web3,
+        db: db.clone(),
+        current_block: current_block_stream,
+    };
+    let auction_transaction = tokio::task::spawn(
+        auction_transaction_updater
+            .run_forever()
+            .instrument(tracing::info_span!("AuctionTransactionUpdater")),
+    );
+
+    LimitOrderQuoter {
+        limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+        loop_delay: args.max_surplus_fee_age / 2,
+        quoter,
+        database: db,
+    }
+    .spawn();
+
     tokio::select! {
-        result = serve_metrics => tracing::error!(?result, "serve_metrics exited"),
-        _ = db_metrics => unreachable!(),
-        _ = maintenance_task => unreachable!(),
+        result = serve_metrics => panic!("serve_metrics exited {:?}", result),
+        result = db_metrics => panic!("db_metrics exited {:?}", result),
+        result = maintenance_task => panic!("maintenance exited {:?}", result),
+        result = auction_transaction => panic!("auction_transaction exited {:?}", result),
     };
 }

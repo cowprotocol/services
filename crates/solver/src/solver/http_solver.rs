@@ -11,7 +11,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
@@ -283,6 +283,7 @@ fn order_models(
             Some((
                 index,
                 OrderModel {
+                    id: order.id.order_uid(),
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
                     sell_amount: order.sell_amount,
@@ -480,7 +481,7 @@ impl Solver for HttpSolver {
 
         let timeout = deadline
             .checked_duration_since(Instant::now())
-            .ok_or_else(|| anyhow!("no time left to send request"))?;
+            .context("no time left to send request")?;
         let settled = self.solver.solve(&model, timeout).await?;
 
         if !settled.has_execution_plan() {
@@ -617,7 +618,7 @@ mod tests {
             buy_amount: base(1).into(),
             sell_amount: base(2).into(),
             kind: OrderKind::Sell,
-            id: "0".to_string(),
+            id: 0.into(),
             ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {

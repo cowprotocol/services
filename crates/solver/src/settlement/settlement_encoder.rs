@@ -32,7 +32,7 @@ type MaybeInternalizableInteraction = (Arc<dyn Interaction>, bool);
 /// Additionally, the fact that the settlement is kept in an intermediate
 /// representation allows the encoder to potentially perform gas optimizations
 /// (e.g. collapsing two interactions into one equivalent one).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SettlementEncoder {
     // Make sure to update the `merge` method when adding new fields.
 
@@ -50,12 +50,6 @@ pub struct SettlementEncoder {
     execution_plan: Vec<MaybeInternalizableInteraction>,
     pre_interactions: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
-}
-
-impl Default for SettlementEncoder {
-    fn default() -> Self {
-        Self::new(Default::default())
-    }
 }
 
 /// Whether or not internalizable interactions should be encoded as calldata

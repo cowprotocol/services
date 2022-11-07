@@ -29,7 +29,7 @@ use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Acco
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::{Web3, Web3Transport};
+use shared::ethrpc::{Web3, Web3Transport};
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -636,19 +636,14 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
-    use shared::{
-        gas_price_estimation::FakeGasPriceEstimator, transport::create_env_test_transport,
-    };
+    use shared::{ethrpc::create_env_test_transport, gas_price_estimation::FakeGasPriceEstimator};
     use std::sync::Arc;
     use tracing::level_filters::LevelFilter;
 
     #[tokio::test]
     #[ignore]
     async fn flashbots_mainnet_settlement() {
-        shared::tracing::initialize(
-            "solver=debug,shared=debug,shared::transport::http=info",
-            LevelFilter::OFF,
-        );
+        shared::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
 
         let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
@@ -690,7 +685,6 @@ mod tests {
             crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
                 std::iter::once((account.clone(), settlement.clone(), None)),
                 &contract,
-                &web3,
                 Default::default(),
             )
             .await

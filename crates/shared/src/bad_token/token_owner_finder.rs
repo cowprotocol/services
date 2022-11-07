@@ -14,11 +14,10 @@ use crate::{
     },
     baseline_solver::BaseTokens,
     ethcontract_error::EthcontractErrorType,
+    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
     http_client::HttpClientFactory,
     rate_limiter::RateLimitingStrategy,
     sources::uniswap_v2::pair_provider::PairProvider,
-    transport::MAX_BATCH_SIZE,
-    Web3, Web3CallBatch,
 };
 use anyhow::{Context, Result};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
@@ -63,7 +62,7 @@ pub struct Arguments {
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
     /// Override the Blockscout token owner finder-specific timeout configuration.
-    #[clap(long, value_parser = duration_from_seconds, default_value = "45")]
+    #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
     /// The Ethplorer token holder API key.

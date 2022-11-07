@@ -5,6 +5,7 @@ use super::{
 use crate::{
     rate_limiter::RateLimiter, trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi,
 };
+use ethcontract::H160;
 use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator(TradeEstimator);
@@ -14,8 +15,10 @@ impl ZeroExPriceEstimator {
         api: Arc<dyn ZeroExApi>,
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
+        settlement: H160,
     ) -> Self {
         Self(TradeEstimator::new(
+            settlement,
             Arc::new(ZeroExTradeFinder::new(api, excluded_sources)),
             rate_limiter,
         ))
@@ -54,6 +57,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
+            testlib::protocol::SETTLEMENT,
         )
     }
 

@@ -10,6 +10,7 @@ use shared::{
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    ethrpc::Web3,
     fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
     order_quoting::{OrderQuoter, QuoteHandler},
@@ -24,7 +25,6 @@ use shared::{
     sources::uniswap_v2::{
         self, pair_provider::PairProvider, pool_cache::PoolCache, pool_fetching::PoolFetcher,
     },
-    Web3,
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
 use std::{
@@ -256,7 +256,7 @@ impl OrderbookServices {
             Duration::from_secs(1),
             None,
             H160::zero(),
-            quoter.clone(),
+            Default::default(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),

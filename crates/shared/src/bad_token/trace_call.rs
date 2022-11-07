@@ -1,6 +1,6 @@
 use super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality};
-use crate::{trace_many, Web3};
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use crate::{ethrpc::Web3, trace_many};
+use anyhow::{bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey};
 use primitive_types::{H160, U256};
@@ -223,13 +223,10 @@ fn decode_u256(trace: &BlockTrace) -> Result<U256> {
 // The outer result signals communication failure with the node.
 // The inner result is Ok(gas_price) or Err if the transaction failed.
 fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, String>> {
-    let transaction_traces = trace
-        .trace
-        .as_ref()
-        .ok_or_else(|| anyhow!("trace not set"))?;
+    let transaction_traces = trace.trace.as_ref().context("trace not set")?;
     let first = transaction_traces
         .first()
-        .ok_or_else(|| anyhow!("expected at least one trace"))?;
+        .context("expected at least one trace")?;
     if let Some(error) = &first.error {
         return Ok(Err(format!("transaction failed: {error}")));
     }
@@ -251,8 +248,8 @@ mod tests {
             },
             TokenOwnerFinder,
         },
+        ethrpc::create_env_test_transport,
         sources::{sushiswap, uniswap_v2},
-        transport::create_env_test_transport,
     };
     use contracts::{BalancerV2Vault, IUniswapV3Factory};
     use hex_literal::hex;

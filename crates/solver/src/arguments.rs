@@ -137,6 +137,7 @@ pub struct Arguments {
     /// Time interval after which market makable list needs to be updated
     #[clap(
         long,
+        env,
         default_value = "3600",
         value_parser = shared::arguments::duration_from_seconds,
     )]
@@ -199,6 +200,7 @@ pub struct Arguments {
     /// network before going to back to solving.
     #[clap(
         long,
+        env,
         default_value = "120",
         value_parser = shared::arguments::duration_from_seconds,
     )]
@@ -216,6 +218,7 @@ pub struct Arguments {
     /// Amount of time to wait before retrying to submit the tx to the ethereum network
     #[clap(
         long,
+        env,
         default_value = "2",
         value_parser = shared::arguments::duration_from_seconds,
     )]

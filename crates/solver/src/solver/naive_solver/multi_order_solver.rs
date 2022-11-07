@@ -365,7 +365,7 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
-                id: "0".to_string(),
+                id: 0.into(),
                 ..Default::default()
             },
             LimitOrder {
@@ -374,7 +374,7 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                id: "1".to_string(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -422,7 +422,7 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
-                id: "0".to_string(),
+                id: 0.into(),
                 ..Default::default()
             },
             LimitOrder {
@@ -431,7 +431,7 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                id: "1".to_string(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -475,7 +475,7 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
-                id: "0".to_string(),
+                id: 0.into(),
                 ..Default::default()
             },
             LimitOrder {
@@ -484,7 +484,7 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Buy,
-                id: "1".to_string(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -532,7 +532,7 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
-                id: "0".to_string(),
+                id: 0.into(),
                 ..Default::default()
             },
             LimitOrder {
@@ -541,7 +541,7 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                id: "1".to_string(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -593,7 +593,7 @@ mod tests {
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
-                id: "0".to_string(),
+                id: 0.into(),
                 ..Default::default()
             },
             LimitOrder {
@@ -602,7 +602,7 @@ mod tests {
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
-                id: "1".to_string(),
+                id: 1.into(),
                 ..Default::default()
             },
         ];
@@ -1016,7 +1016,7 @@ mod tests {
             sell_amount: to_wei(40),
             buy_amount: to_wei(30),
             kind: OrderKind::Sell,
-            id: "0".to_string(),
+            id: 0.into(),
             ..Default::default()
         }];
 

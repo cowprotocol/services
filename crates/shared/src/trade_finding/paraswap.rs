@@ -173,10 +173,9 @@ fn decimals(tokens: &HashMap<H160, TokenInfo>, token: &H160) -> Result<u8, Trade
 mod tests {
     use super::*;
     use crate::{
+        ethrpc::{create_env_test_transport, Web3},
         paraswap_api::{DefaultParaswapApi, MockParaswapApi},
         token_info::{MockTokenInfoFetching, TokenInfoFetcher},
-        transport::create_env_test_transport,
-        Web3,
     };
     use maplit::hashmap;
     use reqwest::Client;

@@ -1,5 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
+    ethrpc,
     fee_subsidy::cow_token::SubsidyTiers,
     gas_price_estimation::GasEstimatorType,
     price_estimation::PriceEstimatorType,
@@ -12,7 +13,7 @@ use ethcontract::{H160, H256, U256};
 use model::app_id::AppId;
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter},
+    fmt::{self, Display, Formatter},
     num::{NonZeroU64, ParseFloatError},
     str::FromStr,
     time::Duration,
@@ -111,12 +112,15 @@ pub struct OrderQuotingArguments {
 #[group(skip)]
 pub struct Arguments {
     #[clap(flatten)]
+    pub ethrpc: ethrpc::Arguments,
+
+    #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
     #[clap(
         long,
         env,
-        default_value = "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,shared::transport::http=info"
+        default_value = "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug"
     )]
     pub log_filter: String,
 
@@ -251,6 +255,7 @@ pub struct Arguments {
     /// to be before updating
     #[clap(
         long,
+        env,
         default_value = "30",
         value_parser = duration_from_seconds,
     )]
@@ -333,7 +338,8 @@ impl Display for OrderQuotingArguments {
 // We have a custom Display implementation so that we can log the arguments on start up without
 // leaking any potentially secret values.
 impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
@@ -415,7 +421,7 @@ pub fn parse_percentage_factor(s: &str) -> Result<f64> {
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f32(s.parse()?))
+    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
@@ -432,15 +438,9 @@ impl FromStr for RateLimitingStrategy {
 
     fn from_str(config: &str) -> Result<Self> {
         let mut parts = config.split(',');
-        let back_off_growth_factor = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing back_off_growth_factor"))?;
-        let min_back_off = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing min_back_off"))?;
-        let max_back_off = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing max_back_off"))?;
+        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
+        let min_back_off = parts.next().context("missing min_back_off")?;
+        let max_back_off = parts.next().context("missing max_back_off")?;
         ensure!(
             parts.next().is_none(),
             "extraneous rate limiting parameters"
@@ -464,13 +464,13 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
         let mut split = pair_str.trim().split(':');
         let key = split
             .next()
-            .ok_or_else(|| anyhow!("missing AppId"))?
+            .context("missing AppId")?
             .trim()
             .parse()
             .context("failed to parse address")?;
         let value = split
             .next()
-            .ok_or_else(|| anyhow!("missing value"))?
+            .context("missing value")?
             .trim()
             .parse::<f64>()
             .context("failed to parse fee factor")?;

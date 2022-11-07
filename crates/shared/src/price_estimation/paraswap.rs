@@ -6,6 +6,7 @@ use crate::{
     paraswap_api::ParaswapApi, rate_limiter::RateLimiter, token_info::TokenInfoFetching,
     trade_finding::paraswap::ParaswapTradeFinder,
 };
+use ethcontract::H160;
 use std::sync::Arc;
 
 pub struct ParaswapPriceEstimator(TradeEstimator);
@@ -16,8 +17,10 @@ impl ParaswapPriceEstimator {
         token_info: Arc<dyn TokenInfoFetching>,
         disabled_paraswap_dexs: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
+        settlement: H160,
     ) -> Self {
         Self(TradeEstimator::new(
+            settlement,
             Arc::new(ParaswapTradeFinder::new(
                 api,
                 token_info,
@@ -45,8 +48,10 @@ impl PriceEstimating for ParaswapPriceEstimator {
 mod tests {
     use super::*;
     use crate::{
-        paraswap_api::DefaultParaswapApi, price_estimation::single_estimate,
-        token_info::TokenInfoFetcher, transport::create_env_test_transport, Web3,
+        ethrpc::{create_env_test_transport, Web3},
+        paraswap_api::DefaultParaswapApi,
+        price_estimation::single_estimate,
+        token_info::TokenInfoFetcher,
     };
     use model::order::OrderKind;
     use reqwest::Client;
@@ -69,6 +74,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
+            testlib::protocol::SETTLEMENT,
         );
 
         let weth = testlib::tokens::WETH;

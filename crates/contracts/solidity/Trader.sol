@@ -47,6 +47,9 @@ contract Trader {
         if (mint != 0) {
             IPhonyERC20(tokens[0]).mintPhonyTokens(address(this), mint);
         }
+        // Make sure to reset the approval before setting a new one - some
+        // popular tokens (like Tether USD) require this.
+        IERC20(tokens[0]).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
         IERC20(tokens[0]).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
 
         traderBalances = new int256[](tokens.length);

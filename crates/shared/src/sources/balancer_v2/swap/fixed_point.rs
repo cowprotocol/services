@@ -4,7 +4,7 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/FixedPoint.sol
 
 use super::error::Error;
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use ethcontract::U256;
 use lazy_static::lazy_static;
 use num::{BigInt, BigRational};
@@ -17,7 +17,7 @@ use std::{
 
 mod logexpmath;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 /// Fixed point numbers that represent exactly any rational number that can be
 /// represented with up to 18 decimals as long as it can be stored in 256 bits.
 /// It corresponds to Solidity's `ufixed256x18`.
@@ -75,9 +75,9 @@ impl FromStr for Bfp {
             .checked_add(
                 U256::from_dec_str(units)?
                     .checked_mul(*ONE_18)
-                    .ok_or_else(|| anyhow!("Too large number"))?,
+                    .context("Too large number")?,
             )
-            .ok_or_else(|| anyhow!("Too large number"))?))
+            .context("Too large number")?))
     }
 }
 

@@ -3,8 +3,8 @@ use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, H25
 use serde::Deserialize;
 use shared::{
     addr,
+    ethrpc::Web3,
     tenderly_api::{SimulationRequest, TenderlyApi},
-    Web3,
 };
 use std::sync::Arc;
 use web3::{
@@ -247,9 +247,7 @@ pub fn create_priority_estimator(
             }
             AccessListEstimatorType::Tenderly => {
                 estimators.push(Box::new(TenderlyAccessList::new(
-                    tenderly_api
-                        .clone()
-                        .ok_or_else(|| anyhow!("Tenderly API missing"))?,
+                    tenderly_api.clone().context("Tenderly API missing")?,
                     network_id.clone(),
                 )));
             }
@@ -264,7 +262,10 @@ mod tests {
     use ethcontract::{Account, H160};
     use hex_literal::hex;
     use serde_json::json;
-    use shared::{tenderly_api::TenderlyHttpApi, transport::create_env_test_transport, Web3};
+    use shared::{
+        ethrpc::{create_env_test_transport, Web3},
+        tenderly_api::TenderlyHttpApi,
+    };
 
     fn example_tx() -> TransactionBuilder<DynTransport> {
         let http = create_env_test_transport();

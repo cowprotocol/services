@@ -14,8 +14,8 @@ use model::{
 };
 use secp256k1::SecretKey;
 use shared::{
-    http_client::HttpClientFactory, maintenance::Maintaining,
-    sources::uniswap_v2::pool_fetching::PoolFetcher, Web3,
+    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
+    sources::uniswap_v2::pool_fetching::PoolFetcher,
 };
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,

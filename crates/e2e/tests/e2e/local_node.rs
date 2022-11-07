@@ -1,6 +1,6 @@
 use ethcontract::{futures::FutureExt, U256};
 use lazy_static::lazy_static;
-use shared::{transport::create_test_transport, Web3};
+use shared::ethrpc::{create_test_transport, Web3};
 use std::{
     fmt::Debug,
     future::Future,

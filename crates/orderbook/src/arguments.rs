@@ -118,7 +118,7 @@ pub struct Arguments {
 
     /// If solvable orders haven't been successfully updated in this many blocks attempting
     /// to get them errors and our liveness check fails.
-    #[clap(long, default_value = "24")]
+    #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
     /// Enable limit orders. Once the full limit order flow is implemented, this can be removed.

@@ -15,8 +15,8 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::H256;
 use model::TokenPair;
 use shared::{
-    baseline_solver::BaseTokens, recent_block_cache::Block,
-    sources::balancer_v2::pool_fetching::BalancerPoolFetching, Web3,
+    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
+    sources::balancer_v2::pool_fetching::BalancerPoolFetching,
 };
 use std::sync::Arc;
 

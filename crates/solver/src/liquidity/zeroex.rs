@@ -1,4 +1,4 @@
-use super::SettlementHandling;
+use super::{LimitOrderUid, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances},
@@ -13,8 +13,8 @@ use model::{order::OrderKind, TokenPair};
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::BaseTokens,
+    ethrpc::Web3,
     zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
-    Web3,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -111,7 +111,7 @@ impl ZeroExLiquidity {
         }
 
         let limit_order = LimitOrder {
-            id: hex::encode(&record.metadata.order_hash),
+            id: LimitOrderUid::ZeroEx(hex::encode(&record.metadata.order_hash)),
             sell_token: record.order.maker_token,
             buy_token: record.order.taker_token,
             sell_amount,

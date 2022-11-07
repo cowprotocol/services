@@ -1,7 +1,7 @@
 use ethcontract::jsonrpc as jsonrpc_core;
 use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
-use reqwest::{Client, Url};
+use reqwest::{header, Client, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -68,43 +68,34 @@ async fn execute_rpc<T: DeserializeOwned>(
     id: RequestId,
     request: &Request,
 ) -> Result<T, Web3Error> {
-    tracing::debug!(
-        "[{}][id:{}] sending request: {:?}",
-        inner.name,
-        id,
-        serde_json::to_string(&request)?
-    );
+    let body = serde_json::to_string(&request)?;
+    tracing::trace!(name = %inner.name, %id, %body, "executing request");
     let response = client
         .post(inner.url.clone())
-        .json(request)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|err| {
-            let message = format!("failed to send request: {}", err);
-            tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
-            Web3Error::Transport(TransportError::Message(message))
+            tracing::warn!(name = %inner.name, %id, ?err, "failed to send request");
+            Web3Error::Transport(TransportError::Message(err.to_string()))
         })?;
     let status = response.status();
     let text = response.text().await.map_err(|err| {
-        let message = format!("failed to get response body: {}", err);
-        tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
-        Web3Error::Transport(TransportError::Message(message))
+        tracing::warn!(name = %inner.name, %id, ?err, "failed to get response body");
+        Web3Error::Transport(TransportError::Message(err.to_string()))
     })?;
     // Log the raw text before decoding to get more information on responses that aren't valid
     // json. Debug encoding so we don't get control characters like newlines in the output.
-    tracing::debug!(
-        "[{}][id:{}] received response: {:?}",
-        inner.name,
-        id,
-        text.trim()
-    );
+    tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
         return Err(Web3Error::Transport(TransportError::Message(format!(
-            "response status code is not success: {}",
-            status
+            "HTTP error {status}"
         ))));
     }
-    jsonrpc_core::serde_from_str(&text).map_err(Into::into)
+
+    let result = jsonrpc_core::serde_from_str(&text)?;
+    Ok(result)
 }
 
 type RpcResult = Result<Value, Web3Error>;
@@ -270,7 +261,7 @@ impl TransportMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{transport::create_env_test_transport, Web3};
+    use crate::ethrpc::{create_env_test_transport, Web3};
 
     #[test]
     fn handles_batch_response_being_in_different_order_than_input() {

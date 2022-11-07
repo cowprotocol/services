@@ -21,7 +21,7 @@ use crate::{
     event_handling::EventStoring,
     sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result};
 use contracts::balancer_v2_base_pool_factory::{
     event_data::PoolCreated, Event as BasePoolFactoryEvent,
 };
@@ -196,10 +196,7 @@ where
         tracing::debug!("inserting {} events", events.len());
 
         for event in events {
-            let block_created = event
-                .meta
-                .ok_or_else(|| anyhow!("event missing metadata"))?
-                .block_number;
+            let block_created = event.meta.context("event missing metadata")?.block_number;
             let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
 
             self.index_pool_creation(pool_created, block_created)
