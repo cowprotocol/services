@@ -17,7 +17,7 @@ use std::{
 
 mod logexpmath;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 /// Fixed point numbers that represent exactly any rational number that can be
 /// represented with up to 18 decimals as long as it can be stored in 256 bits.
 /// It corresponds to Solidity's `ufixed256x18`.

@@ -249,21 +249,11 @@ impl PoolInfo {
 }
 
 /// Common pool state information shared across all pool types.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolState {
     pub paused: bool,
     pub swap_fee: Bfp,
     pub tokens: BTreeMap<H160, TokenState>,
-}
-
-impl Default for PoolState {
-    fn default() -> Self {
-        Self {
-            paused: false,
-            swap_fee: 0.into(),
-            tokens: BTreeMap::new(),
-        }
-    }
 }
 
 /// Common pool token state information that is shared among all pool types.
