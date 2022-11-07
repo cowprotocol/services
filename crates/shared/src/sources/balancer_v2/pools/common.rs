@@ -9,7 +9,7 @@ use crate::{
     },
     token_info::TokenInfoFetching,
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use contracts::{BalancerV2BasePool, BalancerV2Vault};
 use ethcontract::{BlockId, Bytes, H160, H256, U256};
 use futures::{future::BoxFuture, FutureExt as _};
@@ -283,9 +283,9 @@ pub struct TokenState {
 pub fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
     // Balancer `scaling_exponent`s are `18 - decimals`, we want the rate which
     // is `10 ** decimals`.
-    let decimals = 18_u8.checked_sub(scaling_exponent).ok_or_else(|| {
-        anyhow!("underflow computing decimals from Balancer pool scaling exponent")
-    })?;
+    let decimals = 18_u8
+        .checked_sub(scaling_exponent)
+        .context("underflow computing decimals from Balancer pool scaling exponent")?;
 
     debug_assert!(decimals <= 18);
     // `decimals` is guaranteed to be between 0 and 18, and 10**18 cannot
@@ -299,7 +299,7 @@ fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
     // with more than 18 decimals (not supported by balancer contracts)
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/deployments-latest/pkg/pool-utils/contracts/BasePool.sol#L476-L487
     18u8.checked_sub(decimals)
-        .ok_or_else(|| anyhow!("unsupported token with more than 18 decimals"))
+        .context("unsupported token with more than 18 decimals")
 }
 
 /// An internal utility method for sharing the success value for an

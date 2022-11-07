@@ -234,9 +234,9 @@ impl FromStr for ExternalSolverArg {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('|');
-        let name = parts.next().ok_or_else(|| anyhow!("missing name"))?;
-        let url = parts.next().ok_or_else(|| anyhow!("missing url"))?;
-        let account = parts.next().ok_or_else(|| anyhow!("missing account"))?;
+        let name = parts.next().context("missing name")?;
+        let url = parts.next().context("missing url")?;
+        let account = parts.next().context("missing account")?;
         Ok(Self {
             name: name.to_string(),
             url: url.parse().context("parse url")?,
@@ -430,9 +430,7 @@ pub fn create(
                     Ok(shared(single_order(Box::new(BalancerSorSolver::new(
                         account,
                         vault_contract
-                            .ok_or_else(|| {
-                                anyhow!("missing Balancer Vault deployment for SOR solver")
-                            })?
+                            .context("missing Balancer Vault deployment for SOR solver")?
                             .clone(),
                         settlement_contract.clone(),
                         Arc::new(DefaultBalancerSorApi::new(

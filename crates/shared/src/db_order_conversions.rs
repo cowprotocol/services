@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use database::orders::{
     BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
     OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
@@ -52,26 +52,23 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
+            .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
         is_liquidity_order: class == OrderClass::Liquidity,
         surplus_fee: big_decimal_to_u256(&order.surplus_fee.unwrap_or_default())
-            .ok_or_else(|| anyhow!("surplus_fee is not U256"))?,
+            .context("surplus_fee is not U256")?,
         surplus_fee_timestamp: order.surplus_fee_timestamp.unwrap_or_default(),
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
         buy_token: H160(order.buy_token.0),
         receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount)
-            .ok_or_else(|| anyhow!("sell_amount is not U256"))?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount)
-            .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppId(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount)
-            .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
+        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
@@ -95,7 +92,7 @@ pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionDa
         pre_interactions.push(InteractionData {
             target: H160(order.pre_interactions[i].0 .0),
             value: big_decimal_to_u256(&order.pre_interactions[i].1)
-                .ok_or_else(|| anyhow!("pre interaction value is not U256"))?,
+                .context("pre interaction value is not U256")?,
             call_data: order.pre_interactions[i].2.to_vec(),
         });
     }
