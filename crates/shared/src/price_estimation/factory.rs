@@ -278,12 +278,10 @@ impl<'a> PriceEstimatorFactory<'a> {
                 self.native_token_price_estimation_amount()?,
             )),
             self.args.native_price_cache_max_age_secs,
-        ));
-
-        native_estimator.spawn_maintenance_task(
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
-        );
+            None,
+        ));
         Ok(native_estimator)
     }
 }

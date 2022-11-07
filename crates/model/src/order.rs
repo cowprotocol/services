@@ -434,6 +434,7 @@ pub struct OrderMetadata {
     pub is_liquidity_order: bool,
     #[serde(default, with = "u256_decimal")]
     pub surplus_fee: U256,
+    pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
 impl Default for OrderMetadata {
@@ -456,6 +457,7 @@ impl Default for OrderMetadata {
             onchain_user: None,
             is_liquidity_order: false,
             surplus_fee: Default::default(),
+            surplus_fee_timestamp: Default::default(),
         }
     }
 }
@@ -717,6 +719,7 @@ mod tests {
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "ordinary",
