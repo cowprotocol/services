@@ -100,6 +100,9 @@ pub struct Order {
     pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
+// TODO A query to count valid limit orders that belong to a user.
+// Look at the existing query for the quoter as inspiration.
+
 pub async fn insert_pre_interactions(
     ex: &mut PgConnection,
     uid_and_pre_interaction: &[(OrderUid, Interaction)],
@@ -567,6 +570,31 @@ pub fn limit_orders_with_outdated_fees(
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
         .fetch(ex)
+}
+
+/// Count the number of valid limit orders belonging to a particular user.
+pub async fn count_limit_orders(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+    owner: &Address,
+) -> Result<i64, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT COUNT(*) FROM (",
+        "SELECT ",
+        ORDERS_SELECT,
+        " FROM ",
+        ORDERS_FROM,
+        " WHERE o.valid_to >= $1 ",
+        "AND o.class = 'limit' ",
+        "AND o.owner = $2 ",
+        ") AS o ",
+        "WHERE NOT o.invalidated",
+    );
+    sqlx::query_scalar(QUERY)
+        .bind(min_valid_to)
+        .bind(owner)
+        .fetch_one(ex)
+        .await
 }
 
 pub async fn update_surplus_fee(
