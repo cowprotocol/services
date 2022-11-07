@@ -133,8 +133,15 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         events: Vec<EthContractEvent<ContractEvent>>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders) =
-            self.extract_custom_and_general_order_data(events).await?;
+        let order_placement_events = events
+            .into_iter()
+            .filter(|EthContractEvent { data, .. }| {
+                matches!(data, ContractEvent::OrderPlacement(_))
+            })
+            .collect();
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
+            .extract_custom_and_general_order_data(order_placement_events)
+            .await?;
 
         let _timer = Metrics::get()
             .database_queries
@@ -174,8 +181,15 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let (custom_order_data, quotes, broadcasted_order_data, orders) =
-            self.extract_custom_and_general_order_data(events).await?;
+        let order_placement_events = events
+            .into_iter()
+            .filter(|EthContractEvent { data, .. }| {
+                matches!(data, ContractEvent::OrderPlacement(_))
+            })
+            .collect();
+        let (custom_order_data, quotes, broadcasted_order_data, orders) = self
+            .extract_custom_and_general_order_data(order_placement_events)
+            .await?;
 
         let _timer = Metrics::get()
             .database_queries
@@ -299,7 +313,14 @@ async fn parse_general_onchain_order_placement_data(
                 Some(meta) => meta,
                 None => return Err(anyhow!("event without metadata")),
             };
-            let ContractEvent::OrderPlacement(event) = data;
+            let event = match data {
+                ContractEvent::OrderPlacement(event) => event,
+                _ => {
+                    return Err(anyhow!(
+                        "parse_general_onchain_order_placement_data should not reach this state"
+                    ))
+                }
+            };
             let (order_data, owner, signing_scheme, order_uid) =
                 extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
 

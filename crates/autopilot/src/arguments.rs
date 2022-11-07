@@ -23,7 +23,7 @@ pub struct Arguments {
     pub price_estimation: price_estimation::Arguments,
 
     /// Address of the ethflow contract
-    #[clap(long, env, default_value = "31172bb2b5f97e8e89cf3376495d7bc7252f5a53")]
+    #[clap(long, env, default_value = "26c3801b4840dab317cedfd7aeaf9f45fdd22830")]
     pub ethflow_contract: H160,
 
     // Feature flag for ethflow
