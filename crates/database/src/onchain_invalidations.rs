@@ -2,7 +2,7 @@ use crate::{events::EventIndex, OrderUid, PgTransaction};
 use sqlx::{Executor, PgConnection};
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
-pub struct OnchainCancellationRow {
+pub struct OnchainInvalidationRow {
     pub uid: OrderUid,
     pub block_number: i64,
     pub log_index: i64,
@@ -51,7 +51,7 @@ pub async fn insert_onchain_invalidation(
 pub async fn read_onchain_invalidation(
     ex: &mut PgConnection,
     id: &OrderUid,
-) -> Result<Option<OnchainCancellationRow>, sqlx::Error> {
+) -> Result<Option<OnchainInvalidationRow>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT * FROM onchain_order_invalidations
         WHERE uid = $1
@@ -82,7 +82,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let expected_row = OnchainCancellationRow {
+        let expected_row = OnchainInvalidationRow {
             uid: order_uid,
             block_number: event_index.block_number,
             log_index: event_index.log_index,
@@ -92,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_deletes_invalidations() {
+    async fn postgres_delete_invalidations() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -119,7 +119,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let expected_row = OnchainCancellationRow {
+        let expected_row = OnchainInvalidationRow {
             uid: order_uid_1,
             block_number: event_index_1.block_number,
             log_index: event_index_1.log_index,
@@ -159,7 +159,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let expected_row = OnchainCancellationRow {
+        let expected_row = OnchainInvalidationRow {
             uid: order_uid,
             block_number: event_index_2.block_number,
             log_index: event_index_2.log_index,

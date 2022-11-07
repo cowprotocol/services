@@ -413,7 +413,7 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
 (o.cancellation_timestamp IS NOT NULL OR
     (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
-    (SELECT COUNT(*) FROM onchain_order_cancellations onchain_c where onchain_c.uid = o.uid limit 1) > 0
+    (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
 ) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
