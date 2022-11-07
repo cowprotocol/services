@@ -591,7 +591,7 @@ pub fn limit_orders_with_outdated_fees(
         "AND o.class = 'limit' ",
         "AND (o.surplus_fee_timestamp < $2 OR o.surplus_fee_timestamp IS NULL) ",
         ") AS o ",
-        "WHERE NOT o.invalidated",
+        "WHERE NOT o.invalidated LIMIT 100",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)

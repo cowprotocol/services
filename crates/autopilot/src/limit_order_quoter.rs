@@ -32,63 +32,67 @@ impl LimitOrderQuoter {
     }
 
     async fn update(&self) -> Result<()> {
-        let orders = self
-            .database
-            .limit_orders_with_outdated_fees(self.limit_order_age)
-            .await?;
-        for order in orders {
-            match self
-                .quoter
-                .calculate_quote(QuoteParameters {
-                    sell_token: order.data.sell_token,
-                    buy_token: order.data.buy_token,
-                    side: match order.data.kind {
-                        OrderKind::Buy => OrderQuoteSide::Buy {
-                            buy_amount_after_fee: order.data.buy_amount,
-                        },
-                        OrderKind::Sell => OrderQuoteSide::Sell {
-                            sell_amount: SellAmount::BeforeFee {
-                                value: order.data.sell_amount + order.data.fee_amount,
+        loop {
+            let orders = self
+                .database
+                .limit_orders_with_outdated_fees(self.limit_order_age)
+                .await?;
+            if orders.is_empty() {
+                return Ok(());
+            }
+            for order in orders {
+                match self
+                    .quoter
+                    .calculate_quote(QuoteParameters {
+                        sell_token: order.data.sell_token,
+                        buy_token: order.data.buy_token,
+                        side: match order.data.kind {
+                            OrderKind::Buy => OrderQuoteSide::Buy {
+                                buy_amount_after_fee: order.data.buy_amount,
+                            },
+                            OrderKind::Sell => OrderQuoteSide::Sell {
+                                sell_amount: SellAmount::BeforeFee {
+                                    value: order.data.sell_amount + order.data.fee_amount,
+                                },
                             },
                         },
-                    },
-                    from: order.metadata.owner,
-                    app_data: order.data.app_data,
-                    signing_scheme: match order.signature {
-                        Signature::Eip712(_) => QuoteSigningScheme::Eip712,
-                        Signature::EthSign(_) => QuoteSigningScheme::EthSign,
-                        Signature::Eip1271(_) => QuoteSigningScheme::Eip1271 {
-                            onchain_order: false,
-                            verification_gas_limit: default_verification_gas_limit(),
+                        from: order.metadata.owner,
+                        app_data: order.data.app_data,
+                        signing_scheme: match order.signature {
+                            Signature::Eip712(_) => QuoteSigningScheme::Eip712,
+                            Signature::EthSign(_) => QuoteSigningScheme::EthSign,
+                            Signature::Eip1271(_) => QuoteSigningScheme::Eip1271 {
+                                onchain_order: false,
+                                verification_gas_limit: default_verification_gas_limit(),
+                            },
+                            Signature::PreSign => QuoteSigningScheme::PreSign {
+                                onchain_order: false,
+                            },
                         },
-                        Signature::PreSign => QuoteSigningScheme::PreSign {
-                            onchain_order: false,
-                        },
-                    },
-                })
-                .await
-            {
-                Ok(quote) => {
-                    if let Err(err) = self
-                        .database
-                        .update_surplus_fee(&order.metadata.uid, quote.fee_amount)
-                        .await
-                    {
-                        tracing::error!(
-                            ?err,
-                            ?quote,
-                            "failed to update quote surplus fee, skipping"
+                    })
+                    .await
+                {
+                    Ok(quote) => {
+                        if let Err(err) = self
+                            .database
+                            .update_surplus_fee(&order.metadata.uid, quote.fee_amount)
+                            .await
+                        {
+                            tracing::error!(
+                                ?err,
+                                ?quote,
+                                "failed to update quote surplus fee, skipping"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            order_uid =% order.metadata.uid, ?err,
+                            "skipped limit order due to quoting error"
                         );
                     }
                 }
-                Err(err) => {
-                    tracing::warn!(
-                        order_uid =% order.metadata.uid, ?err,
-                        "skipped limit order due to quoting error"
-                    );
-                }
             }
         }
-        Ok(())
     }
 }
