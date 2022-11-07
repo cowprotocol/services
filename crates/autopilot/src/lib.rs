@@ -304,6 +304,7 @@ pub async fn main(args: arguments::Arguments) {
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
+            settlement: settlement_contract.address(),
             authenticator: settlement_contract
                 .authenticator()
                 .call()
