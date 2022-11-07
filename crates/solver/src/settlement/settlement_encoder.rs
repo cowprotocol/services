@@ -1200,4 +1200,112 @@ pub mod tests {
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(encoded.interactions[1].len(), 2);
     }
+
+    #[test]
+    fn computes_custom_price_for_sell_limit_order_correctly() {
+        let weth = token(1);
+        let usdc = token(2);
+        let prices = hashmap! {
+            // assumption 1 WETH == 1_000 USDC (all prices multiplied by 10^18)
+            weth => U256::exp10(18),
+            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+        };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        // sell 1 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
+        let order = OrderBuilder::default()
+            .with_class(OrderClass::Limit)
+            .with_sell_token(weth)
+            .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
+            .with_buy_token(usdc)
+            .with_buy_amount(U256::exp10(9)) // 1_000 USDC
+            .with_surplus_fee(U256::exp10(16)) // 0.01 WETH
+            .with_fee_amount(0.into())
+            .with_kind(OrderKind::Sell)
+            .build();
+
+        let execution = encoder
+            .add_trade(order.clone(), U256::exp10(18), U256::exp10(16))
+            .unwrap();
+        assert_eq!(
+            TradeExecution {
+                sell_token: weth,
+                buy_token: usdc,
+                sell_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
+                buy_amount: U256::exp10(9),                        // 1_000 USDC
+                fee_amount: 0.into(),
+            },
+            execution
+        );
+        assert_eq!(
+            CustomPriceTrade {
+                trade: Trade {
+                    order: order,
+                    sell_token_index: 0,
+                    executed_amount: 1_010_000_000_000_000_000u128.into(), // 1 WETH
+                    scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
+                },
+                buy_token_offset_index: 0,
+                // Instead of the anticipated 1 WETH required to buy 1_000 USDC we had to sell
+                // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
+                buy_token_price: 1_010_000_000_000_000_000_000_000_000u128.into()
+            },
+            encoder.custom_price_trades[0]
+        );
+    }
+
+    #[test]
+    fn computes_custom_price_for_buy_limit_order_correctly() {
+        let weth = token(1);
+        let usdc = token(2);
+        // assuming 1 WETH == 1_000 USDC
+        let prices = hashmap! {
+            weth => U256::exp10(18),
+            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+        };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        // buy 1 WETH for 1_010 USDC with a fee of 10 USDC
+        let order = OrderBuilder::default()
+            .with_class(OrderClass::Limit)
+            .with_buy_token(weth)
+            .with_buy_amount(U256::exp10(18)) // 1 WETH
+            .with_sell_token(usdc)
+            .with_sell_amount(1_010_000_000u128.into()) // 1_010 USDC
+            .with_surplus_fee(U256::exp10(7)) // 10 USDC
+            .with_fee_amount(0.into())
+            .with_kind(OrderKind::Buy)
+            .build();
+
+        let execution = encoder
+            .add_trade(order.clone(), U256::exp10(18), U256::exp10(7))
+            .unwrap();
+        assert_eq!(
+            TradeExecution {
+                sell_token: usdc,
+                buy_token: weth,
+                // With the original price selling 1_000 USDC would have been enough.
+                // With the adjusted price we actually have to sell all 1_010 USDC.
+                sell_amount: 1_010_000_000u128.into(), // 1_010 USDC
+                buy_amount: U256::exp10(18),           // 1 WETH
+                fee_amount: 0.into(),
+            },
+            execution
+        );
+        assert_eq!(
+            CustomPriceTrade {
+                trade: Trade {
+                    order: order,
+                    sell_token_index: 1,
+                    executed_amount: U256::exp10(18), // 1 WETH
+                    scaled_unsubsidized_fee: U256::exp10(7)  // 10 USDC
+                },
+                buy_token_offset_index: 0,
+                // Instead of the anticipated 1_000 USDC required to buy 1 WETH we had to sell
+                // 1_010 USDC (to pocket the fee). This caused the WETH price to increase by 1%.
+                buy_token_price: 1_010_000_000_000_000_000u128.into()
+            },
+            encoder.custom_price_trades[0]
+        );
+    }
 }
