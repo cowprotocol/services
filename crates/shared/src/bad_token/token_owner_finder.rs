@@ -1,7 +1,7 @@
 pub mod blockscout;
 pub mod ethplorer;
 pub mod liquidity;
-pub mod seasolver;
+pub mod solvers;
 pub mod token_owner_list;
 
 use self::{
@@ -12,7 +12,9 @@ use crate::{
     arguments::duration_from_seconds,
     bad_token::token_owner_finder::{
         ethplorer::EthplorerTokenOwnerFinder,
-        seasolver::{AutoUpdatingSeaSolverTokenOwnerFinder, SeaSolverConfiguration},
+        solvers::{
+            solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+        },
         token_owner_list::TokenOwnerList,
     },
     baseline_solver::BaseTokens,
@@ -89,13 +91,14 @@ pub struct Arguments {
     )]
     pub whitelisted_owners: HashMap<H160, Vec<H160>>,
 
-    /// The SeaSolver url to query the token owner pairs.
-    #[clap(long, env, default_value = "https://seasolver.dev/token_holders")]
-    pub seasolver_token_owners_url: Url,
+    /// The solvers urls to query the token owner pairs.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub solver_token_owners_urls: Vec<Url>,
 
-    /// Interval between consecutive queries to update the SeaSolver token owner pairs.
-    #[clap(long, env, default_value = "300", value_parser = duration_from_seconds)]
-    pub seasolver_token_owners_cache_update_interval: Duration,
+    /// Interval between consecutive queries to update the solver token owner pairs.
+    /// Values should be in pair with `solver_token_owners_urls`
+    #[clap(long, env, value_parser = duration_from_seconds)]
+    pub solver_token_owners_cache_update_intervals: Vec<Duration>,
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
@@ -133,20 +136,15 @@ pub enum TokenOwnerFindingStrategy {
     /// Use the Ethplorer token holder API.
     Ethplorer,
 
-    /// Use list provided by the external solver team - SeaSolver
-    SeaSolver,
+    /// Use lists provided by the external solver teams
+    Solvers,
 }
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
     pub fn defaults_for_chain(chain_id: u64) -> &'static [Self] {
         match chain_id {
-            1 => &[
-                Self::Liquidity,
-                Self::Blockscout,
-                Self::Ethplorer,
-                Self::SeaSolver,
-            ],
+            1 => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
             100 => &[Self::Liquidity, Self::Blockscout],
             _ => &[Self::Liquidity],
         }
@@ -236,14 +234,20 @@ pub async fn init(
         proposers.push(Arc::new(ethplorer));
     }
 
-    if finders.contains(&TokenOwnerFindingStrategy::SeaSolver) {
-        let configuration = SeaSolverConfiguration {
-            url: args.seasolver_token_owners_url.clone(),
-            client: http_factory.create(),
-            update_interval: args.seasolver_token_owners_cache_update_interval,
-        };
-        let seasolver = AutoUpdatingSeaSolverTokenOwnerFinder::new(configuration);
-        proposers.push(Arc::new(seasolver));
+    if finders.contains(&TokenOwnerFindingStrategy::Solvers) {
+        for (url, update_interval) in args
+            .solver_token_owners_urls
+            .clone()
+            .into_iter()
+            .zip(args.solver_token_owners_cache_update_intervals.clone())
+        {
+            let solver = Box::new(SolverConfiguration {
+                url,
+                client: http_factory.create(),
+            });
+            let solver = AutoUpdatingSolverTokenOwnerFinder::new(solver, update_interval);
+            proposers.push(Arc::new(solver));
+        }
     }
 
     proposers.push(Arc::new(TokenOwnerList::new(
