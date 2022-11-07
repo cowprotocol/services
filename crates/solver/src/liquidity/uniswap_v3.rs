@@ -18,11 +18,10 @@ use shared::{
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 // 1h timeout for Uniswap V3 interactions
-const TIMEOUT: u64 = 3600;
+const TIMEOUT: u32 = 3600;
 
 pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
@@ -157,10 +156,7 @@ impl UniswapV3SettlementHandler {
                     fee,
                     recipient: self.inner.gpv2_settlement.address(),
                     deadline: {
-                        SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
+                        model::time::now_in_epoch_seconds()
                             .saturating_add(TIMEOUT)
                             .into()
                     },
