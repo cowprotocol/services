@@ -64,8 +64,7 @@ pub trait OrderValidating: Send + Sync {
 #[derive(Debug)]
 pub enum PartialValidationError {
     Forbidden,
-    InsufficientValidTo,
-    ExcessiveValidTo,
+    Validity(OrderValidityError),
     TransferEthToContract,
     InvalidNativeSellToken,
     SameBuyAndSellToken,
@@ -75,6 +74,12 @@ pub enum PartialValidationError {
     UnsupportedSignature,
     UnsupportedToken(H160),
     Other(anyhow::Error),
+}
+
+impl From<OrderValidityError> for PartialValidationError {
+    fn from(err: OrderValidityError) -> Self {
+        Self::Validity(err)
+    }
 }
 
 #[derive(Debug)]
@@ -172,8 +177,7 @@ pub struct OrderValidator {
     native_token: WETH9,
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
-    min_order_validity_period: Duration,
-    max_order_validity_period: Duration,
+    validity_configuration: OrderValidityConfiguration,
     signature_configuration: SignatureConfiguration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
@@ -196,7 +200,7 @@ pub struct PreOrderData {
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
-    pub is_liquidity_order: bool,
+    pub class: OrderClass,
 }
 
 fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
@@ -213,7 +217,7 @@ impl PreOrderData {
         owner: H160,
         order: &OrderData,
         signing_scheme: SigningScheme,
-        is_liquidity_order: bool,
+        liquidity_owner: bool,
     ) -> Self {
         Self {
             owner,
@@ -225,7 +229,11 @@ impl PreOrderData {
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
-            is_liquidity_order,
+            class: match (liquidity_owner, order.fee_amount.is_zero()) {
+                (false, false) => OrderClass::Ordinary,
+                (false, true) => OrderClass::Limit,
+                (true, _) => OrderClass::Liquidity,
+            },
         }
     }
 }
@@ -237,8 +245,7 @@ impl OrderValidator {
         native_token: WETH9,
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
-        min_order_validity_period: Duration,
-        max_order_validity_period: Duration,
+        validity_configuration: OrderValidityConfiguration,
         signature_configuration: SignatureConfiguration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         quoter: Arc<dyn OrderQuoting>,
@@ -252,8 +259,7 @@ impl OrderValidator {
             native_token,
             banned_users,
             liquidity_order_owners,
-            min_order_validity_period,
-            max_order_validity_period,
+            validity_configuration,
             signature_configuration,
             bad_token_detector,
             quoter,
@@ -278,7 +284,7 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::Forbidden);
         }
 
-        if order.partially_fillable && !order.is_liquidity_order {
+        if order.partially_fillable && order.class != OrderClass::Liquidity {
             return Err(PartialValidationError::UnsupportedOrderType);
         }
 
@@ -296,23 +302,14 @@ impl OrderValidating for OrderValidator {
             ));
         }
 
+        self.validity_configuration.validate_period(&order)?;
+
         // Eventually we will support all Signature types and can remove this.
         if !self
             .signature_configuration
             .is_signing_scheme_supported(order.signing_scheme)
         {
             return Err(PartialValidationError::UnsupportedSignature);
-        }
-
-        let now = model::time::now_in_epoch_seconds();
-        if order.valid_to < now + self.min_order_validity_period.as_secs() as u32 {
-            return Err(PartialValidationError::InsufficientValidTo);
-        }
-        if order.valid_to > now.saturating_add(self.max_order_validity_period.as_secs() as u32)
-            && !order.is_liquidity_order
-            && order.signing_scheme != SigningScheme::PreSign
-        {
-            return Err(PartialValidationError::ExcessiveValidTo);
         }
 
         if has_same_buy_and_sell_token(&order, &self.native_token) {
@@ -531,6 +528,59 @@ impl OrderValidating for OrderValidator {
         )?;
         Ok((order, quote))
     }
+}
+
+/// Order validity period configuration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrderValidityConfiguration {
+    pub min: Duration,
+    pub max_market: Duration,
+    pub max_limit: Duration,
+}
+
+impl OrderValidityConfiguration {
+    /// Validates an order's timestamp based on additional data.
+    fn validate_period(&self, order: &PreOrderData) -> Result<(), OrderValidityError> {
+        let now = model::time::now_in_epoch_seconds();
+        if order.valid_to < timestamp_after_duration(now, self.min) {
+            return Err(OrderValidityError::InsufficientValidTo);
+        }
+        if let Some(max) = self.max(order) {
+            if order.valid_to > timestamp_after_duration(now, max) {
+                return Err(OrderValidityError::ExcessiveValidTo);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the maximum valid timestamp for the specified order.
+    fn max(&self, order: &PreOrderData) -> Option<Duration> {
+        // For now, there is no maximum `validTo` for pre-sign orders as a hack
+        // for dealing with signature collection times. We should probably
+        // revisit this.
+        if order.signing_scheme == SigningScheme::PreSign {
+            return None;
+        }
+
+        match order.class {
+            OrderClass::Ordinary => Some(self.max_market),
+            OrderClass::Limit => Some(self.max_limit),
+            OrderClass::Liquidity => None,
+        }
+    }
+}
+
+/// Adds a `std::time::Duration` to a `u32` timestamp. This function uses
+/// saturating semantics and can't panic.
+fn timestamp_after_duration(timestamp: u32, duration: Duration) -> u32 {
+    timestamp.saturating_add(duration.as_secs().try_into().unwrap_or(u32::MAX))
+}
+
+#[derive(Debug)]
+pub enum OrderValidityError {
+    InsufficientValidTo,
+    ExcessiveValidTo,
 }
 
 /// Signature configuration that is accepted by the orderbook.
@@ -773,11 +823,14 @@ mod tests {
     async fn pre_validate_err() {
         let mut code_fetcher = Box::new(MockCodeFetching::new());
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
-        let min_order_validity_period = Duration::from_secs(1);
-        let max_order_validity_period = Duration::from_secs(100);
+        let validity_configuration = OrderValidityConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
-            model::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
+            model::time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
         code_fetcher
             .expect_code_size()
             .times(1)
@@ -789,8 +842,7 @@ mod tests {
             native_token,
             banned_users,
             hashset!(),
-            min_order_validity_period,
-            max_order_validity_period,
+            validity_configuration,
             SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
@@ -855,16 +907,22 @@ mod tests {
                     ..Default::default()
                 })
                 .await,
-            Err(PartialValidationError::InsufficientValidTo)
+            Err(PartialValidationError::Validity(
+                OrderValidityError::InsufficientValidTo,
+            ))
         ));
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to + max_order_validity_period.as_secs() as u32 + 1,
+                    valid_to: legit_valid_to
+                        + validity_configuration.max_market.as_secs() as u32
+                        + 1,
                     ..Default::default()
                 })
                 .await,
-            Err(PartialValidationError::ExcessiveValidTo)
+            Err(PartialValidationError::Validity(
+                OrderValidityError::ExcessiveValidTo,
+            ))
         ));
         assert!(matches!(
             validator
@@ -921,8 +979,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
@@ -947,8 +1008,11 @@ mod tests {
     #[tokio::test]
     async fn pre_validate_ok() {
         let liquidity_order_owner = H160::from_low_u64_be(0x42);
-        let min_order_validity_period = Duration::from_secs(1);
-        let max_order_validity_period = Duration::from_secs(100);
+        let validity_configuration = OrderValidityConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
 
         let mut bad_token_detector = MockBadTokenDetecting::new();
         bad_token_detector
@@ -967,8 +1031,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(liquidity_order_owner),
-            min_order_validity_period,
-            max_order_validity_period,
+            validity_configuration,
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(MockOrderQuoting::new()),
@@ -979,7 +1042,7 @@ mod tests {
         );
         let order = || PreOrderData {
             valid_to: model::time::now_in_epoch_seconds()
-                + min_order_validity_period.as_secs() as u32
+                + validity_configuration.min.as_secs() as u32
                 + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
@@ -998,7 +1061,7 @@ mod tests {
         assert!(validator
             .partial_validate(PreOrderData {
                 partially_fillable: true,
-                is_liquidity_order: true,
+                class: OrderClass::Liquidity,
                 owner: liquidity_order_owner,
                 valid_to: u32::MAX,
                 ..order()
@@ -1036,8 +1099,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1214,8 +1280,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1262,8 +1331,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1313,8 +1385,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1362,8 +1437,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1414,8 +1492,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1469,8 +1550,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1519,8 +1603,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1573,8 +1660,11 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidityConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1630,8 +1720,11 @@ mod tests {
                     dummy_contract!(WETH9, [0xef; 20]),
                     hashset!(),
                     hashset!(),
-                    Duration::from_secs(1),
-                    Duration::MAX,
+                    OrderValidityConfiguration {
+                        min: Duration::from_secs(1),
+                        max_market: Duration::MAX,
+                        max_limit: Duration::MAX,
+                    },
                     SignatureConfiguration::all(),
                     Arc::new(bad_token_detector),
                     Arc::new(order_quoter),

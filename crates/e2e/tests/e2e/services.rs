@@ -14,7 +14,7 @@ use shared::{
     fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
     order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, SignatureConfiguration},
+    order_validation::{OrderValidator, OrderValidityConfiguration, SignatureConfiguration},
     price_estimation::{
         baseline::BaselinePriceEstimator, native::NativePriceEstimator,
         sanitized::SanitizedPriceEstimator,
@@ -264,8 +264,7 @@ impl OrderbookServices {
                 contracts.weth.clone(),
                 HashSet::default(),
                 HashSet::default(),
-                Duration::from_secs(120),
-                Duration::MAX,
+                OrderValidityConfiguration::any(),
                 SignatureConfiguration::all(),
                 bad_token_detector,
                 quoter.clone(),
