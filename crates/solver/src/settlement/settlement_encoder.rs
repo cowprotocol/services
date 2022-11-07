@@ -1206,7 +1206,7 @@ pub mod tests {
         };
 
         let mut encoder = SettlementEncoder::new(prices);
-        // sell 1 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
+        // sell 1.01 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit)
             .with_sell_token(weth)
@@ -1236,11 +1236,11 @@ pub mod tests {
                 trade: Trade {
                     order: order,
                     sell_token_index: 0,
-                    executed_amount: 1_010_000_000_000_000_000u128.into(), // 1 WETH
+                    executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
                     scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
                 },
                 buy_token_offset_index: 0,
-                // Instead of the anticipated 1 WETH required to buy 1_000 USDC we had to sell
+                // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had to sell
                 // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
                 buy_token_price: 1_010_000_000_000_000_000_000_000_000u128.into()
             },
@@ -1295,7 +1295,7 @@ pub mod tests {
                     scaled_unsubsidized_fee: U256::exp10(7)  // 10 USDC
                 },
                 buy_token_offset_index: 0,
-                // Instead of the anticipated 1_000 USDC required to buy 1 WETH we had to sell
+                // Instead of the (solver) anticipated 1_000 USDC required to buy 1 WETH we had to sell
                 // 1_010 USDC (to pocket the fee). This caused the WETH price to increase by 1%.
                 buy_token_price: 1_010_000_000_000_000_000u128.into()
             },
