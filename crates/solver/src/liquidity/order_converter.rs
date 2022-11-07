@@ -385,7 +385,7 @@ pub mod tests {
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())
             .build();
-        let solver_order = converter.normalize_limit_order(order.clone()).unwrap();
+        let solver_order = converter.normalize_limit_order(order).unwrap();
 
         // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
         assert_eq!(solver_order.sell_amount, 1_100.into());

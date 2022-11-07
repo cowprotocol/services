@@ -1234,7 +1234,7 @@ pub mod tests {
         assert_eq!(
             CustomPriceTrade {
                 trade: Trade {
-                    order: order,
+                    order,
                     sell_token_index: 0,
                     executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
                     scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
@@ -1289,7 +1289,7 @@ pub mod tests {
         assert_eq!(
             CustomPriceTrade {
                 trade: Trade {
-                    order: order,
+                    order,
                     sell_token_index: 1,
                     executed_amount: U256::exp10(18), // 1 WETH
                     scaled_unsubsidized_fee: U256::exp10(7)  // 10 USDC
