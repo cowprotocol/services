@@ -12,9 +12,10 @@ use futures::FutureExt as _;
 use model::order::OrderKind;
 use primitive_types::H160;
 use std::{
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::Mutex;
 
 pub struct OneInchTradeFinder {
     inner: Inner,
@@ -27,7 +28,7 @@ struct Inner {
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     referrer_address: Option<H160>,
-    spender_cache: Arc<RwLock<Option<(H160, Instant)>>>,
+    spender_cache: Arc<Mutex<Option<(H160, Instant)>>>,
     spender_max_age: Duration,
 }
 
@@ -137,7 +138,7 @@ impl Inner {
     /// Returns the current 1Inch smart contract as the `spender`. Caches that value for 60 seconds
     /// to avoid unnecessary requests.
     async fn spender(&self) -> Result<H160, TradeError> {
-        let spender = *self.spender_cache.read().unwrap();
+        let spender = *self.spender_cache.lock().await;
         let is_recent =
             |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
         match spender {
@@ -146,9 +147,10 @@ impl Inner {
             }
             _ => (),
         };
+        let mut cache_lock = self.spender_cache.lock().await;
         let spender = self.api.get_spender().await?.address;
         let now = Instant::now();
-        *self.spender_cache.write().unwrap() = Some((spender, now));
+        *cache_lock = Some((spender, now));
         Ok(spender)
     }
 
