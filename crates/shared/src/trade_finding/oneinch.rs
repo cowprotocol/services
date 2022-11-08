@@ -28,7 +28,7 @@ struct Inner {
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     referrer_address: Option<H160>,
-    spender_cache: Arc<Mutex<Option<(H160, Instant)>>>,
+    spender_cache: Arc<Mutex<(H160, Instant)>>,
     spender_max_age: Duration,
 }
 
@@ -38,6 +38,9 @@ struct InternalQuery {
     allowed_protocols: Option<Vec<String>>,
 }
 
+/// Determines for how long the 1Inch `spender` address will get cached.
+const SPENDER_MAX_AGE: Duration = Duration::from_secs(60);
+
 impl OneInchTradeFinder {
     pub fn new(
         api: Arc<dyn OneInchClient>,
@@ -45,14 +48,7 @@ impl OneInchTradeFinder {
         referrer_address: Option<H160>,
     ) -> Self {
         Self {
-            inner: Inner {
-                api,
-                disabled_protocols,
-                protocol_cache: ProtocolCache::default(),
-                referrer_address,
-                spender_cache: Default::default(),
-                spender_max_age: Duration::from_secs(60),
-            },
+            inner: Inner::new(api, disabled_protocols, referrer_address, SPENDER_MAX_AGE),
             sharing: Default::default(),
         }
     }
@@ -101,6 +97,25 @@ impl OneInchTradeFinder {
 }
 
 impl Inner {
+    fn new(
+        api: Arc<dyn OneInchClient>,
+        disabled_protocols: Vec<String>,
+        referrer_address: Option<H160>,
+        spender_max_age: Duration,
+    ) -> Self {
+        let outdated_timestamp = Instant::now() - spender_max_age;
+        let outdated_cache_entry = (H160::default(), outdated_timestamp);
+
+        Self {
+            api,
+            disabled_protocols,
+            referrer_address,
+            protocol_cache: Default::default(),
+            spender_cache: Arc::new(Mutex::new(outdated_cache_entry)),
+            spender_max_age,
+        }
+    }
+
     async fn verify_query_and_get_protocols(
         &self,
         query: &Query,
@@ -140,16 +155,12 @@ impl Inner {
     async fn spender(&self) -> Result<H160, TradeError> {
         // Hold lock for entire function call to only ever issue a single request to `/spender` at once.
         let mut cache_lock = self.spender_cache.lock().await;
-        let is_recent =
-            |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
-        match *cache_lock {
-            Some((spender, updated_at)) if is_recent(updated_at) => {
-                return Ok(spender);
-            }
-            _ => (),
-        };
+        let (spender, updated_at) = *cache_lock;
+        if Instant::now().duration_since(updated_at) < self.spender_max_age {
+            return Ok(spender);
+        }
         let spender = self.api.get_spender().await?.address;
-        *cache_lock = Some((spender, Instant::now()));
+        *cache_lock = (spender, Instant::now());
         Ok(spender)
     }
 
@@ -490,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn spender_gets_cached() {
-        const SPENDER_MAX_AGE_MILLIS: u64 = 10;
+        const SPENDER_MAX_AGE: Duration = Duration::from_millis(10);
         let spender = |address: u64| Spender {
             address: H160::from_low_u64_be(address),
         };
@@ -503,16 +514,9 @@ mod tests {
             one_inch
         };
 
-        let mut inner = Inner {
-            api: Arc::new(mock_api(1)),
-            disabled_protocols: vec![],
-            protocol_cache: Default::default(),
-            referrer_address: None,
-            spender_cache: Arc::new(Default::default()),
-            spender_max_age: Duration::from_millis(SPENDER_MAX_AGE_MILLIS),
-        };
+        let mut inner = Inner::new(Arc::new(mock_api(1)), vec![], None, SPENDER_MAX_AGE);
 
-        // Calling `Inner::spender()` twice within the `SPENDER_MAX_AGE_MILLIS` will return
+        // Calling `Inner::spender()` twice within `SPENDER_MAX_AGE` will return
         // the same result twice and only issue one call to `OneInchClient::spender()`.
         let result = inner.spender().await.unwrap();
         assert_eq!(result, spender(1).address);
@@ -522,9 +526,9 @@ mod tests {
         // Use a different mock instance to allow returning a new value from the `spender()` function.
         inner.api = Arc::new(mock_api(2));
 
-        // After `SPENDER_MAX_AGE_MILLIS` calling `Inner::spender()` again will result in another
+        // After `SPENDER_MAX_AGE` calling `Inner::spender()` again will result in another
         // call to `OneInchClient::spender()` because the cached value expired.
-        tokio::time::sleep(Duration::from_millis(SPENDER_MAX_AGE_MILLIS)).await;
+        tokio::time::sleep(SPENDER_MAX_AGE).await;
         let result = inner.spender().await.unwrap();
         assert_eq!(result, spender(2).address);
     }
