@@ -879,6 +879,7 @@ dependencies = [
  "rand",
  "reqwest",
  "secp256k1",
+ "serde",
  "serde_json",
  "shared",
  "solver",
