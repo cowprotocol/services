@@ -1,6 +1,5 @@
 -- Table to store all invalidations of onchain orders
 -- uid is needed as unique identifier for the order.
--- is_reorged is a flag indicated whether the cancellation was mined and then reorged.
 -- block_number + log_index are used to deal with chain reverts.
 
 CREATE TABLE onchain_order_invalidations (

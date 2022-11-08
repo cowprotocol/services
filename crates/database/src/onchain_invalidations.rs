@@ -8,7 +8,7 @@ pub struct OnchainInvalidationRow {
     pub log_index: i64,
 }
 
-pub async fn append_invalidations(
+pub async fn insert_onchain_invalidations(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, OrderUid)],
 ) -> Result<(), sqlx::Error> {
@@ -18,7 +18,7 @@ pub async fn append_invalidations(
     Ok(())
 }
 
-pub async fn delete_invaldiations(
+pub async fn delete_invalidations(
     ex: &mut PgTransaction<'_>,
     block_number: i64,
 ) -> Result<(), sqlx::Error> {
@@ -108,13 +108,13 @@ mod tests {
 
         let order_uid_1: OrderUid = ByteArray([1; 56]);
         let order_uid_2: OrderUid = ByteArray([2; 56]);
-        append_invalidations(
+        insert_onchain_invalidations(
             &mut db,
             &[(event_index_1, order_uid_1), (event_index_2, order_uid_2)],
         )
         .await
         .unwrap();
-        delete_invaldiations(&mut db, 2).await.unwrap();
+        delete_invalidations(&mut db, 2).await.unwrap();
         let row = read_onchain_invalidation(&mut db, &order_uid_1)
             .await
             .unwrap()
@@ -147,12 +147,12 @@ mod tests {
             log_index: 1,
         };
         let order_uid = ByteArray([1; 56]);
-        append_invalidations(&mut db, &[(event_index_1, order_uid)])
+        insert_onchain_invalidations(&mut db, &[(event_index_1, order_uid)])
             .await
             .unwrap();
         let reorged_order = order_uid;
         // Now, we insert the order again
-        append_invalidations(&mut db, &[(event_index_2, reorged_order)])
+        insert_onchain_invalidations(&mut db, &[(event_index_2, reorged_order)])
             .await
             .unwrap();
         let row = read_onchain_invalidation(&mut db, &order_uid)
