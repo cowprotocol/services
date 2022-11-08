@@ -74,6 +74,7 @@ impl Execution {
     ) -> Result<()> {
         use Execution::*;
 
+        tracing::debug!("internalizable: {}", internalizable);
         match self {
             LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
             Amm(executed_amm) => {
@@ -161,6 +162,7 @@ impl<'a> IntermediateSettlement<'a> {
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
+        tracing::debug!("executions_amm: {:?}", executions_amm);
 
         let executions = merge_and_order_executions(
             executions_amm,
@@ -168,6 +170,7 @@ impl<'a> IntermediateSettlement<'a> {
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
 
+        tracing::debug!("executions: {:?}", executions);
         Ok(Self {
             executions,
             prices,
@@ -262,7 +265,12 @@ fn match_prepared_and_settled_amms(
 ) -> Result<Vec<ExecutedAmm>> {
     settled_amms
         .into_iter()
-        .filter(|(_, settled)| settled.is_non_trivial())
+        .filter(|(index, settled)| {
+            if !settled.is_non_trivial() {
+                tracing::debug!("filtered trivial amm with index {}", index);
+            }
+            settled.is_non_trivial()
+        })
         .flat_map(|(index, settled)| settled.execution.into_iter().map(move |exec| (index, exec)))
         .map(|(index, settled)| {
             Ok(ExecutedAmm {
