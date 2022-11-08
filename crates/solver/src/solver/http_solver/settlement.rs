@@ -718,7 +718,7 @@ mod tests {
         let liquidity = vec![
             Liquidity::ConstantProduct(cpo_0.clone()),
             Liquidity::ConstantProduct(cpo_1.clone()),
-            Liquidity::LimitOrder(lo_1.clone()),
+            Liquidity::LimitOrder(lo_1),
             Liquidity::BalancerWeighted(wpo.clone()),
             Liquidity::BalancerStable(spo.clone()),
         ];
