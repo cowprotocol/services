@@ -140,7 +140,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow contract: {}", self.ethflow_contract)?;
+        writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
         writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;

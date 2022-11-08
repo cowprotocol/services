@@ -54,7 +54,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "min_slippage_bps: {}", self.min_slippage_bps)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "ethflow_contract: {}", self.ethflow_contract)?;
+        writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
         Ok(())
     }
 }
