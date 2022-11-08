@@ -182,6 +182,11 @@ impl std::fmt::Display for Arguments {
             self.fast_price_estimation_results_required
         )?;
         writeln!(f, "enable_limit_orders: {}", self.enable_limit_orders)?;
+        writeln!(
+            f,
+            "max_limit_orders_per_user: {}",
+            self.max_limit_orders_per_user
+        )?;
 
         Ok(())
     }

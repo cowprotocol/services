@@ -171,7 +171,7 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    /// Adds the passed trade to the execution plan. Handles specifics of ordinary, limit and
+    /// Adds the passed trade to the execution plan. Handles specifics of market, limit and
     /// liquidity orders internally.
     pub fn add_trade(
         &mut self,
@@ -182,7 +182,7 @@ impl SettlementEncoder {
         verify_executed_amount(&order, executed_amount)?;
         let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
-            OrderClass::Ordinary => {
+            OrderClass::Market => {
                 self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
             OrderClass::Liquidity => {

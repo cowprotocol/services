@@ -22,7 +22,7 @@ pub enum OrderKind {
 #[sqlx(rename_all = "lowercase")]
 pub enum OrderClass {
     #[default]
-    Ordinary,
+    Market,
     Liquidity,
     Limit,
 }

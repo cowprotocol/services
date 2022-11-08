@@ -563,7 +563,7 @@ pub enum OrderClass {
     /// The most common type of order which can be placed by any user. Expected to be fulfilled
     /// immediately (in the next block).
     #[default]
-    Ordinary,
+    Market,
     /// Liquidity orders can only be placed by whitelisted users. These are
     /// used for matching "coincidence of wants" trades. These are zero-fee orders which are
     /// not expected to be fulfilled immediately and can potentially live for a long time.
@@ -698,7 +698,7 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
-            "class": "ordinary",
+            "class": "market",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",

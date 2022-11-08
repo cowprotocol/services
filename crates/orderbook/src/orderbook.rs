@@ -33,7 +33,7 @@ impl Metrics {
         let metrics = Self::instance(global_metrics::get_metric_storage_registry())
             .expect("unexpected error getting metrics instance");
         let kind = match order.metadata.class {
-            OrderClass::Ordinary => "user",
+            OrderClass::Market => "user",
             OrderClass::Liquidity => "liquidity",
             OrderClass::Limit => "limit",
         };
