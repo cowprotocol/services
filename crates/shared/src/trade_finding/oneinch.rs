@@ -138,19 +138,18 @@ impl Inner {
     /// Returns the current 1Inch smart contract as the `spender`. Caches that value for 60 seconds
     /// to avoid unnecessary requests.
     async fn spender(&self) -> Result<H160, TradeError> {
-        let spender = *self.spender_cache.lock().await;
+        // Hold lock for entire function call to only ever issue a single request to `/spender` at once.
+        let mut cache_lock = self.spender_cache.lock().await;
         let is_recent =
             |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
-        match spender {
+        match *cache_lock {
             Some((spender, updated_at)) if is_recent(updated_at) => {
                 return Ok(spender);
             }
             _ => (),
         };
-        let mut cache_lock = self.spender_cache.lock().await;
         let spender = self.api.get_spender().await?.address;
-        let now = Instant::now();
-        *cache_lock = Some((spender, now));
+        *cache_lock = Some((spender, Instant::now()));
         Ok(spender)
     }
 
