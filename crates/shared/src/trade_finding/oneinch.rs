@@ -11,7 +11,7 @@ use crate::{
 use futures::FutureExt as _;
 use model::order::OrderKind;
 use primitive_types::H160;
-use std::sync::Arc;
+use std::{time::{Instant, Duration}, sync::{Arc, RwLock}};
 
 pub struct OneInchTradeFinder {
     inner: Inner,
@@ -24,6 +24,8 @@ struct Inner {
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     referrer_address: Option<H160>,
+    spender_cache: Arc<RwLock<Option<(H160, Instant)>>>,
+    spender_max_age: Duration,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -44,6 +46,8 @@ impl OneInchTradeFinder {
                 disabled_protocols,
                 protocol_cache: ProtocolCache::default(),
                 referrer_address,
+                spender_cache: Default::default(),
+                spender_max_age: Duration::from_secs(60)
             },
             sharing: Default::default(),
         }
@@ -127,8 +131,21 @@ impl Inner {
         })
     }
 
+    /// Returns the current 1Inch smart contract as the `spender`. Caches that value for 60 seconds
+    /// to avoid unnecessary requests.
     async fn spender(&self) -> Result<H160, TradeError> {
-        Ok(self.api.get_spender().await?.address)
+        let spender = *self.spender_cache.read().unwrap();
+        let is_recent = |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
+        match spender {
+            Some((spender, updated_at)) if is_recent(updated_at) => {
+                return Ok(spender);
+            },
+            _ => ()
+        };
+        let spender = self.api.get_spender().await?.address;
+        let now = Instant::now();
+        *self.spender_cache.write().unwrap() = Some((spender, now));
+        Ok(spender)
     }
 
     async fn swap(
@@ -464,5 +481,46 @@ mod tests {
             trade.out_amount.to_f64_lossy() / 1e18,
             trade.gas_estimate,
         );
+    }
+
+    #[tokio::test]
+    async fn spender_gets_cached() {
+        const SPENDER_MAX_AGE_MILLIS: u64 = 10;
+        let spender = |address: u64| Spender {
+            address: H160::from_low_u64_be(address)
+        };
+        let mock_api = |address: u64| {
+            let mut one_inch = MockOneInchClient::new();
+            one_inch.expect_get_spender()
+                .returning(move || async move { Ok(spender(address)) }.boxed())
+                .times(1);
+            one_inch
+        };
+
+        let mut inner = Inner {
+            api: Arc::new(mock_api(1)),
+            disabled_protocols: vec![],
+            protocol_cache: Default::default(),
+            referrer_address: None,
+            spender_cache: Arc::new(Default::default()),
+            spender_max_age: Duration::from_millis(SPENDER_MAX_AGE_MILLIS),
+        };
+
+        // Calling `Inner::spender()` twice within the `SPENDER_MAX_AGE_MILLIS` will return
+        // the same result twice and only issue one call to `OneInchClient::spender()`.
+        let result = inner.spender().await.unwrap();
+        assert_eq!(result, spender(1).address);
+        let result = inner.spender().await.unwrap();
+        assert_eq!(result, spender(1).address);
+
+        // Use a different mock instance to allow returning a new value from the `spender()` function.
+        inner.api = Arc::new(mock_api(2));
+
+        // After `SPENDER_MAX_AGE_MILLIS` calling `Inner::spender()` again will result in another
+        // call to `OneInchClient::spender()` because the cached value expired.
+        tokio::time::sleep(Duration::from_millis(SPENDER_MAX_AGE_MILLIS)).await;
+        let result = inner.spender().await.unwrap();
+        assert_eq!(result, spender(2).address);
+
     }
 }
