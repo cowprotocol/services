@@ -22,6 +22,17 @@ impl SolverCompetitionStoring for Postgres {
             .await
             .context("solver_competition::save")?;
 
+        if let Some(transaction) = request.transaction {
+            database::auction_transaction::upsert_auction_transaction(
+                &mut ex,
+                request.auction,
+                &ByteArray(transaction.account.0),
+                transaction.nonce.try_into().context("convert nonce")?,
+            )
+            .await
+            .context("upsert_auction_transaction")?;
+        }
+
         for (order, reward) in request.rewards {
             database::order_rewards::save(&mut ex, ByteArray(order.0), request.auction, reward)
                 .await
@@ -74,7 +85,7 @@ impl SolverCompetitionStoring for Postgres {
 mod tests {
     use super::*;
     use model::solver_competition::{CompetitionAuction, SolverSettlement};
-    use primitive_types::H256;
+    use primitive_types::{H160, H256};
 
     #[tokio::test]
     #[ignore]
@@ -85,6 +96,10 @@ mod tests {
         let request = model::solver_competition::Request {
             auction: 0,
             transaction_hash: Some(H256([5; 32])),
+            transaction: Some(model::solver_competition::Transaction {
+                account: H160([7; 20]),
+                nonce: 8,
+            }),
             competition: SolverCompetitionDB {
                 gas_price: 1.,
                 auction_start_block: 2,
@@ -108,7 +123,7 @@ mod tests {
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
         assert_eq!(actual.common, request.competition);
         assert_eq!(actual.auction_id, 0);
-        assert_eq!(actual.transaction_hash, request.transaction_hash);
+        assert_eq!(actual.transaction_hash, None);
     }
 
     #[tokio::test]

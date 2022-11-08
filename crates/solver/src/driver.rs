@@ -358,6 +358,7 @@ impl Driver {
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
             transaction_hash: None,
+            transaction: None,
             competition: solver_competition,
             rewards: Vec::new(),
         };
@@ -403,6 +404,7 @@ impl Driver {
             // competition info immediately in case we don't find the mined transaction hash later
             // for example because the driver got restarted. If we get a hash then we store the
             // competition info again this time including the hash.
+            // TODO: set solver_competition.transaction to account and nonce and remove tx hash.
             self.send_solver_competition(&solver_competition).await;
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
