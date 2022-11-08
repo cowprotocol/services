@@ -14,7 +14,7 @@ use shared::{
     fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
     order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, OrderValidityConfiguration, SignatureConfiguration},
+    order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
     price_estimation::{
         baseline::BaselinePriceEstimator, native::NativePriceEstimator,
         sanitized::SanitizedPriceEstimator,

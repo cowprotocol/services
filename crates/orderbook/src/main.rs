@@ -29,7 +29,7 @@ use shared::{
     network::network_name,
     oneinch_api::OneInchClientImpl,
     order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, OrderValidityConfiguration, SignatureConfiguration},
+    order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
     price_estimation::{
         factory::{self, PriceEstimatorFactory},
         PriceEstimating,
@@ -369,7 +369,7 @@ async fn main() {
         None => fee_subsidy_config,
     };
 
-    let validity_configuration = OrderValidityConfiguration {
+    let validity_configuration = OrderValidPeriodConfiguration {
         min: args.min_order_validity_period,
         max_market: args.max_order_validity_period,
         max_limit: args.max_limit_order_validity_period,

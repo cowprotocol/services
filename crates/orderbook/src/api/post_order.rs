@@ -3,7 +3,7 @@ use anyhow::Result;
 use model::order::{OrderCreation, OrderUid};
 use shared::{
     api::{error, extract_payload, internal_error, ApiReply, IntoWarpReply},
-    order_validation::{OrderValidityError, PartialValidationError, ValidationError},
+    order_validation::{OrderValidToError, PartialValidationError, ValidationError},
 };
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
@@ -38,16 +38,14 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 error("Forbidden", "Forbidden, your account is deny-listed"),
                 StatusCode::FORBIDDEN,
             ),
-            PartialValidationError::Validity(OrderValidityError::InsufficientValidTo) => {
-                with_status(
-                    error(
-                        "InsufficientValidTo",
-                        "validTo is not far enough in the future",
-                    ),
-                    StatusCode::BAD_REQUEST,
-                )
-            }
-            PartialValidationError::Validity(OrderValidityError::ExcessiveValidTo) => with_status(
+            PartialValidationError::ValidTo(OrderValidToError::Insufficient) => with_status(
+                error(
+                    "InsufficientValidTo",
+                    "validTo is not far enough in the future",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            PartialValidationError::ValidTo(OrderValidToError::Excessive) => with_status(
                 error("ExcessiveValidTo", "validTo is too far into the future"),
                 StatusCode::BAD_REQUEST,
             ),

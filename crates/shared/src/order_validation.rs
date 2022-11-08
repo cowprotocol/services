@@ -64,7 +64,7 @@ pub trait OrderValidating: Send + Sync {
 #[derive(Debug)]
 pub enum PartialValidationError {
     Forbidden,
-    Validity(OrderValidityError),
+    ValidTo(OrderValidToError),
     TransferEthToContract,
     InvalidNativeSellToken,
     SameBuyAndSellToken,
@@ -76,9 +76,9 @@ pub enum PartialValidationError {
     Other(anyhow::Error),
 }
 
-impl From<OrderValidityError> for PartialValidationError {
-    fn from(err: OrderValidityError) -> Self {
-        Self::Validity(err)
+impl From<OrderValidToError> for PartialValidationError {
+    fn from(err: OrderValidToError) -> Self {
+        Self::ValidTo(err)
     }
 }
 
@@ -177,7 +177,7 @@ pub struct OrderValidator {
     native_token: WETH9,
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
-    validity_configuration: OrderValidityConfiguration,
+    validity_configuration: OrderValidPeriodConfiguration,
     signature_configuration: SignatureConfiguration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
@@ -245,7 +245,7 @@ impl OrderValidator {
         native_token: WETH9,
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
-        validity_configuration: OrderValidityConfiguration,
+        validity_configuration: OrderValidPeriodConfiguration,
         signature_configuration: SignatureConfiguration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         quoter: Arc<dyn OrderQuoting>,
@@ -532,49 +532,47 @@ impl OrderValidating for OrderValidator {
 
 /// Order validity period configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct OrderValidityConfiguration {
+pub struct OrderValidPeriodConfiguration {
     pub min: Duration,
     pub max_market: Duration,
     pub max_limit: Duration,
 }
 
-impl OrderValidityConfiguration {
+impl OrderValidPeriodConfiguration {
     /// Validates an order's timestamp based on additional data.
-    fn validate_period(&self, order: &PreOrderData) -> Result<(), OrderValidityError> {
+    fn validate_period(&self, order: &PreOrderData) -> Result<(), OrderValidToError> {
         let now = time::now_in_epoch_seconds();
         if order.valid_to < time::timestamp_after_duration(now, self.min) {
-            return Err(OrderValidityError::InsufficientValidTo);
+            return Err(OrderValidToError::Insufficient);
         }
-        if let Some(max) = self.max(order) {
-            if order.valid_to > time::timestamp_after_duration(now, max) {
-                return Err(OrderValidityError::ExcessiveValidTo);
-            }
+        if order.valid_to > time::timestamp_after_duration(now, self.max(order)) {
+            return Err(OrderValidToError::Excessive);
         }
 
         Ok(())
     }
 
     /// Returns the maximum valid timestamp for the specified order.
-    fn max(&self, order: &PreOrderData) -> Option<Duration> {
+    fn max(&self, order: &PreOrderData) -> Duration {
         // For now, there is no maximum `validTo` for pre-sign orders as a hack
         // for dealing with signature collection times. We should probably
         // revisit this.
         if order.signing_scheme == SigningScheme::PreSign {
-            return None;
+            return Duration::MAX;
         }
 
         match order.class {
-            OrderClass::Ordinary => Some(self.max_market),
-            OrderClass::Limit => Some(self.max_limit),
-            OrderClass::Liquidity => None,
+            OrderClass::Ordinary => self.max_market,
+            OrderClass::Limit => self.max_limit,
+            OrderClass::Liquidity => Duration::MAX,
         }
     }
 }
 
 #[derive(Debug)]
-pub enum OrderValidityError {
-    InsufficientValidTo,
-    ExcessiveValidTo,
+pub enum OrderValidToError {
+    Insufficient,
+    Excessive,
 }
 
 /// Signature configuration that is accepted by the orderbook.
@@ -817,7 +815,7 @@ mod tests {
     async fn pre_validate_err() {
         let mut code_fetcher = Box::new(MockCodeFetching::new());
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
-        let validity_configuration = OrderValidityConfiguration {
+        let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
             max_limit: Duration::from_secs(200),
@@ -901,8 +899,8 @@ mod tests {
                     ..Default::default()
                 })
                 .await,
-            Err(PartialValidationError::Validity(
-                OrderValidityError::InsufficientValidTo,
+            Err(PartialValidationError::ValidTo(
+                OrderValidToError::Insufficient,
             ))
         ));
         assert!(matches!(
@@ -914,8 +912,8 @@ mod tests {
                     ..Default::default()
                 })
                 .await,
-            Err(PartialValidationError::Validity(
-                OrderValidityError::ExcessiveValidTo,
+            Err(PartialValidationError::ValidTo(
+                OrderValidToError::Excessive,
             ))
         ));
         assert!(matches!(
@@ -928,8 +926,8 @@ mod tests {
                     ..Default::default()
                 })
                 .await,
-            Err(PartialValidationError::Validity(
-                OrderValidityError::ExcessiveValidTo,
+            Err(PartialValidationError::ValidTo(
+                OrderValidToError::Excessive,
             ))
         ));
         assert!(matches!(
@@ -987,7 +985,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1016,7 +1014,7 @@ mod tests {
     #[tokio::test]
     async fn pre_validate_ok() {
         let liquidity_order_owner = H160::from_low_u64_be(0x42);
-        let validity_configuration = OrderValidityConfiguration {
+        let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
             max_limit: Duration::from_secs(200),
@@ -1118,7 +1116,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1299,7 +1297,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1350,7 +1348,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1404,7 +1402,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1456,7 +1454,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1511,7 +1509,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1569,7 +1567,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1622,7 +1620,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1679,7 +1677,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidityConfiguration {
+            OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
@@ -1739,7 +1737,7 @@ mod tests {
                     dummy_contract!(WETH9, [0xef; 20]),
                     hashset!(),
                     hashset!(),
-                    OrderValidityConfiguration {
+                    OrderValidPeriodConfiguration {
                         min: Duration::from_secs(1),
                         max_market: Duration::MAX,
                         max_limit: Duration::MAX,
