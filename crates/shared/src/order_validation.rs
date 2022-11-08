@@ -506,7 +506,7 @@ impl OrderValidating for OrderValidator {
         let class = match (is_outside_market_price, liquidity_owner) {
             (true, true) => OrderClass::Liquidity,
             (true, false) if self.enable_limit_orders => OrderClass::Limit,
-            _ => OrderClass::Ordinary,
+            _ => OrderClass::Market,
         };
 
         if class == OrderClass::Limit {
@@ -1287,7 +1287,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(quote, None);
-        assert_eq!(order.metadata.class, OrderClass::Ordinary);
+        assert_eq!(order.metadata.class, OrderClass::Market);
     }
 
     #[tokio::test]
