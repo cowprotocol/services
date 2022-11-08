@@ -162,12 +162,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
         tracing::trace!(body = %text, "response");
-        let context = || {
-            format!(
-                "request query {}, request body {}, response body {}",
-                query, body, text
-            )
-        };
+        let context = || format!("request query {}, response body {}", query, text);
         ensure!(
             status.is_success(),
             "solver response is not success: status {}, {}",
