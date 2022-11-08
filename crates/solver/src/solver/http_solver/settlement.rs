@@ -263,6 +263,10 @@ fn match_prepared_and_settled_amms(
     prepared_amms: Vec<Liquidity>,
     settled_amms: HashMap<H160, UpdatedAmmModel>,
 ) -> Result<Vec<ExecutedAmm>> {
+    let prepared_amms: HashMap<H160, Liquidity> = prepared_amms
+        .into_iter()
+        .filter_map(|amm| amm.address().map(|address| (address, amm)))
+        .collect();
     settled_amms
         .into_iter()
         .filter(|(address, settled)| {
@@ -280,8 +284,7 @@ fn match_prepared_and_settled_amms(
         .map(|(address, settled)| {
             Ok(ExecutedAmm {
                 order: prepared_amms
-                    .iter()
-                    .find(|amm| amm.address().unwrap_or_default() == address)
+                    .get(&address)
                     .ok_or_else(|| anyhow!("Invalid AMM {}", address))?
                     .clone(),
                 input: (settled.buy_token, settled.exec_buy_amount),
