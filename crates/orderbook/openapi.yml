@@ -950,6 +950,7 @@ components:
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
               UnsupportedSignature,
+              TooManyLimitOrders,
             ]
         description:
           type: string

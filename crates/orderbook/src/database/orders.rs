@@ -1,5 +1,6 @@
 use super::Postgres;
 use anyhow::{Context as _, Result};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
@@ -14,6 +15,7 @@ use model::{
         OrderUid,
     },
     signature::Signature,
+    time::now_in_epoch_seconds,
 };
 use num::Zero;
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
@@ -25,6 +27,7 @@ use shared::{
         sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
+    order_validation::LimitOrderCounting,
 };
 use sqlx::{types::BigDecimal, Connection, PgConnection};
 use std::convert::TryInto;
@@ -251,6 +254,26 @@ impl OrderStoring for Postgres {
         })
         .try_collect()
         .await
+    }
+}
+
+#[async_trait]
+impl LimitOrderCounting for Postgres {
+    async fn count(&self, owner: H160) -> Result<u64> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["count_limit_orders"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        Ok(database::orders::count_limit_orders(
+            &mut ex,
+            now_in_epoch_seconds().try_into().unwrap(),
+            &ByteArray(owner.0),
+        )
+        .await?
+        .try_into()
+        .unwrap())
     }
 }
 

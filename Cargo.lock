@@ -2530,6 +2530,7 @@ dependencies = [
  "ethcontract",
  "futures",
  "lazy_static",
+ "model",
  "primitive-types",
  "prometheus",
  "shared",
