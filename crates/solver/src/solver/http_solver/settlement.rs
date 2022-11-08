@@ -663,6 +663,19 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         };
 
+        let lo_1 = LimitOrder {
+            id: crate::liquidity::LimitOrderUid::ZeroEx("1".to_string()),
+            sell_token: token_a,
+            buy_token: token_a,
+            sell_amount: U256::from(996570293625199060u128),
+            buy_amount: U256::from(289046068204476404625u128),
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+            exchange: crate::liquidity::Exchange::ZeroEx,
+            ..Default::default()
+        };
+
         let wpo = WeightedProductOrder {
             address: H160::from_low_u64_be(2),
             reserves: hashmap! {
@@ -705,6 +718,7 @@ mod tests {
         let liquidity = vec![
             Liquidity::ConstantProduct(cpo_0.clone()),
             Liquidity::ConstantProduct(cpo_1.clone()),
+            Liquidity::LimitOrder(lo_1.clone()),
             Liquidity::BalancerWeighted(wpo.clone()),
             Liquidity::BalancerStable(spo.clone()),
         ];
