@@ -16,8 +16,15 @@ use std::collections::BTreeMap;
 pub struct Request {
     pub auction: AuctionId,
     pub transaction_hash: Option<H256>,
+    pub transaction: Option<Transaction>,
     pub competition: SolverCompetitionDB,
     pub rewards: Vec<(OrderUid, f64)>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Transaction {
+    pub account: H160,
+    pub nonce: u64,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the
