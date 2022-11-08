@@ -11,7 +11,10 @@ use crate::{
 use futures::FutureExt as _;
 use model::order::OrderKind;
 use primitive_types::H160;
-use std::{time::{Instant, Duration}, sync::{Arc, RwLock}};
+use std::{
+    sync::{Arc, RwLock},
+    time::{Duration, Instant},
+};
 
 pub struct OneInchTradeFinder {
     inner: Inner,
@@ -47,7 +50,7 @@ impl OneInchTradeFinder {
                 protocol_cache: ProtocolCache::default(),
                 referrer_address,
                 spender_cache: Default::default(),
-                spender_max_age: Duration::from_secs(60)
+                spender_max_age: Duration::from_secs(60),
             },
             sharing: Default::default(),
         }
@@ -135,12 +138,13 @@ impl Inner {
     /// to avoid unnecessary requests.
     async fn spender(&self) -> Result<H160, TradeError> {
         let spender = *self.spender_cache.read().unwrap();
-        let is_recent = |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
+        let is_recent =
+            |updated_at| Instant::now().duration_since(updated_at) < self.spender_max_age;
         match spender {
             Some((spender, updated_at)) if is_recent(updated_at) => {
                 return Ok(spender);
-            },
-            _ => ()
+            }
+            _ => (),
         };
         let spender = self.api.get_spender().await?.address;
         let now = Instant::now();
@@ -487,11 +491,12 @@ mod tests {
     async fn spender_gets_cached() {
         const SPENDER_MAX_AGE_MILLIS: u64 = 10;
         let spender = |address: u64| Spender {
-            address: H160::from_low_u64_be(address)
+            address: H160::from_low_u64_be(address),
         };
         let mock_api = |address: u64| {
             let mut one_inch = MockOneInchClient::new();
-            one_inch.expect_get_spender()
+            one_inch
+                .expect_get_spender()
                 .returning(move || async move { Ok(spender(address)) }.boxed())
                 .times(1);
             one_inch
@@ -521,6 +526,5 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(SPENDER_MAX_AGE_MILLIS)).await;
         let result = inner.spender().await.unwrap();
         assert_eq!(result, spender(2).address);
-
     }
 }
