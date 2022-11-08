@@ -408,6 +408,8 @@ async fn main() {
             optimal_quoter.clone(),
             balance_fetcher,
             signature_validator,
+            database.clone(),
+            args.max_limit_orders_per_user,
         )
         .with_limit_orders(args.enable_limit_orders),
     );

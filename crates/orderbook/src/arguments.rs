@@ -124,6 +124,10 @@ pub struct Arguments {
     /// Enable limit orders. Once the full limit order flow is implemented, this can be removed.
     #[clap(long, env, default_value = "false")]
     pub enable_limit_orders: bool,
+
+    /// Max number of limit orders per user.
+    #[clap(long, env, default_value = "10")]
+    pub max_limit_orders_per_user: u64,
 }
 
 impl std::fmt::Display for Arguments {
