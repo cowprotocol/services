@@ -1,6 +1,8 @@
 use crate::{auction::AuctionId, TransactionHash};
 use sqlx::{types::JsonValue, PgConnection};
 
+// TODO: once the auction_transaction are verified to work we can remove the tx_hash
+// column and argument.
 pub async fn save(
     ex: &mut PgConnection,
     id: AuctionId,
@@ -33,9 +35,12 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<LoadById>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT json, tx_hash
-FROM solver_competitions
-WHERE id = $1
+SELECT sc.json, s.tx_hash
+FROM solver_competitions sc
+-- outer joins because the data might not have been indexed yet
+LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
+LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+WHERE sc.id = $1
     ;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
@@ -51,9 +56,11 @@ pub async fn load_by_tx_hash(
     tx_hash: &TransactionHash,
 ) -> Result<Option<LoadByTxHash>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT json, id
-FROM solver_competitions
-WHERE tx_hash = $1
+SELECT sc.json, sc.id
+FROM solver_competitions sc
+JOIN auction_transaction at ON sc.id = at.auction_id
+JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+WHERE s.tx_hash = $1
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
@@ -61,7 +68,11 @@ WHERE tx_hash = $1
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::byte_array::ByteArray;
+    use crate::{
+        byte_array::ByteArray,
+        events::{Event, EventIndex, Settlement},
+        Address,
+    };
     use sqlx::Connection;
 
     #[tokio::test]
@@ -94,9 +105,10 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        let id: i64 = 5;
         let value = JsonValue::Bool(true);
         let hash = ByteArray([1u8; 32]);
-        save(&mut db, 0, &value, Some(&hash)).await.unwrap();
+        save(&mut db, id, &value, Some(&hash)).await.unwrap();
 
         let value_by_id = load_by_id(&mut db, 0).await.unwrap().unwrap();
         let value_by_hash = load_by_tx_hash(&mut db, &hash).await.unwrap().unwrap();
@@ -105,10 +117,45 @@ mod tests {
         assert_eq!(value, value_by_hash.json);
         assert_eq!(value_by_hash.id, 0);
 
-        let not_found = load_by_tx_hash(&mut db, &ByteArray([2u8; 32]))
+        // Fails because the tx_hash stored directly in the solver_competitions table is no longer
+        // used to look the competition up.
+        assert!(load_by_tx_hash(&mut db, &hash).await.unwrap().is_none());
+
+        // Now insert the proper settlement event and account-nonce.
+
+        let index = EventIndex::default();
+        let event = Event::Settlement(Settlement {
+            solver: Default::default(),
+            transaction_hash: hash,
+        });
+        crate::events::append(&mut db, &[(index, event)])
             .await
             .unwrap();
-        assert!(not_found.is_none());
+
+        let tx_from: Address = ByteArray([0x01; 20]);
+        let tx_nonce: i64 = 2;
+        crate::auction_transaction::insert_settlement_tx_info(
+            &mut db,
+            index.block_number,
+            index.log_index,
+            &tx_from,
+            tx_nonce,
+        )
+        .await
+        .unwrap();
+
+        crate::auction_transaction::upsert_auction_transaction(&mut db, id, &tx_from, tx_nonce)
+            .await
+            .unwrap();
+
+        // Now succeeds.
+        let value_by_hash = load_by_tx_hash(&mut db, &hash).await.unwrap().unwrap();
+        assert_eq!(value, value_by_hash.json);
+        assert_eq!(id, value_by_hash.id);
+
+        // By id also sees the hash now.
+        let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
+        assert_eq!(hash, value_by_id.tx_hash.unwrap());
     }
 
     #[tokio::test]
