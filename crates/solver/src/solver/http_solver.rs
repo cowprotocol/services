@@ -302,7 +302,7 @@ fn order_models(
         .collect()
 }
 
-fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, AmmModel> {
+fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, AmmModel> {
     liquidity
         .iter()
         .filter(|liquidity| !matches!(liquidity, Liquidity::LimitOrder(_)))
@@ -383,9 +383,8 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                 },
             })
         })
-        .enumerate()
-        .filter_map(|(index, result)| match result {
-            Ok(value) => Some((index, value)),
+        .filter_map(|result| match result {
+            Ok(value) => Some((value.address, value)),
             Err(err) => {
                 tracing::error!(?err, "error converting liquidity to solver model");
                 None
