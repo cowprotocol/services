@@ -103,14 +103,30 @@ impl HttpSolver {
         &self,
         auction_id: AuctionId,
         run_id: u64,
-        orders: Vec<LimitOrder>,
+        mut orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
+        // The HTTP solver interface expects liquidity limit orders (like 0x
+        // limit orders) to be added to the `orders` models and NOT the
+        // `liquidity` models. Split the two here to avoid indexing errors
+        // later on.
+        let (limit_orders, amms) = liquidity.into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut limit_orders, mut amms), liquidity| {
+                match liquidity {
+                    Liquidity::LimitOrder(limit_order) => limit_orders.push(limit_order),
+                    amm => amms.push(amm),
+                }
+                (limit_orders, amms)
+            },
+        );
+        orders.extend(limit_orders);
+
         let market_makable_token_list = self.market_makable_token_list.addresses();
 
-        let tokens = map_tokens_for_solver(&orders, &liquidity, &market_makable_token_list);
+        let tokens = map_tokens_for_solver(&orders, &amms, &market_makable_token_list);
         let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
@@ -157,7 +173,7 @@ impl HttpSolver {
             // connection between them. Ideally, this filtering **should not be
             // needed** and done in the optimization solvers themselves, since
             // it is logic specific to those solvers.
-            compute_fee_connected_tokens(&liquidity, self.native_token)
+            compute_fee_connected_tokens(&amms, self.native_token)
         } else {
             // For external solvers assume all tokens are connected to the fee
             // token as they may use additional internal liquidity that we don't
@@ -177,7 +193,7 @@ impl HttpSolver {
             &market_makable_token_list,
         );
         let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
-        let amm_models = amm_models(&liquidity, &gas_model);
+        let amm_models = amm_models(&amms, &gas_model);
         let model = BatchAuctionModel {
             tokens: token_models,
             orders: order_models,
@@ -190,7 +206,13 @@ impl HttpSolver {
                 native_token: Some(self.native_token),
             }),
         };
-        Ok((model, SettlementContext { orders, liquidity }))
+        Ok((
+            model,
+            SettlementContext {
+                orders,
+                liquidity: amms,
+            },
+        ))
     }
 }
 
@@ -210,7 +232,7 @@ fn map_tokens_for_solver(
             Liquidity::ConstantProduct(amm) => token_set.extend(amm.tokens),
             Liquidity::BalancerWeighted(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::BalancerStable(amm) => token_set.extend(amm.reserves.keys()),
-            Liquidity::LimitOrder(order) => token_set.extend([order.sell_token, order.buy_token]),
+            Liquidity::LimitOrder(_) => panic!("limit orders are expected to be filtered out"),
             Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
@@ -305,7 +327,6 @@ fn order_models(
 fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, AmmModel> {
     liquidity
         .iter()
-        .filter(|liquidity| !matches!(liquidity, Liquidity::LimitOrder(_)))
         .map(|liquidity| -> Result<_> {
             Ok(match liquidity {
                 Liquidity::ConstantProduct(amm) => AmmModel {
@@ -368,7 +389,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     mandatory: false,
                     address: amm.address,
                 },
-                Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
+                Liquidity::LimitOrder(_) => panic!("limit orders are expected to be filtered out"),
                 Liquidity::Concentrated(amm) => AmmModel {
                     parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
                         pool: amm.pool.clone(),
@@ -433,7 +454,7 @@ impl Solver for HttpSolver {
         Auction {
             id,
             run,
-            mut orders,
+            orders,
             liquidity,
             gas_price,
             deadline,
@@ -444,10 +465,6 @@ impl Solver for HttpSolver {
         if orders.is_empty() {
             return Ok(Vec::new());
         };
-        orders.extend(liquidity.iter().filter_map(|liquidity| match liquidity {
-            Liquidity::LimitOrder(order) => Some(order.clone()),
-            _ => None,
-        }));
 
         let (model, context) = {
             let mut guard = self.instance_cache.lock().await;
@@ -543,6 +560,7 @@ mod tests {
     use crate::{
         interactions::allowances::MockAllowanceManaging,
         liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
+        settlement::external_prices::externalprices,
         solver::http_solver::buffers::MockBufferRetrieving,
     };
     use ::model::TokenPair;
@@ -805,5 +823,114 @@ mod tests {
         "#;
         let parsed_response = serde_json::from_str::<SettledBatchAuctionModel>(example_response);
         assert!(parsed_response.is_ok());
+    }
+
+    #[tokio::test]
+    async fn prepares_models_with_mixed_liquidity() {
+        let address = |x| H160([x; 20]);
+        let native_token = address(0xef);
+
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos.expect_get_token_infos().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| (*token, TokenInfo::default()))
+                .collect()
+        });
+
+        let mut buffer_retriever = MockBufferRetrieving::new();
+        buffer_retriever.expect_get_buffers().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| (*token, Ok(U256::zero())))
+                .collect()
+        });
+
+        let solver = HttpSolver::new(
+            DefaultHttpSolverApi {
+                name: "Test Solver".to_string(),
+                network_name: "mock_network_id".to_string(),
+                chain_id: 0,
+                base: "https://crash.bandicoop".parse().unwrap(),
+                client: Client::new(),
+                config: SolverConfig::default(),
+            },
+            Account::Local(Address::default(), None),
+            H160::zero(),
+            Arc::new(token_infos),
+            Arc::new(buffer_retriever),
+            Arc::new(MockAllowanceManaging::new()),
+            Arc::new(OrderConverter::test(native_token)),
+            Default::default(),
+            false, // filter_non_fee_connected_orders
+            SlippageCalculator::default(),
+            Default::default(),
+        );
+
+        let (model, context) = solver
+            .prepare_model(
+                42,
+                1337,
+                vec![
+                    LimitOrder {
+                        sell_token: address(1),
+                        buy_token: address(2),
+                        sell_amount: 1.into(),
+                        buy_amount: 2.into(),
+                        ..Default::default()
+                    },
+                    LimitOrder {
+                        sell_token: address(3),
+                        buy_token: address(4),
+                        sell_amount: 3.into(),
+                        buy_amount: 4.into(),
+                        ..Default::default()
+                    },
+                ],
+                vec![
+                    Liquidity::ConstantProduct(ConstantProductOrder {
+                        address: address(0x56),
+                        tokens: TokenPair::new(address(5), address(6)).unwrap(),
+                        reserves: (5, 6),
+                        ..Default::default()
+                    }),
+                    Liquidity::LimitOrder(LimitOrder {
+                        sell_token: address(7),
+                        buy_token: address(8),
+                        sell_amount: 7.into(),
+                        buy_amount: 8.into(),
+                        ..Default::default()
+                    }),
+                    Liquidity::ConstantProduct(ConstantProductOrder {
+                        address: address(0x9a),
+                        tokens: TokenPair::new(address(9), address(10)).unwrap(),
+                        reserves: (9, 10),
+                        ..Default::default()
+                    }),
+                ],
+                1e9,
+                externalprices! {
+                    native_token: native_token,
+                    address(1) => BigRational::new(1.into(), 1.into()),
+                    address(2) => BigRational::new(2.into(), 2.into()),
+                    address(3) => BigRational::new(3.into(), 3.into()),
+                    address(4) => BigRational::new(4.into(), 4.into()),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_btreemap_size(&model.orders, 3);
+        assert_btreemap_size(&model.amms, 2);
+
+        assert_eq!(context.orders.len(), 3);
+        assert_eq!(context.liquidity.len(), 2);
+    }
+
+    fn assert_btreemap_size<V>(map: &BTreeMap<usize, V>, len: usize) {
+        assert_eq!(map.len(), len);
+        for i in 0..len {
+            assert!(map.contains_key(&i));
+        }
     }
 }
