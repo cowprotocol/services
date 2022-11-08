@@ -920,7 +920,7 @@ mod tests {
                             "0x0303030303030303030303030303030303030303030303030303030303030303",
                         "feeAmount": "13",
                         "kind": "sell",
-                        "class": "ordinary",
+                        "class": "market",
                         "partiallyFillable": true,
                         "sellTokenBalance": "external",
                         "signingScheme": "eip1271",

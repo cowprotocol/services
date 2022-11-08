@@ -22,7 +22,7 @@ pub enum OrderKind {
 #[sqlx(rename_all = "lowercase")]
 pub enum OrderClass {
     #[default]
-    Ordinary,
+    Market,
     Liquidity,
     Limit,
 }
@@ -412,7 +412,8 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
 (o.cancellation_timestamp IS NOT NULL OR
-    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0
+    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
+    (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
 ) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
@@ -569,6 +570,31 @@ pub fn limit_orders_with_outdated_fees(
         .fetch(ex)
 }
 
+/// Count the number of valid limit orders belonging to a particular user.
+pub async fn count_limit_orders(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+    owner: &Address,
+) -> Result<i64, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT COUNT(*) FROM (",
+        "SELECT ",
+        ORDERS_SELECT,
+        " FROM ",
+        ORDERS_FROM,
+        " WHERE o.valid_to >= $1 ",
+        "AND o.class = 'limit' ",
+        "AND o.owner = $2 ",
+        ") AS o ",
+        "WHERE NOT o.invalidated",
+    );
+    sqlx::query_scalar(QUERY)
+        .bind(min_valid_to)
+        .bind(owner)
+        .fetch_one(ex)
+        .await
+}
+
 pub async fn update_surplus_fee(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -594,6 +620,7 @@ mod tests {
         ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+        onchain_invalidations::insert_onchain_invalidation,
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
@@ -972,6 +999,38 @@ mod tests {
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
         assert!(get_order(&mut db).await.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_onchain_invalidated_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: 3,
+            partially_fillable: true,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+        let result = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!result.invalidated);
+        insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
+            .await
+            .unwrap();
+        let result = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result.invalidated);
     }
 
     #[tokio::test]
