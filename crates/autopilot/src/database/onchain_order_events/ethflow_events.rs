@@ -48,7 +48,10 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                     Some(meta) => meta,
                     None => return Some(Err(anyhow!("event without metadata"))),
                 };
-                let ContractEvent::OrderPlacement(event) = data;
+                let event = match data {
+                    ContractEvent::OrderPlacement(event) => event,
+                    _ => return None,
+                };
                 match convert_to_quote_id_and_user_valid_to(event) {
                     Ok((quote_id, user_valid_to)) => Some(Ok((
                         meta_to_event_index(meta),

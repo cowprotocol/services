@@ -14,6 +14,7 @@ database = { path = "../database" }
 ethcontract = { workspace = true }
 futures = {workspace = true}
 lazy_static = { workspace = true }
+model = { path = "../model" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 shared = { path = "../shared" }

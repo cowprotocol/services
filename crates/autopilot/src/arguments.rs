@@ -23,7 +23,11 @@ pub struct Arguments {
     pub price_estimation: price_estimation::Arguments,
 
     /// Address of the ethflow contract
-    #[clap(long, env, default_value = "31172bb2b5f97e8e89cf3376495d7bc7252f5a53")]
+    #[clap(
+        long,
+        env,
+        default_value = "0x26c3801b4840dab317cedfd7aeaf9f45fdd22830"
+    )]
     pub ethflow_contract: H160,
 
     // Feature flag for ethflow
@@ -136,7 +140,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow contract: {}", self.ethflow_contract)?;
+        writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
         writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
