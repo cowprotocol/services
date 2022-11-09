@@ -501,6 +501,8 @@ pub async fn main(args: arguments::Arguments) {
         risk_adjusted_rewards,
         args.ethflow_contract,
         args.max_surplus_fee_age * 2,
+        // TODO CLI argument
+        0.97.try_into().unwrap(),
     );
     solvable_orders_cache
         .update(block)

@@ -1,8 +1,15 @@
 use crate::{database::Postgres, risk_adjusted_rewards};
 use anyhow::{Context as _, Result};
+use bigdecimal::BigDecimal;
 use chrono::Utc;
 use futures::StreamExt;
-use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
+use model::{
+    auction::Auction,
+    order::{Order, OrderClass},
+    signature::Signature,
+    time::now_in_epoch_seconds,
+};
+use number_conversions::u256_to_big_decimal;
 use primitive_types::{H160, H256, U256};
 use prometheus::{IntCounter, IntGauge};
 use shared::{
@@ -63,6 +70,7 @@ pub struct SolvableOrdersCache {
     reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ethflow_contract_address: H160,
     surplus_fee_age: Duration,
+    limit_order_price_factor: BigDecimal,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -95,6 +103,7 @@ impl SolvableOrdersCache {
         reward_calculator: Option<risk_adjusted_rewards::Calculator>,
         ethflow_contract_address: H160,
         surplus_fee_age: Duration,
+        limit_order_price_factor: BigDecimal,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -117,6 +126,7 @@ impl SolvableOrdersCache {
             reward_calculator,
             ethflow_contract_address,
             surplus_fee_age,
+            limit_order_price_factor,
         });
         tokio::task::spawn(update_task(
             Arc::downgrade(&self_),
@@ -187,6 +197,9 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
+
+        let orders = self.filter_mispriced_limit_orders(orders, &prices);
+
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
                 .calculate_many(&orders)
@@ -235,6 +248,30 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
+    }
+
+    /// Filter out limit orders which are far enough outside the estimated native token price.
+    fn filter_mispriced_limit_orders(
+        &self,
+        mut orders: Vec<Order>,
+        prices: &BTreeMap<H160, U256>,
+    ) -> Vec<Order> {
+        orders.retain(|order| {
+            if order.metadata.class != OrderClass::Limit {
+                return true;
+            }
+
+            // Convert the sell price to eth and the buy price to eth and make sure their
+            // difference factor is less than the configured limit.
+            let sell_native = order.data.sell_amount * prices.get(&order.data.sell_token).unwrap()
+                + order.metadata.surplus_fee;
+            let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
+            let min = sell_native.min(buy_native);
+            let max = sell_native.max(buy_native);
+            let factor = u256_to_big_decimal(&max) / u256_to_big_decimal(&min);
+            factor <= self.limit_order_price_factor
+        });
+        orders
     }
 }
 
