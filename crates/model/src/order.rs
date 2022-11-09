@@ -206,6 +206,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_surplus_fee(mut self, surplus_fee: U256) -> Self {
+        self.0.metadata.surplus_fee = surplus_fee;
+        self
+    }
+
     pub fn build(self) -> Order {
         self.0
     }
