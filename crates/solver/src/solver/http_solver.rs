@@ -322,7 +322,7 @@ fn order_models(
         .collect()
 }
 
-fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, AmmModel> {
+fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, AmmModel> {
     liquidity
         .iter()
         .map(|liquidity| -> Result<_> {
@@ -402,9 +402,8 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                 },
             })
         })
-        .enumerate()
-        .filter_map(|(index, result)| match result {
-            Ok(value) => Some((index, value)),
+        .filter_map(|result| match result {
+            Ok(value) => Some((value.address, value)),
             Err(err) => {
                 tracing::error!(?err, "error converting liquidity to solver model");
                 None
@@ -786,7 +785,7 @@ mod tests {
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "1000000000000000000"
               },
               "amms": {
-                "9": {
+                "0x0000000000000000000000000000000000000000": {
                   "kind": "WeightedProduct",
                   "reserves": {
                     "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
@@ -919,7 +918,7 @@ mod tests {
             .unwrap();
 
         assert_btreemap_size(&model.orders, 3);
-        assert_btreemap_size(&model.amms, 2);
+        assert_eq!(model.amms.len(), 2);
 
         assert_eq!(context.orders.len(), 3);
         assert_eq!(context.liquidity.len(), 2);
