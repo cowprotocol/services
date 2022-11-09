@@ -5,9 +5,8 @@ use database::{
     OrderUid,
 };
 use primitive_types::H160;
-use shared::{transport::MAX_BATCH_SIZE, Web3, Web3CallBatch};
+use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
-use std::time::SystemTime;
 
 const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
 
@@ -75,14 +74,10 @@ impl RefundService {
     }
 
     async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
-        let unix_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
         let mut ex = self.db.acquire().await?;
         refundable_orders(
             &mut ex,
-            unix_timestamp,
+            model::time::now_in_epoch_seconds().into(),
             self.min_validity_duration,
             self.min_slippage,
         )

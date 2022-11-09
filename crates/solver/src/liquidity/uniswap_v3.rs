@@ -12,17 +12,16 @@ use model::TokenPair;
 use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens, recent_block_cache::Block,
-    sources::uniswap_v3::pool_fetching::PoolFetching, Web3,
+    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
+    sources::uniswap_v3::pool_fetching::PoolFetching,
 };
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 // 1h timeout for Uniswap V3 interactions
-const TIMEOUT: u64 = 3600;
+const TIMEOUT: u32 = 3600;
 
 pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
@@ -157,10 +156,7 @@ impl UniswapV3SettlementHandler {
                     fee,
                     recipient: self.inner.gpv2_settlement.address(),
                     deadline: {
-                        SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
+                        model::time::now_in_epoch_seconds()
                             .saturating_add(TIMEOUT)
                             .into()
                     },
@@ -177,10 +173,15 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     // Creates the required interaction to convert the given input into output. Assumes slippage is
     // already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
+        tracing::debug!("entered encoding UniswapV3SettlementHandler");
         let (approval, swap) = self.settle(
             execution.input_max,
             execution.output,
             self.fee.context("missing fee")?,
+        );
+        tracing::debug!(
+            "adding interactions, internalizable: {}",
+            execution.internalizable
         );
         encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);

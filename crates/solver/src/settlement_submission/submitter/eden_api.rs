@@ -17,7 +17,7 @@ use futures::{FutureExt, TryFutureExt};
 use jsonrpc_core::types::Value;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
-use shared::{transport::http::HttpTransport, Web3, Web3Transport};
+use shared::ethrpc::{http::HttpTransport, Web3, Web3Transport};
 use web3::{helpers, types::Bytes};
 
 #[derive(Clone)]

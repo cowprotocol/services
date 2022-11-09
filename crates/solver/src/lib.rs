@@ -22,7 +22,7 @@ pub mod solver;
 mod test;
 
 use anyhow::Result;
-use shared::Web3;
+use shared::ethrpc::Web3;
 
 pub async fn get_settlement_contract(web3: &Web3) -> Result<contracts::GPv2Settlement> {
     Ok(contracts::GPv2Settlement::deployed(web3).await?)

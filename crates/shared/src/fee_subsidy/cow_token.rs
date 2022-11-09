@@ -1,9 +1,7 @@
 use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
-use crate::transport::buffered::{Buffered, Configuration};
 use anyhow::{Context, Result};
 use cached::{Cached, TimedSizedCache};
 use contracts::{CowProtocolToken, CowProtocolVirtualToken};
-use ethcontract::Web3;
 use primitive_types::{H160, U256};
 use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
@@ -72,20 +70,6 @@ impl CowSubsidy {
             false,
         );
 
-        // Create buffered transport to do the two calls we make per user in one batch.
-        let transport = token.raw_instance().web3().transport().clone();
-        let buffered = Buffered::with_config(
-            transport,
-            Configuration {
-                max_concurrent_requests: None,
-                max_batch_len: 2,
-                batch_delay: Duration::from_secs(1),
-            },
-        );
-        let web3 = Web3::new(buffered);
-        let token = CowProtocolToken::at(&web3, token.address());
-        let vtoken = CowProtocolVirtualToken::at(&web3, vtoken.address());
-
         Self {
             token,
             vtoken,
@@ -130,14 +114,14 @@ impl FeeSubsidizing for CowSubsidy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Web3;
+    use crate::ethrpc::Web3;
     use hex_literal::hex;
 
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
         crate::tracing::initialize_for_tests("orderbook=debug");
-        let transport = crate::transport::create_env_test_transport();
+        let transport = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
         let vtoken = CowProtocolVirtualToken::deployed(&web3).await.unwrap();

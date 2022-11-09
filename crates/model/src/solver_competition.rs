@@ -15,26 +15,32 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
     pub auction: AuctionId,
-    pub competition: SolverCompetition,
+    pub transaction_hash: Option<H256>,
+    pub competition: SolverCompetitionDB,
     pub rewards: Vec<(OrderUid, f64)>,
 }
 
-/// This struct is stored directly in the database and returned through the solver_competition
-/// endpoint.
+/// Stored directly in the database and turned into SolverCompetitionAPI for the
+/// `/solver_competition` endpoint.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct SolverCompetition {
-    // default annotation because until https://github.com/cowprotocol/services/pull/488 we weren't
-    // storing an auction id in the database.
-    #[serde(default)]
-    pub auction_id: AuctionId,
+pub struct SolverCompetitionDB {
     pub gas_price: f64,
     pub auction_start_block: u64,
     pub liquidity_collected_block: u64,
     pub competition_simulation_block: u64,
-    pub transaction_hash: Option<H256>,
     pub auction: CompetitionAuction,
     pub solutions: Vec<SolverSettlement>,
+}
+
+/// Returned by the `/solver_competition` endpoint.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SolverCompetitionAPI {
+    pub auction_id: AuctionId,
+    pub transaction_hash: Option<H256>,
+    #[serde(flatten)]
+    pub common: SolverCompetitionDB,
 }
 
 #[serde_as]
@@ -135,48 +141,50 @@ mod tests {
             ],
         });
 
-        let orig = SolverCompetition {
+        let orig = SolverCompetitionAPI {
             auction_id: 0,
-            gas_price: 1.,
-            auction_start_block: 13,
-            liquidity_collected_block: 14,
-            competition_simulation_block: 15,
             transaction_hash: Some(H256([0x11; 32])),
-            auction: CompetitionAuction {
-                orders: vec![
-                    OrderUid([0x11; 56]),
-                    OrderUid([0x22; 56]),
-                    OrderUid([0x33; 56]),
-                ],
-                prices: btreemap! {
-                    H160([0x11; 20]) => 1000.into(),
-                    H160([0x22; 20]) => 2000.into(),
-                    H160([0x33; 20]) => 3000.into(),
+            common: SolverCompetitionDB {
+                gas_price: 1.,
+                auction_start_block: 13,
+                liquidity_collected_block: 14,
+                competition_simulation_block: 15,
+                auction: CompetitionAuction {
+                    orders: vec![
+                        OrderUid([0x11; 56]),
+                        OrderUid([0x22; 56]),
+                        OrderUid([0x33; 56]),
+                    ],
+                    prices: btreemap! {
+                        H160([0x11; 20]) => 1000.into(),
+                        H160([0x22; 20]) => 2000.into(),
+                        H160([0x33; 20]) => 3000.into(),
+                    },
                 },
-            },
-            solutions: vec![SolverSettlement {
-                solver: "2".to_string(),
-                objective: Objective {
-                    total: 3.,
-                    surplus: 4.,
-                    fees: 5.,
-                    cost: 6.,
-                    gas: 7,
-                },
-                clearing_prices: btreemap! {
-                    H160([0x22; 20]) => 8.into(),
-                },
-                orders: vec![Order {
-                    id: OrderUid([0x33; 56]),
-                    executed_amount: 12.into(),
+                solutions: vec![SolverSettlement {
+                    solver: "2".to_string(),
+                    objective: Objective {
+                        total: 3.,
+                        surplus: 4.,
+                        fees: 5.,
+                        cost: 6.,
+                        gas: 7,
+                    },
+                    clearing_prices: btreemap! {
+                        H160([0x22; 20]) => 8.into(),
+                    },
+                    orders: vec![Order {
+                        id: OrderUid([0x33; 56]),
+                        executed_amount: 12.into(),
+                    }],
+                    call_data: vec![0x13],
                 }],
-                call_data: vec![0x13],
-            }],
+            },
         };
 
         let serialized = serde_json::to_value(&orig).unwrap();
         assert_eq!(correct, serialized);
-        let deserialized: SolverCompetition = serde_json::from_value(correct).unwrap();
+        let deserialized: SolverCompetitionAPI = serde_json::from_value(correct).unwrap();
         assert_eq!(orig, deserialized);
     }
 }

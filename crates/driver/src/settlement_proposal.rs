@@ -48,7 +48,7 @@ impl TradedOrder {
     /// buy_token whereas liquidity orders must not get surplus so they return their limit price.
     fn buy_token_price(&self, clearing_prices: &HashMap<H160, U256>) -> Option<U256> {
         match self.order.metadata.class {
-            OrderClass::Ordinary => clearing_prices.get(&self.order.data.buy_token).cloned(),
+            OrderClass::Market => clearing_prices.get(&self.order.data.buy_token).cloned(),
             OrderClass::Liquidity | OrderClass::Limit => clearing_prices
                 .get(&self.order.data.sell_token)?
                 .checked_mul(self.order.data.sell_amount)?

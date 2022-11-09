@@ -1,6 +1,6 @@
 use crate::http_client::response_body_with_size_limit;
 use ::model::auction::AuctionId;
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use reqwest::{
     header::{self, HeaderValue},
     Client, Url,
@@ -100,7 +100,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         // We use one second because the old MIP solver uses integer timeouts.
         let solver_timeout = timeout
             .checked_sub(Duration::from_secs(1))
-            .ok_or_else(|| anyhow!("no time left to send request"))?;
+            .context("no time left to send request")?;
 
         let mut url = self.base.join("solve")?;
 
@@ -162,12 +162,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
         tracing::trace!(body = %text, "response");
-        let context = || {
-            format!(
-                "request query {}, request body {}, response body {}",
-                query, body, text
-            )
-        };
+        let context = || format!("request query {}, response body {}", query, text);
         ensure!(
             status.is_success(),
             "solver response is not success: status {}, {}",

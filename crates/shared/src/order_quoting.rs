@@ -241,7 +241,7 @@ impl Quote {
 }
 
 /// Detailed data for a computed order quote.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteData {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -267,21 +267,6 @@ pub struct QuoteData {
     /// Since different quote kinds have different expirations,
     /// we need to store the quote kind to prevent missuse of quotes.
     pub quote_kind: QuoteKind,
-}
-
-impl Default for QuoteData {
-    fn default() -> Self {
-        Self {
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            quoted_sell_amount: Default::default(),
-            quoted_buy_amount: Default::default(),
-            fee_parameters: Default::default(),
-            kind: Default::default(),
-            expiration: Utc.timestamp(0, 0),
-            quote_kind: QuoteKind::Standard,
-        }
-    }
 }
 
 impl TryFrom<QuoteRow> for QuoteData {

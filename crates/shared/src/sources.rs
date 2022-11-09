@@ -13,7 +13,7 @@ use self::uniswap_v2::{
     pair_provider::PairProvider,
     pool_fetching::{Pool, PoolFetching},
 };
-use crate::{recent_block_cache::Block, Web3};
+use crate::{ethrpc::Web3, recent_block_cache::Block};
 use anyhow::{bail, Result};
 use model::TokenPair;
 use std::{

@@ -23,7 +23,11 @@ pub struct Arguments {
     pub price_estimation: price_estimation::Arguments,
 
     /// Address of the ethflow contract
-    #[clap(long, env, default_value = "31172bb2b5f97e8e89cf3376495d7bc7252f5a53")]
+    #[clap(
+        long,
+        env,
+        default_value = "0x26c3801b4840dab317cedfd7aeaf9f45fdd22830"
+    )]
     pub ethflow_contract: H160,
 
     // Feature flag for ethflow
@@ -43,7 +47,7 @@ pub struct Arguments {
     pub db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
-    #[clap(long)]
+    #[clap(long, env)]
     pub skip_event_sync: bool,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
@@ -92,6 +96,7 @@ pub struct Arguments {
     pub banned_users: Vec<H160>,
 
     /// If the auction hasn't been updated in this amount of time the pod fails the liveness check.
+    /// Expects a value in seconds.
     #[clap(
         long,
         env,
@@ -99,6 +104,16 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_auction_age: Duration,
+
+    /// If a limit order surplus fee is older than this, it will get refreshed. Expects a value in
+    /// seconds.
+    #[clap(
+        long,
+        env,
+        default_value = "180",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_surplus_fee_age: Duration,
 
     #[clap(long, env)]
     pub cip_14_beta: Option<f64>,
@@ -125,7 +140,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow contract: {}", self.ethflow_contract)?;
+        writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
         writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;

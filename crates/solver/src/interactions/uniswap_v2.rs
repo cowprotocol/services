@@ -39,7 +39,7 @@ mod tests {
     use super::*;
     use contracts::IUniswapLikeRouter;
     use hex_literal::hex;
-    use shared::{dummy_contract, transport::dummy};
+    use shared::{dummy_contract, ethrpc::dummy};
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];

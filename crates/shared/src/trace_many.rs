@@ -1,5 +1,5 @@
-use crate::Web3;
-use anyhow::{anyhow, Context, Result};
+use crate::ethrpc::Web3;
+use anyhow::{Context, Result};
 use web3::{
     types::{BlockNumber, BlockTrace, CallRequest, TraceType},
     Transport,
@@ -38,13 +38,10 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<B
 // Ok(false) if transactions simulate with at least one revert.
 pub fn all_calls_succeeded(traces: &[BlockTrace]) -> Result<bool> {
     for trace in traces {
-        let transaction_trace = trace
-            .trace
-            .as_ref()
-            .ok_or_else(|| anyhow!("trace not set"))?;
+        let transaction_trace = trace.trace.as_ref().context("trace not set")?;
         let first = transaction_trace
             .first()
-            .ok_or_else(|| anyhow!("expected at least one trace"))?;
+            .context("expected at least one trace")?;
         if first.error.is_some() {
             return Ok(false);
         }

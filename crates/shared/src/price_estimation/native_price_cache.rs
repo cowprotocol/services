@@ -85,26 +85,30 @@ pub struct CachingNativePriceEstimator(Arc<Inner>);
 impl CachingNativePriceEstimator {
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate native prices which
     /// get cached a duration of `max_age`.
-    pub fn new(estimator: Box<dyn NativePriceEstimating>, max_age: Duration) -> Self {
-        Self(Arc::new(Inner {
-            estimator,
-            cache: Mutex::new(Default::default()),
-            max_age,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
-        }))
-    }
-
     /// Spawns a background task maintaining the cache once per `update_interval`.
     /// Only soon to be outdated prices get updated and recently used prices have a higher priority.
     /// If `update_size` is `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
-    pub fn spawn_maintenance_task(&self, update_interval: Duration, update_size: Option<usize>) {
+    pub fn new(
+        estimator: Box<dyn NativePriceEstimating>,
+        max_age: Duration,
+        update_interval: Duration,
+        update_size: Option<usize>,
+        prefetch_time: Option<Duration>,
+    ) -> Self {
+        let inner = Arc::new(Inner {
+            estimator,
+            cache: Default::default(),
+            max_age,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+        });
         tokio::spawn(update_recently_used_outdated_prices(
-            Arc::downgrade(&self.0),
+            Arc::downgrade(&inner),
             update_interval,
             update_size,
-            PREFETCH_TIME,
+            prefetch_time.unwrap_or(PREFETCH_TIME),
         ));
+        Self(inner)
     }
 }
 
@@ -207,8 +211,13 @@ mod tests {
                 futures::stream::iter([(0, Ok(1.0))]).boxed()
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            None,
+        );
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -231,8 +240,13 @@ mod tests {
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))]).boxed()
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            None,
+        );
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -247,7 +261,6 @@ mod tests {
 
     #[tokio::test]
     async fn maintenance_can_limit_update_size_to_n() {
-        let token = H160::from_low_u64_be;
         let mut inner = MockNativePriceEstimating::new();
         // first request from user
         inner
@@ -255,7 +268,7 @@ mod tests {
             .times(1)
             .returning(move |tokens| {
                 assert_eq!(tokens.len(), 1);
-                assert!(tokens[0] == token(0));
+                assert_eq!(tokens[0], token(0));
                 futures::stream::iter([(0, Ok(1.0))]).boxed()
             });
         // second request from user
@@ -264,7 +277,7 @@ mod tests {
             .times(1)
             .returning(move |tokens| {
                 assert_eq!(tokens.len(), 1);
-                assert!(tokens[0] == token(1));
+                assert_eq!(tokens[0], token(1));
                 futures::stream::iter([(0, Ok(2.0))]).boxed()
             });
         // maintenance task updates n=1 outdated prices
@@ -273,7 +286,7 @@ mod tests {
             .times(1)
             .returning(move |tokens| {
                 assert_eq!(tokens.len(), 1);
-                assert!(tokens[0] == token(1));
+                assert_eq!(tokens[0], token(1));
                 futures::stream::iter([(0, Ok(4.0))]).boxed()
             });
         // user requested something which has been skipped by the maintenance task
@@ -282,18 +295,17 @@ mod tests {
             .times(1)
             .returning(move |tokens| {
                 assert_eq!(tokens.len(), 1);
-                assert!(tokens[0] == token(0));
+                assert_eq!(tokens[0], token(0));
                 futures::stream::iter([(0, Ok(3.0))]).boxed()
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
-        let _join_handle = tokio::spawn(update_recently_used_outdated_prices(
-            Arc::downgrade(&estimator.0),
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
             Duration::from_millis(50),
             Some(1),
-            Duration::ZERO,
-        ));
+            Some(Duration::default()),
+        );
 
         // fill cache with 2 different queries
         let results = estimator
@@ -344,15 +356,13 @@ mod tests {
                 futures::stream::iter(std::iter::repeat(Ok(2.0)).enumerate().take(10)).boxed()
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
-
-        let _join_handle = tokio::spawn(update_recently_used_outdated_prices(
-            Arc::downgrade(&estimator.0),
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
             Duration::from_millis(50),
             None,
-            Duration::ZERO,
-        ));
+            Some(Duration::default()),
+        );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
         let results = estimator

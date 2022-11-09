@@ -1,11 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use crate::{
+    ethrpc::{Web3, Web3CallBatch},
     sources::uniswap_v2::{
         pair_provider::PairProvider,
         pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
     },
-    Web3, Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::ISwaprPair;
@@ -61,8 +61,10 @@ fn handle_results(
 mod tests {
     use super::*;
     use crate::{
-        ethcontract_error, recent_block_cache::Block, sources::swapr,
-        transport::create_env_test_transport, Web3,
+        ethcontract_error,
+        ethrpc::{create_env_test_transport, Web3},
+        recent_block_cache::Block,
+        sources::swapr,
     };
     use ethcontract::H160;
     use maplit::hashset;

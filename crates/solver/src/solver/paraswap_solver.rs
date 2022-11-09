@@ -15,13 +15,13 @@ use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::{
+    ethrpc::Web3,
     paraswap_api::{
         DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
         TradeAmount, TransactionBuilderQuery,
     },
     rate_limiter::RateLimiter,
     token_info::{TokenInfo, TokenInfoFetching},
-    Web3,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -215,9 +215,9 @@ mod tests {
     use reqwest::Client;
     use shared::{
         dummy_contract,
+        ethrpc::create_env_test_transport,
         paraswap_api::MockParaswapApi,
         token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
-        transport::create_env_test_transport,
     };
     use std::collections::HashMap;
 

@@ -524,7 +524,7 @@ fn track_block_range(range: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{transport::create_env_test_transport, Web3};
+    use crate::ethrpc::{create_env_test_transport, Web3};
     use contracts::{gpv2_settlement, GPv2Settlement};
     use ethcontract::{BlockNumber, H256};
     use std::str::FromStr;

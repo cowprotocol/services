@@ -32,7 +32,7 @@ type MaybeInternalizableInteraction = (Arc<dyn Interaction>, bool);
 /// Additionally, the fact that the settlement is kept in an intermediate
 /// representation allows the encoder to potentially perform gas optimizations
 /// (e.g. collapsing two interactions into one equivalent one).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SettlementEncoder {
     // Make sure to update the `merge` method when adding new fields.
 
@@ -50,12 +50,6 @@ pub struct SettlementEncoder {
     execution_plan: Vec<MaybeInternalizableInteraction>,
     pre_interactions: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
-}
-
-impl Default for SettlementEncoder {
-    fn default() -> Self {
-        Self::new(Default::default())
-    }
 }
 
 /// Whether or not internalizable interactions should be encoded as calldata
@@ -177,7 +171,7 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    /// Adds the passed trade to the execution plan. Handles specifics of ordinary, limit and
+    /// Adds the passed trade to the execution plan. Handles specifics of market, limit and
     /// liquidity orders internally.
     pub fn add_trade(
         &mut self,
@@ -188,7 +182,7 @@ impl SettlementEncoder {
         verify_executed_amount(&order, executed_amount)?;
         let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
-            OrderClass::Ordinary => {
+            OrderClass::Market => {
                 self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
             OrderClass::Liquidity => {
@@ -447,6 +441,7 @@ impl SettlementEncoder {
             .map(|trade| trade.encode(uniform_clearing_price_vec_length))
             .collect();
         trades.append(&mut liquidity_order_trades);
+        tracing::debug!("execution plan: {:?}", self.execution_plan);
         EncodedSettlement {
             tokens,
             clearing_prices,
@@ -463,13 +458,18 @@ impl SettlementEncoder {
                     .chain(
                         self.execution_plan
                             .iter()
-                            .filter_map(|(interaction, internalizable)| {
+                            .enumerate()
+                            .filter_map(|(index, (interaction, internalizable))| {
                                 if *internalizable
                                     && matches!(
                                         internalization_strategy,
                                         InternalizationStrategy::SkipInternalizableInteraction
                                     )
                                 {
+                                    tracing::debug!(
+                                        "skipped internalizable interaction with index {}",
+                                        index
+                                    );
                                     None
                                 } else {
                                     Some(interaction)

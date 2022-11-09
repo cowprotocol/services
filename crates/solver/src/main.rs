@@ -5,6 +5,7 @@ use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    ethrpc::{self, Web3},
     http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
@@ -56,7 +57,12 @@ async fn main() {
 
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
+    let web3 = ethrpc::web3(
+        &args.shared.ethrpc,
+        &http_factory,
+        &args.shared.node_url,
+        "base",
+    );
     let chain_id = web3
         .eth()
         .chain_id()
@@ -312,7 +318,12 @@ async fn main() {
         .transaction_submission_nodes
         .into_iter()
         .enumerate()
-        .map(|(index, url)| (shared::web3(&http_factory, &url, index), url))
+        .map(|(index, url)| {
+            (
+                ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, index),
+                url,
+            )
+        })
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
@@ -456,7 +467,7 @@ async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: Arc<BaseTokens>,
-    web3: shared::Web3,
+    web3: Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
     for (source, pool_cache) in sources {

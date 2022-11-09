@@ -2,6 +2,7 @@ use primitive_types::{H160, H256};
 use reqwest::Url;
 use shared::{
     arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
+    ethrpc,
     gas_price_estimation::GasEstimatorType,
     http_client,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
@@ -18,6 +19,9 @@ use tracing::level_filters::LevelFilter;
 pub struct Arguments {
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub ethrpc: ethrpc::Arguments,
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
@@ -148,6 +152,7 @@ pub struct Arguments {
     /// network before going to back to solving.
     #[clap(
         long,
+        env,
         default_value = "120",
         value_parser = shared::arguments::duration_from_seconds,
     )]
@@ -156,6 +161,7 @@ pub struct Arguments {
     /// Amount of time to wait before retrying to submit the tx to the ethereum network
     #[clap(
         long,
+        env,
         default_value = "2",
         value_parser = shared::arguments::duration_from_seconds,
     )]
@@ -239,6 +245,7 @@ pub struct Arguments {
     /// to be before updating
     #[clap(
         long,
+        env,
         default_value = "30",
         value_parser = duration_from_seconds,
     )]
@@ -266,6 +273,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;

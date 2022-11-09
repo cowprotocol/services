@@ -28,6 +28,7 @@ use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     conversions::U256Ext,
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     http_solver::{
         model::{AuctionResult, SimulatedTransaction},
@@ -36,7 +37,6 @@ use shared::{
     token_info::TokenInfoFetching,
     token_list::AutoUpdatingTokenList,
     zeroex_api::ZeroExApi,
-    Web3,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -234,9 +234,9 @@ impl FromStr for ExternalSolverArg {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('|');
-        let name = parts.next().ok_or_else(|| anyhow!("missing name"))?;
-        let url = parts.next().ok_or_else(|| anyhow!("missing url"))?;
-        let account = parts.next().ok_or_else(|| anyhow!("missing account"))?;
+        let name = parts.next().context("missing name")?;
+        let url = parts.next().context("missing url")?;
+        let account = parts.next().context("missing account")?;
         Ok(Self {
             name: name.to_string(),
             url: url.parse().context("parse url")?,
@@ -430,9 +430,7 @@ pub fn create(
                     Ok(shared(single_order(Box::new(BalancerSorSolver::new(
                         account,
                         vault_contract
-                            .ok_or_else(|| {
-                                anyhow!("missing Balancer Vault deployment for SOR solver")
-                            })?
+                            .context("missing Balancer Vault deployment for SOR solver")?
                             .clone(),
                         settlement_contract.clone(),
                         Arc::new(DefaultBalancerSorApi::new(

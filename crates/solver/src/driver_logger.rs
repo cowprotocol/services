@@ -16,7 +16,7 @@ use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::H256;
-use shared::{tenderly_api::TenderlyApi, Web3};
+use shared::{ethrpc::Web3, tenderly_api::TenderlyApi};
 use std::sync::Arc;
 use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};

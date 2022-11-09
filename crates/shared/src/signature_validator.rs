@@ -1,4 +1,7 @@
-use crate::{ethcontract_error::EthcontractErrorType, transport::MAX_BATCH_SIZE, Web3};
+use crate::{
+    ethcontract_error::EthcontractErrorType,
+    ethrpc::{Web3, MAX_BATCH_SIZE},
+};
 use contracts::ERC1271SignatureValidator;
 use ethcontract::{
     batch::CallBatch,

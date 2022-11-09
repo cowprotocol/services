@@ -13,8 +13,8 @@ use futures::FutureExt;
 use gas_estimation::GasPrice1559;
 use primitive_types::{H160, H256, U256};
 use shared::{
+    ethrpc::Web3,
     tenderly_api::{SimulationRequest, TenderlyApi},
-    Web3,
 };
 use web3::types::{AccessList, BlockId};
 
@@ -39,34 +39,19 @@ const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 pub async fn simulate_and_estimate_gas_at_current_block(
     settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
-    web3: &Web3,
     gas_price: GasPrice1559,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
     // Collect into Vec to not rely on Itertools::chunk which would make this future !Send.
     let settlements: Vec<_> = settlements.collect();
 
-    // Needed because sending an empty batch request gets an empty response which doesn't
-    // deserialize correctly.
-    if settlements.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let web3 = web3::Web3::new(shared::transport::buffered::Buffered::new(
-        web3.transport().clone(),
-    ));
-    let contract_with_buffered_transport = GPv2Settlement::at(&web3, contract.address());
+    // Force settlement simulations to be done in smaller batches. They can be
+    // quite large and exert significant node pressure.
     let mut results = Vec::new();
     for chunk in settlements.chunks(SIMULATE_BATCH_SIZE) {
         let calls = chunk
             .iter()
             .map(|(account, settlement, access_list)| {
-                let tx = settle_method(
-                    gas_price,
-                    &contract_with_buffered_transport,
-                    settlement.clone(),
-                    account.clone(),
-                )
-                .tx;
+                let tx = settle_method(gas_price, contract, settlement.clone(), account.clone()).tx;
                 let tx = match access_list {
                     Some(access_list) => tx.access_list(access_list.clone()),
                     None => tx,
@@ -77,6 +62,7 @@ pub async fn simulate_and_estimate_gas_at_current_block(
         let chuck_results = futures::future::join_all(calls).await;
         results.extend(chuck_results);
     }
+
     Ok(results)
 }
 
@@ -169,9 +155,9 @@ pub async fn simulate_before_after_access_list(
         .eth()
         .transaction_receipt(transaction_hash)
         .await?
-        .ok_or_else(|| anyhow!("no transaction receipt"))?
+        .context("no transaction receipt")?
         .gas_used
-        .ok_or_else(|| anyhow!("no gas used field"))?;
+        .context("no gas used field")?;
 
     Ok(gas_used_without_access_list as f64 - gas_used_with_access_list.to_f64_lossy())
 }
@@ -208,7 +194,7 @@ pub fn settle_method_builder(
 
 /// The call data of a settle call with this settlement.
 pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&shared::transport::dummy::web3(), H160::default());
+    let contract = GPv2Settlement::at(&shared::ethrpc::dummy::web3(), H160::default());
     let method = contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
@@ -261,10 +247,10 @@ mod tests {
     use num::{rational::Ratio, BigRational};
     use serde_json::json;
     use shared::{
+        ethrpc::create_env_test_transport,
         http_solver::model::SettledBatchAuctionModel,
         sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
         tenderly_api::TenderlyHttpApi,
-        transport::create_env_test_transport,
     };
     use std::{
         str::FromStr,
@@ -276,7 +262,10 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         // Create some bogus settlements to see that the simulation returns an error.
-        shared::tracing::initialize("solver=debug,shared=debug", tracing::Level::ERROR.into());
+        shared::tracing::initialize(
+            "info,solver=debug,shared=debug,shared::transport=trace",
+            tracing::Level::ERROR.into(),
+        );
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let block = web3.eth().block_number().await.unwrap().as_u64();
@@ -307,7 +296,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,
-            &web3,
             Default::default(),
         )
         .await
@@ -317,7 +305,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::empty(),
             &contract,
-            &web3,
             Default::default(),
         )
         .await
@@ -383,6 +370,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
+            "class": "market",
         });
         let order0: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -414,6 +402,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": true,
+            "class": "liquidity",
         });
         let order1: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -445,6 +434,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
+            "class": "market",
         });
         let order2: Order = serde_json::from_value(value).unwrap();
 
@@ -686,7 +676,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_chunked() {
-        shared::tracing::initialize("solver=debug,shared=debug", tracing::Level::ERROR.into());
+        shared::tracing::initialize(
+            "info,solver=debug,shared=debug,shared::transport=trace",
+            tracing::Level::ERROR.into(),
+        );
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
@@ -700,7 +693,6 @@ mod tests {
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,
-            &web3,
             GasPrice1559::default(),
         )
         .await

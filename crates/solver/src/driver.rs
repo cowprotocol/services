@@ -22,19 +22,20 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
+    order::OrderClass,
     solver_competition::{
-        self, CompetitionAuction, Objective, SolverCompetition, SolverSettlement,
+        self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
+    ethrpc::Web3,
     http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
     token_list::AutoUpdatingTokenList,
-    Web3,
 };
 use std::{
     sync::Arc,
@@ -310,13 +311,11 @@ impl Driver {
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
-        let solver_competition = SolverCompetition {
-            auction_id,
+        let solver_competition = SolverCompetitionDB {
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
             liquidity_collected_block: current_block_during_liquidity_fetch,
             competition_simulation_block: block_during_simulation,
-            transaction_hash: None,
             auction: competition_auction,
             solutions: rated_settlements
                 .iter()
@@ -358,6 +357,7 @@ impl Driver {
         };
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
+            transaction_hash: None,
             competition: solver_competition,
             rewards: Vec::new(),
         };
@@ -379,9 +379,20 @@ impl Driver {
                 winning_settlement
             );
 
-            // Note that order_trades doesn't include liquidity orders.
-            for trade in winning_settlement.settlement.encoder.order_trades() {
-                let uid = &trade.trade.order.metadata.uid;
+            let encoder = &winning_settlement.settlement.encoder;
+            let trades0 = encoder.order_trades().iter().map(|trade| &trade.trade);
+            let trades1 = encoder
+                .custom_price_trades()
+                .iter()
+                .map(|trade| &trade.trade);
+            for trade in trades0.chain(trades1) {
+                // full match so we get compilation error when new variant is added
+                match trade.order.metadata.class {
+                    OrderClass::Market => (),
+                    OrderClass::Liquidity => continue,
+                    OrderClass::Limit => (),
+                }
+                let uid = &trade.order.metadata.uid;
                 let reward = rewards.get(uid).copied().unwrap_or(0.);
                 // Log in case something goes wrong with storing the rewards in the database.
                 tracing::debug!(%uid, %reward, "winning solution reward");
@@ -415,7 +426,7 @@ impl Driver {
             if let Some(hash) = hash {
                 // Rewards were already stored and don't change.
                 solver_competition.rewards.clear();
-                solver_competition.competition.transaction_hash = Some(hash);
+                solver_competition.transaction_hash = Some(hash);
                 self.send_solver_competition(&solver_competition).await;
             }
 

@@ -1,5 +1,5 @@
 use crate::database::Postgres;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use database::{byte_array::ByteArray, trades::TradesQueryRow};
 use ethcontract::H160;
 use futures::{stream::TryStreamExt, StreamExt};
@@ -51,11 +51,11 @@ fn trade_from(row: TradesQueryRow) -> Result<Trade> {
     let log_index = row.log_index.try_into().context("log_index is not u32")?;
     let order_uid = OrderUid(row.order_uid.0);
     let buy_amount = big_decimal_to_big_uint(&row.buy_amount)
-        .ok_or_else(|| anyhow!("buy_amount is not an unsigned integer"))?;
+        .context("buy_amount is not an unsigned integer")?;
     let sell_amount = big_decimal_to_big_uint(&row.sell_amount)
-        .ok_or_else(|| anyhow!("sell_amount is not an unsigned integer"))?;
+        .context("sell_amount is not an unsigned integer")?;
     let sell_amount_before_fees = big_decimal_to_big_uint(&row.sell_amount_before_fees)
-        .ok_or_else(|| anyhow!("sell_amount_before_fees is not an unsigned integer"))?;
+        .context("sell_amount_before_fees is not an unsigned integer")?;
     let owner = H160(row.owner.0);
     let buy_token = H160(row.buy_token.0);
     let sell_token = H160(row.sell_token.0);

@@ -20,6 +20,7 @@ use crate::{
     baseline_solver::BaseTokens,
     code_fetching::CachedCodeFetcher,
     code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+    ethrpc::Web3,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     oneinch_api::OneInchClient,
@@ -32,7 +33,6 @@ use crate::{
     },
     token_info::TokenInfoFetching,
     zeroex_api::ZeroExApi,
-    Web3,
 };
 use anyhow::{Context as _, Result};
 use ethcontract::{H160, U256};
@@ -63,6 +63,7 @@ pub struct Network {
     pub name: String,
     pub chain_id: u64,
     pub native_token: H160,
+    pub settlement: H160,
     pub authenticator: H160,
     pub base_tokens: Arc<BaseTokens>,
 }
@@ -277,12 +278,10 @@ impl<'a> PriceEstimatorFactory<'a> {
                 self.native_token_price_estimation_amount()?,
             )),
             self.args.native_price_cache_max_age_secs,
-        ));
-
-        native_estimator.spawn_maintenance_task(
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
-        );
+            None,
+        ));
         Ok(native_estimator)
     }
 }
@@ -347,6 +346,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
             factory.rate_limiter(kind),
+            factory.network.settlement,
         ))
     }
 
@@ -366,6 +366,7 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
             factory.components.zeroex.clone(),
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(kind),
+            factory.network.settlement,
         ))
     }
 
@@ -390,6 +391,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
                 .context("1Inch API not supported for network")?,
             factory.shared_args.disabled_one_inch_protocols.clone(),
             factory.rate_limiter(kind),
+            factory.network.settlement,
             factory.shared_args.one_inch_referrer_address,
         ))
     }

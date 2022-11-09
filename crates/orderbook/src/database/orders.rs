@@ -1,5 +1,6 @@
 use super::Postgres;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
@@ -14,6 +15,7 @@ use model::{
         OrderUid,
     },
     signature::Signature,
+    time::now_in_epoch_seconds,
 };
 use num::Zero;
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
@@ -25,6 +27,7 @@ use shared::{
         sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
     order_quoting::Quote,
+    order_validation::LimitOrderCounting,
 };
 use sqlx::{types::BigDecimal, Connection, PgConnection};
 use std::convert::TryInto;
@@ -92,6 +95,8 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
+        surplus_fee: u256_to_big_decimal(&order.metadata.surplus_fee),
+        surplus_fee_timestamp: order.metadata.surplus_fee_timestamp,
     };
     database::orders::insert_order(ex, &order)
         .await
@@ -252,6 +257,26 @@ impl OrderStoring for Postgres {
     }
 }
 
+#[async_trait]
+impl LimitOrderCounting for Postgres {
+    async fn count(&self, owner: H160) -> Result<u64> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["count_limit_orders"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        Ok(database::orders::count_limit_orders(
+            &mut ex,
+            now_in_epoch_seconds().try_into().unwrap(),
+            &ByteArray(owner.0),
+        )
+        .await?
+        .try_into()
+        .unwrap())
+    }
+}
+
 fn calculate_status(order: &FullOrder) -> OrderStatus {
     match order.kind {
         DbOrderKind::Buy => {
@@ -313,26 +338,23 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
+            .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
         is_liquidity_order: class == OrderClass::Liquidity,
-        // TODO #643 when we add surplus fee caching, this will be properly stored
-        // in the db
-        surplus_fee: Default::default(),
+        surplus_fee: big_decimal_to_u256(&order.surplus_fee.unwrap_or_default())
+            .context("surplus_fee is not U256")?,
+        surplus_fee_timestamp: order.surplus_fee_timestamp.unwrap_or_default(),
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
         buy_token: H160(order.buy_token.0),
         receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount)
-            .ok_or_else(|| anyhow!("sell_amount is not U256"))?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount)
-            .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppId(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount)
-            .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
+        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
@@ -417,6 +439,8 @@ mod tests {
             pre_interactions: Vec::new(),
             ethflow_data: None,
             onchain_user: None,
+            surplus_fee: Default::default(),
+            surplus_fee_timestamp: Default::default(),
         };
 
         // Open - sell (filled - 0%)

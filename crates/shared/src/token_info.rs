@@ -1,4 +1,4 @@
-use crate::Web3;
+use crate::ethrpc::Web3;
 use async_trait::async_trait;
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, H160};
