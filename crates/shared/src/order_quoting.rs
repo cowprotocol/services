@@ -638,7 +638,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
-            class: OrderClass::Ordinary,
+            class: OrderClass::Market,
         }
     }
 }

@@ -230,7 +230,7 @@ impl PreOrderData {
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
             class: match (liquidity_owner, order.fee_amount.is_zero()) {
-                (false, false) => OrderClass::Ordinary,
+                (false, false) => OrderClass::Market,
                 (false, true) => OrderClass::Limit,
                 (true, _) => OrderClass::Liquidity,
             },
@@ -539,6 +539,15 @@ pub struct OrderValidPeriodConfiguration {
 }
 
 impl OrderValidPeriodConfiguration {
+    /// Creates an configuration where any `validTo` is accepted.
+    pub fn any() -> Self {
+        Self {
+            min: Duration::ZERO,
+            max_market: Duration::MAX,
+            max_limit: Duration::MAX,
+        }
+    }
+
     /// Validates an order's timestamp based on additional data.
     fn validate_period(&self, order: &PreOrderData) -> Result<(), OrderValidToError> {
         let now = time::now_in_epoch_seconds();
@@ -562,7 +571,7 @@ impl OrderValidPeriodConfiguration {
         }
 
         match order.class {
-            OrderClass::Ordinary => self.max_market,
+            OrderClass::Market => self.max_market,
             OrderClass::Limit => self.max_limit,
             OrderClass::Liquidity => Duration::MAX,
         }
@@ -1247,8 +1256,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            Duration::from_secs(1),
-            Duration::from_secs(100),
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1297,11 +1305,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1348,11 +1352,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1402,11 +1402,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1454,11 +1450,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1509,11 +1501,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1567,11 +1555,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1620,11 +1604,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1677,11 +1657,7 @@ mod tests {
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
+            OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
@@ -1737,11 +1713,7 @@ mod tests {
                     dummy_contract!(WETH9, [0xef; 20]),
                     hashset!(),
                     hashset!(),
-                    OrderValidPeriodConfiguration {
-                        min: Duration::from_secs(1),
-                        max_market: Duration::MAX,
-                        max_limit: Duration::MAX,
-                    },
+                    OrderValidPeriodConfiguration::any(),
                     SignatureConfiguration::all(),
                     Arc::new(bad_token_detector),
                     Arc::new(order_quoter),

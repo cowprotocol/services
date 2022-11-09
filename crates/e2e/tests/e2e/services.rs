@@ -264,7 +264,7 @@ impl OrderbookServices {
                 contracts.weth.clone(),
                 HashSet::default(),
                 HashSet::default(),
-                OrderValidityConfiguration::any(),
+                OrderValidPeriodConfiguration::any(),
                 SignatureConfiguration::all(),
                 bad_token_detector,
                 quoter.clone(),
