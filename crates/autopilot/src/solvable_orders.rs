@@ -261,7 +261,7 @@ impl SolvableOrdersCache {
                 return true;
             }
 
-            // Convert the sell price to eth and the buy price to eth and make sure their
+            // Convert the sell and buy price to the native token (ETH) and make sure their
             // difference factor is less than the configured limit.
             let sell_native = order.data.sell_amount * prices.get(&order.data.sell_token).unwrap()
                 + order.metadata.surplus_fee;
