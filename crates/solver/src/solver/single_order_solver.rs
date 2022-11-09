@@ -2,11 +2,13 @@ use crate::{
     driver::solver_settlements::merge_settlements,
     liquidity::LimitOrder,
     metrics::SolverMetrics,
-    settlement::Settlement,
+    settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
 use anyhow::{Error, Result};
 use ethcontract::Account;
+use num::BigRational;
+use number_conversions::u256_to_big_rational;
 use primitive_types::U256;
 use rand::prelude::SliceRandom;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
@@ -51,20 +53,42 @@ impl SingleOrderSolver {
             max_settlements_per_solver,
         }
     }
+
+    /// Returns the `native_sell_amount / native_buy_amount` of the given order under the current
+    /// market conditions. The higher the value the more likely it is that this order could get filled.
+    fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> BigRational {
+        let sell_amount = u256_to_big_rational(&order.sell_amount);
+        let buy_amount = u256_to_big_rational(&order.buy_amount);
+        let native_sell_amount = prices.get_native_amount(order.sell_token, sell_amount);
+        let native_buy_amount = prices.get_native_amount(order.buy_token, buy_amount);
+        native_sell_amount / native_buy_amount
+    }
+
+    /// In case there are too many orders to solve before the auction deadline we want to
+    /// prioritize orders which are more likely to be matchable. This is implemented by looking at
+    /// the current native price of the traded tokens and comparing that to the order's limit price.
+    /// Sorts the highest priority orders to the front of the list.
+    fn get_prioritized_orders(
+        orders: &[LimitOrder],
+        prices: &ExternalPrices,
+    ) -> VecDeque<LimitOrder> {
+        // Liquidity orders don't make sense on their own and a `SingleOrderSolver` can't
+        // settle them together with a user order.
+        let mut user_orders: Vec<_> = orders
+            .iter()
+            .filter(|o| !o.is_liquidity_order)
+            .cloned()
+            .collect();
+        user_orders.sort_by_cached_key(|o| Self::estimate_price_viability(o, prices));
+        user_orders.into()
+    }
 }
 
 #[async_trait::async_trait]
 impl Solver for SingleOrderSolver {
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
-        let mut orders = auction.orders.clone();
+        let mut orders = Self::get_prioritized_orders(&auction.orders, &auction.external_prices);
 
-        // Randomize which orders we start with to prevent us getting stuck on bad orders.
-        orders.shuffle(&mut rand::thread_rng());
-
-        let mut orders = orders
-            .into_iter()
-            .filter(|order| !order.is_liquidity_order)
-            .collect::<VecDeque<_>>();
         let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
