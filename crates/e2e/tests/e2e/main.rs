@@ -7,6 +7,8 @@ mod services;
 mod deploy;
 mod local_node;
 
+mod limit_orders;
+
 // Each of the following modules contains one test.
 mod eth_integration;
 mod onchain_settlement;
