@@ -22,6 +22,7 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
+    order::OrderClass,
     solver_competition::{
         self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
@@ -378,9 +379,20 @@ impl Driver {
                 winning_settlement
             );
 
-            // Note that order_trades doesn't include liquidity orders.
-            for trade in winning_settlement.settlement.encoder.order_trades() {
-                let uid = &trade.trade.order.metadata.uid;
+            let encoder = &winning_settlement.settlement.encoder;
+            let trades0 = encoder.order_trades().iter().map(|trade| &trade.trade);
+            let trades1 = encoder
+                .custom_price_trades()
+                .iter()
+                .map(|trade| &trade.trade);
+            for trade in trades0.chain(trades1) {
+                // full match so we get compilation error when new variant is added
+                match trade.order.metadata.class {
+                    OrderClass::Market => (),
+                    OrderClass::Liquidity => continue,
+                    OrderClass::Limit => (),
+                }
+                let uid = &trade.order.metadata.uid;
                 let reward = rewards.get(uid).copied().unwrap_or(0.);
                 // Log in case something goes wrong with storing the rewards in the database.
                 tracing::debug!(%uid, %reward, "winning solution reward");
