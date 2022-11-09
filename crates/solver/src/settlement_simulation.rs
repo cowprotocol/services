@@ -370,7 +370,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
-            "class": "ordinary",
+            "class": "market",
         });
         let order0: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -434,7 +434,7 @@ mod tests {
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
             "isLiquidityOrder": false,
-            "class": "ordinary",
+            "class": "market",
         });
         let order2: Order = serde_json::from_value(value).unwrap();
 

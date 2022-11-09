@@ -23,7 +23,7 @@ use crate::{
 pub struct BatchAuctionModel {
     pub tokens: BTreeMap<H160, TokenInfoModel>,
     pub orders: BTreeMap<usize, OrderModel>,
-    pub amms: BTreeMap<usize, AmmModel>,
+    pub amms: BTreeMap<H160, AmmModel>,
     pub metadata: Option<MetadataModel>,
 }
 
@@ -175,7 +175,7 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
     #[serde(default)]
-    pub amms: HashMap<usize, UpdatedAmmModel>,
+    pub amms: HashMap<H160, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
     #[serde_as(as = "HashMap<_, DecimalU256>")]
     pub prices: HashMap<H160, U256>,
@@ -607,10 +607,10 @@ mod tests {
             },
             orders: btreemap! { 0 => order_model },
             amms: btreemap! {
-                0 => constant_product_pool_model,
-                1 => weighted_product_pool_model,
-                2 => stable_pool_model,
-                3 => concentrated_pool_model,
+                H160::from_low_u64_be(0) => constant_product_pool_model,
+                H160::from_low_u64_be(1) => weighted_product_pool_model,
+                H160::from_low_u64_be(2) => stable_pool_model,
+                H160::from_low_u64_be(3) => concentrated_pool_model,
             },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
@@ -663,7 +663,7 @@ mod tests {
             },
           },
           "amms": {
-            "0": {
+            "0x0000000000000000000000000000000000000000": {
               "kind": "ConstantProduct",
               "reserves": {
                 "0x000000000000000000000000000000000000a866": "200",
@@ -677,7 +677,7 @@ mod tests {
               "mandatory": false,
               "address": "0x0000000000000000000000000000000000000001",
             },
-            "1": {
+            "0x0000000000000000000000000000000000000001": {
               "kind": "WeightedProduct",
               "reserves": {
                 "0x000000000000000000000000000000000000a866": {
@@ -697,7 +697,7 @@ mod tests {
               "mandatory": true,
               "address": "0x0000000000000000000000000000000000000002",
             },
-            "2": {
+            "0x0000000000000000000000000000000000000002": {
               "kind": "Stable",
               "reserves": {
                 "0x000000000000000000000000000000000000a866": "1000",
@@ -716,7 +716,7 @@ mod tests {
               "mandatory": true,
               "address": "0x0000000000000000000000000000000000000003",
             },
-            "3": {
+            "0x0000000000000000000000000000000000000003": {
               "kind": "Concentrated",
               "pool": {
                  "tokens": [
@@ -920,7 +920,7 @@ mod tests {
                             "0x0303030303030303030303030303030303030303030303030303030303030303",
                         "feeAmount": "13",
                         "kind": "sell",
-                        "class": "ordinary",
+                        "class": "market",
                         "partiallyFillable": true,
                         "sellTokenBalance": "external",
                         "signingScheme": "eip1271",

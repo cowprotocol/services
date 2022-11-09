@@ -128,11 +128,11 @@ impl HttpPriceEstimator {
             self.balancer_pools(pairs.clone(), &gas_model),
             self.uniswap_v3_pools(pairs.clone(), &gas_model)
         )?;
-        let amms: BTreeMap<usize, AmmModel> = uniswap_pools
+        let amms: BTreeMap<H160, AmmModel> = uniswap_pools
             .into_iter()
             .chain(balancer_pools)
             .chain(uniswap_v3_pools)
-            .enumerate()
+            .map(|amm| (amm.address, amm))
             .collect();
 
         let mut tokens: HashSet<H160> = Default::default();
@@ -579,7 +579,7 @@ mod tests {
                     }
                 },
                 amms: hashmap! {
-                    0 => UpdatedAmmModel {
+                    H160::from_low_u64_be(0) => UpdatedAmmModel {
                         execution: vec![ExecutedAmmModel {
                             sell_token: H160::from_low_u64_be(0),
                             buy_token: H160::from_low_u64_be(1),

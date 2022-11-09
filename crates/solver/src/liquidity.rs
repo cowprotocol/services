@@ -53,6 +53,16 @@ impl Liquidity {
             Liquidity::Concentrated(amm) => vec![amm.tokens],
         }
     }
+
+    pub fn address(&self) -> Option<H160> {
+        match self {
+            Liquidity::ConstantProduct(amm) => Some(amm.address),
+            Liquidity::BalancerWeighted(amm) => Some(amm.address),
+            Liquidity::BalancerStable(amm) => Some(amm.address),
+            Liquidity::LimitOrder(_) => None,
+            Liquidity::Concentrated(amm) => Some(amm.pool.address),
+        }
+    }
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded

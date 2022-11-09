@@ -124,13 +124,13 @@ fn run() -> Result<()> {
         )?
         .github(
             "CoWSwapOnchainOrders",
-            "cowprotocol/ethflowcontract/v0.0.0/\
-            rc-artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+            "cowprotocol/ethflowcontract/v0.0.0-rc.1\
+            -artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
         )?
         .github(
             "CoWSwapEthFlow",
-            "cowprotocol/ethflowcontract/v0.0.0/\
-            rc-artifacts/artifacts/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+            "cowprotocol/ethflowcontract/v0.0.0-rc.1\
+            -artifacts/artifacts/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
         )?
         .npm(
             "ERC20",

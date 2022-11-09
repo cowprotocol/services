@@ -9,7 +9,8 @@ use crate::{
     price_estimation::PriceEstimationError,
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use contracts::WETH9;
 use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
@@ -99,6 +100,7 @@ pub enum ValidationError {
     WrongOwner(H160),
     ZeroAmount,
     IncompatibleSigningScheme,
+    TooManyLimitOrders,
     Other(anyhow::Error),
 }
 
@@ -157,6 +159,12 @@ impl From<SignatureValidationError> for ValidationError {
     }
 }
 
+#[mockall::automock]
+#[async_trait]
+pub trait LimitOrderCounting: Send + Sync {
+    async fn count(&self, owner: H160) -> Result<u64>;
+}
+
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
@@ -173,6 +181,8 @@ pub struct OrderValidator {
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
     enable_limit_orders: bool,
+    limit_order_counter: Arc<dyn LimitOrderCounting>,
+    max_limit_orders_per_user: u64,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -234,6 +244,8 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
+        limit_order_counter: Arc<dyn LimitOrderCounting>,
+        max_limit_orders_per_user: u64,
     ) -> Self {
         Self {
             code_fetcher,
@@ -248,6 +260,8 @@ impl OrderValidator {
             balance_fetcher,
             signature_validator,
             enable_limit_orders: false,
+            limit_order_counter,
+            max_limit_orders_per_user,
         }
     }
 
@@ -491,9 +505,22 @@ impl OrderValidating for OrderValidator {
 
         let class = match (is_outside_market_price, liquidity_owner) {
             (true, true) => OrderClass::Liquidity,
-            (true, false) if self.enable_limit_orders => OrderClass::Limit,
-            _ => OrderClass::Ordinary,
+            (true, false) if self.enable_limit_orders && order.data.fee_amount.is_zero() => {
+                OrderClass::Limit
+            }
+            _ => OrderClass::Market,
         };
+
+        if class == OrderClass::Limit {
+            let num_limit_orders = self
+                .limit_order_counter
+                .count(owner)
+                .await
+                .map_err(ValidationError::Other)?;
+            if num_limit_orders >= self.max_limit_orders_per_user {
+                return Err(ValidationError::TooManyLimitOrders);
+            }
+        }
 
         let order = Order::from_order_creation(
             &order,
@@ -755,6 +782,8 @@ mod tests {
             .expect_code_size()
             .times(1)
             .return_once(|_| Ok(1));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             code_fetcher,
             native_token,
@@ -767,6 +796,8 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         assert!(matches!(
             validator
@@ -883,6 +914,8 @@ mod tests {
             .expect_code_size()
             .times(1)
             .return_once(|_| Err(_err));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             code_fetcher,
             dummy_contract!(WETH9, [0xef; 20]),
@@ -895,6 +928,8 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
 
         assert!(matches!(
@@ -925,6 +960,8 @@ mod tests {
             .with(eq(H160::from_low_u64_be(2)))
             .returning(|_| Ok(TokenQuality::Good));
 
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -937,6 +974,8 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = || PreOrderData {
             valid_to: model::time::now_in_epoch_seconds()
@@ -988,6 +1027,10 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .never();
 
+        let max_limit_orders_per_user = 1;
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1000,6 +1043,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
+            Arc::new(limit_order_counter),
+            max_limit_orders_per_user,
         );
 
         let creation = OrderCreation {
@@ -1088,6 +1133,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn post_validate_too_many_limit_orders() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+
+        const MAX_LIMIT_ORDERS_PER_USER: u64 = 2;
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter
+            .expect_count()
+            .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
+
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            Arc::new(limit_order_counter),
+            MAX_LIMIT_ORDERS_PER_USER,
+        )
+        .with_limit_orders(true);
+
+        let creation = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let res = validator
+            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
+            .await;
+        assert!(matches!(res, Err(ValidationError::TooManyLimitOrders)));
+    }
+
+    #[tokio::test]
     async fn post_validate_err_zero_amount() {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
@@ -1101,6 +1207,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1113,6 +1221,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1145,6 +1255,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1157,6 +1269,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1175,7 +1289,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(quote, None);
-        assert_eq!(order.metadata.class, OrderClass::Ordinary);
+        assert_eq!(order.metadata.class, OrderClass::Market);
     }
 
     #[tokio::test]
@@ -1192,6 +1306,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1204,6 +1320,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1237,6 +1355,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1249,6 +1369,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1285,6 +1407,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1297,6 +1421,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1336,6 +1462,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1348,6 +1476,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1382,6 +1512,8 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1394,6 +1526,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1432,6 +1566,8 @@ mod tests {
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
 
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -1444,6 +1580,8 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
+            Arc::new(limit_order_counter),
+            0,
         );
 
         let creation = OrderCreation {
@@ -1485,6 +1623,8 @@ mod tests {
                 balance_fetcher
                     .expect_can_transfer()
                     .returning(|_, _, _, _| Err(TransferSimulationError::$err));
+                let mut limit_order_counter = MockLimitOrderCounting::new();
+                limit_order_counter.expect_count().returning(|_| Ok(0u64));
                 let validator = OrderValidator::new(
                     Box::new(MockCodeFetching::new()),
                     dummy_contract!(WETH9, [0xef; 20]),
@@ -1497,6 +1637,8 @@ mod tests {
                     Arc::new(order_quoter),
                     Arc::new(balance_fetcher),
                     Arc::new(MockSignatureValidating::new()),
+                    Arc::new(limit_order_counter),
+                    0,
                 );
 
                 let order = OrderBuilder::default()

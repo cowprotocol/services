@@ -145,6 +145,7 @@ impl SolutionSubmitter {
         settlement: Settlement,
         gas_estimate: U256,
         account: Account,
+        nonce: U256,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let is_dry_run: bool = self
             .transaction_strategies
@@ -164,6 +165,7 @@ impl SolutionSubmitter {
                     self.settle_with_strategy(
                         strategy,
                         &account,
+                        nonce,
                         gas_estimate,
                         network_id.clone(),
                         settlement.clone(),
@@ -188,10 +190,12 @@ impl SolutionSubmitter {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn settle_with_strategy(
         &self,
         strategy: &TransactionStrategy,
         account: &Account,
+        nonce: U256,
         gas_estimate: U256,
         network_id: String,
         settlement: Settlement,
@@ -228,6 +232,7 @@ impl SolutionSubmitter {
         let submitter = Submitter::new(
             &self.contract,
             account,
+            nonce,
             strategy_args.submit_api.as_ref(),
             &gas_price_estimator,
             self.access_list_estimator.as_ref(),

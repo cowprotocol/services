@@ -175,7 +175,7 @@ pub struct OrderbookServices {
 }
 
 impl OrderbookServices {
-    pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
+    pub async fn new(web3: &Web3, contracts: &Contracts, enable_limit_orders: bool) -> Self {
         let api_db = Arc::new(Postgres::new("postgresql://").unwrap());
         let autopilot_db = autopilot::database::Postgres::new("postgresql://")
             .await
@@ -258,19 +258,24 @@ impl OrderbookServices {
             H160::zero(),
             Default::default(),
         );
-        let order_validator = Arc::new(OrderValidator::new(
-            Box::new(web3.clone()),
-            contracts.weth.clone(),
-            HashSet::default(),
-            HashSet::default(),
-            Duration::from_secs(120),
-            Duration::MAX,
-            SignatureConfiguration::all(),
-            bad_token_detector,
-            quoter.clone(),
-            balance_fetcher,
-            signature_validator,
-        ));
+        let order_validator = Arc::new(
+            OrderValidator::new(
+                Box::new(web3.clone()),
+                contracts.weth.clone(),
+                HashSet::default(),
+                HashSet::default(),
+                Duration::from_secs(120),
+                Duration::MAX,
+                SignatureConfiguration::all(),
+                bad_token_detector,
+                quoter.clone(),
+                balance_fetcher,
+                signature_validator,
+                api_db.clone(),
+                1,
+            )
+            .with_limit_orders(enable_limit_orders),
+        );
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),

@@ -528,6 +528,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
                 logger: logger.clone(),
                 settlement_rater: settlement_rater.clone(),
                 gas_price_estimator: common.gas_price_estimator.clone(),
+                web3: common.web3.clone(),
             });
             (driver, name)
         })
