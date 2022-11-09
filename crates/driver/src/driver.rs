@@ -8,7 +8,10 @@ use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
 use primitive_types::H256;
-use shared::current_block::{block_number, into_stream, Block, CurrentBlockStream};
+use shared::{
+    current_block::{block_number, into_stream, Block, CurrentBlockStream},
+    ethrpc::Web3,
+};
 use solver::{
     driver::submit_settlement,
     driver_logger::DriverLogger,
@@ -29,6 +32,7 @@ pub struct Driver {
     pub settlement_rater: Arc<dyn SettlementRating>,
     pub logger: Arc<DriverLogger>,
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    pub web3: Web3,
 }
 
 impl Driver {
@@ -149,10 +153,19 @@ impl Driver {
     ) -> Result<H256, SubmissionError> {
         let gas_estimate = gas_estimate.expect("checked simulation gas_estimate during validation");
         tracing::info!(?gas_estimate, settlement =? simulation.settlement, "start submitting settlement");
+        let account = simulation.solver.account();
+        let nonce = self
+            .web3
+            .eth()
+            .transaction_count(account.address(), None)
+            .await
+            .context("transaction_count")?;
         submit_settlement(
             &self.submitter,
             &self.logger,
-            simulation.solver,
+            account.clone(),
+            nonce,
+            simulation.solver.name(),
             simulation.settlement,
             gas_estimate,
             None, // the concept of a settlement_id does not make sense here

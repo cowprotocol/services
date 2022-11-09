@@ -2,10 +2,9 @@
 //! competition into the api.
 
 use crate::solver_competition::SolverCompetitionStoring;
-use anyhow::{anyhow, Context};
 use model::solver_competition::Request;
 use reqwest::StatusCode;
-use shared::api::{convert_json_response_with_status, IntoWarpReply};
+use shared::api::convert_json_response_with_status;
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
@@ -34,24 +33,9 @@ pub fn post(
                 ));
             }
 
-            if request.auction != request.competition.auction_id {
-                return Ok(anyhow!(
-                    "auction ids don't match {} != {}",
-                    request.auction,
-                    request.competition.auction_id
-                )
-                .into_warp_reply());
-            }
-            let result0 = handler
-                .save_rewards(request.auction, request.rewards.into_iter().collect())
-                .await
-                .context("save_rewards");
-            let result1 = handler
-                .save_competition(request.competition)
-                .await
-                .context("save_competition");
+            let result = handler.handle_request(request).await;
             Ok(convert_json_response_with_status(
-                result0.and(result1),
+                result,
                 StatusCode::CREATED,
             ))
         }
@@ -67,8 +51,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
-        handler.expect_save_competition().returning(|_| Ok(()));
-        handler.expect_save_rewards().returning(|_, _| Ok(()));
+        handler.expect_handle_request().returning(|_| Ok(()));
 
         let filter = post(Arc::new(handler), None);
         let body = serde_json::to_vec(&Request::default()).unwrap();
@@ -86,10 +69,9 @@ mod tests {
     async fn test_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
         handler
-            .expect_save_competition()
+            .expect_handle_request()
             .times(1)
             .returning(|_| Ok(()));
-        handler.expect_save_rewards().returning(|_, _| Ok(()));
 
         let filter = post(Arc::new(handler), Some("auth".to_string()));
         let body = serde_json::to_vec(&Request::default()).unwrap();

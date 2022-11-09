@@ -1,6 +1,7 @@
 pub mod blockscout;
 pub mod ethplorer;
 pub mod liquidity;
+pub mod solvers;
 pub mod token_owner_list;
 
 use self::{
@@ -10,7 +11,11 @@ use self::{
 use crate::{
     arguments::duration_from_seconds,
     bad_token::token_owner_finder::{
-        ethplorer::EthplorerTokenOwnerFinder, token_owner_list::TokenOwnerList,
+        ethplorer::EthplorerTokenOwnerFinder,
+        solvers::{
+            solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+        },
+        token_owner_list::TokenOwnerList,
     },
     baseline_solver::BaseTokens,
     ethcontract_error::EthcontractErrorType,
@@ -24,6 +29,7 @@ use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
 use ethcontract::U256;
 use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
+use reqwest::Url;
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
@@ -83,6 +89,15 @@ pub struct Arguments {
         default_value = "",
     )]
     pub whitelisted_owners: HashMap<H160, Vec<H160>>,
+
+    /// The solvers urls to query the token owner pairs.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub solver_token_owners_urls: Vec<Url>,
+
+    /// Interval in seconds between consecutive queries to update the solver token owner pairs.
+    /// Values should be in pair with `solver_token_owners_urls`
+    #[clap(long, env, use_value_delimiter = true, value_parser = duration_from_seconds)]
+    pub solver_token_owners_cache_update_intervals: Vec<Duration>,
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
@@ -119,6 +134,9 @@ pub enum TokenOwnerFindingStrategy {
 
     /// Use the Ethplorer token holder API.
     Ethplorer,
+
+    /// Use lists provided by the external solver teams
+    Solvers,
 }
 
 impl TokenOwnerFindingStrategy {
@@ -213,6 +231,22 @@ pub async fn init(
             ethplorer.with_rate_limiter(strategy);
         }
         proposers.push(Arc::new(ethplorer));
+    }
+
+    if finders.contains(&TokenOwnerFindingStrategy::Solvers) {
+        for (url, update_interval) in args
+            .solver_token_owners_urls
+            .clone()
+            .into_iter()
+            .zip(args.solver_token_owners_cache_update_intervals.clone())
+        {
+            let solver = Box::new(SolverConfiguration {
+                url,
+                client: http_factory.create(),
+            });
+            let solver = AutoUpdatingSolverTokenOwnerFinder::new(solver, update_interval);
+            proposers.push(Arc::new(solver));
+        }
     }
 
     proposers.push(Arc::new(TokenOwnerList::new(
