@@ -918,7 +918,7 @@ mod tests {
             .unwrap();
 
         assert_btreemap_size(&model.orders, 3);
-        assert_btreemap_size(&model.amms, 2);
+        assert_eq!(model.amms.len(), 2);
 
         assert_eq!(context.orders.len(), 3);
         assert_eq!(context.liquidity.len(), 2);
