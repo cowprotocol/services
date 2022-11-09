@@ -505,7 +505,9 @@ impl OrderValidating for OrderValidator {
 
         let class = match (is_outside_market_price, liquidity_owner) {
             (true, true) => OrderClass::Liquidity,
-            (true, false) if self.enable_limit_orders => OrderClass::Limit,
+            (true, false) if self.enable_limit_orders && order.data.fee_amount.is_zero() => {
+                OrderClass::Limit
+            }
             _ => OrderClass::Market,
         };
 

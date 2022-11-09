@@ -146,7 +146,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         solvable_orders_cache,
         base_tokens,
         ..
-    } = OrderbookServices::new(&web3, &contracts).await;
+    } = OrderbookServices::new(&web3, &contracts, false).await;
 
     let http_factory = HttpClientFactory::default();
     let client = http_factory.create();

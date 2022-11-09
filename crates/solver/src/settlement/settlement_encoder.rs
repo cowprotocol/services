@@ -137,6 +137,7 @@ impl SettlementEncoder {
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
             .clearing_prices
             .get(&order.data.sell_token)
@@ -179,7 +180,6 @@ impl SettlementEncoder {
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
-        verify_executed_amount(&order, executed_amount)?;
         let interactions = order.interactions.clone();
         let execution = match order.metadata.class {
             OrderClass::Market => {
@@ -195,11 +195,87 @@ impl SettlementEncoder {
                 )?
             }
             OrderClass::Limit => {
-                anyhow::bail!("limit orders are not supported by the SettlementEncoder");
+                // Solvers calculate with slightly adjusted amounts compared to this order but because
+                // limit orders are fill-or-kill we can simply use the total original `sell_amount`.
+                let executed_amount = match order.data.kind {
+                    OrderKind::Sell => order.data.sell_amount,
+                    OrderKind::Buy => order.data.buy_amount,
+                };
+                let buy_price = self.custom_price_for_limit_order(&order)?;
+
+                self.add_custom_price_trade(
+                    order,
+                    executed_amount,
+                    scaled_unsubsidized_fee,
+                    buy_price,
+                )?
             }
         };
         self.pre_interactions.extend(interactions.pre.into_iter());
         Ok(execution)
+    }
+
+    /// Uses the uniform clearing prices to compute the individual buy token price to satisfy the
+    /// original limit order which was adjusted to account for the `surplus_fee` (see
+    /// `compute_synthetic_order_amounts_if_limit_order()`).
+    /// Returns an error if the UCP doesn't contain the traded tokens or if under- or overflows
+    /// happen during the computation.
+    fn custom_price_for_limit_order(&self, order: &Order) -> Result<U256> {
+        // The order passed into this function is the original order signed by the user.
+        // But the solver actually computed a solution for an order with `sell_amount -= surplus_fee`.
+        // To account for the `surplus_fee` we first have to compute the expected `sell_amount` and
+        // `buy_amount` adjusted for the order kind and `surplus_fee`.
+        // Afterwards we compute a slightly worse `buy_price` that allows us to buy the expected number
+        // of `buy_token`s while pocketing the `surplus_fee` from the `sell_token`s.
+        let uniform_buy_price = *self
+            .clearing_prices
+            .get(&order.data.buy_token)
+            .context("buy token price is missing")?;
+        let uniform_sell_price = *self
+            .clearing_prices
+            .get(&order.data.sell_token)
+            .context("sell token price is missing")?;
+
+        let (sell_amount, buy_amount) = match order.data.kind {
+            // This means sell as much `sell_token` as needed to buy exactly the expected
+            // `buy_amount`. Therefore we need to solve for `sell_amount`.
+            OrderKind::Buy => {
+                let sell_amount = order
+                    .data
+                    .buy_amount
+                    .checked_mul(uniform_buy_price)
+                    .context("sell_amount computation failed")?
+                    .checked_div(uniform_sell_price)
+                    .context("sell_amount computation failed")?;
+                // We have to sell slightly more `sell_token` to capture the `surplus_fee`
+                let sell_amount_adjusted_for_fees = sell_amount
+                    .checked_add(order.metadata.surplus_fee)
+                    .context("sell_amount computation failed")?;
+                (sell_amount_adjusted_for_fees, order.data.buy_amount)
+            }
+            // This means sell ALL the `sell_token` and get as much `buy_token` as possible.
+            // Therefore we need to solve for `buy_amount`.
+            OrderKind::Sell => {
+                // Solver actually used this `sell_amount` to compute prices.
+                let sell_amount = order
+                    .data
+                    .sell_amount
+                    .checked_sub(order.metadata.surplus_fee)
+                    .context("buy_amount computation failed")?;
+                let buy_amount = sell_amount
+                    .checked_mul(uniform_sell_price)
+                    .context("buy_amount computation failed")?
+                    .checked_div(uniform_buy_price)
+                    .context("buy_amount computation failed")?;
+                (order.data.sell_amount, buy_amount)
+            }
+        };
+
+        sell_amount
+            .checked_mul(uniform_sell_price)
+            .context("custom_buy_price computation failed")?
+            .checked_div(buy_amount)
+            .context("custom_buy_price computation failed")
     }
 
     /// Uses either the existing UCP for the sell token or the sell price within the order to
@@ -236,6 +312,7 @@ impl SettlementEncoder {
         scaled_unsubsidized_fee: U256,
         buy_price: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         // For the encoding strategy of liquidity and limit orders, the sell prices are taken from
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
@@ -1122,5 +1199,113 @@ pub mod tests {
 
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(encoded.interactions[1].len(), 2);
+    }
+
+    #[test]
+    fn computes_custom_price_for_sell_limit_order_correctly() {
+        let weth = token(1);
+        let usdc = token(2);
+        let prices = hashmap! {
+            // assumption 1 WETH == 1_000 USDC (all prices multiplied by 10^18)
+            weth => U256::exp10(18),
+            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+        };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        // sell 1.01 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
+        let order = OrderBuilder::default()
+            .with_class(OrderClass::Limit)
+            .with_sell_token(weth)
+            .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
+            .with_buy_token(usdc)
+            .with_buy_amount(U256::exp10(9)) // 1_000 USDC
+            .with_surplus_fee(U256::exp10(16)) // 0.01 WETH
+            .with_fee_amount(0.into())
+            .with_kind(OrderKind::Sell)
+            .build();
+
+        let execution = encoder
+            .add_trade(order.clone(), U256::exp10(18), U256::exp10(16))
+            .unwrap();
+        assert_eq!(
+            TradeExecution {
+                sell_token: weth,
+                buy_token: usdc,
+                sell_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
+                buy_amount: U256::exp10(9),                        // 1_000 USDC
+                fee_amount: 0.into(),
+            },
+            execution
+        );
+        assert_eq!(
+            CustomPriceTrade {
+                trade: Trade {
+                    order,
+                    sell_token_index: 0,
+                    executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
+                    scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
+                },
+                buy_token_offset_index: 0,
+                // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had to sell
+                // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
+                buy_token_price: 1_010_000_000_000_000_000_000_000_000u128.into()
+            },
+            encoder.custom_price_trades[0]
+        );
+    }
+
+    #[test]
+    fn computes_custom_price_for_buy_limit_order_correctly() {
+        let weth = token(1);
+        let usdc = token(2);
+        // assuming 1 WETH == 1_000 USDC
+        let prices = hashmap! {
+            weth => U256::exp10(18),
+            usdc => U256::exp10(27) // 1 ETH buys 1_000 * 10^6 units of USDC
+        };
+
+        let mut encoder = SettlementEncoder::new(prices);
+        // buy 1 WETH for 1_010 USDC with a fee of 10 USDC
+        let order = OrderBuilder::default()
+            .with_class(OrderClass::Limit)
+            .with_buy_token(weth)
+            .with_buy_amount(U256::exp10(18)) // 1 WETH
+            .with_sell_token(usdc)
+            .with_sell_amount(1_010_000_000u128.into()) // 1_010 USDC
+            .with_surplus_fee(U256::exp10(7)) // 10 USDC
+            .with_fee_amount(0.into())
+            .with_kind(OrderKind::Buy)
+            .build();
+
+        let execution = encoder
+            .add_trade(order.clone(), U256::exp10(18), U256::exp10(7))
+            .unwrap();
+        assert_eq!(
+            TradeExecution {
+                sell_token: usdc,
+                buy_token: weth,
+                // With the original price selling 1_000 USDC would have been enough.
+                // With the adjusted price we actually have to sell all 1_010 USDC.
+                sell_amount: 1_010_000_000u128.into(), // 1_010 USDC
+                buy_amount: U256::exp10(18),           // 1 WETH
+                fee_amount: 0.into(),
+            },
+            execution
+        );
+        assert_eq!(
+            CustomPriceTrade {
+                trade: Trade {
+                    order,
+                    sell_token_index: 1,
+                    executed_amount: U256::exp10(18), // 1 WETH
+                    scaled_unsubsidized_fee: U256::exp10(7)  // 10 USDC
+                },
+                buy_token_offset_index: 0,
+                // Instead of the (solver) anticipated 1_000 USDC required to buy 1 WETH we had to sell
+                // 1_010 USDC (to pocket the fee). This caused the WETH price to increase by 1%.
+                buy_token_price: 1_010_000_000_000_000_000u128.into()
+            },
+            encoder.custom_price_trades[0]
+        );
     }
 }
