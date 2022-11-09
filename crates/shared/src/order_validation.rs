@@ -686,7 +686,7 @@ pub async fn get_quote_and_check_fee(
                 .await
                 .map_err(ValidationError::Other)?;
 
-            tracing::debug!("computed fresh quote for order creation");
+            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
             quote
         }
         Err(err) => return Err(err.into()),
