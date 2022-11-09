@@ -29,7 +29,7 @@ use shared::{
     network::network_name,
     oneinch_api::OneInchClientImpl,
     order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, SignatureConfiguration},
+    order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
     price_estimation::{
         factory::{self, PriceEstimatorFactory},
         PriceEstimating,
@@ -369,6 +369,11 @@ async fn main() {
         None => fee_subsidy_config,
     };
 
+    let validity_configuration = OrderValidPeriodConfiguration {
+        min: args.min_order_validity_period,
+        max_market: args.max_order_validity_period,
+        max_limit: args.max_limit_order_validity_period,
+    };
     let signature_configuration = SignatureConfiguration {
         eip1271: args.enable_eip1271_orders,
         eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
@@ -401,8 +406,7 @@ async fn main() {
                 .iter()
                 .copied()
                 .collect(),
-            args.min_order_validity_period,
-            args.max_order_validity_period,
+            validity_configuration,
             signature_configuration,
             bad_token_detector.clone(),
             optimal_quoter.clone(),
