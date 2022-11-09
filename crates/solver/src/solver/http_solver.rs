@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
+use itertools::{Either, Itertools as _};
 use maplit::{btreemap, hashset};
 use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
@@ -112,16 +113,13 @@ impl HttpSolver {
         // limit orders) to be added to the `orders` models and NOT the
         // `liquidity` models. Split the two here to avoid indexing errors
         // later on.
-        let (limit_orders, amms) = liquidity.into_iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut limit_orders, mut amms), liquidity| {
-                match liquidity {
-                    Liquidity::LimitOrder(limit_order) => limit_orders.push(limit_order),
-                    amm => amms.push(amm),
-                }
-                (limit_orders, amms)
-            },
-        );
+        let (limit_orders, amms): (Vec<_>, Vec<_>) =
+            liquidity
+                .into_iter()
+                .partition_map(|liquidity| match liquidity {
+                    Liquidity::LimitOrder(limit_order) => Either::Left(limit_order),
+                    amm => Either::Right(amm),
+                });
         orders.extend(limit_orders);
 
         let market_makable_token_list = self.market_makable_token_list.addresses();
