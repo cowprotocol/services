@@ -80,13 +80,12 @@ impl DriverLogger {
         submission: &Result<TransactionReceipt, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
-        solver: &Arc<dyn Solver>,
+        solver_name: &str,
     ) {
         self.metrics
-            .settlement_revertable_status(settlement.revertable(), solver.name());
+            .settlement_revertable_status(settlement.revertable(), solver_name);
         match submission {
             Ok(receipt) => {
-                let name = solver.name();
                 tracing::info!(
                     settlement_id,
                     transaction_hash =? receipt.transaction_hash,
@@ -94,10 +93,10 @@ impl DriverLogger {
                 );
                 Self::get_traded_orders(settlement)
                     .iter()
-                    .for_each(|order| self.metrics.order_settled(order, name));
+                    .for_each(|order| self.metrics.order_settled(order, solver_name));
                 self.metrics.settlement_submitted(
                     crate::metrics::SettlementSubmissionOutcome::Success,
-                    name,
+                    solver_name,
                 );
                 if let Err(err) = self
                     .metric_access_list_gas_saved(receipt.transaction_hash)
@@ -119,7 +118,7 @@ impl DriverLogger {
                 // point in logging transaction failures in the form of race conditions as hard errors.
                 tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
-                    .settlement_submitted(err.as_outcome(), solver.name());
+                    .settlement_submitted(err.as_outcome(), solver_name);
                 if let Some(transaction_hash) = err.transaction_hash() {
                     if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
                         tracing::debug!(?err, "access list metric not saved");

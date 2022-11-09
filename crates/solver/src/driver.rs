@@ -16,8 +16,9 @@ use crate::{
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, Solver, Solvers},
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
+use ethcontract::Account;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
@@ -62,6 +63,7 @@ pub struct Driver {
     fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
+    web3: Web3,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -115,7 +117,7 @@ impl Driver {
 
         let logger = DriverLogger {
             metrics: metrics.clone(),
-            web3,
+            web3: web3.clone(),
             tenderly,
             network_id,
             settlement_contract,
@@ -141,6 +143,7 @@ impl Driver {
                 .unwrap(),
             settlement_ranker,
             logger,
+            web3,
         }
     }
 
@@ -358,6 +361,7 @@ impl Driver {
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
             transaction_hash: None,
+            transaction: None,
             competition: solver_competition,
             rewards: Vec::new(),
         };
@@ -399,17 +403,34 @@ impl Driver {
                 solver_competition.rewards.push((*uid, reward));
             }
 
-            // At this point we know that we are going to attempt to settle on chain. We store the
-            // competition info immediately in case we don't find the mined transaction hash later
-            // for example because the driver got restarted. If we get a hash then we store the
-            // competition info again this time including the hash.
-            self.send_solver_competition(&solver_competition).await;
+            let account = winning_solver.account();
+            let address = account.address();
+            let nonce = self
+                .web3
+                .eth()
+                .transaction_count(address, None)
+                .await
+                .context("transaction_count")?;
+            solver_competition.transaction = Some(model::solver_competition::Transaction {
+                account: address,
+                nonce: nonce
+                    .try_into()
+                    .map_err(|err| anyhow!("{err}"))
+                    .context("convert nonce")?,
+            });
+            // This has to succeed in order to continue settling. Otherwise we can't be sure the
+            // competition info has been stored.
+            self.send_solver_competition(&solver_competition).await?;
+
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
+            tracing::debug!(?address, ?nonce, "submitting settlement");
             let hash = match submit_settlement(
                 &self.solution_submitter,
                 &self.logger,
-                winning_solver.clone(),
+                account.clone(),
+                nonce,
+                winning_solver.name(),
                 winning_settlement.settlement.clone(),
                 winning_settlement.gas_estimate,
                 Some(winning_settlement.id as u64),
@@ -424,10 +445,21 @@ impl Driver {
                 _ => None,
             };
             if let Some(hash) = hash {
+                tracing::debug!(?hash, "settled transaction");
+
+                // This step is no longer needed now that we use account and nonce to find the hash.
+                // Temporarily we continue to store the hash until the reward payout script is
+                // updated to get the hash the new way.
+
                 // Rewards were already stored and don't change.
                 solver_competition.rewards.clear();
                 solver_competition.transaction_hash = Some(hash);
-                self.send_solver_competition(&solver_competition).await;
+                // Same for account-nonce
+                solver_competition.transaction.take();
+
+                if let Err(err) = self.send_solver_competition(&solver_competition).await {
+                    tracing::error!(?err, "failed to send tx hash for competition");
+                };
             }
 
             self.logger.report_on_batch(
@@ -465,34 +497,40 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(&self, body: &model::solver_competition::Request) {
+    async fn send_solver_competition(
+        &self,
+        body: &model::solver_competition::Request,
+    ) -> Result<()> {
         // For example shadow solver shouldn't store competition info.
         if !self.api.is_authenticated() {
-            return;
+            return Ok(());
         }
-        match self.api.send_solver_competition(body).await {
-            Ok(()) => tracing::debug!("stored solver competition"),
-            Err(err) => tracing::error!(?err, "failed to send solver competition"),
-        }
+        self.api
+            .send_solver_competition(body)
+            .await
+            .context("send_solver_competition")
     }
 }
 
 /// Submits the winning solution and handles the related logging and metrics.
+#[allow(clippy::too_many_arguments)]
 pub async fn submit_settlement(
     solution_submitter: &SolutionSubmitter,
     logger: &DriverLogger,
-    solver: Arc<dyn Solver>,
+    account: Account,
+    nonce: U256,
+    solver_name: &str,
     settlement: Settlement,
     gas_estimate: U256,
     settlement_id: Option<u64>,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
-        .settle(settlement.clone(), gas_estimate, solver.account().clone())
+        .settle(settlement.clone(), gas_estimate, account, nonce)
         .await;
     logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &settlement, settlement_id, &solver)
+        .log_submission_info(&result, &settlement, settlement_id, solver_name)
         .await;
     result
 }
