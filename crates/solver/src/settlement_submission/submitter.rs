@@ -181,6 +181,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
 pub struct Submitter<'a> {
     contract: &'a GPv2Settlement,
     account: &'a Account,
+    nonce: U256,
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
@@ -191,6 +192,7 @@ impl<'a> Submitter<'a> {
     pub fn new(
         contract: &'a GPv2Settlement,
         account: &'a Account,
+        nonce: U256,
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
@@ -199,6 +201,7 @@ impl<'a> Submitter<'a> {
         Ok(Self {
             contract,
             account,
+            nonce,
             submit_api,
             gas_price_estimator,
             access_list_estimator,
@@ -216,12 +219,11 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
-        let nonce = self.nonce().await?;
         let name = self.submit_api.name();
 
-        tracing::debug!(address=?self.account.address(), ?nonce, "starting solution submission");
+        tracing::debug!(address=?self.account.address(), ?self.nonce, "starting solution submission");
 
-        self.submitted_transactions.remove_older_than(nonce);
+        self.submitted_transactions.remove_older_than(self.nonce);
 
         // Take pending transactions from previous submission loops with the same nonce
         // Those exist if
@@ -229,19 +231,18 @@ impl<'a> Submitter<'a> {
         // 2. Previous loop ended with simulation revert, and cancellation tx was sent but not mined
         let mut transactions = self
             .submitted_transactions
-            .get(self.account.address(), nonce)
+            .get(self.account.address(), self.nonce)
             .unwrap_or_default();
 
         // Continually simulate and submit transactions
         let submit_future = self.submit_with_increasing_gas_prices_until_simulation_fails(
             settlement,
-            nonce,
             &params,
             &mut transactions,
         );
 
         // Nonce future is used to detect if tx is mined
-        let nonce_future = self.wait_for_nonce_to_change(nonce);
+        let nonce_future = self.wait_for_nonce_to_change(self.nonce);
 
         // If specified, deadline future stops submitting when deadline is reached
         let deadline_future = tokio::time::sleep(match params.deadline {
@@ -264,7 +265,7 @@ impl<'a> Submitter<'a> {
                 if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
-                        .cancel_transaction(&gas_price, nonce)
+                        .cancel_transaction(&gas_price, self.nonce)
                         .await
                     {
                         Ok(handle) => transactions.push((handle, gas_price)),
@@ -290,8 +291,11 @@ impl<'a> Submitter<'a> {
             // Update (overwrite) the submitted transaction list with `transactions` variable that,
             // at this point, contains both transactions from previous submission loop and
             // transactions from current submission loop
-            self.submitted_transactions
-                .update(self.account.address(), nonce, transactions.clone());
+            self.submitted_transactions.update(
+                self.account.address(),
+                self.nonce,
+                transactions.clone(),
+            );
 
             const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
@@ -362,7 +366,6 @@ impl<'a> Submitter<'a> {
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
         settlement: Settlement,
-        nonce: U256,
         params: &SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
@@ -404,7 +407,7 @@ impl<'a> Submitter<'a> {
             // create transaction
 
             let method = self
-                .build_method(settlement.clone(), &gas_price, nonce, gas_limit)
+                .build_method(settlement.clone(), &gas_price, self.nonce, gas_limit)
                 .await;
 
             // append access list
@@ -431,7 +434,10 @@ impl<'a> Submitter<'a> {
                     // cancellation actually being mined as long as it successfully replaces the
                     // original transaction in the mempool.
                     let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                    match self.cancel_transaction(&replacement_price, nonce).await {
+                    match self
+                        .cancel_transaction(&replacement_price, self.nonce)
+                        .await
+                    {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
@@ -650,6 +656,11 @@ mod tests {
         assert_eq!(chain_id, 1);
         let private_key: PrivateKey = std::env::var("PRIVATE_KEY").unwrap().parse().unwrap();
         let account = Account::Offline(private_key, Some(chain_id));
+        let nonce = web3
+            .eth()
+            .transaction_count(account.address(), None)
+            .await
+            .unwrap();
         let contract = crate::get_settlement_contract(&web3).await.unwrap();
         let flashbots_api = FlashbotsApi::new(Client::new(), "https://rpc.flashbots.net").unwrap();
         let mut header = reqwest::header::HeaderMap::new();
@@ -699,6 +710,7 @@ mod tests {
         let submitter = Submitter::new(
             &contract,
             &account,
+            nonce,
             &flashbots_api,
             &gas_price_estimator,
             access_list_estimator.as_ref(),

@@ -261,22 +261,31 @@ fn convert_foreign_liquidity_orders(
 
 fn match_prepared_and_settled_amms(
     prepared_amms: Vec<Liquidity>,
-    settled_amms: HashMap<usize, UpdatedAmmModel>,
+    settled_amms: HashMap<H160, UpdatedAmmModel>,
 ) -> Result<Vec<ExecutedAmm>> {
+    let prepared_amms: HashMap<H160, Liquidity> = prepared_amms
+        .into_iter()
+        .filter_map(|amm| amm.address().map(|address| (address, amm)))
+        .collect();
     settled_amms
         .into_iter()
-        .filter(|(index, settled)| {
+        .filter(|(address, settled)| {
             if !settled.is_non_trivial() {
-                tracing::debug!("filtered trivial amm with index {}", index);
+                tracing::debug!("filtered trivial amm with address {}", address);
             }
             settled.is_non_trivial()
         })
-        .flat_map(|(index, settled)| settled.execution.into_iter().map(move |exec| (index, exec)))
-        .map(|(index, settled)| {
+        .flat_map(|(address, settled)| {
+            settled
+                .execution
+                .into_iter()
+                .map(move |exec| (address, exec))
+        })
+        .map(|(address, settled)| {
             Ok(ExecutedAmm {
                 order: prepared_amms
-                    .get(index)
-                    .ok_or_else(|| anyhow!("Invalid AMM {}", index))?
+                    .get(&address)
+                    .ok_or_else(|| anyhow!("Invalid AMM {}", address))?
                     .clone(),
                 input: (settled.buy_token, settled.exec_buy_amount),
                 output: (settled.sell_token, settled.exec_sell_amount),
@@ -409,21 +418,21 @@ mod tests {
         let sp_amm_handler = CapturingSettlementHandler::arc();
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
-                address: H160::from_low_u64_be(1),
+                address: H160::from_low_u64_be(0),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (3, 4),
                 fee: 5.into(),
                 settlement_handling: cp_amm_handler.clone(),
             }),
             Liquidity::ConstantProduct(ConstantProductOrder {
-                address: H160::from_low_u64_be(2),
+                address: H160::from_low_u64_be(1),
                 tokens: TokenPair::new(t0, t1).unwrap(),
                 reserves: (6, 7),
                 fee: 8.into(),
                 settlement_handling: internal_amm_handler.clone(),
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
-                address: H160::from_low_u64_be(3),
+                address: H160::from_low_u64_be(2),
                 reserves: hashmap! {
                     t0 => WeightedTokenState {
                         common: TokenState {
@@ -444,7 +453,7 @@ mod tests {
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
-                address: H160::from_low_u64_be(4),
+                address: H160::from_low_u64_be(3),
                 reserves: hashmap! {
                     t0 => TokenState {
                         balance: U256::from(300),
@@ -539,10 +548,10 @@ mod tests {
             orders: hashmap! { 0 => executed_order },
             foreign_liquidity_orders: vec![foreign_liquidity_order],
             amms: hashmap! {
-                0 => updated_uniswap,
-                1 => internal_uniswap,
-                2 => updated_balancer_weighted,
-                3 => updated_balancer_stable,
+                H160::from_low_u64_be(0) => updated_uniswap,
+                H160::from_low_u64_be(1) => internal_uniswap,
+                H160::from_low_u64_be(2) => updated_balancer_weighted,
+                H160::from_low_u64_be(3) => updated_balancer_stable,
             },
             ref_token: Some(t0),
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
@@ -640,22 +649,35 @@ mod tests {
         let token_c = H160::from_slice(&hex!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"));
 
         let cpo_0 = ConstantProductOrder {
-            address: H160::from_low_u64_be(1),
+            address: H160::from_low_u64_be(0),
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (597249810824827988770940, 225724246562756585230),
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         let cpo_1 = ConstantProductOrder {
-            address: H160::from_low_u64_be(2),
+            address: H160::from_low_u64_be(1),
             tokens: TokenPair::new(token_b, token_c).unwrap(),
             reserves: (8488677530563931705, 75408146511005299032),
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
 
+        let lo_1 = LimitOrder {
+            id: crate::liquidity::LimitOrderUid::ZeroEx("1".to_string()),
+            sell_token: token_a,
+            buy_token: token_a,
+            sell_amount: U256::from(996570293625199060u128),
+            buy_amount: U256::from(289046068204476404625u128),
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+            exchange: crate::liquidity::Exchange::ZeroEx,
+            ..Default::default()
+        };
+
         let wpo = WeightedProductOrder {
-            address: H160::from_low_u64_be(3),
+            address: H160::from_low_u64_be(2),
             reserves: hashmap! {
                 token_c => WeightedTokenState {
                     common: TokenState {
@@ -677,7 +699,7 @@ mod tests {
         };
 
         let spo = StablePoolOrder {
-            address: H160::from_low_u64_be(4),
+            address: H160::from_low_u64_be(3),
             reserves: hashmap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
@@ -696,6 +718,7 @@ mod tests {
         let liquidity = vec![
             Liquidity::ConstantProduct(cpo_0.clone()),
             Liquidity::ConstantProduct(cpo_1.clone()),
+            Liquidity::LimitOrder(lo_1),
             Liquidity::BalancerWeighted(wpo.clone()),
             Liquidity::BalancerStable(spo.clone()),
         ];
@@ -745,7 +768,7 @@ mod tests {
                 }
             },
             "amms": {
-                "0": {
+                "0x0000000000000000000000000000000000000000": {
                     "kind": "ConstantProduct",
                     "reserves": {
                         "0xa7d1c04faf998f9161fc9f800a99a809b84cfc9d": "597249810824827988770940",
@@ -769,7 +792,7 @@ mod tests {
                         }
                     ]
                 },
-                "1": {
+                "0x0000000000000000000000000000000000000001": {
                     "execution": [
                         {
                             "sell_token": "0xc778417e063141139fce010982780140aa0cd5ab",
@@ -783,7 +806,7 @@ mod tests {
                         }
                     ]
                 },
-                "2": {
+                "0x0000000000000000000000000000000000000002": {
                     "kind": "WeightedProduct",
                     "reserves": {
                         "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353": {
@@ -813,7 +836,7 @@ mod tests {
                         }
                     ]
                 },
-                "3": {
+                "0x0000000000000000000000000000000000000003": {
                     "kind": "Stable",
                     "reserves": {
                         "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353": "1234",
