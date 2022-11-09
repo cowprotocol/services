@@ -1,20 +1,9 @@
 use crate::orderbook::{OrderCancellationError, Orderbook};
 use anyhow::Result;
-use model::{
-    order::{OrderCancellation, OrderUid},
-    signature::{EcdsaSignature, EcdsaSigningScheme},
-};
-use serde::{Deserialize, Serialize};
+use model::order::{CancellationPayload, OrderCancellation, OrderUid};
 use shared::api::{convert_json_response, extract_payload, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
-
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CancellationPayload {
-    signature: EcdsaSignature,
-    signing_scheme: EcdsaSigningScheme,
-}
 
 pub fn cancel_order_request(
 ) -> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
@@ -91,13 +80,14 @@ mod tests {
     use super::*;
     use ethcontract::H256;
     use hex_literal::hex;
+    use model::signature::{EcdsaSignature, EcdsaSigningScheme};
     use serde_json::json;
     use warp::{test::request, Reply};
 
     #[test]
     fn cancellation_payload_deserialization() {
         assert_eq!(
-            CancellationPayload::deserialize(json!({
+            serde_json::from_value::<CancellationPayload>(json!({
                 "signature": "0x\
                     000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\
                     202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f\
