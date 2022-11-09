@@ -12,12 +12,12 @@ use std::sync::Arc;
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
-    /// Counter for measuring ignored limit orders.
+    /// Histogram for counting ignored limit orders.
     ignored: prometheus::Histogram,
 }
 
 impl Metrics {
-    fn on_ignored(ignored: i32) {
+    fn on_ignored(ignored: u32) {
         Self::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
             .ignored
