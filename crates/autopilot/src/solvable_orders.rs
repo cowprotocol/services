@@ -266,10 +266,9 @@ impl SolvableOrdersCache {
             let sell_native = order.data.sell_amount * prices.get(&order.data.sell_token).unwrap()
                 + order.metadata.surplus_fee;
             let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
-            let min = sell_native.min(buy_native);
-            let max = sell_native.max(buy_native);
-            let factor = u256_to_big_decimal(&max) / u256_to_big_decimal(&min);
-            factor <= self.limit_order_price_factor
+            let sell_native = u256_to_big_decimal(&sell_native);
+            let buy_native = u256_to_big_decimal(&buy_native);
+            sell_native >= buy_native * self.limit_order_price_factor.clone()
         });
         orders
     }
