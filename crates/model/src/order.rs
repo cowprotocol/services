@@ -411,18 +411,11 @@ pub struct OrderCancellation {
 
 impl Default for OrderCancellation {
     fn default() -> Self {
-        let mut result = Self {
-            order_uid: OrderUid::default(),
-            signature: Default::default(),
-            signing_scheme: EcdsaSigningScheme::Eip712,
-        };
-        result.signature = EcdsaSignature::sign(
-            result.signing_scheme,
+        Self::for_order(
+            OrderUid::default(),
             &DomainSeparator::default(),
-            &result.hash_struct(),
             SecretKeyRef::new(&ONE_KEY),
-        );
-        result
+        )
     }
 }
 
@@ -431,6 +424,25 @@ impl OrderCancellation {
     // keccak256("OrderCancellation(bytes orderUid)")
     const TYPE_HASH: [u8; 32] =
         hex!("7b41b3a6e2b3cae020a3b2f9cdc997e0d420643957e7fea81747e984e47c88ec");
+
+    pub fn for_order(
+        order_uid: OrderUid,
+        domain_separator: &DomainSeparator,
+        key: SecretKeyRef,
+    ) -> Self {
+        let mut result = Self {
+            order_uid,
+            signature: Default::default(),
+            signing_scheme: EcdsaSigningScheme::Eip712,
+        };
+        result.signature = EcdsaSignature::sign(
+            result.signing_scheme,
+            domain_separator,
+            &result.hash_struct(),
+            key,
+        );
+        result
+    }
 
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
@@ -443,6 +455,14 @@ impl OrderCancellation {
         self.signature
             .recover(self.signing_scheme, domain_separator, &self.hash_struct())
     }
+}
+
+/// Order cancellation payload that is sent over the API.
+#[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancellationPayload {
+    pub signature: EcdsaSignature,
+    pub signing_scheme: EcdsaSigningScheme,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
