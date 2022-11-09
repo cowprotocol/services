@@ -379,15 +379,19 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let is_liquidity_owner = self.liquidity_order_owners.contains(&owner);
-        let is_limit_order =
-            self.enable_limit_orders && !is_liquidity_owner && order.data.fee_amount.is_zero();
+        let class = if self.liquidity_order_owners.contains(&owner) {
+            OrderClass::Liquidity
+        } else if self.enable_limit_orders && order.data.fee_amount.is_zero() {
+            OrderClass::Limit
+        } else {
+            OrderClass::Market
+        };
 
         self.partial_validate(PreOrderData::from_order_creation(
             owner,
             &order.data,
             signing_scheme,
-            is_liquidity_owner,
+            class == OrderClass::Liquidity,
         ))
         .await
         .map_err(ValidationError::Partial)?;
@@ -402,7 +406,7 @@ impl OrderValidating for OrderValidator {
             from: owner,
             app_data: order.data.app_data,
         };
-        let quote = if !is_liquidity_owner && !is_limit_order {
+        let quote = if class == OrderClass::Market {
             let quote = get_quote_and_check_fee(
                 &*self.quoter,
                 &quote_parameters,
@@ -481,7 +485,10 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        let is_outside_market_price = match &quote {
+        // Check if we need to re-classify the order if it is outside the market
+        // price. We consider out-of-price orders as liquidity orders. See
+        // <https://github.com/cowprotocol/services/pull/301>.
+        let class = match &quote {
             Some(quote)
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
@@ -490,21 +497,11 @@ impl OrderValidating for OrderValidator {
                 ) =>
             {
                 let order_uid = order.data.uid(domain_separator, &owner);
-                tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
-                true
-            }
-            Some(_) => false,
-            None => true,
-        };
+                tracing::debug!(%order_uid, ?owner, ?class, "order being flagged as outside market price");
 
-        let class = if is_limit_order {
-            OrderClass::Limit
-        } else if is_liquidity_owner || is_outside_market_price {
-            // Note that we consider out-of-price orders as liquidity orders.
-            // See <https://github.com/cowprotocol/services/pull/301>
-            OrderClass::Liquidity
-        } else {
-            OrderClass::Market
+                OrderClass::Liquidity
+            }
+            _ => class,
         };
 
         if class == OrderClass::Limit {
