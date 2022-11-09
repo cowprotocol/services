@@ -204,6 +204,7 @@ impl Orderbook {
             .await?;
 
         for order in &orders {
+            tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
             Metrics::on_order_operation(order, OrderOperation::Cancelled);
         }
 
@@ -231,6 +232,8 @@ impl Orderbook {
         self.database
             .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
+
+        tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
         Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         Ok(())

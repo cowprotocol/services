@@ -6,8 +6,8 @@ use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
     app_id::AppId,
     order::{
-        CancellationPayload, OrderBuilder, OrderCancellation, OrderCancellations, OrderUid,
-        SignedOrderCancellations,
+        CancellationPayload, Order, OrderBuilder, OrderCancellation, OrderCancellations,
+        OrderStatus, OrderUid, SignedOrderCancellations,
     },
     quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount},
     signature::{EcdsaSignature, EcdsaSigningScheme},
@@ -30,6 +30,7 @@ async fn local_node_order_cancellation() {
 async fn order_cancellation(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,shared=debug");
     shared::exit_process_on_panic::set_panic_hook();
+
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
@@ -83,7 +84,7 @@ async fn order_cancellation(web3: Web3) {
         maintenance,
         solvable_orders_cache,
         ..
-    } = OrderbookServices::new(&web3, &contracts).await;
+    } = OrderbookServices::new(&web3, &contracts, false).await;
 
     let http_factory = HttpClientFactory::default();
     let client = http_factory.create();
@@ -151,7 +152,7 @@ async fn order_cancellation(web3: Web3) {
         );
 
         async move {
-            let placement = client
+            let cancellation = client
                 .delete(&format!(
                     "{}{}{}",
                     API_HOST, ORDER_PLACEMENT_ENDPOINT, order_uid
@@ -164,7 +165,7 @@ async fn order_cancellation(web3: Web3) {
                 .await
                 .unwrap();
 
-            assert_eq!(placement.status(), 201);
+            assert_eq!(cancellation.status(), 200);
         }
     };
 
@@ -186,14 +187,14 @@ async fn order_cancellation(web3: Web3) {
         };
 
         async move {
-            let placement = client
+            let cancellation = client
                 .delete(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
                 .json(&signed_cancellations)
                 .send()
                 .await
                 .unwrap();
 
-            assert_eq!(placement.status(), 201);
+            assert_eq!(cancellation.status(), 200);
         }
     };
 
@@ -203,6 +204,23 @@ async fn order_cancellation(web3: Web3) {
         create_orderbook_api().get_auction().await.unwrap().auction
     };
 
+    let get_order = |order_uid: OrderUid| {
+        let client = &client;
+        async move {
+            client
+                .get(&format!(
+                    "{}{}{}",
+                    API_HOST, ORDER_PLACEMENT_ENDPOINT, order_uid
+                ))
+                .send()
+                .await
+                .unwrap()
+                .json::<Order>()
+                .await
+                .unwrap()
+        }
+    };
+
     // Place 3 orders.
     let order_uids = vec![
         place_order(0).await,
@@ -210,12 +228,30 @@ async fn order_cancellation(web3: Web3) {
         place_order(2).await,
     ];
     assert_eq!(get_auction().await.orders.len(), 3);
+    for order_uid in &order_uids {
+        assert_eq!(
+            get_order(*order_uid).await.metadata.status,
+            OrderStatus::Open,
+        );
+    }
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
     assert_eq!(get_auction().await.orders.len(), 2);
+    assert_eq!(
+        get_order(order_uids[0]).await.metadata.status,
+        OrderStatus::Cancelled,
+    );
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
     assert_eq!(get_auction().await.orders.len(), 0);
+    assert_eq!(
+        get_order(order_uids[1]).await.metadata.status,
+        OrderStatus::Cancelled,
+    );
+    assert_eq!(
+        get_order(order_uids[2]).await.metadata.status,
+        OrderStatus::Cancelled,
+    );
 }

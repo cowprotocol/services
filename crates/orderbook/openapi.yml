@@ -52,11 +52,12 @@ paths:
             schema:
               $ref: "#/components/schemas/OrderCreation"
     delete:
-      summary: Cancels multiple orders by marking it invalid with a timestamp.
+      summary: Cancels multiple orders by marking them invalid with a timestamp.
       description: |
-        The successful deletion might not prevent solvers from settling the orders
-        Authentication must be provided by providing an EIP-712 signature of an
-        "OrderCacellations(bytes[] orderUids)" message.
+        This is a best effort cancellation, and might not prevent solvers from
+        settling the orders (if the order is part of an in-flight settlement
+        transaction for example). Authentication must be provided by an EIP-712
+        signature of an "OrderCacellations(bytes[] orderUids)" message.
       requestBody:
         description: "Signed OrderCancellations"
         required: true
@@ -96,9 +97,10 @@ paths:
         404:
           description: Order was not found
     delete:
+      deprecated: true
       summary: Cancels order by marking it invalid with a timestamp.
       description: |
-        The successful deletion might not prevent solvers from settling the order
+        The successful deletion might not prevent solvers from settling the order.
         Authentication must be provided by providing an EIP-712 signature of an
         "OrderCacellation(bytes orderUids)" message.
       parameters:
