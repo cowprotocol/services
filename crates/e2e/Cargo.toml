@@ -32,6 +32,3 @@ solver = { path = "../solver" }
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
-
-[dependencies]
-serde.workspace = true
