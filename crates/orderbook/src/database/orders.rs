@@ -37,6 +37,7 @@ use std::convert::TryInto;
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order, quote: Option<Quote>)
         -> Result<(), InsertionError>;
+    async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn replace_order(
         &self,
@@ -148,6 +149,27 @@ impl OrderStoring for Postgres {
                     insert_order(&order, transaction).await?;
                     if let Some(quote) = quote {
                         insert_quote(&order.metadata.uid, &quote, transaction).await?;
+                    }
+                    Ok(())
+                }
+                .boxed()
+            })
+            .await
+    }
+
+    async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["cancel_orders"])
+            .start_timer();
+
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |ex| {
+                async move {
+                    for order_uid in order_uids {
+                        let uid = ByteArray(order_uid.0);
+                        database::orders::cancel_order(ex, &uid, now).await?;
                     }
                     Ok(())
                 }
@@ -792,5 +814,54 @@ mod tests {
         // Re-signing sets the status back to open.
         insert_presignature(true).await;
         assert_eq!(order_status().await, OrderStatus::Open);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_cancel_orders() {
+        let db = Postgres::new("postgresql://").unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        // Define some helper closures to make the test easier to read.
+        let uid = |byte: u8| OrderUid([byte; 56]);
+        let order = |byte: u8| Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: uid(byte),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let order_status = |byte: u8| {
+            let db = &db;
+            let uid = &uid;
+            async move {
+                db.single_order(&uid(byte))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .metadata
+                    .status
+            }
+        };
+
+        db.insert_order(&order(1), None).await.unwrap();
+        db.insert_order(&order(2), None).await.unwrap();
+        db.insert_order(&order(3), None).await.unwrap();
+
+        assert_eq!(order_status(1).await, OrderStatus::Open);
+        assert_eq!(order_status(2).await, OrderStatus::Open);
+        assert_eq!(order_status(3).await, OrderStatus::Open);
+
+        db.cancel_orders(vec![uid(1), uid(2)], Utc::now())
+            .await
+            .unwrap();
+
+        assert_eq!(order_status(1).await, OrderStatus::Cancelled);
+        assert_eq!(order_status(2).await, OrderStatus::Cancelled);
+        assert_eq!(order_status(3).await, OrderStatus::Open);
     }
 }
