@@ -503,7 +503,8 @@ pub fn user_orders<'a>(
 " (SElECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE onchain_o.sender = $1) ",
+" WHERE onchain_o.sender = $1 ",
+" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
 " ORDER BY creation_timestamp DESC ",
 " LIMIT $2 ",
 " OFFSET $3 ",
@@ -1166,11 +1167,11 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        for i in 0..1u32 {
+        for i in 0..1000u32 {
             let mut owner_bytes = i.to_ne_bytes().to_vec();
             owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
             let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..10u32 {
+            for j in 0..300u32 {
                 let mut i_as_bytes = i.to_ne_bytes().to_vec();
                 let mut j_as_bytes = j.to_ne_bytes().to_vec();
                 let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
