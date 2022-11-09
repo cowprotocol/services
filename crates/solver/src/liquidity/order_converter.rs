@@ -43,7 +43,10 @@ impl OrderConverter {
         );
         let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
 
-        let (sell_amount, fee_amount) = compute_synthetic_order_amounts_if_limit_order(&order)?;
+        let (sell_amount, fee_amount) = match order.metadata.class {
+            OrderClass::Limit => compute_synthetic_order_amounts_for_limit_order(&order)?,
+            _ => (order.data.sell_amount, order.data.fee_amount),
+        };
 
         Ok(LimitOrder {
             id: order.metadata.uid.into(),
@@ -76,20 +79,19 @@ struct OrderSettlementHandler {
 
 /// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the values accordingly
 /// for limit orders.
-fn compute_synthetic_order_amounts_if_limit_order(order: &Order) -> Result<(U256, U256)> {
-    if order.metadata.class == OrderClass::Limit {
-        // adjust amounts to account for `surplus_fee`
-        let sell_amount = order
-            .data
-            .sell_amount
-            .checked_add(order.data.fee_amount)
-            .context("surplus_fee adjustment would overflow sell_amount")?
-            .checked_sub(order.metadata.surplus_fee)
-            .context("surplus_fee adjustment would underflow sell_amount")?;
-        return Ok((sell_amount, order.metadata.surplus_fee));
-    }
-
-    Ok((order.data.sell_amount, order.data.fee_amount))
+fn compute_synthetic_order_amounts_for_limit_order(order: &Order) -> Result<(U256, U256)> {
+    anyhow::ensure!(
+        order.metadata.class == OrderClass::Limit,
+        "this function should only be called for limit orders"
+    );
+    let sell_amount = order
+        .data
+        .sell_amount
+        .checked_add(order.data.fee_amount)
+        .context("surplus_fee adjustment would overflow sell_amount")?
+        .checked_sub(order.metadata.surplus_fee)
+        .context("surplus_fee adjustment would underflow sell_amount")?;
+    Ok((sell_amount, order.metadata.surplus_fee))
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
