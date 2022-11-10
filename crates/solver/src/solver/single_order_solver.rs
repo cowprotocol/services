@@ -201,6 +201,8 @@ mod tests {
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             settlement_handling: handler.clone(),
+            is_liquidity_order: false,
+            buy_amount: 1.into(),
             ..Default::default()
         };
         let orders = vec![
