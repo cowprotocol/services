@@ -226,7 +226,7 @@ pub enum SellAmount {
 }
 
 /// The quoted order by the service.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: H160,
@@ -249,7 +249,7 @@ pub struct OrderQuote {
 
 pub type QuoteId = i64;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,

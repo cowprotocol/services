@@ -51,6 +51,33 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/OrderCreation"
+    delete:
+      summary: Cancels multiple orders by marking them invalid with a timestamp.
+      description: |
+        This is a best effort cancellation, and might not prevent solvers from
+        settling the orders (if the order is part of an in-flight settlement
+        transaction for example). Authentication must be provided by an EIP-712
+        signature of an "OrderCacellations(bytes[] orderUids)" message.
+      requestBody:
+        description: "Signed OrderCancellations"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCancellations"
+      responses:
+        200:
+          description: Orders deleted
+        400:
+          description: Malformed signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCancellationError"
+        401:
+          description: Invalid signature
+        404:
+          description: One or more orders were not found and no orders were cancelled.
   /api/v1/orders/{UID}:
     get:
       summary: Get existing order from UID.
@@ -70,10 +97,12 @@ paths:
         404:
           description: Order was not found
     delete:
+      deprecated: true
       summary: Cancels order by marking it invalid with a timestamp.
       description: |
-        The successful deletion might not prevent solvers from settling the order
-        Authentication must be provided by signing the following message:
+        The successful deletion might not prevent solvers from settling the order.
+        Authentication must be provided by providing an EIP-712 signature of an
+        "OrderCacellation(bytes orderUids)" message.
       parameters:
         - in: path
           name: UID
@@ -827,9 +856,27 @@ components:
             addresses to a price denominated in native token (i.e. 1e18 represents a token that
             trades one to one with the native token). These prices are used for solution competition
             for computing surplus and converting fees to native token.
+    OrderCancellations:
+      description: |
+        EIP-712 signature of struct OrderCancellations { orderUid: bytes[] } from the order's owner
+      type: object
+      properties:
+        orderUids:
+          type: array
+          description: "UIDs of orders to cancel"
+          items:
+            $ref: "#/components/schemas/UID"
+        signature:
+          description: "OrderCancellation signed by owner"
+          $ref: "#/components/schemas/EcdsaSignature"
+        signingScheme:
+          $ref: "#/components/schemas/EcdsaSigningScheme"
+      required:
+        - signature
+        - signingScheme
     OrderCancellation:
       description: |
-        EIP712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
+        EIP-712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
       type: object
       properties:
         signature:

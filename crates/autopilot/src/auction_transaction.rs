@@ -87,34 +87,9 @@ impl AuctionTransactionUpdater {
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
         self.db
-            .insert_settlement_tx_info(event.block_number, event.log_index, &from, nonce)
+            .update_settlement_tx_info(event.block_number, event.log_index, from, nonce, hash)
             .await
-            .with_context(|| format!("insert_settlement_tx_info {hash:?}"))?;
-
-        // Auctions that were stored before the auction_transaction table existed need to be
-        // inserted into it.
-        // This code can be removed when all old auctions have been processed this way.
-        let auction_id = match self
-            .db
-            .get_auction_id_from_tx_hash(&hash)
-            .await
-            .with_context(|| format!("get_auction_id_from_tx_hash {hash:?}"))?
-        {
-            Some(auction_id) => auction_id,
-            None => return Ok(true),
-        };
-        tracing::trace!(auction_id);
-        // If this is an auction that was stored after the auction_transaction table existed then
-        // the row has already been inserted. This should not be treated as an error.
-        // Inserting exactly the same row again as it already exist does not error in Postgres. If
-        // this wasn't the case we would need to check the the error reason is the primary key
-        // constraint to find out whether the error is benign.
-        // Because this insert does not error there is no need for the check. If our insert changed
-        // any column we would correctly error.
-        self.db
-            .upsert_auction_transaction(auction_id, &from, nonce)
-            .await
-            .with_context(|| format!("upsert_auction_transaction {hash:?} {auction_id}"))?;
+            .context("update_settlement_tx_info")?;
 
         Ok(true)
     }

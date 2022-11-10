@@ -206,6 +206,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_surplus_fee(mut self, surplus_fee: U256) -> Self {
+        self.0.metadata.surplus_fee = surplus_fee;
+        self
+    }
+
     pub fn build(self) -> Order {
         self.0
     }
@@ -350,8 +355,53 @@ impl From<Order> for OrderCreation {
     }
 }
 
+/// Cancellation of multiple orders.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct OrderCancellations {
+    pub order_uids: Vec<OrderUid>,
+}
+
+impl OrderCancellations {
+    /// The EIP-712 type hash for order cancellations. Computed with:
+    /// `keccak256("OrderCancellations(bytes[] orderUid)")`.
+    const TYPE_HASH: [u8; 32] =
+        hex!("4c89efb91ae246f78d2fe68b47db2fa1444a121a4f2dc3fda7a5a408c2e3588e");
+
+    pub fn hash_struct(&self) -> [u8; 32] {
+        let mut encoded_uids = Vec::with_capacity(32 * self.order_uids.len());
+        for order_uid in &self.order_uids {
+            encoded_uids.extend_from_slice(&signing::keccak256(&order_uid.0));
+        }
+
+        let array_hash = signing::keccak256(&encoded_uids);
+
+        let mut hash_data = [0u8; 64];
+        hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
+        hash_data[32..64].copy_from_slice(&array_hash);
+        signing::keccak256(&hash_data)
+    }
+}
+
+/// Signed order cancellations.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct SignedOrderCancellations {
+    #[serde(flatten)]
+    pub data: OrderCancellations,
+    pub signature: EcdsaSignature,
+    pub signing_scheme: EcdsaSigningScheme,
+}
+
+impl SignedOrderCancellations {
+    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
+        self.signature.recover(
+            self.signing_scheme,
+            domain_separator,
+            &self.data.hash_struct(),
+        )
+    }
+}
+
 /// An order cancellation as provided to the orderbook by the frontend.
-#[serde_as]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub struct OrderCancellation {
     pub order_uid: OrderUid,
@@ -361,18 +411,11 @@ pub struct OrderCancellation {
 
 impl Default for OrderCancellation {
     fn default() -> Self {
-        let mut result = Self {
-            order_uid: OrderUid::default(),
-            signature: Default::default(),
-            signing_scheme: EcdsaSigningScheme::Eip712,
-        };
-        result.signature = EcdsaSignature::sign(
-            result.signing_scheme,
+        Self::for_order(
+            OrderUid::default(),
             &DomainSeparator::default(),
-            &result.hash_struct(),
             SecretKeyRef::new(&ONE_KEY),
-        );
-        result
+        )
     }
 }
 
@@ -381,6 +424,25 @@ impl OrderCancellation {
     // keccak256("OrderCancellation(bytes orderUid)")
     const TYPE_HASH: [u8; 32] =
         hex!("7b41b3a6e2b3cae020a3b2f9cdc997e0d420643957e7fea81747e984e47c88ec");
+
+    pub fn for_order(
+        order_uid: OrderUid,
+        domain_separator: &DomainSeparator,
+        key: SecretKeyRef,
+    ) -> Self {
+        let mut result = Self {
+            order_uid,
+            signature: Default::default(),
+            signing_scheme: EcdsaSigningScheme::Eip712,
+        };
+        result.signature = EcdsaSignature::sign(
+            result.signing_scheme,
+            domain_separator,
+            &result.hash_struct(),
+            key,
+        );
+        result
+    }
 
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
@@ -393,6 +455,14 @@ impl OrderCancellation {
         self.signature
             .recover(self.signing_scheme, domain_separator, &self.hash_struct())
     }
+}
+
+/// Order cancellation payload that is sent over the API.
+#[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancellationPayload {
+    pub signature: EcdsaSignature,
+    pub signing_scheme: EcdsaSigningScheme,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
@@ -563,7 +633,7 @@ pub enum OrderClass {
     /// The most common type of order which can be placed by any user. Expected to be fulfilled
     /// immediately (in the next block).
     #[default]
-    Ordinary,
+    Market,
     /// Liquidity orders can only be placed by whitelisted users. These are
     /// used for matching "coincidence of wants" trades. These are zero-fee orders which are
     /// not expected to be fulfilled immediately and can potentially live for a long time.
@@ -698,7 +768,7 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
-            "class": "ordinary",
+            "class": "market",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
@@ -1017,5 +1087,23 @@ mod tests {
     #[test]
     fn debug_order_data() {
         dbg!(Order::default());
+    }
+
+    #[test]
+    fn order_cancellations_struct_hash() {
+        // Generated with Ethers.js as a reference EIP-712 hashing impl.
+        for (order_uids, struct_hash) in [
+            (
+                vec![],
+                hex!("56acdb3034898c6c23971cb3f92c32a4739e89a13c85282547025583a93911bd"),
+            ),
+            (
+                vec![OrderUid([0x11; 56]), OrderUid([0x22; 56])],
+                hex!("405f6cb53d87901a5385a824a99c94b43146547f5ea3623f8d2f50b925e97a8b"),
+            ),
+        ] {
+            let cancellations = OrderCancellations { order_uids };
+            assert_eq!(cancellations.hash_struct(), struct_hash);
+        }
     }
 }

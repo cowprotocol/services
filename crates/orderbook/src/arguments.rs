@@ -56,6 +56,15 @@ pub struct Arguments {
     )]
     pub max_order_validity_period: Duration,
 
+    /// The maximum amount of time in seconds a limit order can be valid for. Defaults to 1 year.
+    #[clap(
+        long,
+        env,
+        default_value = "31536000",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_limit_order_validity_period: Duration,
+
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[clap(
         long,
@@ -152,6 +161,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
+            "max_limit_order_validity_period: {:?}",
+            self.max_limit_order_validity_period
+        )?;
+        writeln!(
+            f,
             "token_quality_cache_expiry: {:?}",
             self.token_quality_cache_expiry
         )?;
@@ -182,6 +196,11 @@ impl std::fmt::Display for Arguments {
             self.fast_price_estimation_results_required
         )?;
         writeln!(f, "enable_limit_orders: {}", self.enable_limit_orders)?;
+        writeln!(
+            f,
+            "max_limit_orders_per_user: {}",
+            self.max_limit_orders_per_user
+        )?;
 
         Ok(())
     }

@@ -16,7 +16,7 @@ use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
-    order::OrderKind,
+    order::{OrderClass, OrderKind},
     quote::{
         OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
         QuoteSigningScheme, SellAmount,
@@ -638,7 +638,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
-            is_liquidity_order: quote_request.partially_fillable,
+            class: OrderClass::Market,
         }
     }
 }

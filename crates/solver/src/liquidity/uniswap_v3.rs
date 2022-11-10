@@ -173,10 +173,15 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     // Creates the required interaction to convert the given input into output. Assumes slippage is
     // already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
+        tracing::debug!("entered encoding UniswapV3SettlementHandler");
         let (approval, swap) = self.settle(
             execution.input_max,
             execution.output,
             self.fee.context("missing fee")?,
+        );
+        tracing::debug!(
+            "adding interactions, internalizable: {}",
+            execution.internalizable
         );
         encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);

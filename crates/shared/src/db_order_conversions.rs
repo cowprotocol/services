@@ -115,7 +115,7 @@ pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
 
 pub fn order_class_into(class: OrderClass) -> DbOrderClass {
     match class {
-        OrderClass::Ordinary => DbOrderClass::Ordinary,
+        OrderClass::Market => DbOrderClass::Market,
         OrderClass::Liquidity => DbOrderClass::Liquidity,
         OrderClass::Limit => DbOrderClass::Limit,
     }
@@ -123,7 +123,7 @@ pub fn order_class_into(class: OrderClass) -> DbOrderClass {
 
 pub fn order_class_from(class: DbOrderClass) -> OrderClass {
     match class {
-        DbOrderClass::Ordinary => OrderClass::Ordinary,
+        DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit,
     }

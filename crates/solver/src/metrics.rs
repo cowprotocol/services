@@ -325,7 +325,7 @@ impl SolverMetrics for Metrics {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
         let order_type = match order.metadata.class {
-            OrderClass::Ordinary => "user_order",
+            OrderClass::Market => "user_order",
             OrderClass::Liquidity => "liquidity_order",
             OrderClass::Limit => "limit_order",
         };

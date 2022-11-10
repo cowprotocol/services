@@ -442,7 +442,7 @@ fn convert_onchain_order_placement(
     let class = match (is_outside_market_price, liquidity_owner) {
         (true, true) => OrderClass::Liquidity,
         (true, false) => OrderClass::Limit,
-        _ => OrderClass::Ordinary,
+        _ => OrderClass::Market,
     };
 
     let order = database::orders::Order {
@@ -736,7 +736,7 @@ mod test {
             app_data: ByteArray(expected_order_data.app_data.0),
             fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
-            class: OrderClass::Ordinary,
+            class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.1 .0,
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),

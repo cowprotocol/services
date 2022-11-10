@@ -7,9 +7,11 @@ mod services;
 mod deploy;
 mod local_node;
 
-// Each of the following modules contains one test.
+// Each of the following modules contains tests.
 mod eth_integration;
+mod limit_orders;
 mod onchain_settlement;
+mod order_cancellation;
 mod settlement_without_onchain_liquidity;
 mod smart_contract_orders;
 mod vault_balances;

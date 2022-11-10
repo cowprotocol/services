@@ -1,4 +1,5 @@
 mod cancel_order;
+mod cancel_orders;
 mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
@@ -13,7 +14,7 @@ mod get_trades;
 mod get_user_orders;
 mod post_order;
 mod post_quote;
-pub mod post_solver_competition;
+mod post_solver_competition;
 mod replace_order;
 mod version;
 
@@ -60,6 +61,9 @@ pub fn handle_all_routes(
         .boxed();
     let cancel_order = cancel_order::cancel_order(orderbook.clone())
         .map(|result| (result, "v1/cancel_order"))
+        .boxed();
+    let cancel_orders = cancel_orders::filter(orderbook.clone())
+        .map(|result| (result, "v1/cancel_orders"))
         .boxed();
     let replace_order = replace_order::filter(orderbook.clone())
         .map(|result| (result, "v1/replace_order"))
@@ -111,6 +115,8 @@ pub fn handle_all_routes(
                 .or(get_trades)
                 .unify()
                 .or(cancel_order)
+                .unify()
+                .or(cancel_orders)
                 .unify()
                 .or(replace_order)
                 .unify()
