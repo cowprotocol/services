@@ -511,7 +511,6 @@ impl Solver for HttpSolver {
             self.solver.name,
             serde_json::to_string_pretty(&settled).unwrap()
         );
-        tracing::debug!("Solver context {}, context {:?}", self.solver.name, context);
 
         if settled.orders.is_empty() {
             return Ok(vec![]);

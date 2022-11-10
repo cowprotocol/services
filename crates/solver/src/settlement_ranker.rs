@@ -141,20 +141,10 @@ impl SettlementRanker {
         // statement allows us to figure out which settlements were filtered out and which ones are
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
-            let encoded_settlement = settlement
-                .encoder
-                .clone()
-                .finish(InternalizationStrategy::EncodeAllInteractions);
             tracing::debug!(
-                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(encoded_settlement.clone())),
+                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(InternalizationStrategy::EncodeAllInteractions))),
                 "considering solution for solver competition",
             );
-            if encoded_settlement.interactions[1].is_empty() {
-                tracing::warn!(
-                    "no interactions for valid settlement: {:?}",
-                    encoded_settlement
-                );
-            }
         }
 
         let (mut rated_settlements, errors) = self
