@@ -18,6 +18,7 @@ jobs:
           toolchain: nightly
           components: rustfmt
       - run: |
+          rustup update stable
           rustup --version
           rustup show
           cargo --version
