@@ -47,7 +47,12 @@ impl OneInchTradeFinder {
         referrer_address: Option<H160>,
     ) -> Self {
         Self {
-            inner: Arc::new(Inner::new(api, disabled_protocols, referrer_address, SPENDER_MAX_AGE)),
+            inner: Arc::new(Inner::new(
+                api,
+                disabled_protocols,
+                referrer_address,
+                SPENDER_MAX_AGE,
+            )),
             sharing: Default::default(),
         }
     }
