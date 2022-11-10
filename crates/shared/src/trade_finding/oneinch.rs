@@ -18,17 +18,16 @@ use std::{
 use tokio::sync::Mutex;
 
 pub struct OneInchTradeFinder {
-    inner: Inner,
+    inner: Arc<Inner>,
     sharing: BoxRequestSharing<InternalQuery, Result<Quote, TradeError>>,
 }
 
-#[derive(Clone)]
 struct Inner {
     api: Arc<dyn OneInchClient>,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     referrer_address: Option<H160>,
-    spender_cache: Arc<Mutex<(H160, Instant)>>,
+    spender_cache: Mutex<(H160, Instant)>,
     spender_max_age: Duration,
 }
 
@@ -48,7 +47,7 @@ impl OneInchTradeFinder {
         referrer_address: Option<H160>,
     ) -> Self {
         Self {
-            inner: Inner::new(api, disabled_protocols, referrer_address, SPENDER_MAX_AGE),
+            inner: Arc::new(Inner::new(api, disabled_protocols, referrer_address, SPENDER_MAX_AGE)),
             sharing: Default::default(),
         }
     }
@@ -111,7 +110,7 @@ impl Inner {
             disabled_protocols,
             referrer_address,
             protocol_cache: Default::default(),
-            spender_cache: Arc::new(Mutex::new(outdated_cache_entry)),
+            spender_cache: Mutex::new(outdated_cache_entry),
             spender_max_age,
         }
     }
