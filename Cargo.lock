@@ -182,6 +182,7 @@ dependencies = [
  "anyhow",
  "approx",
  "async-trait",
+ "bigdecimal",
  "chrono",
  "clap 4.0.8",
  "contracts",
