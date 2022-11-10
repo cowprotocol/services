@@ -1,7 +1,9 @@
 pub mod arguments;
 pub mod refund_service;
+pub mod submitter;
 
 use contracts::CoWSwapEthFlow;
+use ethcontract::{Account, PrivateKey};
 use refund_service::RefundService;
 use shared::http_client::HttpClientFactory;
 use sqlx::PgPool;
@@ -14,12 +16,14 @@ pub async fn main(args: arguments::Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     let ethflow_contract = CoWSwapEthFlow::at(&web3, args.ethflow_contract);
-    let refunder = RefundService::new(
+    let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
+    let mut refunder = RefundService::new(
         pg_pool,
         web3,
         ethflow_contract,
         args.min_validity_duration.as_secs() as i64,
         args.min_slippage_bps,
+        refunder_account,
     );
     loop {
         tracing::info!("Staring a new refunding loop");
