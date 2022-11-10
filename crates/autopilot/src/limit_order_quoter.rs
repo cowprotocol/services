@@ -12,7 +12,7 @@ use std::sync::Arc;
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
-    /// Histogram for counting failed limit orders.
+    /// Counter for failed limit orders.
     failed: prometheus::IntCounter,
 }
 
