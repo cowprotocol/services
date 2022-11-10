@@ -268,7 +268,12 @@ impl SolvableOrdersCache {
             let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
             let sell_native = u256_to_big_decimal(&sell_native);
             let buy_native = u256_to_big_decimal(&buy_native);
-            sell_native >= buy_native * self.limit_order_price_factor.clone()
+            if sell_native >= buy_native * self.limit_order_price_factor.clone() {
+                true
+            } else {
+                tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
+                false
+            }
         });
         orders
     }
