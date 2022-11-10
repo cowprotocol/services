@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn orders_get_prioritized() {
         let token = H160::from_low_u64_be;
-        let amount = |amount: u128| U256::from(amount);
+        let amount = U256::from;
         let order = |sell_amount: u128, is_liquidity_order: bool| LimitOrder {
             sell_token: token(1),
             sell_amount: amount(sell_amount),
