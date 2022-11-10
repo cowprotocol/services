@@ -529,7 +529,7 @@ impl Solver for HttpSolver {
             Ok(settlement) => Ok(vec![settlement]),
             Err(err) => {
                 tracing::debug!(
-                    name = %self.name(), ?settled,
+                    name = %self.name(), ?settled, ?err,
                     "failed to process HTTP solver result",
                 );
                 Err(err)
