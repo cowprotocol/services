@@ -412,6 +412,7 @@ mod tests {
     use crate::sources::uniswap_v3::graph_api::Token;
 
     use super::*;
+    use chrono::NaiveDateTime;
     use ethcontract::H256;
     use maplit::btreemap;
     use model::{
@@ -420,7 +421,6 @@ mod tests {
     };
     use serde_json::json;
     use web3::types::AccessListItem;
-    use chrono::NaiveDateTime;
 
     #[test]
     fn updated_amm_model_is_non_trivial() {

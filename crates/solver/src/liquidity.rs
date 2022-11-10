@@ -7,6 +7,7 @@ pub mod zeroex;
 
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 #[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
@@ -28,7 +29,6 @@ use shared::sources::{
 };
 use std::{collections::HashMap, sync::Arc};
 use strum::{EnumVariantNames, IntoStaticStr};
-use chrono::{DateTime, Utc};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
