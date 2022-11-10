@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use derivative::Derivative;
 use ethcontract::{Bytes, H160};
 use model::{
@@ -31,6 +32,7 @@ pub struct BatchAuctionModel {
 pub struct OrderModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<OrderUid>,
+    pub created_at: DateTime<Utc>,
     pub sell_token: H160,
     pub buy_token: H160,
     #[serde(with = "u256_decimal")]
@@ -418,6 +420,7 @@ mod tests {
     };
     use serde_json::json;
     use web3::types::AccessListItem;
+    use chrono::NaiveDateTime;
 
     #[test]
     fn updated_amm_model_is_non_trivial() {
@@ -486,6 +489,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(43110);
         let order_model = OrderModel {
             id: Some(OrderUid::default()),
+            created_at: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
             sell_token,
             buy_token,
             sell_amount: U256::from(1),
@@ -642,6 +646,7 @@ mod tests {
           "orders": {
             "0": {
               "id": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+              "created_at": "1970-01-01T00:00:02Z",
               "sell_token": "0x000000000000000000000000000000000000a866",
               "buy_token": "0x0000000000000000000000000000000000000539",
               "sell_amount": "1",

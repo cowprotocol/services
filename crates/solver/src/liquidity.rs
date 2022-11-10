@@ -28,6 +28,7 @@ use shared::sources::{
 };
 use std::{collections::HashMap, sync::Arc};
 use strum::{EnumVariantNames, IntoStaticStr};
+use chrono::{DateTime, Utc};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
@@ -133,6 +134,7 @@ impl From<u32> for LimitOrderUid {
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
     pub id: LimitOrderUid,
+    pub created_at: DateTime<Utc>,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -204,6 +206,7 @@ impl Default for LimitOrder {
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: Default::default(),
+            created_at: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),
         }

@@ -304,6 +304,7 @@ fn order_models(
                 index,
                 OrderModel {
                     id: order.id.order_uid(),
+                    created_at: order.created_at,
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
                     sell_amount: order.sell_amount,

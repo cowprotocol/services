@@ -50,6 +50,7 @@ impl OrderConverter {
 
         Ok(LimitOrder {
             id: order.metadata.uid.into(),
+            created_at: order.metadata.creation_date,
             sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.remaining(sell_amount)?,
