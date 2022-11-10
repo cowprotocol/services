@@ -13,15 +13,15 @@ use std::sync::Arc;
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
     /// Histogram for counting failed limit orders.
-    failed: prometheus::Histogram,
+    failed: prometheus::IntCounter,
 }
 
 impl Metrics {
-    fn on_failed(failed: u32) {
+    fn on_failed(failed: u64) {
         Self::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
             .failed
-            .observe(failed.into())
+            .inc_by(failed);
     }
 }
 
