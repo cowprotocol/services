@@ -68,7 +68,7 @@ impl SingleOrderSolver {
     /// prioritize orders which are more likely to be matchable. This is implemented by looking at
     /// the current native price of the traded tokens and comparing that to the order's limit price.
     /// Sorts the highest priority orders to the front of the list.
-    fn get_prioritized_orders(
+    pub fn get_prioritized_orders(
         orders: &[LimitOrder],
         prices: &ExternalPrices,
     ) -> VecDeque<LimitOrder> {
@@ -79,7 +79,8 @@ impl SingleOrderSolver {
             .filter(|o| !o.is_liquidity_order)
             .cloned()
             .collect();
-        user_orders.sort_by_cached_key(|o| Self::estimate_price_viability(o, prices));
+        user_orders
+            .sort_by_cached_key(|o| std::cmp::Reverse(Self::estimate_price_viability(o, prices)));
         user_orders.into()
     }
 }
@@ -176,7 +177,10 @@ mod tests {
     use super::*;
     use crate::{liquidity::tests::CapturingSettlementHandler, metrics::NoopMetrics};
     use anyhow::anyhow;
+    use maplit::hashmap;
     use model::order::OrderKind;
+    use num::FromPrimitive;
+    use primitive_types::H160;
     use std::sync::Arc;
 
     fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
@@ -313,5 +317,39 @@ mod tests {
         assert!(execution_respects_order(&order, 10.into(), 11.into(),));
         // Price is respected but order is partially filled.
         assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
+    }
+
+    #[test]
+    fn orders_get_prioritized() {
+        let token = H160::from_low_u64_be;
+        let amount = |amount: u128| U256::from(amount);
+        let order = |sell_amount: u128, is_liquidity_order: bool| LimitOrder {
+            sell_token: token(1),
+            sell_amount: amount(sell_amount),
+            buy_token: token(2),
+            buy_amount: amount(100),
+            is_liquidity_order,
+            ..Default::default()
+        };
+        let orders = [
+            order(500, true),
+            order(100, false),
+            order(200, false),
+            order(300, false),
+        ];
+        let prices = ExternalPrices::new(
+            token(0),
+            hashmap! {
+                token(1) => BigRational::from_u8(100).unwrap(),
+                token(2) => BigRational::from_u8(100).unwrap(),
+            },
+        )
+        .unwrap();
+        let prioritized_orders = SingleOrderSolver::get_prioritized_orders(&orders, &prices);
+        assert_eq!(prioritized_orders.len(), 3); // liquidity orders get filtered out
+        for (sell_amount, order) in [300, 200, 100].iter().zip(prioritized_orders.iter()) {
+            assert!(!order.is_liquidity_order);
+            assert_eq!(amount(*sell_amount), order.sell_amount);
+        }
     }
 }
