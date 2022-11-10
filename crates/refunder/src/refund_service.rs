@@ -8,9 +8,8 @@ use database::{
     orders::read_order as read_db_order,
     OrderUid,
 };
-use ethcontract::Account;
+use ethcontract::{Account, H160};
 use futures::{stream, StreamExt};
-use primitive_types::H160;
 use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
 
