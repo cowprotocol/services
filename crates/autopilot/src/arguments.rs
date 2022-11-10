@@ -131,7 +131,7 @@ pub struct Arguments {
     #[clap(long, env)]
     pub cip_14_reward_cap: Option<f64>,
 
-    #[clap(long, env, default_value = "0.97")]
+    #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 }
 
