@@ -12,16 +12,16 @@ use std::sync::Arc;
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
-    /// Histogram for counting ignored limit orders.
-    ignored: prometheus::Histogram,
+    /// Histogram for counting failed limit orders.
+    failed: prometheus::Histogram,
 }
 
 impl Metrics {
-    fn on_ignored(ignored: u32) {
+    fn on_failed(failed: u32) {
         Self::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
-            .ignored
-            .observe(ignored.into())
+            .failed
+            .observe(failed.into())
     }
 }
 
@@ -48,7 +48,7 @@ impl LimitOrderQuoter {
     }
 
     async fn update(&self) -> Result<()> {
-        let mut ignored_orders = 0;
+        let mut failed_orders = 0;
         loop {
             let orders = self
                 .database
@@ -95,7 +95,7 @@ impl LimitOrderQuoter {
                             .update_surplus_fee(&order.metadata.uid, quote.fee_amount)
                             .await
                         {
-                            ignored_orders += 1;
+                            failed_orders += 1;
                             tracing::error!(
                                 ?err,
                                 ?quote,
@@ -104,7 +104,7 @@ impl LimitOrderQuoter {
                         }
                     }
                     Err(err) => {
-                        ignored_orders += 1;
+                        failed_orders += 1;
                         tracing::warn!(
                             order_uid =% order.metadata.uid, ?err,
                             "skipped limit order due to quoting error"
@@ -113,7 +113,7 @@ impl LimitOrderQuoter {
                 }
             }
         }
-        Metrics::on_ignored(ignored_orders);
+        Metrics::on_failed(failed_orders);
         Ok(())
     }
 }
