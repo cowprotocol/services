@@ -518,7 +518,6 @@ impl SettlementEncoder {
             .map(|trade| trade.encode(uniform_clearing_price_vec_length))
             .collect();
         trades.append(&mut liquidity_order_trades);
-        tracing::debug!("execution plan: {:?}", self.execution_plan);
         EncodedSettlement {
             tokens,
             clearing_prices,
@@ -535,18 +534,13 @@ impl SettlementEncoder {
                     .chain(
                         self.execution_plan
                             .iter()
-                            .enumerate()
-                            .filter_map(|(index, (interaction, internalizable))| {
+                            .filter_map(|(interaction, internalizable)| {
                                 if *internalizable
                                     && matches!(
                                         internalization_strategy,
                                         InternalizationStrategy::SkipInternalizableInteraction
                                     )
                                 {
-                                    tracing::debug!(
-                                        "skipped internalizable interaction with index {}",
-                                        index
-                                    );
                                     None
                                 } else {
                                     Some(interaction)
