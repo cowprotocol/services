@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{Error, Result};
 use ethcontract::Account;
-use num::BigRational;
+use num::ToPrimitive;
 use number_conversions::u256_to_big_rational;
 use primitive_types::U256;
 use rand::prelude::SliceRandom;
@@ -130,18 +130,20 @@ impl From<anyhow::Error> for SettlementError {
 
 /// Returns the `native_sell_amount / native_buy_amount` of the given order under the current
 /// market conditions. The higher the value the more likely it is that this order could get filled.
-fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> BigRational {
+fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 {
     let sell_amount = u256_to_big_rational(&order.sell_amount);
     let buy_amount = u256_to_big_rational(&order.buy_amount);
     let native_sell_amount = prices.get_native_amount(order.sell_token, sell_amount);
     let native_buy_amount = prices.get_native_amount(order.buy_token, buy_amount);
-    native_sell_amount / native_buy_amount
+    (native_sell_amount / native_buy_amount)
+        .to_f64()
+        .unwrap_or(0.)
 }
 
 /// In case there are too many orders to solve before the auction deadline we want to
-/// prioritize orders which are more likely to be matchable. This is implemented by looking at
-/// the current native price of the traded tokens and comparing that to the order's limit price.
-/// Sorts the highest priority orders to the front of the list.
+/// prioritize orders which are more likely to be matchable. This is implemented by rating each
+/// order's viability by comparing the ask price with the current market price. The lower the ask
+/// price is compared to the market price the higher the chance the order will get prioritized.
 fn get_prioritized_orders(orders: &[LimitOrder], prices: &ExternalPrices) -> VecDeque<LimitOrder> {
     // Liquidity orders don't make sense on their own and a `SingleOrderSolver` can't
     // settle them together with a user order.
@@ -150,8 +152,25 @@ fn get_prioritized_orders(orders: &[LimitOrder], prices: &ExternalPrices) -> Vec
         .filter(|o| !o.is_liquidity_order)
         .cloned()
         .collect();
-    user_orders.sort_by_cached_key(|o| std::cmp::Reverse(estimate_price_viability(o, prices)));
-    user_orders.into()
+    if user_orders.len() <= 1 {
+        return user_orders.into();
+    }
+
+    let mut rng = rand::thread_rng();
+
+    // Chose `choices.len()` distinct items from `user_orders` weighted by the viability of the order.
+    // This effectively sorts the orders by viability with a slight randomness to not get stuck on
+    // bad orders.
+    match user_orders.choose_multiple_weighted(&mut rng, user_orders.len(), |order| {
+        estimate_price_viability(order, prices)
+    }) {
+        Ok(weighted_user_orders) => weighted_user_orders.into_iter().cloned().collect(),
+        Err(_) => {
+            // if weighted sorting by viability fails we fall back to shuffling randomly
+            user_orders.shuffle(&mut rng);
+            user_orders.into()
+        }
+    }
 }
 
 // Used by the single order solvers to verify that the response respects the order price.
@@ -175,7 +194,7 @@ mod tests {
     use anyhow::anyhow;
     use maplit::hashmap;
     use model::order::OrderKind;
-    use num::FromPrimitive;
+    use num::{BigRational, FromPrimitive};
     use primitive_types::H160;
     use std::sync::Arc;
 
@@ -317,6 +336,7 @@ mod tests {
         assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
     }
 
+    #[ignore] // ignore this test because it could fail due to randomness
     #[test]
     fn orders_get_prioritized() {
         let token = H160::from_low_u64_be;
@@ -332,8 +352,8 @@ mod tests {
         let orders = [
             order(500, true),
             order(100, false),
-            order(200, false),
-            order(300, false),
+            order(2_000, false),
+            order(30_000, false),
         ];
         let prices = ExternalPrices::new(
             token(0),
@@ -343,11 +363,17 @@ mod tests {
             },
         )
         .unwrap();
-        let prioritized_orders = get_prioritized_orders(&orders, &prices);
-        assert_eq!(prioritized_orders.len(), 3); // liquidity orders get filtered out
-        for (sell_amount, order) in [300, 200, 100].iter().zip(prioritized_orders.iter()) {
-            assert!(!order.is_liquidity_order);
-            assert_eq!(amount(*sell_amount), order.sell_amount);
+
+        const SAMPLES: usize = 1_000;
+        let mut expected_results = 0;
+        for _ in 0..SAMPLES {
+            let prioritized_orders = get_prioritized_orders(&orders, &prices);
+            let expected_output = &[order(30_000, false), order(2_000, false), order(100, false)];
+            expected_results += usize::from(prioritized_orders == expected_output);
         }
+        // Using weighted selection should give us some suboptimal orderings even with skewed
+        // weights.
+        dbg!(expected_results);
+        assert!((expected_results as f64) < (SAMPLES as f64 * 0.9));
     }
 }
