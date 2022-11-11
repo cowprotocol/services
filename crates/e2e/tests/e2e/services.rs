@@ -257,6 +257,7 @@ impl OrderbookServices {
             None,
             H160::zero(),
             Default::default(),
+            0.97.try_into().unwrap(),
         );
         let order_validator = Arc::new(
             OrderValidator::new(
