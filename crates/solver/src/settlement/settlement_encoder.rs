@@ -52,6 +52,13 @@ pub struct SettlementEncoder {
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
+/// An encoded trade.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EncoderTrade<'a> {
+    Order(&'a OrderTrade),
+    CustomPrice(&'a CustomPriceTrade),
+}
+
 /// Whether or not internalizable interactions should be encoded as calldata
 pub enum InternalizationStrategy {
     EncodeAllInteractions,
@@ -115,6 +122,16 @@ impl SettlementEncoder {
         &self.clearing_prices
     }
 
+    pub fn trades(&self) -> impl Iterator<Item = EncoderTrade> + '_ {
+        let order_trades = self.order_trades.iter().map(EncoderTrade::Order);
+        let custom_price_trades = self
+            .custom_price_trades
+            .iter()
+            .map(EncoderTrade::CustomPrice);
+
+        order_trades.chain(custom_price_trades)
+    }
+    /*
     pub fn order_trades(&self) -> &[OrderTrade] {
         &self.order_trades
     }
@@ -122,6 +139,7 @@ impl SettlementEncoder {
     pub fn custom_price_trades(&self) -> &[CustomPriceTrade] {
         &self.custom_price_trades
     }
+    */
 
     pub fn has_interactions(&self) -> bool {
         self.execution_plan
