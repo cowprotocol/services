@@ -131,15 +131,6 @@ impl SettlementEncoder {
 
         order_trades.chain(custom_price_trades)
     }
-    /*
-    pub fn order_trades(&self) -> &[OrderTrade] {
-        &self.order_trades
-    }
-
-    pub fn custom_price_trades(&self) -> &[CustomPriceTrade] {
-        &self.custom_price_trades
-    }
-    */
 
     pub fn has_interactions(&self) -> bool {
         self.execution_plan
