@@ -304,7 +304,6 @@ fn order_models(
                 index,
                 OrderModel {
                     id: order.id.order_uid(),
-                    created_at: order.created_at,
                     sell_token: order.sell_token,
                     buy_token: order.buy_token,
                     sell_amount: order.sell_amount,
@@ -317,6 +316,7 @@ fn order_models(
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,
+                    is_mature: order.is_mature,
                 },
             ))
         })

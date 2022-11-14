@@ -7,7 +7,6 @@ pub mod zeroex;
 
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 #[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
@@ -134,7 +133,6 @@ impl From<u32> for LimitOrderUid {
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
     pub id: LimitOrderUid,
-    pub created_at: DateTime<Utc>,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -150,6 +148,7 @@ pub struct LimitOrder {
     /// perspective.
     pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
+    /// Indicator if the order is mature at the creation of the Auction. Relevant to user orders.
     pub is_mature: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
@@ -208,7 +207,6 @@ impl Default for LimitOrder {
             is_liquidity_order: false,
             is_mature: false,
             id: Default::default(),
-            created_at: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),
         }

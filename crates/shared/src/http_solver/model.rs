@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use derivative::Derivative;
 use ethcontract::{Bytes, H160};
 use model::{
@@ -32,7 +31,6 @@ pub struct BatchAuctionModel {
 pub struct OrderModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<OrderUid>,
-    pub created_at: DateTime<Utc>,
     pub sell_token: H160,
     pub buy_token: H160,
     #[serde(with = "u256_decimal")]
@@ -44,6 +42,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
     /// Signals if the order will be executed as an atomic unit. In that case the order's
@@ -412,7 +411,6 @@ mod tests {
     use crate::sources::uniswap_v3::graph_api::Token;
 
     use super::*;
-    use chrono::NaiveDateTime;
     use ethcontract::H256;
     use maplit::btreemap;
     use model::{
@@ -489,7 +487,6 @@ mod tests {
         let sell_token = H160::from_low_u64_be(43110);
         let order_model = OrderModel {
             id: Some(OrderUid::default()),
-            created_at: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
             sell_token,
             buy_token,
             sell_amount: U256::from(1),
@@ -508,6 +505,7 @@ mod tests {
             mandatory: false,
             has_atomic_execution: false,
             reward: 3.,
+            is_mature: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -646,7 +644,6 @@ mod tests {
           "orders": {
             "0": {
               "id": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-              "created_at": "1970-01-01T00:00:02Z",
               "sell_token": "0x000000000000000000000000000000000000a866",
               "buy_token": "0x0000000000000000000000000000000000000539",
               "sell_amount": "1",
@@ -664,7 +661,8 @@ mod tests {
               },
               "mandatory": false,
               "has_atomic_execution": false,
-              "reward": 3.0
+              "reward": 3.0,
+              "is_mature": false,
             },
           },
           "amms": {
