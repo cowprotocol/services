@@ -494,10 +494,17 @@ pub fn user_orders<'a>(
     // queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-" SELECT ", ORDERS_SELECT,
+"(SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE o.owner = $1 OR onchain_o.sender = $1 ",
+" WHERE o.owner = $1",
+" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
+" UNION ",
+" (SELECT ", ORDERS_SELECT,
+" FROM ", ORDERS_FROM,
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE onchain_o.sender = $1 ",
+" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
 " ORDER BY creation_timestamp DESC ",
 " LIMIT $2 ",
 " OFFSET $3 ",
