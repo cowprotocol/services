@@ -56,9 +56,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         ethflow_data,
         onchain_user,
         is_liquidity_order: class == OrderClass::Liquidity,
-        surplus_fee: big_decimal_to_u256(&order.surplus_fee.unwrap_or_default())
-            .context("surplus_fee is not U256")?,
-        surplus_fee_timestamp: order.surplus_fee_timestamp.unwrap_or_default(),
+        surplus_fee: match order.surplus_fee {
+            Some(fee) => Some(big_decimal_to_u256(&fee).context("surplus_fee is not U256")?),
+            None => None,
+        },
+        surplus_fee_timestamp: order.surplus_fee_timestamp,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

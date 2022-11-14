@@ -96,8 +96,8 @@ pub struct Order {
     pub full_fee_amount: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
-    pub surplus_fee: BigDecimal,
-    pub surplus_fee_timestamp: DateTime<Utc>,
+    pub surplus_fee: Option<BigDecimal>,
+    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
 pub async fn insert_pre_interactions(
@@ -344,7 +344,7 @@ AND cancellation_timestamp IS NULL
 }
 
 /// Order with extra information from other tables. Has all the information needed to construct a model::Order.
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
     pub uid: OrderUid,
     pub owner: Address,
@@ -1457,8 +1457,8 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, fee);
-        assert_eq!(order.surplus_fee_timestamp, timestamp);
+        assert_eq!(order.surplus_fee, Some(fee));
+        assert_eq!(order.surplus_fee_timestamp, Some(timestamp));
     }
 
     #[tokio::test]
@@ -1512,7 +1512,7 @@ mod tests {
             &mut db,
             &Order {
                 uid: ByteArray([4; 56]),
-                surplus_fee_timestamp: timestamp,
+                surplus_fee_timestamp: Some(timestamp),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 ..Default::default()
