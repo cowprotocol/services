@@ -11,11 +11,8 @@ use model::{
 };
 use secp256k1::SecretKey;
 use shared::{
-    ethrpc::Web3,
-    http_client::HttpClientFactory,
-    maintenance::Maintaining,
+    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
     sources::uniswap_v2::pool_fetching::PoolFetcher,
-    token_list::{AutoUpdatingTokenList, Token},
 };
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -191,14 +188,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         uniswap_v3_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
-    let market_makable_token_list = AutoUpdatingTokenList::new(maplit::hashmap! {
-        token_a.address() => Token {
-            address: token_a.address(),
-            name: "Test Coin".into(),
-            symbol: "TC".into(),
-            decimals: 18,
-        }
-    });
     let submitted_transactions = GlobalTxPool::default();
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
@@ -212,7 +201,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        market_makable_token_list,
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -242,7 +230,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,
