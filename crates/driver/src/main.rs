@@ -121,6 +121,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     CommonComponents {
