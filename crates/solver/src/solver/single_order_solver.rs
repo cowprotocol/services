@@ -158,7 +158,7 @@ fn get_prioritized_orders(orders: &[LimitOrder], prices: &ExternalPrices) -> Vec
 
     let mut rng = rand::thread_rng();
 
-    // Chose `choices.len()` distinct items from `user_orders` weighted by the viability of the order.
+    // Chose `user_orders.len()` distinct items from `user_orders` weighted by the viability of the order.
     // This effectively sorts the orders by viability with a slight randomness to not get stuck on
     // bad orders.
     match user_orders.choose_multiple_weighted(&mut rng, user_orders.len(), |order| {
