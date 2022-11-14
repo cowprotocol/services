@@ -379,15 +379,23 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let liquidity_owner = self.liquidity_order_owners.contains(&owner);
+        let class = if self.liquidity_order_owners.contains(&owner) {
+            OrderClass::Liquidity
+        } else if self.enable_limit_orders && order.data.fee_amount.is_zero() {
+            OrderClass::Limit
+        } else {
+            OrderClass::Market
+        };
+
         self.partial_validate(PreOrderData::from_order_creation(
             owner,
             &order.data,
             signing_scheme,
-            liquidity_owner,
+            class == OrderClass::Liquidity,
         ))
         .await
         .map_err(ValidationError::Partial)?;
+
         let quote_parameters = QuoteSearchParameters {
             sell_token: order.data.sell_token,
             buy_token: order.data.buy_token,
@@ -398,7 +406,7 @@ impl OrderValidating for OrderValidator {
             from: owner,
             app_data: order.data.app_data,
         };
-        let quote = if !liquidity_owner && order.data.fee_amount > U256::zero() {
+        let quote = if class == OrderClass::Market {
             let quote = get_quote_and_check_fee(
                 &*self.quoter,
                 &quote_parameters,
@@ -411,11 +419,6 @@ impl OrderValidating for OrderValidator {
                 )?,
             )
             .await?;
-            let quote = self
-                .quoter
-                .store_quote(quote)
-                .await
-                .map_err(ValidationError::Other)?;
             Some(quote)
         } else {
             // We don't try to get quotes for liquidity and limit orders
@@ -437,10 +440,8 @@ impl OrderValidating for OrderValidator {
             })
             .unwrap_or_default();
 
-        let min_balance = match minimum_balance(&order.data) {
-            Some(amount) => amount,
-            None => return Err(ValidationError::SellAmountOverflow),
-        };
+        let min_balance =
+            minimum_balance(&order.data).ok_or(ValidationError::SellAmountOverflow)?;
 
         // Fast path to check if transfer is possible with a single node query.
         // If not, run extra queries for additional information.
@@ -484,7 +485,10 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        let is_outside_market_price = match &quote {
+        // Check if we need to re-classify the order if it is outside the market
+        // price. We consider out-of-price orders as liquidity orders. See
+        // <https://github.com/cowprotocol/services/pull/301>.
+        let class = match &quote {
             Some(quote)
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
@@ -493,19 +497,11 @@ impl OrderValidating for OrderValidator {
                 ) =>
             {
                 let order_uid = order.data.uid(domain_separator, &owner);
-                tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
-                true
-            }
-            Some(_) => false,
-            None => true,
-        };
+                tracing::debug!(%order_uid, ?owner, ?class, "order being flagged as outside market price");
 
-        let class = match (is_outside_market_price, liquidity_owner) {
-            (true, true) => OrderClass::Liquidity,
-            (true, false) if self.enable_limit_orders && order.data.fee_amount.is_zero() => {
-                OrderClass::Limit
+                OrderClass::Liquidity
             }
-            _ => OrderClass::Market,
+            _ => class,
         };
 
         if class == OrderClass::Limit {
@@ -683,9 +679,14 @@ pub async fn get_quote_and_check_fee(
                 app_data: quote_search_parameters.app_data,
                 signing_scheme,
             };
-            let quote = quoter.calculate_quote(parameters).await?;
 
-            tracing::debug!("computed fresh quote for order creation");
+            let quote = quoter.calculate_quote(parameters).await?;
+            let quote = quoter
+                .store_quote(quote)
+                .await
+                .map_err(ValidationError::Other)?;
+
+            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
             quote
         }
         Err(err) => return Err(err.into()),
@@ -1336,9 +1337,12 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _, _| Ok(Default::default()));
+        order_quoter.expect_find_quote().returning(|_, _, _| {
+            Ok(Quote {
+                fee_amount: U256::from(1),
+                ..Default::default()
+            })
+        });
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1373,12 +1377,71 @@ mod tests {
             },
             ..Default::default()
         };
+        let result = validator
+            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .await;
+        assert!(matches!(result, Err(ValidationError::InsufficientFee)));
+    }
+
+    #[tokio::test]
+    async fn post_out_of_market_orders_when_limit_orders_disabled() {
+        let expected_buy_amount = U256::from(100);
+
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter.expect_find_quote().returning(move |_, _, _| {
+            Ok(Quote {
+                buy_amount: expected_buy_amount,
+                sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
+                ..Default::default()
+            })
+        });
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            OrderValidPeriodConfiguration::any(),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
+            Arc::new(limit_order_counter),
+            0,
+        );
+        let order = OrderCreation {
+            data: OrderData {
+                valid_to: time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: expected_buy_amount + 1, // buy more than expected
+                sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let (order, quote) = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await
             .unwrap();
-        assert_eq!(quote, None);
-        assert_eq!(order.metadata.class, OrderClass::Market);
+
+        // Out-of-price orders are intentionally marked as liquidity
+        // orders!
+        assert_eq!(order.metadata.class, OrderClass::Liquidity);
+        assert!(quote.is_some());
     }
 
     #[tokio::test]
@@ -1855,7 +1918,19 @@ mod tests {
                 app_data: quote_search_parameters.app_data,
                 signing_scheme: QuoteSigningScheme::Eip712,
             }))
-            .returning(move |_| Ok(quote_data.clone()));
+            .returning({
+                let quote_data = quote_data.clone();
+                move |_| Ok(quote_data.clone())
+            });
+        order_quoter
+            .expect_store_quote()
+            .with(eq(quote_data.clone()))
+            .returning(|quote| {
+                Ok(Quote {
+                    id: Some(42),
+                    ..quote
+                })
+            });
 
         let quote = get_quote_and_check_fee(
             &order_quoter,
@@ -1870,6 +1945,7 @@ mod tests {
         assert_eq!(
             quote,
             Quote {
+                id: Some(42),
                 fee_amount: 6.into(),
                 ..Default::default()
             }
