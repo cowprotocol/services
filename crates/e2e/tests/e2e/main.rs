@@ -12,6 +12,7 @@ mod eth_integration;
 mod limit_orders;
 mod onchain_settlement;
 mod order_cancellation;
+mod refunder;
 mod settlement_without_onchain_liquidity;
 mod smart_contract_orders;
 mod vault_balances;

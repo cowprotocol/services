@@ -16,7 +16,7 @@ use sqlx::PgPool;
 use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
 use crate::submitter::Submitter;
 
-const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
+pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 pub struct RefundService {
