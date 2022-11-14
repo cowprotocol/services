@@ -33,7 +33,7 @@ const MAX_GAS_PRICE: u64 = 500_000_000_000u64;
 // then the gas_price used will be 12.
 const GAS_PRICE_BUFFER_IN_PERCENT: f64 = 30.0f64;
 // Max priority fee that the refunder is willing to pay. (=2 Gwei)
-const PRIORITY_TIP_OF_TRANSACTION: u64 = 2_000_000_000u64;
+const MAX_PRIORITY_FEE_TIP: u64 = 2_000_000_000u64;
 // In order to resubmit a new tx with the same nonce, the gas price needs to
 // be increased by at least 10 percent. We increase it by 12 percent
 const GAS_PRICE_BUMP: f64 = 1.12f64;
@@ -76,8 +76,15 @@ impl Submitter {
             nonce,
             self.nonce_of_last_submission,
         )?;
-        let GasPrice::Eip1559 { max_fee_per_gas, ..} = gas_price else {
-            return Err(anyhow!("Unreachable state during refunder submission"));
+        let max_fee_per_gas = match gas_price {
+            GasPrice::Eip1559 {
+                max_fee_per_gas, ..
+            } => max_fee_per_gas,
+            _ => {
+                return Err(anyhow!(
+                    "Unreachable state while accessing the max_fee_per_gas"
+                ))
+            }
         };
 
         // Gas prices are capped at MAX_GAS_PRICE
@@ -163,9 +170,10 @@ fn calculate_submission_gas_price(
             }
         }
     }
+    let max_fee_per_gas = U256::from(new_max_fee_per_gas as u64);
     let gas_price = GasPrice::Eip1559 {
-        max_fee_per_gas: U256::from(new_max_fee_per_gas as u64),
-        max_priority_fee_per_gas: U256::from(PRIORITY_TIP_OF_TRANSACTION),
+        max_fee_per_gas,
+        max_priority_fee_per_gas: U256::min(max_fee_per_gas, U256::from(MAX_PRIORITY_FEE_TIP)),
     };
     Ok(gas_price)
 }
@@ -177,11 +185,11 @@ mod tests {
     #[test]
     fn test_calculate_submission_gas_price() {
         // First case: previous tx was successful
-        let max_fee_per_gas = 10f64;
+        let max_fee_per_gas = 4_000_000_000f64;
         let web3_gas_estimation = GasPrice1559 {
-            base_fee_per_gas: 2f64,
+            base_fee_per_gas: 2_000_000_000f64,
             max_fee_per_gas,
-            max_priority_fee_per_gas: 10f64,
+            max_priority_fee_per_gas: 2_000_000_000f64,
         };
         let newest_nonce = U256::one();
         let nonce_of_last_submission = None;
@@ -197,12 +205,12 @@ mod tests {
             max_fee_per_gas: U256::from(
                 (max_fee_per_gas * (1f64 + GAS_PRICE_BUFFER_IN_PERCENT / 100f64)) as u64,
             ),
-            max_priority_fee_per_gas: U256::from(PRIORITY_TIP_OF_TRANSACTION),
+            max_priority_fee_per_gas: U256::from(MAX_PRIORITY_FEE_TIP),
         };
         assert_eq!(result, expected_result);
         // Second case: Preivous tx was not successful
-        let nonce_of_last_submission = Some(newest_nonce.clone());
-        let gas_price_of_last_submission = 100f64;
+        let nonce_of_last_submission = Some(newest_nonce);
+        let gas_price_of_last_submission = 5_000_000_000f64;
         let result = calculate_submission_gas_price(
             Some(U256::from(gas_price_of_last_submission as u64)),
             web3_gas_estimation,
@@ -212,7 +220,7 @@ mod tests {
         .unwrap();
         let expected_result = GasPrice::Eip1559 {
             max_fee_per_gas: U256::from((gas_price_of_last_submission * GAS_PRICE_BUMP) as u64),
-            max_priority_fee_per_gas: U256::from(PRIORITY_TIP_OF_TRANSACTION),
+            max_priority_fee_per_gas: U256::from(MAX_PRIORITY_FEE_TIP),
         };
         assert_eq!(result, expected_result);
     }
