@@ -117,6 +117,23 @@ where
             .expect("worker task unexpectedly dropped");
         receiver
     }
+
+    /// Executes a call.
+    async fn execute_call(&self, id: RequestId, request: Call) -> RpcResult {
+        let method = match &request {
+            Call::MethodCall(call) => call.method.as_str(),
+            _ => "none",
+        };
+
+        tracing::trace!(%id, %method, "queueing call");
+
+        let response = self.queue_call(id, request);
+        let result = response.await.expect("worker task unexpectedly dropped");
+
+        tracing::trace!(%id, ok = %result.is_ok(), "received response");
+
+        result
+    }
 }
 
 impl<Inner> Transport for BufferedTransport<Inner>
@@ -134,21 +151,9 @@ where
     fn send(&self, id: RequestId, request: Call) -> Self::Out {
         let this = self.clone();
 
-        async move {
-            let method = match &request {
-                Call::MethodCall(call) => call.method.as_str(),
-                _ => "none",
-            };
-            tracing::trace!(%id, %method, "queueing call");
-
-            let response = this.queue_call(id, request);
-            let result = response.await.expect("worker task unexpectedly dropped");
-
-            tracing::trace!(%id, ok = %result.is_ok(), "received response");
-            result
-        }
-        .in_current_span()
-        .boxed()
+        async move { this.execute_call(id, request).await }
+            .in_current_span()
+            .boxed()
     }
 }
 
@@ -170,11 +175,10 @@ where
         async move {
             let responses = requests
                 .into_iter()
-                .map(|(id, request)| this.queue_call(id, request));
-            Ok(future::try_join_all(responses)
-                .await
-                .expect("worker task unexpectedly dropped"))
+                .map(|(id, request)| this.execute_call(id, request));
+            Ok(future::join_all(responses).await)
         }
+        .in_current_span()
         .boxed()
     }
 }
