@@ -17,7 +17,7 @@ use crate::{
     },
     metrics::SolverMetrics,
     settlement::{external_prices::ExternalPrices, Settlement},
-    settlement_post_processing::PostProcessingPipeline,
+    settlement_post_processing::PostProcessing,
     solver::balancer_sor_solver::BalancerSorSolver,
 };
 use anyhow::{anyhow, Context, Result};
@@ -280,7 +280,7 @@ pub fn create(
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
     market_makable_token_list: AutoUpdatingTokenList,
-    post_processing_pipeline: Arc<PostProcessingPipeline>,
+    post_processing_pipeline: Arc<dyn PostProcessing>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.

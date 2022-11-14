@@ -1,6 +1,6 @@
 use crate::{
     settlement::Settlement,
-    settlement_post_processing::PostProcessingPipeline,
+    settlement_post_processing::PostProcessing,
     solver::{Auction, Solver},
 };
 use anyhow::Result;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// A wrapper for solvers that applies a set of optimizations to all the generated settlements.
 pub struct OptimizingSolver {
     pub inner: Arc<dyn Solver>,
-    pub post_processing_pipeline: Arc<PostProcessingPipeline>,
+    pub post_processing_pipeline: Arc<dyn PostProcessing>,
 }
 
 #[async_trait::async_trait]
