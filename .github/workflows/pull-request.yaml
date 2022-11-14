@@ -12,13 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: Swatinem/rust-cache@v1
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
           toolchain: nightly
           components: rustfmt
       - run: |
-          rustup update stable
           rustup --version
           rustup show
           cargo --version
