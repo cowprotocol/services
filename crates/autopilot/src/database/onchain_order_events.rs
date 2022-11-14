@@ -439,6 +439,10 @@ fn convert_onchain_order_placement(
         false
     };
 
+    // TODO(nlordell): It is currently possible to create limit orders from
+    // on-chain events even if they are disabled at the API level. This feels
+    // non-intentional, and we should revisit this before releasing EthFlow
+    // orders.
     let class = match (is_outside_market_price, liquidity_owner) {
         (true, true) => OrderClass::Liquidity,
         (true, false) => OrderClass::Limit,

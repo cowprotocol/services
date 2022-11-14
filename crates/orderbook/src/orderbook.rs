@@ -4,7 +4,10 @@ use chrono::Utc;
 use ethcontract::H256;
 use model::{
     auction::AuctionWithId,
-    order::{Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid},
+    order::{
+        Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid,
+        SignedOrderCancellations,
+    },
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -177,6 +180,37 @@ impl Orderbook {
         Ok(order)
     }
 
+    pub async fn cancel_orders(
+        &self,
+        cancellation: SignedOrderCancellations,
+    ) -> Result<(), OrderCancellationError> {
+        let mut orders = Vec::new();
+        for order_uid in &cancellation.data.order_uids {
+            orders.push(self.find_order_for_cancellation(order_uid).await?);
+        }
+
+        // Verify the cancellation signer is the same as the order signers
+        let signer = cancellation
+            .validate(&self.domain_separator)
+            .map_err(|_| OrderCancellationError::InvalidSignature)?;
+        if orders.iter().any(|order| signer != order.metadata.owner) {
+            return Err(OrderCancellationError::WrongOwner);
+        };
+
+        // orders are already known to exist in DB at this point, and signer is
+        // known to be correct!
+        self.database
+            .cancel_orders(cancellation.data.order_uids, Utc::now())
+            .await?;
+
+        for order in &orders {
+            tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
+            Metrics::on_order_operation(order, OrderOperation::Cancelled);
+        }
+
+        Ok(())
+    }
+
     pub async fn cancel_order(
         &self,
         cancellation: OrderCancellation,
@@ -198,6 +232,8 @@ impl Orderbook {
         self.database
             .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
+
+        tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
         Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         Ok(())

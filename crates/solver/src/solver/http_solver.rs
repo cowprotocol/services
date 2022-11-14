@@ -511,7 +511,6 @@ impl Solver for HttpSolver {
             self.solver.name,
             serde_json::to_string_pretty(&settled).unwrap()
         );
-        tracing::debug!("Solver context {}, context {:?}", self.solver.name, context);
 
         if settled.orders.is_empty() {
             return Ok(vec![]);
@@ -530,7 +529,7 @@ impl Solver for HttpSolver {
             Ok(settlement) => Ok(vec![settlement]),
             Err(err) => {
                 tracing::debug!(
-                    name = %self.name(), ?settled,
+                    name = %self.name(), ?settled, ?err,
                     "failed to process HTTP solver result",
                 );
                 Err(err)
