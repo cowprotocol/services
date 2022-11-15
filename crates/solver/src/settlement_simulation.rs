@@ -276,7 +276,7 @@ mod tests {
         let settlements = vec![
             (
                 account.clone(),
-                Settlement::with_trades(Default::default(), vec![Default::default()], vec![]),
+                Settlement::with_trades(Default::default(), vec![Default::default()]),
                 None,
             ),
             (account.clone(), Settlement::new(Default::default()), None),

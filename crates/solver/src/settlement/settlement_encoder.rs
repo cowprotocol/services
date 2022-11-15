@@ -35,9 +35,6 @@ pub struct SettlementEncoder {
     // Invariant: tokens is all keys in clearing_prices sorted.
     tokens: Vec<H160>,
     clearing_prices: HashMap<H160, U256>,
-    // Order trades are trades of usual user orders. They will be settled using the
-    // uniform clearing prices. Hence, every trade's buy and sell token has an entry
-    // in clearing_prices
     trades: Vec<EncoderTrade>,
     // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
     // would make the trait not be object safe which prevents using it through `dyn`.
@@ -155,17 +152,19 @@ impl SettlementEncoder {
     }
 
     pub fn all_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
-        self.trades.iter().map(move |trade| self.price_trade(trade))
+        self.trades
+            .iter()
+            .map(move |trade| self.compute_trade_token_prices(trade))
     }
 
     pub fn user_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
         self.trades
             .iter()
             .filter(|trade| is_user_order(&trade.data.order))
-            .map(move |trade| self.price_trade(trade))
+            .map(move |trade| self.compute_trade_token_prices(trade))
     }
 
-    fn price_trade<'a>(&'a self, trade: &'a EncoderTrade) -> PricedTrade<'a> {
+    fn compute_trade_token_prices<'a>(&'a self, trade: &'a EncoderTrade) -> PricedTrade<'a> {
         let (sell_token_price, buy_token_price) = match trade.tokens {
             TokenReference::Indexed {
                 sell_token_index,
@@ -997,8 +996,13 @@ pub mod tests {
             .unwrap();
 
         assert_eq!(encoder.tokens, [token_a, token_b]);
-        assert_eq!(encoder.order_trades[0].trade.sell_token_index, 0);
-        assert_eq!(encoder.order_trades[0].buy_token_index, 1);
+        assert_eq!(
+            encoder.trades[0].tokens,
+            TokenReference::Indexed {
+                sell_token_index: 0,
+                buy_token_index: 1,
+            }
+        );
 
         let token_c = H160([0xee; 20]);
         encoder.add_token_equivalency(token_a, token_c).unwrap();
@@ -1008,8 +1012,13 @@ pub mod tests {
             encoder.clearing_prices[&token_a],
             encoder.clearing_prices[&token_c],
         );
-        assert_eq!(encoder.order_trades[0].trade.sell_token_index, 0);
-        assert_eq!(encoder.order_trades[0].buy_token_index, 2);
+        assert_eq!(
+            encoder.trades[0].tokens,
+            TokenReference::Indexed {
+                sell_token_index: 0,
+                buy_token_index: 2,
+            }
+        );
     }
 
     #[test]
@@ -1055,7 +1064,9 @@ pub mod tests {
             .build();
         order13.metadata.uid.0[0] = 0;
         order12.metadata.uid.0[0] = 2;
-        encoder0.add_trade(order13, 11.into(), 0.into()).unwrap();
+        encoder0
+            .add_trade(order13.clone(), 11.into(), 0.into())
+            .unwrap();
         encoder0
             .add_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
@@ -1082,7 +1093,9 @@ pub mod tests {
             .build();
         order24.metadata.uid.0[0] = 1;
         order23.metadata.uid.0[0] = 4;
-        encoder1.add_trade(order24, 22.into(), 0.into()).unwrap();
+        encoder1
+            .add_trade(order24.clone(), 22.into(), 0.into())
+            .unwrap();
         encoder1
             .add_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
@@ -1100,33 +1113,56 @@ pub mod tests {
         assert_eq!(merged.clearing_prices, prices);
         assert_eq!(merged.tokens, [token(1), token(2), token(3), token(4)]);
         assert_eq!(
-            merged.custom_price_trades,
-            vec![
-                CustomPriceTrade {
-                    trade: Trade {
-                        order: order12,
+            merged.trades,
+            [
+                EncoderTrade {
+                    data: Trade {
+                        order: order13,
+                        executed_amount: 11.into(),
+                        scaled_unsubsidized_fee: 0.into()
+                    },
+                    tokens: TokenReference::Indexed {
                         sell_token_index: 0,
-                        executed_amount: 11.into(),
-                        scaled_unsubsidized_fee: 0.into()
+                        buy_token_index: 2,
                     },
-                    buy_token_offset_index: 0,
-                    buy_token_price: 2.into(),
                 },
-                CustomPriceTrade {
-                    trade: Trade {
-                        order: order23,
-                        sell_token_index: 1,
+                EncoderTrade {
+                    data: Trade {
+                        order: order12,
                         executed_amount: 11.into(),
                         scaled_unsubsidized_fee: 0.into()
                     },
-                    buy_token_offset_index: 1,
-                    buy_token_price: 3.into(),
-                }
-            ]
+                    tokens: TokenReference::CustomPrice {
+                        sell_token_index: 0,
+                        buy_token_price: 2.into(),
+                    },
+                },
+                EncoderTrade {
+                    data: Trade {
+                        order: order24,
+                        executed_amount: 22.into(),
+                        scaled_unsubsidized_fee: 0.into()
+                    },
+                    tokens: TokenReference::Indexed {
+                        sell_token_index: 1,
+                        buy_token_index: 3,
+                    },
+                },
+                EncoderTrade {
+                    data: Trade {
+                        order: order23,
+                        executed_amount: 11.into(),
+                        scaled_unsubsidized_fee: 0.into()
+                    },
+                    tokens: TokenReference::CustomPrice {
+                        sell_token_index: 1,
+                        buy_token_price: 3.into(),
+                    },
+                },
+            ],
         );
 
-        assert_eq!(merged.order_trades.len(), 2);
-        assert_eq!(merged.custom_price_trades.len(), 2);
+        assert_eq!(merged.trades.len(), 4);
         assert_eq!(merged.execution_plan.len(), 2);
         assert_eq!(merged.unwraps[0].amount, 3.into());
     }
@@ -1150,13 +1186,15 @@ pub mod tests {
         order.data.buy_token = token(1);
         order.data.sell_token = token(3);
 
-        encoder1.custom_price_trades = vec![CustomPriceTrade {
-            trade: Trade {
+        encoder1.trades = vec![EncoderTrade {
+            data: Trade {
                 order: order.clone(),
                 ..Default::default()
             },
-            buy_token_price: 1.into(),
-            ..Default::default()
+            tokens: TokenReference::CustomPrice {
+                sell_token_index: 0,
+                buy_token_price: 1.into(),
+            },
         }];
         let merged = encoder0.merge(encoder1).unwrap();
         let prices = hashmap! {
@@ -1166,15 +1204,16 @@ pub mod tests {
         };
         assert_eq!(merged.clearing_prices, prices);
         assert_eq!(
-            merged.custom_price_trades,
-            vec![CustomPriceTrade {
-                trade: Trade {
+            merged.trades,
+            vec![EncoderTrade {
+                data: Trade {
                     order,
-                    sell_token_index: 2,
                     ..Default::default()
                 },
-                buy_token_price: 2.into(),
-                ..Default::default()
+                tokens: TokenReference::CustomPrice {
+                    sell_token_index: 2,
+                    buy_token_price: 2.into(),
+                },
             }],
         );
     }
@@ -1322,19 +1361,20 @@ pub mod tests {
             execution
         );
         assert_eq!(
-            CustomPriceTrade {
-                trade: Trade {
+            EncoderTrade {
+                data: Trade {
                     order,
-                    sell_token_index: 0,
                     executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
                     scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
                 },
-                buy_token_offset_index: 0,
-                // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had to sell
-                // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
-                buy_token_price: 1_010_000_000_000_000_000_000_000_000u128.into()
+                tokens: TokenReference::CustomPrice {
+                    sell_token_index: 0,
+                    // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had to sell
+                    // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
+                    buy_token_price: 1_010_000_000_000_000_000_000_000_000u128.into()
+                },
             },
-            encoder.custom_price_trades[0]
+            encoder.trades[0]
         );
     }
 

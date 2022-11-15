@@ -3,7 +3,7 @@ mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
 pub use self::settlement_encoder::{
-    verify_executed_amount, InternalizationStrategy, SettlementEncoder,
+    verify_executed_amount, InternalizationStrategy, PricedTrade, SettlementEncoder,
 };
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
@@ -269,6 +269,17 @@ impl Settlement {
         Self { encoder }
     }
 
+    #[cfg(test)]
+    pub fn with_default_prices(trades: Vec<Trade>) -> Self {
+        let clearing_prices = trades
+            .iter()
+            .flat_map(|trade| [trade.order.data.sell_token, trade.order.data.buy_token])
+            .map(|token| (token, U256::from(1_000_000_000_000_000_000_u128)))
+            .collect();
+        let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
+        Self { encoder }
+    }
+
     /// Returns the clearing prices map.
     pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
         self.encoder.clearing_prices()
@@ -503,7 +514,7 @@ pub mod tests {
     use super::*;
     use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
     use maplit::hashmap;
-    use model::order::{OrderData, OrderKind, OrderMetadata};
+    use model::order::{OrderClass, OrderData, OrderKind, OrderMetadata};
     use num::FromPrimitive;
     use shared::addr;
 
@@ -744,6 +755,7 @@ pub mod tests {
                 sell_amount: 10.into(),
                 buy_amount: 9.into(),
                 kind: OrderKind::Sell,
+                partially_fillable: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -755,25 +767,20 @@ pub mod tests {
                 sell_amount: 10.into(),
                 buy_amount: 9.into(),
                 kind: OrderKind::Sell,
+                partially_fillable: true,
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let trade0 = OrderTrade {
-            trade: Trade {
-                order: order0.clone(),
-                executed_amount: 10.into(),
-                ..Default::default()
-            },
+        let trade0 = Trade {
+            order: order0.clone(),
+            executed_amount: 10.into(),
             ..Default::default()
         };
-        let trade1 = OrderTrade {
-            trade: Trade {
-                order: order1.clone(),
-                executed_amount: 10.into(),
-                ..Default::default()
-            },
+        let trade1 = Trade {
+            order: order1.clone(),
+            executed_amount: 10.into(),
             ..Default::default()
         };
 
@@ -782,13 +789,8 @@ pub mod tests {
         let clearing_prices0 = hashmap! {token0 => 1.into(), token1 => 1.into()};
         let clearing_prices1 = hashmap! {token0 => 2.into(), token1 => 2.into()};
 
-        let settlement0 = test_settlement(
-            clearing_prices0,
-            vec![trade0.clone(), trade1.clone()],
-            vec![],
-        );
-
-        let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1], vec![]);
+        let settlement0 = test_settlement(clearing_prices0, vec![trade0.clone(), trade1.clone()]);
+        let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1]);
 
         let external_prices = externalprices! { native_token: token0, token1 => r(1) };
         assert_eq!(
@@ -804,20 +806,14 @@ pub mod tests {
 
         // Case where external price vector influences ranking:
 
-        let trade0 = OrderTrade {
-            trade: Trade {
-                order: order0.clone(),
-                executed_amount: 10.into(),
-                ..Default::default()
-            },
+        let trade0 = Trade {
+            order: order0.clone(),
+            executed_amount: 10.into(),
             ..Default::default()
         };
-        let trade1 = OrderTrade {
-            trade: Trade {
-                order: order1.clone(),
-                executed_amount: 9.into(),
-                ..Default::default()
-            },
+        let trade1 = Trade {
+            order: order1.clone(),
+            executed_amount: 9.into(),
             ..Default::default()
         };
 
@@ -826,22 +822,16 @@ pub mod tests {
         // Settlement0 gets the following surpluses:
         // trade0: 81 - 81 = 0
         // trade1: 100 - 81 = 19
-        let settlement0 = test_settlement(clearing_prices0, vec![trade0, trade1], vec![]);
+        let settlement0 = test_settlement(clearing_prices0, vec![trade0, trade1]);
 
-        let trade0 = OrderTrade {
-            trade: Trade {
-                order: order0,
-                executed_amount: 9.into(),
-                ..Default::default()
-            },
+        let trade0 = Trade {
+            order: order0,
+            executed_amount: 9.into(),
             ..Default::default()
         };
-        let trade1 = OrderTrade {
-            trade: Trade {
-                order: order1,
-                executed_amount: 10.into(),
-                ..Default::default()
-            },
+        let trade1 = Trade {
+            order: order1,
+            executed_amount: 10.into(),
             ..Default::default()
         };
 
@@ -850,7 +840,7 @@ pub mod tests {
         // Settlement1 gets the following surpluses:
         // trade0: 90 - 72.9 = 17.1
         // trade1: 100 - 100 = 0
-        let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1], vec![]);
+        let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1]);
 
         // If the external prices of the two tokens is the same, then both settlements are symmetric.
         let external_prices = externalprices! { native_token: token0, token1 => r(1) };
@@ -885,9 +875,9 @@ pub mod tests {
     }
 
     #[test]
-    fn test_computing_objective_value_with_zero_prices() {
-        // Test if passing a clearing price of zero to the objective value function does
-        // not panic.
+    fn test_constructing_settlement_with_zero_prices() {
+        // Test if passing a clearing price of zero makes it not possible to add
+        // trades.
 
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
@@ -904,21 +894,23 @@ pub mod tests {
             ..Default::default()
         };
 
-        let trade = OrderTrade {
-            trade: Trade {
-                order,
-                executed_amount: 10.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let mut settlement = Settlement::new(hashmap! {
+            token0 => 1.into(),
+            token1 => 1.into(),
+        });
+        assert!(settlement
+            .encoder
+            .add_trade(order.clone(), 10.into(), 0.into())
+            .is_ok());
 
-        let clearing_prices = hashmap! {token0 => 1.into(), token1 => 0.into()};
-
-        let settlement = test_settlement(clearing_prices, vec![trade], vec![]);
-
-        let external_prices = externalprices! { native_token: token0, token1 => r(1) };
-        settlement.total_surplus(&external_prices);
+        let mut settlement = Settlement::new(hashmap! {
+            token0 => 1.into(),
+            token1 => 0.into(),
+        });
+        assert!(settlement
+            .encoder
+            .add_trade(order, 10.into(), 0.into())
+            .is_err());
     }
 
     #[test]
@@ -1159,44 +1151,36 @@ pub mod tests {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
 
-        let trade0 = OrderTrade {
-            trade: Trade {
-                order: Order {
-                    data: OrderData {
-                        sell_token: token0,
-                        sell_amount: 10.into(),
-                        fee_amount: 1.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
+        let trade0 = Trade {
+            order: Order {
+                data: OrderData {
+                    sell_token: token0,
+                    sell_amount: 10.into(),
+                    fee_amount: 1.into(),
+                    kind: OrderKind::Sell,
                     ..Default::default()
                 },
-                executed_amount: 10.into(),
-                // Note that the scaled fee amount is different than the order's
-                // signed fee amount. This happens for subsidized orders, and when
-                // a fee objective scaling factor is configured.
-                scaled_unsubsidized_fee: 5.into(),
                 ..Default::default()
             },
-            ..Default::default()
+            executed_amount: 10.into(),
+            // Note that the scaled fee amount is different than the order's
+            // signed fee amount. This happens for subsidized orders, and when
+            // a fee objective scaling factor is configured.
+            scaled_unsubsidized_fee: 5.into(),
         };
-        let trade1 = OrderTrade {
-            trade: Trade {
-                order: Order {
-                    data: OrderData {
-                        sell_token: token1,
-                        sell_amount: 10.into(),
-                        fee_amount: 2.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
+        let trade1 = Trade {
+            order: Order {
+                data: OrderData {
+                    sell_token: token1,
+                    sell_amount: 10.into(),
+                    fee_amount: 2.into(),
+                    kind: OrderKind::Sell,
                     ..Default::default()
                 },
-                executed_amount: 10.into(),
-                scaled_unsubsidized_fee: 2.into(),
                 ..Default::default()
             },
-            ..Default::default()
+            executed_amount: 10.into(),
+            scaled_unsubsidized_fee: 2.into(),
         };
 
         let clearing_prices = hashmap! {token0 => 5.into(), token1 => 10.into()};
@@ -1207,19 +1191,13 @@ pub mod tests {
         };
 
         // Fee in sell tokens
-        assert_eq!(trade0.trade.executed_fee().unwrap(), 1.into());
-        assert_eq!(
-            trade0.trade.executed_scaled_unsubsidized_fee().unwrap(),
-            5.into()
-        );
-        assert_eq!(trade1.trade.executed_fee().unwrap(), 2.into());
-        assert_eq!(
-            trade1.trade.executed_scaled_unsubsidized_fee().unwrap(),
-            2.into()
-        );
+        assert_eq!(trade0.executed_fee().unwrap(), 1.into());
+        assert_eq!(trade0.executed_scaled_unsubsidized_fee().unwrap(), 5.into());
+        assert_eq!(trade1.executed_fee().unwrap(), 2.into());
+        assert_eq!(trade1.executed_scaled_unsubsidized_fee().unwrap(), 2.into());
 
         // Fee in wei of ETH
-        let settlement = test_settlement(clearing_prices, vec![trade0, trade1], vec![]);
+        let settlement = test_settlement(clearing_prices, vec![trade0, trade1]);
         assert_eq!(
             settlement.total_scaled_unsubsidized_fees(&external_prices),
             BigRational::from_integer(45.into())
@@ -1232,8 +1210,8 @@ pub mod tests {
         let token1 = H160([1; 20]);
         let settlement = test_settlement(
             hashmap! { token0 => 1.into(), token1 => 1.into() },
-            vec![OrderTrade {
-                trade: Trade {
+            vec![
+                Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: token0,
@@ -1249,12 +1227,8 @@ pub mod tests {
                     executed_amount: 1.into(),
                     // This is what matters for the objective value
                     scaled_unsubsidized_fee: 42.into(),
-                    ..Default::default()
                 },
-                ..Default::default()
-            }],
-            vec![CustomPriceTrade {
-                trade: Trade {
+                Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: token1,
@@ -1264,15 +1238,17 @@ pub mod tests {
                             fee_amount: 28.into(),
                             ..Default::default()
                         },
+                        metadata: OrderMetadata {
+                            class: OrderClass::Liquidity,
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     executed_amount: 1.into(),
                     // Doesn't count because it is a "liquidity order"
                     scaled_unsubsidized_fee: 1337.into(),
-                    ..Default::default()
                 },
-                ..Default::default()
-            }],
+            ],
         );
 
         assert_eq!(
@@ -1288,27 +1264,22 @@ pub mod tests {
                 addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b") => 99760667014_u128.into(),
                 addr!("dac17f958d2ee523a2206206994597c13d831ec7") => 3813250751402140530019_u128.into(),
             },
-            vec![OrderTrade {
-                trade: Trade {
-                    order: Order {
-                        data: OrderData {
-                            sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
-                            buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
-                            sell_amount: 99760667014_u128.into(),
-                            buy_amount: 3805639472457226077863_u128.into(),
-                            fee_amount: 239332986_u128.into(),
-                            kind: OrderKind::Sell,
-                            ..Default::default()
-                        },
+            vec![Trade {
+                order: Order {
+                    data: OrderData {
+                        sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
+                        buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
+                        sell_amount: 99760667014_u128.into(),
+                        buy_amount: 3805639472457226077863_u128.into(),
+                        fee_amount: 239332986_u128.into(),
+                        kind: OrderKind::Sell,
                         ..Default::default()
                     },
-                    executed_amount: 99760667014_u128.into(),
-                    scaled_unsubsidized_fee: 239332986_u128.into(),
                     ..Default::default()
                 },
-                ..Default::default()
+                executed_amount: 99760667014_u128.into(),
+                scaled_unsubsidized_fee: 239332986_u128.into(),
             }],
-            vec![],
         );
 
         let pmm = test_settlement(
@@ -1317,8 +1288,8 @@ pub mod tests {
                 addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") => 235665799111775530988005794_u128.into(),
                 addr!("dac17f958d2ee523a2206206994597c13d831ec7") => 235593507027683452564881428_u128.into(),
             },
-            vec![OrderTrade {
-                trade: Trade {
+            vec![
+                Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
@@ -1333,12 +1304,8 @@ pub mod tests {
                     },
                     executed_amount: 99760667014_u128.into(),
                     scaled_unsubsidized_fee: 239332986_u128.into(),
-                    ..Default::default()
                 },
-                ..Default::default()
-            }],
-            vec![CustomPriceTrade {
-                trade: Trade {
+                Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
@@ -1357,10 +1324,8 @@ pub mod tests {
                     },
                     executed_amount: 99760667014_u128.into(),
                     scaled_unsubsidized_fee: 77577144_u128.into(),
-                    ..Default::default()
                 },
-                ..Default::default()
-            }],
+            ],
         );
 
         let external_prices = externalprices! {
