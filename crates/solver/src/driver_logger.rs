@@ -57,8 +57,7 @@ impl DriverLogger {
     fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
         let mut traded_orders = Vec::new();
         for (_, group) in &settlement
-            .executed_trades()
-            .map(|(trade, _)| trade)
+            .trades()
             .group_by(|trade| trade.order.metadata.uid)
         {
             let mut group = group.into_iter().peekable();

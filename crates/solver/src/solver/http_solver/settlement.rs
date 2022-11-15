@@ -374,7 +374,7 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
-        settlement::{CustomPriceTrade, Trade},
+        settlement::{CustomPriceTrade, EncoderTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -567,8 +567,8 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.custom_price_trades(),
-            [CustomPriceTrade {
+            settlement.encoder.trades().collect::<Vec<_>>(),
+            [EncoderTrade::CustomPrice(&CustomPriceTrade {
                 trade: Trade {
                     order: Order {
                         metadata: OrderMetadata {
@@ -596,7 +596,7 @@ mod tests {
                 },
                 buy_token_offset_index: 0,
                 buy_token_price: (10 * 102 / 101).into(),
-            }]
+            })]
         );
 
         assert_eq!(limit_handler.calls(), vec![7.into()]);
