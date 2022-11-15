@@ -201,6 +201,7 @@ async fn single_limit_order_test(web3: Web3) {
         .json()
         .await
         .unwrap();
+    // TODO Follow-up PR: check that surplus_fee and surplus_fee_timestamp are set upon creation.
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     wait_for_solvable_orders(&client, 1).await.unwrap();
@@ -860,27 +861,95 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
-    let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
+    let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
+    let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
 
-    // Create & Mint tokens to trade
+    // Create tokens to trade
     let token_a = deploy_mintable_token(&web3).await;
     let token_b = deploy_mintable_token(&web3).await;
 
-    // Fund trader and settlement accounts
+    // Fund trader accounts
     tx!(
         solver_account,
-        token_a.mint(trader_account.address(), to_wei(100))
+        token_a.mint(trader_a.address(), to_wei(1010))
     );
     tx!(
         solver_account,
-        token_b.mint(contracts.gp_settlement.address(), to_wei(100))
+        token_b.mint(trader_b.address(), to_wei(510))
     );
 
-    // Approve GPv2 for trading
+    // Create and fund Uniswap pool
     tx!(
-        trader_account,
-        token_a.approve(contracts.allowance, to_wei(100))
+        solver_account,
+        contracts
+            .uniswap_factory
+            .create_pair(token_a.address(), token_b.address())
     );
+    tx!(
+        solver_account,
+        token_a.mint(solver_account.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_b.mint(solver_account.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_a.approve(contracts.uniswap_router.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_b.approve(contracts.uniswap_router.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        contracts.uniswap_router.add_liquidity(
+            token_a.address(),
+            token_b.address(),
+            to_wei(100_000),
+            to_wei(100_000),
+            0_u64.into(),
+            0_u64.into(),
+            solver_account.address(),
+            U256::max_value(),
+        )
+    );
+
+    // Create and fund pools for fee connections.
+    for token in [&token_a, &token_b] {
+        tx!(
+            solver_account,
+            token.mint(solver_account.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
+        );
+        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
+        tx!(
+            solver_account,
+            contracts
+                .weth
+                .approve(contracts.uniswap_router.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            contracts.uniswap_router.add_liquidity(
+                token.address(),
+                contracts.weth.address(),
+                to_wei(100_000),
+                to_wei(100_000),
+                0_u64.into(),
+                0_u64.into(),
+                solver_account.address(),
+                U256::max_value(),
+            )
+        );
+    }
+
+    // Approve GPv2 for trading
+    tx!(trader_a, token_a.approve(contracts.allowance, to_wei(101)));
+    tx!(trader_b, token_b.approve(contracts.allowance, to_wei(51)));
 
     // Place Orders
     let _services = OrderbookServices::new(&web3, &contracts, true).await;

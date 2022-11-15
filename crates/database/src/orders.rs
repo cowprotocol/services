@@ -1,4 +1,5 @@
 use crate::{Address, AppId, OrderUid, TransactionHash};
+use chrono::Duration;
 use futures::stream::BoxStream;
 use sqlx::{
     types::{
@@ -567,7 +568,7 @@ FROM settlements
 
 pub fn limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
-    max_fee_timestamp: DateTime<Utc>,
+    age: Duration,
     min_valid_to: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
@@ -582,6 +583,7 @@ pub fn limit_orders_with_outdated_fees(
         ") AS o ",
         "WHERE NOT o.invalidated LIMIT 100",
     );
+    let max_fee_timestamp = Utc::now() - age;
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
@@ -1543,7 +1545,7 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, Duration::seconds(2), 2)
             .try_collect()
             .await
             .unwrap();

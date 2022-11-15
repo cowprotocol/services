@@ -2,6 +2,7 @@ use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
     bad_token::BadTokenDetecting,
     code_fetching::CodeFetching,
+    limit_order_quoter::LimitOrderQuoter,
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
         QuoteSearchParameters,
@@ -182,6 +183,7 @@ pub struct OrderValidator {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
+    limit_order_quoter: LimitOrderQuoter,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
     enable_limit_orders: bool,
@@ -249,6 +251,7 @@ impl OrderValidator {
         signature_configuration: SignatureConfiguration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         quoter: Arc<dyn OrderQuoting>,
+        limit_order_quoter: LimitOrderQuoter,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
@@ -263,6 +266,7 @@ impl OrderValidator {
             signature_configuration,
             bad_token_detector,
             quoter,
+            limit_order_quoter,
             balance_fetcher,
             signature_validator,
             enable_limit_orders: false,
@@ -407,19 +411,20 @@ impl OrderValidating for OrderValidator {
             app_data: order.data.app_data,
         };
         let quote = if class == OrderClass::Market {
-            let quote = get_quote_and_check_fee(
-                &*self.quoter,
-                &quote_parameters,
-                order.quote_id,
-                order.data.fee_amount,
-                convert_signing_scheme_into_quote_signing_scheme(
-                    order.signature.scheme(),
-                    true,
-                    additional_gas,
-                )?,
+            Some(
+                get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    order.data.fee_amount,
+                    convert_signing_scheme_into_quote_signing_scheme(
+                        order.signature.scheme(),
+                        true,
+                        additional_gas,
+                    )?,
+                )
+                .await?,
             )
-            .await?;
-            Some(quote)
         } else {
             // We don't try to get quotes for liquidity and limit orders
             // for two reasons:
@@ -522,6 +527,14 @@ impl OrderValidating for OrderValidator {
             full_fee_amount,
             class,
         )?;
+
+        if order.metadata.class == OrderClass::Limit {
+            self.limit_order_quoter
+                .quote(&order)
+                .await
+                .map_err(ValidationError::Other)?;
+        }
+
         Ok((order, quote))
     }
 }
@@ -749,7 +762,7 @@ mod tests {
         account_balances::MockBalanceFetching,
         bad_token::{MockBadTokenDetecting, TokenQuality},
         code_fetching::MockCodeFetching,
-        dummy_contract,
+        dummy_contract, limit_order_quoter,
         order_quoting::MockOrderQuoting,
         rate_limiter::RateLimiterError,
         signature_validator::MockSignatureValidating,
@@ -848,6 +861,10 @@ mod tests {
             SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
+            LimitOrderQuoter::new(
+                Arc::new(MockOrderQuoting::new()),
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1003,6 +1020,10 @@ mod tests {
             SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
+            LimitOrderQuoter::new(
+                Arc::new(MockOrderQuoting::new()),
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1051,6 +1072,10 @@ mod tests {
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(MockOrderQuoting::new()),
+            LimitOrderQuoter::new(
+                Arc::new(MockOrderQuoting::new()),
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1100,6 +1125,7 @@ mod tests {
     #[tokio::test]
     async fn post_validate_ok() {
         let mut order_quoter = MockOrderQuoting::new();
+        let mut limit_order_store = limit_order_quoter::MockStoring::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
@@ -1111,6 +1137,14 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        order_quoter
+            .expect_calculate_quote()
+            .returning(|_| Ok(Default::default()));
+        limit_order_store
+            .expect_update_surplus_fee()
+            .returning(|_, _| Ok(()));
+
+        let order_quoter = Arc::new(order_quoter);
 
         let mut signature_validating = MockSignatureValidating::new();
         signature_validating
@@ -1133,7 +1167,8 @@ mod tests {
             },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(order_quoter, Arc::new(limit_order_store)),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
             Arc::new(limit_order_counter),
@@ -1240,6 +1275,8 @@ mod tests {
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
 
+        let order_quoter = Arc::new(order_quoter);
+
         let mut signature_validating = MockSignatureValidating::new();
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
@@ -1260,7 +1297,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
             Arc::new(limit_order_counter),
@@ -1299,6 +1340,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1309,7 +1351,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1349,6 +1395,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1359,7 +1406,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1404,6 +1455,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1414,7 +1466,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1458,6 +1514,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1468,7 +1525,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1506,6 +1567,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1516,7 +1578,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1557,6 +1623,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1567,7 +1634,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1611,6 +1682,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1621,7 +1693,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1660,6 +1736,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1670,7 +1747,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
@@ -1712,7 +1793,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-
+        let order_quoter = Arc::new(order_quoter);
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1723,7 +1804,11 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            Arc::new(order_quoter),
+            order_quoter.clone(),
+            LimitOrderQuoter::new(
+                order_quoter,
+                Arc::new(limit_order_quoter::MockStoring::new()),
+            ),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
             Arc::new(limit_order_counter),
@@ -1769,6 +1854,7 @@ mod tests {
                 balance_fetcher
                     .expect_can_transfer()
                     .returning(|_, _, _, _| Err(TransferSimulationError::$err));
+                let order_quoter = Arc::new(order_quoter);
                 let mut limit_order_counter = MockLimitOrderCounting::new();
                 limit_order_counter.expect_count().returning(|_| Ok(0u64));
                 let validator = OrderValidator::new(
@@ -1779,7 +1865,11 @@ mod tests {
                     OrderValidPeriodConfiguration::any(),
                     SignatureConfiguration::all(),
                     Arc::new(bad_token_detector),
-                    Arc::new(order_quoter),
+                    order_quoter.clone(),
+                    LimitOrderQuoter::new(
+                        order_quoter,
+                        Arc::new(limit_order_quoter::MockStoring::new()),
+                    ),
                     Arc::new(balance_fetcher),
                     Arc::new(MockSignatureValidating::new()),
                     Arc::new(limit_order_counter),

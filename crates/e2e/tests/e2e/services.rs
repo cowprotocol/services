@@ -1,10 +1,7 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use autopilot::{
-    event_updater::GPv2SettlementContract, limit_order_quoter::LimitOrderQuoter,
-    solvable_orders::SolvableOrdersCache,
-};
+use autopilot::{event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use database::quotes::QuoteId;
 use ethcontract::{Bytes, H160, H256, U256};
@@ -18,6 +15,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
     fee_subsidy::Subsidy,
+    limit_order_quoter::{self, LimitOrderQuoter},
     maintenance::ServiceMaintenance,
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoter, OrderQuoting, Quote, QuoteHandler,
@@ -269,6 +267,20 @@ impl OrderbookServices {
             Duration::from_secs(5),
             Default::default(),
         );
+        let limit_order_quoter = LimitOrderQuoter::new(
+            Arc::new(FixedFeeQuoter {
+                quoter: quoter.clone(),
+                fee: 1_000.into(),
+            }),
+            Arc::new(autopilot_db.clone()),
+        );
+        limit_order_quoter::start_background_quoter(
+            limit_order_quoter.clone(),
+            limit_order_quoter::BackgroundConfig {
+                limit_order_age: chrono::Duration::seconds(15),
+                loop_delay: Duration::from_secs(1),
+            },
+        );
         let order_validator = Arc::new(
             OrderValidator::new(
                 Box::new(web3.clone()),
@@ -279,6 +291,7 @@ impl OrderbookServices {
                 SignatureConfiguration::all(),
                 bad_token_detector,
                 quoter.clone(),
+                limit_order_quoter,
                 balance_fetcher,
                 signature_validator,
                 api_db.clone(),
@@ -293,9 +306,9 @@ impl OrderbookServices {
             order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
+            maintainers: vec![Arc::new(autopilot_db), event_updater],
         };
-        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
+        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter));
         orderbook::serve_api(
             api_db.clone(),
             orderbook,
@@ -306,16 +319,6 @@ impl OrderbookServices {
             None,
             native_price_estimator,
         );
-        LimitOrderQuoter {
-            limit_order_age: chrono::Duration::seconds(15),
-            loop_delay: Duration::from_secs(1),
-            quoter: Arc::new(FixedFeeQuoter {
-                quoter,
-                fee: 1_000.into(),
-            }),
-            database: autopilot_db,
-        }
-        .spawn();
 
         Self {
             price_estimator,

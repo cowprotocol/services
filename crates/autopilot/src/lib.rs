@@ -2,7 +2,6 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
@@ -12,7 +11,6 @@ use crate::{
         Postgres,
     },
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
@@ -35,6 +33,7 @@ use shared::{
     },
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
+    limit_order_quoter::{self, LimitOrderQuoter},
     maintenance::Maintaining,
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
@@ -526,13 +525,14 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
     );
 
-    LimitOrderQuoter {
-        limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
-        loop_delay: args.max_surplus_fee_age / 2,
-        quoter,
-        database: db,
-    }
-    .spawn();
+    let limit_order_quoter = LimitOrderQuoter::new(quoter, Arc::new(db));
+    limit_order_quoter::start_background_quoter(
+        limit_order_quoter,
+        limit_order_quoter::BackgroundConfig {
+            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+            loop_delay: args.max_surplus_fee_age / 2,
+        },
+    );
 
     tokio::select! {
         result = serve_metrics => panic!("serve_metrics exited {:?}", result),

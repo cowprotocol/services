@@ -1,12 +1,12 @@
 use super::Postgres;
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use database::{
     byte_array::ByteArray,
     orders::{FullOrder, OrderKind as DbOrderKind},
 };
-use ethcontract::H256;
+use ethcontract::{H256, U256};
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
@@ -26,6 +26,7 @@ use shared::{
         order_class_from, order_class_into, order_kind_from, order_kind_into,
         sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },
+    limit_order_quoter,
     order_quoting::Quote,
     order_validation::LimitOrderCounting,
 };
@@ -296,6 +297,46 @@ impl LimitOrderCounting for Postgres {
         .await?
         .try_into()
         .unwrap())
+    }
+}
+
+#[async_trait]
+impl limit_order_quoter::Storing for Postgres {
+    async fn update_surplus_fee(&self, order: &Order, surplus_fee: U256) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["update_surplus_fee"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        database::orders::update_surplus_fee(
+            &mut ex,
+            &database::byte_array::ByteArray(order.metadata.uid.0),
+            &u256_to_big_decimal(&surplus_fee),
+            Utc::now(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn limit_orders_with_outdated_fees(&self, age: Duration) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["limit_orders_with_outdated_fees"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        database::orders::limit_orders_with_outdated_fees(
+            &mut ex,
+            age,
+            now_in_epoch_seconds().into(),
+        )
+        .map(|result| match result {
+            Ok(order) => full_order_into_model_order(order),
+            Err(err) => Err(anyhow::Error::from(err)),
+        })
+        .try_collect()
+        .await
     }
 }
 
