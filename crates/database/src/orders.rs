@@ -381,6 +381,8 @@ pub struct FullOrder {
 impl FullOrder {
     pub fn valid_to(&self) -> i64 {
         if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
             return valid_to;
         }
         self.valid_to
