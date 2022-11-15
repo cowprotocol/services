@@ -348,7 +348,7 @@ impl Settlement {
             .map(|execution| execution.expect("invalid trade was added to encoder"))
     }
 
-    /// Returns an iterator over all user trades.
+    /// Returns an iterator over all trades.
     pub fn trades(&self) -> impl Iterator<Item = &'_ Trade> + '_ {
         self.encoder.trades().map(move |trade| match trade {
             EncoderTrade::Order(order_trade) => &order_trade.trade,
