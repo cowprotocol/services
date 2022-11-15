@@ -308,6 +308,7 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor,
         )?;
+        writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
