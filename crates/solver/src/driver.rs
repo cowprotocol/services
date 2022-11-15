@@ -23,7 +23,6 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
-    order::OrderClass,
     solver_competition::{
         self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
@@ -346,8 +345,8 @@ impl Driver {
                         .collect(),
                     orders: rated_settlement
                         .settlement
-                        .executed_trades()
-                        .map(|(trade, _)| solver_competition::Order {
+                        .trades()
+                        .map(|trade| solver_competition::Order {
                             id: trade.order.metadata.uid,
                             executed_amount: trade.executed_amount,
                         })
@@ -383,19 +382,7 @@ impl Driver {
                 winning_settlement
             );
 
-            let encoder = &winning_settlement.settlement.encoder;
-            let trades0 = encoder.order_trades().iter().map(|trade| &trade.trade);
-            let trades1 = encoder
-                .custom_price_trades()
-                .iter()
-                .map(|trade| &trade.trade);
-            for trade in trades0.chain(trades1) {
-                // full match so we get compilation error when new variant is added
-                match trade.order.metadata.class {
-                    OrderClass::Market => (),
-                    OrderClass::Liquidity => continue,
-                    OrderClass::Limit => (),
-                }
+            for trade in winning_settlement.settlement.user_trades() {
                 let uid = &trade.order.metadata.uid;
                 let reward = rewards.get(uid).copied().unwrap_or(0.);
                 // Log in case something goes wrong with storing the rewards in the database.

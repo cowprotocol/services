@@ -141,8 +141,18 @@ impl SettlementRanker {
         // statement allows us to figure out which settlements were filtered out and which ones are
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
+            let uninternalized_calldata = format!(
+                "0x{}",
+                hex::encode(call_data(
+                    settlement
+                        .encoder
+                        .clone()
+                        .finish(InternalizationStrategy::EncodeAllInteractions)
+                )),
+            );
+
             tracing::debug!(
-                solver_name = %solver.name(), ?settlement, uninternalized_calldata = hex::encode(call_data(settlement.encoder.clone().finish(InternalizationStrategy::EncodeAllInteractions))),
+                solver_name = %solver.name(), ?settlement, %uninternalized_calldata,
                 "considering solution for solver competition",
             );
         }
