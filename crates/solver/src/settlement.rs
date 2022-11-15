@@ -3,7 +3,7 @@ mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
 pub use self::settlement_encoder::{
-    verify_executed_amount, EncoderTrade, InternalizationStrategy, SettlementEncoder,
+    verify_executed_amount, InternalizationStrategy, SettlementEncoder,
 };
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::Result;
 use itertools::Itertools;
-use model::order::{Order, OrderClass, OrderKind};
+use model::order::{Order, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext as _;
@@ -23,27 +23,8 @@ use std::{
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub order: Order,
-    pub sell_token_index: usize,
     pub executed_amount: U256,
     pub scaled_unsubsidized_fee: U256,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct OrderTrade {
-    pub trade: Trade,
-    pub buy_token_index: usize,
-}
-
-/// Contains a trade for an order with a price that can be different from the uniform clearing
-/// price. This is required for liquidity orders and limit orders.
-/// Liquidity orders are not allowed to get surplus and therefore have to be settled at their limit
-/// price.
-/// Prices for limit orders have to be adjusted slightly to account for the `surplus_fee` mark up.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CustomPriceTrade {
-    pub trade: Trade,
-    pub buy_token_offset_index: usize,
-    pub buy_token_price: U256,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -55,7 +36,7 @@ pub struct TradeExecution {
     pub fee_amount: U256,
 }
 
-pub fn trade_surplus(
+fn trade_surplus(
     order: &Order,
     executed_amount: U256,
     sell_token_price: &BigRational,
@@ -85,14 +66,31 @@ pub fn trade_surplus_in_native_token(
     external_prices: &ExternalPrices,
     clearing_prices: &HashMap<H160, U256>,
 ) -> Option<BigRational> {
-    let sell_token_clearing_price = clearing_prices
+    let sell_token_price = *clearing_prices
         .get(&order.data.sell_token)
-        .expect("Solution with trade but without price for sell token")
-        .to_big_rational();
-    let buy_token_clearing_price = clearing_prices
+        .expect("Solution with trade but without price for sell token");
+    let buy_token_price = *clearing_prices
         .get(&order.data.buy_token)
-        .expect("Solution with trade but without price for buy token")
-        .to_big_rational();
+        .expect("Solution with trade but without price for buy token");
+
+    trade_surplus_in_native_token_with_prices(
+        order,
+        executed_amount,
+        external_prices,
+        sell_token_price,
+        buy_token_price,
+    )
+}
+
+fn trade_surplus_in_native_token_with_prices(
+    order: &Order,
+    executed_amount: U256,
+    external_prices: &ExternalPrices,
+    sell_token_price: U256,
+    buy_token_price: U256,
+) -> Option<BigRational> {
+    let sell_token_clearing_price = sell_token_price.to_big_rational();
+    let buy_token_clearing_price = buy_token_price.to_big_rational();
 
     if match order.data.kind {
         OrderKind::Sell => &buy_token_clearing_price,
@@ -119,20 +117,6 @@ pub fn trade_surplus_in_native_token(
 }
 
 impl Trade {
-    // The difference between the minimum you were willing to buy/maximum you were willing to sell, and what you ended up buying/selling
-    pub fn surplus(
-        &self,
-        sell_token_price: &BigRational,
-        buy_token_price: &BigRational,
-    ) -> Option<BigRational> {
-        trade_surplus(
-            &self.order,
-            self.executed_amount,
-            sell_token_price,
-            buy_token_price,
-        )
-    }
-
     pub fn surplus_ratio(
         &self,
         sell_token_price: &BigRational,
@@ -202,36 +186,21 @@ impl Trade {
     }
 }
 
-impl OrderTrade {
+impl Trade {
     /// Encodes the settlement's order_trade as a tuple, as expected by the smart
     /// contract.
-    pub fn encode(&self) -> EncodedTrade {
+    pub fn encode(&self, sell_token_index: usize, buy_token_index: usize) -> EncodedTrade {
         encoding::encode_trade(
-            &self.trade.order.data,
-            &self.trade.order.signature,
-            self.trade.order.metadata.owner,
-            self.trade.sell_token_index,
-            self.buy_token_index,
-            &self.trade.executed_amount,
+            &self.order.data,
+            &self.order.signature,
+            self.order.metadata.owner,
+            sell_token_index,
+            buy_token_index,
+            &self.executed_amount,
         )
     }
 }
 
-impl CustomPriceTrade {
-    /// Encodes the settlement's liquidity_order_trade as a tuple, as expected by the smart
-    /// contract.
-    pub fn encode(&self, clearing_price_vec_length: usize) -> EncodedTrade {
-        let buy_token_index = clearing_price_vec_length + self.buy_token_offset_index;
-        encoding::encode_trade(
-            &self.trade.order.data,
-            &self.trade.order.signature,
-            self.trade.order.metadata.owner,
-            self.trade.sell_token_index,
-            buy_token_index,
-            &self.trade.executed_amount,
-        )
-    }
-}
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
 #[cfg(test)]
@@ -295,13 +264,8 @@ impl Settlement {
     }
 
     #[cfg(test)]
-    pub fn with_trades(
-        clearing_prices: HashMap<H160, U256>,
-        trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<CustomPriceTrade>,
-    ) -> Self {
-        let encoder =
-            SettlementEncoder::with_trades(clearing_prices, trades, liquidity_order_trades);
+    pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
+        let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
         Self { encoder }
     }
 
@@ -319,51 +283,26 @@ impl Settlement {
 
     /// Returns all orders included in the settlement.
     pub fn traded_orders(&self) -> impl Iterator<Item = &Order> + '_ {
-        self.encoder.trades().map(move |trade| match trade {
-            EncoderTrade::Order(order_trade) => &order_trade.trade.order,
-            EncoderTrade::CustomPrice(custom_price_trade) => &custom_price_trade.trade.order,
-        })
+        self.encoder.all_trades().map(|trade| &trade.data.order)
     }
 
     /// Returns an iterator of all executed trades.
     pub fn trade_executions(&self) -> impl Iterator<Item = TradeExecution> + '_ {
-        self.encoder
-            .trades()
-            .map(move |trade| match trade {
-                EncoderTrade::Order(order_trade) => {
-                    let order = &order_trade.trade.order.data;
-                    order_trade.trade.executed_amounts(
-                        self.clearing_price(order.sell_token)?,
-                        self.clearing_price(order.buy_token)?,
-                    )
-                }
-                EncoderTrade::CustomPrice(custom_price_trade) => {
-                    let order = &custom_price_trade.trade.order.data;
-                    custom_price_trade.trade.executed_amounts(
-                        self.clearing_price(order.sell_token)?,
-                        custom_price_trade.buy_token_price,
-                    )
-                }
-            })
-            .map(|execution| execution.expect("invalid trade was added to encoder"))
+        self.encoder.all_trades().map(|trade| {
+            trade
+                .executed_amounts()
+                .expect("invalid trade was added to encoder")
+        })
     }
 
     /// Returns an iterator over all trades.
     pub fn trades(&self) -> impl Iterator<Item = &'_ Trade> + '_ {
-        self.encoder.trades().map(move |trade| match trade {
-            EncoderTrade::Order(order_trade) => &order_trade.trade,
-            EncoderTrade::CustomPrice(custom_price_trade) => &custom_price_trade.trade,
-        })
+        self.encoder.all_trades().map(|trade| trade.data)
     }
 
     /// Returns an iterator over all user trades.
     pub fn user_trades(&self) -> impl Iterator<Item = &'_ Trade> + '_ {
-        self.trades()
-            // full match so we get compilation error when new variant is added
-            .filter(|trade| match trade.order.metadata.class {
-                OrderClass::Market | OrderClass::Limit => true,
-                OrderClass::Liquidity => false,
-            })
+        self.encoder.user_trades().map(|trade| trade.data)
     }
 
     // Computes the total surplus of all protocol trades (in wei ETH).
@@ -598,13 +537,9 @@ pub mod tests {
 
     /// Helper function for creating a settlement for the specified prices and
     /// trades for testing objective value computations.
-    fn test_settlement(
-        prices: HashMap<H160, U256>,
-        trades: Vec<OrderTrade>,
-        liquidity_order_trades: Vec<CustomPriceTrade>,
-    ) -> Settlement {
+    fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
         Settlement {
-            encoder: SettlementEncoder::with_trades(prices, trades, liquidity_order_trades),
+            encoder: SettlementEncoder::with_trades(prices, trades),
         }
     }
 
@@ -618,7 +553,7 @@ pub mod tests {
         let max_price_deviation = Ratio::from_float(0.02f64).unwrap();
         let clearing_prices =
             hashmap! {token0 => 50i32.into(), token1 => 100i32.into(), token2 => 103i32.into()};
-        let settlement = test_settlement(clearing_prices, vec![], vec![]);
+        let settlement = test_settlement(clearing_prices, vec![]);
 
         let external_prices = ExternalPrices::new(
             native_token,
