@@ -281,7 +281,7 @@ async fn single_limit_order_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_600_698_103_990_321_648_u128));
+    assert_eq!(balance, U256::from(99_600_698_103_990_320_654_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
@@ -557,14 +557,14 @@ async fn two_limit_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_316_811_u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_315_815_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, U256::from(50_175_363_672_226_073_522_u128));
+    assert_eq!(balance, U256::from(50_175_363_672_226_072_520_u128));
 
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
@@ -636,12 +636,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
             solver_account.address(),
             U256::max_value(),
         )
-    );
-
-    // Fund settlement contract
-    tx!(
-        solver_account,
-        token_a.mint(contracts.gp_settlement.address(), to_wei(1010))
     );
 
     // Create and fund pools for fee connections.
@@ -839,7 +833,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_316_811_u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_315_816_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())

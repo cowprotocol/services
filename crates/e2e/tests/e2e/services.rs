@@ -310,7 +310,7 @@ impl OrderbookServices {
             loop_delay: Duration::from_secs(1),
             quoter: Arc::new(FixedFeeQuoter {
                 quoter,
-                fee: 1.into(),
+                fee: 1_000.into(),
             }),
             database: autopilot_db,
         }
