@@ -2,7 +2,7 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-mod limit_order_quoter;
+pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 

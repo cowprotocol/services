@@ -1,6 +1,9 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
-use autopilot::{event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache};
+use autopilot::{
+    event_updater::GPv2SettlementContract, limit_order_quoter::LimitOrderQuoter,
+    solvable_orders::SolvableOrdersCache,
+};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{database::Postgres, orderbook::Orderbook};
@@ -256,8 +259,8 @@ impl OrderbookServices {
             Duration::from_secs(1),
             None,
             H160::zero(),
+            Duration::from_secs(5),
             Default::default(),
-            0.97.try_into().unwrap(),
         );
         let order_validator = Arc::new(
             OrderValidator::new(
@@ -285,7 +288,7 @@ impl OrderbookServices {
         let maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
         };
-        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter));
+        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(
             api_db.clone(),
             orderbook,
@@ -296,6 +299,13 @@ impl OrderbookServices {
             None,
             native_price_estimator,
         );
+        LimitOrderQuoter {
+            limit_order_age: chrono::Duration::seconds(15),
+            loop_delay: Duration::from_secs(1),
+            quoter,
+            database: autopilot_db,
+        }
+        .spawn();
 
         Self {
             price_estimator,
