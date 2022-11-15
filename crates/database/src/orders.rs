@@ -378,6 +378,15 @@ pub struct FullOrder {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
+impl FullOrder {
+    pub fn valid_to(&self) -> i64 {
+        if let Some((_, valid_to)) = self.ethflow_data {
+            return valid_to;
+        }
+        self.valid_to
+    }
+}
+
 // When querying orders we have several specialized use cases working with their own filtering,
 // ordering, indexes. The parts that are shared between all queries are defined here so they can be
 // reused.

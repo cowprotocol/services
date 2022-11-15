@@ -315,11 +315,7 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
     if order.invalidated {
         return OrderStatus::Cancelled;
     }
-    let now = Utc::now().timestamp();
-    if order.valid_to < now {
-        return OrderStatus::Expired;
-    }
-    if matches!(&order.ethflow_data, Some((_,valid_to)) if *valid_to < now) {
+    if order.valid_to() < Utc::now().timestamp() {
         return OrderStatus::Expired;
     }
     if order.presignature_pending {
