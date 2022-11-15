@@ -579,7 +579,7 @@ components:
         Provides the additional data for ethflow orders
       type: object
       properties:
-        refunded_status:
+        automaticRefundStatus:
           description: |
             Describes the status of the refund
           type: string
@@ -589,21 +589,21 @@ components:
               NotYetRefunded,
               Refunded,
             ]
-        user_valid_to:
+        userValidTo:
           description: |
            Describes the valid to of an order ethflow order.
            Note that for ethflow orders, the valid_to encoded in the smart
            contract is max(uint)
           type: integer
       required:
-        - expiration
-        - amount
+        - userValidTo
+        - automaticRefundStatus
     OnchainOrderData:
       description: |
         Provides the additional data for onchain placed orders
       type: object
       properties:
-        onchainUser:
+        sender:
           description: |
             If orders are placed as onchain orders, the owner of the order might 
             be a smart contract, but not the user placing the order. The 
@@ -617,12 +617,13 @@ components:
           type: string
           enum:
             [
-              InvalidQuoteId,
-              InvalidValidTo,
+              QuoteIdNotFound,
+              ValidToTooFarInFuture,
+              NotAllowedBuyToken,
               ...,
             ]
       required:
-        - onchainUser
+        - sender
     FeeInformation:
       description: |
         Provides the information to calculate the fees.
