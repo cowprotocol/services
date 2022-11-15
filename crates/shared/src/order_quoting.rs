@@ -179,7 +179,7 @@ pub struct Quote {
     /// scaled down to account for the computed `fee_amount`).
     pub buy_amount: U256,
     /// The final minimum subsidized fee amount for any order created for this
-    /// quote. The fee is denoted in the sell token. TODO Ask to make sure
+    /// quote. The fee is denoted in the sell token.
     pub fee_amount: U256,
 }
 
