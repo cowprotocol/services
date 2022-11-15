@@ -17,7 +17,7 @@ use sqlx::PgPool;
 use crate::submitter::Submitter;
 
 const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
-const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30usize;
+const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 pub type EncodedEthflowOrder = (
     H160,            // buyToken
@@ -184,12 +184,18 @@ impl RefundService {
             .take(MAX_NUMBER_OF_UIDS_PER_REFUND_TX)
             .collect();
 
-        tracing::debug!("Trying to refunded the following uids: {:?}", uids);
+        tracing::debug!("Trying to refund the following uids: {:?}", uids);
 
         let futures = uids.iter().map(|uid| {
             let local_db = self.db.clone();
             async move {
-                let mut ex = local_db.acquire().await?;
+                let mut ex = match local_db.acquire().await {
+                    Ok(ex) => ex,
+                    Err(err) => {
+                        tracing::error!("Error while acquiring db connection: {:?}", err);
+                        return Ok(None);
+                    }
+                };
                 match (
                     read_db_order(&mut ex, uid).await,
                     read_order(&mut ex, uid).await,
@@ -200,7 +206,8 @@ impl RefundService {
                     (Err(err), _) => {
                         tracing::error!(
                             "Error while reading the order belonging to\
-                                    an ethflow order: {:?}",
+                                    the ethflow order with uid: {:?}: {:?}",
+                            uid,
                             err
                         );
                         Ok(None)
@@ -208,14 +215,16 @@ impl RefundService {
                     (Ok(None), _) => {
                         tracing::error!(
                             "Could not find the order belonging to\
-                                    an ethflow order"
+                                    an ethflow order with id: {:?}",
+                            uid
                         );
                         Ok(None)
                     }
                     (Ok(_), Err(err)) => {
                         tracing::error!(
                             "Error while reading the ethflow order 
-                                    placement: {:?}",
+                                    placement with uid {:?}: {:?}",
+                            uid,
                             err
                         );
                         Ok(None)
@@ -223,7 +232,8 @@ impl RefundService {
                     (Ok(_), Ok(None)) => {
                         tracing::error!(
                             "Could not find the ethflow order 
-                                    placement"
+                                    placement for uid {:?}",
+                            uid
                         );
                         Ok(None)
                     }
@@ -258,8 +268,7 @@ fn order_to_ethflow_data(
         big_decimal_to_u256(&order.buy_amount).unwrap(),
         Bytes(order.app_data.0),
         big_decimal_to_u256(&order.fee_amount).unwrap(),
-        ethflow_order_placement.valid_to as u32, // Unwrap can never fail, as the value
-        // is not None for ethflow orders
+        ethflow_order_placement.valid_to as u32,
         false, // ethflow orders are always fill or kill orders
         0i64,  // quoteId is not important for refunding and will be ignored
     )

@@ -25,18 +25,18 @@ use shared::{
 // Max gas used for submitting transactions
 // If the gas price is higher than this value,
 // the service will temproarily not refund users
-const MAX_GAS_PRICE: u64 = 500_000_000_000u64;
+const MAX_GAS_PRICE: u64 = 800_000_000_000;
 
-// The gas price buffer determine the gas price buffer used to
+// The gas price buffer determines the gas price buffer used to
 // send out EIP1559 txs.
-// Example: If the prevailing gas is 10Gwei and the buffer is 20
+// Example: If the prevailing gas is 10Gwei and the buffer factor is 1.20
 // then the gas_price used will be 12.
-const GAS_PRICE_BUFFER_IN_PERCENT: f64 = 30.0f64;
+const GAS_PRICE_BUFFER_FACTOR: f64 = 1.3;
 // Max priority fee that the refunder is willing to pay. (=2 Gwei)
-const MAX_PRIORITY_FEE_TIP: u64 = 2_000_000_000u64;
+const MAX_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
 // In order to resubmit a new tx with the same nonce, the gas price needs to
 // be increased by at least 10 percent. We increase it by 12 percent
-const GAS_PRICE_BUMP: f64 = 1.12f64;
+const GAS_PRICE_BUMP: f64 = 1.12;
 
 pub struct Submitter {
     pub web3: Web3,
@@ -88,55 +88,55 @@ impl Submitter {
         };
 
         // Gas prices are capped at MAX_GAS_PRICE
-        if max_fee_per_gas < U256::from(MAX_GAS_PRICE) {
-            self.gas_price_of_last_submission = Some(max_fee_per_gas);
-            self.nonce_of_last_submission = Some(nonce);
-            let tx_result = self
-                .ethflow_contract
-                .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
-                .gas_price(gas_price)
-                .from(self.account.clone())
-                .nonce(nonce)
-                .into_inner()
-                .resolve(resolve_conditions)
-                .send()
-                .await;
-            match tx_result {
-                Ok(handle) => {
-                    tracing::debug!(
-                        "Tx to refund the orderuids {:?} yielded following result {:?}",
-                        uids,
-                        handle
-                    );
-                }
-                Err(err) => {
-                    let err = err.to_string();
-                    if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
-                        // It could happen that the previous tx got mined right before the tx was
-                        // send.
-                        tracing::debug!(?err, "transaction already mined");
-                    } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
-                        // This case means that the node is already aware of the tx
-                        // This can only happen after restarts, as usually we would always increase
-                        // the gas price compared to previous tx.
-                        // In this situation, we restart the submission loop with double the
-                        // previous gas. Due to the nature of EIP1559 this will not increase the
-                        // cost of the tx
-                        // todo: Finding last tx and its gas price would be nicer
-                        self.gas_price_of_last_submission = Some(max_fee_per_gas * 2);
-                        tracing::debug!(?err, "transaction already known");
-                    } else {
-                        tracing::warn!(?err, "submission failed");
-                    }
-                }
-            }
-        } else {
+        if max_fee_per_gas > U256::from(MAX_GAS_PRICE) {
             tracing::warn!(
-                "Refund tx are not started, as the current gas price {:?} \
+                "Refunding txs are not started, as the current gas price {:?} \
                             is higher than MAX_GAS_PRICE specified {:?}",
                 max_fee_per_gas,
                 MAX_GAS_PRICE
             );
+            return Ok(());
+        }
+        self.gas_price_of_last_submission = Some(max_fee_per_gas);
+        self.nonce_of_last_submission = Some(nonce);
+        let tx_result = self
+            .ethflow_contract
+            .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
+            .gas_price(gas_price)
+            .from(self.account.clone())
+            .nonce(nonce)
+            .into_inner()
+            .resolve(resolve_conditions)
+            .send()
+            .await;
+        match tx_result {
+            Ok(handle) => {
+                tracing::debug!(
+                    "Tx to refund the orderuids {:?} yielded following result {:?}",
+                    uids,
+                    handle
+                );
+            }
+            Err(err) => {
+                let err = err.to_string();
+                if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
+                    // It could happen that the previous tx got mined right before the tx was
+                    // send.
+                    tracing::debug!(?err, "transaction already mined");
+                } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                    // This case means that the node is already aware of the tx
+                    // This can only happen after restarts, as usually we would always increase
+                    // the gas price compared to previous tx.
+                    // In this situation, we restart the submission loop with double the
+                    // previous gas. Due to the nature of EIP1559 this will not increase the
+                    // cost of the tx
+                    // todo: Finding last tx and its gas price would be nicer
+                    self.gas_price_of_last_submission = Some(max_fee_per_gas * 2);
+                    tracing::debug!(?err, "transaction already known");
+                } else {
+                    tracing::warn!(?err, "submission failed");
+                }
+            }
         }
         Ok(())
     }
@@ -155,7 +155,7 @@ fn calculate_submission_gas_price(
     // of the web3 gas estimation plus a buffer.
     // Since we are using Eip1559 gas specification,
     // we will only pay the buffer if it is used
-    let mut new_max_fee_per_gas = max_fee_per_gas * (1f64 + GAS_PRICE_BUFFER_IN_PERCENT / 100f64);
+    let mut new_max_fee_per_gas = max_fee_per_gas * (1f64 + GAS_PRICE_BUFFER_FACTOR / 100f64);
     // If tx from the previous submission was not mined,
     // we incease the gas price
     if let Some(nonce_of_last_submission) = nonce_of_last_submission {
@@ -170,7 +170,7 @@ fn calculate_submission_gas_price(
             }
         }
     }
-    let max_fee_per_gas = U256::from(new_max_fee_per_gas as u64);
+    let max_fee_per_gas = U256::from_f64_lossy(new_max_fee_per_gas);
     let gas_price = GasPrice::Eip1559 {
         max_fee_per_gas,
         max_priority_fee_per_gas: U256::min(max_fee_per_gas, U256::from(MAX_PRIORITY_FEE_TIP)),
@@ -202,9 +202,7 @@ mod tests {
         )
         .unwrap();
         let expected_result = GasPrice::Eip1559 {
-            max_fee_per_gas: U256::from(
-                (max_fee_per_gas * (1f64 + GAS_PRICE_BUFFER_IN_PERCENT / 100f64)) as u64,
-            ),
+            max_fee_per_gas: U256::from((max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR) as u64),
             max_priority_fee_per_gas: U256::from(MAX_PRIORITY_FEE_TIP),
         };
         assert_eq!(result, expected_result);
