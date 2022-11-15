@@ -1481,7 +1481,6 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
         let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
@@ -1525,7 +1524,7 @@ mod tests {
             &mut db,
             &Order {
                 uid: ByteArray([4; 56]),
-                surplus_fee_timestamp: Some(timestamp),
+                surplus_fee_timestamp: Some(Utc::now()),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 ..Default::default()
@@ -1545,7 +1544,7 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, Duration::seconds(2), 2)
+        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, Duration::seconds(5), 2)
             .try_collect()
             .await
             .unwrap();
