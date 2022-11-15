@@ -308,7 +308,10 @@ impl OrderbookServices {
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
             loop_delay: Duration::from_secs(1),
-            quoter: Arc::new(OneUnitFeeQuoter(quoter)),
+            quoter: Arc::new(FixedFeeQuoter {
+                quoter,
+                fee: 1.into(),
+            }),
             database: autopilot_db,
         }
         .spawn();
@@ -350,25 +353,31 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
     }
 }
 
-/// Same as [`OrderQuoter`], but forces the fee to be exactly 1.
-struct OneUnitFeeQuoter(Arc<OrderQuoter>);
+/// Same as [`OrderQuoter`], but forces the fee to be exactly the specified amount.
+struct FixedFeeQuoter {
+    quoter: Arc<OrderQuoter>,
+    fee: U256,
+}
 
 #[async_trait]
-impl OrderQuoting for OneUnitFeeQuoter {
+impl OrderQuoting for FixedFeeQuoter {
     /// Computes a quote for the specified order parameters. Doesn't store the quote.
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError> {
-        self.0.calculate_quote(parameters).await.map(|q| Quote {
-            fee_amount: 1.into(),
-            ..q
-        })
+        self.quoter
+            .calculate_quote(parameters)
+            .await
+            .map(|q| Quote {
+                fee_amount: self.fee,
+                ..q
+            })
     }
 
     /// Stores a quote.
     async fn store_quote(&self, quote: Quote) -> Result<Quote> {
-        self.0.store_quote(quote).await
+        self.quoter.store_quote(quote).await
     }
 
     /// Finds an existing quote.
@@ -378,6 +387,6 @@ impl OrderQuoting for OneUnitFeeQuoter {
         parameters: QuoteSearchParameters,
         signing_scheme: &QuoteSigningScheme,
     ) -> Result<Quote, FindQuoteError> {
-        self.0.find_quote(id, parameters, signing_scheme).await
+        self.quoter.find_quote(id, parameters, signing_scheme).await
     }
 }
