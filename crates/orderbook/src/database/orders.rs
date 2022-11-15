@@ -318,6 +318,11 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
     if order.valid_to < Utc::now().timestamp() {
         return OrderStatus::Expired;
     }
+    if let Some((_, valid_to)) = order.ethflow_data {
+        if valid_to < Utc::now().timestamp() {
+            return OrderStatus::Expired;
+        }
+    }
     if order.presignature_pending {
         return OrderStatus::PresignaturePending;
     }
@@ -623,6 +628,16 @@ mod tests {
                 invalidated: false,
                 valid_to: valid_to_yesterday.timestamp(),
                 presignature_pending: true,
+                ..order_row()
+            }),
+            OrderStatus::Expired
+        );
+
+        // Expired - for ethflow orders
+        assert_eq!(
+            calculate_status(&FullOrder {
+                invalidated: false,
+                ethflow_data: Some((false, valid_to_yesterday.timestamp())),
                 ..order_row()
             }),
             OrderStatus::Expired
