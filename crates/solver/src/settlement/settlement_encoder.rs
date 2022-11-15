@@ -52,6 +52,13 @@ pub struct SettlementEncoder {
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
+/// An trade that was added to the settlement encoder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EncoderTrade<'a> {
+    Order(&'a OrderTrade),
+    CustomPrice(&'a CustomPriceTrade),
+}
+
 /// Whether or not internalizable interactions should be encoded as calldata
 pub enum InternalizationStrategy {
     EncodeAllInteractions,
@@ -115,12 +122,14 @@ impl SettlementEncoder {
         &self.clearing_prices
     }
 
-    pub fn order_trades(&self) -> &[OrderTrade] {
-        &self.order_trades
-    }
+    pub fn trades(&self) -> impl Iterator<Item = EncoderTrade> + '_ {
+        let order_trades = self.order_trades.iter().map(EncoderTrade::Order);
+        let custom_price_trades = self
+            .custom_price_trades
+            .iter()
+            .map(EncoderTrade::CustomPrice);
 
-    pub fn custom_price_trades(&self) -> &[CustomPriceTrade] {
-        &self.custom_price_trades
+        order_trades.chain(custom_price_trades)
     }
 
     pub fn has_interactions(&self) -> bool {
@@ -236,6 +245,10 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
+        let surplus_fee = order
+            .metadata
+            .surplus_fee
+            .context("limit order does not have surplus fee set")?;
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -249,7 +262,7 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(order.metadata.surplus_fee)
+                    .checked_add(surplus_fee)
                     .context("sell_amount computation failed")?;
                 (sell_amount_adjusted_for_fees, order.data.buy_amount)
             }
@@ -260,7 +273,7 @@ impl SettlementEncoder {
                 let sell_amount = order
                     .data
                     .sell_amount
-                    .checked_sub(order.metadata.surplus_fee)
+                    .checked_sub(surplus_fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)

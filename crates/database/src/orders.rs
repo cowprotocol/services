@@ -96,8 +96,8 @@ pub struct Order {
     pub full_fee_amount: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
-    pub surplus_fee: BigDecimal,
-    pub surplus_fee_timestamp: DateTime<Utc>,
+    pub surplus_fee: Option<BigDecimal>,
+    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
 pub async fn insert_pre_interactions(
@@ -344,7 +344,7 @@ AND cancellation_timestamp IS NULL
 }
 
 /// Order with extra information from other tables. Has all the information needed to construct a model::Order.
-#[derive(sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
     pub uid: OrderUid,
     pub owner: Address,
@@ -494,10 +494,17 @@ pub fn user_orders<'a>(
     // queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-" SELECT ", ORDERS_SELECT,
+"(SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE o.owner = $1 OR onchain_o.sender = $1 ",
+" WHERE o.owner = $1",
+" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
+" UNION ",
+" (SELECT ", ORDERS_SELECT,
+" FROM ", ORDERS_FROM,
+" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
+" WHERE onchain_o.sender = $1 ",
+" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
 " ORDER BY creation_timestamp DESC ",
 " LIMIT $2 ",
 " OFFSET $3 ",
@@ -1450,8 +1457,8 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, fee);
-        assert_eq!(order.surplus_fee_timestamp, timestamp);
+        assert_eq!(order.surplus_fee, Some(fee));
+        assert_eq!(order.surplus_fee_timestamp, Some(timestamp));
     }
 
     #[tokio::test]
@@ -1505,7 +1512,7 @@ mod tests {
             &mut db,
             &Order {
                 uid: ByteArray([4; 56]),
-                surplus_fee_timestamp: timestamp,
+                surplus_fee_timestamp: Some(timestamp),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 ..Default::default()

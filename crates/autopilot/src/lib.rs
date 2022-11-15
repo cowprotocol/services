@@ -2,7 +2,7 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-mod limit_order_quoter;
+pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
@@ -501,6 +501,9 @@ pub async fn main(args: arguments::Arguments) {
         risk_adjusted_rewards,
         args.ethflow_contract,
         args.max_surplus_fee_age * 2,
+        args.limit_order_price_factor
+            .try_into()
+            .expect("limit order price factor can't be converted to BigDecimal"),
     );
     solvable_orders_cache
         .update(block)

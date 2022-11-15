@@ -3,7 +3,7 @@ mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
 pub use self::settlement_encoder::{
-    verify_executed_amount, InternalizationStrategy, SettlementEncoder,
+    verify_executed_amount, EncoderTrade, InternalizationStrategy, SettlementEncoder,
 };
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::Result;
 use itertools::Itertools;
-use model::order::{Order, OrderKind};
+use model::order::{Order, OrderClass, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext as _;
@@ -319,49 +319,51 @@ impl Settlement {
 
     /// Returns all orders included in the settlement.
     pub fn traded_orders(&self) -> impl Iterator<Item = &Order> + '_ {
-        let user_orders = self
-            .encoder
-            .order_trades()
-            .iter()
-            .map(|trade| &trade.trade.order);
-        let custom_trades = self
-            .encoder
-            .custom_price_trades()
-            .iter()
-            .map(|trade| &trade.trade.order);
-        user_orders.chain(custom_trades)
+        self.encoder.trades().map(move |trade| match trade {
+            EncoderTrade::Order(order_trade) => &order_trade.trade.order,
+            EncoderTrade::CustomPrice(custom_price_trade) => &custom_price_trade.trade.order,
+        })
     }
 
     /// Returns an iterator of all executed trades.
-    pub fn executed_trades(&self) -> impl Iterator<Item = (&'_ Trade, TradeExecution)> + '_ {
-        let order_trades = self.encoder.order_trades().iter().map(move |order_trade| {
-            let order = &order_trade.trade.order.data;
-            order_trade
-                .trade
-                .executed_amounts(
-                    self.clearing_price(order.sell_token)?,
-                    self.clearing_price(order.buy_token)?,
-                )
-                .map(|execution| (&order_trade.trade, execution))
-        });
-        let custom_price_trades =
-            self.encoder
-                .custom_price_trades()
-                .iter()
-                .map(move |custom_price_trade| {
+    pub fn trade_executions(&self) -> impl Iterator<Item = TradeExecution> + '_ {
+        self.encoder
+            .trades()
+            .map(move |trade| match trade {
+                EncoderTrade::Order(order_trade) => {
+                    let order = &order_trade.trade.order.data;
+                    order_trade.trade.executed_amounts(
+                        self.clearing_price(order.sell_token)?,
+                        self.clearing_price(order.buy_token)?,
+                    )
+                }
+                EncoderTrade::CustomPrice(custom_price_trade) => {
                     let order = &custom_price_trade.trade.order.data;
-                    custom_price_trade
-                        .trade
-                        .executed_amounts(
-                            self.clearing_price(order.sell_token)?,
-                            custom_price_trade.buy_token_price,
-                        )
-                        .map(|execution| (&custom_price_trade.trade, execution))
-                });
-
-        order_trades
-            .chain(custom_price_trades)
+                    custom_price_trade.trade.executed_amounts(
+                        self.clearing_price(order.sell_token)?,
+                        custom_price_trade.buy_token_price,
+                    )
+                }
+            })
             .map(|execution| execution.expect("invalid trade was added to encoder"))
+    }
+
+    /// Returns an iterator over all trades.
+    pub fn trades(&self) -> impl Iterator<Item = &'_ Trade> + '_ {
+        self.encoder.trades().map(move |trade| match trade {
+            EncoderTrade::Order(order_trade) => &order_trade.trade,
+            EncoderTrade::CustomPrice(custom_price_trade) => &custom_price_trade.trade,
+        })
+    }
+
+    /// Returns an iterator over all user trades.
+    pub fn user_trades(&self) -> impl Iterator<Item = &'_ Trade> + '_ {
+        self.trades()
+            // full match so we get compilation error when new variant is added
+            .filter(|trade| match trade.order.metadata.class {
+                OrderClass::Market | OrderClass::Limit => true,
+                OrderClass::Liquidity => false,
+            })
     }
 
     // Computes the total surplus of all protocol trades (in wei ETH).
@@ -445,16 +447,11 @@ impl Settlement {
 
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
     pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
-        self.encoder
-            .order_trades()
-            .iter()
-            .filter_map(|order_trade| {
+        self.user_trades()
+            .filter_map(|trade| {
                 external_prices.try_get_native_amount(
-                    order_trade.trade.order.data.sell_token,
-                    order_trade
-                        .trade
-                        .executed_scaled_unsubsidized_fee()?
-                        .to_big_rational(),
+                    trade.order.data.sell_token,
+                    trade.executed_scaled_unsubsidized_fee()?.to_big_rational(),
                 )
             })
             .sum()
@@ -462,16 +459,11 @@ impl Settlement {
 
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
     pub fn total_unscaled_subsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
-        self.encoder
-            .order_trades()
-            .iter()
-            .filter_map(|order_trade| {
+        self.user_trades()
+            .filter_map(|trade| {
                 external_prices.try_get_native_amount(
-                    order_trade.trade.order.data.sell_token,
-                    order_trade
-                        .trade
-                        .executed_unscaled_subsidized_fee()?
-                        .to_big_rational(),
+                    trade.order.data.sell_token,
+                    trade.executed_unscaled_subsidized_fee()?.to_big_rational(),
                 )
             })
             .sum()
@@ -572,7 +564,7 @@ pub mod tests {
     use super::*;
     use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
     use maplit::hashmap;
-    use model::order::{OrderData, OrderKind};
+    use model::order::{OrderData, OrderKind, OrderMetadata};
     use num::FromPrimitive;
     use shared::addr;
 
@@ -1420,6 +1412,10 @@ pub mod tests {
                             buy_amount: 99760667014_u128.into(),
                             fee_amount: 10650127_u128.into(),
                             kind: OrderKind::Buy,
+                            ..Default::default()
+                        },
+                        metadata: OrderMetadata {
+                            class: OrderClass::Liquidity,
                             ..Default::default()
                         },
                         ..Default::default()
