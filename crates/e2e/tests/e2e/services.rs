@@ -1,11 +1,14 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use autopilot::{
     event_updater::GPv2SettlementContract, limit_order_quoter::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
+use database::quotes::QuoteId;
 use ethcontract::{Bytes, H160, H256, U256};
+use model::quote::QuoteSigningScheme;
 use orderbook::{database::Postgres, orderbook::Orderbook};
 use reqwest::{Client, StatusCode};
 use shared::{
@@ -16,7 +19,10 @@ use shared::{
     ethrpc::Web3,
     fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
-    order_quoting::{OrderQuoter, QuoteHandler},
+    order_quoting::{
+        CalculateQuoteError, FindQuoteError, OrderQuoter, OrderQuoting, Quote, QuoteHandler,
+        QuoteParameters, QuoteSearchParameters,
+    },
     order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
     price_estimation::{
         baseline::BaselinePriceEstimator, native::NativePriceEstimator,
@@ -302,7 +308,10 @@ impl OrderbookServices {
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
             loop_delay: Duration::from_secs(1),
-            quoter,
+            quoter: Arc::new(FixedFeeQuoter {
+                quoter,
+                fee: 1_000.into(),
+            }),
             database: autopilot_db,
         }
         .spawn();
@@ -341,5 +350,43 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
     match tokio::time::timeout(Duration::from_secs(5), task).await {
         Ok(inner) => inner,
         Err(_) => Err(anyhow!("timeout")),
+    }
+}
+
+/// Same as [`OrderQuoter`], but forces the fee to be exactly the specified amount.
+struct FixedFeeQuoter {
+    quoter: Arc<OrderQuoter>,
+    fee: U256,
+}
+
+#[async_trait]
+impl OrderQuoting for FixedFeeQuoter {
+    /// Computes a quote for the specified order parameters. Doesn't store the quote.
+    async fn calculate_quote(
+        &self,
+        parameters: QuoteParameters,
+    ) -> Result<Quote, CalculateQuoteError> {
+        self.quoter
+            .calculate_quote(parameters)
+            .await
+            .map(|q| Quote {
+                fee_amount: self.fee,
+                ..q
+            })
+    }
+
+    /// Stores a quote.
+    async fn store_quote(&self, quote: Quote) -> Result<Quote> {
+        self.quoter.store_quote(quote).await
+    }
+
+    /// Finds an existing quote.
+    async fn find_quote(
+        &self,
+        id: Option<QuoteId>,
+        parameters: QuoteSearchParameters,
+        signing_scheme: &QuoteSigningScheme,
+    ) -> Result<Quote, FindQuoteError> {
+        self.quoter.find_quote(id, parameters, signing_scheme).await
     }
 }
