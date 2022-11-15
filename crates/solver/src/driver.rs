@@ -271,7 +271,9 @@ impl Driver {
         self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders)
+            || !auction_preprocessing::has_at_least_one_mature_order(&orders)
+        {
             return Ok(());
         }
 

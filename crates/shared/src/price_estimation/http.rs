@@ -113,6 +113,7 @@ impl HttpPriceEstimator {
                 has_atomic_execution: false,
                 // TODO: is it possible to set a more accurate reward?
                 reward: 35.,
+                is_mature: true, // irrelevant for price estimation
             },
         };
 
