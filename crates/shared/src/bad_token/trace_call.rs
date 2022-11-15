@@ -216,8 +216,10 @@ fn call_request(
 
 fn decode_u256(trace: &BlockTrace) -> Result<U256> {
     let bytes = trace.output.0.as_slice();
-    ensure!(bytes.len() == 32, "invalid length");
-    Ok(U256::from_big_endian(bytes))
+    // >= because we have observed that some contracts return more bytes than expected.
+    // For example 0x19D3364A399d251E894aC732651be8B0E4e85001 .
+    ensure!(bytes.len() >= 32, "invalid length");
+    Ok(U256::from_big_endian(&bytes[0..32]))
 }
 
 // The outer result signals communication failure with the node.
