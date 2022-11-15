@@ -378,6 +378,17 @@ pub struct FullOrder {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
+impl FullOrder {
+    pub fn valid_to(&self) -> i64 {
+        if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
+            return valid_to;
+        }
+        self.valid_to
+    }
+}
+
 // When querying orders we have several specialized use cases working with their own filtering,
 // ordering, indexes. The parts that are shared between all queries are defined here so they can be
 // reused.
