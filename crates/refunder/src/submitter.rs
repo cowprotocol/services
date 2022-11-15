@@ -155,7 +155,7 @@ fn calculate_submission_gas_price(
     // of the web3 gas estimation plus a buffer.
     // Since we are using Eip1559 gas specification,
     // we will only pay the buffer if it is used
-    let mut new_max_fee_per_gas = max_fee_per_gas * (1f64 + GAS_PRICE_BUFFER_FACTOR / 100f64);
+    let mut new_max_fee_per_gas = max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR;
     // If tx from the previous submission was not mined,
     // we incease the gas price
     if let Some(nonce_of_last_submission) = nonce_of_last_submission {
