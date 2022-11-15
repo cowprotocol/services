@@ -134,7 +134,7 @@ pub fn retain_mature_settlements(
                     || valid_trades.contains(&trade.order.metadata.uid)
                 });
 
-                if contains_valid_order_trade {
+                if contains_valid_user_trade {
                     for trade in settlement.user_trades() {
                         // make all user orders within this settlement mature by association
                         new_order_added |= valid_trades.insert(&trade.order.metadata.uid);

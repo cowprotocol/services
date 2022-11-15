@@ -52,7 +52,7 @@ pub struct SettlementEncoder {
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
-/// An encoded trade.
+/// An trade that was added to the settlement encoder.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EncoderTrade<'a> {
     Order(&'a OrderTrade),
