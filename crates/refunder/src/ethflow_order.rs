@@ -11,7 +11,7 @@ pub struct EthflowOrder {
     app_data: Bytes<[u8; 32]>,
     fee_amount: U256,
     valid_to: u32,
-    flags: bool,
+    partially_fillable: bool,
     quote_id: i64,
 }
 
@@ -25,7 +25,7 @@ impl EthflowOrder {
             self.app_data,
             self.fee_amount,
             self.valid_to,
-            self.flags,
+            self.partially_fillable,
             self.quote_id,
         )
     }
@@ -56,7 +56,7 @@ pub fn order_to_ethflow_data(
         app_data: Bytes(order.app_data.0),
         fee_amount: big_decimal_to_u256(&order.fee_amount).unwrap(),
         valid_to: ethflow_order_placement.valid_to as u32,
-        flags: order.partially_fillable,
+        partially_fillable: order.partially_fillable,
         quote_id: 0i64, // quoteId is not important for refunding and will be ignored
     }
 }
@@ -99,7 +99,7 @@ mod tests {
             Bytes(order.app_data.0),
             big_decimal_to_u256(&order.fee_amount).unwrap(),
             ethflow_order.valid_to as u32,
-            false,
+            order.partially_fillable,
             0i64,
         );
         assert_eq!(
