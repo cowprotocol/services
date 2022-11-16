@@ -1348,4 +1348,85 @@ pub mod tests {
         // to the user!
         assert!(objective_value(&amm, 657196) > objective_value(&pmm, 405053));
     }
+
+    #[test]
+    fn computes_limit_order_surplus_without_fees() {
+        let native_token = H160([0xe; 20]);
+        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+
+        let external_prices = externalprices! {
+            native_token: native_token,
+            tokens[0] => BigRational::one(),
+            tokens[1] => BigRational::one(),
+            tokens[2] => BigRational::one(),
+        };
+
+        for kind in [OrderKind::Sell, OrderKind::Buy] {
+            // Settlement where there is surplus, but all of it is taken as
+            // protocol fees - so total surplus should be 0.
+            let no_surplus = test_settlement(
+                hashmap! {
+                    tokens[0] => 100_000_u128.into(),
+                    tokens[1] => 100_000_u128.into(),
+                },
+                vec![Trade {
+                    order: Order {
+                        data: OrderData {
+                            sell_token: tokens[0],
+                            buy_token: tokens[1],
+                            sell_amount: 100_000_u128.into(),
+                            buy_amount: 99_000_u128.into(),
+                            kind,
+                            ..Default::default()
+                        },
+                        metadata: OrderMetadata {
+                            class: OrderClass::Limit,
+                            surplus_fee: Some(1_000_u128.into()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 100_000_u128.into(),
+                    scaled_unsubsidized_fee: 1_000_u128.into(),
+                }],
+            );
+
+            assert_eq!(
+                no_surplus.total_surplus(&external_prices).to_integer(),
+                BigInt::zero(),
+            );
+
+            let some_surplus = test_settlement(
+                hashmap! {
+                    tokens[0] => 100_000_u128.into(),
+                    tokens[2] => 100_000_u128.into(),
+                },
+                vec![Trade {
+                    order: Order {
+                        data: OrderData {
+                            sell_token: tokens[0],
+                            buy_token: tokens[2],
+                            sell_amount: 100_000_u128.into(),
+                            buy_amount: 98_000_u128.into(),
+                            kind,
+                            ..Default::default()
+                        },
+                        metadata: OrderMetadata {
+                            class: OrderClass::Limit,
+                            surplus_fee: Some(1_000_u128.into()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 100_000_u128.into(),
+                    scaled_unsubsidized_fee: 1_000_u128.into(),
+                }],
+            );
+
+            assert_eq!(
+                some_surplus.total_surplus(&external_prices).to_integer(),
+                BigInt::from(1000_u128),
+            );
+        }
+    }
 }
