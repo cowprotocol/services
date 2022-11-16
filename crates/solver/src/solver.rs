@@ -52,7 +52,7 @@ pub mod http_solver;
 mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;
-mod single_order_solver;
+pub mod single_order_solver;
 pub mod uni_v3_router_solver;
 mod zeroex_solver;
 
@@ -277,6 +277,7 @@ pub fn create(
     max_merged_settlements: usize,
     slippage_configuration: &slippage::Arguments,
     market_makable_token_list: AutoUpdatingTokenList,
+    order_prioritization_config: &single_order_solver::Arguments,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -343,6 +344,7 @@ pub fn create(
                     solver_metrics.clone(),
                     max_merged_settlements,
                     max_settlements_per_solver,
+                    order_prioritization_config.clone(),
                 )
             };
 
