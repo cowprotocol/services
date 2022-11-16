@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
     ethflow_orders::{
@@ -173,6 +173,19 @@ impl RefundService {
         Ok(result)
     }
 
+    async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EncodedEthflowOrder> {
+        let mut ex = self.db.acquire().await.context("acquire")?;
+        let order = read_db_order(&mut ex, uid)
+            .await
+            .context("read order")?
+            .context("missing order")?;
+        let ethflow_order = read_order(&mut ex, uid)
+            .await
+            .context("read ethflow order")?
+            .context("missing ethflow order")?;
+        Ok(order_to_ethflow_data(order, ethflow_order))
+    }
+
     async fn send_out_refunding_tx(&mut self, uids: Vec<OrderUid>) -> Result<()> {
         if uids.is_empty() {
             return Ok(());
@@ -187,69 +200,27 @@ impl RefundService {
         tracing::debug!("Trying to refund the following uids: {:?}", uids);
 
         let futures = uids.iter().map(|uid| {
-            let local_db = self.db.clone();
+            let (uid, self_) = (*uid, &self);
             async move {
-                let mut ex = match local_db.acquire().await {
-                    Ok(ex) => ex,
-                    Err(err) => {
-                        tracing::error!("Error while acquiring db connection: {:?}", err);
-                        return Ok(None);
-                    }
-                };
-                match (
-                    read_db_order(&mut ex, uid).await,
-                    read_order(&mut ex, uid).await,
-                ) {
-                    (Ok(Some(order)), Ok(Some(ethflow_order_placement))) => {
-                        Ok(Some(order_to_ethflow_data(order, ethflow_order_placement)))
-                    }
-                    (Err(err), _) => {
-                        tracing::error!(
-                            "Error while reading the order belonging to\
-                                    the ethflow order with uid: {:?}: {:?}",
-                            uid,
-                            err
-                        );
-                        Ok(None)
-                    }
-                    (Ok(None), _) => {
-                        tracing::error!(
-                            "Could not find the order belonging to\
-                                    an ethflow order with id: {:?}",
-                            uid
-                        );
-                        Ok(None)
-                    }
-                    (Ok(_), Err(err)) => {
-                        tracing::error!(
-                            "Error while reading the ethflow order 
-                                    placement with uid {:?}: {:?}",
-                            uid,
-                            err
-                        );
-                        Ok(None)
-                    }
-                    (Ok(_), Ok(None)) => {
-                        tracing::error!(
-                            "Could not find the ethflow order 
-                                    placement for uid {:?}",
-                            uid
-                        );
-                        Ok(None)
-                    }
-                }
+                self_
+                    .get_ethflow_data_from_db(&uid)
+                    .await
+                    .context(format!("uid {uid:?}"))
             }
         });
-        let encoded_ethflow_orders: Vec<Result<Option<EncodedEthflowOrder>>> =
-            stream::iter(futures)
-                .buffer_unordered(10)
-                .collect::<Vec<Result<Option<EncodedEthflowOrder>>>>()
-                .await;
-        let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = encoded_ethflow_orders
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect();
+        let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = stream::iter(futures)
+            .buffer_unordered(10)
+            .filter_map(|result| async {
+                match result {
+                    Ok(order) => Some(order),
+                    Err(err) => {
+                        tracing::error!(?err, "failed to get data from db");
+                        None
+                    }
+                }
+            })
+            .collect()
+            .await;
 
         self.submitter.submit(uids, encoded_ethflow_orders).await?;
         Ok(())
