@@ -608,20 +608,20 @@ components:
         Provides the additional data for ethflow orders
       type: object
       properties:
-        is_refunded:
+        isRefunded:
           description: |
             Provides a flag that shows whether the refunding service has 
             refunded the order, in case it was not settled onchain
           type: boolean
-        user_valid_to:
+        userValidTo:
           description: |
            Describes the valid to of an order ethflow order.
            Note that for ethflow orders, the valid_to encoded in the smart
            contract is max(uint)
           type: integer
       required:
-        - expiration
-        - amount
+        - isRefunded
+        - userValidTo
     FeeInformation:
       description: |
         Provides the information to calculate the fees.

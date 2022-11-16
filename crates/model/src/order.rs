@@ -466,6 +466,7 @@ pub struct CancellationPayload {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
     pub is_refunded: bool,
