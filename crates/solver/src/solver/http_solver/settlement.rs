@@ -374,7 +374,7 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
-        settlement::{CustomPriceTrade, Trade},
+        settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -567,9 +567,9 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.custom_price_trades(),
-            [CustomPriceTrade {
-                trade: Trade {
+            settlement.encoder.all_trades().collect::<Vec<_>>(),
+            [PricedTrade {
+                data: &Trade {
                     order: Order {
                         metadata: OrderMetadata {
                             owner: H160([99; 20]),
@@ -590,11 +590,10 @@ mod tests {
                         signature: Signature::PreSign,
                         ..Default::default()
                     },
-                    sell_token_index: 1,
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                buy_token_offset_index: 0,
+                sell_token_price: 11.into(),
                 buy_token_price: (10 * 102 / 101).into(),
             }]
         );

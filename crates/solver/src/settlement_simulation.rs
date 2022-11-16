@@ -276,7 +276,7 @@ mod tests {
         let settlements = vec![
             (
                 account.clone(),
-                Settlement::with_trades(Default::default(), vec![Default::default()], vec![]),
+                Settlement::with_trades(Default::default(), vec![Default::default()]),
                 None,
             ),
             (account.clone(), Settlement::new(Default::default()), None),
@@ -340,6 +340,7 @@ mod tests {
         let order_converter = OrderConverter {
             native_token: native_token_contract.clone(),
             fee_objective_scaling_factor: 0.91_f64,
+            min_order_age: std::time::Duration::from_secs(30),
         };
         let value = json!(
         {

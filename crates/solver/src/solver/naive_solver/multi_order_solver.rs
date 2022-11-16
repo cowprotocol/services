@@ -152,13 +152,13 @@ fn solve_with_uniswap(
     // be that we actually require a bit more from the Uniswap pool in order to
     // pay out all proceeds. We move the rounding error to the sell token so that
     // it either comes out of the fees or existing buffers. Compute that amount:
-    let uniswap_out_with_rounding = big_int_to_u256(&settlement.executed_trades().fold(
+    let uniswap_out_with_rounding = big_int_to_u256(&settlement.trade_executions().fold(
         BigInt::default(),
-        |mut total, (_, trade)| {
-            if trade.sell_token == uniswap_out_token {
-                total -= trade.sell_amount.to_big_int();
+        |mut total, execution| {
+            if execution.sell_token == uniswap_out_token {
+                total -= execution.sell_amount.to_big_int();
             } else {
-                total += trade.buy_amount.to_big_int();
+                total += execution.buy_amount.to_big_int();
             };
             total
         },
@@ -985,10 +985,7 @@ mod tests {
         };
 
         let settlement = solve(&SlippageContext::default(), orders, &pool.into()).unwrap();
-        let trades = settlement
-            .executed_trades()
-            .map(|(_, trade)| trade)
-            .collect::<Vec<_>>();
+        let trades = settlement.trade_executions().collect::<Vec<_>>();
 
         // Check the prices are set according to the expected pool swap:
         assert_eq!(settlement.clearing_prices(), &expected_prices);

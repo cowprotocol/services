@@ -42,6 +42,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
     /// Signals if the order will be executed as an atomic unit. In that case the order's
@@ -504,6 +505,7 @@ mod tests {
             mandatory: false,
             has_atomic_execution: false,
             reward: 3.,
+            is_mature: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -659,7 +661,8 @@ mod tests {
               },
               "mandatory": false,
               "has_atomic_execution": false,
-              "reward": 3.0
+              "reward": 3.0,
+              "is_mature": false,
             },
           },
           "amms": {

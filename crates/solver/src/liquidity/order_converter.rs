@@ -4,11 +4,12 @@ use anyhow::{Context, Result};
 use contracts::WETH9;
 use ethcontract::U256;
 use model::order::{Order, OrderClass, BUY_ETH_ADDRESS};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 pub struct OrderConverter {
     pub native_token: WETH9,
     pub fee_objective_scaling_factor: f64,
+    pub min_order_age: Duration,
 }
 
 impl OrderConverter {
@@ -19,6 +20,7 @@ impl OrderConverter {
         Self {
             native_token: shared::dummy_contract!(WETH9, native_token),
             fee_objective_scaling_factor: 1.,
+            min_order_age: Duration::from_secs(30),
         }
     }
 
@@ -42,6 +44,9 @@ impl OrderConverter {
                 * self.fee_objective_scaling_factor,
         );
         let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
+        let is_mature = order.metadata.creation_date
+            + chrono::Duration::from_std(self.min_order_age).unwrap()
+            <= chrono::offset::Utc::now();
 
         let (sell_amount, fee_amount) = match order.metadata.class {
             OrderClass::Limit => compute_synthetic_order_amounts_for_limit_order(&order)?,
@@ -67,6 +72,7 @@ impl OrderConverter {
             exchange: Exchange::GnosisProtocol,
             // TODO: It would be nicer to set this here too but we need #529 first.
             reward: 0.,
+            is_mature,
         })
     }
 }
@@ -84,14 +90,18 @@ fn compute_synthetic_order_amounts_for_limit_order(order: &Order) -> Result<(U25
         order.metadata.class == OrderClass::Limit,
         "this function should only be called for limit orders"
     );
+    let surplus_fee = order
+        .metadata
+        .surplus_fee
+        .context("limit order does not have surplus fee set")?;
     let sell_amount = order
         .data
         .sell_amount
         .checked_add(order.data.fee_amount)
         .context("surplus_fee adjustment would overflow sell_amount")?
-        .checked_sub(order.metadata.surplus_fee)
+        .checked_sub(surplus_fee)
         .context("surplus_fee adjustment would underflow sell_amount")?;
-    Ok((sell_amount, order.metadata.surplus_fee))
+    Ok((sell_amount, surplus_fee))
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {

@@ -96,7 +96,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
-        surplus_fee: u256_to_big_decimal(&order.metadata.surplus_fee),
+        surplus_fee: order.metadata.surplus_fee.as_ref().map(u256_to_big_decimal),
         surplus_fee_timestamp: order.metadata.surplus_fee_timestamp,
     };
     database::orders::insert_order(ex, &order)
@@ -315,7 +315,7 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
     if order.invalidated {
         return OrderStatus::Cancelled;
     }
-    if order.valid_to < Utc::now().timestamp() {
+    if order.valid_to() < Utc::now().timestamp() {
         return OrderStatus::Expired;
     }
     if order.presignature_pending {
@@ -364,9 +364,11 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         ethflow_data,
         onchain_user,
         is_liquidity_order: class == OrderClass::Liquidity,
-        surplus_fee: big_decimal_to_u256(&order.surplus_fee.unwrap_or_default())
-            .context("surplus_fee is not U256")?,
-        surplus_fee_timestamp: order.surplus_fee_timestamp.unwrap_or_default(),
+        surplus_fee: match order.surplus_fee {
+            Some(fee) => Some(big_decimal_to_u256(&fee).context("surplus_fee is not U256")?),
+            None => None,
+        },
+        surplus_fee_timestamp: order.surplus_fee_timestamp,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -623,6 +625,16 @@ mod tests {
                 invalidated: false,
                 valid_to: valid_to_yesterday.timestamp(),
                 presignature_pending: true,
+                ..order_row()
+            }),
+            OrderStatus::Expired
+        );
+
+        // Expired - for ethflow orders
+        assert_eq!(
+            calculate_status(&FullOrder {
+                invalidated: false,
+                ethflow_data: Some((false, valid_to_yesterday.timestamp())),
                 ..order_row()
             }),
             OrderStatus::Expired
