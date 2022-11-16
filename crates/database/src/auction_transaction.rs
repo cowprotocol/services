@@ -68,30 +68,11 @@ LIMIT 1
         .await
 }
 
-pub async fn get_auction_id_from_tx_hash(
-    ex: &mut PgConnection,
-    tx_hash: &TransactionHash,
-) -> Result<Option<i64>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT id
-FROM solver_competitions
-WHERE tx_hash = $1
-LIMIT 1
-    "#;
-    sqlx::query_scalar(QUERY)
-        .bind(tx_hash)
-        .fetch_optional(ex)
-        .await
-}
-
 #[cfg(test)]
 mod tests {
     use sqlx::Connection;
 
-    use crate::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement},
-    };
+    use crate::events::{Event, EventIndex, Settlement};
 
     use super::*;
 
@@ -240,25 +221,5 @@ mod tests {
             .await
             .unwrap();
         assert!(event.is_none());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_auction_id_from_tx_hash_() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let hash = ByteArray::<32>::default();
-
-        let id = get_auction_id_from_tx_hash(&mut db, &hash).await.unwrap();
-        assert!(id.is_none());
-
-        crate::solver_competition::save(&mut db, 1, &Default::default(), Some(&hash))
-            .await
-            .unwrap();
-
-        let id = get_auction_id_from_tx_hash(&mut db, &hash).await.unwrap();
-        assert_eq!(id, Some(1));
     }
 }
