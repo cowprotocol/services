@@ -1,37 +1,41 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
-
 use super::TokenOwnerSolverApi;
 use crate::bad_token::token_owner_finder::TokenOwnerProposing;
 use anyhow::Result;
 use ethcontract::H160;
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 type Token = H160;
 type Owner = H160;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AutoUpdatingSolverTokenOwnerFinder {
-    cache: Arc<RwLock<HashMap<Token, Vec<Owner>>>>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    solver: Box<dyn TokenOwnerSolverApi>,
+    cache: RwLock<HashMap<Token, Vec<Owner>>>,
 }
 
 impl AutoUpdatingSolverTokenOwnerFinder {
     pub fn new(solver: Box<dyn TokenOwnerSolverApi>, update_interval: Duration) -> Self {
-        let cache = Arc::new(RwLock::new(Default::default()));
+        let inner = Arc::new(Inner {
+            solver,
+            cache: RwLock::new(Default::default()),
+        });
 
         // spawn a background task to regularly update cache
         {
-            let cache = cache.clone();
+            let inner = inner.clone();
             let updater = async move {
                 loop {
-                    match solver.get_token_owner_pairs().await {
-                        Ok(token_owner_pairs) => {
-                            let mut w = cache.write().unwrap();
-                            *w = token_owner_pairs;
-                        }
-                        Err(err) => tracing::error!(?err, "failed to update token list"),
+                    if let Err(err) = inner.update().await {
+                        tracing::error!(?err, "failed to update token list");
                     }
                     tokio::time::sleep(update_interval).await;
                 }
@@ -39,7 +43,28 @@ impl AutoUpdatingSolverTokenOwnerFinder {
             tokio::task::spawn(updater);
         }
 
-        Self { cache }
+        Self { inner }
+    }
+
+    pub async fn update(&self) -> Result<()> {
+        self.inner.update().await
+    }
+}
+
+impl Inner {
+    async fn update(&self) -> Result<()> {
+        let token_owner_pairs = self.solver.get_token_owner_pairs().await?;
+
+        let mut cache = self.cache.write().unwrap();
+        *cache = token_owner_pairs;
+
+        Ok(())
+    }
+}
+
+impl Debug for Inner {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("Inner").field("cache", &self.cache).finish()
     }
 }
 
@@ -47,6 +72,7 @@ impl AutoUpdatingSolverTokenOwnerFinder {
 impl TokenOwnerProposing for AutoUpdatingSolverTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: Token) -> Result<Vec<Owner>> {
         Ok(self
+            .inner
             .cache
             .read()
             .unwrap()
