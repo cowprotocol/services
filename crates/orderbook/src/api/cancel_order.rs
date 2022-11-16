@@ -7,7 +7,7 @@ use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 pub fn cancel_order_request(
 ) -> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
-    warp::path!("orders" / OrderUid)
+    warp::path!("v1" / "orders" / OrderUid)
         .and(warp::delete())
         .and(extract_payload())
         .map(|uid, payload: CancellationPayload| OrderCancellation {
@@ -116,7 +116,7 @@ mod tests {
         let cancellation = OrderCancellation::default();
 
         let request = request()
-            .path(&format!("/orders/{:}", cancellation.order_uid))
+            .path(&format!("/v1/orders/{:}", cancellation.order_uid))
             .method("DELETE")
             .header("content-type", "application/json")
             .json(&CancellationPayload {

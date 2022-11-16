@@ -6,7 +6,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
 fn get_auction_request() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("auction").and(warp::get())
+    warp::path!("v1" / "auction").and(warp::get())
 }
 
 pub fn get_auction(
