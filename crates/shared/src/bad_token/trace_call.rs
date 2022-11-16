@@ -246,6 +246,9 @@ mod tests {
             liquidity::{
                 BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
             },
+            solvers::{
+                solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+            },
             TokenOwnerFinder,
         },
         ethrpc::create_env_test_transport,
@@ -253,6 +256,7 @@ mod tests {
     };
     use contracts::{BalancerV2Vault, IUniswapV3Factory};
     use hex_literal::hex;
+    use std::{env, time::Duration};
     use web3::types::{
         Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace,
     };
@@ -646,5 +650,125 @@ mod tests {
         let result = token_cache.detect(only_v3_token).await;
         dbg!(&result);
         assert!(result.unwrap().is_good());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn yearn_vault_tokens() {
+        let tokens = [
+            addr!("1025b1641d1F23C289412Dd5E5701e9810103a93"),
+            addr!("132d8D2C76Db3812403431fAcB00F3453Fc42125"),
+            addr!("1635b506a88fBF428465Ad65d00e8d6B6E5846C3"),
+            addr!("16825039dfe2a5b01F3E1E6a2BBF9a576c6F95c4"),
+            addr!("1b905331F7dE2748F4D6a0678e1521E20347643F"),
+            addr!("23D3D0f1c697247d5e0a9efB37d8b0ED0C464f7f"),
+            addr!("25212Df29073FfFA7A67399AcEfC2dd75a831A1A"),
+            addr!("27B5739e22ad9033bcBf192059122d163b60349D"),
+            addr!("2D5D4869381C4Fce34789BC1D38aCCe747E295AE"),
+            addr!("2DfB14E32e2F8156ec15a2c21c3A6c053af52Be8"),
+            addr!("2a38B9B0201Ca39B17B460eD2f11e4929559071E"),
+            addr!("2e5c7e9B1Da0D9Cb2832eBb06241d18552A85400"),
+            addr!("30FCf7c6cDfC46eC237783D94Fc78553E79d4E9C"),
+            addr!("341bb10D8f5947f3066502DC8125d9b8949FD3D6"),
+            addr!("378cb52b00F9D0921cb46dFc099CFf73b42419dC"),
+            addr!("39CAF13a104FF567f71fd2A4c68C026FDB6E740B"),
+            addr!("3B27F92C0e212C671EA351827EDF93DB27cc0c65"),
+            addr!("3B96d491f067912D18563d56858Ba7d6EC67a6fa"),
+            addr!("3c5DF3077BcF800640B5DAE8c91106575a4826E6"),
+            addr!("4560b99C904aAD03027B5178CCa81584744AC01f"),
+            addr!("490bD0886F221A5F79713D3E84404355A9293C50"),
+            addr!("4B5BfD52124784745c1071dcB244C6688d2533d3"),
+            addr!("528D50dC9a333f01544177a924893FA1F5b9F748"),
+            addr!("59518884EeBFb03e90a18ADBAAAB770d4666471e"),
+            addr!("595a68a8c9D5C230001848B69b1947ee2A607164"),
+            addr!("5AB64C599FcC59f0f2726A300b03166A395578Da"),
+            addr!("5a770DbD3Ee6bAF2802D29a901Ef11501C44797A"),
+            addr!("5c0A86A32c129538D62C106Eb8115a8b02358d57"),
+            addr!("5e69e8b51B71C8596817fD442849BD44219bb095"),
+            addr!("5fA5B62c8AF877CB37031e0a3B2f34A78e3C56A6"),
+            addr!("625b7DF2fa8aBe21B0A976736CDa4775523aeD1E"),
+            addr!("671a912C10bba0CFA74Cfc2d6Fba9BA1ed9530B2"),
+            addr!("67e019bfbd5a67207755D04467D6A70c0B75bF60"),
+            addr!("6A5468752f8DB94134B6508dAbAC54D3b45efCE6"),
+            addr!("6B5ce31AF687a671a804d8070Ddda99Cab926dfE"),
+            addr!("6Ede7F19df5df6EF23bD5B9CeDb651580Bdf56Ca"),
+            addr!("6d765CbE5bC922694afE112C140b8878b9FB0390"),
+            addr!("7047F90229a057C13BF847C0744D646CFb6c9E1A"),
+            addr!("718AbE90777F5B778B52D553a5aBaa148DD0dc5D"),
+            addr!("790a60024bC3aea28385b60480f15a0771f26D09"),
+            addr!("801Ab06154Bf539dea4385a39f5fa8534fB53073"),
+            addr!("8414Db07a7F743dEbaFb402070AB01a4E0d2E45e"),
+            addr!("84E13785B5a27879921D6F685f041421C7F482dA"),
+            addr!("873fB544277FD7b977B196a826459a69E27eA4ea"),
+            addr!("8b9C0c24307344B6D7941ab654b2Aeee25347473"),
+            addr!("8cc94ccd0f3841a468184aCA3Cc478D2148E1757"),
+            addr!("8ee57c05741aA9DB947A744E713C15d4d19D8822"),
+            addr!("8fA3A9ecd9EFb07A8CE90A6eb014CF3c0E3B32Ef"),
+            addr!("9A39f31DD5EDF5919A5C0c2433cE053fAD2E0336"),
+            addr!("9d409a0A012CFbA9B15F6D4B36Ac57A46966Ab9a"),
+            addr!("A696a63cc78DfFa1a63E9E50587C197387FF6C7E"),
+            addr!("A74d4B67b3368E83797a35382AFB776bAAE4F5C8"),
+            addr!("A9412Ffd7E0866755ae0dda3318470A61F62abe8"),
+            addr!("B4AdA607B9d6b2c9Ee07A275e9616B84AC560139"),
+            addr!("BCBB5b54Fa51e7b7Dc920340043B203447842A6b"),
+            addr!("Bfedbcbe27171C418CDabC2477042554b1904857"),
+            addr!("C4dAf3b5e2A9e93861c3FBDd25f1e943B8D87417"),
+            addr!("D6Ea40597Be05c201845c0bFd2e96A60bACde267"),
+            addr!("E537B5cc158EB71037D4125BDD7538421981E6AA"),
+            addr!("E5eDcE53e39Cbc6d819E2C340BCF295e0084ff7c"),
+            addr!("F29AE508698bDeF169B89834F76704C3B205aedf"),
+            addr!("F59D66c1d593Fb10e2f8c2a6fD2C958792434B9c"),
+            addr!("F6B9DFE6bc42ed2eaB44D6B829017f7B78B29f88"),
+            addr!("FBEB78a723b8087fD2ea7Ef1afEc93d35E8Bed42"),
+            addr!("FD0877d9095789cAF24c98F7CCe092fa8E120775"),
+            addr!("a258C4606Ca8206D8aA700cE2143D7db854D168c"),
+            addr!("a354F35829Ae975e850e23e9615b11Da1B3dC4DE"),
+            addr!("b09F2a67a731466182518fae980feAe96479d80b"),
+            addr!("b4D1Be44BfF40ad6e506edf43156577a3f8672eC"),
+            addr!("c5F3D11580c41cD07104e9AF154Fc6428bb93c73"),
+            addr!("c97232527B62eFb0D8ed38CF3EA103A6CcA4037e"),
+            addr!("c97511a1dDB162C8742D39FF320CfDCd13fBcf7e"),
+            addr!("d88dBBA3f9c4391Ee46f5FF548f289054db6E51C"),
+            addr!("d8C620991b8E626C099eAaB29B1E3eEa279763bb"),
+            addr!("d9788f3931Ede4D5018184E198699dC6d66C1915"),
+            addr!("dA816459F1AB5631232FE5e97a05BBBb94970c95"),
+            addr!("db25cA703181E7484a155DD612b06f57E12Be5F0"),
+            addr!("e9Dc63083c464d6EDcCFf23444fF3CFc6886f6FB"),
+            addr!("f2db9a7c0ACd427A680D640F02d90f6186E71725"),
+            addr!("f8768814b88281DE4F532a3beEfA5b85B69b9324"),
+        ];
+
+        let solver_token_finder = Arc::new(AutoUpdatingSolverTokenOwnerFinder::new(
+            Box::new(SolverConfiguration {
+                url: env::var("SOLVER_TOKEN_OWNERS_URLS")
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+                client: reqwest::Client::new(),
+            }),
+            Duration::MAX,
+        ));
+
+        // Force the cache to update at least once.
+        solver_token_finder.update().await.unwrap();
+
+        let http = create_env_test_transport();
+        let web3 = Web3::new(http);
+
+        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let finder = Arc::new(TokenOwnerFinder {
+            web3: web3.clone(),
+            proposers: vec![solver_token_finder],
+        });
+        let token_cache = TraceCallDetector {
+            web3,
+            finder,
+            settlement_contract: settlement.address(),
+        };
+
+        for token in tokens {
+            let result = token_cache.detect(token).await;
+            println!("token {:?} is {:?}", token, result);
+        }
     }
 }
