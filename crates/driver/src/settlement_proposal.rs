@@ -49,7 +49,7 @@ impl TradedOrder {
     fn buy_token_price(&self, clearing_prices: &HashMap<H160, U256>) -> Option<U256> {
         match self.order.metadata.class {
             OrderClass::Market => clearing_prices.get(&self.order.data.buy_token).cloned(),
-            OrderClass::Liquidity | OrderClass::Limit => clearing_prices
+            OrderClass::Liquidity | OrderClass::Limit(_) => clearing_prices
                 .get(&self.order.data.sell_token)?
                 .checked_mul(self.order.data.sell_amount)?
                 .checked_div(self.order.data.buy_amount),

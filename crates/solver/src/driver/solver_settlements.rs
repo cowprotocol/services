@@ -200,7 +200,6 @@ mod tests {
                     creation_date: created_at,
                     uid: OrderUid([uid; 56]),
                     class,
-                    surplus_fee: Some(0.into()),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -273,7 +272,7 @@ mod tests {
 
         let s1 = Settlement::with_default_prices(vec![
             trade(old, 1, OrderClass::Market),
-            trade(recent, 2, OrderClass::Limit),
+            trade(recent, 2, OrderClass::Limit(Default::default())),
         ]);
         let s2 = Settlement::with_default_prices(vec![
             trade(recent, 3, OrderClass::Market),
@@ -534,7 +533,8 @@ mod tests {
         let settlement = Settlement::with_default_prices(vec![]);
         assert!(!has_user_order(&settlement));
 
-        let settlement = Settlement::with_default_prices(vec![order(OrderClass::Limit)]);
+        let settlement =
+            Settlement::with_default_prices(vec![order(OrderClass::Limit(Default::default()))]);
         assert!(has_user_order(&settlement));
 
         let settlement = Settlement::with_default_prices(vec![order(OrderClass::Liquidity)]);
@@ -551,7 +551,7 @@ mod tests {
 
         let settlement = Settlement::with_default_prices(vec![
             order(OrderClass::Liquidity),
-            order(OrderClass::Limit),
+            order(OrderClass::Limit(Default::default())),
         ]);
         assert!(has_user_order(&settlement));
     }

@@ -201,7 +201,10 @@ async fn single_limit_order_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert_eq!(
+        limit_order.metadata.class,
+        OrderClass::Limit(Default::default())
+    );
 
     wait_for_solvable_orders(&client, 1).await.unwrap();
 
@@ -441,7 +444,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
@@ -475,7 +478,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     wait_for_solvable_orders(&client, 2).await.unwrap();
 
@@ -714,7 +717,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
