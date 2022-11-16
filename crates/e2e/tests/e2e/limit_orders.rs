@@ -235,7 +235,6 @@ async fn single_limit_order_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -265,7 +264,6 @@ async fn single_limit_order_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,
@@ -511,7 +509,6 @@ async fn two_limit_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -541,7 +538,6 @@ async fn two_limit_orders_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,
@@ -787,7 +783,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -817,7 +812,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

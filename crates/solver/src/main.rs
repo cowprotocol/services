@@ -264,6 +264,7 @@ async fn main() {
         args.max_merged_settlements,
         &args.slippage,
         market_makable_token_list,
+        &args.order_prioritization,
         post_processing_pipeline,
     )
     .expect("failure creating solvers");
