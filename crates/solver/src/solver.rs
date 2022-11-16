@@ -53,7 +53,7 @@ mod baseline_solver;
 pub mod http_solver;
 mod naive_solver;
 mod oneinch_solver;
-mod optimizing_solver;
+pub mod optimizing_solver;
 mod paraswap_solver;
 pub mod single_order_solver;
 pub mod uni_v3_router_solver;
