@@ -498,14 +498,6 @@ impl Solver for HttpSolver {
             .context("no time left to send request")?;
         let settled = self.solver.solve(&model, timeout).await?;
 
-        if !settled.has_execution_plan() {
-            tracing::debug!(
-                name = %self.name(), ?settled,
-                "ignoring settlement without execution plan",
-            );
-            return Ok(Vec::new());
-        }
-
         tracing::debug!(
             "Solution received from http solver {} (json):\n{:}",
             self.solver.name,

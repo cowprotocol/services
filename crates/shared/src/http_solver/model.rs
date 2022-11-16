@@ -158,7 +158,7 @@ pub struct InteractionData {
     ///
     /// `AMM -> GPv2Settlement`
     pub outputs: Vec<TokenAmount>,
-    pub exec_plan: Option<ExecutionPlan>,
+    pub exec_plan: ExecutionPlan,
     pub cost: Option<TokenAmount>,
 }
 
@@ -184,23 +184,6 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
-}
-
-impl SettledBatchAuctionModel {
-    pub fn has_execution_plan(&self) -> bool {
-        // Its a bit weird that we expect all entries to contain an execution plan. Could make
-        // execution plan required and assert that the vector of execution updates is non-empty
-        // - NOTE(nlordell): This was done as a way for the HTTP solvers to say "look, we found
-        //   a solution but don't know how to order the AMMs to execute it". I think that we
-        //   can, as the parent comment suggests, clean this up and just make the field required.
-
-        // **Intentionally** allow interactions without execution plans.
-
-        self.amms
-            .values()
-            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan))
-            .all(|ex| ex.is_some())
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -263,10 +246,7 @@ pub struct ExecutedAmmModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
-    /// The exec plan is allowed to be optional because the http solver isn't always
-    /// able to determine and order of execution. That is, solver may have a solution
-    /// which it wants to share with the driver even if it couldn't derive an execution plan.
-    pub exec_plan: Option<ExecutionPlan>,
+    pub exec_plan: ExecutionPlan,
 }
 
 impl UpdatedAmmModel {
@@ -281,50 +261,13 @@ impl UpdatedAmmModel {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum ExecutionPlan {
-    /// The coordinates at which the interaction should be included within a
-    /// settlement.
-    Coordinates(ExecutionPlanCoordinatesModel),
-
-    /// The interaction should **not** be included in the settlement as
-    /// internal buffers will be used instead.
-    #[serde(with = "execution_plan_internal")]
-    Internal,
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct ExecutionPlan {
+    pub coordinates: ExecutionPlanCoordinatesModel,
+    pub internal: bool,
 }
 
-/// A module for implementing `serde` (de)serialization for the execution plan
-/// enum.
-///
-/// This is a work-around for untagged enum serialization not supporting empty
-/// variants <https://github.com/serde-rs/serde/issues/1560>.
-mod execution_plan_internal {
-    use super::*;
-
-    #[derive(Deserialize, Serialize)]
-    enum Kind {
-        #[serde(rename = "internal")]
-        Internal,
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Kind::deserialize(deserializer)?;
-        Ok(())
-    }
-
-    pub fn serialize<S>(serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        Kind::Internal.serialize(serializer)
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,

@@ -6,7 +6,7 @@ use crate::{
     },
     settlement::Settlement,
 };
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{anyhow, ensure, Context as _, Result};
 use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
@@ -52,18 +52,14 @@ enum Execution {
 impl Execution {
     fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
-            Execution::Amm(executed_amm) => &executed_amm.exec_plan,
-            Execution::CustomInteraction(interaction) => &interaction.exec_plan,
-            Execution::LimitOrder(order) => &order.exec_plan,
+            Execution::Amm(executed_amm) => Some(&executed_amm.exec_plan),
+            Execution::CustomInteraction(interaction) => Some(&interaction.exec_plan),
+            Execution::LimitOrder(order) => order.exec_plan.as_ref(),
         }
-        .as_ref()
     }
 
     fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
-        match self.execution_plan()? {
-            ExecutionPlan::Coordinates(coords) => Some(coords.clone()),
-            _ => None,
-        }
+        self.execution_plan().map(|exec_plan| exec_plan.coordinates.clone())
     }
 
     fn add_to_settlement(
@@ -143,7 +139,7 @@ struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
     order: Liquidity,
-    exec_plan: Option<ExecutionPlan>,
+    exec_plan: ExecutionPlan,
 }
 
 impl<'a> IntermediateSettlement<'a> {
@@ -190,7 +186,10 @@ impl<'a> IntermediateSettlement<'a> {
             execution.add_to_settlement(
                 &mut settlement,
                 &self.slippage,
-                Some(&ExecutionPlan::Internal) == execution.execution_plan(),
+                execution
+                    .execution_plan()
+                    .map(|plan| plan.internal)
+                    .unwrap_or_default(),
             )?;
         }
 
@@ -211,6 +210,13 @@ fn match_prepared_and_settled_orders(
             let prepared = prepared_orders
                 .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
+            match prepared.id {
+                crate::liquidity::LimitOrderUid::OrderUid(_) => {}
+                crate::liquidity::LimitOrderUid::ZeroEx(_) => ensure!(
+                    settled.exec_plan.is_some(),
+                    "missing mandatory exec plan for 0x order"
+                ),
+            }
             Ok(ExecutedLimitOrder {
                 order: prepared.clone(),
                 executed_buy_amount: settled.exec_buy_amount,
