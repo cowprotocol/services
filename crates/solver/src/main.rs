@@ -211,6 +211,7 @@ async fn main() {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     let market_makable_token_list_configuration = TokenListConfiguration {
@@ -254,6 +255,7 @@ async fn main() {
         args.max_merged_settlements,
         &args.slippage,
         market_makable_token_list.clone(),
+        &args.order_prioritization,
     )
     .expect("failure creating solvers");
 

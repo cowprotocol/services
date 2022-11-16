@@ -94,14 +94,15 @@ impl InFlightOrders {
         self.in_flight.entry(block).or_default().extend(uids);
 
         settlement
-            .executed_trades()
+            .trades()
+            .zip(settlement.trade_executions())
             .filter(|(trade, _)| trade.order.data.partially_fillable)
             .into_group_map_by(|(trade, _)| trade.order.metadata.uid)
             .into_iter()
             .for_each(|(uid, trades)| {
                 let most_recent_data = PartiallyFilledOrder {
                     order: trades[0].0.order.clone(),
-                    in_flight_trades: trades.into_iter().map(|(_, trade)| trade).collect(),
+                    in_flight_trades: trades.into_iter().map(|(_, execution)| execution).collect(),
                 };
                 // always overwrite existing data with the most recent data
                 self.in_flight_trades.insert(uid, most_recent_data);
@@ -112,7 +113,7 @@ impl InFlightOrders {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::{CustomPriceTrade, OrderTrade, SettlementEncoder, Trade};
+    use crate::settlement::{SettlementEncoder, Trade};
     use maplit::hashmap;
     use model::order::{Order, OrderData, OrderKind, OrderMetadata};
     use primitive_types::H160;
@@ -152,49 +153,34 @@ mod tests {
         let mut partially_fillable_2 = partially_fillable_1.clone();
         partially_fillable_2.metadata.uid = OrderUid::from_integer(3);
 
-        let user_trades = vec![OrderTrade {
-            trade: Trade {
+        let trades = vec![
+            Trade {
                 order: fill_or_kill.clone(),
+                executed_amount: 100u8.into(),
                 ..Default::default()
             },
-            ..Default::default()
-        }];
-
-        let liquidity_trades = vec![
             // This order uses some of the remaining executable amount of partially_fillable_1
-            CustomPriceTrade {
-                trade: Trade {
-                    order: partially_fillable_2.clone(),
-                    executed_amount: 20u8.into(),
-                    ..Default::default()
-                },
-                buy_token_price: 1u8.into(),
+            Trade {
+                order: partially_fillable_2.clone(),
+                executed_amount: 20u8.into(),
                 ..Default::default()
             },
             // Following orders use remaining executable amount of partially_fillable_2
-            CustomPriceTrade {
-                trade: Trade {
-                    order: partially_fillable_1.clone(),
-                    executed_amount: 50u8.into(),
-                    ..Default::default()
-                },
-                buy_token_price: 1u8.into(),
+            Trade {
+                order: partially_fillable_1.clone(),
+                executed_amount: 50u8.into(),
                 ..Default::default()
             },
-            CustomPriceTrade {
-                trade: Trade {
-                    order: partially_fillable_1.clone(),
-                    executed_amount: 20u8.into(),
-                    ..Default::default()
-                },
-                buy_token_price: 1u8.into(),
+            Trade {
+                order: partially_fillable_1.clone(),
+                executed_amount: 20u8.into(),
                 ..Default::default()
             },
         ];
 
         let prices = hashmap! {token0 => 1u8.into(), token1 => 1u8.into()};
         let settlement = Settlement {
-            encoder: SettlementEncoder::with_trades(prices, user_trades, liquidity_trades),
+            encoder: SettlementEncoder::with_trades(prices, trades),
         };
 
         let mut inflight = InFlightOrders::default();
