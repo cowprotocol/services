@@ -1366,28 +1366,28 @@ pub mod tests {
             // protocol fees - so total surplus should be 0.
             let no_surplus = test_settlement(
                 hashmap! {
-                    tokens[0] => 100000_u128.into(),
-                    tokens[1] => 100000_u128.into(),
+                    tokens[0] => 100_000_u128.into(),
+                    tokens[1] => 100_000_u128.into(),
                 },
                 vec![Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: tokens[0],
                             buy_token: tokens[1],
-                            sell_amount: 100000_u128.into(),
-                            buy_amount: 99000_u128.into(),
+                            sell_amount: 100_000_u128.into(),
+                            buy_amount: 99_000_u128.into(),
                             kind,
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
                             class: OrderClass::Limit,
-                            surplus_fee: Some(1000_u128.into()),
+                            surplus_fee: Some(1_000_u128.into()),
                             ..Default::default()
                         },
                         ..Default::default()
                     },
-                    executed_amount: 100000_u128.into(),
-                    scaled_unsubsidized_fee: 1000_u128.into(),
+                    executed_amount: 100_000_u128.into(),
+                    scaled_unsubsidized_fee: 1_000_u128.into(),
                 }],
             );
 
@@ -1398,28 +1398,28 @@ pub mod tests {
 
             let some_surplus = test_settlement(
                 hashmap! {
-                    tokens[0] => 100000_u128.into(),
-                    tokens[2] => 100000_u128.into(),
+                    tokens[0] => 100_000_u128.into(),
+                    tokens[2] => 100_000_u128.into(),
                 },
                 vec![Trade {
                     order: Order {
                         data: OrderData {
                             sell_token: tokens[0],
                             buy_token: tokens[2],
-                            sell_amount: 100000_u128.into(),
-                            buy_amount: 98000_u128.into(),
+                            sell_amount: 100_000_u128.into(),
+                            buy_amount: 98_000_u128.into(),
                             kind,
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
                             class: OrderClass::Limit,
-                            surplus_fee: Some(1000_u128.into()),
+                            surplus_fee: Some(1_000_u128.into()),
                             ..Default::default()
                         },
                         ..Default::default()
                     },
-                    executed_amount: 100000_u128.into(),
-                    scaled_unsubsidized_fee: 1000_u128.into(),
+                    executed_amount: 100_000_u128.into(),
+                    scaled_unsubsidized_fee: 1_000_u128.into(),
                 }],
             );
 
