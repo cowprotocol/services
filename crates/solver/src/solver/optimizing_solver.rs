@@ -5,10 +5,10 @@ use crate::{
 };
 use anyhow::Result;
 use ethcontract::Account;
+use gas_estimation::GasPrice1559;
 use model::auction::AuctionId;
 use shared::http_solver::model::AuctionResult;
 use std::sync::Arc;
-use gas_estimation::GasPrice1559;
 
 /// A wrapper for solvers that applies a set of optimizations to all the generated settlements.
 pub struct OptimizingSolver {
@@ -22,14 +22,14 @@ impl Solver for OptimizingSolver {
         let gas_price = GasPrice1559 {
             base_fee_per_gas: auction.gas_price,
             max_fee_per_gas: auction.gas_price,
-            max_priority_fee_per_gas: 0.
+            max_priority_fee_per_gas: 0.,
         };
         let results = self.inner.solve(auction).await?;
         let optimizations = results.into_iter().map(|settlement| {
             self.post_processing_pipeline.optimize_settlement(
                 settlement,
                 self.account().clone(),
-                gas_price
+                gas_price,
             )
         });
         let optimized = futures::future::join_all(optimizations).await;
@@ -57,17 +57,17 @@ mod tests {
         solver::MockSolver,
     };
     use contracts::WETH9;
+    use ethcontract::PrivateKey;
     use futures::FutureExt;
+    use hex_literal::hex;
     use primitive_types::H160;
     use shared::dummy_contract;
-    use hex_literal::hex;
-    use ethcontract::PrivateKey;
 
     #[tokio::test]
     async fn optimizes_solutions() {
         const PRIVATE_KEY: [u8; 32] =
             hex!("0000000000000000000000000000000000000000000000000000000000000001");
-        let account = Account::Offline(PrivateKey::from_raw([0x1;32]).unwrap(), None);
+        let account = Account::Offline(PrivateKey::from_raw([0x1; 32]).unwrap(), None);
 
         let mut inner = MockSolver::new();
         inner
@@ -80,7 +80,10 @@ mod tests {
             .expect_optimize_settlement()
             .withf(|settlement, _, gas_price| {
                 gas_price.effective_gas_price() == 9_999.
-                    && settlement.encoder.amount_to_unwrap(H160([0x42; 20])).is_zero()
+                    && settlement
+                        .encoder
+                        .amount_to_unwrap(H160([0x42; 20]))
+                        .is_zero()
             })
             .returning(|_, _, _| {
                 async {
