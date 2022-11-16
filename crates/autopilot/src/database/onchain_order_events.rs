@@ -354,7 +354,7 @@ fn extract_invalidated_order_uids(
             Ok((
                 event_index,
                 // The following conversion should not error, as the contract
-                // enforces that the enough bytes are send.
+                // enforces that the enough bytes are sent
                 // If the error hpapens anyways, we want to stop indexing and
                 // hence escalate the error
                 bytes_to_order_uid(invalidation.order_uid.0.as_slice())?,
