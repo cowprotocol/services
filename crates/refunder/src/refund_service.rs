@@ -1,35 +1,24 @@
+use super::ethflow_order::order_to_ethflow_data;
 use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
     ethflow_orders::{
         mark_eth_orders_as_refunded, read_order, refundable_orders, EthOrderPlacement,
     },
-    orders::{read_order as read_db_order, Order},
+    orders::read_order as read_db_order,
     OrderUid,
 };
-use ethcontract::{Account, Bytes, U256};
+use ethcontract::Account;
 use futures::{stream, StreamExt};
-use number_conversions::big_decimal_to_u256;
 use primitive_types::H160;
 use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
 
+use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
 use crate::submitter::Submitter;
 
 const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
-
-pub type EncodedEthflowOrder = (
-    H160,            // buyToken
-    H160,            // receiver
-    U256,            // sellAmount
-    U256,            // buyAmount
-    Bytes<[u8; 32]>, // appData
-    U256,            // feeAmount
-    u32,             // validTo
-    bool,            // flags
-    i64,             // quoteId
-);
 
 pub struct RefundService {
     pub db: PgPool,
@@ -42,7 +31,7 @@ pub struct RefundService {
 
 struct SplittedOrderUids {
     refunded: Vec<OrderUid>,
-    _to_be_refunded: Vec<OrderUid>,
+    to_be_refunded: Vec<OrderUid>,
 }
 
 impl RefundService {
@@ -80,7 +69,7 @@ impl RefundService {
         self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
             .await?;
 
-        self.send_out_refunding_tx(order_uids_per_status._to_be_refunded)
+        self.send_out_refunding_tx(order_uids_per_status.to_be_refunded)
             .await?;
         Ok(())
     }
@@ -168,12 +157,12 @@ impl RefundService {
             .collect();
         let result = SplittedOrderUids {
             refunded: refunded_uids,
-            _to_be_refunded: to_be_refunded_uids,
+            to_be_refunded: to_be_refunded_uids,
         };
         Ok(result)
     }
 
-    async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EncodedEthflowOrder> {
+    async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EthflowOrder> {
         let mut ex = self.db.acquire().await.context("acquire")?;
         let order = read_db_order(&mut ex, uid)
             .await
@@ -190,7 +179,6 @@ impl RefundService {
         if uids.is_empty() {
             return Ok(());
         }
-
         // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit into gas limit
         let uids: Vec<OrderUid> = uids
             .into_iter()
@@ -212,7 +200,7 @@ impl RefundService {
             .buffer_unordered(10)
             .filter_map(|result| async {
                 match result {
-                    Ok(order) => Some(order),
+                    Ok(order) => Some(order.encode()),
                     Err(err) => {
                         tracing::error!(?err, "failed to get data from db");
                         None
@@ -224,71 +212,5 @@ impl RefundService {
 
         self.submitter.submit(uids, encoded_ethflow_orders).await?;
         Ok(())
-    }
-}
-
-fn order_to_ethflow_data(
-    order: Order,
-    ethflow_order_placement: EthOrderPlacement,
-) -> EncodedEthflowOrder {
-    (
-        H160(order.buy_token.0),
-        H160(order.receiver.unwrap().0), // ethflow orders have always a
-        // receiver. It's enforced by the contract.
-        big_decimal_to_u256(&order.sell_amount).unwrap(),
-        big_decimal_to_u256(&order.buy_amount).unwrap(),
-        Bytes(order.app_data.0),
-        big_decimal_to_u256(&order.fee_amount).unwrap(),
-        ethflow_order_placement.valid_to as u32,
-        false, // ethflow orders are always fill or kill orders
-        0i64,  // quoteId is not important for refunding and will be ignored
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use database::byte_array::ByteArray;
-    use number_conversions::u256_to_big_decimal;
-
-    #[test]
-    fn test_order_to_ethflow_data() {
-        let buy_token = ByteArray([1u8; 20]);
-        let receiver = ByteArray([3u8; 20]);
-        let sell_amount = U256::from_dec_str("1").unwrap();
-        let buy_amount = U256::from_dec_str("2").unwrap();
-        let app_data = ByteArray([3u8; 32]);
-        let fee_amount = U256::from_dec_str("3").unwrap();
-        let valid_to = 234u32;
-
-        let order = Order {
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount: u256_to_big_decimal(&sell_amount),
-            buy_amount: u256_to_big_decimal(&buy_amount),
-            valid_to: valid_to.into(),
-            app_data,
-            fee_amount: u256_to_big_decimal(&fee_amount),
-            ..Default::default()
-        };
-        let ethflow_order = EthOrderPlacement {
-            valid_to: valid_to.into(),
-            ..Default::default()
-        };
-        let expected_encoded_order = (
-            H160(order.buy_token.0),
-            H160(order.receiver.unwrap().0),
-            big_decimal_to_u256(&order.sell_amount).unwrap(),
-            big_decimal_to_u256(&order.buy_amount).unwrap(),
-            Bytes(order.app_data.0),
-            big_decimal_to_u256(&order.fee_amount).unwrap(),
-            ethflow_order.valid_to as u32,
-            false,
-            0i64,
-        );
-        assert_eq!(
-            order_to_ethflow_data(order, ethflow_order),
-            expected_encoded_order
-        );
     }
 }
