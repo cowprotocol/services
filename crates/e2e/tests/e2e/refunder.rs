@@ -6,7 +6,10 @@ use model::{
     signature::hashed_eip712_message,
     DomainSeparator,
 };
-use refunder::refund_service::{EncodedEthflowOrder, RefundService, INVALIDATED_OWNER};
+use refunder::{
+    ethflow_order::EthflowOrder,
+    refund_service::{RefundService, INVALIDATED_OWNER},
+};
 use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
 use sqlx::PgPool;
 
@@ -14,7 +17,7 @@ const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
 
 #[tokio::test]
 #[ignore]
-async fn local_node_smart_contract_orders() {
+async fn local_node_refunder_tx() {
     crate::local_node::test(refunder_tx).await;
 }
 
@@ -105,17 +108,17 @@ async fn refunder_tx(web3: Web3) {
     let fee_amount = quote_response.quote.fee_amount;
 
     // Creating ethflow order
-    let ethflow_order: EncodedEthflowOrder = (
+    let ethflow_order = EthflowOrder {
         buy_token,
-        receiver.unwrap(),
+        receiver: receiver.unwrap(),
         sell_amount,
         buy_amount,
-        Bytes([0u8; 32]),
+        app_data: Bytes([0u8; 32]),
         fee_amount,
         valid_to,
-        false,
+        partially_fillable: false,
         quote_id,
-    );
+    };
 
     // Each ethflow user order has an order that is representing
     // it as EIP1271 order with a different owner and valid_to
@@ -151,7 +154,7 @@ async fn refunder_tx(web3: Web3) {
     tx_value!(
         user,
         sell_amount + fee_amount,
-        contracts.ethflow.create_order(ethflow_order)
+        contracts.ethflow.create_order(ethflow_order.encode())
     );
 
     // Run autopilot indexing loop
