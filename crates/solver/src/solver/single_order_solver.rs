@@ -132,6 +132,8 @@ impl Solver for SingleOrderSolver {
             &self.order_prioritization_config,
         );
 
+        tracing::trace!(name = self.name(), ?orders, "prioritized orders");
+
         let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
@@ -242,8 +244,9 @@ fn get_prioritized_orders(
         order_prioritization_config.apply_weight_constraints(price_viability)
     }) {
         Ok(weighted_user_orders) => weighted_user_orders.into_iter().cloned().collect(),
-        Err(_) => {
+        Err(err) => {
             // if weighted sorting by viability fails we fall back to shuffling randomly
+            tracing::warn!(?err, "weighted order prioritization failed");
             user_orders.shuffle(&mut rng);
             user_orders.into()
         }
