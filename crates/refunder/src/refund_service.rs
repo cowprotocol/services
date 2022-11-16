@@ -1,14 +1,24 @@
-use anyhow::{anyhow, Result};
+use super::ethflow_order::order_to_ethflow_data;
+use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
-    ethflow_orders::{mark_eth_orders_as_refunded, refundable_orders, EthOrderPlacement},
+    ethflow_orders::{
+        mark_eth_orders_as_refunded, read_order, refundable_orders, EthOrderPlacement,
+    },
+    orders::read_order as read_db_order,
     OrderUid,
 };
+use ethcontract::Account;
+use futures::{stream, StreamExt};
 use primitive_types::H160;
 use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
 
+use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
+use crate::submitter::Submitter;
+
 const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
+const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 pub struct RefundService {
     pub db: PgPool,
@@ -16,11 +26,12 @@ pub struct RefundService {
     pub ethflow_contract: CoWSwapEthFlow,
     pub min_validity_duration: i64,
     pub min_slippage: f64,
+    pub submitter: Submitter,
 }
 
 struct SplittedOrderUids {
     refunded: Vec<OrderUid>,
-    _to_be_refunded: Vec<OrderUid>,
+    to_be_refunded: Vec<OrderUid>,
 }
 
 impl RefundService {
@@ -30,16 +41,25 @@ impl RefundService {
         ethflow_contract: CoWSwapEthFlow,
         min_validity_duration: i64,
         min_slippage_bps: u64,
+        account: Account,
     ) -> Self {
         RefundService {
             db,
-            web3,
-            ethflow_contract,
+            web3: web3.clone(),
+            ethflow_contract: ethflow_contract.clone(),
             min_validity_duration,
             min_slippage: min_slippage_bps as f64 / 10000f64,
+            submitter: Submitter {
+                web3: web3.clone(),
+                ethflow_contract,
+                account,
+                gas_estimator: Box::new(web3),
+                gas_price_of_last_submission: None,
+                nonce_of_last_submission: None,
+            },
         }
     }
-    pub async fn try_to_refund_all_eligble_orders(&self) -> Result<()> {
+    pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
         let order_uids_per_status = self
@@ -49,10 +69,8 @@ impl RefundService {
         self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
             .await?;
 
-        // Send out tx to deleteOrders, and wait for 5 block for the tx
-        // to be mined
-        // todo()
-
+        self.send_out_refunding_tx(order_uids_per_status.to_be_refunded)
+            .await?;
         Ok(())
     }
 
@@ -73,7 +91,7 @@ impl RefundService {
         Ok(transaction.commit().await?)
     }
 
-    async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
+    pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
         let mut ex = self.db.acquire().await?;
         refundable_orders(
             &mut ex,
@@ -139,8 +157,60 @@ impl RefundService {
             .collect();
         let result = SplittedOrderUids {
             refunded: refunded_uids,
-            _to_be_refunded: to_be_refunded_uids,
+            to_be_refunded: to_be_refunded_uids,
         };
         Ok(result)
+    }
+
+    async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EthflowOrder> {
+        let mut ex = self.db.acquire().await.context("acquire")?;
+        let order = read_db_order(&mut ex, uid)
+            .await
+            .context("read order")?
+            .context("missing order")?;
+        let ethflow_order = read_order(&mut ex, uid)
+            .await
+            .context("read ethflow order")?
+            .context("missing ethflow order")?;
+        Ok(order_to_ethflow_data(order, ethflow_order))
+    }
+
+    async fn send_out_refunding_tx(&mut self, uids: Vec<OrderUid>) -> Result<()> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+        // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit into gas limit
+        let uids: Vec<OrderUid> = uids
+            .into_iter()
+            .take(MAX_NUMBER_OF_UIDS_PER_REFUND_TX)
+            .collect();
+
+        tracing::debug!("Trying to refund the following uids: {:?}", uids);
+
+        let futures = uids.iter().map(|uid| {
+            let (uid, self_) = (*uid, &self);
+            async move {
+                self_
+                    .get_ethflow_data_from_db(&uid)
+                    .await
+                    .context(format!("uid {uid:?}"))
+            }
+        });
+        let encoded_ethflow_orders: Vec<EncodedEthflowOrder> = stream::iter(futures)
+            .buffer_unordered(10)
+            .filter_map(|result| async {
+                match result {
+                    Ok(order) => Some(order.encode()),
+                    Err(err) => {
+                        tracing::error!(?err, "failed to get data from db");
+                        None
+                    }
+                }
+            })
+            .collect()
+            .await;
+
+        self.submitter.submit(uids, encoded_ethflow_orders).await?;
+        Ok(())
     }
 }

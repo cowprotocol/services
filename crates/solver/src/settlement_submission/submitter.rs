@@ -29,7 +29,10 @@ use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Acco
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::ethrpc::{Web3, Web3Transport};
+use shared::{
+    ethrpc::{Web3, Web3Transport},
+    submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
+};
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -39,23 +42,6 @@ use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
-
-/// Error messages which suggest that the node is already aware of the submitted tx thus prompting
-/// us to increase the replacement gas price.
-pub const TX_ALREADY_KNOWN: &[&str] = &[
-    "Transaction gas price supplied is too low", //openethereum
-    "already known",                             //infura, erigon, eden
-    "INTERNAL_ERROR: existing tx with same hash", //erigon
-    "replacement transaction underpriced",       //eden
-];
-
-/// Error messages suggesting that the transaction we tried to submit has already been mined
-/// because its nonce is suddenly too low.
-pub const TX_ALREADY_MINED: &[&str] = &[
-    "Transaction nonce is too low", //openethereum
-    "nonce too low",                //infura, erigon
-    "OldNonce",                     //erigon
-];
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
