@@ -128,6 +128,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(auction_id, 1);
+
+        // reusing auction-id fails
+        let result = upsert_auction_transaction(&mut db, 1, &Default::default(), 1).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
