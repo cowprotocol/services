@@ -8,16 +8,15 @@ use database::{
     orders::read_order as read_db_order,
     OrderUid,
 };
-use ethcontract::Account;
+use ethcontract::{Account, H160};
 use futures::{stream, StreamExt};
-use primitive_types::H160;
 use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
 use sqlx::PgPool;
 
 use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
 use crate::submitter::Submitter;
 
-const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
+pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
 const MAX_NUMBER_OF_UIDS_PER_REFUND_TX: usize = 30;
 
 pub struct RefundService {

@@ -4,15 +4,15 @@ use number_conversions::big_decimal_to_u256;
 // Data structure reflecting the contract ethflow order
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/libraries/EthFlowOrder.sol#L19
 pub struct EthflowOrder {
-    buy_token: H160,
-    receiver: H160,
-    sell_amount: U256,
-    buy_amount: U256,
-    app_data: Bytes<[u8; 32]>,
-    fee_amount: U256,
-    valid_to: u32,
-    partially_fillable: bool,
-    quote_id: i64,
+    pub buy_token: H160,
+    pub receiver: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub app_data: Bytes<[u8; 32]>,
+    pub fee_amount: U256,
+    pub valid_to: u32,
+    pub partially_fillable: bool,
+    pub quote_id: i64,
 }
 
 impl EthflowOrder {

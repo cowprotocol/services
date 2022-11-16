@@ -139,6 +139,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_receiver(mut self, receiver: Option<H160>) -> Self {
+        self.0.data.receiver = receiver;
+        self
+    }
+
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
         self.0.data.fee_amount = fee_amount;
         self
