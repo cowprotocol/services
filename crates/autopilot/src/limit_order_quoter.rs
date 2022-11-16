@@ -1,4 +1,4 @@
-use crate::database::Postgres;
+use crate::database::{Postgres, orders::FeeUpdate};
 use anyhow::Result;
 use chrono::Duration;
 use futures::future::join_all;
@@ -94,7 +94,13 @@ impl LimitOrderQuoter {
                         Ok(quote) => {
                             if let Err(err) = self
                                 .database
-                                .update_surplus_fee(&order.metadata.uid, quote.fee_amount)
+                                .update_limit_order_fees(
+                                    &order.metadata.uid,
+                                    &FeeUpdate {
+                                        surplus_fee: quote.fee_amount,
+                                        full_fee_amount: quote.full_fee_amount,
+                                    },
+                                )
                                 .await
                             {
                                 tracing::error!(

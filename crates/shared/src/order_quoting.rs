@@ -181,6 +181,10 @@ pub struct Quote {
     /// The final minimum subsidized fee amount for any order created for this
     /// quote. The fee is denoted in the sell token.
     pub fee_amount: U256,
+    /// The actual fee amount that is esimated to be require in order to settle
+    /// the order on chain. This is the fee in full without any subsidies. The
+    /// fee is denoted in the sell token.
+    pub full_fee_amount: U256,
 }
 
 impl Quote {
@@ -191,6 +195,7 @@ impl Quote {
             sell_amount: data.quoted_sell_amount,
             buy_amount: data.quoted_buy_amount,
             fee_amount: data.fee_parameters.unsubsidized(),
+            full_fee_amount: data.fee_parameters.unsubsidized(),
             data,
         }
     }
@@ -201,19 +206,20 @@ impl Quote {
         subsidy: &Subsidy,
         scheme: &QuoteSigningScheme,
     ) -> Self {
-        let verification_fee = match scheme {
-            QuoteSigningScheme::Eip1271 {
-                verification_gas_limit,
-                ..
-            } => *verification_gas_limit,
-            _ => 0u64,
-        };
+        let additional_cost = scheme.additional_gas_amount();
 
-        // THIS CANNOT MODIFY `quote.data`.
+        // Be careful not to modify `self.data` as this represents the actual
+        // quote data that is stored in the database. Instead, update the
+        // computed fee fields.
         self.fee_amount = self
             .data
             .fee_parameters
-            .subsidized_with_additional_cost(subsidy, verification_fee);
+            .subsidized_with_additional_cost(subsidy, additional_cost);
+        self.full_fee_amount = self
+            .data
+            .fee_parameters
+            .unsubsidized_with_additional_cost(additional_cost);
+
         self
     }
 
@@ -822,6 +828,7 @@ mod tests {
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
                 fee_amount: 30.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }
@@ -941,6 +948,7 @@ mod tests {
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 15.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1061,6 +1069,7 @@ mod tests {
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 9.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1275,6 +1284,7 @@ mod tests {
                 // example `from` is specified as a random address) can still
                 // create orders with fees that aren't fully subsidized.
                 fee_amount: 8.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1347,6 +1357,7 @@ mod tests {
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 30.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1424,6 +1435,7 @@ mod tests {
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 30.into(),
+                full_fee_amount: 30.into(),
             }
         );
     }

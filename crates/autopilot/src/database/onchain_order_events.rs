@@ -1206,6 +1206,7 @@ mod test {
             sell_amount,
             buy_amount,
             fee_amount,
+            full_fee_amount: 24.into(),
         };
         let cloned_quote = quote.clone();
         order_quoter
