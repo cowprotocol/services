@@ -2,13 +2,19 @@ use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
-    event_updater::GPv2SettlementContract, limit_order_quoter::LimitOrderQuoter,
+    database::onchain_order_events::{
+        ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser,
+    },
+    event_updater::{CoWSwapOnchainOrdersContract, GPv2SettlementContract},
+    limit_order_quoter::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
-use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
+use contracts::{
+    CoWSwapOnchainOrders, ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9,
+};
 use database::quotes::QuoteId;
 use ethcontract::{Bytes, H160, H256, U256};
-use model::quote::QuoteSigningScheme;
+use model::{quote::QuoteSigningScheme, DomainSeparator};
 use orderbook::{database::Postgres, orderbook::Orderbook};
 use reqwest::{Client, StatusCode};
 use shared::{
@@ -191,7 +197,7 @@ impl OrderbookServices {
             .await
             .unwrap();
         database::clear_DANGER(&api_db.pool).await.unwrap();
-        let event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
+        let gpv2_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
             GPv2SettlementContract::new(contracts.gp_settlement.clone()),
             autopilot_db.clone(),
             contracts.gp_settlement.clone().raw_instance().web3(),
@@ -286,6 +292,24 @@ impl OrderbookServices {
             )
             .with_limit_orders(enable_limit_orders),
         );
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let chain_id = web3.eth().chain_id().await.unwrap();
+        let onchain_order_event_parser = OnchainOrderParser::new(
+            autopilot_db.clone(),
+            quoter.clone(),
+            Box::new(custom_ethflow_order_parser),
+            DomainSeparator::new(chain_id.as_u64(), contracts.gp_settlement.address()),
+            contracts.gp_settlement.address(),
+            HashSet::new(),
+        );
+        let cow_onchain_order_contract =
+            CoWSwapOnchainOrders::at(web3, contracts.ethflow.address());
+        let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
+            CoWSwapOnchainOrdersContract::new(cow_onchain_order_contract),
+            onchain_order_event_parser,
+            contracts.ethflow.clone().raw_instance().web3(),
+            None,
+        ));
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),
@@ -293,7 +317,11 @@ impl OrderbookServices {
             order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
+            maintainers: vec![
+                Arc::new(autopilot_db.clone()),
+                ethflow_event_updater,
+                gpv2_event_updater,
+            ],
         };
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(
