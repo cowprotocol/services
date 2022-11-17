@@ -29,7 +29,9 @@ secp256k1 = { workspace = true }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
+refunder = { path = "../refunder" }
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
 async-trait = { workspace = true }
+sqlx = { workspace = true }

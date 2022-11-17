@@ -80,8 +80,11 @@ SELECT eo.uid, eo.valid_to, eo.is_refunded from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
 INNER JOIN order_quotes oq on o.uid = oq.order_uid
 LEFT JOIN trades t on o.uid = t.order_uid
+LEFT JOIN onchain_order_invalidations o_inv on o.uid = o_inv.uid
 WHERE 
 eo.is_refunded = false
+AND o_inv.uid is null
+AND o.partially_fillable = false
 AND t.order_uid is null
 AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
@@ -101,6 +104,7 @@ mod tests {
     use crate::{
         byte_array::ByteArray,
         events::{insert_trade, EventIndex, Trade},
+        onchain_invalidations::insert_onchain_invalidation,
         orders::{insert_order, insert_quote, Order, Quote},
     };
 
@@ -212,32 +216,50 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order_uid_1 = ByteArray([1u8; 56]);
-        let eth_order_1 = EthOrderPlacement {
-            uid: order_uid_1,
-            valid_to: 4,
-            is_refunded: false,
-        };
-        insert_ethflow_order(&mut db, &eth_order_1).await.unwrap();
-        let order_1 = Order {
-            uid: order_uid_1,
-            buy_amount: BigDecimal::from(1),
-            sell_amount: BigDecimal::from(100u32),
-            creation_timestamp: Utc.timestamp(1, 0),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order_1).await.unwrap();
-        let quote_1 = Quote {
-            order_uid: order_uid_1,
-            buy_amount: BigDecimal::from(2),
-            sell_amount: BigDecimal::from(100u32),
-            ..Default::default()
-        };
-        insert_quote(&mut db, &quote_1).await.unwrap();
+        struct EthflowOrderParts {
+            eth_order: EthOrderPlacement,
+            order: Order,
+            quote: Quote,
+        }
 
+        fn create_standard_ethflow_order_parts(order_uid: ByteArray<56>) -> EthflowOrderParts {
+            let eth_order = EthOrderPlacement {
+                uid: order_uid,
+                valid_to: 4,
+                is_refunded: false,
+            };
+            let order = Order {
+                uid: order_uid,
+                buy_amount: BigDecimal::from(1),
+                sell_amount: BigDecimal::from(100u32),
+                creation_timestamp: Utc.timestamp(1, 0),
+                ..Default::default()
+            };
+            let quote = Quote {
+                order_uid,
+                buy_amount: BigDecimal::from(2),
+                sell_amount: BigDecimal::from(100u32),
+                ..Default::default()
+            };
+            EthflowOrderParts {
+                eth_order,
+                order,
+                quote,
+            }
+        }
+        async fn insert_order_parts_in_db(db: &mut PgConnection, order_parts: &EthflowOrderParts) {
+            insert_order(db, &order_parts.order).await.unwrap();
+            insert_ethflow_order(db, &order_parts.eth_order)
+                .await
+                .unwrap();
+            insert_quote(db, &order_parts.quote).await.unwrap();
+        }
+        let order_uid_1 = ByteArray([1u8; 56]);
+        let order_parts = create_standard_ethflow_order_parts(order_uid_1);
+        insert_order_parts_in_db(&mut db, &order_parts).await;
         // all criteria are fulfilled
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
-        assert_eq!(orders, vec![eth_order_1.clone()]);
+        assert_eq!(orders, vec![order_parts.eth_order.clone()]);
         // slippage is not fulfilled
         let orders = refundable_orders(&mut db, 5, 1, 0.53).await.unwrap();
         assert_eq!(orders, Vec::new());
@@ -258,54 +280,47 @@ mod tests {
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
         assert_eq!(orders, Vec::new());
         let order_uid_2 = ByteArray([2u8; 56]);
-        let eth_order_2 = EthOrderPlacement {
-            uid: order_uid_2,
-            valid_to: 4,
-            is_refunded: true, // <-- sole change in setup
-        };
-        insert_ethflow_order(&mut db, &eth_order_2).await.unwrap();
-        let order_2 = Order {
-            uid: order_uid_2,
-            buy_amount: BigDecimal::from(1),
-            sell_amount: BigDecimal::from(100u32),
-            creation_timestamp: Utc.timestamp(1, 0),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order_2).await.unwrap();
-        let quote_2 = Quote {
-            order_uid: order_uid_2,
-            buy_amount: BigDecimal::from(2),
-            sell_amount: BigDecimal::from(100u32),
-            ..Default::default()
-        };
-        insert_quote(&mut db, &quote_2).await.unwrap();
+        let mut order_parts = create_standard_ethflow_order_parts(order_uid_2);
+        order_parts.eth_order.is_refunded = true;
+        insert_order_parts_in_db(&mut db, &order_parts).await;
         // is_refunded is not fulfilled
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
         assert_eq!(orders, Vec::new());
+
         let order_uid_3 = ByteArray([3u8; 56]);
-        let eth_order_3 = EthOrderPlacement {
-            uid: order_uid_3,
-            valid_to: 4,
-            is_refunded: false,
-        };
-        insert_ethflow_order(&mut db, &eth_order_3).await.unwrap();
-        let order_3 = Order {
-            uid: order_uid_3,
-            buy_amount: BigDecimal::from(1),
-            sell_amount: BigDecimal::from(99u32), // Single change here
-            creation_timestamp: Utc.timestamp(1, 0),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order_3).await.unwrap();
-        let quote_3 = Quote {
-            order_uid: order_uid_3,
-            buy_amount: BigDecimal::from(2),
-            sell_amount: BigDecimal::from(100u32),
-            ..Default::default()
-        };
-        insert_quote(&mut db, &quote_3).await.unwrap();
+        let mut order_parts = create_standard_ethflow_order_parts(order_uid_3);
+        order_parts.order.sell_amount = BigDecimal::from(99u32);
+        insert_order_parts_in_db(&mut db, &order_parts).await;
         // sell_amount is not fulfilled
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
+        assert_eq!(orders, Vec::new());
+
+        let order_uid_4 = ByteArray([4u8; 56]);
+        let mut order_parts = create_standard_ethflow_order_parts(order_uid_4);
+        order_parts.order.partially_fillable = true;
+        insert_order_parts_in_db(&mut db, &order_parts).await;
+        // no refundable orders as order is partially fillable
+        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        assert_eq!(orders, Vec::new());
+
+        let order_uid_5 = ByteArray([5u8; 56]);
+        let order_parts = create_standard_ethflow_order_parts(order_uid_5);
+        insert_order_parts_in_db(&mut db, &order_parts).await;
+        // the newly created order should be found
+        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        assert_eq!(orders, vec![order_parts.eth_order]);
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                log_index: 1,
+            },
+            &order_uid_5,
+        )
+        .await
+        .unwrap();
+        let orders = refundable_orders(&mut db, 5, 1, 0.001).await.unwrap();
+        // but after invaldiation event, it should not longer be found
         assert_eq!(orders, Vec::new());
     }
 

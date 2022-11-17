@@ -613,17 +613,29 @@ pub async fn count_limit_orders(
         .await
 }
 
-pub async fn update_surplus_fee(
+pub struct FeeUpdate {
+    pub surplus_fee: BigDecimal,
+    pub surplus_fee_timestamp: DateTime<Utc>,
+    pub full_fee_amount: BigDecimal,
+}
+
+pub async fn update_limit_order_fees(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
-    surplus_fee: &BigDecimal,
-    surplus_fee_timestamp: DateTime<Utc>,
+    update: &FeeUpdate,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str =
-        "UPDATE orders SET surplus_fee = $1, surplus_fee_timestamp = $2 WHERE uid = $3";
+    const QUERY: &str = "
+        UPDATE orders
+        SET
+            surplus_fee = $1,
+            surplus_fee_timestamp = $2,
+            full_fee_amount = $3
+        WHERE uid = $4
+    ";
     sqlx::query(QUERY)
-        .bind(surplus_fee)
-        .bind(surplus_fee_timestamp)
+        .bind(&update.surplus_fee)
+        .bind(update.surplus_fee_timestamp)
+        .bind(&update.full_fee_amount)
         .bind(order_uid)
         .execute(ex)
         .await?;
@@ -1445,7 +1457,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_update_surplus_fee() {
+    async fn postgres_update_limit_order_fees() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -1461,15 +1473,25 @@ mod tests {
         .await
         .unwrap();
 
-        let fee = 42.into();
-        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
-        update_surplus_fee(&mut db, &order_uid, &fee, timestamp)
+        let update = FeeUpdate {
+            surplus_fee: 42.into(),
+            surplus_fee_timestamp: DateTime::from_utc(
+                NaiveDateTime::from_timestamp(1234567890, 0),
+                Utc,
+            ),
+            full_fee_amount: 1337.into(),
+        };
+        update_limit_order_fees(&mut db, &order_uid, &update)
             .await
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, Some(fee));
-        assert_eq!(order.surplus_fee_timestamp, Some(timestamp));
+        assert_eq!(order.surplus_fee, Some(update.surplus_fee));
+        assert_eq!(
+            order.surplus_fee_timestamp,
+            Some(update.surplus_fee_timestamp)
+        );
+        assert_eq!(order.full_fee_amount, update.full_fee_amount);
     }
 
     #[tokio::test]

@@ -251,7 +251,6 @@ async fn smart_contract_orders(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -281,7 +280,6 @@ async fn smart_contract_orders(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

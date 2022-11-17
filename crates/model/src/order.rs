@@ -94,6 +94,13 @@ impl Order {
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
+
+    pub fn is_user_order(&self) -> bool {
+        match self.metadata.class {
+            OrderClass::Market | OrderClass::Limit => true,
+            OrderClass::Liquidity => false,
+        }
+    }
 }
 
 /// Remaining order buy, sell and fee amounts.
@@ -136,6 +143,11 @@ impl OrderBuilder {
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
         self.0.data.app_data = AppId(app_data);
+        self
+    }
+
+    pub fn with_receiver(mut self, receiver: Option<H160>) -> Self {
+        self.0.data.receiver = receiver;
         self
     }
 

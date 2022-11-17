@@ -9,7 +9,6 @@ use crate::{
     metrics::SolverMetrics,
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_simulation,
@@ -23,6 +22,7 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
+    order::OrderUid,
     solver_competition::{
         self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
@@ -35,7 +35,6 @@ use shared::{
     http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
-    token_list::AutoUpdatingTokenList,
 };
 use std::{
     sync::Arc,
@@ -58,7 +57,6 @@ pub struct Driver {
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    post_processing_pipeline: PostProcessingPipeline,
     fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
@@ -78,12 +76,10 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: AutoUpdatingTokenList,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
-        weth_unwrap_factor: f64,
         simulation_gas_limit: u128,
         fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
@@ -91,14 +87,6 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
     ) -> Self {
-        let post_processing_pipeline = PostProcessingPipeline::new(
-            native_token,
-            web3.clone(),
-            weth_unwrap_factor,
-            settlement_contract.clone(),
-            market_makable_token_list,
-        );
-
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
@@ -137,7 +125,6 @@ impl Driver {
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            post_processing_pipeline,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
             settlement_ranker,
@@ -359,24 +346,8 @@ impl Driver {
                 })
                 .collect(),
         };
-        let mut solver_competition = model::solver_competition::Request {
-            auction: auction_id,
-            transaction_hash: None,
-            transaction: None,
-            competition: solver_competition,
-            rewards: Vec::new(),
-        };
 
-        if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
-            winning_settlement.settlement = self
-                .post_processing_pipeline
-                .optimize_settlement(
-                    winning_settlement.settlement,
-                    winning_solver.account().clone(),
-                    gas_price,
-                )
-                .await;
-
+        if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
                 winning_settlement.id,
@@ -384,13 +355,17 @@ impl Driver {
                 winning_settlement
             );
 
-            for trade in winning_settlement.settlement.user_trades() {
-                let uid = &trade.order.metadata.uid;
-                let reward = rewards.get(uid).copied().unwrap_or(0.);
-                // Log in case something goes wrong with storing the rewards in the database.
-                tracing::debug!(%uid, %reward, "winning solution reward");
-                solver_competition.rewards.push((*uid, reward));
-            }
+            let rewards: Vec<(OrderUid, f64)> = winning_settlement
+                .settlement
+                .user_trades()
+                .map(|trade| {
+                    let uid = &trade.order.metadata.uid;
+                    let reward = rewards.get(uid).copied().unwrap_or(0.);
+                    // Log in case something goes wrong with storing the rewards in the database.
+                    tracing::debug!(%uid, %reward, "winning solution reward");
+                    (*uid, reward)
+                })
+                .collect();
 
             let account = winning_solver.account();
             let address = account.address();
@@ -400,13 +375,21 @@ impl Driver {
                 .transaction_count(address, None)
                 .await
                 .context("transaction_count")?;
-            solver_competition.transaction = Some(model::solver_competition::Transaction {
+            let transaction = model::solver_competition::Transaction {
                 account: address,
                 nonce: nonce
                     .try_into()
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
-            });
+            };
+            tracing::debug!(?transaction, "winning solution transaction");
+
+            let solver_competition = model::solver_competition::Request {
+                auction: auction_id,
+                transaction,
+                competition: solver_competition,
+                rewards,
+            };
             // This has to succeed in order to continue settling. Otherwise we can't be sure the
             // competition info has been stored.
             self.send_solver_competition(&solver_competition).await?;
@@ -435,20 +418,6 @@ impl Driver {
             };
             if let Some(hash) = hash {
                 tracing::debug!(?hash, "settled transaction");
-
-                // This step is no longer needed now that we use account and nonce to find the hash.
-                // Temporarily we continue to store the hash until the reward payout script is
-                // updated to get the hash the new way.
-
-                // Rewards were already stored and don't change.
-                solver_competition.rewards.clear();
-                solver_competition.transaction_hash = Some(hash);
-                // Same for account-nonce
-                solver_competition.transaction.take();
-
-                if let Err(err) = self.send_solver_competition(&solver_competition).await {
-                    tracing::error!(?err, "failed to send tx hash for competition");
-                };
             }
 
             self.logger.report_on_batch(
