@@ -22,10 +22,12 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+    settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         submitter::{public_mempool_api::PublicMempoolApi, Strategy},
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
+    solver::optimizing_solver::OptimizingSolver,
 };
 use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -183,7 +185,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
-    let solver = solver::solver::naive_solver(solver_account);
+
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         balancer_v2_liquidity: None,
@@ -199,6 +201,18 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             decimals: 18,
         }
     });
+    let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
+        contracts.weth.address(),
+        web3.clone(),
+        1.,
+        contracts.gp_settlement.clone(),
+        market_makable_token_list,
+    ));
+    let solver = Arc::new(OptimizingSolver {
+        inner: solver::solver::naive_solver(solver_account),
+        post_processing_pipeline,
+    });
+
     let submitted_transactions = GlobalTxPool::default();
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
@@ -212,7 +226,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        market_makable_token_list,
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -242,7 +255,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

@@ -39,6 +39,19 @@ impl SettlementSimulating for SettlementSimulator {
     }
 }
 
+#[async_trait::async_trait]
+#[mockall::automock]
+pub trait PostProcessing: Send + Sync + 'static {
+    /// Tries to apply optimizations to a given settlement. If all optimizations fail the original
+    /// settlement gets returned.
+    async fn optimize_settlement(
+        &self,
+        settlement: Settlement,
+        solver_account: Account,
+        gas_price: GasPrice1559,
+    ) -> Settlement;
+}
+
 pub struct PostProcessingPipeline {
     settlement_contract: GPv2Settlement,
     unwrap_factor: f64,
@@ -66,8 +79,11 @@ impl PostProcessingPipeline {
             market_makable_token_list,
         }
     }
+}
 
-    pub async fn optimize_settlement(
+#[async_trait::async_trait]
+impl PostProcessing for PostProcessingPipeline {
+    async fn optimize_settlement(
         &self,
         settlement: Settlement,
         solver_account: Account,

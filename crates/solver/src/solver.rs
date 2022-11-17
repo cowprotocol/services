@@ -3,6 +3,7 @@ use self::{
     http_solver::{buffers::BufferRetriever, HttpSolver},
     naive_solver::NaiveSolver,
     oneinch_solver::OneInchSolver,
+    optimizing_solver::OptimizingSolver,
     paraswap_solver::ParaswapSolver,
     single_order_solver::{SingleOrderSolver, SingleOrderSolving},
     zeroex_solver::ZeroExSolver,
@@ -16,6 +17,7 @@ use crate::{
     },
     metrics::SolverMetrics,
     settlement::{external_prices::ExternalPrices, Settlement},
+    settlement_post_processing::PostProcessing,
     solver::balancer_sor_solver::BalancerSorSolver,
 };
 use anyhow::{anyhow, Context, Result};
@@ -51,6 +53,7 @@ mod baseline_solver;
 pub mod http_solver;
 mod naive_solver;
 mod oneinch_solver;
+pub mod optimizing_solver;
 mod paraswap_solver;
 pub mod single_order_solver;
 pub mod uni_v3_router_solver;
@@ -278,6 +281,7 @@ pub fn create(
     slippage_configuration: &slippage::Arguments,
     market_makable_token_list: AutoUpdatingTokenList,
     order_prioritization_config: &single_order_solver::Arguments,
+    post_processing_pipeline: Arc<dyn PostProcessing>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -355,13 +359,13 @@ pub fn create(
             );
 
             let solver = match solver_type {
-                SolverType::Naive => Ok(shared(NaiveSolver::new(account, slippage_calculator))),
-                SolverType::Baseline => Ok(shared(BaselineSolver::new(
+                SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),
+                SolverType::Baseline => shared(BaselineSolver::new(
                     account,
                     base_tokens.clone(),
                     slippage_calculator,
-                ))),
-                SolverType::Mip => Ok(shared(create_http_solver(
+                )),
+                SolverType::Mip => shared(create_http_solver(
                     account,
                     mip_solver_url.clone(),
                     "Mip".to_string(),
@@ -371,16 +375,16 @@ pub fn create(
                     },
                     true,
                     slippage_calculator,
-                ))),
-                SolverType::CowDexAg => Ok(shared(create_http_solver(
+                )),
+                SolverType::CowDexAg => shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
                     "CowDexAg".to_string(),
                     SolverConfig::default(),
                     false,
                     slippage_calculator,
-                ))),
-                SolverType::Quasimodo => Ok(shared(create_http_solver(
+                )),
+                SolverType::Quasimodo => shared(create_http_solver(
                     account,
                     quasimodo_solver_url.clone(),
                     "Quasimodo".to_string(),
@@ -390,8 +394,8 @@ pub fn create(
                     },
                     true,
                     slippage_calculator,
-                ))),
-                SolverType::OneInch => Ok(shared(single_order(Box::new(
+                )),
+                SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
                         account,
                         web3.clone(),
@@ -402,8 +406,9 @@ pub fn create(
                         one_inch_url.clone(),
                         slippage_calculator,
                         one_inch_referrer_address,
-                    )?,
-                )))),
+                    )
+                    .unwrap(),
+                ))),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,
@@ -415,9 +420,9 @@ pub fn create(
                         slippage_calculator,
                     )
                     .unwrap();
-                    Ok(shared(single_order(Box::new(zeroex_solver))))
+                    shared(single_order(Box::new(zeroex_solver)))
                 }
-                SolverType::Paraswap => Ok(shared(single_order(Box::new(ParaswapSolver::new(
+                SolverType::Paraswap => shared(single_order(Box::new(ParaswapSolver::new(
                     account,
                     web3.clone(),
                     settlement_contract.clone(),
@@ -427,27 +432,31 @@ pub fn create(
                     paraswap_partner.clone(),
                     None,
                     slippage_calculator,
-                ))))),
-                SolverType::BalancerSor => {
-                    Ok(shared(single_order(Box::new(BalancerSorSolver::new(
-                        account,
-                        vault_contract
-                            .context("missing Balancer Vault deployment for SOR solver")?
-                            .clone(),
-                        settlement_contract.clone(),
-                        Arc::new(DefaultBalancerSorApi::new(
+                )))),
+                SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(
+                    account,
+                    vault_contract
+                        .expect("missing Balancer Vault deployment for SOR solver")
+                        .clone(),
+                    settlement_contract.clone(),
+                    Arc::new(
+                        DefaultBalancerSorApi::new(
                             http_factory.create(),
                             balancer_sor_url.clone(),
                             chain_id,
-                        )?),
-                        allowance_mananger.clone(),
-                        slippage_calculator,
-                    )))))
-                }
+                        )
+                        .unwrap(),
+                    ),
+                    allowance_mananger.clone(),
+                    slippage_calculator,
+                )))),
             };
-            solver
+            shared(OptimizingSolver {
+                inner: solver,
+                post_processing_pipeline: post_processing_pipeline.clone(),
+            })
         })
-        .collect::<Result<_>>()?;
+        .collect();
 
     let external_solvers = external_solvers.into_iter().map(|solver| {
         shared(create_http_solver(
