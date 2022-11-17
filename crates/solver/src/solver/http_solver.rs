@@ -654,14 +654,7 @@ mod tests {
         let execution = &uniswap.execution[0];
         assert!(execution.exec_buy_amount.gt(&U256::zero()));
         assert_eq!(execution.exec_sell_amount, U256::from(base(2)));
-        assert!(execution.exec_plan.is_some());
-        assert!(matches!(
-            execution.exec_plan.as_ref().unwrap(),
-            ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 0,
-            }),
-        ));
+        assert_eq!(execution.exec_plan, ExecutionPlan::default());
 
         assert_eq!(settled.prices.len(), 2);
     }
@@ -800,8 +793,11 @@ mod tests {
                       "exec_sell_amount": "56532986820633012234",
                       "exec_buy_amount": "590320000000000032",
                       "exec_plan": {
-                        "sequence": 0,
-                        "position": 0
+                        "coordinates": {
+                            "sequence": 0,
+                            "position": 0
+                        },
+                        "internal": false
                       }
                     }
                   ]

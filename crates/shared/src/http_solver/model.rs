@@ -370,24 +370,10 @@ mod tests {
         }
         .is_non_trivial());
 
-        let trivial_execution_without_plan = ExecutedAmmModel {
-            exec_plan: None,
-            ..Default::default()
-        };
-
-        let trivial_execution_with_plan = ExecutedAmmModel {
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 0,
-            })),
-            ..Default::default()
-        };
+        let trivial_execution = ExecutedAmmModel::default();
 
         assert!(!UpdatedAmmModel {
-            execution: vec![
-                trivial_execution_with_plan.clone(),
-                trivial_execution_without_plan
-            ],
+            execution: vec![trivial_execution.clone()],
             cost: Default::default(),
         }
         .is_non_trivial());
@@ -416,7 +402,7 @@ mod tests {
 
         assert!(UpdatedAmmModel {
             // One trivial and one non-trivial -> non-trivial
-            execution: vec![execution_with_buy, trivial_execution_with_plan],
+            execution: vec![trivial_execution, execution_with_buy],
             cost: Default::default(),
         }
         .is_non_trivial());
@@ -768,21 +754,27 @@ mod tests {
 
     #[test]
     fn decode_execution_plan() {
-        for (json, expected) in [
-            (r#""internal""#, ExecutionPlan::Internal),
-            (
-                r#"{ "sequence": 42, "position": 1337 }"#,
-                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+        assert_eq!(
+            serde_json::from_str::<ExecutionPlan>(
+                r#"
+                    {
+                        "coordinates": {
+                            "sequence": 42,
+                            "position": 1337
+                        },
+                        "internal": true
+                    }
+                "#,
+            )
+            .unwrap(),
+            ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 42,
-                    position: 1337,
-                }),
-            ),
-        ] {
-            assert_eq!(
-                serde_json::from_str::<ExecutionPlan>(json).unwrap(),
-                expected,
-            );
-        }
+                    position: 1337
+                },
+                internal: true
+            }
+        );
     }
 
     #[test]
@@ -810,7 +802,13 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": "internal",
+                        "exec_plan": {
+                            "coordinates": {
+                                "sequence": 42,
+                                "position": 1337
+                            },
+                            "internal": true
+                        },
                         "cost": {
                             "amount": "1",
                             "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -837,7 +835,13 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 42,
+                        position: 1337
+                    },
+                    internal: true,
+                },
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")

@@ -585,13 +585,13 @@ mod tests {
                             buy_token: H160::from_low_u64_be(1),
                             exec_sell_amount: 100.into(),
                             exec_buy_amount: 100.into(),
-                            exec_plan: None
+                            exec_plan: Default::default(),
                         },ExecutedAmmModel {
                             sell_token: H160::from_low_u64_be(1),
                             buy_token: H160::from_low_u64_be(0),
                             exec_sell_amount: 100.into(),
                             exec_buy_amount: 100.into(),
-                            exec_plan: None
+                            exec_plan: Default::default(),
                         }],
                         cost: Some(TokenAmount {
                             amount: 200_000.into(),
@@ -606,7 +606,7 @@ mod tests {
                     call_data: vec![],
                     inputs: vec![],
                     outputs: vec![],
-                    exec_plan: None,
+                    exec_plan: Default::default(),
                     cost: Some(TokenAmount {
                         amount: 300_000.into(),
                         token: native_token,

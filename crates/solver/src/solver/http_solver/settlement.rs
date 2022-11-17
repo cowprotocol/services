@@ -59,7 +59,8 @@ impl Execution {
     }
 
     fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
-        self.execution_plan().map(|exec_plan| exec_plan.coordinates.clone())
+        self.execution_plan()
+            .map(|exec_plan| exec_plan.coordinates.clone())
     }
 
     fn add_to_settlement(
@@ -499,10 +500,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(9),
                 exec_buy_amount: U256::from(8),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
-                })),
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 0,
+                        position: 0,
+                    },
+                    internal: false,
+                },
             }],
             cost: Default::default(),
         };
@@ -512,7 +516,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(1),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 1,
+                        position: 0,
+                    },
+                    internal: true,
+                },
             }],
             cost: Default::default(),
         };
@@ -522,10 +532,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(2),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 1,
-                    position: 0,
-                })),
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 2,
+                        position: 0,
+                    },
+                    internal: false,
+                },
             }],
             cost: Default::default(),
         };
@@ -535,10 +548,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(6),
                 exec_buy_amount: U256::from(4),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 2,
-                    position: 0,
-                })),
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 3,
+                        position: 0,
+                    },
+                    internal: false,
+                },
             }],
             cost: Default::default(),
         };
@@ -784,8 +800,11 @@ mod tests {
                             "exec_sell_amount": "932415220613609833982",
                             "exec_buy_amount": "354009510372389956",
                             "exec_plan": {
-                                "sequence": 0,
-                                "position": 1
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 1
+                                },
+                                "internal": false
                             }
                         }
                     ]
@@ -798,8 +817,11 @@ mod tests {
                             "exec_sell_amount": "1",
                             "exec_buy_amount": "2",
                             "exec_plan": {
-                                "sequence": 0,
-                                "position": 2
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 2
+                                },
+                                "internal": false
                             }
                         }
                     ]
@@ -828,8 +850,11 @@ mod tests {
                             "exec_sell_amount": "354009510372384890",
                             "exec_buy_amount": "996570293625184642",
                             "exec_plan": {
-                                "sequence": 0,
-                                "position": 0
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 0
+                                },
+                                "internal": false
                             }
                         }
                     ]
@@ -852,8 +877,11 @@ mod tests {
                             "exec_sell_amount": "3",
                             "exec_buy_amount": "4",
                             "exec_plan": {
-                                "sequence": 0,
-                                "position": 3
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 3
+                                },
+                                "internal": false
                             }
                         }
                     ]
@@ -893,37 +921,49 @@ mod tests {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 0u32,
-                    })),
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0u32,
+                            position: 0u32,
+                        },
+                        internal: false,
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 1u32,
-                    })),
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0u32,
+                            position: 1u32,
+                        },
+                        internal: false,
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 2u32,
-                    })),
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0u32,
+                            position: 2u32,
+                        },
+                        internal: false,
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 3u32,
-                    })),
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0u32,
+                            position: 3u32,
+                        },
+                        internal: false,
+                    }
                 })),
             ],
         );
@@ -945,10 +985,13 @@ mod tests {
             order: Liquidity::ConstantProduct(cpo_1),
             input: (token_a, U256::from(2_u8)),
             output: (token_b, U256::from(1_u8)),
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 2u32,
-            })),
+            exec_plan: ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 2u32,
+                },
+                internal: false,
+            },
         }];
         let interactions = vec![InteractionData {
             target: H160::zero(),
@@ -956,10 +999,13 @@ mod tests {
             call_data: Vec::new(),
             inputs: vec![],
             outputs: vec![],
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 1u32,
-            })),
+            exec_plan: ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 1u32,
+                },
+                internal: false,
+            },
             cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
