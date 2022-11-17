@@ -293,6 +293,21 @@ pub enum ExecutionPlan {
     /// internal buffers will be used instead.
     #[serde(with = "execution_plan_internal")]
     Internal,
+
+    /// Execution plan containing both coordinates and internalization flag.
+    /// Intoduced to allow solvers to have some time to adapt to the breaking change.
+    CoordinatesWithInternal(CoordinatesWithInternal),
+}
+
+impl ExecutionPlan {
+    /// TODO: remove function when ExecutionPlan is refactored to a struct
+    pub fn internalizable(&self) -> bool {
+        match self {
+            ExecutionPlan::Coordinates(_) => false,
+            ExecutionPlan::Internal => true,
+            ExecutionPlan::CoordinatesWithInternal(coords) => coords.internal,
+        }
+    }
 }
 
 /// A module for implementing `serde` (de)serialization for the execution plan
@@ -325,10 +340,16 @@ mod execution_plan_internal {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct CoordinatesWithInternal {
+    pub coordinates: ExecutionPlanCoordinatesModel,
+    pub internal: bool,
 }
 
 /// The result a given solver achieved in the auction
@@ -837,6 +858,16 @@ mod tests {
                     position: 1337,
                 }),
             ),
+            (
+                r#"{ "coordinates": { "sequence": 42, "position": 1337 }, "internal": false }"#,
+                ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 42,
+                        position: 1337,
+                    },
+                    internal: false,
+                }),
+            ),
         ] {
             assert_eq!(
                 serde_json::from_str::<ExecutionPlan>(json).unwrap(),
@@ -870,7 +901,13 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": "internal",
+                        "exec_plan": {
+                            "coordinates": {
+                                "sequence": 0,
+                                "position": 0
+                            },
+                            "internal": true
+                        },
                         "cost": {
                             "amount": "1",
                             "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -897,7 +934,15 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
+                    CoordinatesWithInternal {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 0
+                        },
+                        internal: true
+                    }
+                )),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")

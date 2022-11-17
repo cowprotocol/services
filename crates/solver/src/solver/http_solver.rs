@@ -809,8 +809,11 @@ mod tests {
                       "exec_sell_amount": "56532986820633012234",
                       "exec_buy_amount": "590320000000000032",
                       "exec_plan": {
-                        "sequence": 0,
-                        "position": 0
+                        "coordinates": {
+                            "sequence": 0,
+                            "position": 0
+                        },
+                        "internal": false
                       }
                     }
                   ]
