@@ -94,6 +94,13 @@ impl Order {
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
+
+    pub fn is_user_order(&self) -> bool {
+        match self.metadata.class {
+            OrderClass::Market | OrderClass::Limit => true,
+            OrderClass::Liquidity => false,
+        }
+    }
 }
 
 /// Remaining order buy, sell and fee amounts.
