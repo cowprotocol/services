@@ -108,13 +108,13 @@ impl From<OrderQuoteResponse> for BuyResponse {
 }
 
 fn sell_request() -> impl Filter<Extract = (SellQuery,), Error = Rejection> + Clone {
-    warp::path!("feeAndQuote" / "sell")
+    warp::path!("v1" / "feeAndQuote" / "sell")
         .and(warp::get())
         .and(warp::query::<SellQuery>())
 }
 
 fn buy_request() -> impl Filter<Extract = (BuyQuery,), Error = Rejection> + Clone {
-    warp::path!("feeAndQuote" / "buy")
+    warp::path!("v1" / "feeAndQuote" / "buy")
         .and(warp::get())
         .and(warp::query::<BuyQuery>())
 }
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn sell_query() {
-        let path= "/feeAndQuote/sell?sellToken=0xdac17f958d2ee523a2206206994597c13d831ec7&buyToken=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&sellAmountBeforeFee=1000000";
+        let path= "/v1/feeAndQuote/sell?sellToken=0xdac17f958d2ee523a2206206994597c13d831ec7&buyToken=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&sellAmountBeforeFee=1000000";
         let request = request().path(path).method("GET");
         let result = request
             .filter(&sell_request())
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn buy_query() {
-        let path= "/feeAndQuote/buy?sellToken=0xdac17f958d2ee523a2206206994597c13d831ec7&buyToken=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&buyAmountAfterFee=1000000";
+        let path= "/v1/feeAndQuote/buy?sellToken=0xdac17f958d2ee523a2206206994597c13d831ec7&buyToken=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&buyAmountAfterFee=1000000";
         let request = request().path(path).method("GET");
         let result = request
             .filter(&buy_request())

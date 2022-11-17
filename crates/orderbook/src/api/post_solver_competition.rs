@@ -9,7 +9,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
 fn request() -> impl Filter<Extract = (Option<String>, Request), Error = Rejection> + Clone {
-    warp::path!("solver_competition")
+    warp::path!("v1" / "solver_competition")
         .and(warp::post())
         .and(warp::header::optional::<String>("Authorization"))
         // While this is an authenticated endpoint we still want to protect against very large
@@ -57,7 +57,7 @@ mod tests {
         let body = serde_json::to_vec(&Request::default()).unwrap();
 
         let request = request()
-            .path("/solver_competition")
+            .path("/v1/solver_competition")
             .method("POST")
             .header("authorization", "password")
             .body(body.clone());
@@ -77,7 +77,7 @@ mod tests {
         let body = serde_json::to_vec(&Request::default()).unwrap();
 
         let request_ = request()
-            .path("/solver_competition")
+            .path("/v1/solver_competition")
             .method("POST")
             .header("authorization", "wrong")
             .body(body.clone());
@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         let request_ = request()
-            .path("/solver_competition")
+            .path("/v1/solver_competition")
             .method("POST")
             .header("authorization", "auth")
             .body(body);

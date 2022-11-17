@@ -34,7 +34,7 @@ struct Query {
 }
 
 fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> + Clone {
-    warp::path!("fee")
+    warp::path!("v1" / "fee")
         .and(warp::get())
         .and(warp::query::<Query>())
 }
@@ -84,7 +84,7 @@ mod tests {
         let sell_token = String::from("0x0000000000000000000000000000000000000001");
         let buy_token = String::from("0x0000000000000000000000000000000000000002");
         let path_string = format!(
-            "/fee?sellToken={}&buyToken={}&amount={}&kind=buy",
+            "/v1/fee?sellToken={}&buyToken={}&amount={}&kind=buy",
             sell_token,
             buy_token,
             U256::exp10(18)

@@ -10,7 +10,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
-    warp::path!("quote")
+    warp::path!("v1" / "quote")
         .and(warp::post())
         .and(api::extract_payload())
 }
@@ -221,7 +221,7 @@ mod tests {
         let filter = post_quote_request();
         let request_payload = OrderQuoteRequest::default();
         let request = request()
-            .path("/quote")
+            .path("/v1/quote")
             .method("POST")
             .header("content-type", "application/json")
             .json(&request_payload);
@@ -235,7 +235,7 @@ mod tests {
         let request_payload = OrderQuoteRequest::default();
         // Path is wrong!
         let request = request()
-            .path("/fee_quote")
+            .path("/v1/fee_quote")
             .method("POST")
             .header("content-type", "application/json")
             .json(&request_payload);
