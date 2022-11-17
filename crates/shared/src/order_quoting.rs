@@ -181,7 +181,7 @@ pub struct Quote {
     /// The final minimum subsidized fee amount for any order created for this
     /// quote. The fee is denoted in the sell token.
     pub fee_amount: U256,
-    /// The actual fee amount that is esimated to be require in order to settle
+    /// The actual fee amount that is esimated to be required in order to settle
     /// the order on chain. This is the fee in full without any subsidies. The
     /// fee is denoted in the sell token.
     pub full_fee_amount: U256,
