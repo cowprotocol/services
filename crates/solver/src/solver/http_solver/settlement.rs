@@ -901,49 +901,57 @@ mod tests {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
-                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 0u32,
-                        },
-                        internal: false,
-                    })),
+                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
+                        CoordinatesWithInternal {
+                            coordinates: ExecutionPlanCoordinatesModel {
+                                sequence: 0u32,
+                                position: 0u32,
+                            },
+                            internal: false,
+                        }
+                    )),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
-                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 1u32,
-                        },
-                        internal: false,
-                    })),
+                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
+                        CoordinatesWithInternal {
+                            coordinates: ExecutionPlanCoordinatesModel {
+                                sequence: 0u32,
+                                position: 1u32,
+                            },
+                            internal: false,
+                        }
+                    )),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
-                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 2u32,
-                        },
-                        internal: false,
-                    })),
+                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
+                        CoordinatesWithInternal {
+                            coordinates: ExecutionPlanCoordinatesModel {
+                                sequence: 0u32,
+                                position: 2u32,
+                            },
+                            internal: false,
+                        }
+                    )),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
-                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 3u32,
-                        },
-                        internal: false,
-                    })),
+                    exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
+                        CoordinatesWithInternal {
+                            coordinates: ExecutionPlanCoordinatesModel {
+                                sequence: 0u32,
+                                position: 3u32,
+                            },
+                            internal: false,
+                        }
+                    )),
                 })),
             ],
         );
