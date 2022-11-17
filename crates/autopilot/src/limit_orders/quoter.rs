@@ -14,22 +14,6 @@ use shared::{
 };
 use std::sync::Arc;
 
-#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "limit_order_quoter")]
-struct Metrics {
-    /// Counter for failed limit orders.
-    failed: prometheus::IntCounter,
-}
-
-impl Metrics {
-    fn on_failed(failed: u64) {
-        Self::instance(global_metrics::get_metric_storage_registry())
-            .unwrap()
-            .failed
-            .inc_by(failed);
-    }
-}
-
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
 /// to the fee returned by the quoting process. If quoting fails, the corresponding
 /// order is skipped.
@@ -135,5 +119,21 @@ impl LimitOrderQuoter {
                 },
             )
             .await
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "limit_order_quoter")]
+struct Metrics {
+    /// Counter for failed limit orders.
+    failed: prometheus::IntCounter,
+}
+
+impl Metrics {
+    fn on_failed(failed: u64) {
+        Self::instance(global_metrics::get_metric_storage_registry())
+            .unwrap()
+            .failed
+            .inc_by(failed);
     }
 }
