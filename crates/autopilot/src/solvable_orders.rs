@@ -153,6 +153,7 @@ impl SolvableOrdersCache {
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -257,22 +258,40 @@ impl SolvableOrdersCache {
         prices: &BTreeMap<H160, U256>,
     ) -> Vec<Order> {
         orders.retain(|order| {
-            if let OrderClass::Limit(limit) = &order.metadata.class {
-                // Convert the sell and buy price to the native token (ETH) and make sure that sell
-                // with the surplus fee is higher than buy with the configurable price factor.
-                let sell_native = (order.data.sell_amount + limit.surplus_fee)
-                    * prices.get(&order.data.sell_token).unwrap();
-                let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
-                let sell_native = u256_to_big_decimal(&sell_native);
-                let buy_native = u256_to_big_decimal(&buy_native);
-                if sell_native >= buy_native * self.limit_order_price_factor.clone() {
-                    true
-                } else {
-                    tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
-                    false
+            let surplus_fee = match &order.metadata.class {
+                OrderClass::Limit(limit) => limit.surplus_fee,
+                _ => return true,
+            };
+
+            let sell_price = *prices.get(&order.data.sell_token).unwrap();
+            let buy_price = *prices.get(&order.data.buy_token).unwrap();
+
+            // Convert the sell and buy price to the native token (ETH) and make sure that sell
+            // discounting the surplus fee is higher than buy with the configurable price factor.
+            let (sell_native, buy_native) = match (
+                (order.data.sell_amount - surplus_fee).checked_mul(sell_price),
+                order.data.buy_amount.checked_mul(buy_price),
+            ) {
+                (Some(sell), Some(buy)) => (sell, buy),
+                _ => {
+                    tracing::debug!(
+                        order_uid = %order.metadata.uid,
+                        "limit order overflow computing native amounts; skipping",
+                    );
+                    return false;
                 }
-            } else {
+            };
+
+            let sell_native = u256_to_big_decimal(&sell_native);
+            let buy_native = u256_to_big_decimal(&buy_native);
+            if sell_native >= buy_native * &self.limit_order_price_factor {
                 true
+            } else {
+                tracing::debug!(
+                    order_uid = %order.metadata.uid,
+                    "limit order is outside market price, skipping",
+                );
+                false
             }
         });
         orders
@@ -580,6 +599,23 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
+fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    orders.retain(|order| {
+        let surplus_fee = match &order.metadata.class {
+            OrderClass::Limit(limit) => limit.surplus_fee,
+            _ => return true,
+        };
+
+        match order.data.sell_amount.checked_sub(surplus_fee) {
+            Some(value) if value > U256::zero() => true,
+            // There is not enough sell amount to account for the surplus fee, so exclude
+            // the order unconditionally.
+            _ => false,
+        }
+    });
+    orders
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,7 +623,9 @@ mod tests {
     use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
-    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid};
+    use model::order::{
+        LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid,
+    };
     use primitive_types::H160;
     use shared::{
         bad_token::list_based::ListBasedDetector,
@@ -1077,5 +1115,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
+    }
+
+    #[test]
+    fn filters_limit_orders_with_too_high_fees() {
+        let order = |sell_amount: u8, surplus_fee: u8| Order {
+            data: OrderData {
+                buy_amount: 1u8.into(),
+                sell_amount: sell_amount.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: surplus_fee.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orders = vec![
+            // Enough sell amout for the surplus fee.
+            order(100, 10),
+            // Surplus fee effectively turns order into a 0 sell amount order
+            order(100, 100),
+            // Surplus fee is higher than the sell amount.
+            order(100, 101),
+        ];
+
+        assert_eq!(
+            filter_limit_orders_with_insufficient_sell_amount(orders),
+            [order(100, 10)]
+        );
     }
 }
