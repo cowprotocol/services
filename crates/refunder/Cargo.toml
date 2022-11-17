@@ -12,7 +12,9 @@ clap = { workspace = true }
 contracts  = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
+gas-estimation = { workspace = true }
 futures = {workspace = true}
+number-conversions = { path = "../number-conversions" }
 lazy_static = { workspace = true }
 model = { path = "../model" }
 primitive-types = { workspace = true }

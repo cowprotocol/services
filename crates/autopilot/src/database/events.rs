@@ -99,7 +99,7 @@ pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     }
 }
 
-fn bytes_to_order_uid(bytes: &[u8]) -> Result<OrderUid> {
+pub fn bytes_to_order_uid(bytes: &[u8]) -> Result<OrderUid> {
     bytes
         .try_into()
         .context("order_uid has wrong number of bytes")
