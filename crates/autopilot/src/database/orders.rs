@@ -10,7 +10,7 @@ use model::{
 use number_conversions::u256_to_big_decimal;
 use shared::db_order_conversions::full_order_into_model_order;
 
-/// New fee data to update the order with.
+/// New fee data to update a limit order with.
 pub struct FeeUpdate {
     /// The actual fee amount to charge the order from its surplus.
     pub surplus_fee: U256,
