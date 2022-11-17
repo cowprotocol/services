@@ -9,7 +9,6 @@ use primitive_types::H256;
 impl SolverCompetitionStoring for Postgres {
     async fn handle_request(&self, request: model::solver_competition::Request) -> Result<()> {
         let json = &serde_json::to_value(&request.competition)?;
-        let tx_hash = request.transaction_hash.map(|hash| ByteArray(hash.0));
 
         let _timer = super::Metrics::get()
             .database_queries
@@ -18,20 +17,19 @@ impl SolverCompetitionStoring for Postgres {
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
-        database::solver_competition::save(&mut ex, request.auction, json, tx_hash.as_ref())
+        database::solver_competition::save(&mut ex, request.auction, json)
             .await
             .context("solver_competition::save")?;
 
-        if let Some(transaction) = request.transaction {
-            database::auction_transaction::upsert_auction_transaction(
-                &mut ex,
-                request.auction,
-                &ByteArray(transaction.account.0),
-                transaction.nonce.try_into().context("convert nonce")?,
-            )
-            .await
-            .context("upsert_auction_transaction")?;
-        }
+        let transaction = request.transaction;
+        database::auction_transaction::upsert_auction_transaction(
+            &mut ex,
+            request.auction,
+            &ByteArray(transaction.account.0),
+            transaction.nonce.try_into().context("convert nonce")?,
+        )
+        .await
+        .context("upsert_auction_transaction")?;
 
         for (order, reward) in request.rewards {
             database::order_rewards::save(&mut ex, ByteArray(order.0), request.auction, reward)
@@ -85,7 +83,7 @@ impl SolverCompetitionStoring for Postgres {
 mod tests {
     use super::*;
     use model::solver_competition::{CompetitionAuction, SolverSettlement};
-    use primitive_types::{H160, H256};
+    use primitive_types::H160;
 
     #[tokio::test]
     #[ignore]
@@ -95,11 +93,10 @@ mod tests {
 
         let request = model::solver_competition::Request {
             auction: 0,
-            transaction_hash: Some(H256([5; 32])),
-            transaction: Some(model::solver_competition::Transaction {
+            transaction: model::solver_competition::Transaction {
                 account: H160([7; 20]),
                 nonce: 8,
-            }),
+            },
             competition: SolverCompetitionDB {
                 gas_price: 1.,
                 auction_start_block: 2,
