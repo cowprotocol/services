@@ -131,6 +131,11 @@ fn run() -> Result<()> {
             "balancer-labs/balancer-v2-monorepo/903d34e491a5e9c5d59dabf512c7addf1ccf9bbd/\
             pkg/deployments/tasks/20220609-stable-pool-v2/abi/StablePoolFactory.json",
         )?
+        .github(
+            "CoWSwapOnchainOrders",
+            "cowprotocol/ethflowcontract/0.0.0-rc.2\
+            -artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+        )?
         .npm(
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",
