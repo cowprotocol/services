@@ -724,7 +724,6 @@ mod tests {
                 &destReceiver=0x41111a111217dc0aa78b774fa6a738024120c302\
                 &referrerAddress=0x41111a111217dc0aa78b774fa6a738024120c302\
                 &fee=1.5\
-                &gasPrice=100000\
                 &burnChi=false\
                 &allowPartialFill=false\
                 &virtualParts=10\
