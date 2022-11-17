@@ -436,7 +436,6 @@ pub struct Transaction {
     pub value: U256,
     #[serde(with = "u256_decimal")]
     pub gas_price: U256,
-    // `gas` appears to always be 0.
     pub gas: u64,
 }
 
