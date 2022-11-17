@@ -514,7 +514,7 @@ pub mod tests {
     use super::*;
     use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
     use maplit::hashmap;
-    use model::order::{OrderClass, OrderData, OrderKind, OrderMetadata};
+    use model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata};
     use num::FromPrimitive;
     use shared::addr;
 
@@ -1380,8 +1380,10 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit,
-                            surplus_fee: Some(1_000_u128.into()),
+                            class: OrderClass::Limit(LimitOrderClass {
+                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee_timestamp: Default::default(),
+                            }),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1412,8 +1414,10 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit,
-                            surplus_fee: Some(1_000_u128.into()),
+                            class: OrderClass::Limit(LimitOrderClass {
+                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee_timestamp: Default::default(),
+                            }),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1451,8 +1455,10 @@ pub mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        class: OrderClass::Limit,
-                        surplus_fee: Some(1_000_u128.into()),
+                        class: OrderClass::Limit(LimitOrderClass {
+                            surplus_fee: 1_000_u128.into(),
+                            surplus_fee_timestamp: Default::default(),
+                        }),
                         ..Default::default()
                     },
                     ..Default::default()
