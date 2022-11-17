@@ -15,8 +15,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
     pub auction: AuctionId,
-    pub transaction_hash: Option<H256>,
-    pub transaction: Option<Transaction>,
+    pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
     pub rewards: Vec<(OrderUid, f64)>,
 }

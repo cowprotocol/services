@@ -432,12 +432,7 @@ impl OrderValidating for OrderValidator {
 
         let full_fee_amount = quote
             .as_ref()
-            .map(|quote| {
-                quote
-                    .data
-                    .fee_parameters
-                    .unsubsidized_with_additional_cost(additional_gas)
-            })
+            .map(|quote| quote.full_fee_amount)
             .unwrap_or_default();
 
         let min_balance =

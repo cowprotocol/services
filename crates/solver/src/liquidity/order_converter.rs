@@ -107,11 +107,7 @@ fn compute_synthetic_order_amounts_for_limit_order(order: &Order) -> Result<(U25
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
-
-        if self.order.metadata.class == OrderClass::Market && is_native_token_buy_order {
-            // Only market orders need an additional token equivalency, as the buy token's
-            // clearing price is stored in the clearing prices vector instad of the
-            // `CustomPriceTrade` as we do for limit and liquidity orders.
+        if is_native_token_buy_order {
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
@@ -274,47 +270,57 @@ pub mod tests {
 
     #[test]
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
-        let native_token_address = H160([0x42; 20]);
-        let sell_token = H160([0x21; 20]);
-        let native_token = dummy_contract!(WETH9, native_token_address);
-        let executed_amount = U256::from(1337);
-        let prices = hashmap! {
-            native_token.address() => U256::from(1),
-            sell_token => U256::from(2),
-        };
-        let order = Order {
-            data: OrderData {
-                buy_token: BUY_ETH_ADDRESS,
-                buy_amount: 1337.into(),
-                sell_token,
-                kind: OrderKind::Buy,
+        for class in [OrderClass::Market, OrderClass::Limit, OrderClass::Liquidity] {
+            let native_token_address = H160([0x42; 20]);
+            let sell_token = H160([0x21; 20]);
+            let native_token = dummy_contract!(WETH9, native_token_address);
+            let executed_amount = U256::from(1337);
+            let prices = hashmap! {
+                native_token.address() => U256::from(1),
+                sell_token => U256::from(2),
+            };
+            let order = Order {
+                data: OrderData {
+                    buy_token: BUY_ETH_ADDRESS,
+                    buy_amount: 1337.into(),
+                    sell_token,
+                    kind: OrderKind::Buy,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class,
+                    surplus_fee: match class {
+                        OrderClass::Limit => Some(0.into()),
+                        _ => None,
+                    },
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        println!("{}", order.data.buy_token);
+            };
+            println!("{}", order.data.buy_token);
 
-        let order_settlement_handler = OrderSettlementHandler {
-            order: order.clone(),
-            native_token: native_token.clone(),
-            scaled_unsubsidized_fee_amount: 0.into(),
-        };
+            let order_settlement_handler = OrderSettlementHandler {
+                order: order.clone(),
+                native_token: native_token.clone(),
+                scaled_unsubsidized_fee_amount: 0.into(),
+            };
 
-        assert_settlement_encoded_with(
-            prices,
-            order_settlement_handler,
-            executed_amount,
-            |encoder| {
-                encoder
-                    .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
-                    .unwrap();
-                assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
-                encoder.add_unwrap(UnwrapWethInteraction {
-                    weth: native_token,
-                    amount: executed_amount,
-                });
-            },
-        );
+            assert_settlement_encoded_with(
+                prices,
+                order_settlement_handler,
+                executed_amount,
+                |encoder| {
+                    encoder
+                        .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
+                        .unwrap();
+                    assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
+                    encoder.add_unwrap(UnwrapWethInteraction {
+                        weth: native_token,
+                        amount: executed_amount,
+                    });
+                },
+            );
+        }
     }
 
     #[test]
