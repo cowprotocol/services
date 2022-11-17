@@ -201,7 +201,10 @@ async fn single_limit_order_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert_eq!(
+        limit_order.metadata.class,
+        OrderClass::Limit(Default::default())
+    );
 
     wait_for_solvable_orders(&client, 1).await.unwrap();
 
@@ -235,7 +238,6 @@ async fn single_limit_order_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -265,7 +267,6 @@ async fn single_limit_order_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,
@@ -443,7 +444,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
@@ -477,7 +478,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     wait_for_solvable_orders(&client, 2).await.unwrap();
 
@@ -511,7 +512,6 @@ async fn two_limit_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -541,7 +541,6 @@ async fn two_limit_orders_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,
@@ -718,7 +717,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         .json()
         .await
         .unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
@@ -787,7 +786,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -817,7 +815,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

@@ -28,27 +28,13 @@ fn handle_all_routes(
     // This string will be used later to report metrics.
     // It is not used to form the actual server response.
 
-    let mut base_routes = vec![];
+    let mut routes = vec![];
     for (driver, name) in drivers.into_iter() {
         // leak string to use it in tracing spans
         let name = Box::leak(name.into_boxed_str());
-
-        let solve = solve::post_solve(name, driver.clone())
-            .map(|result| (result, "solve"))
-            .boxed();
-        base_routes.push(solve);
-
-        let execute = execute::post_execute(name, driver)
-            .map(|result| (result, "execute"))
-            .boxed();
-        base_routes.push(execute);
+        routes.push(("solve", solve::post_solve(name, driver.clone()).boxed()));
+        routes.push(("execute", execute::post_execute(name, driver).boxed()));
     }
 
-    let routes = base_routes
-        .into_iter()
-        .reduce(|routes, route| routes.or(route).unify().boxed())
-        .expect("there should be at least 1 solver configured");
-
-    let routes = warp::path!("api" / ..).and(routes).untuple_one().boxed();
     finalize_router(routes, "driver::api::request_summary")
 }

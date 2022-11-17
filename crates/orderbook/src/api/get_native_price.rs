@@ -21,7 +21,7 @@ impl From<f64> for PriceResponse {
 }
 
 fn get_native_prices_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
-    warp::path!("token" / H160 / "native_price").and(warp::get())
+    warp::path!("v1" / "token" / H160 / "native_price").and(warp::get())
 }
 
 pub fn get_native_price(
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn native_prices_query() {
-        let path = "/token/0xdac17f958d2ee523a2206206994597c13d831ec7/native_price";
+        let path = "/v1/token/0xdac17f958d2ee523a2206206994597c13d831ec7/native_price";
         let request = request().path(path).method("GET");
         let result = request
             .filter(&get_native_prices_request())

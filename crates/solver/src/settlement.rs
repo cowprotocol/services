@@ -514,7 +514,7 @@ pub mod tests {
     use super::*;
     use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
     use maplit::hashmap;
-    use model::order::{OrderClass, OrderData, OrderKind, OrderMetadata};
+    use model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata};
     use num::FromPrimitive;
     use shared::addr;
 
@@ -1380,8 +1380,10 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit,
-                            surplus_fee: Some(1_000_u128.into()),
+                            class: OrderClass::Limit(LimitOrderClass {
+                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee_timestamp: Default::default(),
+                            }),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1412,8 +1414,10 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit,
-                            surplus_fee: Some(1_000_u128.into()),
+                            class: OrderClass::Limit(LimitOrderClass {
+                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee_timestamp: Default::default(),
+                            }),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1428,5 +1432,53 @@ pub mod tests {
                 BigInt::from(1000_u128),
             );
         }
+    }
+
+    #[test]
+    fn includes_limit_order_ucp() {
+        let sell_token = H160([1; 20]);
+        let buy_token = H160([2; 20]);
+
+        let settlement = EncodedSettlement::from(test_settlement(
+            hashmap! {
+                sell_token => 100_000_u128.into(),
+                buy_token => 100_000_u128.into(),
+            },
+            vec![Trade {
+                order: Order {
+                    data: OrderData {
+                        sell_token,
+                        buy_token,
+                        sell_amount: 100_000_u128.into(),
+                        buy_amount: 99_000_u128.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        class: OrderClass::Limit(LimitOrderClass {
+                            surplus_fee: 1_000_u128.into(),
+                            surplus_fee_timestamp: Default::default(),
+                        }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                executed_amount: 100_000_u128.into(),
+                scaled_unsubsidized_fee: 1_000_u128.into(),
+            }],
+        ));
+
+        // Note that for limit order **both** the uniform clearing price of the
+        // buy token as well as the executed clearing price accounting for fees
+        // are included.
+        assert_eq!(settlement.tokens, [sell_token, buy_token, buy_token]);
+        assert_eq!(
+            settlement.clearing_prices,
+            [
+                100_000_u128.into(),
+                100_000_u128.into(),
+                101_010_u128.into()
+            ],
+        );
     }
 }

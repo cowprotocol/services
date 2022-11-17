@@ -4,7 +4,7 @@ use anyhow::{bail, ensure, Context as _, Result};
 use itertools::{Either, Itertools};
 use model::{
     interaction::InteractionData,
-    order::{Order, OrderClass, OrderKind},
+    order::{LimitOrderClass, Order, OrderClass, OrderKind},
 };
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
@@ -249,7 +249,7 @@ impl SettlementEncoder {
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
         let interactions = order.interactions.clone();
-        let execution = match order.metadata.class {
+        let execution = match &order.metadata.class {
             OrderClass::Market => {
                 self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
@@ -262,14 +262,14 @@ impl SettlementEncoder {
                     buy_price,
                 )?
             }
-            OrderClass::Limit => {
+            OrderClass::Limit(limit) => {
                 // Solvers calculate with slightly adjusted amounts compared to this order but because
                 // limit orders are fill-or-kill we can simply use the total original `sell_amount`.
                 let executed_amount = match order.data.kind {
                     OrderKind::Sell => order.data.sell_amount,
                     OrderKind::Buy => order.data.buy_amount,
                 };
-                let buy_price = self.custom_price_for_limit_order(&order)?;
+                let buy_price = self.custom_price_for_limit_order(&order, limit)?;
 
                 self.add_custom_price_trade(
                     order,
@@ -288,7 +288,11 @@ impl SettlementEncoder {
     /// `compute_synthetic_order_amounts_if_limit_order()`).
     /// Returns an error if the UCP doesn't contain the traded tokens or if under- or overflows
     /// happen during the computation.
-    fn custom_price_for_limit_order(&self, order: &Order) -> Result<U256> {
+    fn custom_price_for_limit_order(&self, order: &Order, limit: &LimitOrderClass) -> Result<U256> {
+        anyhow::ensure!(
+            order.metadata.class.is_limit(),
+            "this function should only be called for limit orders"
+        );
         // The order passed into this function is the original order signed by the user.
         // But the solver actually computed a solution for an order with `sell_amount -= surplus_fee`.
         // To account for the `surplus_fee` we first have to compute the expected `sell_amount` and
@@ -304,10 +308,6 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
-        let surplus_fee = order
-            .metadata
-            .surplus_fee
-            .context("limit order does not have surplus fee set")?;
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -321,7 +321,7 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(surplus_fee)
+                    .checked_add(limit.surplus_fee)
                     .context("sell_amount computation failed")?;
                 (sell_amount_adjusted_for_fees, order.data.buy_amount)
             }
@@ -332,7 +332,7 @@ impl SettlementEncoder {
                 let sell_amount = order
                     .data
                     .sell_amount
-                    .checked_sub(surplus_fee)
+                    .checked_sub(limit.surplus_fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)
@@ -520,15 +520,19 @@ impl SettlementEncoder {
         let traded_tokens: HashSet<_> = self
             .trades
             .iter()
-            .flat_map(|trade| match trade.tokens {
-                TokenReference::Indexed { .. } => Either::Left(
-                    [
-                        trade.data.order.data.sell_token,
-                        trade.data.order.data.buy_token,
-                    ]
-                    .into_iter(),
-                ),
-                TokenReference::CustomPrice { .. } => {
+            .flat_map(|trade| {
+                // For user order trades, always keep uniform clearing prices
+                // for all tokens (even if we could technically drop the buy
+                // token for limit orders).
+                if trade.data.order.is_user_order() {
+                    Either::Left(
+                        [
+                            trade.data.order.data.sell_token,
+                            trade.data.order.data.buy_token,
+                        ]
+                        .into_iter(),
+                    )
+                } else {
                     Either::Right(iter::once(trade.data.order.data.sell_token))
                 }
             })
@@ -1330,7 +1334,7 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
         // sell 1.01 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
         let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit)
+            .with_class(OrderClass::Limit(Default::default()))
             .with_sell_token(weth)
             .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
             .with_buy_token(usdc)
@@ -1384,7 +1388,7 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
         // buy 1 WETH for 1_010 USDC with a fee of 10 USDC
         let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit)
+            .with_class(OrderClass::Limit(Default::default()))
             .with_buy_token(weth)
             .with_buy_amount(U256::exp10(18)) // 1 WETH
             .with_sell_token(usdc)

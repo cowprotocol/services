@@ -32,6 +32,7 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
+    settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
@@ -224,6 +225,14 @@ async fn main() {
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
+    let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
+        native_token_contract.address(),
+        web3.clone(),
+        args.weth_unwrap_factor,
+        settlement_contract.clone(),
+        market_makable_token_list.clone(),
+    ));
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -254,8 +263,9 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
-        market_makable_token_list.clone(),
+        market_makable_token_list,
         &args.order_prioritization,
+        post_processing_pipeline,
     )
     .expect("failure creating solvers");
 
@@ -436,12 +446,10 @@ async fn main() {
         web3,
         network_id,
         args.solver_time_limit,
-        market_makable_token_list.clone(),
         current_block_stream.clone(),
         solution_submitter,
         api,
         order_converter,
-        args.weth_unwrap_factor,
         args.simulation_gas_limit,
         args.fee_objective_scaling_factor,
         args.max_settlement_price_deviation

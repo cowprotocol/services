@@ -9,7 +9,6 @@ use crate::{
     metrics::SolverMetrics,
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_simulation,
@@ -36,7 +35,6 @@ use shared::{
     http_solver::model::SolverRunError,
     recent_block_cache::Block,
     tenderly_api::TenderlyApi,
-    token_list::AutoUpdatingTokenList,
 };
 use std::{
     sync::Arc,
@@ -59,7 +57,6 @@ pub struct Driver {
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    post_processing_pipeline: PostProcessingPipeline,
     fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
@@ -79,12 +76,10 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        market_makable_token_list: AutoUpdatingTokenList,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
-        weth_unwrap_factor: f64,
         simulation_gas_limit: u128,
         fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
@@ -92,14 +87,6 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
     ) -> Self {
-        let post_processing_pipeline = PostProcessingPipeline::new(
-            native_token,
-            web3.clone(),
-            weth_unwrap_factor,
-            settlement_contract.clone(),
-            market_makable_token_list,
-        );
-
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
@@ -138,7 +125,6 @@ impl Driver {
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            post_processing_pipeline,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
             settlement_ranker,
@@ -361,16 +347,7 @@ impl Driver {
                 .collect(),
         };
 
-        if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
-            winning_settlement.settlement = self
-                .post_processing_pipeline
-                .optimize_settlement(
-                    winning_settlement.settlement,
-                    winning_solver.account().clone(),
-                    gas_price,
-                )
-                .await;
-
+        if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
                 winning_settlement.id,
