@@ -30,12 +30,8 @@ pub enum SignatureValidationError {
     /// Either the calling contract reverted or did not return the magic value.
     #[error("invalid signature")]
     Invalid,
-    /// A generic Web3 method error occurred.
     #[error(transparent)]
-    Method(#[from] MethodError),
-    /// An error occurred while estimating gas for isValidSignature
-    #[error(transparent)]
-    Execution(#[from] ExecutionError),
+    Other(#[from] anyhow::Error),
 }
 
 #[mockall::automock]
@@ -80,9 +76,9 @@ impl SignatureValidating for Web3SignatureValidator {
         let result = instance
             .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
             .call()
-            .await;
+            .await?;
 
-        parse_is_valid_signature_result(result)
+        check_erc1271_result(result)
     }
 
     async fn validate_signatures(
@@ -98,7 +94,7 @@ impl SignatureValidating for Web3SignatureValidator {
                     .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
                     .batch_call(&mut batch);
 
-                async move { parse_is_valid_signature_result(call.await) }
+                async move { check_erc1271_result(call.await?) }
             })
             .collect::<Vec<_>>();
 
@@ -111,43 +107,48 @@ impl SignatureValidating for Web3SignatureValidator {
         check: SignatureCheck,
     ) -> Result<u64, SignatureValidationError> {
         let instance = ERC1271SignatureValidator::at(&self.web3, check.signer);
-        let is_valid_result = instance
-            .is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()))
-            .call()
-            .await;
+        let check = instance.is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()));
 
-        let is_valid_gas_estimate_with_tx_initiation = instance
-            .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
-            .m
-            .tx
-            .estimate_gas()
-            .await
-            .map_err(SignatureValidationError::Execution)?;
+        let (result, gas_estimate) =
+            futures::join!(check.clone().call(), check.m.tx.estimate_gas());
 
-        // Since all gas amounts should be smaller the the blocksize of 15M,
-        // the following operation should never panic
-        let is_valid_gas_estimate = is_valid_gas_estimate_with_tx_initiation.as_u64()
-            - TRANSACTION_INITIALIZATION_GAS_AMOUNT;
+        check_erc1271_result(result?)?;
 
-        parse_is_valid_signature_result(is_valid_result).map(|_| is_valid_gas_estimate)
+        // Adjust the estimate we receive by the fixed transaction gas cost.
+        // This is because this cost is not payed by an internal call, but by
+        // the root transaction only.
+        Ok(gas_estimate?.as_u64() - TRANSACTION_INITIALIZATION_GAS_AMOUNT)
     }
 }
 
 /// The Magical value as defined by EIP-1271
 const MAGICAL_VALUE: [u8; 4] = hex!("1626ba7e");
 
-fn parse_is_valid_signature_result(
-    result: Result<Bytes<[u8; 4]>, MethodError>,
-) -> Result<(), SignatureValidationError> {
-    match result {
-        Ok(Bytes(value)) if value == MAGICAL_VALUE => Ok(()),
-        Ok(_) => Err(SignatureValidationError::Invalid),
+fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValidationError> {
+    if result.0 == MAGICAL_VALUE {
+        Ok(())
+    } else {
+        Err(SignatureValidationError::Invalid)
+    }
+}
+
+impl From<MethodError> for SignatureValidationError {
+    fn from(err: MethodError) -> Self {
         // Classify "contract" errors as invalid signatures instead of node
         // errors (which may be temporary). This can happen if there is ABI
         // compability issues or calling an EOA instead of a SC.
-        Err(err) if EthcontractErrorType::classify(&err) == EthcontractErrorType::Contract => {
-            Err(SignatureValidationError::Invalid)
+        match EthcontractErrorType::classify(&err) {
+            EthcontractErrorType::Contract => Self::Invalid,
+            _ => Self::Other(err.into()),
         }
-        Err(err) => Err(SignatureValidationError::Method(err)),
+    }
+}
+
+impl From<ExecutionError> for SignatureValidationError {
+    fn from(err: ExecutionError) -> Self {
+        match EthcontractErrorType::classify(&err) {
+            EthcontractErrorType::Contract => Self::Invalid,
+            _ => Self::Other(err.into()),
+        }
     }
 }
