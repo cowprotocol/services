@@ -1,4 +1,4 @@
-use crate::database::{Postgres, orders::FeeUpdate};
+use crate::database::{orders::FeeUpdate, Postgres};
 use anyhow::Result;
 use chrono::Duration;
 use futures::future::join_all;
