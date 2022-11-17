@@ -24,7 +24,7 @@ use shared::{
     },
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
-    maintenance::ServiceMaintenance,
+    maintenance::{Maintaining, ServiceMaintenance},
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
@@ -423,15 +423,15 @@ async fn main() {
         database.as_ref().clone(),
         order_validator.clone(),
     ));
-    let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![pool_fetcher],
-    };
+
+    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
     if let Some(balancer) = balancer_pool_fetcher {
-        service_maintainer.maintainers.push(balancer);
+        maintainers.push(balancer);
     }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        service_maintainer.maintainers.push(uniswap_v3);
+        maintainers.push(uniswap_v3);
     }
+
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
@@ -448,6 +448,8 @@ async fn main() {
         args.shared.solver_competition_auth,
         native_price_estimator,
     );
+
+    let service_maintainer = ServiceMaintenance::new(maintainers);
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 

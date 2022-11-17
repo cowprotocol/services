@@ -387,13 +387,11 @@ impl OrderbookServices {
             api_db.as_ref().clone(),
             order_validator.clone(),
         ));
-        let maintenance = ServiceMaintenance {
-            maintainers: vec![
-                Arc::new(autopilot_db.clone()),
-                ethflow_event_updater,
-                gpv2_event_updater,
-            ],
-        };
+        let maintenance = ServiceMaintenance::new(vec![
+            Arc::new(autopilot_db.clone()),
+            ethflow_event_updater,
+            gpv2_event_updater,
+        ]);
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(
             api_db.clone(),
