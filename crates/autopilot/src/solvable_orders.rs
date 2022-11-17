@@ -600,18 +600,9 @@ async fn filter_unsupported_tokens(
 }
 
 fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    orders.retain(|order| {
-        let surplus_fee = match &order.metadata.class {
-            OrderClass::Limit(limit) => limit.surplus_fee,
-            _ => return true,
-        };
-
-        match order.data.sell_amount.checked_sub(surplus_fee) {
-            Some(value) if value > U256::zero() => true,
-            // There is not enough sell amount to account for the surplus fee, so exclude
-            // the order unconditionally.
-            _ => false,
-        }
+    orders.retain(|order| match &order.metadata.class {
+        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
+        _ => true,
     });
     orders
 }
