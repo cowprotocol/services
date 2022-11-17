@@ -520,15 +520,19 @@ impl SettlementEncoder {
         let traded_tokens: HashSet<_> = self
             .trades
             .iter()
-            .flat_map(|trade| match trade.tokens {
-                TokenReference::Indexed { .. } => Either::Left(
-                    [
-                        trade.data.order.data.sell_token,
-                        trade.data.order.data.buy_token,
-                    ]
-                    .into_iter(),
-                ),
-                TokenReference::CustomPrice { .. } => {
+            .flat_map(|trade| {
+                // For user order trades, always keep uniform clearing prices
+                // for all tokens (even if we could technically drop the buy
+                // token for limit orders).
+                if trade.data.order.is_user_order() {
+                    Either::Left(
+                        [
+                            trade.data.order.data.sell_token,
+                            trade.data.order.data.buy_token,
+                        ]
+                        .into_iter(),
+                    )
+                } else {
                     Either::Right(iter::once(trade.data.order.data.sell_token))
                 }
             })
