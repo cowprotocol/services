@@ -1,8 +1,6 @@
 use crate::{
-    services::{
-        create_orderbook_api, deploy_token_with_weth_uniswap_pool, to_wei, OrderbookServices,
-        WethPoolConfig, API_HOST,
-    },
+    onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+    services::{create_orderbook_api, OrderbookServices, API_HOST},
     tx, tx_value,
 };
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};

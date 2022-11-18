@@ -1,10 +1,10 @@
 use crate::{
     eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     local_node::AccountAssigner,
-    services::{
-        deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, OrderbookServices,
-        WethPoolConfig, API_HOST,
+    onchain_components::{
+        deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
+    services::{OrderbookServices, API_HOST},
 };
 use ethcontract::{H160, U256};
 use model::quote::{
