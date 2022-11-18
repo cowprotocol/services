@@ -49,7 +49,6 @@ use std::{
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
-#[allow(dead_code)]
 pub fn create_orderbook_api() -> OrderBookApi {
     OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
