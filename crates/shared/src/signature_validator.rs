@@ -115,7 +115,7 @@ impl SignatureValidating for Web3SignatureValidator {
         check_erc1271_result(result?)?;
 
         // Adjust the estimate we receive by the fixed transaction gas cost.
-        // This is because this cost is not payed by an internal call, but by
+        // This is because this cost is not paid by an internal call, but by
         // the root transaction only.
         Ok(gas_estimate?.as_u64() - TRANSACTION_INITIALIZATION_GAS_AMOUNT)
     }
