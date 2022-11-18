@@ -39,7 +39,7 @@ impl Query {
 
 fn get_trades_request(
 ) -> impl Filter<Extract = (Result<TradeFilter, TradeFilterError>,), Error = Rejection> + Clone {
-    warp::path!("trades")
+    warp::path!("v1" / "trades")
         .and(warp::get())
         .and(warp::query::<Query>())
         .map(|query: Query| query.validate())
@@ -80,7 +80,7 @@ mod tests {
         };
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
-        let owner_path = format!("/trades?owner=0x{:x}", owner);
+        let owner_path = format!("/v1/trades?owner=0x{:x}", owner);
         let result = trade_filter(request().path(owner_path.as_str()))
             .await
             .unwrap()
@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(result.order_uid, None);
 
         let uid = OrderUid([1u8; 56]);
-        let order_uid_path = format!("/trades?orderUid={:}", uid);
+        let order_uid_path = format!("/v1/trades?orderUid={:}", uid);
         let result = trade_filter(request().path(order_uid_path.as_str()))
             .await
             .unwrap()
@@ -107,12 +107,12 @@ mod tests {
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
         let uid = OrderUid([1u8; 56]);
-        let path = format!("/trades?owner=0x{:x}&orderUid={:}", owner, uid);
+        let path = format!("/v1/trades?owner=0x{:x}&orderUid={:}", owner, uid);
 
         let result = trade_filter(request().path(path.as_str())).await.unwrap();
         assert!(result.is_err());
 
-        let path = "/trades";
+        let path = "/v1/trades";
         let result = trade_filter(request().path(path)).await.unwrap();
         assert!(result.is_err());
     }

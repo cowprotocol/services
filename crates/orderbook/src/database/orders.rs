@@ -11,8 +11,8 @@ use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
     order::{
-        EthflowData, Interactions, Order, OrderClass, OrderData, OrderMetadata, OrderStatus,
-        OrderUid,
+        EthflowData, Interactions, LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata,
+        OrderStatus, OrderUid,
     },
     signature::Signature,
     time::now_in_epoch_seconds,
@@ -87,7 +87,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         app_data: ByteArray(order.data.app_data.0),
         fee_amount: u256_to_big_decimal(&order.data.fee_amount),
         kind: order_kind_into(order.data.kind),
-        class: order_class_into(order.metadata.class),
+        class: order_class_into(&order.metadata.class),
         partially_fillable: order.data.partially_fillable,
         signature: order.signature.to_bytes(),
         signing_scheme: signing_scheme_into(order.signature.scheme()),
@@ -96,8 +96,19 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
-        surplus_fee: order.metadata.surplus_fee.as_ref().map(u256_to_big_decimal),
-        surplus_fee_timestamp: order.metadata.surplus_fee_timestamp,
+        surplus_fee: match order.metadata.class {
+            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                Some(u256_to_big_decimal(&surplus_fee))
+            }
+            _ => None,
+        },
+        surplus_fee_timestamp: match order.metadata.class {
+            OrderClass::Limit(LimitOrderClass {
+                surplus_fee_timestamp,
+                ..
+            }) => Some(surplus_fee_timestamp),
+            _ => None,
+        },
     };
     database::orders::insert_order(ex, &order)
         .await
@@ -336,7 +347,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         None
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
-    let class = order_class_from(order.class);
+    let class = order_class_from(&order);
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -357,18 +368,13 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
-        is_liquidity_order: class == OrderClass::Liquidity,
-        surplus_fee: match order.surplus_fee {
-            Some(fee) => Some(big_decimal_to_u256(&fee).context("surplus_fee is not U256")?),
-            None => None,
-        },
-        surplus_fee_timestamp: order.surplus_fee_timestamp,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

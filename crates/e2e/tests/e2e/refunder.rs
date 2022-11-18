@@ -1,15 +1,16 @@
-use crate::services::{deploy_mintable_token, to_wei, OrderbookServices, API_HOST};
-use ethcontract::{Account, Address, Bytes, H256, U256};
-use model::{
-    order::{OrderBuilder, OrderKind},
-    quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity},
-    signature::hashed_eip712_message,
-    DomainSeparator,
+use crate::{
+    eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    local_node::AccountAssigner,
+    services::{
+        deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, OrderbookServices,
+        WethPoolConfig, API_HOST,
+    },
 };
-use refunder::{
-    ethflow_order::EthflowOrder,
-    refund_service::{RefundService, INVALIDATED_OWNER},
+use ethcontract::{H160, U256};
+use model::quote::{
+    OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity,
 };
+use refunder::refund_service::RefundService;
 use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
 use sqlx::PgPool;
 
@@ -26,49 +27,22 @@ async fn refunder_tx(web3: Web3) {
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let setup_account = Account::Local(accounts[0], None);
-    let user = Account::Local(accounts[1], None);
-    let refunder_account = Account::Local(accounts[2], None);
+    let mut accounts = AccountAssigner::new(&web3).await;
+    let user = accounts.assign_free_account();
+    let refunder_account = accounts.assign_free_account();
 
-    // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        setup_account,
-        token.mint(setup_account.address(), to_wei(100_000))
-    );
-    tx_value!(setup_account, to_wei(100_000), contracts.weth.deposit());
-
-    // Create and fund Uniswap pool for price estimation
-    tx!(
-        setup_account,
-        contracts
-            .uniswap_factory
-            .create_pair(token.address(), contracts.weth.address())
-    );
-    tx!(
-        setup_account,
-        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        setup_account,
-        contracts
-            .weth
-            .approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        setup_account,
-        contracts.uniswap_router.add_liquidity(
-            token.address(),
-            contracts.weth.address(),
-            to_wei(100_000),
-            to_wei(100_000),
-            0_u64.into(),
-            0_u64.into(),
-            setup_account.address(),
-            U256::max_value(),
-        )
-    );
+    // Create & mint tokens to trade, pools for fee connections
+    let MintableToken {
+        contract: token, ..
+    } = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
     let services = OrderbookServices::new(&web3, &contracts, true).await;
     let http_factory = HttpClientFactory::default();
@@ -76,11 +50,9 @@ async fn refunder_tx(web3: Web3) {
 
     // Get quote id for order placement
     let buy_token = token.address();
-    let receiver = Some(setup_account.address());
+    let receiver = Some(H160([42; 20]));
     let sell_amount = U256::from("3000000000000000");
-    let buy_amount = U256::from("1");
-    // A valid_to in the past is chosen, such that the refunder can refund it immediately
-    let valid_to = chrono::offset::Utc::now().timestamp() as u32 - 1;
+
     let quote = OrderQuoteRequest {
         from: contracts.ethflow.address(),
         sell_token: contracts.weth.address(),
@@ -104,58 +76,16 @@ async fn refunder_tx(web3: Web3) {
         .unwrap();
     assert_eq!(quoting.status(), 200);
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
-    let quote_id: i64 = quote_response.id.unwrap();
-    let fee_amount = quote_response.quote.fee_amount;
 
-    // Creating ethflow order
-    let ethflow_order = EthflowOrder {
-        buy_token,
-        receiver: receiver.unwrap(),
-        sell_amount,
-        buy_amount,
-        app_data: Bytes([0u8; 32]),
-        fee_amount,
-        valid_to,
-        partially_fillable: false,
-        quote_id,
-    };
+    // A valid_to in the past is chosen, such that the refunder can refund it immediately
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32 - 1;
+    // Accounting for slippage is necesary for the order to be picked up by the refunder
+    let ethflow_order =
+        ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
-    // Each ethflow user order has an order that is representing
-    // it as EIP1271 order with a different owner and valid_to
-    let technical_order = OrderBuilder::default()
-        .with_kind(OrderKind::Sell)
-        .with_sell_token(contracts.weth.address())
-        .with_sell_amount(sell_amount)
-        .with_fee_amount(fee_amount)
-        .with_receiver(receiver)
-        .with_buy_token(token.address())
-        .with_buy_amount(buy_amount)
-        .with_valid_to(u32::MAX)
-        .with_eip1271(
-            contracts.ethflow.address(),
-            contracts.ethflow.address().0.to_vec(),
-        )
-        .build();
-    let domain_separator = DomainSeparator(
-        contracts
-            .gp_settlement
-            .domain_separator()
-            .call()
-            .await
-            .expect("Couldn't query domain separator")
-            .0,
-    );
-    let order_hash = H256(hashed_eip712_message(
-        &domain_separator,
-        &technical_order.data.hash_struct(),
-    ));
-
-    // Mine ethflow order
-    tx_value!(
-        user,
-        sell_amount + fee_amount,
-        contracts.ethflow.create_order(ethflow_order.encode())
-    );
+    ethflow_order
+        .mine_order_creation(&user, &contracts.ethflow)
+        .await;
 
     // Run autopilot indexing loop
     services.maintenance.run_maintenance().await.unwrap();
@@ -171,22 +101,15 @@ async fn refunder_tx(web3: Web3) {
         refunder_account,
     );
 
-    let order_status = contracts
-        .ethflow
-        .orders(Bytes(order_hash.0))
-        .call()
-        .await
-        .expect("Couldn't fetch native token balance");
-    assert_ne!(order_status.0, INVALIDATED_OWNER);
+    assert_ne!(
+        ethflow_order.status(&contracts).await,
+        EthFlowOrderOnchainStatus::Invalidated
+    );
 
     refunder.try_to_refund_all_eligble_orders().await.unwrap();
 
-    // Observe that the order got invalidated
-    let order_status = contracts
-        .ethflow
-        .orders(Bytes(order_hash.0))
-        .call()
-        .await
-        .expect("Couldn't fetch native token balance");
-    assert_eq!(order_status.0, INVALIDATED_OWNER);
+    assert_eq!(
+        ethflow_order.status(&contracts).await,
+        EthFlowOrderOnchainStatus::Invalidated
+    );
 }

@@ -17,6 +17,7 @@ COPY --from=cargo-build /src/target/release/orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /src/target/release/solver /usr/local/bin/solver
 COPY --from=cargo-build /src/target/release/alerter /usr/local/bin/alerter
 COPY --from=cargo-build /src/target/release/autopilot /usr/local/bin/autopilot
+COPY --from=cargo-build /src/target/release/refunder /usr/local/bin/refunder
 
 CMD echo "Specify binary - either solver or orderbook"
 ENTRYPOINT ["/usr/bin/tini"]

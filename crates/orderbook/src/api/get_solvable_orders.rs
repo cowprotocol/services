@@ -5,7 +5,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
 fn get_solvable_orders_request() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("solvable_orders").and(warp::get())
+    warp::path!("v1" / "solvable_orders").and(warp::get())
 }
 
 pub fn get_solvable_orders(

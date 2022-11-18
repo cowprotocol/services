@@ -3,7 +3,7 @@ use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::{Context, Result};
 use contracts::WETH9;
 use ethcontract::U256;
-use model::order::{Order, OrderClass, BUY_ETH_ADDRESS};
+use model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS};
 use std::{sync::Arc, time::Duration};
 
 pub struct OrderConverter {
@@ -48,8 +48,10 @@ impl OrderConverter {
             + chrono::Duration::from_std(self.min_order_age).unwrap()
             <= chrono::offset::Utc::now();
 
-        let (sell_amount, fee_amount) = match order.metadata.class {
-            OrderClass::Limit => compute_synthetic_order_amounts_for_limit_order(&order)?,
+        let (sell_amount, fee_amount) = match &order.metadata.class {
+            OrderClass::Limit(limit) => {
+                compute_synthetic_order_amounts_for_limit_order(&order, limit)?
+            }
             _ => (order.data.sell_amount, order.data.fee_amount),
         };
 
@@ -85,23 +87,22 @@ struct OrderSettlementHandler {
 
 /// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the values accordingly
 /// for limit orders.
-fn compute_synthetic_order_amounts_for_limit_order(order: &Order) -> Result<(U256, U256)> {
+fn compute_synthetic_order_amounts_for_limit_order(
+    order: &Order,
+    limit: &LimitOrderClass,
+) -> Result<(U256, U256)> {
     anyhow::ensure!(
-        order.metadata.class == OrderClass::Limit,
+        order.metadata.class.is_limit(),
         "this function should only be called for limit orders"
     );
-    let surplus_fee = order
-        .metadata
-        .surplus_fee
-        .context("limit order does not have surplus fee set")?;
     let sell_amount = order
         .data
         .sell_amount
         .checked_add(order.data.fee_amount)
         .context("surplus_fee adjustment would overflow sell_amount")?
-        .checked_sub(surplus_fee)
+        .checked_sub(limit.surplus_fee)
         .context("surplus_fee adjustment would underflow sell_amount")?;
-    Ok((sell_amount, surplus_fee))
+    Ok((sell_amount, limit.surplus_fee))
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -270,7 +271,11 @@ pub mod tests {
 
     #[test]
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
-        for class in [OrderClass::Market, OrderClass::Limit, OrderClass::Liquidity] {
+        for class in [
+            OrderClass::Market,
+            OrderClass::Limit(Default::default()),
+            OrderClass::Liquidity,
+        ] {
             let native_token_address = H160([0x42; 20]);
             let sell_token = H160([0x21; 20]);
             let native_token = dummy_contract!(WETH9, native_token_address);
@@ -289,10 +294,6 @@ pub mod tests {
                 },
                 metadata: OrderMetadata {
                     class,
-                    surplus_fee: match class {
-                        OrderClass::Limit => Some(0.into()),
-                        _ => None,
-                    },
                     ..Default::default()
                 },
                 ..Default::default()
@@ -398,7 +399,7 @@ pub mod tests {
     fn limit_orders_get_adjusted_for_surplus_fee() {
         let converter = OrderConverter::test(Default::default());
         let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit)
+            .with_class(OrderClass::Limit(Default::default()))
             .with_sell_amount(1_000.into())
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())

@@ -8,13 +8,13 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
 fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("solver_competition" / AuctionId)
+    warp::path!("v1" / "solver_competition" / AuctionId)
         .and(warp::get())
         .map(Identifier::Id)
 }
 
 fn request_hash() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("solver_competition" / "by_tx_hash" / H256)
+    warp::path!("v1" / "solver_competition" / "by_tx_hash" / H256)
         .and(warp::get())
         .map(Identifier::Transaction)
 }
@@ -62,17 +62,17 @@ mod tests {
             .return_once(|_| Err(LoadSolverCompetitionError::NotFound));
         let filter = get(Arc::new(storage));
 
-        let request_ = request().path("/solver_competition/0").method("GET");
+        let request_ = request().path("/v1/solver_competition/0").method("GET");
         let response = request_.filter(&filter).await.unwrap().into_response();
         dbg!(&response);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let request_ = request().path("/solver_competition/by_tx_hash/0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5").method("GET");
+        let request_ = request().path("/v1/solver_competition/by_tx_hash/0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5").method("GET");
         let response = request_.filter(&filter).await.unwrap().into_response();
         dbg!(&response);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let request_ = request().path("/solver_competition/1337").method("GET");
+        let request_ = request().path("/v1/solver_competition/1337").method("GET");
         let response = request_.filter(&filter).await.unwrap().into_response();
         dbg!(&response);
         assert_eq!(response.status(), StatusCode::NOT_FOUND);

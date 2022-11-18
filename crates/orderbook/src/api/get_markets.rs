@@ -62,7 +62,7 @@ impl FromStr for Market {
 
 fn get_amount_estimate_request(
 ) -> impl Filter<Extract = (AmountEstimateQuery,), Error = Rejection> + Clone {
-    warp::path!("markets" / Market / OrderKind / TokenAmount)
+    warp::path!("v1" / "markets" / Market / OrderKind / TokenAmount)
         .and(warp::get())
         .map(|market, kind, amount: TokenAmount| AmountEstimateQuery {
             market,
@@ -136,7 +136,7 @@ mod tests {
                 .unwrap()
         };
 
-        let request = get_query("/markets/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2-0x6b175474e89094c44da98b954eedeac495271d0f/sell/100").await;
+        let request = get_query("/v1/markets/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2-0x6b175474e89094c44da98b954eedeac495271d0f/sell/100").await;
         assert_eq!(
             request,
             AmountEstimateQuery {
@@ -149,7 +149,7 @@ mod tests {
             }
         );
 
-        let request = get_query("/markets/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2-0x6b175474e89094c44da98b954eedeac495271d0f/buy/100").await;
+        let request = get_query("/v1/markets/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2-0x6b175474e89094c44da98b954eedeac495271d0f/buy/100").await;
         assert_eq!(request.kind, OrderKind::Buy);
     }
 

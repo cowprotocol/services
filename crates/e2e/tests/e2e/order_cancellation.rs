@@ -1,5 +1,8 @@
 use crate::{
-    services::{create_orderbook_api, deploy_mintable_token, to_wei, OrderbookServices, API_HOST},
+    services::{
+        create_orderbook_api, deploy_token_with_weth_uniswap_pool, to_wei, OrderbookServices,
+        WethPoolConfig, API_HOST,
+    },
     tx, tx_value,
 };
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -37,45 +40,21 @@ async fn order_cancellation(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
 
-    // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(solver_account, token.mint(trader.address(), to_wei(100)));
+    // Create & mint tokens to trade, pools for fee connections
+    let token = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    token.mint(trader.address(), to_wei(100)).await;
+    let token = token.contract;
 
     let weth = contracts.weth.clone();
     tx_value!(solver_account, to_wei(100_000), weth.deposit());
-
-    // Create and fund Uniswap pool
-    tx!(
-        solver_account,
-        contracts
-            .uniswap_factory
-            .create_pair(token.address(), weth.address())
-    );
-    tx!(
-        solver_account,
-        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        weth.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        contracts.uniswap_router.add_liquidity(
-            token.address(),
-            weth.address(),
-            to_wei(100_000),
-            to_wei(100_000),
-            0_u64.into(),
-            0_u64.into(),
-            solver_account.address(),
-            U256::max_value(),
-        )
-    );
 
     // Approve GPv2 for trading
     tx!(trader, token.approve(contracts.allowance, to_wei(100)));
