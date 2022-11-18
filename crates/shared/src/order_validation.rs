@@ -158,8 +158,7 @@ impl From<SignatureValidationError> for ValidationError {
     fn from(err: SignatureValidationError) -> Self {
         match err {
             SignatureValidationError::Invalid => Self::InvalidSignature,
-            SignatureValidationError::Method(err) => Self::Other(err.into()),
-            SignatureValidationError::Execution(err) => Self::Other(err.into()),
+            SignatureValidationError::Other(err) => Self::Other(err),
         }
     }
 }
