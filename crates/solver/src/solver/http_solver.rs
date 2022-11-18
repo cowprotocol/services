@@ -669,6 +669,7 @@ mod tests {
             ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
+                internal: false,
             }),
         ));
 
@@ -810,7 +811,8 @@ mod tests {
                       "exec_buy_amount": "590320000000000032",
                       "exec_plan": {
                         "sequence": 0,
-                        "position": 0
+                        "position": 0,
+                        "internal": false
                       }
                     }
                   ]
