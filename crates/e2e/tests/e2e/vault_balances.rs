@@ -1,6 +1,6 @@
 use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-    uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
+    create_order_converter, create_orderbook_api, deploy_token_with_weth_uniswap_pool, to_wei,
+    uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, WethPoolConfig, API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -44,46 +44,18 @@ async fn vault_balances(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
 
-    // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(solver_account, token.mint(trader.address(), to_wei(10)));
-
-    tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
-
-    // Create and fund Uniswap pool
-    tx!(
-        solver_account,
-        contracts
-            .uniswap_factory
-            .create_pair(token.address(), contracts.weth.address())
-    );
-    tx!(
-        solver_account,
-        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        contracts
-            .weth
-            .approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        contracts.uniswap_router.add_liquidity(
-            token.address(),
-            contracts.weth.address(),
-            to_wei(100_000),
-            to_wei(100_000),
-            0_u64.into(),
-            0_u64.into(),
-            solver_account.address(),
-            U256::max_value(),
-        )
-    );
+    // Create & mint tokens to trade, pools for fee connections
+    let token = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    token.mint(trader.address(), to_wei(10)).await;
+    let token = token.contract;
 
     // Approve GPv2 for trading
     tx!(
