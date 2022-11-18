@@ -65,7 +65,7 @@ impl ExtendedEthFlowOrder {
             .orders(Bytes(self.hash(contracts).await.0))
             .call()
             .await
-            .expect("Couldn't fetch native token balance")
+            .expect("Couldn't fetch order status")
             .into()
     }
 
