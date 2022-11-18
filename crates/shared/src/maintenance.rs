@@ -64,21 +64,24 @@ impl ServiceMaintenance {
             None => blocks.next().await,
         } {
             tracing::debug!(
-                "running maintenance on block number {:?} hash {:?}",
-                block.number,
-                block.hash,
+                ?block.number, ?block.hash,
+                "running maintenance",
             );
 
             let block_number = block.number.unwrap_or_default().as_u64();
 
             metrics.last_seen_block.set(block_number as _);
 
-            if self
+            if let Err(err) = self
                 .run_maintenance()
                 .instrument(tracing::debug_span!("maintenance", block = block_number))
                 .await
-                .is_err()
             {
+                tracing::debug!(
+                    ?block.number, ?block.hash, ?err,
+                    "maintenance failed; queuing retry",
+                );
+
                 metrics.runs.with_label_values(&["failure"]).inc();
                 retry_block = Some(block);
                 continue;
