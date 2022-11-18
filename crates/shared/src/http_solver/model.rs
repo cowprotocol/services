@@ -344,12 +344,6 @@ pub struct ExecutionPlanCoordinatesModel {
     pub internal: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub struct CoordinatesWithInternal {
-    pub coordinates: ExecutionPlanCoordinatesModel,
-    pub internal: bool,
-}
-
 /// The result a given solver achieved in the auction
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
