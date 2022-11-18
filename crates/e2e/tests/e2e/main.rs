@@ -5,6 +5,7 @@
 #[macro_use]
 mod services;
 mod deploy;
+mod eth_flow;
 mod local_node;
 
 // Each of the following modules contains tests.

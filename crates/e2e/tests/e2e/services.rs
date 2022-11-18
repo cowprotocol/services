@@ -13,7 +13,7 @@ use contracts::{
     CoWSwapOnchainOrders, ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9,
 };
 use database::quotes::QuoteId;
-use ethcontract::{Bytes, H160, H256, U256};
+use ethcontract::{Account, Bytes, H160, H256, U256};
 use model::{quote::QuoteSigningScheme, DomainSeparator};
 use orderbook::{database::Postgres, orderbook::Orderbook};
 use reqwest::{Client, StatusCode};
@@ -173,6 +173,67 @@ pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
         .deploy()
         .await
         .expect("MintableERC20 deployment failed")
+}
+
+pub struct WethPoolConfig {
+    pub token_amount: U256,
+    pub weth_amount: U256,
+}
+
+pub struct MintableToken {
+    pub contract: ERC20Mintable,
+}
+
+pub async fn deploy_token_with_weth_uniswap_pool(
+    web3: &Web3,
+    deployed_contracts: &Contracts,
+    pool_config: WethPoolConfig,
+) -> MintableToken {
+    let token = deploy_mintable_token(web3).await;
+    let minter = Account::Local(
+        web3.eth().accounts().await.expect("get accounts failed")[0],
+        None,
+    );
+
+    let WethPoolConfig {
+        weth_amount,
+        token_amount,
+    } = pool_config;
+
+    tx!(minter, token.mint(minter.address(), token_amount));
+    tx_value!(minter, weth_amount, deployed_contracts.weth.deposit());
+
+    tx!(
+        minter,
+        deployed_contracts
+            .uniswap_factory
+            .create_pair(token.address(), deployed_contracts.weth.address())
+    );
+    tx!(
+        minter,
+        token.approve(deployed_contracts.uniswap_router.address(), token_amount)
+    );
+    tx!(
+        minter,
+        deployed_contracts
+            .weth
+            .approve(deployed_contracts.uniswap_router.address(), weth_amount)
+    );
+    tx!(
+        minter,
+        deployed_contracts.uniswap_router.add_liquidity(
+            token.address(),
+            deployed_contracts.weth.address(),
+            token_amount,
+            weth_amount,
+            0_u64.into(),
+            0_u64.into(),
+            minter.address(),
+            U256::max_value(),
+        )
+    );
+
+    MintableToken { contract: token }
 }
 
 pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
