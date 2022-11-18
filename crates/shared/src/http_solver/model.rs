@@ -335,7 +335,6 @@ mod execution_plan_internal {
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
