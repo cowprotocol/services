@@ -450,13 +450,7 @@ async fn update_task(
                 break;
             }
         };
-        let block = match current_block.borrow().number {
-            Some(block) => block.as_u64(),
-            None => {
-                tracing::error!("no block number");
-                continue;
-            }
-        };
+        let block = current_block.borrow().number;
         let start = Instant::now();
         match cache.update(block).await {
             Ok(()) => tracing::debug!(

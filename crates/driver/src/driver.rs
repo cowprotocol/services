@@ -9,7 +9,7 @@ use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
 use primitive_types::H256;
 use shared::{
-    current_block::{block_number, into_stream, Block, CurrentBlockStream},
+    current_block::{into_stream, BlockInfo, CurrentBlockStream},
     ethrpc::Web3,
 };
 use solver::{
@@ -58,11 +58,11 @@ impl Driver {
     /// Computes a solution with the liquidity collected from a given block.
     async fn compute_solution_for_block(
         auction: AuctionWithId,
-        block: Block,
+        block: BlockInfo,
         converter: Arc<dyn AuctionConverting>,
         solver: Arc<dyn CommitRevealSolving>,
     ) -> Result<SettlementSummary> {
-        let block = block_number(&block)?;
+        let block = block.number;
         let auction = converter.convert_auction(auction, block).await?;
         solver.commit(auction).await
     }
@@ -180,16 +180,15 @@ mod tests {
     use super::*;
     use crate::{auction_converter::MockAuctionConverting, commit_reveal::MockCommitRevealSolving};
     use futures::FutureExt;
-    use shared::current_block::Block;
     use std::{
         sync::Arc,
         time::{Duration, Instant},
     };
     use tokio::sync::watch::channel;
 
-    fn block(number: Option<u64>) -> Block {
-        Block {
-            number: number.map(|n| n.into()),
+    fn block(number: u64) -> BlockInfo {
+        BlockInfo {
+            number,
             ..Default::default()
         }
     }
@@ -199,25 +198,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_block_number_results_in_error() {
-        let (_tx, rx) = channel(block(None));
-        let converter = MockAuctionConverting::new();
-        let solver = MockCommitRevealSolving::new();
-        let result = Driver::solve_until_deadline(
-            Default::default(),
-            Arc::new(solver),
-            Arc::new(converter),
-            rx.clone(),
-            deadline(10),
-        )
-        .await;
-
-        assert_eq!(result.unwrap_err().to_string(), "no block number");
-    }
-
-    #[tokio::test]
     async fn propagates_error_from_auction_conversion() {
-        let (_tx, rx) = channel(block(Some(1)));
+        let (_tx, rx) = channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -237,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn propagates_error_from_auction_solving() {
-        let (_tx, rx) = channel(block(Some(1)));
+        let (_tx, rx) = channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -260,7 +242,7 @@ mod tests {
 
     #[tokio::test]
     async fn follow_up_computations_use_the_latest_block() {
-        let (tx, rx) = channel(block(Some(1)));
+        let (tx, rx) = channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -282,8 +264,8 @@ mod tests {
                 assert_eq!(auction.liquidity_fetch_block, 1);
                 async move {
                     // there is no great place to trigger the next block so let's do it here
-                    tx.send(block(Some(2))).unwrap();
-                    tx.send(block(Some(3))).unwrap();
+                    tx.send(block(2)).unwrap();
+                    tx.send(block(3)).unwrap();
                     anyhow::bail!("failed to solve auction")
                 }
                 .boxed()
@@ -311,8 +293,8 @@ mod tests {
 
     #[tokio::test]
     async fn first_computation_starts_with_the_latest_block() {
-        let (tx, rx) = channel(block(Some(1)));
-        tx.send(block(Some(2))).unwrap();
+        let (tx, rx) = channel(block(1));
+        tx.send(block(2)).unwrap();
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -351,7 +333,7 @@ mod tests {
     #[tokio::test]
     async fn solving_can_end_early_when_stream_terminates() {
         let start = Instant::now();
-        let (tx, rx) = channel(block(Some(1)));
+        let (tx, rx) = channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()

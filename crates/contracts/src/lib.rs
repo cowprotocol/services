@@ -60,6 +60,8 @@ pub mod support {
         AnyoneAuthenticator;
         PhonyERC20;
         Trader;
+
+        FetchBlock;
     }
 }
 
