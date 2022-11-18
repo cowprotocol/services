@@ -31,7 +31,7 @@ async fn refunder_tx(web3: Web3) {
     let user = accounts.assign_free_account();
     let refunder_account = accounts.assign_free_account();
 
-    // Create token with Uniswap pool for price estimation
+    // Create & mint tokens to trade, pools for fee connections
     let MintableToken {
         contract: token, ..
     } = deploy_token_with_weth_uniswap_pool(

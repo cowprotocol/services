@@ -56,7 +56,7 @@ pub const API_HOST: &str = "http://127.0.0.1:8080";
 
 #[macro_export]
 macro_rules! tx_value {
-    ($acc:ident, $value:expr, $call:expr) => {{
+    ($acc:expr, $value:expr, $call:expr) => {{
         const NAME: &str = stringify!($call);
         $call
             .from($acc.clone())
@@ -70,7 +70,7 @@ macro_rules! tx_value {
 
 #[macro_export]
 macro_rules! tx {
-    ($acc:ident, $call:expr) => {
+    ($acc:expr, $call:expr) => {
         $crate::tx_value!($acc, U256::zero(), $call)
     };
 }
@@ -182,6 +182,13 @@ pub struct WethPoolConfig {
 
 pub struct MintableToken {
     pub contract: ERC20Mintable,
+    minter: Account,
+}
+
+impl MintableToken {
+    pub async fn mint(&self, to: H160, amount: U256) {
+        tx!(self.minter, self.contract.mint(to, amount));
+    }
 }
 
 pub async fn deploy_token_with_weth_uniswap_pool(
@@ -233,7 +240,10 @@ pub async fn deploy_token_with_weth_uniswap_pool(
         )
     );
 
-    MintableToken { contract: token }
+    MintableToken {
+        contract: token,
+        minter,
+    }
 }
 
 pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
