@@ -293,19 +293,14 @@ pub enum ExecutionPlan {
     /// internal buffers will be used instead.
     #[serde(with = "execution_plan_internal")]
     Internal,
-
-    /// Execution plan containing both coordinates and internalization flag.
-    /// Intoduced to allow solvers to have some time to adapt to the breaking change.
-    CoordinatesWithInternal(CoordinatesWithInternal),
 }
 
 impl ExecutionPlan {
     /// TODO: remove function when ExecutionPlan is refactored to a struct
     pub fn internalizable(&self) -> bool {
         match self {
-            ExecutionPlan::Coordinates(_) => false,
+            ExecutionPlan::Coordinates(coords) => coords.internal,
             ExecutionPlan::Internal => true,
-            ExecutionPlan::CoordinatesWithInternal(coords) => coords.internal,
         }
     }
 }
@@ -340,10 +335,13 @@ mod execution_plan_internal {
     }
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
+    #[serde(default)]
+    pub internal: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -458,6 +456,7 @@ mod tests {
             exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
+                internal: false,
             })),
             ..Default::default()
         };
@@ -856,15 +855,14 @@ mod tests {
                 ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 42,
                     position: 1337,
+                    internal: false,
                 }),
             ),
             (
-                r#"{ "coordinates": { "sequence": 42, "position": 1337 }, "internal": false }"#,
-                ExecutionPlan::CoordinatesWithInternal(CoordinatesWithInternal {
-                    coordinates: ExecutionPlanCoordinatesModel {
-                        sequence: 42,
-                        position: 1337,
-                    },
+                r#"{ "sequence": 42, "position": 1337, "internal": false }"#,
+                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
                     internal: false,
                 }),
             ),
@@ -902,10 +900,8 @@ mod tests {
                             }
                         ],
                         "exec_plan": {
-                            "coordinates": {
-                                "sequence": 0,
-                                "position": 0
-                            },
+                            "sequence": 0,
+                            "position": 0,
                             "internal": true
                         },
                         "cost": {
@@ -934,15 +930,11 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::CoordinatesWithInternal(
-                    CoordinatesWithInternal {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0,
-                            position: 0
-                        },
-                        internal: true
-                    }
-                )),
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                    internal: true,
+                })),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
