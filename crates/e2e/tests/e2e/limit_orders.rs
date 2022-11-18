@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-    uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
+    create_order_converter, create_orderbook_api, deploy_mintable_token,
+    deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, wait_for_solvable_orders,
+    OrderbookServices, WethPoolConfig, API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -70,34 +71,44 @@ async fn single_limit_order_test(web3: Web3) {
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
 
-    // Create tokens to trade
-    let token_a = deploy_mintable_token(&web3).await;
-    let token_b = deploy_mintable_token(&web3).await;
+    // Create & mint tokens to trade, pools for fee connections
+    let token_a = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    let token_b = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
     // Fund trader accounts
-    tx!(
-        solver_account,
-        token_a.mint(trader_a.address(), to_wei(1010))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(trader_b.address(), to_wei(510))
-    );
+    token_a.mint(trader_a.address(), to_wei(1010)).await;
+    token_b.mint(trader_b.address(), to_wei(510)).await;
 
     // Create and fund Uniswap pool
+    token_a
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    token_b
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    let token_a = token_a.contract;
+    let token_b = token_b.contract;
     tx!(
         solver_account,
         contracts
             .uniswap_factory
             .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver_account,
-        token_a.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
@@ -120,38 +131,6 @@ async fn single_limit_order_test(web3: Web3) {
             U256::max_value(),
         )
     );
-
-    // Create and fund pools for fee connections.
-    for token in [&token_a, &token_b] {
-        tx!(
-            solver_account,
-            token.mint(solver_account.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
-        tx!(
-            solver_account,
-            contracts
-                .weth
-                .approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            contracts.uniswap_router.add_liquidity(
-                token.address(),
-                contracts.weth.address(),
-                to_wei(100_000),
-                to_wei(100_000),
-                0_u64.into(),
-                0_u64.into(),
-                solver_account.address(),
-                U256::max_value(),
-            )
-        );
-    }
 
     // Approve GPv2 for trading
     tx!(trader_a, token_a.approve(contracts.allowance, to_wei(101)));
@@ -313,19 +292,37 @@ async fn two_limit_orders_test(web3: Web3) {
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
 
-    // Create tokens to trade
-    let token_a = deploy_mintable_token(&web3).await;
-    let token_b = deploy_mintable_token(&web3).await;
+    // Create & mint tokens to trade, pools for fee connections
+    let token_a = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    let token_b = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
-    // Fund trader accounts
-    tx!(
-        solver_account,
-        token_a.mint(trader_a.address(), to_wei(1010))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(trader_b.address(), to_wei(510))
-    );
+    // Fund trader accounts and prepare funding Uniswap pool
+    token_a.mint(trader_a.address(), to_wei(1010)).await;
+    token_b.mint(trader_b.address(), to_wei(510)).await;
+    token_a
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    token_b
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    let token_a = token_a.contract;
+    let token_b = token_b.contract;
 
     // Create and fund Uniswap pool
     tx!(
@@ -333,14 +330,6 @@ async fn two_limit_orders_test(web3: Web3) {
         contracts
             .uniswap_factory
             .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver_account,
-        token_a.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
@@ -363,38 +352,6 @@ async fn two_limit_orders_test(web3: Web3) {
             U256::max_value(),
         )
     );
-
-    // Create and fund pools for fee connections.
-    for token in [&token_a, &token_b] {
-        tx!(
-            solver_account,
-            token.mint(solver_account.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
-        tx!(
-            solver_account,
-            contracts
-                .weth
-                .approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            contracts.uniswap_router.add_liquidity(
-                token.address(),
-                contracts.weth.address(),
-                to_wei(100_000),
-                to_wei(100_000),
-                0_u64.into(),
-                0_u64.into(),
-                solver_account.address(),
-                U256::max_value(),
-            )
-        );
-    }
 
     // Approve GPv2 for trading
     tx!(trader_a, token_a.approve(contracts.allowance, to_wei(101)));
@@ -586,19 +543,31 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
 
-    // Create tokens to trade
-    let token_a = deploy_mintable_token(&web3).await;
-    let token_b = deploy_mintable_token(&web3).await;
+    // Create & mint tokens to trade, pools for fee connections
+    let token_a = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    let token_b = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
     // Fund trader accounts
-    tx!(
-        solver_account,
-        token_a.mint(trader_a.address(), to_wei(1010))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(trader_b.address(), to_wei(510))
-    );
+    token_a.mint(trader_a.address(), to_wei(1010)).await;
+    token_b.mint(trader_b.address(), to_wei(510)).await;
+    let token_a = token_a.contract;
+    let token_b = token_b.contract;
 
     // Create and fund Uniswap pool
     tx!(
@@ -636,38 +605,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
             U256::max_value(),
         )
     );
-
-    // Create and fund pools for fee connections.
-    for token in [&token_a, &token_b] {
-        tx!(
-            solver_account,
-            token.mint(solver_account.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
-        tx!(
-            solver_account,
-            contracts
-                .weth
-                .approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            contracts.uniswap_router.add_liquidity(
-                token.address(),
-                contracts.weth.address(),
-                to_wei(100_000),
-                to_wei(100_000),
-                0_u64.into(),
-                0_u64.into(),
-                solver_account.address(),
-                U256::max_value(),
-            )
-        );
-    }
 
     // Approve GPv2 for trading
     tx!(trader_a, token_a.approve(contracts.allowance, to_wei(101)));
