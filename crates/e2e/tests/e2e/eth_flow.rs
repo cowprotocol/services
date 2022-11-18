@@ -3,7 +3,7 @@ use contracts::{CoWSwapEthFlow, WETH9};
 use ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256};
 use hex_literal::hex;
 use model::{
-    order::{Order, OrderBuilder, OrderKind},
+    order::{Order, OrderBuilder, OrderClass, OrderKind},
     quote::OrderQuoteResponse,
     signature::hashed_eip712_message,
     DomainSeparator,
@@ -44,17 +44,18 @@ impl ExtendedEthFlowOrder {
             .with_buy_amount(self.0.buy_amount)
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.app_data.0)
+            .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
             .with_eip1271(ethflow.address(), hex!("").into())
             .build()
     }
 
     pub fn include_slippage_bps(&self, slippage: u16) -> Self {
-        let max_base_point = 10000;
-        if slippage > max_base_point {
+        const MAX_BASE_POINT: u16 = 10000;
+        if slippage > MAX_BASE_POINT {
             panic!("Slippage must be specified in base points");
         }
         ExtendedEthFlowOrder(EthflowOrder {
-            buy_amount: self.0.buy_amount * (max_base_point - slippage) / max_base_point,
+            buy_amount: self.0.buy_amount * (MAX_BASE_POINT - slippage) / MAX_BASE_POINT,
             ..self.0
         })
     }
@@ -65,7 +66,7 @@ impl ExtendedEthFlowOrder {
             .orders(Bytes(self.hash(contracts).await.0))
             .call()
             .await
-            .expect("Couldn't fetch native token balance")
+            .expect("Couldn't fetch order status")
             .into()
     }
 
