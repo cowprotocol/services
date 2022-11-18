@@ -3,7 +3,7 @@ use contracts::{CoWSwapEthFlow, WETH9};
 use ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256};
 use hex_literal::hex;
 use model::{
-    order::{Order, OrderBuilder, OrderKind},
+    order::{Order, OrderBuilder, OrderClass, OrderKind},
     quote::OrderQuoteResponse,
     signature::hashed_eip712_message,
     DomainSeparator,
@@ -44,6 +44,7 @@ impl ExtendedEthFlowOrder {
             .with_buy_amount(self.0.buy_amount)
             .with_valid_to(u32::MAX)
             .with_app_data(self.0.app_data.0)
+            .with_class(OrderClass::Market) // Eth-flow orders only support market orders at this point in time
             .with_eip1271(ethflow.address(), hex!("").into())
             .build()
     }
