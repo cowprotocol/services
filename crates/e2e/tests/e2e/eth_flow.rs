@@ -50,12 +50,12 @@ impl ExtendedEthFlowOrder {
     }
 
     pub fn include_slippage_bps(&self, slippage: u16) -> Self {
-        let max_base_point = 10000;
-        if slippage > max_base_point {
+        const MAX_BASE_POINT: u16 = 10000;
+        if slippage > MAX_BASE_POINT {
             panic!("Slippage must be specified in base points");
         }
         ExtendedEthFlowOrder(EthflowOrder {
-            buy_amount: self.0.buy_amount * (max_base_point - slippage) / max_base_point,
+            buy_amount: self.0.buy_amount * (MAX_BASE_POINT - slippage) / MAX_BASE_POINT,
             ..self.0
         })
     }
