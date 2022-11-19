@@ -45,13 +45,13 @@ impl Call {
     }
 }
 
-/// Additional call that affect all calls in the multicall.
+/// Additional options that affect all calls in the multicall.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Options {
     /// The transaction origin.
     ///
     /// Note that this will not be the `msg.sender` for the calls, which will
-    /// instead be the Multicall contract.
+    /// instead be the Multicall trampoline contract.
     pub origin: Option<H160>,
 
     /// Total gas limit for all the calls.
@@ -196,8 +196,9 @@ fn decode_revert_reason(revert_data: &[u8]) -> Option<String> {
     const ERROR_SELECTOR: [u8; 4] = hex!("08c379a0");
 
     let bytes = revert_data.strip_prefix(&ERROR_SELECTOR)?;
-    match &ethabi::decode(&[ParamType::String], bytes).ok()?[..] {
-        [Token::String(value)] => Some(value.clone()),
+    let mut tokens = ethabi::decode(&[ParamType::String], bytes).ok()?;
+    match tokens.pop() {
+        Some(Token::String(value)) if tokens.is_empty() => Some(value),
         _ => None,
     }
 }
@@ -412,7 +413,7 @@ mod tests {
     ) where
         T: Debug + PartialEq,
     {
-        for (actual, expected) in actual.into_iter().zip(expected) {
+        for (actual, expected) in actual.iter().zip(expected) {
             match (actual, expected) {
                 (Ok(a), Ok(b)) if a == b => (),
                 (Err(ExecutionError::Revert(a)), Err(ExecutionError::Revert(b))) if a == b => (),
