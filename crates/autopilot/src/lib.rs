@@ -35,7 +35,7 @@ use shared::{
     },
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
-    maintenance::Maintaining,
+    maintenance::{Maintaining, ServiceMaintenance},
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
     order_quoting::OrderQuoter,
@@ -475,14 +475,14 @@ pub async fn main(args: arguments::Arguments) {
         ));
         maintainers.push(broadcaster_event_updater);
     }
-    let mut service_maintainer = shared::maintenance::ServiceMaintenance { maintainers };
-
     if let Some(balancer) = balancer_pool_fetcher {
-        service_maintainer.maintainers.push(balancer);
+        maintainers.push(balancer);
     }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        service_maintainer.maintainers.push(uniswap_v3);
+        maintainers.push(uniswap_v3);
     }
+
+    let service_maintainer = ServiceMaintenance::new(maintainers);
     let maintenance_task = tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
