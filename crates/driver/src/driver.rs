@@ -180,11 +180,12 @@ mod tests {
     use super::*;
     use crate::{auction_converter::MockAuctionConverting, commit_reveal::MockCommitRevealSolving};
     use futures::FutureExt;
+    use shared::current_block;
     use std::{
         sync::Arc,
         time::{Duration, Instant},
     };
-    use tokio::sync::watch::channel;
+    use tokio::sync::watch;
 
     fn block(number: u64) -> BlockInfo {
         BlockInfo {
@@ -199,7 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn propagates_error_from_auction_conversion() {
-        let (_tx, rx) = channel(block(1));
+        let block_stream = current_block::mock_single_block(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -209,7 +210,7 @@ mod tests {
             Default::default(),
             Arc::new(solver),
             Arc::new(converter),
-            rx.clone(),
+            block_stream,
             deadline(10),
         )
         .await;
@@ -219,7 +220,7 @@ mod tests {
 
     #[tokio::test]
     async fn propagates_error_from_auction_solving() {
-        let (_tx, rx) = channel(block(1));
+        let block_stream = current_block::mock_single_block(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -232,7 +233,7 @@ mod tests {
             Default::default(),
             Arc::new(solver),
             Arc::new(converter),
-            rx.clone(),
+            block_stream,
             deadline(10),
         )
         .await;
@@ -242,7 +243,7 @@ mod tests {
 
     #[tokio::test]
     async fn follow_up_computations_use_the_latest_block() {
-        let (tx, rx) = channel(block(1));
+        let (tx, rx) = watch::channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -283,7 +284,7 @@ mod tests {
             Default::default(),
             Arc::new(solver),
             Arc::new(converter),
-            rx.clone(),
+            rx,
             deadline(100),
         )
         .await
@@ -293,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn first_computation_starts_with_the_latest_block() {
-        let (tx, rx) = channel(block(1));
+        let (tx, rx) = watch::channel(block(1));
         tx.send(block(2)).unwrap();
         let mut converter = MockAuctionConverting::new();
         converter
@@ -322,7 +323,7 @@ mod tests {
             Default::default(),
             Arc::new(solver),
             Arc::new(converter),
-            rx.clone(),
+            rx,
             deadline(10),
         )
         .await
@@ -333,7 +334,7 @@ mod tests {
     #[tokio::test]
     async fn solving_can_end_early_when_stream_terminates() {
         let start = Instant::now();
-        let (tx, rx) = channel(block(1));
+        let (tx, rx) = watch::channel(block(1));
         let mut converter = MockAuctionConverting::new();
         converter
             .expect_convert_auction()
@@ -363,7 +364,7 @@ mod tests {
             Default::default(),
             Arc::new(solver),
             Arc::new(converter),
-            rx.clone(),
+            rx,
             deadline(1_000),
         )
         .await
