@@ -269,7 +269,11 @@ impl SolvableOrdersCache {
             // Convert the sell and buy price to the native token (ETH) and make sure that sell
             // discounting the surplus fee is higher than buy with the configurable price factor.
             let (sell_native, buy_native) = match (
-                (order.data.sell_amount - surplus_fee).checked_mul(sell_price),
+                order
+                    .data
+                    .sell_amount
+                    .checked_sub(surplus_fee)
+                    .and_then(|sell| sell.checked_mul(sell_price)),
                 order.data.buy_amount.checked_mul(buy_price),
             ) {
                 (Some(sell), Some(buy)) => (sell, buy),
