@@ -1,7 +1,12 @@
-use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_token_with_weth_uniswap_pool,
-    gnosis_safe_eip1271_signature, to_wei, uniswap_pair_provider, wait_for_solvable_orders,
-    OrderbookServices, WethPoolConfig, API_HOST,
+use crate::{
+    onchain_components::{
+        deploy_token_with_weth_uniswap_pool, gnosis_safe_eip1271_signature, to_wei,
+        uniswap_pair_provider, WethPoolConfig,
+    },
+    services::{
+        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
+        API_HOST,
+    },
 };
 use contracts::{
     GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, IUniswapLikeRouter,

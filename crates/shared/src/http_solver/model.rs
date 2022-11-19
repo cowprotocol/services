@@ -295,6 +295,16 @@ pub enum ExecutionPlan {
     Internal,
 }
 
+impl ExecutionPlan {
+    /// TODO: remove function when ExecutionPlan is refactored to a struct
+    pub fn internalizable(&self) -> bool {
+        match self {
+            ExecutionPlan::Coordinates(coords) => coords.internal,
+            ExecutionPlan::Internal => true,
+        }
+    }
+}
+
 /// A module for implementing `serde` (de)serialization for the execution plan
 /// enum.
 ///
@@ -325,10 +335,12 @@ mod execution_plan_internal {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
+    #[serde(default)]
+    pub internal: bool,
 }
 
 /// The result a given solver achieved in the auction
@@ -437,6 +449,7 @@ mod tests {
             exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
+                internal: false,
             })),
             ..Default::default()
         };
@@ -835,6 +848,15 @@ mod tests {
                 ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 42,
                     position: 1337,
+                    internal: false,
+                }),
+            ),
+            (
+                r#"{ "sequence": 42, "position": 1337, "internal": false }"#,
+                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                    internal: false,
                 }),
             ),
         ] {
@@ -870,7 +892,11 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": "internal",
+                        "exec_plan": {
+                            "sequence": 0,
+                            "position": 0,
+                            "internal": true
+                        },
                         "cost": {
                             "amount": "1",
                             "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -897,7 +923,11 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                    internal: true,
+                })),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
