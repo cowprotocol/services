@@ -59,6 +59,7 @@ pub mod support {
     include_contracts! {
         AnyoneAuthenticator;
         FetchBlock;
+        Multicall;
         PhonyERC20;
         Trader;
     }
