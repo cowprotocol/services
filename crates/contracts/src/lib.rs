@@ -25,10 +25,10 @@ include_contracts! {
     BalancerV2WeightedPoolFactory;
     BaoswapFactory;
     BaoswapRouter;
+    CoWSwapEthFlow;
+    CoWSwapOnchainOrders;
     CowProtocolToken;
     CowProtocolVirtualToken;
-    CoWSwapOnchainOrders;
-    CoWSwapEthFlow;
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;
@@ -50,17 +50,17 @@ include_contracts! {
     SwaprRouter;
     UniswapV2Factory;
     UniswapV2Router02;
-    UniswapV3SwapRouter;
     UniswapV3Pool;
+    UniswapV3SwapRouter;
     WETH9;
 }
 
 pub mod support {
     include_contracts! {
         AnyoneAuthenticator;
+        FetchBlock;
         PhonyERC20;
         Trader;
-        FetchBlock;
     }
 }
 
