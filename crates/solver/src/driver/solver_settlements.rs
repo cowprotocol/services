@@ -123,10 +123,6 @@ pub fn retain_mature_settlements(
             let mut new_order_added = false;
 
             for (index, (_, settlement)) in settlements.iter().enumerate() {
-                if valid_settlement_indices.contains(&index) {
-                    break;
-                }
-
                 let contains_valid_user_trade = settlement.user_trades().any(|trade| {
                     // mature by age
                     trade.order.metadata.creation_date <= settle_orders_older_than
@@ -329,6 +325,35 @@ mod tests {
         assert_same_settlements(
             &solver_settlements_into_settlements(&mature_settlements),
             &[s1, s2, s3],
+        );
+    }
+
+    #[test]
+    fn mature_by_association_in_between() {
+        let recent = Local::now().with_timezone(&Utc);
+        let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
+        let min_age = std::time::Duration::from_secs(60);
+
+        let s1 = Settlement::with_default_prices(vec![
+            trade(old, 1, OrderClass::Market),
+            trade(recent, 2, OrderClass::Market),
+        ]);
+        let s2 = Settlement::with_default_prices(vec![trade(recent, 3, OrderClass::Market)]);
+        let s3 = Settlement::with_default_prices(vec![
+            trade(recent, 2, OrderClass::Market),
+            trade(recent, 3, OrderClass::Market),
+        ]);
+        let s4 = Settlement::with_default_prices(vec![trade(recent, 3, OrderClass::Market)]);
+        let settlements = vec![s1.clone(), s2.clone(), s3.clone(), s4.clone()];
+        let mature_settlements = retain_mature_settlements(
+            min_age,
+            settlements_into_dummy_solver_settlements(settlements),
+            0,
+        );
+
+        assert_same_settlements(
+            &solver_settlements_into_settlements(&mature_settlements),
+            &[s1, s2, s3, s4],
         );
     }
 
