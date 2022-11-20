@@ -262,7 +262,7 @@ impl UpdatedAmmModel {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ExecutionPlan {
     #[serde(flatten)]
     pub coordinates: ExecutionPlanCoordinatesModel,
