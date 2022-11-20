@@ -805,8 +805,8 @@ mod tests {
                             }
                         ],
                         "exec_plan": {
-                            "sequence": 42,
-                            "position": 1337,
+                            "sequence": 0,
+                            "position": 0,
                             "internal": true
                         },
                         "cost": {
@@ -837,8 +837,8 @@ mod tests {
                 ],
                 exec_plan: ExecutionPlan {
                     coordinates: ExecutionPlanCoordinatesModel {
-                        sequence: 42,
-                        position: 1337,
+                        sequence: 0,
+                        position: 0,
                     },
                     internal: true,
                 },
