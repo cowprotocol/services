@@ -526,7 +526,7 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
     );
 
-    if args.enable_limit_order_quoter {
+    if args.enable_limit_orders {
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
             loop_delay: args.max_surplus_fee_age / 2,

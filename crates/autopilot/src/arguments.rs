@@ -135,8 +135,8 @@ pub struct Arguments {
     pub limit_order_price_factor: f64,
 
     // Enable background quoting for limit orders.
-    #[clap(long, env, default_value = "true")]
-    pub enable_limit_order_quoter: bool,
+    #[clap(long, env)]
+    pub enable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -178,6 +178,7 @@ impl std::fmt::Display for Arguments {
         display_option(f, "cip_14_profit", &self.cip_14_profit)?;
         display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
         display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
+        writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
         Ok(())
     }
 }
