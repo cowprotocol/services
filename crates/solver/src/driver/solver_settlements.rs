@@ -178,7 +178,7 @@ pub fn retain_mature_settlements(
 mod tests {
     use super::*;
     use crate::{
-        settlement::{external_prices::externalprices, CustomPriceTrade, OrderTrade, Trade},
+        settlement::{external_prices::externalprices, Trade},
         solver::dummy_arc_solver,
     };
     use chrono::{offset::Utc, DateTime, Duration, Local};
@@ -188,55 +188,23 @@ mod tests {
     use primitive_types::{H160, U256};
     use std::{collections::HashSet, ops::Sub};
 
-    fn trade(created_at: DateTime<Utc>, uid: u8) -> OrderTrade {
-        OrderTrade {
-            trade: Trade {
-                order: Order {
-                    metadata: OrderMetadata {
-                        creation_date: created_at,
-                        uid: OrderUid([uid; 56]),
-                        ..Default::default()
-                    },
+    fn trade(created_at: DateTime<Utc>, uid: u8, class: OrderClass) -> Trade {
+        Trade {
+            order: Order {
+                data: OrderData {
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    creation_date: created_at,
+                    uid: OrderUid([uid; 56]),
+                    class,
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            ..Default::default()
-        }
-    }
-
-    fn limit_trade(created_at: DateTime<Utc>, uid: u8) -> CustomPriceTrade {
-        CustomPriceTrade {
-            trade: Trade {
-                order: Order {
-                    metadata: OrderMetadata {
-                        creation_date: created_at,
-                        uid: OrderUid([uid; 56]),
-                        class: OrderClass::Limit,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    fn liquidity_trade(created_at: DateTime<Utc>, uid: u8) -> CustomPriceTrade {
-        CustomPriceTrade {
-            trade: Trade {
-                order: Order {
-                    metadata: OrderMetadata {
-                        creation_date: created_at,
-                        uid: OrderUid([uid; 56]),
-                        class: OrderClass::Liquidity,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            executed_amount: 1.into(),
             ..Default::default()
         }
     }
@@ -271,10 +239,18 @@ mod tests {
         let recent = Local::now().with_timezone(&Utc);
         let min_age = std::time::Duration::from_secs(50);
 
-        let settlement = |trades| Settlement::with_trades(hashmap!(), trades, vec![]);
-        let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)]);
-        let s2 = settlement(vec![trade(recent, 2), trade(recent, 3)]);
-        let s3 = settlement(vec![trade(recent, 4), trade(recent, 5)]);
+        let s1 = Settlement::with_default_prices(vec![
+            trade(recent, 1, OrderClass::Market),
+            trade(recent, 2, OrderClass::Market),
+        ]);
+        let s2 = Settlement::with_default_prices(vec![
+            trade(recent, 2, OrderClass::Market),
+            trade(recent, 3, OrderClass::Market),
+        ]);
+        let s3 = Settlement::with_default_prices(vec![
+            trade(recent, 4, OrderClass::Market),
+            trade(recent, 5, OrderClass::Market),
+        ]);
         let settlements = vec![s1, s2, s3];
         let mature_settlements = retain_mature_settlements(
             min_age,
@@ -294,12 +270,18 @@ mod tests {
         let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
         let min_age = std::time::Duration::from_secs(60);
 
-        let settlement = |trades, liquidity_order_trades| {
-            Settlement::with_trades(hashmap!(), trades, liquidity_order_trades)
-        };
-        let s1 = settlement(vec![trade(old, 1)], vec![limit_trade(recent, 2)]);
-        let s2 = settlement(vec![trade(recent, 3), trade(recent, 4)], vec![]);
-        let s3 = settlement(vec![trade(recent, 5)], vec![liquidity_trade(old, 6)]);
+        let s1 = Settlement::with_default_prices(vec![
+            trade(old, 1, OrderClass::Market),
+            trade(recent, 2, OrderClass::Limit(Default::default())),
+        ]);
+        let s2 = Settlement::with_default_prices(vec![
+            trade(recent, 3, OrderClass::Market),
+            trade(recent, 4, OrderClass::Market),
+        ]);
+        let s3 = Settlement::with_default_prices(vec![
+            trade(recent, 5, OrderClass::Market),
+            trade(old, 6, OrderClass::Liquidity),
+        ]);
         let settlements = vec![s1.clone(), s2, s3];
         let mature_settlements = retain_mature_settlements(
             min_age,
@@ -319,13 +301,24 @@ mod tests {
         let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
         let min_age = std::time::Duration::from_secs(60);
 
-        let settlement = |trades| Settlement::with_trades(hashmap!(), trades, vec![]);
-        let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)]);
-        let s2 = settlement(vec![trade(recent, 2), trade(recent, 3)]);
-        let s3 = settlement(vec![trade(recent, 3), trade(old, 4)]);
+        let s1 = Settlement::with_default_prices(vec![
+            trade(recent, 1, OrderClass::Market),
+            trade(recent, 2, OrderClass::Market),
+        ]);
+        let s2 = Settlement::with_default_prices(vec![
+            trade(recent, 2, OrderClass::Market),
+            trade(recent, 3, OrderClass::Market),
+        ]);
+        let s3 = Settlement::with_default_prices(vec![
+            trade(recent, 3, OrderClass::Market),
+            trade(old, 4, OrderClass::Market),
+        ]);
         // this will not be included because it only contains recent orders which are not
         // referenced in any other valid settlements
-        let s4 = settlement(vec![trade(recent, 5), trade(recent, 6)]);
+        let s4 = Settlement::with_default_prices(vec![
+            trade(recent, 5, OrderClass::Market),
+            trade(recent, 6, OrderClass::Market),
+        ]);
         let settlements = vec![s1.clone(), s2.clone(), s3.clone(), s4];
         let mature_settlements = retain_mature_settlements(
             min_age,
@@ -345,11 +338,14 @@ mod tests {
         let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
         let min_age = std::time::Duration::from_secs(60);
 
-        let settlement = |trades, liquidity_order_trades| {
-            Settlement::with_trades(hashmap!(), trades, liquidity_order_trades)
-        };
-        let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)], vec![]);
-        let s2 = settlement(vec![trade(recent, 2)], vec![liquidity_trade(old, 3)]);
+        let s1 = Settlement::with_default_prices(vec![
+            trade(recent, 1, OrderClass::Market),
+            trade(recent, 2, OrderClass::Market),
+        ]);
+        let s2 = Settlement::with_default_prices(vec![
+            trade(recent, 2, OrderClass::Market),
+            trade(old, 3, OrderClass::Liquidity),
+        ]);
         let settlements = vec![s1, s2];
         let mature_settlements = retain_mature_settlements(
             min_age,
@@ -375,35 +371,27 @@ mod tests {
             OrderUid([number; 56])
         }
 
-        let trade = |executed_amount, uid_: u8| OrderTrade {
-            trade: Trade {
-                sell_token_index: 0,
-                executed_amount,
-                order: Order {
-                    metadata: OrderMetadata {
-                        uid: uid(uid_),
-                        ..Default::default()
-                    },
-                    data: OrderData {
-                        sell_token: token0,
-                        buy_token: token1,
-                        sell_amount: executed_amount,
-                        buy_amount: 1.into(),
-                        kind: OrderKind::Buy,
-                        ..Default::default()
-                    },
+        let trade = |sell_amount, uid_: u8| Trade {
+            executed_amount: 1.into(),
+            order: Order {
+                metadata: OrderMetadata {
+                    uid: uid(uid_),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    sell_token: token0,
+                    buy_token: token1,
+                    sell_amount,
+                    buy_amount: 1.into(),
+                    kind: OrderKind::Buy,
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            buy_token_index: 1,
+            ..Default::default()
         };
         let settlement = |executed_amount: U256, order_uid: u8| {
-            Settlement::with_trades(
-                prices.clone(),
-                vec![trade(executed_amount, order_uid)],
-                vec![],
-            )
+            Settlement::with_trades(prices.clone(), vec![trade(executed_amount, order_uid)])
         };
 
         let mut settlements = vec![
@@ -540,58 +528,31 @@ mod tests {
 
     #[test]
     fn has_user_order_() {
-        let custom_price_order = |class| CustomPriceTrade {
-            trade: Trade {
-                order: Order {
-                    metadata: OrderMetadata {
-                        class,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let order = |class| trade(Default::default(), 0, class);
 
-        let settlement = Settlement::with_trades(Default::default(), vec![], vec![]);
-        assert!(!has_user_order(&settlement));
-
-        let settlement = Settlement::with_trades(
-            Default::default(),
-            vec![],
-            vec![custom_price_order(OrderClass::Limit)],
-        );
-        assert!(has_user_order(&settlement));
-
-        let settlement = Settlement::with_trades(
-            Default::default(),
-            vec![],
-            vec![custom_price_order(OrderClass::Liquidity)],
-        );
+        let settlement = Settlement::with_default_prices(vec![]);
         assert!(!has_user_order(&settlement));
 
         let settlement =
-            Settlement::with_trades(Default::default(), vec![OrderTrade::default()], vec![]);
+            Settlement::with_default_prices(vec![order(OrderClass::Limit(Default::default()))]);
         assert!(has_user_order(&settlement));
 
-        let settlement = Settlement::with_trades(
-            Default::default(),
-            vec![OrderTrade {
-                ..Default::default()
-            }],
-            vec![custom_price_order(OrderClass::Liquidity)],
-        );
+        let settlement = Settlement::with_default_prices(vec![order(OrderClass::Liquidity)]);
+        assert!(!has_user_order(&settlement));
+
+        let settlement = Settlement::with_default_prices(vec![order(OrderClass::Market)]);
         assert!(has_user_order(&settlement));
 
-        let settlement = Settlement::with_trades(
-            Default::default(),
-            vec![],
-            vec![
-                custom_price_order(OrderClass::Liquidity),
-                custom_price_order(OrderClass::Limit),
-            ],
-        );
+        let settlement = Settlement::with_default_prices(vec![
+            order(OrderClass::Market),
+            order(OrderClass::Liquidity),
+        ]);
+        assert!(has_user_order(&settlement));
+
+        let settlement = Settlement::with_default_prices(vec![
+            order(OrderClass::Liquidity),
+            order(OrderClass::Limit(Default::default())),
+        ]);
         assert!(has_user_order(&settlement));
     }
 }

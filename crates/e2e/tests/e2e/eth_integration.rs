@@ -1,9 +1,12 @@
 use crate::{
-    services::{
-        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-        uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
+    onchain_components::{
+        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
     },
-    tx, tx_value,
+    services::{
+        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
+        API_HOST,
+    },
+    tx,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -53,52 +56,20 @@ async fn eth_integration(web3: Web3) {
     let trader_buy_eth_b =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
 
-    // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_a.address(), to_wei(51))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_b.address(), to_wei(51))
-    );
+    // Create & mint tokens to trade, pools for fee connections
+    let token = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
-    let weth = contracts.weth.clone();
-    tx_value!(solver_account, to_wei(100_000), weth.deposit());
-
-    // Create and fund Uniswap pool
-    tx!(
-        solver_account,
-        contracts
-            .uniswap_factory
-            .create_pair(token.address(), weth.address())
-    );
-    tx!(
-        solver_account,
-        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        weth.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        contracts.uniswap_router.add_liquidity(
-            token.address(),
-            weth.address(),
-            to_wei(100_000),
-            to_wei(100_000),
-            0_u64.into(),
-            0_u64.into(),
-            solver_account.address(),
-            U256::max_value(),
-        )
-    );
+    token.mint(trader_buy_eth_a.address(), to_wei(51)).await;
+    token.mint(trader_buy_eth_b.address(), to_wei(51)).await;
+    let token = token.contract;
 
     // Approve GPv2 for trading
     tx!(
@@ -144,7 +115,7 @@ async fn eth_integration(web3: Web3) {
     assert_eq!(fee_invalid_token.status(), 400);
 
     // Place Orders
-    assert_ne!(weth.address(), BUY_ETH_ADDRESS);
+    assert_ne!(contracts.weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderBuilder::default()
         .with_kind(OrderKind::Buy)
         .with_sell_token(token.address())
@@ -214,13 +185,12 @@ async fn eth_integration(web3: Web3) {
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
-        weth.address(),
+        contracts.weth.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        Default::default(),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -250,7 +220,6 @@ async fn eth_integration(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

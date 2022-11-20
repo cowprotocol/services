@@ -48,6 +48,46 @@ struct ApiMetrics {
     requests_duration_seconds: prometheus::HistogramVec,
 }
 
+impl ApiMetrics {
+    // Status codes we care about in our application. Populated with:
+    // `rg -oIN 'StatusCode::[A-Z_]+' | sort | uniq`.
+    const INITIAL_STATUSES: &[StatusCode] = &[
+        StatusCode::OK,
+        StatusCode::CREATED,
+        StatusCode::BAD_REQUEST,
+        StatusCode::UNAUTHORIZED,
+        StatusCode::FORBIDDEN,
+        StatusCode::NOT_FOUND,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::SERVICE_UNAVAILABLE,
+    ];
+
+    fn reset_requests_rejected(&self) {
+        for status in Self::INITIAL_STATUSES {
+            self.requests_rejected
+                .with_label_values(&[status.as_str()])
+                .reset();
+        }
+    }
+
+    fn reset_requests_complete(&self, method: &str) {
+        for status in Self::INITIAL_STATUSES {
+            self.requests_complete
+                .with_label_values(&[method, status.as_str()])
+                .reset();
+        }
+    }
+
+    fn on_request_completed(&self, method: &str, status: StatusCode, timer: Instant) {
+        self.requests_complete
+            .with_label_values(&[method, status.as_str()])
+            .inc();
+        self.requests_duration_seconds
+            .with_label_values(&[method])
+            .observe(timer.elapsed().as_secs_f64());
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Error<'a> {
@@ -148,32 +188,46 @@ pub fn extract_payload_with_max_size<T: DeserializeOwned + Send>(
 }
 
 /// Sets up basic metrics, cors and proper log tracing for all routes.
+///
+/// # Panics
+///
+/// This method panics if `routes` is empty.
 pub fn finalize_router(
-    routes: BoxedFilter<(ApiReply, &'static str)>,
+    routes: Vec<(&'static str, BoxedFilter<(ApiReply,)>)>,
     log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
-    let routes_with_metrics = warp::any()
-        .map(Instant::now) // Start a timer at the beginning of response processing
-        .and(routes) // Parse requests
-        .map(|timer: Instant, reply: ApiReply, method: &'static str| {
-            let response = reply.into_response();
+    metrics.reset_requests_rejected();
+    for (method, _) in &routes {
+        metrics.reset_requests_complete(method);
+    }
 
-            metrics
-                .requests_complete
-                .with_label_values(&[method, response.status().as_str()])
-                .inc();
-            metrics
-                .requests_duration_seconds
-                .with_label_values(&[method])
-                .observe(timer.elapsed().as_secs_f64());
+    let router = routes
+        .into_iter()
+        .fold(
+            Option::<BoxedFilter<(&'static str, ApiReply)>>::None,
+            |router, (method, route)| {
+                let route = route.map(move |result| (method, result)).untuple_one();
+                let next = match router {
+                    Some(router) => router.or(route).unify().boxed(),
+                    None => route.boxed(),
+                };
+                Some(next)
+            },
+        )
+        .expect("routes cannot be empty");
 
-            response
-        })
-        .boxed();
+    let instrumented =
+        warp::any()
+            .map(Instant::now)
+            .and(router)
+            .map(|timer, method, reply: ApiReply| {
+                let response = reply.into_response();
+                metrics.on_request_completed(method, response.status(), timer);
+                response
+            });
 
     // Final setup
-
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -195,7 +249,8 @@ pub fn finalize_router(
         }
     });
 
-    routes_with_metrics
+    warp::path!("api" / ..)
+        .and(instrumented)
         .recover(handle_rejection)
         .with(cors)
         .with(warp::log::log(log_prefix))

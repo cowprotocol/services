@@ -94,6 +94,13 @@ impl Order {
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
+
+    pub fn is_user_order(&self) -> bool {
+        match self.metadata.class {
+            OrderClass::Market | OrderClass::Limit(_) => true,
+            OrderClass::Liquidity => false,
+        }
+    }
 }
 
 /// Remaining order buy, sell and fee amounts.
@@ -136,6 +143,11 @@ impl OrderBuilder {
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
         self.0.data.app_data = AppId(app_data);
+        self
+    }
+
+    pub fn with_receiver(mut self, receiver: Option<H160>) -> Self {
+        self.0.data.receiver = receiver;
         self
     }
 
@@ -207,7 +219,11 @@ impl OrderBuilder {
     }
 
     pub fn with_surplus_fee(mut self, surplus_fee: U256) -> Self {
-        self.0.metadata.surplus_fee = surplus_fee;
+        if let OrderClass::Limit(limit) = &mut self.0.metadata.class {
+            limit.surplus_fee = surplus_fee;
+        } else {
+            panic!("not a limit order");
+        }
         self
     }
 
@@ -466,6 +482,7 @@ pub struct CancellationPayload {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
     pub is_refunded: bool,
@@ -494,6 +511,7 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
+    #[serde(flatten)]
     pub class: OrderClass,
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
@@ -503,9 +521,6 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
-    #[serde(default, with = "u256_decimal")]
-    pub surplus_fee: U256,
-    pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -626,9 +641,9 @@ pub enum OrderKind {
     Sell,
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
-#[serde(rename_all = "lowercase")]
+#[serde(tag = "class", rename_all = "lowercase")]
 pub enum OrderClass {
     /// The most common type of order which can be placed by any user. Expected to be fulfilled
     /// immediately (in the next block).
@@ -643,7 +658,21 @@ pub enum OrderClass {
     /// the future, then fulfill my order". These orders have their fee set to zero, because it's
     /// impossible to predict fees that far in the future. Instead, the fee is taken from the order
     /// surplus once the order becomes fulfillable and the surplus is high enough.
-    Limit,
+    Limit(LimitOrderClass),
+}
+
+impl OrderClass {
+    pub fn is_limit(&self) -> bool {
+        matches!(self, Self::Limit(_))
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitOrderClass {
+    #[serde(with = "u256_decimal")]
+    pub surplus_fee: U256,
+    pub surplus_fee_timestamp: DateTime<Utc>,
 }
 
 impl OrderKind {
@@ -670,7 +699,7 @@ impl OrderKind {
     }
 }
 
-/// Source from which the sellAmount should be drawn upon order fulfilment
+/// Source from which the sellAmount should be drawn upon order fulfillment
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
@@ -695,7 +724,7 @@ impl SellTokenSource {
     }
 }
 
-/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
+/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfillment
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
@@ -768,7 +797,7 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
-            "class": "market",
+            "class": "limit",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
@@ -785,6 +814,10 @@ mod tests {
         let expected = Order {
             metadata: OrderMetadata {
                 creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: U256::MAX,
+                    surplus_fee_timestamp: Default::default(),
+                }),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: Some(100.into()),
@@ -796,7 +829,6 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
-                surplus_fee: U256::MAX,
                 ..Default::default()
             },
             data: OrderData {

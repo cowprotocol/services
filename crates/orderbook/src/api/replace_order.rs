@@ -7,7 +7,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{reply, Filter, Rejection};
 
 fn request() -> impl Filter<Extract = (OrderUid, OrderCreation), Error = Rejection> + Clone {
-    warp::path!("orders" / OrderUid)
+    warp::path!("v1" / "orders" / OrderUid)
         .and(warp::patch())
         .and(extract_payload())
 }
@@ -54,7 +54,7 @@ mod tests {
         let new_order = OrderCreation::default();
 
         let result = warp::test::request()
-            .path(&format!("/orders/{old_order}"))
+            .path(&format!("/v1/orders/{old_order}"))
             .method("PATCH")
             .header("content-type", "application/json")
             .json(&new_order)

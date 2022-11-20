@@ -13,7 +13,7 @@ struct Query {
 }
 
 fn request() -> impl Filter<Extract = (H160, Query), Error = Rejection> + Clone {
-    warp::path!("account" / H160 / "orders")
+    warp::path!("v1" / "account" / H160 / "orders")
         .and(warp::get())
         .and(warp::query::<Query>())
 }
@@ -52,7 +52,7 @@ mod tests {
 
     #[tokio::test]
     async fn request_() {
-        let path = "/account/0x0000000000000000000000000000000000000001/orders";
+        let path = "/v1/account/0x0000000000000000000000000000000000000001/orders";
         let result = warp::test::request()
             .path(path)
             .method("GET")
@@ -63,7 +63,7 @@ mod tests {
         assert_eq!(result.1.offset, None);
         assert_eq!(result.1.limit, None);
 
-        let path = "/account/0x0000000000000000000000000000000000000001/orders?offset=1&limit=2";
+        let path = "/v1/account/0x0000000000000000000000000000000000000001/orders?offset=1&limit=2";
         let result = warp::test::request()
             .path(path)
             .method("GET")

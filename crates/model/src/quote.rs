@@ -44,6 +44,17 @@ pub enum QuoteSigningScheme {
 }
 
 impl QuoteSigningScheme {
+    /// Returns the additional gas amount associated with a signing scheme.
+    pub fn additional_gas_amount(&self) -> u64 {
+        match self {
+            QuoteSigningScheme::Eip1271 {
+                verification_gas_limit,
+                ..
+            } => *verification_gas_limit,
+            _ => 0u64,
+        }
+    }
+
     pub fn new_eip1271_with_default_gas(onchain_order: bool) -> Self {
         QuoteSigningScheme::Eip1271 {
             onchain_order,

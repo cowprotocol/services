@@ -1,26 +1,16 @@
 use crate::{auction::AuctionId, TransactionHash};
 use sqlx::{types::JsonValue, PgConnection};
 
-// TODO: once the auction_transaction are verified to work we can remove the tx_hash
-// column and argument.
 pub async fn save(
     ex: &mut PgConnection,
     id: AuctionId,
     data: &JsonValue,
-    tx_hash: Option<&TransactionHash>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO solver_competitions (id, json, tx_hash)
-VALUES ($1, $2, $3)
-ON CONFLICT (id) DO UPDATE
-SET json = EXCLUDED.json, tx_hash = EXCLUDED.tx_hash
+INSERT INTO solver_competitions (id, json)
+VALUES ($1, $2)
     ;"#;
-    sqlx::query(QUERY)
-        .bind(id)
-        .bind(data)
-        .bind(tx_hash)
-        .execute(ex)
-        .await?;
+    sqlx::query(QUERY).bind(id).bind(data).execute(ex).await?;
     Ok(())
 }
 
@@ -83,19 +73,12 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let value = JsonValue::Bool(true);
-        save(&mut db, 0, &value, None).await.unwrap();
+        save(&mut db, 0, &value).await.unwrap();
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
         assert_eq!(value, value_.json);
         assert!(value_.tx_hash.is_none());
 
         assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
-
-        let value = JsonValue::String("a".to_string());
-        let tx_hash = ByteArray([0x01; 32]);
-        save(&mut db, 0, &value, Some(&tx_hash)).await.unwrap();
-        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
-        assert_eq!(value, value_.json);
-        assert!(value_.tx_hash.is_none());
     }
 
     #[tokio::test]
@@ -108,7 +91,7 @@ mod tests {
         let id: i64 = 5;
         let value = JsonValue::Bool(true);
         let hash = ByteArray([1u8; 32]);
-        save(&mut db, id, &value, Some(&hash)).await.unwrap();
+        save(&mut db, id, &value).await.unwrap();
 
         let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
         assert_eq!(value, value_by_id.json);
@@ -154,27 +137,5 @@ mod tests {
         // By id also sees the hash now.
         let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
         assert_eq!(hash, value_by_id.tx_hash.unwrap());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_can_overwrite() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let value = JsonValue::Bool(true);
-        save(&mut db, 0, &value, None).await.unwrap();
-        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
-        assert_eq!(value, value_.json);
-        assert!(value_.tx_hash.is_none());
-
-        // overwrite id
-        let value = JsonValue::Bool(false);
-        let hash = ByteArray([1u8; 32]);
-        save(&mut db, 0, &value, Some(&hash)).await.unwrap();
-        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
-        assert_eq!(value, value_.json);
-        assert!(value_.tx_hash.is_none());
     }
 }

@@ -128,6 +128,7 @@ impl ZeroExLiquidity {
             }),
             exchange: Exchange::ZeroEx,
             reward: 0.,
+            is_mature: false, // irrelevant for liquidity orders
         };
         Some(Liquidity::LimitOrder(limit_order))
     }

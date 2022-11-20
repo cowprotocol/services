@@ -87,7 +87,7 @@ impl AuctionTransactionUpdater {
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
         self.db
-            .update_settlement_tx_info(event.block_number, event.log_index, from, nonce, hash)
+            .update_settlement_tx_info(event.block_number, event.log_index, from, nonce)
             .await
             .context("update_settlement_tx_info")?;
 

@@ -139,7 +139,7 @@ impl SolvableOrdersCache {
     /// Manually update solvable orders. Usually called by the background updating task.
     ///
     /// Usually this method is called from update_task. If it isn't, which is the case in unit tests,
-    /// then concurrent calls might overwrite eachother's results.
+    /// then concurrent calls might overwrite each other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self
@@ -257,22 +257,22 @@ impl SolvableOrdersCache {
         prices: &BTreeMap<H160, U256>,
     ) -> Vec<Order> {
         orders.retain(|order| {
-            if order.metadata.class != OrderClass::Limit {
-                return true;
-            }
-
-            // Convert the sell and buy price to the native token (ETH) and make sure that sell
-            // with the surplus fee is higher than buy with the configurable price factor.
-            let sell_native = (order.data.sell_amount + order.metadata.surplus_fee)
-                * prices.get(&order.data.sell_token).unwrap();
-            let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
-            let sell_native = u256_to_big_decimal(&sell_native);
-            let buy_native = u256_to_big_decimal(&buy_native);
-            if sell_native >= buy_native * self.limit_order_price_factor.clone() {
-                true
+            if let OrderClass::Limit(limit) = &order.metadata.class {
+                // Convert the sell and buy price to the native token (ETH) and make sure that sell
+                // with the surplus fee is higher than buy with the configurable price factor.
+                let sell_native = (order.data.sell_amount + limit.surplus_fee)
+                    * prices.get(&order.data.sell_token).unwrap();
+                let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
+                let sell_native = u256_to_big_decimal(&sell_native);
+                let buy_native = u256_to_big_decimal(&buy_native);
+                if sell_native >= buy_native * self.limit_order_price_factor.clone() {
+                    true
+                } else {
+                    tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
+                    false
+                }
             } else {
-                tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
-                false
+                true
             }
         });
         orders
@@ -331,7 +331,7 @@ async fn filter_invalid_signature_orders(
         .collect()
 }
 
-/// Returns existing balances and Vec of queries that need to be peformed.
+/// Returns existing balances and Vec of queries that need to be performed.
 fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U256>, Vec<Query>) {
     let mut new_balances = HashMap::new();
     let mut missing_queries = HashSet::new();

@@ -6,7 +6,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
 pub fn request() -> impl Filter<Extract = (SignedOrderCancellations,), Error = Rejection> + Clone {
-    warp::path!("orders")
+    warp::path!("v1" / "orders")
         .and(warp::delete())
         .and(extract_payload())
 }

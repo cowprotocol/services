@@ -121,6 +121,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     CommonComponents {
@@ -408,14 +409,14 @@ async fn build_auction_converter(
             (None, None)
         };
 
-    let maintainer = ServiceMaintenance {
-        maintainers: pool_caches
+    let maintainer = ServiceMaintenance::new(
+        pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
             .collect(),
-    };
+    );
     tokio::task::spawn(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use contracts::{
-    BalancerV2Authorizer, BalancerV2Vault, GPv2AllowListAuthentication, GPv2Settlement,
-    UniswapV2Factory, UniswapV2Router02, WETH9,
+    BalancerV2Authorizer, BalancerV2Vault, CoWSwapEthFlow, GPv2AllowListAuthentication,
+    GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9,
 };
 use ethcontract::{Address, U256};
 use model::DomainSeparator;
@@ -15,6 +15,7 @@ pub struct Contracts {
     pub weth: WETH9,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
+    pub ethflow: CoWSwapEthFlow,
 }
 
 pub async fn deploy(web3: &Web3) -> Result<Contracts> {
@@ -95,6 +96,8 @@ pub async fn deploy(web3: &Web3) -> Result<Contracts> {
             .0,
     );
 
+    let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address(),));
+
     Ok(Contracts {
         balancer_vault,
         gp_settlement,
@@ -103,5 +106,6 @@ pub async fn deploy(web3: &Web3) -> Result<Contracts> {
         weth,
         allowance,
         domain_separator,
+        ethflow,
     })
 }

@@ -1,4 +1,4 @@
-use ethcontract::{futures::FutureExt, U256};
+use ethcontract::{futures::FutureExt, Account, Address, U256};
 use lazy_static::lazy_static;
 use shared::ethrpc::{create_test_transport, Web3};
 use std::{
@@ -101,5 +101,25 @@ impl<T: Transport> EvmApi<T> {
     pub fn revert(&self, snapshot_id: &U256) -> CallFuture<bool, T::Out> {
         let value_id = serde_json::json!(snapshot_id);
         CallFuture::new(self.transport.execute("evm_revert", vec![value_id]))
+    }
+}
+
+pub struct AccountAssigner {
+    pub default_deployer: Account,
+    free_accounts: Vec<Account>,
+}
+
+impl AccountAssigner {
+    pub async fn new(web3: &Web3) -> Self {
+        let addresses: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
+        let mut accounts = addresses.into_iter().map(|addr| Account::Local(addr, None));
+        AccountAssigner {
+            default_deployer: accounts.next().expect("No accounts available"),
+            free_accounts: accounts.collect(),
+        }
+    }
+
+    pub fn assign_free_account(&mut self) -> Account {
+        self.free_accounts.pop().expect("No testing accounts available, consider increasing the number of testing account in the test node")
     }
 }

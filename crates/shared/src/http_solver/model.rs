@@ -42,6 +42,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
     /// Signals if the order will be executed as an atomic unit. In that case the order's
@@ -261,9 +262,11 @@ impl UpdatedAmmModel {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlan {
+    #[serde(flatten)]
     pub coordinates: ExecutionPlanCoordinatesModel,
+    #[serde(default)]
     pub internal: bool,
 }
 
@@ -433,6 +436,7 @@ mod tests {
             mandatory: false,
             has_atomic_execution: false,
             reward: 3.,
+            is_mature: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -588,7 +592,8 @@ mod tests {
               },
               "mandatory": false,
               "has_atomic_execution": false,
-              "reward": 3.0
+              "reward": 3.0,
+              "is_mature": false,
             },
           },
           "amms": {
@@ -758,10 +763,8 @@ mod tests {
             serde_json::from_str::<ExecutionPlan>(
                 r#"
                     {
-                        "coordinates": {
-                            "sequence": 42,
-                            "position": 1337
-                        },
+                        "sequence": 42,
+                        "position": 1337,
                         "internal": true
                     }
                 "#,
@@ -770,7 +773,7 @@ mod tests {
             ExecutionPlan {
                 coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 42,
-                    position: 1337
+                    position: 1337,
                 },
                 internal: true
             }
@@ -803,10 +806,8 @@ mod tests {
                             }
                         ],
                         "exec_plan": {
-                            "coordinates": {
-                                "sequence": 42,
-                                "position": 1337
-                            },
+                            "sequence": 42,
+                            "position": 1337,
                             "internal": true
                         },
                         "cost": {
@@ -838,7 +839,7 @@ mod tests {
                 exec_plan: ExecutionPlan {
                     coordinates: ExecutionPlanCoordinatesModel {
                         sequence: 42,
-                        position: 1337
+                        position: 1337,
                     },
                     internal: true,
                 },
