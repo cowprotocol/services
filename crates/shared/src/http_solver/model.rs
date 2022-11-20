@@ -266,7 +266,6 @@ impl UpdatedAmmModel {
 pub struct ExecutionPlan {
     #[serde(flatten)]
     pub coordinates: ExecutionPlanCoordinatesModel,
-    #[serde(default)]
     pub internal: bool,
 }
 
