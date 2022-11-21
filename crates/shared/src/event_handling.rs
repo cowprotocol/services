@@ -139,8 +139,8 @@ where
         };
 
         let current_block = self.block_retriever.current_block().await?;
-        let current_block_number = current_block.number.context("missing number")?.as_u64();
-        let current_block_hash = current_block.hash.context("missing hash")?;
+        let current_block_number = current_block.number;
+        let current_block_hash = current_block.hash;
         let (last_handled_block_number, last_handled_block_hash) = *handled_blocks.last().unwrap();
         tracing::debug!(
             "current block: {} - {:?}, handled_blocks: {:?}",

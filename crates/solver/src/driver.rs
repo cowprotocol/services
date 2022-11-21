@@ -30,11 +30,8 @@ use model::{
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    current_block::{self, CurrentBlockStream},
-    ethrpc::Web3,
-    http_solver::model::SolverRunError,
-    recent_block_cache::Block,
-    tenderly_api::TenderlyApi,
+    current_block::CurrentBlockStream, ethrpc::Web3, http_solver::model::SolverRunError,
+    recent_block_cache::Block, tenderly_api::TenderlyApi,
 };
 use std::{
     sync::Arc,
@@ -199,8 +196,7 @@ impl Driver {
         let auction_id = auction.id;
         let mut auction = auction.auction;
 
-        let current_block_during_liquidity_fetch =
-            current_block::block_number(&self.block_stream.borrow())?;
+        let current_block_during_liquidity_fetch = self.block_stream.borrow().number;
 
         let before_count = auction.orders.len();
         let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
@@ -292,12 +288,7 @@ impl Driver {
 
         // We don't know the exact block because simulation can happen over multiple blocks but
         // this is a good approximation.
-        let block_during_simulation = self
-            .block_stream
-            .borrow()
-            .number
-            .unwrap_or_default()
-            .as_u64();
+        let block_during_simulation = self.block_stream.borrow().number;
 
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 

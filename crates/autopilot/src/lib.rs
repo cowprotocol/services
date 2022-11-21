@@ -487,7 +487,7 @@ pub async fn main(args: arguments::Arguments) {
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
-    let block = current_block_stream.borrow().number.unwrap().as_u64();
+    let block = current_block_stream.borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         db.clone(),

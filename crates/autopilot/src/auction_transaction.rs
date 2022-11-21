@@ -48,12 +48,7 @@ impl AuctionTransactionUpdater {
     ///
     /// Returns whether an update was performed.
     async fn update(&self) -> Result<bool> {
-        let current_block = self
-            .current_block
-            .borrow()
-            .number
-            .context("no block number")?
-            .as_u64();
+        let current_block = self.current_block.borrow().number;
         let reorg_safe_block: u64 = current_block
             .checked_sub(MAX_REORG_BLOCK_COUNT)
             .context("no reorg safe block")?;
