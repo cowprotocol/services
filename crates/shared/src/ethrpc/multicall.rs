@@ -26,11 +26,11 @@ pub struct Call {
     /// Optional gas limit to use for the call.
     pub gas: Option<U256>,
 
-    /// Optional value to use for the call.
-    pub value: Option<U256>,
+    /// Value to use for the call.
+    pub value: U256,
 
     /// Data to use for the call.
-    pub data: Bytes,
+    pub data: Vec<u8>,
 }
 
 impl Call {
@@ -39,8 +39,8 @@ impl Call {
         (
             self.to,
             self.gas.unwrap_or_default(),
-            self.value.unwrap_or_default(),
-            ethcontract::Bytes(self.data.0),
+            self.value,
+            ethcontract::Bytes(self.data),
         )
     }
 }
@@ -61,7 +61,7 @@ pub struct Options {
     pub gas_price: Option<U256>,
 
     /// The transaction type index.
-    pub transaction_type: Option<U64>,
+    pub transaction_type: Option<u64>,
 
     /// Access list.
     pub access_list: Option<AccessList>,
@@ -81,7 +81,7 @@ pub trait MulticallExt<T> {
         calls: Vec<Call>,
         options: Options,
         block: Option<BlockId>,
-    ) -> Vec<Result<Bytes, ExecutionError>>;
+    ) -> Vec<Result<Vec<u8>, ExecutionError>>;
 }
 
 #[async_trait::async_trait]
@@ -95,9 +95,9 @@ where
         calls: Vec<Call>,
         options: Options,
         block: Option<BlockId>,
-    ) -> Vec<Result<Bytes, ExecutionError>> {
+    ) -> Vec<Result<Vec<u8>, ExecutionError>> {
         let len = calls.len();
-        let value = calls.iter().flat_map(|call| call.value).max();
+        let value = calls.iter().map(|call| call.value).max();
 
         println!("0x{}", hex::encode(encode(calls.clone()).0));
 
@@ -110,7 +110,7 @@ where
                     gas_price: options.gas_price,
                     value,
                     data: Some(encode(calls)),
-                    transaction_type: options.transaction_type,
+                    transaction_type: options.transaction_type.map(U64::from),
                     access_list: options.access_list,
                     max_fee_per_gas: options.max_fee_per_gas,
                     max_priority_fee_per_gas: options.max_priority_fee_per_gas,
@@ -137,7 +137,7 @@ fn encode(calls: Vec<Call>) -> Bytes {
         .unwrap()
 }
 
-fn decode(len: usize, return_data: Bytes) -> Vec<Result<Bytes, ExecutionError>> {
+fn decode(len: usize, return_data: Bytes) -> Vec<Result<Vec<u8>, ExecutionError>> {
     let results = match decode_return_data(len, return_data) {
         Ok(value) => value,
         Err(err) => return repeat_err(err, len),
@@ -146,7 +146,7 @@ fn decode(len: usize, return_data: Bytes) -> Vec<Result<Bytes, ExecutionError>> 
     results
         .into_iter()
         .map(|(success, data)| match success {
-            true => Ok(Bytes(data.0)),
+            true => Ok(data.0),
             false => Err(ExecutionError::Revert(decode_revert_reason(&data.0))),
         })
         .collect()
@@ -216,19 +216,25 @@ mod tests {
     use crate::ethrpc::{create_env_test_transport, Web3};
     use std::fmt::Debug;
 
+    macro_rules! data {
+        ($x:literal) => {{
+            ::hex_literal::hex!($x).to_vec()
+        }};
+    }
+
     #[test]
     fn encode_multicall() {
         let encoded = encode(vec![
             Call {
                 to: H160([1; 20]),
-                data: Bytes(vec![1, 2]),
+                data: vec![1, 2],
                 ..Default::default()
             },
             Call {
                 to: H160([2; 20]),
                 gas: Some(42.into()),
-                value: Some(1337.into()),
-                data: Bytes(vec![3, 4]),
+                value: 1337.into(),
+                data: vec![3, 4],
             },
         ]);
 
@@ -289,7 +295,7 @@ mod tests {
         assert_result_eq(
             &decoded,
             &[
-                Ok(bytes!("0102")),
+                Ok(data!("0102")),
                 Err(ExecutionError::Revert(None)),
                 Err(ExecutionError::Revert(Some("poop".to_owned()))),
             ],
@@ -308,21 +314,21 @@ mod tests {
                     Call {
                         to: testlib::tokens::COW,
                         // name()
-                        data: bytes!("06fdde03"),
+                        data: data!("06fdde03"),
                         ..Default::default()
                     },
                     // Revert because COW token doesn't accept ETH transfers
                     Call {
                         to: testlib::tokens::COW,
-                        value: Some(1.into()),
-                        data: bytes!(""),
+                        value: 1.into(),
+                        data: data!(""),
                         ..Default::default()
                     },
                     // Revert because Multicall address doesn't have balance
                     Call {
                         to: testlib::tokens::COW,
                         // transfer(settlement, 1.0)
-                        data: bytes!(
+                        data: data!(
                             "a9059cbb
                              0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41
                              0000000000000000000000000000000000000000000000000de0b6b3a7640000"
@@ -333,8 +339,8 @@ mod tests {
                     Call {
                         to: testlib::tokens::WETH,
                         // deposit()
-                        value: Some(1.into()),
-                        data: bytes!("d0e30db0"),
+                        value: 1.into(),
+                        data: data!("d0e30db0"),
                         ..Default::default()
                     },
                 ],
@@ -347,7 +353,7 @@ mod tests {
             &results,
             &[
                 // "CoW Protocol Token"
-                Ok(bytes!(
+                Ok(data!(
                     "0000000000000000000000000000000000000000000000000000000000000020
                      0000000000000000000000000000000000000000000000000000000000000012
                      436f572050726f746f636f6c20546f6b656e0000000000000000000000000000"
@@ -356,7 +362,7 @@ mod tests {
                 Err(ExecutionError::Revert(Some(
                     "ERC20: transfer amount exceeds balance".to_owned(),
                 ))),
-                Ok(bytes!("")),
+                Ok(data!("")),
             ],
         );
     }
@@ -372,14 +378,14 @@ mod tests {
                     // Deposit WETH
                     Call {
                         to: testlib::tokens::WETH,
-                        value: Some(1.into()),
-                        data: bytes!(""),
+                        value: 1.into(),
+                        data: data!(""),
                         ..Default::default()
                     },
                     // Withdraw the WETH
                     Call {
                         to: testlib::tokens::WETH,
-                        data: bytes!(
+                        data: data!(
                             "2e1a7d4d
                              0000000000000000000000000000000000000000000000000000000000000001"
                         ),
@@ -399,7 +405,7 @@ mod tests {
             &[
                 // Deposit is successful, which increase the balance of the
                 // Multicall contract.
-                Ok(bytes!("")),
+                Ok(data!("")),
                 // But the withdraw fails because the balance increase does not
                 // affect the second call.
                 Err(ExecutionError::Revert(None)),
