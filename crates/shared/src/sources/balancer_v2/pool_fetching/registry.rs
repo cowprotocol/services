@@ -3,7 +3,7 @@
 
 use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
 use crate::{
-    current_block::BlockNumberHash,
+    current_block::{BlockNumberHash, BlockRetrieving},
     ethcontract_error::EthcontractErrorType,
     ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
     event_handling::EventHandler,
@@ -25,8 +25,7 @@ impl_event_retrieving! {
 }
 
 /// Type alias for the internal event updater type.
-type PoolUpdater<Factory> =
-    Mutex<EventHandler<Web3, BasePoolFactoryContract, PoolStorage<Factory>>>;
+type PoolUpdater<Factory> = Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>>>;
 
 /// The Pool Registry maintains an event handler for each of the Balancer Pool Factory contracts
 /// and maintains a `PoolStorage` for each.
@@ -48,6 +47,7 @@ where
 {
     /// Returns a new pool registry for the specified factory.
     pub fn new(
+        block_retreiver: Arc<dyn BlockRetrieving>,
         fetcher: Arc<dyn PoolInfoFetching<Factory>>,
         factory_instance: &Instance<Web3Transport>,
         initial_pools: Vec<Factory::PoolInfo>,
@@ -55,7 +55,7 @@ where
     ) -> Self {
         let web3 = factory_instance.web3();
         let updater = Mutex::new(EventHandler::new(
-            web3.clone(),
+            block_retreiver,
             BasePoolFactoryContract(base_pool_factory(factory_instance)),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,

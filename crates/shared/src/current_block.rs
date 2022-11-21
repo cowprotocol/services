@@ -1,14 +1,16 @@
+mod arguments;
+mod eth_call;
+
+pub use self::arguments::Arguments;
 use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
-use contracts::support::FetchBlock;
-use ethcontract::U256;
 use primitive_types::H256;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
     helpers,
-    types::{BlockNumber, CallRequest},
+    types::{BlockId, BlockNumber, U64},
     BatchTransport, Transport,
 };
 
@@ -55,17 +57,17 @@ pub struct BlockInfo {
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
 pub async fn current_block_stream(
-    web3: Web3,
+    retreiver: Arc<dyn BlockRetrieving>,
     poll_interval: Duration,
-) -> Result<watch::Receiver<BlockInfo>> {
-    let first_block = web3.current_block().await?;
+) -> Result<CurrentBlockStream> {
+    let first_block = retreiver.current_block().await?;
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match web3.current_block().await {
+            let block = match retreiver.current_block().await {
                 Ok(block) => block,
                 Err(err) => {
                     tracing::warn!("failed to get current block: {:?}", err);
@@ -111,42 +113,21 @@ pub fn into_stream(receiver: CurrentBlockStream) -> WatchStream<BlockInfo> {
 /// Trait for abstracting the retrieval of the block information such as the
 /// latest block number.
 #[async_trait::async_trait]
-pub trait BlockRetrieving {
+pub trait BlockRetrieving: Send + Sync + 'static {
     async fn current_block(&self) -> Result<BlockInfo>;
+    async fn block(&self, number: u64) -> Result<BlockNumberHash>;
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
 impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
-        let return_data = self
-            .eth()
-            .call(
-                CallRequest {
-                    data: Some(bytecode!(FetchBlock)),
-                    ..Default::default()
-                },
-                Some(BlockNumber::Pending.into()),
-            )
-            .await
-            .context("failed to execute block fetch call")?
-            .0;
+        get_block_info_at_id(self, BlockNumber::Latest.into()).await
+    }
 
-        ensure!(
-            return_data.len() == 96,
-            "failed to decode block fetch result"
-        );
-        let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
-            .ok()
-            .context("block number overflows u64")?;
-        let hash = H256::from_slice(&return_data[32..64]);
-        let parent_hash = H256::from_slice(&return_data[64..96]);
-
-        Ok(BlockInfo {
-            number,
-            hash,
-            parent_hash,
-        })
+    async fn block(&self, number: u64) -> Result<BlockNumberHash> {
+        let block = get_block_info_at_id(self, U64::from(number).into()).await?;
+        Ok((block.number, block.hash))
     }
 
     /// get blocks defined by the range (inclusive)
@@ -181,6 +162,21 @@ impl BlockRetrieving for Web3 {
             })
             .collect()
     }
+}
+
+async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
+    let block = web3
+        .eth()
+        .block(id)
+        .await
+        .with_context(|| format!("failed to get block for {id:?}"))?
+        .with_context(|| format!("no block for {id:?}"))?;
+
+    Ok(BlockInfo {
+        number: block.number.context("block missing number")?.as_u64(),
+        hash: block.hash.context("block missing hash")?,
+        parent_hash: block.parent_hash,
+    })
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -222,7 +218,7 @@ mod tests {
         let node = std::env::var("NODE_URL").unwrap();
         let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);
-        let receiver = current_block_stream(web3, Duration::from_secs(1))
+        let receiver = current_block_stream(Arc::new(web3), Duration::from_secs(1))
             .await
             .unwrap();
         let mut stream = into_stream(receiver);
