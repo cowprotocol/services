@@ -26,7 +26,7 @@ pub struct Arguments {
     /// Flag for enabling eth_call based block fetching. This is useful when
     /// conneting to Nethermind nodes where they can return block headers before
     /// the state is available which causes issues updating internal state.
-    #[clap(long, env, default_value = "getblock")]
+    #[clap(long, env, default_value = "get-block")]
     pub block_stream_retriever_strategy: BlockRetrieverStrategy,
 }
 
