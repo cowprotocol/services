@@ -526,13 +526,15 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
     );
 
-    LimitOrderQuoter {
-        limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
-        loop_delay: args.max_surplus_fee_age / 2,
-        quoter,
-        database: db,
+    if args.enable_limit_orders {
+        LimitOrderQuoter {
+            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+            loop_delay: args.max_surplus_fee_age / 2,
+            quoter,
+            database: db,
+        }
+        .spawn();
     }
-    .spawn();
 
     tokio::select! {
         result = serve_metrics => panic!("serve_metrics exited {:?}", result),
