@@ -48,7 +48,7 @@ pub const ALL_TABLES: &[&str] = &[
     "auctions",
     "onchain_placed_orders",
     "ethflow_orders",
-    "order_rewards",
+    "order_execution",
     "interactions",
     "auction_transaction",
 ];

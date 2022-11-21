@@ -1382,7 +1382,7 @@ pub mod tests {
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
                                 surplus_fee: 1_000_u128.into(),
-                                surplus_fee_timestamp: Default::default(),
+                                ..Default::default()
                             }),
                             ..Default::default()
                         },
@@ -1416,7 +1416,7 @@ pub mod tests {
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
                                 surplus_fee: 1_000_u128.into(),
-                                surplus_fee_timestamp: Default::default(),
+                                ..Default::default()
                             }),
                             ..Default::default()
                         },
@@ -1457,7 +1457,7 @@ pub mod tests {
                     metadata: OrderMetadata {
                         class: OrderClass::Limit(LimitOrderClass {
                             surplus_fee: 1_000_u128.into(),
-                            surplus_fee_timestamp: Default::default(),
+                            ..Default::default()
                         }),
                         ..Default::default()
                     },

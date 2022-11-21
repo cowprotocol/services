@@ -8,7 +8,7 @@ pub async fn save(
     reward: f64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_rewards (order_uid, auction_id, reward)
+INSERT INTO order_execution (order_uid, auction_id, reward)
 VALUES ($1, $2, $3)
     ;"#;
     sqlx::query(QUERY)
