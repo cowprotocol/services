@@ -76,6 +76,9 @@ pub struct Options {
 /// Web3 convenience multicall extension.
 #[async_trait::async_trait]
 pub trait MulticallExt<T> {
+    /// Performs a multicall for the specified call entries. Returns a vector
+    /// with the same length of the `calls` parameter containing the return data
+    /// from each of the call entries.
     async fn multicall(
         &self,
         calls: Vec<Call>,
