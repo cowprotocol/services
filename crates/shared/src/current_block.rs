@@ -169,8 +169,8 @@ async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
         .eth()
         .block(id)
         .await
-        .context("failed to get latest block")?
-        .context("no current block")?;
+        .with_context(|| format!("failed to get block for {id:?}"))?
+        .with_context(|| format!("no block for {id:?}"))?;
 
     Ok(BlockInfo {
         number: block.number.context("block missing number")?.as_u64(),
