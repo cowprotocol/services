@@ -22,7 +22,7 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
-    order::OrderUid,
+    order::{LimitOrderClass, OrderClass, OrderUid},
     solver_competition::{
         self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
     },
@@ -358,6 +358,17 @@ impl Driver {
                 })
                 .collect();
 
+            let executed_surplus_fees: Vec<(OrderUid, U256)> = winning_settlement
+                .settlement
+                .traded_orders()
+                .filter_map(|order| match order.metadata.class {
+                    OrderClass::Market | OrderClass::Liquidity => None,
+                    OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                        Some((order.metadata.uid, surplus_fee))
+                    }
+                })
+                .collect();
+
             let account = winning_solver.account();
             let address = account.address();
             let nonce = self
@@ -380,6 +391,7 @@ impl Driver {
                 transaction,
                 competition: solver_competition,
                 rewards,
+                executed_surplus_fees,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure the
             // competition info has been stored.
