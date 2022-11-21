@@ -19,7 +19,7 @@
 //! a cache of previous blocks in the first place as we could simplify this module if it was only
 //! used by by the former.
 
-use crate::current_block::{self, CurrentBlockStream};
+use crate::current_block::CurrentBlockStream;
 use anyhow::Result;
 use ethcontract::BlockNumber;
 use lru::LruCache;
@@ -139,7 +139,7 @@ where
         block_stream: CurrentBlockStream,
         metrics_label: &'static str,
     ) -> Result<Self> {
-        let block = current_block::block_number(&block_stream.borrow())?;
+        let block = block_stream.borrow().number;
         Ok(Self {
             mutexed: Mutex::new(Mutexed::new(
                 config.number_of_entries_to_auto_update,
@@ -157,7 +157,7 @@ where
     }
 
     pub async fn update_cache(&self) -> Result<()> {
-        let new_block = current_block::block_number(&self.block_stream.borrow())?;
+        let new_block = self.block_stream.borrow().number;
         self.update_cache_at_block(new_block).await
     }
 
@@ -346,10 +346,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::current_block::Block as Web3Block;
+    use crate::current_block::{self, BlockInfo};
     use futures::FutureExt;
     use std::sync::Arc;
-    use tokio::sync::watch;
 
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     struct TestKey(usize);
@@ -396,18 +395,17 @@ mod tests {
     fn marks_recently_used() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();
@@ -450,18 +448,17 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();
@@ -498,18 +495,17 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();
@@ -555,11 +551,10 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
@@ -567,7 +562,7 @@ mod tests {
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();
@@ -621,11 +616,10 @@ mod tests {
     fn evicts_old_blocks_from_cache() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
@@ -633,7 +627,7 @@ mod tests {
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();
@@ -662,11 +656,10 @@ mod tests {
     fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block = Web3Block {
-            number: Some(block_number.into()),
+        let block_stream = current_block::mock_single_block(BlockInfo {
+            number: block_number,
             ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(block);
+        });
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
@@ -674,7 +667,7 @@ mod tests {
                 ..Default::default()
             },
             fetcher,
-            receiver,
+            block_stream,
             "",
         )
         .unwrap();

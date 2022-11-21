@@ -80,12 +80,12 @@ pub async fn main(args: arguments::Arguments) {
         "base",
     );
 
-    let current_block_stream = shared::current_block::current_block_stream(
-        web3.clone(),
-        args.shared.block_stream_poll_interval_seconds,
-    )
-    .await
-    .unwrap();
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
 
     let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
         .await
@@ -222,6 +222,7 @@ pub async fn main(args: arguments::Arguments) {
         )
         .expect("failed to create pool cache"),
     );
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -235,6 +236,7 @@ pub async fn main(args: arguments::Arguments) {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
+                block_retriever.clone(),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
@@ -253,8 +255,9 @@ pub async fn main(args: arguments::Arguments) {
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
             chain_id,
-            http_factory.create(),
             web3.clone(),
+            http_factory.create(),
+            block_retriever,
             args.shared.max_pools_to_initialize_cache,
         )
         .await
@@ -386,10 +389,11 @@ pub async fn main(args: arguments::Arguments) {
     } else {
         None
     };
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let event_updater = Arc::new(EventUpdater::new(
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
-        settlement_contract.clone().raw_instance().web3(),
+        block_retriever.clone(),
         sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
@@ -466,11 +470,9 @@ pub async fn main(args: arguments::Arguments) {
             liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
+            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
             onchain_order_event_parser,
-            cowswap_onchain_order_contract_for_eth_flow
-                .raw_instance()
-                .web3(),
+            block_retriever,
             sync_start,
         ));
         maintainers.push(broadcaster_event_updater);
@@ -487,7 +489,7 @@ pub async fn main(args: arguments::Arguments) {
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
-    let block = current_block_stream.borrow().number.unwrap().as_u64();
+    let block = current_block_stream.borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         db.clone(),
@@ -526,13 +528,18 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
     );
 
-    LimitOrderQuoter {
-        limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
-        loop_delay: args.max_surplus_fee_age / 2,
-        quoter,
-        database: db,
+    if args.enable_limit_orders {
+        let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+        LimitOrderQuoter {
+            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+            loop_delay: args.max_surplus_fee_age / 2,
+            quoter,
+            database: db,
+            signature_validator,
+            domain_separator,
+        }
+        .spawn();
     }
-    .spawn();
 
     tokio::select! {
         result = serve_metrics => panic!("serve_metrics exited {:?}", result),

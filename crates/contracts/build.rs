@@ -358,9 +358,13 @@ fn main() {
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 
+    // Support contracts used for trade and token simulations.
     generate_contract("AnyoneAuthenticator");
     generate_contract("PhonyERC20");
     generate_contract("Trader");
+
+    // Support contract used for global block stream.
+    generate_contract("FetchBlock");
 }
 
 fn generate_contract(name: &str) {

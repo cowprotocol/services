@@ -1,4 +1,4 @@
-use crate::current_block::{self, Block, CurrentBlockStream};
+use crate::current_block::{self, BlockInfo, CurrentBlockStream};
 use anyhow::{ensure, Result};
 use futures::{future::join_all, Stream, StreamExt as _};
 use std::{sync::Arc, time::Duration};
@@ -43,7 +43,7 @@ impl Maintaining for ServiceMaintenance {
 }
 
 impl ServiceMaintenance {
-    pub async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = Block>) {
+    async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         for label in ["success", "failure"] {
             metrics.runs.with_label_values(&[label]).reset();
@@ -68,13 +68,11 @@ impl ServiceMaintenance {
                 "running maintenance",
             );
 
-            let block_number = block.number.unwrap_or_default().as_u64();
-
-            metrics.last_seen_block.set(block_number as _);
+            metrics.last_seen_block.set(block.number as _);
 
             if let Err(err) = self
                 .run_maintenance()
-                .instrument(tracing::debug_span!("maintenance", block = block_number))
+                .instrument(tracing::debug_span!("maintenance", block = block.number))
                 .await
             {
                 tracing::debug!(
@@ -87,7 +85,7 @@ impl ServiceMaintenance {
                 continue;
             }
 
-            metrics.last_updated_block.set(block_number as _);
+            metrics.last_updated_block.set(block.number as _);
             metrics.runs.with_label_values(&["success"]).inc();
         }
     }
@@ -169,7 +167,7 @@ mod tests {
             retry_delay: Duration::default(),
         };
 
-        let block_stream = stream::repeat(Block::default()).take(block_count);
+        let block_stream = stream::repeat(BlockInfo::default()).take(block_count);
         service_maintenance
             .run_maintenance_for_blocks(block_stream)
             .await;
@@ -203,11 +201,11 @@ mod tests {
         };
 
         let block_stream = async_stream::stream! {
-            yield Block::default();
+            yield BlockInfo::default();
 
             // Wait a bit to trigger a retry and not just go to the next block
             time::sleep(Duration::from_millis(10)).await;
-            yield Block::default();
+            yield BlockInfo::default();
         };
         service_maintenance
             .run_maintenance_for_blocks(block_stream)
