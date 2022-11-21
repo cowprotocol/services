@@ -139,7 +139,7 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Derivative, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
