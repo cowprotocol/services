@@ -158,6 +158,18 @@ impl OrderbookServices {
             Duration::from_secs(5),
             Default::default(),
         );
+        LimitOrderQuoter {
+            limit_order_age: chrono::Duration::seconds(15),
+            loop_delay: Duration::from_secs(1),
+            quoter: Arc::new(FixedFeeQuoter {
+                quoter: quoter.clone(),
+                fee: 1_000.into(),
+            }),
+            database: autopilot_db.clone(),
+            signature_validator: signature_validator.clone(),
+            domain_separator: contracts.domain_separator,
+        }
+        .spawn();
         let order_validator = Arc::new(
             OrderValidator::new(
                 Box::new(web3.clone()),
@@ -215,16 +227,6 @@ impl OrderbookServices {
             None,
             native_price_estimator,
         );
-        LimitOrderQuoter {
-            limit_order_age: chrono::Duration::seconds(15),
-            loop_delay: Duration::from_secs(1),
-            quoter: Arc::new(FixedFeeQuoter {
-                quoter,
-                fee: 1_000.into(),
-            }),
-            database: autopilot_db,
-        }
-        .spawn();
 
         Self {
             price_estimator,
