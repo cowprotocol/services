@@ -126,7 +126,6 @@ pub fn retain_mature_settlements(
                 if valid_settlement_indices.contains(&index) {
                     continue;
                 }
-                
                 let contains_valid_user_trade = settlement.user_trades().any(|trade| {
                     // mature by age
                     trade.order.metadata.creation_date <= settle_orders_older_than
