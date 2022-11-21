@@ -8,7 +8,7 @@ pub mod ethflow_orders;
 pub mod events;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
-pub mod order_rewards;
+pub mod order_execution;
 pub mod orders;
 pub mod quotes;
 pub mod solver_competition;

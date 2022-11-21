@@ -1,4 +1,4 @@
-use crate::{auction::AuctionId, Address, AppId, OrderUid, TransactionHash};
+use crate::{Address, AppId, OrderUid, TransactionHash};
 use futures::stream::BoxStream;
 use sqlx::{
     types::{
@@ -639,25 +639,6 @@ pub async fn update_limit_order_fees(
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
         .bind(order_uid)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
-pub async fn save_executed_surplus_fee(
-    ex: &mut PgConnection,
-    order: &OrderUid,
-    auction: AuctionId,
-    surplus_fee: &BigDecimal,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, surplus_fee)
-VALUES ($1, $2, $3)
-    ;"#;
-    sqlx::query(QUERY)
-        .bind(order)
-        .bind(auction)
-        .bind(surplus_fee)
         .execute(ex)
         .await?;
     Ok(())
@@ -1621,7 +1602,7 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, None);
 
         let fee: BigDecimal = 1.into();
-        save_executed_surplus_fee(&mut db, &order_uid, 0, &fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee))
             .await
             .unwrap();
 

@@ -6,6 +6,5 @@ RENAME TO order_execution
 ;
 
 ALTER TABLE order_execution
-ALTER COLUMN reward DROP NOT NULL,
 ADD COLUMN surplus_fee numeric(78, 0)
 ;
