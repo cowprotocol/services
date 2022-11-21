@@ -513,7 +513,39 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
+        // verify solution is not empty
         if settled.orders.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // verify internal custom interactions return only bufferable tokens to settlement contract
+        let market_makable_token_list = self.market_makable_token_list.addresses();
+        let non_bufferable_tokens = settled
+            .interaction_data
+            .iter()
+            .filter(|interaction| {
+                interaction
+                    .exec_plan
+                    .as_ref()
+                    .map(|plan| plan.internalizable())
+                    .unwrap_or_default()
+            })
+            .flat_map(|interaction| interaction.outputs.clone())
+            .filter(|output| !market_makable_token_list.contains(&output.token))
+            .map(|output| output.token)
+            .collect::<Vec<_>>();
+        if !non_bufferable_tokens.is_empty() {
+            tracing::debug!(
+                "Solution filtered out for using non bufferable output tokens for solver {}, tokens: {:?}",
+                self.solver.name,
+                non_bufferable_tokens
+            );
+            self.notify_auction_result(
+                id,
+                AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
+                    non_bufferable_tokens,
+                )),
+            );
             return Ok(vec![]);
         }
 

@@ -370,6 +370,10 @@ pub enum SolverRejectionReason {
     /// The solution violated a price constraint (ie. max deviation to external price vector)
     PriceViolation,
 
+    /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
+    /// Returns the list of not allowed tokens
+    NonBufferableTokensUsed(Vec<H160>),
+
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
 }
@@ -1014,6 +1018,20 @@ mod tests {
                 "data": "0x13fa49",
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_rejection_non_bufferable_tokens_used() {
+        assert_eq!(
+            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(vec![
+                H160::from_low_u64_be(1),
+                H160::from_low_u64_be(2),
+            ]))
+            .unwrap(),
+            json!({
+                "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
             }),
         );
     }
