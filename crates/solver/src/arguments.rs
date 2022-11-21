@@ -130,11 +130,7 @@ pub struct Arguments {
 
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
-    #[clap(
-        long,
-        env,
-        default_value = "https://tokens.coingecko.com/uniswap/all.json"
-    )]
+    #[clap(long, env, default_value = "https://files.cow.fi/token_list.json")]
     pub market_makable_token_list: String,
 
     /// Time interval after which market makable list needs to be updated
