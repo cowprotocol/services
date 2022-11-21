@@ -409,14 +409,14 @@ async fn build_auction_converter(
             (None, None)
         };
 
-    let maintainer = ServiceMaintenance {
-        maintainers: pool_caches
+    let maintainer = ServiceMaintenance::new(
+        pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
             .collect(),
-    };
+    );
     tokio::task::spawn(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );
