@@ -18,15 +18,21 @@ pub struct Request {
     pub auction: AuctionId,
     pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
-    pub rewards: Vec<(OrderUid, f64)>,
-    #[serde_as(as = "Vec<(_, DecimalU256)>")]
-    pub executed_surplus_fees: Vec<(OrderUid, U256)>,
+    pub executions: Vec<(OrderUid, Execution)>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Transaction {
     pub account: H160,
     pub nonce: u64,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Execution {
+    pub reward: f64,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub surplus_fee: Option<U256>,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

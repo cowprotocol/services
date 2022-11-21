@@ -32,21 +32,17 @@ impl SolverCompetitionStoring for Postgres {
         .await
         .context("upsert_auction_transaction")?;
 
-        for (order, reward) in request.rewards {
-            database::order_rewards::save(&mut ex, ByteArray(order.0), request.auction, reward)
-                .await
-                .context("order_rewards::save")?;
-        }
-
-        for (order, surplus_fee) in request.executed_surplus_fees {
-            database::orders::save_executed_surplus_fee(
+        for (order, execution) in request.executions {
+            let surplus_fee = execution.surplus_fee.as_ref().map(u256_to_big_decimal);
+            database::order_execution::save(
                 &mut ex,
                 &ByteArray(order.0),
                 request.auction,
-                &u256_to_big_decimal(&surplus_fee),
+                execution.reward,
+                surplus_fee.as_ref(),
             )
             .await
-            .context("orders::save_executed_surplus_fee")?;
+            .context("order_rewards::save")?;
         }
 
         ex.commit().await.context("commit")
@@ -126,8 +122,7 @@ mod tests {
                     call_data: vec![1, 2],
                 }],
             },
-            rewards: Default::default(),
-            executed_surplus_fees: Default::default(),
+            executions: Default::default(),
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
