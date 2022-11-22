@@ -28,7 +28,7 @@ use shared::{
     token_list::AutoUpdatingTokenList,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     iter::FromIterator as _,
     sync::Arc,
     time::Instant,
@@ -448,7 +448,7 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
 fn non_bufferable_tokens_used(
     interactions: &[InteractionData],
     market_makable_token_list: &HashSet<H160>,
-) -> HashSet<H160> {
+) -> BTreeSet<H160> {
     interactions
         .iter()
         .filter(|interaction| {
@@ -979,7 +979,7 @@ mod tests {
         let market_makable_token_list = HashSet::<H160>::new();
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            HashSet::new()
+            BTreeSet::new()
         );
     }
 
@@ -1002,7 +1002,7 @@ mod tests {
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            HashSet::new()
+            BTreeSet::new()
         );
     }
 
@@ -1025,7 +1025,7 @@ mod tests {
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            HashSet::from([non_bufferable_token])
+            BTreeSet::from([non_bufferable_token])
         );
     }
 
@@ -1050,7 +1050,7 @@ mod tests {
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            HashSet::new()
+            BTreeSet::new()
         );
     }
 }
