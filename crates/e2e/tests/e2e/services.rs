@@ -80,16 +80,18 @@ impl OrderbookServices {
             .await
             .unwrap();
         database::clear_DANGER(&api_db.pool).await.unwrap();
+        let block_retriever = Arc::new(web3.clone());
         let gpv2_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
             GPv2SettlementContract::new(contracts.gp_settlement.clone()),
             autopilot_db.clone(),
-            contracts.gp_settlement.clone().raw_instance().web3(),
+            block_retriever.clone(),
             None,
         ));
         let pair_provider = uniswap_pair_provider(contracts);
-        let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(5))
-            .await
-            .unwrap();
+        let current_block_stream =
+            current_block_stream(Arc::new(web3.clone()), Duration::from_secs(5))
+                .await
+                .unwrap();
         let pool_fetcher = PoolCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
@@ -158,6 +160,18 @@ impl OrderbookServices {
             Duration::from_secs(5),
             Default::default(),
         );
+        LimitOrderQuoter {
+            limit_order_age: chrono::Duration::seconds(15),
+            loop_delay: Duration::from_secs(1),
+            quoter: Arc::new(FixedFeeQuoter {
+                quoter: quoter.clone(),
+                fee: 1_000.into(),
+            }),
+            database: autopilot_db.clone(),
+            signature_validator: signature_validator.clone(),
+            domain_separator: contracts.domain_separator,
+        }
+        .spawn();
         let order_validator = Arc::new(
             OrderValidator::new(
                 Box::new(web3.clone()),
@@ -190,7 +204,7 @@ impl OrderbookServices {
         let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
             CoWSwapOnchainOrdersContract::new(cow_onchain_order_contract),
             onchain_order_event_parser,
-            contracts.ethflow.clone().raw_instance().web3(),
+            block_retriever,
             None,
         ));
         let orderbook = Arc::new(Orderbook::new(
@@ -215,16 +229,6 @@ impl OrderbookServices {
             None,
             native_price_estimator,
         );
-        LimitOrderQuoter {
-            limit_order_age: chrono::Duration::seconds(15),
-            loop_delay: Duration::from_secs(1),
-            quoter: Arc::new(FixedFeeQuoter {
-                quoter,
-                fee: 1_000.into(),
-            }),
-            database: autopilot_db,
-        }
-        .spawn();
 
         Self {
             price_estimator,

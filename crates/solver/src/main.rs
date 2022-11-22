@@ -4,7 +4,6 @@ use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9}
 use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
-    current_block::current_block_stream,
     ethrpc::{self, Web3},
     http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
@@ -88,6 +87,7 @@ async fn main() {
         &args.shared.base_tokens,
     ));
 
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -102,10 +102,12 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
 
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
@@ -141,6 +143,7 @@ async fn main() {
             let balancer_pool_fetcher = Arc::new(
                 BalancerPoolFetcher::new(
                     chain_id,
+                    block_retriever.clone(),
                     token_info_fetcher.clone(),
                     cache_config,
                     current_block_stream.clone(),
@@ -292,8 +295,9 @@ async fn main() {
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
             match UniswapV3PoolFetcher::new(
                 chain_id,
-                http_factory.create(),
                 web3.clone(),
+                http_factory.create(),
+                block_retriever,
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
