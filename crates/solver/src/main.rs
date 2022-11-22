@@ -43,7 +43,7 @@ use solver::{
 use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ! {
     let args = solver::arguments::Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
@@ -474,7 +474,7 @@ async fn main() {
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
-    driver.run_forever().await;
+    driver.run_forever().await
 }
 
 async fn build_amm_artifacts(
