@@ -330,8 +330,7 @@ mod tests {
                         to: addr!("1111111254fb6c44bac0bed2854e76f90643097d"),
                         data: vec![0xe4, 0x49, 0x02, 0x2e],
                         value: Default::default(),
-                        max_fee_per_gas: Default::default(),
-                        max_priority_fee_per_gas: Default::default(),
+                        gas_price: Default::default(),
                         gas: Default::default(),
                     },
                 })

@@ -39,12 +39,11 @@ fn is_only_selling_trusted_tokens(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::{OrderTrade, Trade};
+    use crate::settlement::Trade;
     use maplit::hashmap;
     use model::order::{Order, OrderData};
     use primitive_types::H160;
     use shared::token_list::Token;
-    use std::collections::HashMap;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {
@@ -67,36 +66,29 @@ mod tests {
             }
         });
 
-        let trade = |token| OrderTrade {
-            trade: Trade {
-                order: Order {
-                    data: OrderData {
-                        sell_token: token,
-                        ..Default::default()
-                    },
+        let trade = |token| Trade {
+            order: Order {
+                data: OrderData {
+                    sell_token: token,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
                     ..Default::default()
                 },
                 ..Default::default()
             },
+            executed_amount: 1.into(),
             ..Default::default()
         };
 
-        let settlement = Settlement::with_trades(
-            HashMap::new(),
-            vec![trade(good_token), trade(another_good_token)],
-            vec![],
-        );
+        let settlement =
+            Settlement::with_default_prices(vec![trade(good_token), trade(another_good_token)]);
         assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
 
-        let settlement = Settlement::with_trades(
-            HashMap::new(),
-            vec![
-                trade(good_token),
-                trade(another_good_token),
-                trade(bad_token),
-            ],
-            vec![],
-        );
+        let settlement = Settlement::with_default_prices(vec![
+            trade(good_token),
+            trade(another_good_token),
+            trade(bad_token),
+        ]);
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
     }
 }

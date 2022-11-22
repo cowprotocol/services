@@ -10,7 +10,7 @@ use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
 {
-    warp::path!("orders")
+    warp::path!("v1" / "orders")
         .and(warp::post())
         .and(extract_payload())
 }
@@ -231,7 +231,7 @@ mod tests {
         let filter = create_order_request();
         let order_payload = OrderCreation::default();
         let request = request()
-            .path("/orders")
+            .path("/v1/orders")
             .method("POST")
             .header("content-type", "application/json")
             .json(&order_payload);

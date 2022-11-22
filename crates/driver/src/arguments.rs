@@ -71,6 +71,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
+    /// A settlement must contain at least one order older than this duration in seconds for it
+    /// to be applied.  Larger values delay individual settlements more but have a higher
+    /// coincidence of wants chance.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub min_order_age: Duration,
+
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
@@ -297,6 +308,7 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor,
         )?;
+        writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(

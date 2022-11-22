@@ -149,6 +149,8 @@ pub struct LimitOrder {
     /// perspective.
     pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
+    /// Indicator if the order is mature at the creation of the Auction. Relevant to user orders.
+    pub is_mature: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
@@ -204,6 +206,7 @@ impl Default for LimitOrder {
             scaled_unsubsidized_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
+            is_mature: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),

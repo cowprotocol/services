@@ -316,6 +316,7 @@ fn order_models(
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,
+                    is_mature: order.is_mature,
                 },
             ))
         })
@@ -793,10 +794,8 @@ mod tests {
                       "exec_sell_amount": "56532986820633012234",
                       "exec_buy_amount": "590320000000000032",
                       "exec_plan": {
-                        "coordinates": {
-                            "sequence": 0,
-                            "position": 0
-                        },
+                        "sequence": 0,
+                        "position": 0,
                         "internal": false
                       }
                     }

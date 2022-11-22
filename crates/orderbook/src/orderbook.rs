@@ -38,7 +38,7 @@ impl Metrics {
         let kind = match order.metadata.class {
             OrderClass::Market => "user",
             OrderClass::Liquidity => "liquidity",
-            OrderClass::Limit => "limit",
+            OrderClass::Limit(_) => "limit",
         };
         let op = match operation {
             OrderOperation::Created => "created",

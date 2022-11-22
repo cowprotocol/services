@@ -184,14 +184,11 @@ impl<'a> IntermediateSettlement<'a> {
         }
 
         for execution in &self.executions {
-            execution.add_to_settlement(
-                &mut settlement,
-                &self.slippage,
-                execution
-                    .execution_plan()
-                    .map(|plan| plan.internal)
-                    .unwrap_or_default(),
-            )?;
+            let internalizable = execution
+                .execution_plan()
+                .map(|exec_plan| exec_plan.internal)
+                .unwrap_or_default();
+            execution.add_to_settlement(&mut settlement, &self.slippage, internalizable)?;
         }
 
         Ok(settlement)
@@ -387,7 +384,7 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
-        settlement::{CustomPriceTrade, EncoderTrade, Trade},
+        settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -595,9 +592,9 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.trades().collect::<Vec<_>>(),
-            [EncoderTrade::CustomPrice(&CustomPriceTrade {
-                trade: Trade {
+            settlement.encoder.all_trades().collect::<Vec<_>>(),
+            [PricedTrade {
+                data: &Trade {
                     order: Order {
                         metadata: OrderMetadata {
                             owner: H160([99; 20]),
@@ -618,13 +615,12 @@ mod tests {
                         signature: Signature::PreSign,
                         ..Default::default()
                     },
-                    sell_token_index: 1,
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                buy_token_offset_index: 0,
+                sell_token_price: 11.into(),
                 buy_token_price: (10 * 102 / 101).into(),
-            })]
+            }]
         );
 
         assert_eq!(limit_handler.calls(), vec![7.into()]);
@@ -806,10 +802,8 @@ mod tests {
                             "exec_sell_amount": "932415220613609833982",
                             "exec_buy_amount": "354009510372389956",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 1
-                                },
+                                "sequence": 0,
+                                "position": 1,
                                 "internal": false
                             }
                         }
@@ -823,10 +817,8 @@ mod tests {
                             "exec_sell_amount": "1",
                             "exec_buy_amount": "2",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 2
-                                },
+                                "sequence": 0,
+                                "position": 2,
                                 "internal": false
                             }
                         }
@@ -856,10 +848,8 @@ mod tests {
                             "exec_sell_amount": "354009510372384890",
                             "exec_buy_amount": "996570293625184642",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 0
-                                },
+                                "sequence": 0,
+                                "position": 0,
                                 "internal": false
                             }
                         }
@@ -883,10 +873,8 @@ mod tests {
                             "exec_sell_amount": "3",
                             "exec_buy_amount": "4",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 3
-                                },
+                                "sequence": 0,
+                                "position": 3,
                                 "internal": false
                             }
                         }
@@ -929,8 +917,8 @@ mod tests {
                     output: (token_b, U256::from(354009510372384890u128)),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 0u32,
+                            sequence: 0,
+                            position: 0,
                         },
                         internal: false,
                     }
@@ -941,8 +929,8 @@ mod tests {
                     output: (token_a, U256::from(932415220613609833982u128)),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 1u32,
+                            sequence: 0,
+                            position: 1,
                         },
                         internal: false,
                     }
@@ -953,8 +941,8 @@ mod tests {
                     output: (token_b, U256::from(1)),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 2u32,
+                            sequence: 0,
+                            position: 2,
                         },
                         internal: false,
                     }
@@ -965,8 +953,8 @@ mod tests {
                     output: (token_b, U256::from(3)),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0u32,
-                            position: 3u32,
+                            sequence: 0,
+                            position: 3,
                         },
                         internal: false,
                     }

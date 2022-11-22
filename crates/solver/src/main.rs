@@ -32,6 +32,7 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
+    settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
@@ -211,6 +212,7 @@ async fn main() {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     let market_makable_token_list_configuration = TokenListConfiguration {
@@ -222,6 +224,14 @@ async fn main() {
     // updated in background task
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
+    let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
+        native_token_contract.address(),
+        web3.clone(),
+        args.weth_unwrap_factor,
+        settlement_contract.clone(),
+        market_makable_token_list.clone(),
+    ));
 
     let solver = solver::solver::create(
         web3.clone(),
@@ -253,7 +263,9 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
-        market_makable_token_list.clone(),
+        market_makable_token_list,
+        &args.order_prioritization,
+        post_processing_pipeline,
     )
     .expect("failure creating solvers");
 
@@ -434,12 +446,10 @@ async fn main() {
         web3,
         network_id,
         args.solver_time_limit,
-        market_makable_token_list.clone(),
         current_block_stream.clone(),
         solution_submitter,
         api,
         order_converter,
-        args.weth_unwrap_factor,
         args.simulation_gas_limit,
         args.fee_objective_scaling_factor,
         args.max_settlement_price_deviation
@@ -449,14 +459,14 @@ async fn main() {
         args.solution_comparison_decimal_cutoff,
     );
 
-    let maintainer = ServiceMaintenance {
-        maintainers: pool_caches
+    let maintainer = ServiceMaintenance::new(
+        pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
             .collect(),
-    };
+    );
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());

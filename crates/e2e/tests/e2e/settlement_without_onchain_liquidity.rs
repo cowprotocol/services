@@ -1,6 +1,11 @@
-use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-    uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
+use crate::{
+    onchain_components::{
+        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
+    },
+    services::{
+        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
+        API_HOST,
+    },
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -22,10 +27,12 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+    settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         submitter::{public_mempool_api::PublicMempoolApi, Strategy},
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
+    solver::optimizing_solver::OptimizingSolver,
 };
 use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -50,19 +57,39 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
 
-    // Create & Mint tokens to trade
-    let token_a = deploy_mintable_token(&web3).await;
-    let token_b = deploy_mintable_token(&web3).await;
+    // Create & mint tokens to trade, pools for fee connections
+    let token_a = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
+    let token_b = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
-    // Fund trader and settlement accounts
-    tx!(
-        solver_account,
-        token_a.mint(trader_account.address(), to_wei(100))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(contracts.gp_settlement.address(), to_wei(100))
-    );
+    // Fund trader, settlement accounts, and pool creation
+    token_a.mint(trader_account.address(), to_wei(100)).await;
+    token_b
+        .mint(contracts.gp_settlement.address(), to_wei(100))
+        .await;
+    token_a
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    token_b
+        .mint(solver_account.address(), to_wei(100_000))
+        .await;
+    let token_a = token_a.contract;
+    let token_b = token_b.contract;
 
     // Create and fund Uniswap pool
     tx!(
@@ -70,14 +97,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         contracts
             .uniswap_factory
             .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver_account,
-        token_a.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token_b.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
@@ -100,38 +119,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             U256::max_value(),
         )
     );
-
-    // Create and fund pools for fee connections.
-    for token in [&token_a, &token_b] {
-        tx!(
-            solver_account,
-            token.mint(solver_account.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
-        tx!(
-            solver_account,
-            contracts
-                .weth
-                .approve(contracts.uniswap_router.address(), to_wei(100_000))
-        );
-        tx!(
-            solver_account,
-            contracts.uniswap_router.add_liquidity(
-                token.address(),
-                contracts.weth.address(),
-                to_wei(100_000),
-                to_wei(100_000),
-                0_u64.into(),
-                0_u64.into(),
-                solver_account.address(),
-                U256::max_value(),
-            )
-        );
-    }
 
     // Approve GPv2 for trading
     tx!(
@@ -183,7 +170,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
-    let solver = solver::solver::naive_solver(solver_account);
+
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         balancer_v2_liquidity: None,
@@ -199,6 +186,18 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             decimals: 18,
         }
     });
+    let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
+        contracts.weth.address(),
+        web3.clone(),
+        1.,
+        contracts.gp_settlement.clone(),
+        market_makable_token_list,
+    ));
+    let solver = Arc::new(OptimizingSolver {
+        inner: solver::solver::naive_solver(solver_account),
+        post_processing_pipeline,
+    });
+
     let submitted_transactions = GlobalTxPool::default();
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
@@ -212,7 +211,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(10),
-        market_makable_token_list,
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -242,7 +240,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
-        0.0,
         15000000u128,
         1.0,
         None,

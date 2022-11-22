@@ -26,7 +26,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "0x26c3801b4840dab317cedfd7aeaf9f45fdd22830"
+        default_value = "0x76aAf674848311C7F21fc691B0b952f016dA49F3"
     )]
     pub ethflow_contract: H160,
 
