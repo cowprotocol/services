@@ -445,6 +445,25 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
     fee_connected_tokens
 }
 
+fn non_bufferable_tokens_used(
+    interactions: &[InteractionData],
+    market_makable_token_list: &HashSet<H160>,
+) -> HashSet<H160> {
+    interactions
+        .iter()
+        .filter(|interaction| {
+            interaction
+                .exec_plan
+                .as_ref()
+                .map(|plan| plan.internalizable())
+                .unwrap_or_default()
+        })
+        .flat_map(|interaction| &interaction.inputs)
+        .filter(|input| !market_makable_token_list.contains(&input.token))
+        .map(|input| input.token)
+        .collect()
+}
+
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
     async fn solve(
@@ -513,7 +532,28 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
+        // verify solution is not empty
         if settled.orders.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // verify internal custom interactions return only bufferable tokens to settlement contract
+        let non_bufferable_tokens = non_bufferable_tokens_used(
+            &settled.interaction_data,
+            &self.market_makable_token_list.addresses(),
+        );
+        if !non_bufferable_tokens.is_empty() {
+            tracing::warn!(
+                "Solution filtered out for using non bufferable output tokens for solver {}, tokens: {:?}",
+                self.solver.name,
+                non_bufferable_tokens
+            );
+            self.notify_auction_result(
+                id,
+                AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
+                    non_bufferable_tokens,
+                )),
+            );
             return Ok(vec![]);
         }
 
@@ -931,5 +971,86 @@ mod tests {
         for i in 0..len {
             assert!(map.contains_key(&i));
         }
+    }
+
+    #[test]
+    fn non_bufferable_tokens_used_test_all_empty() {
+        let interactions = vec![];
+        let market_makable_token_list = HashSet::<H160>::new();
+        assert_eq!(
+            non_bufferable_tokens_used(&interactions, &market_makable_token_list),
+            HashSet::new()
+        );
+    }
+
+    // Interaction is internal and it contains only bufferable tokens
+    #[test]
+    fn non_bufferable_tokens_used_test_ok() {
+        let bufferable_token = H160::from_low_u64_be(1);
+        let market_makable_token_list = HashSet::from([bufferable_token]);
+
+        let token_amount = TokenAmount {
+            token: bufferable_token,
+            ..Default::default()
+        };
+
+        let interactions = vec![InteractionData {
+            inputs: vec![token_amount],
+            exec_plan: Some(ExecutionPlan::Internal),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            non_bufferable_tokens_used(&interactions, &market_makable_token_list),
+            HashSet::new()
+        );
+    }
+
+    // Interaction is internal but it contains non bufferable tokens
+    #[test]
+    fn non_bufferable_tokens_used_test_not_ok() {
+        let non_bufferable_token = H160::from_low_u64_be(1);
+        let market_makable_token_list = HashSet::from([]);
+
+        let token_amount = TokenAmount {
+            token: non_bufferable_token,
+            ..Default::default()
+        };
+
+        let interactions = vec![InteractionData {
+            inputs: vec![token_amount],
+            exec_plan: Some(ExecutionPlan::Internal),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            non_bufferable_tokens_used(&interactions, &market_makable_token_list),
+            HashSet::from([non_bufferable_token])
+        );
+    }
+
+    // Interaction is **not** internal and it contains non bufferable tokens
+    #[test]
+    fn non_bufferable_tokens_used_test_ok2() {
+        let non_bufferable_token = H160::from_low_u64_be(1);
+        let market_makable_token_list = HashSet::from([]);
+
+        let token_amount = TokenAmount {
+            token: non_bufferable_token,
+            ..Default::default()
+        };
+
+        let interactions = vec![InteractionData {
+            inputs: vec![token_amount],
+            exec_plan: Some(ExecutionPlan::Coordinates(
+                ExecutionPlanCoordinatesModel::default(),
+            )),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            non_bufferable_tokens_used(&interactions, &market_makable_token_list),
+            HashSet::new()
+        );
     }
 }
