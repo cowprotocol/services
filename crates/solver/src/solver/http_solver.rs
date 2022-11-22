@@ -458,9 +458,9 @@ fn non_bufferable_tokens_used(
                 .map(|plan| plan.internalizable())
                 .unwrap_or_default()
         })
-        .flat_map(|interaction| interaction.outputs.clone())
-        .filter(|output| !market_makable_token_list.contains(&output.token))
-        .map(|output| output.token)
+        .flat_map(|interaction| &interaction.inputs)
+        .filter(|input| !market_makable_token_list.contains(&input.token))
+        .map(|input| input.token)
         .collect()
 }
 
@@ -543,7 +543,7 @@ impl Solver for HttpSolver {
             &self.market_makable_token_list.addresses(),
         );
         if !non_bufferable_tokens.is_empty() {
-            tracing::debug!(
+            tracing::warn!(
                 "Solution filtered out for using non bufferable output tokens for solver {}, tokens: {:?}",
                 self.solver.name,
                 non_bufferable_tokens
