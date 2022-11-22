@@ -610,7 +610,7 @@ components:
       properties:
         isRefunded:
           description: |
-            Provides a flag that shows whether the refunding service has 
+            Provides a flag that shows whether the refunding service has
             refunded the order, in case it was not settled onchain
           type: boolean
         userValidTo:
@@ -803,10 +803,14 @@ components:
           $ref: "#/components/schemas/EthflowData"
         onchainUser:
           description: |
-            If orders are placed as onchain orders, the owner of the order might 
-            specific smart contracts, but not the user placing the order. The 
+            If orders are placed as onchain orders, the owner of the order might
+            specific smart contracts, but not the user placing the order. The
             actual user will be provided in this field
           $ref: "#/components/schemas/Address"
+        executedSurplusFee:
+          description: "Surplus fee that the limit order was executed with."
+          $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - creationTime
         - owner

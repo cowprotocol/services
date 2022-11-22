@@ -22,9 +22,9 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{
     auction::AuctionWithId,
-    order::OrderUid,
+    order::{LimitOrderClass, OrderClass, OrderUid},
     solver_competition::{
-        self, CompetitionAuction, Objective, SolverCompetitionDB, SolverSettlement,
+        self, CompetitionAuction, Execution, Objective, SolverCompetitionDB, SolverSettlement,
     },
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
@@ -346,15 +346,23 @@ impl Driver {
                 winning_settlement
             );
 
-            let rewards: Vec<(OrderUid, f64)> = winning_settlement
+            let executions: Vec<(OrderUid, Execution)> = winning_settlement
                 .settlement
                 .user_trades()
                 .map(|trade| {
                     let uid = &trade.order.metadata.uid;
                     let reward = rewards.get(uid).copied().unwrap_or(0.);
+                    let surplus_fee = match trade.order.metadata.class {
+                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => Some(surplus_fee),
+                        _ => None,
+                    };
                     // Log in case something goes wrong with storing the rewards in the database.
                     tracing::debug!(%uid, %reward, "winning solution reward");
-                    (*uid, reward)
+                    let execution = Execution {
+                        reward,
+                        surplus_fee,
+                    };
+                    (*uid, execution)
                 })
                 .collect();
 
@@ -379,7 +387,7 @@ impl Driver {
                 auction: auction_id,
                 transaction,
                 competition: solver_competition,
-                rewards,
+                executions,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure the
             // competition info has been stored.

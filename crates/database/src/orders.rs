@@ -376,6 +376,7 @@ pub struct FullOrder {
     pub onchain_user: Option<Address>,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
+    pub executed_surplus_fee: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -435,7 +436,8 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
 (SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
-(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user
+(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
+(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -1572,5 +1574,42 @@ mod tests {
 
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].uid, order_uid);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_limit_order_executed() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_uid = ByteArray([1; 56]);
+        insert_order(
+            &mut db,
+            &Order {
+                uid: order_uid,
+                class: OrderClass::Limit,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let order = single_full_order(&mut db, &order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(order.executed_surplus_fee, None);
+
+        let fee: BigDecimal = 1.into();
+        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee))
+            .await
+            .unwrap();
+
+        let order = single_full_order(&mut db, &order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(order.executed_surplus_fee, Some(fee));
     }
 }
