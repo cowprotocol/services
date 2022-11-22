@@ -153,6 +153,7 @@ impl SolvableOrdersCache {
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -198,7 +199,7 @@ impl SolvableOrdersCache {
         )
         .await;
 
-        let orders = self.filter_mispriced_limit_orders(orders, &prices);
+        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
 
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
@@ -248,34 +249,6 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
-    }
-
-    /// Filter out limit orders which are far enough outside the estimated native token price.
-    fn filter_mispriced_limit_orders(
-        &self,
-        mut orders: Vec<Order>,
-        prices: &BTreeMap<H160, U256>,
-    ) -> Vec<Order> {
-        orders.retain(|order| {
-            if let OrderClass::Limit(limit) = &order.metadata.class {
-                // Convert the sell and buy price to the native token (ETH) and make sure that sell
-                // with the surplus fee is higher than buy with the configurable price factor.
-                let sell_native = (order.data.sell_amount + limit.surplus_fee)
-                    * prices.get(&order.data.sell_token).unwrap();
-                let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
-                let sell_native = u256_to_big_decimal(&sell_native);
-                let buy_native = u256_to_big_decimal(&buy_native);
-                if sell_native >= buy_native * self.limit_order_price_factor.clone() {
-                    true
-                } else {
-                    tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
-                    false
-                }
-            } else {
-                true
-            }
-        });
-        orders
     }
 }
 
@@ -580,6 +553,65 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
+fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    orders.retain(|order| match &order.metadata.class {
+        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
+        _ => true,
+    });
+    orders
+}
+
+/// Filter out limit orders which are far enough outside the estimated native token price.
+fn filter_mispriced_limit_orders(
+    mut orders: Vec<Order>,
+    prices: &BTreeMap<H160, U256>,
+    price_factor: &BigDecimal,
+) -> Vec<Order> {
+    orders.retain(|order| {
+        let surplus_fee = match &order.metadata.class {
+            OrderClass::Limit(limit) => limit.surplus_fee,
+            _ => return true,
+        };
+
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
+        if effective_sell_amount.is_zero() {
+            return false;
+        }
+
+        let sell_price = *prices.get(&order.data.sell_token).unwrap();
+        let buy_price = *prices.get(&order.data.buy_token).unwrap();
+
+        // Convert the sell and buy price to the native token (ETH) and make sure that sell
+        // discounting the surplus fee is higher than buy with the configurable price factor.
+        let (sell_native, buy_native) = match (
+            effective_sell_amount.checked_mul(sell_price),
+            order.data.buy_amount.checked_mul(buy_price),
+        ) {
+            (Some(sell), Some(buy)) => (sell, buy),
+            _ => {
+                tracing::debug!(
+                    order_uid = %order.metadata.uid,
+                    "limit order overflow computing native amounts; skipping",
+                );
+                return false;
+            }
+        };
+
+        let sell_native = u256_to_big_decimal(&sell_native);
+        let buy_native = u256_to_big_decimal(&buy_native);
+        if sell_native >= buy_native * price_factor {
+            true
+        } else {
+            tracing::debug!(
+                order_uid = %order.metadata.uid,
+                "limit order is outside market price, skipping",
+            );
+            false
+        }
+    });
+    orders
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,7 +619,9 @@ mod tests {
     use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
-    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid};
+    use model::order::{
+        LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid,
+    };
     use primitive_types::H160;
     use shared::{
         bad_token::list_based::ListBasedDetector,
@@ -1077,5 +1111,98 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
+    }
+
+    #[test]
+    fn filters_limit_orders_with_too_high_fees() {
+        let order = |sell_amount: u8, surplus_fee: u8| Order {
+            data: OrderData {
+                buy_amount: 1u8.into(),
+                sell_amount: sell_amount.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: surplus_fee.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orders = vec![
+            // Enough sell amout for the surplus fee.
+            order(100, 10),
+            // Surplus fee effectively turns order into a 0 sell amount order
+            order(100, 100),
+            // Surplus fee is higher than the sell amount.
+            order(100, 101),
+        ];
+
+        assert_eq!(
+            filter_limit_orders_with_insufficient_sell_amount(orders),
+            [order(100, 10)]
+        );
+    }
+
+    #[test]
+    fn filters_mispriced_orders() {
+        let sell_token = H160([1; 20]);
+        let buy_token = H160([2; 20]);
+
+        // Prices are set such that 1 sell token is equivalent to 2 buy tokens.
+        // Additionally, they are scaled to large values to allow for overflows.
+        let prices = btreemap! {
+            sell_token => U256::MAX / 100,
+            buy_token => U256::MAX / 200,
+        };
+        let price_factor = "0.95".parse().unwrap();
+
+        let order = |sell_amount: u8, buy_amount: u8, surplus_fee: u8| Order {
+            data: OrderData {
+                sell_token,
+                sell_amount: sell_amount.into(),
+                buy_token,
+                buy_amount: buy_amount.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: surplus_fee.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let valid_orders = vec![
+            // Reasonably priced order, doesn't get filtered.
+            order(101, 200, 1),
+            // Slightly out of price order, doesn't get filtered.
+            order(10, 21, 0),
+        ];
+
+        let invalid_orders = vec![
+            // Out of price order gets filtered out.
+            order(10, 100, 0),
+            // Reasonably priced order becomes out of price after fees and gets
+            // filtered out
+            order(10, 18, 5),
+            // Zero sell amount after fees gets filtered.
+            order(1, 1, 1),
+            // Overflow sell amount after fees gets filtered.
+            order(1, 1, 100),
+            // Overflow sell value gets filtered.
+            order(255, 1, 1),
+            // Overflow buy value gets filtered.
+            order(100, 255, 1),
+        ];
+
+        let orders = [valid_orders.clone(), invalid_orders].concat();
+        assert_eq!(
+            filter_mispriced_limit_orders(orders, &prices, &price_factor),
+            valid_orders,
+        );
     }
 }

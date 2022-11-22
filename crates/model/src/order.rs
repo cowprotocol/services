@@ -667,12 +667,15 @@ impl OrderClass {
     }
 }
 
+#[serde_as]
 #[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
     #[serde(with = "u256_decimal")]
     pub surplus_fee: U256,
     pub surplus_fee_timestamp: DateTime<Utc>,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub executed_surplus_fee: Option<U256>,
 }
 
 impl OrderKind {
@@ -795,6 +798,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
+            "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
@@ -817,6 +821,7 @@ mod tests {
                 class: OrderClass::Limit(LimitOrderClass {
                     surplus_fee: U256::MAX,
                     surplus_fee_timestamp: Default::default(),
+                    executed_surplus_fee: Some(1.into()),
                 }),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
