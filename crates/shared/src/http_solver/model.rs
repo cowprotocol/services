@@ -11,7 +11,7 @@ use num::BigRational;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use web3::types::AccessList;
 
 use crate::{
@@ -372,7 +372,7 @@ pub enum SolverRejectionReason {
 
     /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
     /// Returns the list of not allowed tokens
-    NonBufferableTokensUsed(Vec<H160>),
+    NonBufferableTokensUsed(HashSet<H160>),
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
@@ -1025,10 +1025,9 @@ mod tests {
     #[test]
     fn serialize_rejection_non_bufferable_tokens_used() {
         assert_eq!(
-            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(vec![
-                H160::from_low_u64_be(1),
-                H160::from_low_u64_be(2),
-            ]))
+            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(
+                HashSet::from([H160::from_low_u64_be(1), H160::from_low_u64_be(2),])
+            ))
             .unwrap(),
             json!({
                 "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],

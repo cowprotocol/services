@@ -448,7 +448,7 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
 fn non_bufferable_tokens_used(
     interactions: &[InteractionData],
     market_makable_token_list: &HashSet<H160>,
-) -> Vec<H160> {
+) -> HashSet<H160> {
     interactions
         .iter()
         .filter(|interaction| {
@@ -979,7 +979,7 @@ mod tests {
         let market_makable_token_list = HashSet::<H160>::new();
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            vec![]
+            HashSet::new()
         );
     }
 
@@ -995,14 +995,14 @@ mod tests {
         };
 
         let interactions = vec![InteractionData {
-            outputs: vec![token_amount],
+            inputs: vec![token_amount],
             exec_plan: Some(ExecutionPlan::Internal),
             ..Default::default()
         }];
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            vec![]
+            HashSet::new()
         );
     }
 
@@ -1018,14 +1018,14 @@ mod tests {
         };
 
         let interactions = vec![InteractionData {
-            outputs: vec![token_amount],
+            inputs: vec![token_amount],
             exec_plan: Some(ExecutionPlan::Internal),
             ..Default::default()
         }];
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            vec![non_bufferable_token]
+            HashSet::from([non_bufferable_token])
         );
     }
 
@@ -1041,7 +1041,7 @@ mod tests {
         };
 
         let interactions = vec![InteractionData {
-            outputs: vec![token_amount],
+            inputs: vec![token_amount],
             exec_plan: Some(ExecutionPlan::Coordinates(
                 ExecutionPlanCoordinatesModel::default(),
             )),
@@ -1050,7 +1050,7 @@ mod tests {
 
         assert_eq!(
             non_bufferable_tokens_used(&interactions, &market_makable_token_list),
-            vec![]
+            HashSet::new()
         );
     }
 }
