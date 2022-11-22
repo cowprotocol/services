@@ -213,10 +213,16 @@ fn match_prepared_and_settled_orders(
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
             match prepared.id {
                 crate::liquidity::LimitOrderUid::OrderUid(_) => {}
-                crate::liquidity::LimitOrderUid::ZeroEx(_) => ensure!(
-                    settled.exec_plan.is_some(),
-                    "missing mandatory exec plan for 0x order"
-                ),
+                crate::liquidity::LimitOrderUid::ZeroEx(_) => {
+                    if let Some(internalizable) =
+                        settled.exec_plan.as_ref().map(|plan| plan.internal)
+                    {
+                        ensure!(
+                            !internalizable,
+                            "liquidity orders are not allowed to be internalizable"
+                        )
+                    }
+                }
             }
             Ok(ExecutedLimitOrder {
                 order: prepared.clone(),
