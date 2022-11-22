@@ -92,9 +92,9 @@ impl AuctionTransactionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use sqlx::Executor;
-
     use super::*;
+    use sqlx::Executor;
+    use std::sync::Arc;
 
     #[tokio::test]
     #[ignore]
@@ -104,10 +104,12 @@ mod tests {
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let current_block =
-            shared::current_block::current_block_stream(web3.clone(), Duration::from_secs(1))
-                .await
-                .unwrap();
+        let current_block = shared::current_block::current_block_stream(
+            Arc::new(web3.clone()),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
         let updater = AuctionTransactionUpdater {
             web3,
             db,

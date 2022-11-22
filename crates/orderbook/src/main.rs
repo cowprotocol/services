@@ -18,7 +18,6 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
-    current_block::current_block_stream,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -194,10 +193,12 @@ async fn main() {
         .instrumented(),
     );
 
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
 
     let pool_aggregator = PoolAggregator { pool_fetchers };
 
@@ -216,6 +217,7 @@ async fn main() {
         )
         .expect("failed to create pool cache"),
     );
+    let block_retriver = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -229,6 +231,7 @@ async fn main() {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
+                block_retriver.clone(),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
@@ -247,8 +250,9 @@ async fn main() {
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
             chain_id,
-            http_factory.create(),
             web3.clone(),
+            http_factory.create(),
+            block_retriver,
             args.shared.max_pools_to_initialize_cache,
         )
         .await

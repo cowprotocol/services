@@ -22,7 +22,7 @@ use super::{
     swap::fixed_point::Bfp,
 };
 use crate::{
-    current_block::CurrentBlockStream,
+    current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{Web3, Web3Transport},
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig},
@@ -217,6 +217,7 @@ impl BalancerPoolFetcher {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         chain_id: u64,
+        block_retriever: Arc<dyn BlockRetrieving>,
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
@@ -227,7 +228,14 @@ impl BalancerPoolFetcher {
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
-            create_aggregate_pool_fetcher(web3, pool_initializer, token_infos, contracts).await?,
+            create_aggregate_pool_fetcher(
+                web3,
+                pool_initializer,
+                block_retriever,
+                token_infos,
+                contracts,
+            )
+            .await?,
             config,
             block_stream,
         )?);
@@ -296,6 +304,7 @@ impl Maintaining for BalancerPoolFetcher {
 async fn create_aggregate_pool_fetcher(
     web3: Web3,
     pool_initializer: impl PoolInitializing,
+    block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
@@ -319,6 +328,7 @@ async fn create_aggregate_pool_fetcher(
                     $instance.address(),
                     $instance.deployment_information(),
                 ),
+                block_retriever.clone(),
                 token_infos.clone(),
                 $instance,
                 registered_pools_by_factory
@@ -372,6 +382,7 @@ async fn create_aggregate_pool_fetcher(
 fn create_internal_pool_fetcher<Factory>(
     vault: BalancerV2Vault,
     factory: Factory,
+    block_retriever: Arc<dyn BlockRetrieving>,
     token_infos: Arc<dyn TokenInfoFetching>,
     factory_instance: &Instance<Web3Transport>,
     registered_pools: RegisteredPools,
@@ -388,6 +399,7 @@ where
     let start_sync_at_block = Some((registered_pools.fetched_block_number, fetched_block_hash));
 
     Ok(Box::new(Registry::new(
+        block_retriever,
         Arc::new(PoolInfoFetcher::new(vault, factory, token_infos)),
         factory_instance,
         initial_pools,
@@ -445,21 +457,24 @@ mod tests {
             Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
                 web3: web3.clone(),
             })));
-        let block_stream =
-            crate::current_block::current_block_stream(web3.clone(), Duration::from_secs(1000))
-                .await
-                .unwrap();
+        let block_stream = crate::current_block::current_block_stream(
+            Arc::new(web3.clone()),
+            Duration::from_secs(1000),
+        )
+        .await
+        .unwrap();
         let deny_list = vec![H256(hex_literal::hex!(
             "072f14b85add63488ddad88f855fda4a99d6ac9b000200000000000000000027"
         ))];
         // let deny_list = vec![];
         let pool_fetcher = BalancerPoolFetcher::new(
             chain_id,
+            Arc::new(web3.clone()),
             token_info_fetcher,
             Default::default(),
             block_stream,
             Default::default(),
-            web3.clone(),
+            web3,
             &contracts,
             deny_list,
         )
@@ -502,6 +517,7 @@ mod tests {
                 create_aggregate_pool_fetcher(
                     web3.clone(),
                     pool_initializer,
+                    Arc::new(web3.clone()),
                     Arc::new(token_infos),
                     &contracts,
                 )

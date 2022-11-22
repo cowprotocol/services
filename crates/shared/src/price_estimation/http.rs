@@ -684,23 +684,26 @@ mod tests {
             PoolCache::new(
                 CacheConfig::default(),
                 uniswap_v2::get_liquidity_source(&web3).await.unwrap().1,
-                current_block_stream(web3.clone(), Duration::from_secs(1))
+                current_block_stream(Arc::new(web3.clone()), Duration::from_secs(1))
                     .await
                     .unwrap(),
             )
             .unwrap(),
         );
+        let block_retriever = Arc::new(web3.clone());
         let token_info = Arc::new(TokenInfoFetcher { web3: web3.clone() });
         let contracts =
             BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
                 .await
                 .unwrap();
-        let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(10))
-            .await
-            .unwrap();
+        let current_block_stream =
+            current_block_stream(Arc::new(web3.clone()), Duration::from_secs(10))
+                .await
+                .unwrap();
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
+                block_retriever.clone(),
                 token_info.clone(),
                 Default::default(),
                 current_block_stream.clone(),
@@ -713,9 +716,15 @@ mod tests {
             .expect("failed to create Balancer pool fetcher"),
         );
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone(), 100)
-                .await
-                .expect("failed to create uniswap v3 pool fetcher"),
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                web3.clone(),
+                client.clone(),
+                block_retriever.clone(),
+                100,
+            )
+            .await
+            .expect("failed to create uniswap v3 pool fetcher"),
         );
         let gas_info = Arc::new(web3);
 

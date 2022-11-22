@@ -2,7 +2,7 @@ use primitive_types::{H160, H256};
 use reqwest::Url;
 use shared::{
     arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
-    ethrpc,
+    current_block, ethrpc,
     gas_price_estimation::GasEstimatorType,
     http_client,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
@@ -22,6 +22,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub ethrpc: ethrpc::Arguments,
+
+    #[clap(flatten)]
+    pub current_block: current_block::Arguments,
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
@@ -233,15 +236,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
-    /// How often in seconds we poll the node to check if the current block has changed.
-    #[clap(
-        long,
-        env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
-    )]
-    pub block_stream_poll_interval_seconds: Duration,
-
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
@@ -285,6 +279,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.ethrpc)?;
+        write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
@@ -364,11 +359,6 @@ impl std::fmt::Display for Arguments {
             f,
             "pool_cache_delay_between_retries_seconds: {:?}",
             self.pool_cache_delay_between_retries_seconds
-        )?;
-        writeln!(
-            f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds
         )?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         writeln!(
