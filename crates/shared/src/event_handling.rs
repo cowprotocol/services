@@ -10,6 +10,7 @@ use ethcontract::{
     Event as EthcontractEvent, EventMetadata,
 };
 use futures::{future, Stream, StreamExt, TryStreamExt};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
@@ -33,13 +34,12 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 /// to update the latest blocks (last X canonical blocks)
 /// 4. Do the history update, and if successful, update `last_handled_blocks` to make sure the data is consistent.
 /// 5. If history update is successful, procceed with latest update, and if successful update `last_handled_blocks`.  
-pub struct EventHandler<B, C, S>
+pub struct EventHandler<C, S>
 where
-    B: BlockRetrieving,
     C: EventRetrieving,
     S: EventStoring<C::Event>,
 {
-    block_retriever: B,
+    block_retriever: Arc<dyn BlockRetrieving>,
     contract: C,
     store: S,
     last_handled_blocks: Vec<BlockNumberHash>,
@@ -87,14 +87,13 @@ struct EventRange {
     is_reorg: bool,
 }
 
-impl<B, C, S> EventHandler<B, C, S>
+impl<C, S> EventHandler<C, S>
 where
-    B: BlockRetrieving,
     C: EventRetrieving,
     S: EventStoring<C::Event>,
 {
     pub fn new(
-        block_retriever: B,
+        block_retriever: Arc<dyn BlockRetrieving>,
         contract: C,
         store: S,
         start_sync_at_block: Option<BlockNumberHash>,
@@ -444,9 +443,8 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
 }
 
 #[async_trait::async_trait]
-impl<B, C, S> Maintaining for Mutex<EventHandler<B, C, S>>
+impl<C, S> Maintaining for Mutex<EventHandler<C, S>>
 where
-    B: BlockRetrieving + Send + Sync,
     C: EventRetrieving + Send + Sync,
     C::Event: Send,
     S: EventStoring<C::Event> + Send + Sync,
@@ -709,8 +707,12 @@ mod tests {
                 .unwrap(),
             ),
         ];
-        let event_handler =
-            EventHandler::new(web3, GPv2SettlementContract(contract), storage, None);
+        let event_handler = EventHandler::new(
+            Arc::new(web3),
+            GPv2SettlementContract(contract),
+            storage,
+            None,
+        );
         let (replacement_blocks, _) = event_handler.past_events_by_block_hashes(&blocks).await;
         assert_eq!(replacement_blocks, blocks[..2]);
     }
@@ -736,8 +738,12 @@ mod tests {
             .unwrap()
             .unwrap();
         let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
-        let mut event_handler =
-            EventHandler::new(web3, GPv2SettlementContract(contract), storage, Some(block));
+        let mut event_handler = EventHandler::new(
+            Arc::new(web3),
+            GPv2SettlementContract(contract),
+            storage,
+            Some(block),
+        );
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
     }

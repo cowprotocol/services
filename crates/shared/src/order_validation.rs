@@ -1120,6 +1120,7 @@ mod tests {
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
             .never();
+        let signature_validating = Arc::new(signature_validating);
 
         let max_limit_orders_per_user = 1;
 
@@ -1139,7 +1140,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
+            signature_validating,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
         );
@@ -1248,6 +1249,7 @@ mod tests {
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
             .never();
+        let signature_validating = Arc::new(signature_validating);
 
         const MAX_LIMIT_ORDERS_PER_USER: u64 = 2;
 
@@ -1266,7 +1268,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
+            signature_validating,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
         )
@@ -1716,7 +1718,6 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1958,7 +1959,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_errors_when_not_found_by_id() {
-        let quote_search_paramters = QuoteSearchParameters {
+        let quote_search_parameters = QuoteSearchParameters {
             ..Default::default()
         };
 
@@ -1969,7 +1970,7 @@ mod tests {
 
         let err = get_quote_and_check_fee(
             &order_quoter,
-            &quote_search_paramters,
+            &quote_search_parameters,
             Some(0),
             U256::zero(),
             QuoteSigningScheme::Eip712,

@@ -3,11 +3,15 @@ use anyhow::Result;
 use chrono::Duration;
 use futures::future::join_all;
 use model::{
-    order::OrderKind,
-    quote::{default_verification_gas_limit, OrderQuoteSide, QuoteSigningScheme, SellAmount},
-    signature::Signature,
+    order::{Order, OrderKind},
+    quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+    signature::{hashed_eip712_message, Signature},
+    DomainSeparator,
 };
-use shared::order_quoting::{OrderQuoting, QuoteParameters};
+use shared::{
+    order_quoting::{OrderQuoting, QuoteParameters},
+    signature_validator::{SignatureCheck, SignatureValidating},
+};
 use std::sync::Arc;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -34,6 +38,8 @@ pub struct LimitOrderQuoter {
     pub loop_delay: std::time::Duration,
     pub quoter: Arc<dyn OrderQuoting>,
     pub database: Postgres,
+    pub signature_validator: Arc<dyn SignatureValidating>,
+    pub domain_separator: DomainSeparator,
 }
 
 impl LimitOrderQuoter {
@@ -60,75 +66,74 @@ impl LimitOrderQuoter {
             }
             for chunk in orders.chunks(10) {
                 failed_orders += join_all(chunk.iter().map(|order| async move {
-                    match self
-                        .quoter
-                        .calculate_quote(QuoteParameters {
-                            sell_token: order.data.sell_token,
-                            buy_token: order.data.buy_token,
-                            side: match order.data.kind {
-                                OrderKind::Buy => OrderQuoteSide::Buy {
-                                    buy_amount_after_fee: order.data.buy_amount,
-                                },
-                                OrderKind::Sell => OrderQuoteSide::Sell {
-                                    sell_amount: SellAmount::BeforeFee {
-                                        value: order.data.sell_amount + order.data.fee_amount,
-                                    },
-                                },
-                            },
-                            from: order.metadata.owner,
-                            app_data: order.data.app_data,
-                            signing_scheme: match order.signature {
-                                Signature::Eip712(_) => QuoteSigningScheme::Eip712,
-                                Signature::EthSign(_) => QuoteSigningScheme::EthSign,
-                                Signature::Eip1271(_) => QuoteSigningScheme::Eip1271 {
-                                    onchain_order: false,
-                                    verification_gas_limit: default_verification_gas_limit(),
-                                },
-                                Signature::PreSign => QuoteSigningScheme::PreSign {
-                                    onchain_order: false,
-                                },
-                            },
-                        })
-                        .await
-                    {
-                        Ok(quote) => {
-                            if let Err(err) = self
-                                .database
-                                .update_limit_order_fees(
-                                    &order.metadata.uid,
-                                    &FeeUpdate {
-                                        surplus_fee: quote.fee_amount,
-                                        full_fee_amount: quote.full_fee_amount,
-                                    },
-                                )
-                                .await
-                            {
-                                tracing::error!(
-                                    ?err,
-                                    ?quote,
-                                    "failed to update quote surplus fee, skipping"
-                                );
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        Err(err) => {
-                            tracing::warn!(
-                                order_uid =% order.metadata.uid, ?err,
-                                "skipped limit order due to quoting error"
-                            );
-                            true
-                        }
-                    }
+                    let update_result = self.update_surplus_fee(order).await;
+                    if let Err(err) = &update_result {
+                        let order_uid = &order.metadata.uid;
+                        tracing::warn!(%order_uid, ?err, "skipped limit order due to error");
+                    };
+                    usize::from(update_result.is_err())
                 }))
                 .await
                 .into_iter()
-                .filter(|&v| v)
-                .count();
+                .sum::<usize>();
             }
         }
         Metrics::on_failed(failed_orders.try_into().unwrap());
         Ok(())
+    }
+
+    async fn update_surplus_fee(&self, order: &Order) -> Result<()> {
+        let quote = self
+            .quoter
+            .calculate_quote(QuoteParameters {
+                sell_token: order.data.sell_token,
+                buy_token: order.data.buy_token,
+                side: match order.data.kind {
+                    OrderKind::Buy => OrderQuoteSide::Buy {
+                        buy_amount_after_fee: order.data.buy_amount,
+                    },
+                    OrderKind::Sell => OrderQuoteSide::Sell {
+                        sell_amount: SellAmount::BeforeFee {
+                            value: order.data.sell_amount + order.data.fee_amount,
+                        },
+                    },
+                },
+                from: order.metadata.owner,
+                app_data: order.data.app_data,
+                signing_scheme: match &order.signature {
+                    Signature::Eip712(_) => QuoteSigningScheme::Eip712,
+                    Signature::EthSign(_) => QuoteSigningScheme::EthSign,
+                    Signature::Eip1271(signature) => {
+                        let additional_gas = self
+                            .signature_validator
+                            .validate_signature_and_get_additional_gas(SignatureCheck {
+                                signer: order.metadata.owner,
+                                hash: hashed_eip712_message(
+                                    &self.domain_separator,
+                                    &order.data.hash_struct(),
+                                ),
+                                signature: signature.to_owned(),
+                            })
+                            .await?;
+                        QuoteSigningScheme::Eip1271 {
+                            onchain_order: false,
+                            verification_gas_limit: additional_gas,
+                        }
+                    }
+                    Signature::PreSign => QuoteSigningScheme::PreSign {
+                        onchain_order: false,
+                    },
+                },
+            })
+            .await?;
+        self.database
+            .update_limit_order_fees(
+                &order.metadata.uid,
+                &FeeUpdate {
+                    surplus_fee: quote.fee_amount,
+                    full_fee_amount: quote.full_fee_amount,
+                },
+            )
+            .await
     }
 }

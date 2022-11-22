@@ -30,7 +30,7 @@ pub struct Arguments {
     )]
     pub ethflow_contract: H160,
 
-    // Feature flag for ethflow
+    // Feature flag for ethflow.
     #[clap(long, env)]
     pub enable_ethflow_orders: bool,
 
@@ -133,6 +133,10 @@ pub struct Arguments {
 
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
+
+    // Enable background quoting for limit orders.
+    #[clap(long, env)]
+    pub enable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -174,6 +178,7 @@ impl std::fmt::Display for Arguments {
         display_option(f, "cip_14_profit", &self.cip_14_profit)?;
         display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
         display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
+        writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
         Ok(())
     }
 }
