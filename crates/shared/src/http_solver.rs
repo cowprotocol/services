@@ -184,7 +184,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         let client = self.client.clone();
         let config_api_key = self.config.api_key.clone();
-        let name = self.name.clone();
+        tracing::debug!(solver_name = self.name, ?result, "notify auction result");
         let future = async move {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
@@ -200,7 +200,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 request = request.header("X-API-KEY", header);
             }
 
-            tracing::debug!(auction_id, name, ?result, "notify auction result");
             let _result = request.json(&json!(result)).send().await;
         };
         tokio::task::spawn(future);
