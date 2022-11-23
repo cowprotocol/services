@@ -405,7 +405,7 @@ async fn main() -> ! {
                 }))
             }
             TransactionStrategyArg::Gelato => {
-                transaction_strategies.push(TransactionStrategy::Gelato(
+                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
                     GelatoSubmitter::new(
                         web3.clone(),
                         settlement_contract.clone(),
@@ -413,7 +413,7 @@ async fn main() -> ! {
                     )
                     .await
                     .unwrap(),
-                ))
+                )))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)

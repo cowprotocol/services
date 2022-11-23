@@ -123,7 +123,7 @@ pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
     PublicMempool(StrategyArgs),
-    Gelato(GelatoSubmitter),
+    Gelato(Arc<GelatoSubmitter>),
     DryRun,
 }
 

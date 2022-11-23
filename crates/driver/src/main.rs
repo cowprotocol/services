@@ -259,7 +259,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                 }))
             }
             TransactionStrategyArg::Gelato => {
-                transaction_strategies.push(TransactionStrategy::Gelato(
+                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
                     GelatoSubmitter::new(
                         web3.clone(),
                         common.settlement_contract.clone(),
@@ -270,7 +270,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     )
                     .await
                     .unwrap(),
-                ))
+                )))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
