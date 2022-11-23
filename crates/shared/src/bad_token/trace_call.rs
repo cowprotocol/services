@@ -747,6 +747,7 @@ mod tests {
                 client: reqwest::Client::new(),
             }),
             Duration::MAX,
+            "test".to_owned(),
         ));
 
         // Force the cache to update at least once.
