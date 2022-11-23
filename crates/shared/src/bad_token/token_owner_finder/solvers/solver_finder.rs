@@ -2,6 +2,10 @@ use super::TokenOwnerSolverApi;
 use crate::bad_token::token_owner_finder::TokenOwnerProposing;
 use anyhow::Result;
 use ethcontract::H160;
+use prometheus::{
+    core::{AtomicU64, GenericCounter},
+    IntCounterVec,
+};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Formatter},
@@ -17,25 +21,54 @@ pub struct AutoUpdatingSolverTokenOwnerFinder {
     inner: Arc<Inner>,
 }
 
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+struct Metrics {
+    /// Tracks how often a token owner update succeeded or failed.
+    #[metric(labels("identifier", "result"))]
+    updates: IntCounterVec,
+}
+
 struct Inner {
     solver: Box<dyn TokenOwnerSolverApi>,
     cache: RwLock<HashMap<Token, Vec<Owner>>>,
+    metrics: &'static Metrics,
+    identifier: String,
+}
+
+impl Inner {
+    pub fn get_update_counter(&self, success: bool) -> GenericCounter<AtomicU64> {
+        let result = if success { "success" } else { "failure" };
+        let labels = [&self.identifier, result];
+        self.metrics.updates.with_label_values(&labels)
+    }
 }
 
 impl AutoUpdatingSolverTokenOwnerFinder {
-    pub fn new(solver: Box<dyn TokenOwnerSolverApi>, update_interval: Duration) -> Self {
+    pub fn new(
+        solver: Box<dyn TokenOwnerSolverApi>,
+        update_interval: Duration,
+        identifier: String,
+    ) -> Self {
         let inner = Arc::new(Inner {
             solver,
             cache: RwLock::new(Default::default()),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            identifier,
         });
+
+        // reset metrics for consistent graphs in grafana
+        inner.get_update_counter(true).reset();
+        inner.get_update_counter(false).reset();
 
         // spawn a background task to regularly update cache
         {
             let inner = inner.clone();
             let updater = async move {
                 loop {
-                    if let Err(err) = inner.update().await {
-                        tracing::error!(?err, "failed to update token list");
+                    let result = inner.update().await;
+                    inner.get_update_counter(result.is_ok()).inc();
+                    if let Err(err) = result {
+                        tracing::warn!(?err, "failed to update token list");
                     }
                     tokio::time::sleep(update_interval).await;
                 }
@@ -99,8 +132,11 @@ mod tests {
             url: Url::from_str(&url).unwrap(),
             client: Client::new(),
         });
-        let finder =
-            AutoUpdatingSolverTokenOwnerFinder::new(configuration, Duration::from_secs(1000));
+        let finder = AutoUpdatingSolverTokenOwnerFinder::new(
+            configuration,
+            Duration::from_secs(1000),
+            "test".to_owned(),
+        );
         tokio::time::sleep(Duration::from_secs(10)).await;
         let owners = finder
             .find_candidate_owners(addr!("132d8D2C76Db3812403431fAcB00F3453Fc42125"))
