@@ -10,6 +10,7 @@ use shared::{
     baseline_solver::BaseTokens,
     current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{self, Web3},
+    gelato_api::GelatoClient,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::{Maintaining, ServiceMaintenance},
@@ -39,6 +40,7 @@ use solver::{
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_submission::{
+        gelato::GelatoSubmitter,
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
@@ -255,6 +257,20 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
+            }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato(
+                    GelatoSubmitter::new(
+                        web3.clone(),
+                        common.settlement_contract.clone(),
+                        GelatoClient::new(
+                            &common.http_factory,
+                            args.gelato_api_key.clone().unwrap(),
+                        ),
+                    )
+                    .await
+                    .unwrap(),
+                ))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)

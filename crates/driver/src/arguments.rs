@@ -99,6 +99,10 @@ pub struct Arguments {
     )]
     pub transaction_strategy: Vec<TransactionStrategyArg>,
 
+    /// The API key to use for the Gelato submission strategy.
+    #[clap(long, env)]
+    pub gelato_api_key: Option<String>,
+
     /// The API endpoint of the Eden network for transaction submission.
     #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
     pub eden_api_url: Url,
@@ -305,6 +309,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
+        display_secret_option(f, "gelato_api_key", &self.gelato_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
             f,

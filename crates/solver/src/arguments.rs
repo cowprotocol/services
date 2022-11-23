@@ -6,7 +6,7 @@ use crate::{
 use primitive_types::H160;
 use reqwest::Url;
 use shared::{
-    arguments::{display_list, display_option},
+    arguments::{display_list, display_option, display_secret_option},
     http_client,
 };
 use std::time::Duration;
@@ -164,6 +164,10 @@ pub struct Arguments {
         use_value_delimiter = true
     )]
     pub transaction_strategy: Vec<TransactionStrategyArg>,
+
+    /// The API key to use for the Gelato submission strategy.
+    #[clap(long, env)]
+    pub gelato_api_key: Option<String>,
 
     /// Which access list estimators to use. Multiple estimators are used in sequence if a previous one
     /// fails. Individual estimators might support different networks.
@@ -329,6 +333,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
+        display_secret_option(f, "gelato_api_key", &self.gelato_api_key)?;
         writeln!(
             f,
             "access_list_estimators: {:?}",
@@ -403,5 +408,6 @@ pub enum TransactionStrategyArg {
     PublicMempool,
     Eden,
     Flashbots,
+    Gelato,
     DryRun,
 }

@@ -1,5 +1,5 @@
 mod dry_run;
-mod gelato;
+pub mod gelato;
 pub mod submitter;
 
 use crate::{
@@ -27,6 +27,8 @@ use submitter::{
 };
 use tracing::Instrument;
 use web3::types::TransactionReceipt;
+
+use self::gelato::GelatoSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
@@ -121,6 +123,7 @@ pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
     PublicMempool(StrategyArgs),
+    Gelato(GelatoSubmitter),
     DryRun,
 }
 
@@ -130,7 +133,7 @@ impl TransactionStrategy {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
             TransactionStrategy::PublicMempool(args) => Some(args),
-            TransactionStrategy::DryRun => None,
+            _ => None,
         }
     }
 }
@@ -148,44 +151,51 @@ impl SolutionSubmitter {
         account: Account,
         nonce: U256,
     ) -> Result<TransactionReceipt, SubmissionError> {
-        let is_dry_run: bool = self
-            .transaction_strategies
-            .iter()
-            .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
+        for strategy in &self.transaction_strategies {
+            match strategy {
+                TransactionStrategy::DryRun => {
+                    return Ok(dry_run::log_settlement(account, &self.contract, settlement).await?);
+                }
+                TransactionStrategy::Gelato(gelato) => {
+                    return tokio::time::timeout(
+                        self.max_confirm_time,
+                        gelato.relay_settlement(account, settlement),
+                    )
+                    .await
+                    .map_err(|_| SubmissionError::Timeout)?;
+                }
+                _ => {}
+            }
+        }
 
         let network_id = self.web3.net().version().await?;
+        let mut futures = self
+            .transaction_strategies
+            .iter()
+            .enumerate()
+            .map(|(i, strategy)| {
+                self.settle_with_strategy(
+                    strategy,
+                    &account,
+                    nonce,
+                    gas_estimate,
+                    network_id.clone(),
+                    settlement.clone(),
+                    i,
+                )
+                .boxed()
+            })
+            .collect::<Vec<_>>();
 
-        if is_dry_run {
-            Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
-        } else {
-            let mut futures = self
-                .transaction_strategies
-                .iter()
-                .enumerate()
-                .map(|(i, strategy)| {
-                    self.settle_with_strategy(
-                        strategy,
-                        &account,
-                        nonce,
-                        gas_estimate,
-                        network_id.clone(),
-                        settlement.clone(),
-                        i,
-                    )
-                    .boxed()
-                })
-                .collect::<Vec<_>>();
-
-            loop {
-                let (result, _index, rest) = futures::future::select_all(futures).await;
-                match result {
-                    Ok(receipt) => return Ok(receipt),
-                    Err(err) if rest.is_empty() || err.is_transaction_mined() => {
-                        return Err(err);
-                    }
-                    Err(_) => {
-                        futures = rest;
-                    }
+        loop {
+            let (result, _index, rest) = futures::future::select_all(futures).await;
+            match result {
+                Ok(receipt) => return Ok(receipt),
+                Err(err) if rest.is_empty() || err.is_transaction_mined() => {
+                    return Err(err);
+                }
+                Err(_) => {
+                    futures = rest;
                 }
             }
         }
@@ -211,7 +221,7 @@ impl SolutionSubmitter {
                 }
             }
             TransactionStrategy::PublicMempool(_) => {}
-            TransactionStrategy::DryRun => unreachable!(),
+            _ => unreachable!(),
         };
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");

@@ -5,6 +5,7 @@ use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
     ethrpc::{self, Web3},
+    gelato_api::GelatoClient,
     http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
@@ -33,6 +34,7 @@ use solver::{
     orderbook::OrderBookApi,
     settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
+        gelato::GelatoSubmitter,
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
@@ -401,6 +403,17 @@ async fn main() -> ! {
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
+            }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato(
+                    GelatoSubmitter::new(
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        GelatoClient::new(&http_factory, args.gelato_api_key.clone().unwrap()),
+                    )
+                    .await
+                    .unwrap(),
+                ))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
