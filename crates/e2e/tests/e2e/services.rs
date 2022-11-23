@@ -6,7 +6,7 @@ use autopilot::{
         ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser,
     },
     event_updater::{CoWSwapOnchainOrdersContract, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
+    limit_orders::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{CoWSwapOnchainOrders, WETH9};
