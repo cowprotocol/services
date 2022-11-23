@@ -159,7 +159,6 @@ impl SettlementRating for SettlementRater {
             .await?;
 
         // split simulations into succeeded and failed groups, then do the rating only for succeeded settlements
-        // since rating is done WITH internalizations, repeat the simulations
         let (settlements, simulations_failed): (Vec<_>, Vec<_>) = simulations
             .into_iter()
             .partition_map(|simulation| match simulation.gas_estimate {
@@ -170,7 +169,7 @@ impl SettlementRating for SettlementRater {
                 Err(_) => Either::Right(simulation),
             });
 
-        // repeat simulation with internalizations only for previously succeeded simulations
+        // since rating is done WITH internalizations, repeat the simulations for previously succeeded simulations
         let mut simulations = self
             .simulate_settlements(
                 settlements,

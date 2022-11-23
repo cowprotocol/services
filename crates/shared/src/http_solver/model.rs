@@ -408,7 +408,7 @@ pub struct TransactionWithError {
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
     pub block_number: u64,
-    /// Is transaction simulated with iternalized interactions or not
+    /// Is transaction simulated with internalized interactions or without
     pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
