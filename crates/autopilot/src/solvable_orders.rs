@@ -34,19 +34,19 @@ const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
-    /// auction creations
+    /// Auction creations.
     auction_creations: IntCounter,
 
-    /// auction solvable orders
+    /// Auction solvable orders.
     auction_solvable_orders: IntGauge,
 
-    /// auction filtered orders
+    /// Auction filtered orders.
     auction_filtered_orders: IntGauge,
 
-    /// auction errored price estimates
+    /// Auction errored price estimates.
     auction_errored_price_estimates: IntCounter,
 
-    /// auction price estimate timeouts
+    /// Auction price estimate timeouts.
     auction_price_estimate_timeouts: IntCounter,
 }
 

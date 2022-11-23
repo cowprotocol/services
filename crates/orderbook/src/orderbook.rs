@@ -8,6 +8,7 @@ use model::{
         Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid,
         SignedOrderCancellations,
     },
+    quote::QuoteId,
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -141,16 +142,20 @@ impl Orderbook {
         }
     }
 
-    pub async fn add_order(&self, payload: OrderCreation) -> Result<OrderUid, AddOrderError> {
+    pub async fn add_order(
+        &self,
+        payload: OrderCreation,
+    ) -> Result<(OrderUid, Option<QuoteId>), AddOrderError> {
         let (order, quote) = self
             .order_validator
             .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
             .await?;
+        let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
         self.database.insert_order(&order, quote).await?;
         Metrics::on_order_operation(&order, OrderOperation::Created);
 
-        Ok(order.metadata.uid)
+        Ok((order.metadata.uid, quote_id))
     }
 
     /// Finds an order for cancellation.

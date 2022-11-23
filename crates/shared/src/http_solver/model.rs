@@ -403,7 +403,8 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
@@ -416,6 +417,7 @@ pub struct SimulatedTransaction {
     /// GPv2 settlement contract address
     pub to: H160,
     /// Transaction input data
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
 }
