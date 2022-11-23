@@ -190,6 +190,12 @@ impl DriverLogger {
                     );
 
                     metrics.settlement_simulation(solver.name(), SolverSimulationOutcome::Failure);
+                } else {
+                    tracing::debug!(
+                        name = solver.name(),
+                        ?settlement,
+                        "simulation only failed on the latest block but not on the block the auction started",
+                    );
                 }
             }
         };
