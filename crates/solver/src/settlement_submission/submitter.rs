@@ -31,6 +31,7 @@ use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::{
     ethrpc::{Web3, Web3Transport},
+    http_solver::model::InternalizationStrategy,
     submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
 };
 use std::{
@@ -494,7 +495,9 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<Web3Transport, ()> {
-        settle_method_builder(self.contract, settlement.into(), self.account.clone())
+        let settlement =
+            settlement.into_encoded(InternalizationStrategy::SkipInternalizableInteraction);
+        settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
             .gas_price(crate::into_gas_price(gas_price))
@@ -680,7 +683,13 @@ mod tests {
         let settlement = Settlement::new(Default::default());
         let gas_estimate =
             crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
-                std::iter::once((account.clone(), settlement.clone(), None)),
+                std::iter::once((
+                    account.clone(),
+                    settlement
+                        .clone()
+                        .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                    None,
+                )),
                 &contract,
                 Default::default(),
             )

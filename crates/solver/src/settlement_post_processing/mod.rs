@@ -11,7 +11,9 @@ use gas_estimation::GasPrice1559;
 use optimize_buffer_usage::optimize_buffer_usage;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
-use shared::{ethrpc::Web3, token_list::AutoUpdatingTokenList};
+use shared::{
+    ethrpc::Web3, http_solver::model::InternalizationStrategy, token_list::AutoUpdatingTokenList,
+};
 
 /// Determines whether a settlement would be executed successfully.
 #[cfg_attr(test, mockall::automock)]
@@ -24,11 +26,13 @@ pub struct SettlementSimulator {
     settlement_contract: GPv2Settlement,
     gas_price: GasPrice1559,
     solver_account: Account,
+    internalization: InternalizationStrategy,
 }
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
     async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
+        let settlement = settlement.into_encoded(self.internalization);
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
@@ -93,6 +97,7 @@ impl PostProcessing for PostProcessingPipeline {
             settlement_contract: self.settlement_contract.clone(),
             gas_price,
             solver_account,
+            internalization: InternalizationStrategy::SkipInternalizableInteraction,
         };
 
         let optimized_solution = optimize_buffer_usage(

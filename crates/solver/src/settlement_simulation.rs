@@ -1,4 +1,4 @@
-use crate::{encoding::EncodedSettlement, settlement::Settlement};
+use crate::encoding::EncodedSettlement;
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
@@ -37,7 +37,7 @@ const SIMULATE_BATCH_SIZE: usize = 10;
 const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 
 pub async fn simulate_and_estimate_gas_at_current_block(
-    settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
+    settlements: impl Iterator<Item = (Account, EncodedSettlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     gas_price: GasPrice1559,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
@@ -68,7 +68,7 @@ pub async fn simulate_and_estimate_gas_at_current_block(
 
 #[allow(clippy::needless_collect)]
 pub async fn simulate_and_error_with_tenderly_link(
-    settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
+    settlements: impl Iterator<Item = (Account, EncodedSettlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     web3: &Web3,
     gas_price: GasPrice1559,
@@ -165,7 +165,7 @@ pub async fn simulate_before_after_access_list(
 pub fn settle_method(
     gas_price: GasPrice1559,
     contract: &GPv2Settlement,
-    settlement: Settlement,
+    settlement: EncodedSettlement,
     account: Account,
 ) -> MethodBuilder<DynTransport, ()> {
     // Increase the gas price by the highest possible base gas fee increase. This
@@ -173,7 +173,7 @@ pub fn settle_method(
     // a block may have been mined that increases the base gas fee and causes the
     // `eth_call` simulation to fail with `max fee per gas less than block base fee`.
     let gas_price = gas_price.bump(MAX_BASE_GAS_FEE_INCREASE);
-    settle_method_builder(contract, settlement.into(), account)
+    settle_method_builder(contract, settlement, account)
         .gas_price(crate::into_gas_price(&gas_price))
 }
 
@@ -237,7 +237,7 @@ mod tests {
             slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
             StablePoolOrder,
         },
-        settlement::InternalizationStrategy,
+        settlement::Settlement,
         solver::http_solver::settlement::{convert_settlement, SettlementContext},
     };
     use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
@@ -248,7 +248,7 @@ mod tests {
     use serde_json::json;
     use shared::{
         ethrpc::create_env_test_transport,
-        http_solver::model::SettledBatchAuctionModel,
+        http_solver::model::{InternalizationStrategy, SettledBatchAuctionModel},
         sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
         tenderly_api::TenderlyHttpApi,
     };
@@ -276,10 +276,16 @@ mod tests {
         let settlements = vec![
             (
                 account.clone(),
-                Settlement::with_trades(Default::default(), vec![Default::default()]),
+                Settlement::with_trades(Default::default(), vec![Default::default()])
+                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
                 None,
             ),
-            (account.clone(), Settlement::new(Default::default()), None),
+            (
+                account.clone(),
+                Settlement::new(Default::default())
+                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                None,
+            ),
         ];
         let result = simulate_and_error_with_tenderly_link(
             settlements.iter().cloned(),
@@ -694,7 +700,12 @@ mod tests {
 
         // 12 so that we hit more than one chunk.
         let settlements = vec![
-            (account.clone(), Settlement::new(Default::default()), None);
+            (
+                account.clone(),
+                Settlement::new(Default::default())
+                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                None
+            );
             SIMULATE_BATCH_SIZE + 2
         ];
         let result = simulate_and_estimate_gas_at_current_block(

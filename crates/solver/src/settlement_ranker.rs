@@ -1,9 +1,7 @@
 use crate::{
     driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-    settlement::{
-        external_prices::ExternalPrices, InternalizationStrategy, PriceCheckTokens, Settlement,
-    },
+    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     settlement_simulation::call_data,
     solver::{SimulationWithError, Solver},
@@ -15,7 +13,8 @@ use model::auction::AuctionId;
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
 use rand::prelude::SliceRandom;
 use shared::http_solver::model::{
-    AuctionResult, SolverRejectionReason, SolverRunError, TransactionWithError,
+    AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
+    TransactionWithError,
 };
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 

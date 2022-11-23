@@ -11,6 +11,7 @@ use primitive_types::H256;
 use shared::{
     current_block::{into_stream, BlockInfo, CurrentBlockStream},
     ethrpc::Web3,
+    http_solver::model::InternalizationStrategy,
 };
 use solver::{
     driver::submit_settlement,
@@ -113,7 +114,11 @@ impl Driver {
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
         let simulation_details = self
             .settlement_rater
-            .simulate_settlements(vec![(fake_solver, settlement)], gas_price)
+            .simulate_settlements(
+                vec![(fake_solver, settlement)],
+                gas_price,
+                InternalizationStrategy::SkipInternalizableInteraction,
+            )
             .await?
             .pop()
             .context("simulation returned no results")?;
