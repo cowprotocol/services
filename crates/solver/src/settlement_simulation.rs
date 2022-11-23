@@ -674,9 +674,8 @@ mod tests {
         .unwrap();
         let settlement = settlements.get(0).unwrap();
         let settlement_encoded = settlement
-            .encoder
             .clone()
-            .finish(InternalizationStrategy::SkipInternalizableInteraction);
+            .into_encoded(InternalizationStrategy::SkipInternalizableInteraction);
         println!("Settlement_encoded: {:?}", settlement_encoded);
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(

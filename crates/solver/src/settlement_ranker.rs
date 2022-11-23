@@ -144,9 +144,8 @@ impl SettlementRanker {
                 "0x{}",
                 hex::encode(call_data(
                     settlement
-                        .encoder
                         .clone()
-                        .finish(InternalizationStrategy::EncodeAllInteractions)
+                        .into_encoded(InternalizationStrategy::EncodeAllInteractions)
                 )),
             );
 
