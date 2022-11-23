@@ -202,7 +202,7 @@ pub fn create_order_response(
     result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
 ) -> ApiReply {
     match result {
-        Ok(uid) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
+        Ok((uid, _)) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
         Err(err) => err.into_warp_reply(),
     }
 }
