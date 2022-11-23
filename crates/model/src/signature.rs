@@ -11,6 +11,7 @@ use web3::{
     types::Recovery,
 };
 
+/// See [`Signature`].
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -35,9 +36,19 @@ impl From<QuoteSigningScheme> for SigningScheme {
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
 pub enum Signature {
+    /// Transaction data hashed and signed according to EIP-712.
+    /// https://eips.ethereum.org/EIPS/eip-712
     Eip712(EcdsaSignature),
+    /// A standard Ethereum transaction signature.
     EthSign(EcdsaSignature),
+    /// Transaction data signed according to EIP-1271, which facilitates a way for contracts to
+    /// verify signatures using an arbitrary method. This allows smart contracts to sign and
+    /// place orders.
+    /// https://eips.ethereum.org/EIPS/eip-1271
     Eip1271(Vec<u8>),
+    /// Data signed using EIP-191. Similar to the [`Self::Eip712`] variant, except the data is not
+    /// structured.
+    /// https://eips.ethereum.org/EIPS/eip-191
     PreSign,
 }
 
