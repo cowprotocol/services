@@ -166,7 +166,7 @@ impl OrderbookServices {
             signature_validator.clone(),
             Duration::from_secs(1),
             None,
-            contracts.ethflow.address(),
+            Some(contracts.ethflow.address()),
             Duration::from_secs(5),
             Default::default(),
         );
