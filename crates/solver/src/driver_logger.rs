@@ -168,7 +168,7 @@ impl DriverLogger {
                         Simulation {
                             solver, settlement, ..
                         },
-                    ..
+                    error: error_at_latest_block,
                 },
                 result,
             ) in errors.iter().zip(simulations)
@@ -190,6 +190,12 @@ impl DriverLogger {
                     );
 
                     metrics.settlement_simulation(solver.name(), SolverSimulationOutcome::Failure);
+                } else {
+                    tracing::debug!(
+                        name = solver.name(),
+                        ?error_at_latest_block,
+                        "simulation only failed on the latest block but not on the block the auction started",
+                    );
                 }
             }
         };
