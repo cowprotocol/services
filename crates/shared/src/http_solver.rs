@@ -200,7 +200,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 request = request.header("X-API-KEY", header);
             }
 
-            tracing::debug!(name, auction_id, ?result, "notify auction result");
+            tracing::debug!(auction_id, name, ?result, "notify auction result");
             let _result = request.json(&json!(result)).send().await;
         };
         tokio::task::spawn(future);
