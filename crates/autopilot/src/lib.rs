@@ -2,9 +2,10 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
+
+pub mod limit_orders;
 
 use crate::{
     database::{
@@ -12,7 +13,7 @@ use crate::{
         Postgres,
     },
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
+    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
@@ -530,13 +531,20 @@ pub async fn main(args: arguments::Arguments) {
 
     if args.enable_limit_orders {
         let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+        let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
-            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+            limit_order_age,
             loop_delay: args.max_surplus_fee_age / 2,
             quoter,
-            database: db,
+            database: db.clone(),
             signature_validator,
             domain_separator,
+        }
+        .spawn();
+        LimitOrderMetrics {
+            limit_order_age,
+            loop_delay: Duration::from_secs(5),
+            database: db,
         }
         .spawn();
     }
