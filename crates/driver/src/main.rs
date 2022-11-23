@@ -8,6 +8,7 @@ use driver::{
 use gas_estimation::GasPriceEstimating;
 use shared::{
     baseline_solver::BaseTokens,
+    code_fetching::{CachedCodeFetcher, CodeFetching},
     current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{self, Web3},
     gelato_api::GelatoClient,
@@ -68,6 +69,7 @@ struct CommonComponents {
     block_retriever: Arc<dyn BlockRetrieving>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     current_block_stream: CurrentBlockStream,
+    code_fetcher: Arc<dyn CodeFetching>,
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
@@ -117,6 +119,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let current_block_stream = args.current_block.stream(web3.clone()).await.unwrap();
 
@@ -140,6 +143,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         block_retriever,
         token_info_fetcher,
         current_block_stream,
+        code_fetcher,
     }
 }
 
@@ -289,6 +293,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator: common.access_list_estimator.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     })
 }
 
@@ -505,6 +510,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         access_list_estimator: common.access_list_estimator.clone(),
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
     let metrics = Arc::new(Metrics::new().unwrap());

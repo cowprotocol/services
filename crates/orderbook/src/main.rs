@@ -18,6 +18,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    code_fetching::CachedCodeFetcher,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -402,7 +403,6 @@ async fn main() -> ! {
 
     let order_validator = Arc::new(
         OrderValidator::new(
-            Box::new(web3.clone()),
             native_token.clone(),
             args.banned_users.iter().copied().collect(),
             args.order_quoting
@@ -418,8 +418,10 @@ async fn main() -> ! {
             signature_validator,
             database.clone(),
             args.max_limit_orders_per_user,
+            Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
         )
-        .with_limit_orders(args.enable_limit_orders),
+        .with_limit_orders(args.enable_limit_orders)
+        .with_smart_contract_payments(args.enable_smart_contract_payments),
     );
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

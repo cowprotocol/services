@@ -19,6 +19,7 @@ use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
+    code_fetching::{CachedCodeFetcher, MockCodeFetching},
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
     fee_subsidy::Subsidy,
@@ -182,9 +183,10 @@ impl OrderbookServices {
             domain_separator: contracts.domain_separator,
         }
         .spawn();
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher.expect_code_size().returning(|_| Ok(0));
         let order_validator = Arc::new(
             OrderValidator::new(
-                Box::new(web3.clone()),
                 contracts.weth.clone(),
                 HashSet::default(),
                 HashSet::default(),
@@ -196,6 +198,7 @@ impl OrderbookServices {
                 signature_validator,
                 api_db.clone(),
                 1,
+                Arc::new(code_fetcher),
             )
             .with_limit_orders(enable_limit_orders),
         );
@@ -274,6 +277,7 @@ pub async fn setup_naive_solver_uniswapv2_driver(
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
@@ -308,6 +312,7 @@ pub async fn setup_naive_solver_uniswapv2_driver(
                 create_priority_estimator(web3, &[AccessListEstimatorType::Web3], None, network_id)
                     .unwrap(),
             ),
+            code_fetcher: code_fetcher.clone(),
         },
         create_orderbook_api(),
         create_order_converter(web3, contracts.weth.address()),
@@ -317,6 +322,7 @@ pub async fn setup_naive_solver_uniswapv2_driver(
         None.into(),
         None,
         0,
+        code_fetcher,
     )
 }
 

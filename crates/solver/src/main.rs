@@ -4,6 +4,7 @@ use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9}
 use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
+    code_fetching::CachedCodeFetcher,
     ethrpc::{self, Web3},
     gelato_api::GelatoClient,
     http_client::HttpClientFactory,
@@ -435,6 +436,7 @@ async fn main() -> ! {
         )
         .expect("failed to create access list estimator"),
     );
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -445,6 +447,7 @@ async fn main() -> ! {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
+        code_fetcher: code_fetcher.clone(),
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
@@ -475,6 +478,7 @@ async fn main() -> ! {
         args.token_list_restriction_for_price_checks.into(),
         tenderly_api,
         args.solution_comparison_decimal_cutoff,
+        code_fetcher,
     );
 
     let maintainer = ServiceMaintenance::new(

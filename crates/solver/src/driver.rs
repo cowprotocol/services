@@ -30,8 +30,8 @@ use model::{
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    current_block::CurrentBlockStream, ethrpc::Web3, http_solver::model::SolverRunError,
-    recent_block_cache::Block, tenderly_api::TenderlyApi,
+    code_fetching::CodeFetching, current_block::CurrentBlockStream, ethrpc::Web3,
+    http_solver::model::SolverRunError, recent_block_cache::Block, tenderly_api::TenderlyApi,
 };
 use std::{
     sync::Arc,
@@ -84,11 +84,13 @@ impl Driver {
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
+        code_fetcher: Arc<dyn CodeFetching>,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
             web3: web3.clone(),
+            code_fetcher,
         });
 
         let settlement_ranker = SettlementRanker {
