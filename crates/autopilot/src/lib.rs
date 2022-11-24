@@ -456,11 +456,11 @@ pub async fn main(args: arguments::Arguments) {
             .unwrap(),
     ));
 
-    if args.enable_ethflow_orders {
+    if let Some(ethflow_contract) = args.ethflow_contract {
         // The events from the ethflow contract are read with the more generic contract
         // interface called CoWSwapOnchainOrders.
         let cowswap_onchain_order_contract_for_eth_flow =
-            contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
+            contracts::CoWSwapOnchainOrders::at(&web3, ethflow_contract);
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
