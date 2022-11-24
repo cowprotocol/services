@@ -25,7 +25,7 @@ pub struct AutoUpdatingSolverTokenOwnerFinder {
 struct Metrics {
     /// Tracks how often a token owner update succeeded or failed.
     #[metric(labels("identifier", "result"))]
-    updates: IntCounterVec,
+    token_owner_list_updates: IntCounterVec,
 }
 
 struct Inner {
@@ -38,8 +38,9 @@ struct Inner {
 impl Inner {
     pub fn get_update_counter(&self, success: bool) -> GenericCounter<AtomicU64> {
         let result = if success { "success" } else { "failure" };
-        let labels = [&self.identifier, result];
-        self.metrics.updates.with_label_values(&labels)
+        self.metrics
+            .token_owner_list_updates
+            .with_label_values(&[&self.identifier, result])
     }
 }
 
