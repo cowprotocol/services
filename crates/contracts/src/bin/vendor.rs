@@ -28,6 +28,8 @@ fn main() {
 fn run() -> Result<()> {
     let vendor = Vendor::new()?;
 
+    let ethflow_version = "0.0.0-rc.3";
+
     vendor
         .full()
         .github(
@@ -57,7 +59,10 @@ fn run() -> Result<()> {
         )?
         .github(
             "CoWSwapEthFlow",
-            "cowprotocol/ethflowcontract/hardhatversion/build/artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+            &format!(
+                "cowprotocol/ethflowcontract/{ethflow_version}-artifacts/\
+            hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+            ),
         )?
         .npm(
             "ERC20Mintable",
@@ -107,11 +112,6 @@ fn run() -> Result<()> {
              pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPool.json",
         )?
         .github(
-            "CoWSwapOnchainOrders",
-            "cowprotocol/ethflowcontract/v0.0.0-rc.1\
-            -artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
-        )?
-        .github(
             "BalancerV2LiquidityBootstrappingPoolFactory",
             "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/\
              pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPoolFactory.json",
@@ -133,8 +133,10 @@ fn run() -> Result<()> {
         )?
         .github(
             "CoWSwapOnchainOrders",
-            "cowprotocol/ethflowcontract/0.0.0-rc.2\
-            -artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+            &format!(
+                "cowprotocol/ethflowcontract/{ethflow_version}-artifacts/\
+            hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+            )
         )?
         .npm(
             "ERC20",
