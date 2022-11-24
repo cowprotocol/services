@@ -8,7 +8,8 @@ use std::{
 
 /// This allows arbitrary user data to be associated with an order. This type holds the
 /// hash of the data, while the data itself is uploaded to IPFS. The hash is signed along with the
-/// order. This allows the protocol to be extended by users in their own custom ways.
+/// order. Most commonly, the user-agent is encoded in this field, but it allows any data to be
+/// stored.
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
 pub struct AppId(pub [u8; 32]);
 
