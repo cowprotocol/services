@@ -274,6 +274,9 @@ impl OrderData {
     pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
 
+    /// Returns the value of hashStruct() over the order data as defined by EIP-712.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-712#definition-of-hashstruct
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
