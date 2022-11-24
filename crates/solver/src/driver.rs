@@ -338,7 +338,7 @@ impl Driver {
                         rated_settlement
                             .settlement
                             .clone()
-                            .into_encoded(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
+                            .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
                     ),
                 })
                 .collect(),

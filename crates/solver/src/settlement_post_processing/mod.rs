@@ -32,7 +32,7 @@ pub struct SettlementSimulator {
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
     async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
-        let settlement = settlement.into_encoded(self.internalization);
+        let settlement = settlement.encode(self.internalization);
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,

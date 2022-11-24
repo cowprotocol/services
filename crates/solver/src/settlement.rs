@@ -432,10 +432,7 @@ impl Settlement {
         }
     }
 
-    pub fn into_encoded(
-        self,
-        internalization_strategy: InternalizationStrategy,
-    ) -> EncodedSettlement {
+    pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
         self.encoder.finish(internalization_strategy)
     }
 }
@@ -1464,7 +1461,7 @@ pub mod tests {
                 scaled_unsubsidized_fee: 1_000_u128.into(),
             }],
         )
-        .into_encoded(InternalizationStrategy::SkipInternalizableInteraction);
+        .encode(InternalizationStrategy::SkipInternalizableInteraction);
 
         // Note that for limit order **both** the uniform clearing price of the
         // buy token as well as the executed clearing price accounting for fees

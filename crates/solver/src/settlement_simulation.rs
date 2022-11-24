@@ -277,13 +277,13 @@ mod tests {
             (
                 account.clone(),
                 Settlement::with_trades(Default::default(), vec![Default::default()])
-                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
                 None,
             ),
             (
                 account.clone(),
                 Settlement::new(Default::default())
-                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
                 None,
             ),
         ];
@@ -675,7 +675,7 @@ mod tests {
         let settlement = settlements.get(0).unwrap();
         let settlement_encoded = settlement
             .clone()
-            .into_encoded(InternalizationStrategy::SkipInternalizableInteraction);
+            .encode(InternalizationStrategy::SkipInternalizableInteraction);
         println!("Settlement_encoded: {:?}", settlement_encoded);
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
@@ -702,7 +702,7 @@ mod tests {
             (
                 account.clone(),
                 Settlement::new(Default::default())
-                    .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
                 None
             );
             SIMULATE_BATCH_SIZE + 2

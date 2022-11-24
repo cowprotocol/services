@@ -150,7 +150,7 @@ impl DriverLogger {
                     let settlement = simulation
                         .settlement
                         .clone()
-                        .into_encoded(simulation.transaction.internalization);
+                        .encode(simulation.transaction.internalization);
                     (
                         simulation.solver.account().clone(),
                         settlement,

@@ -69,7 +69,7 @@ impl SettlementRater {
                 settle_method(
                     gas_price,
                     &self.settlement_contract,
-                    settlement.clone().into_encoded(internalization),
+                    settlement.clone().encode(internalization),
                     solver.account().clone(),
                 )
                 .tx
@@ -109,7 +109,7 @@ impl SettlementRating for SettlementRater {
             settlements.iter().map(|(solver, settlement, access_list)| {
                 (
                     solver.account().clone(),
-                    settlement.clone().into_encoded(internalization),
+                    settlement.clone().encode(internalization),
                     access_list.clone(),
                 )
             }),
@@ -131,7 +131,7 @@ impl SettlementRating for SettlementRater {
                             block_number,
                             to: self.settlement_contract.address(),
                             from: solver.account().address(),
-                            data: call_data(settlement.clone().into_encoded(internalization)),
+                            data: call_data(settlement.clone().encode(internalization)),
                         },
                         settlement,
                         solver,

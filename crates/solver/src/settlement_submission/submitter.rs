@@ -495,8 +495,7 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<Web3Transport, ()> {
-        let settlement =
-            settlement.into_encoded(InternalizationStrategy::SkipInternalizableInteraction);
+        let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
         settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
@@ -687,7 +686,7 @@ mod tests {
                     account.clone(),
                     settlement
                         .clone()
-                        .into_encoded(InternalizationStrategy::SkipInternalizableInteraction),
+                        .encode(InternalizationStrategy::SkipInternalizableInteraction),
                     None,
                 )),
                 &contract,
