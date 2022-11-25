@@ -28,7 +28,7 @@ fn main() {
 fn run() -> Result<()> {
     let vendor = Vendor::new()?;
 
-    let ethflow_version = "0.0.0-rc.3";
+    const ETHFLOW_VERSION: &str = "0.0.0-rc.3";
 
     vendor
         .full()
@@ -60,7 +60,7 @@ fn run() -> Result<()> {
         .github(
             "CoWSwapEthFlow",
             &format!(
-                "cowprotocol/ethflowcontract/{ethflow_version}-artifacts/\
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
             hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
             ),
         )?
@@ -134,7 +134,7 @@ fn run() -> Result<()> {
         .github(
             "CoWSwapOnchainOrders",
             &format!(
-                "cowprotocol/ethflowcontract/{ethflow_version}-artifacts/\
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
             hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
             )
         )?
