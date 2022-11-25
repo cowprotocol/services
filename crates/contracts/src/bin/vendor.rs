@@ -61,7 +61,7 @@ fn run() -> Result<()> {
             "CoWSwapEthFlow",
             &format!(
                 "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
-            hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+                 hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
             ),
         )?
         .npm(
@@ -135,7 +135,7 @@ fn run() -> Result<()> {
             "CoWSwapOnchainOrders",
             &format!(
                 "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
-            hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+                 hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
             )
         )?
         .npm(
