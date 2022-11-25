@@ -182,7 +182,6 @@ mod tests {
             assert_has_deployment_information!(BalancerV2Vault for *network);
             assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
-            
         }
         // only mainnet
         assert_has_deployment_information!(BalancerV2StablePoolFactory for MAINNET);
