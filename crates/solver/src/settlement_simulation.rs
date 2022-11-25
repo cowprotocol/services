@@ -544,8 +544,8 @@ mod tests {
                             "buy_token": "0xdac17f958d2ee523a2206206994597c13d831ec7",
                             "exec_buy_amount": "7922480269",
                             "exec_plan": {
-                                "sequence": 1,
-                                "position": 0,
+                                "sequence": 0,
+                                "position": 1,
                                 "internal": false
                             },
                             "exec_sell_amount": "2005171356556612050",
