@@ -128,7 +128,7 @@ impl<T: Transport> Namespace<T> for TestNodeApi<T> {
     }
 }
 
-/// Implements functions that are only available in a testing nodes.
+/// Implements functions that are only available in a testing node.
 ///
 /// Relevant RPC calls for the Hardhat network can be found at:
 /// https://hardhat.org/hardhat-network/docs/reference#special-testing/debugging-methods
