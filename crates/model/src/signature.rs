@@ -278,7 +278,7 @@ fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8;
     signing::keccak256(&message)
 }
 
-/// Orders are always hashed into 32 bytes according to EIP-217.
+/// Orders are always hashed into 32 bytes according to EIP-712.
 fn hashed_signing_message(
     signing_scheme: EcdsaSigningScheme,
     domain_separator: &DomainSeparator,
