@@ -26,14 +26,14 @@ where
         web3.api::<TestNodeApi<_>>()
             .set_next_block_timestamp(&chrono::offset::Utc::now())
             .await
-            .expect("Could not not set block timestamp");
+            .expect("Could not set block timestamp");
 
         // Mine an empty block. This writes the current time to the blockchain, also it can be retrieved from the latest
         // block.
         web3.api::<TestNodeApi<_>>()
             .mine_pending_block()
             .await
-            .expect("Could not not mine empty block");
+            .expect("Could not mine empty block");
 
         // Run the actual test function.
         test_function(web3.clone()).await;
