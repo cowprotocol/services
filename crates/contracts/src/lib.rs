@@ -66,6 +66,10 @@ pub mod support {
 
 #[cfg(test)]
 mod tests {
+    const MAINNET: u64 = 1;
+    const GOERLI: u64 = 5;
+    const GNOSIS: u64 = 100;
+
     use super::*;
     use ethcontract::{
         common::DeploymentInformation,
@@ -125,29 +129,38 @@ mod tests {
             }};
         }
 
-        for network in &[1, 4, 100] {
+        for network in &[MAINNET, GOERLI, GNOSIS] {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(SushiSwapFactory for *network);
             assert_has_deployment_address!(SushiSwapRouter for *network);
             assert_has_deployment_address!(WETH9 for *network);
+            assert_has_deployment_address!(CowProtocolToken for *network);
+            assert_has_deployment_address!(CowProtocolVirtualToken for *network);
         }
-        for network in &[1, 4] {
+        for network in &[MAINNET, GOERLI] {
             assert_has_deployment_address!(BalancerV2Vault for *network);
-            assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for *network);
-            assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for *network);
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
-            assert_has_deployment_address!(BalancerV2StablePoolFactory for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
+            assert_has_deployment_address!(UniswapV3SwapRouter for *network);
+            assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
-        #[allow(clippy::single_element_loop)]
-        for network in &[100] {
-            assert_has_deployment_address!(HoneyswapFactory for *network);
-            assert_has_deployment_address!(HoneyswapRouter for *network);
-        }
-        assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for 1);
-        assert_has_deployment_address!(UniswapV3SwapRouter for 1);
+
+        // only gnosis
+        assert_has_deployment_address!(BaoswapFactory for GNOSIS);
+        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
+        assert_has_deployment_address!(HoneyswapFactory for GNOSIS);
+        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
+        assert_has_deployment_address!(SwaprFactory for GNOSIS);
+        assert_has_deployment_address!(SwaprRouter for GNOSIS);
+
+        // only mainnet
+        assert_has_deployment_address!(BalancerV2StablePoolFactory for MAINNET);
+        assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for MAINNET);
+        assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for MAINNET);
+        assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for MAINNET);
+        assert_has_deployment_address!(IZeroEx for MAINNET);
     }
 
     #[test]
@@ -163,16 +176,17 @@ mod tests {
             }};
         }
 
-        for network in &[1, 4, 100] {
+        for network in &[MAINNET, GOERLI, GNOSIS] {
             assert_has_deployment_information!(GPv2Settlement for *network);
         }
-        for network in &[1, 4] {
+        for network in &[MAINNET, GOERLI] {
             assert_has_deployment_information!(BalancerV2Vault for *network);
             assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
-            assert_has_deployment_information!(BalancerV2StablePoolFactory for *network);
         }
-        assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for 1);
+        // only mainnet
+        assert_has_deployment_information!(BalancerV2StablePoolFactory for MAINNET);
+        assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for MAINNET);
     }
 
     #[test]
