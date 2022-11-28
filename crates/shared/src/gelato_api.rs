@@ -5,15 +5,13 @@
 use crate::http_client::HttpClientFactory;
 use anyhow::{ensure, Result};
 use chrono::{DateTime, Utc};
+use derivative::Derivative;
 use ethcontract::{H160, H256, U256};
 use model::u256_decimal::DecimalU256;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, skip_serializing_none};
-use std::{
-    env,
-    fmt::{self, Display, Formatter},
-};
+use std::fmt::{self, Display, Formatter};
 
 pub struct GelatoClient {
     client: reqwest::Client,
@@ -38,10 +36,11 @@ impl GelatoClient {
         }
     }
 
-    pub fn from_env() -> Result<Self> {
+    #[cfg(test)]
+    pub fn test_from_env() -> Result<Self> {
         Ok(Self::new(
             &HttpClientFactory::default(),
-            env::var("GELATO_API_KEY")?,
+            std::env::var("GELATO_API_KEY")?,
         ))
     }
 
@@ -83,11 +82,13 @@ impl GelatoClient {
 /// A call to send to the Gelato relay network and to be executed onchain.
 #[serde_as]
 #[skip_serializing_none]
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Derivative, Default, Serialize)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Call {
     pub chain_id: u64,
     pub target: H160,
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
     #[serde_as(as = "Option<DecimalU256>")]
@@ -177,7 +178,7 @@ mod tests {
 
         let weth = WETH9::deployed(&web3).await.unwrap();
 
-        let gelato = GelatoClient::from_env().unwrap();
+        let gelato = GelatoClient::test_from_env().unwrap();
         let call = Call {
             chain_id: chain_id.as_u64(),
             target: weth.address(),
