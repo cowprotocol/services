@@ -69,9 +69,9 @@ impl LivenessChecking for Liveness {
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) {
+pub async fn main(args: arguments::Arguments) -> ! {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
+    tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -486,7 +486,7 @@ pub async fn main(args: arguments::Arguments) {
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
-    let maintenance_task = tokio::task::spawn(
+    tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
@@ -523,7 +523,7 @@ pub async fn main(args: arguments::Arguments) {
         db: db.clone(),
         current_block: current_block_stream,
     };
-    let auction_transaction = tokio::task::spawn(
+    tokio::task::spawn(
         auction_transaction_updater
             .run_forever()
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
@@ -549,10 +549,6 @@ pub async fn main(args: arguments::Arguments) {
         .spawn();
     }
 
-    tokio::select! {
-        result = serve_metrics => panic!("serve_metrics exited {:?}", result),
-        result = db_metrics => panic!("db_metrics exited {:?}", result),
-        result = maintenance_task => panic!("maintenance exited {:?}", result),
-        result = auction_transaction => panic!("auction_transaction exited {:?}", result),
-    };
+    let result = serve_metrics.await;
+    panic!("serve_metrics exited {:?}", result);
 }
