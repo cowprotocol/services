@@ -53,7 +53,7 @@ impl Execution {
     fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
             Execution::Amm(executed_amm) => Some(&executed_amm.exec_plan),
-            Execution::CustomInteraction(interaction) => Some(&interaction.exec_plan),
+            Execution::CustomInteraction(interaction) => interaction.exec_plan.as_ref(),
             Execution::LimitOrder(order) => order.exec_plan.as_ref(),
         }
     }
@@ -993,13 +993,13 @@ mod tests {
             call_data: Vec::new(),
             inputs: vec![],
             outputs: vec![],
-            exec_plan: ExecutionPlan {
+            exec_plan: Some(ExecutionPlan {
                 coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 1u32,
                     position: 1u32,
                 },
                 internal: false,
-            },
+            }),
             cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {

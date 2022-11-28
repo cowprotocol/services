@@ -497,7 +497,8 @@ impl Solver for HttpSolver {
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
-        let settled = self.solver.solve(&model, timeout).await?;
+        let mut settled = self.solver.solve(&model, timeout).await?;
+        settled.add_missing_execution_plans();
 
         tracing::debug!(
             "Solution received from http solver {} (json):\n{:}",
