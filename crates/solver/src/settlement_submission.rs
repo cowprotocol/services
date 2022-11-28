@@ -1,4 +1,5 @@
 mod dry_run;
+mod gelato;
 pub mod submitter;
 
 use crate::{
