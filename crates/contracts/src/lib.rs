@@ -142,8 +142,8 @@ mod tests {
             assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
-            assert_has_deployment_address!(UniswapV3SwapRouter for MAINNET);
-            assert_has_deployment_address!(IUniswapV3Factory for MAINNET);
+            assert_has_deployment_address!(UniswapV3SwapRouter for *network);
+            assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
 
         // only gnosis
