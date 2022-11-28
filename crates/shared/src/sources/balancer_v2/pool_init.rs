@@ -61,7 +61,7 @@ fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
         .get(&chain_id.to_string())
         // Note that we are conflating network IDs with chain IDs. In general
         // they cannot be considered the same, but for the networks that we
-        // support (xDAI, Rinkeby, Görli and Mainnet) they are.
+        // support (xDAI, Görli and Mainnet) they are.
         .ok_or_else(|| anyhow!("missing {} deployment for {}", contract.name, chain_id))
 }
 
@@ -84,11 +84,11 @@ mod tests {
 
     #[tokio::test]
     async fn initializes_empty_pools() {
-        let initializer = EmptyPoolInitializer(4);
+        let initializer = EmptyPoolInitializer(5);
         assert_eq!(
             initializer.initialize_pools().await.unwrap(),
             RegisteredPools {
-                fetched_block_number: 8441702,
+                fetched_block_number: 4648099,
                 ..Default::default()
             }
         );

@@ -28,10 +28,7 @@ pub struct DefaultBalancerSorApi {
 impl DefaultBalancerSorApi {
     /// Creates a new Balancer SOR API instance.
     pub fn new(client: Client, base_url: impl IntoUrl, chain_id: u64) -> Result<Self> {
-        ensure!(
-            chain_id == 1 || chain_id == 4,
-            "Balancer SOR API only supported on Mainnet and Rinkeby",
-        );
+        ensure!(chain_id == 1, "Balancer SOR API only supported on Mainnet",);
 
         let url = base_url.into_url()?.join(&chain_id.to_string())?;
         Ok(Self { client, url })

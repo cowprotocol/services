@@ -180,7 +180,7 @@ pub struct Arguments {
     /// fails. Individual estimators support different networks.
     /// `EthGasStation`: supports mainnet.
     /// `GasNow`: supports mainnet.
-    /// `GnosisSafe`: supports mainnet, rinkeby and goerli.
+    /// `GnosisSafe`: supports mainnet and goerli.
     /// `Web3`: supports every network.
     /// `Native`: supports every network.
     #[clap(
