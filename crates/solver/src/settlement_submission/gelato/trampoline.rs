@@ -13,7 +13,7 @@ use model::{
     signature::{EcdsaSignature, EcdsaSigningScheme},
     DomainSeparator,
 };
-use shared::gelato_api::Call;
+use shared::gelato_api::GelatoCall;
 use web3::signing::{self, SecretKeyRef};
 
 pub struct Trampoline {
@@ -46,7 +46,11 @@ impl Trampoline {
     }
 
     /// Prepares a Gelato relayer call.
-    pub async fn prepare_call(&self, account: &Account, settlement: &Settlement) -> Result<Call> {
+    pub async fn prepare_call(
+        &self,
+        account: &Account,
+        settlement: &Settlement,
+    ) -> Result<GelatoCall> {
         let key = match account {
             Account::Offline(key, _) => SecretKeyRef::new(key),
             _ => bail!("offline account required for relayed submission"),
@@ -76,7 +80,7 @@ impl Trampoline {
             )
             .from(account.clone());
 
-        Ok(Call {
+        Ok(GelatoCall {
             chain_id: self.chain_id,
             target: relay.tx.to.unwrap(),
             data: relay.tx.data.unwrap().0,
@@ -85,6 +89,21 @@ impl Trampoline {
     }
 
     fn sign(&self, key: SecretKeyRef, calldata: &[u8], nonce: U256) -> EcdsaSignature {
+        // Solver trampoline solutions are signed with EIP-712 using the
+        // following message type:
+        //
+        // ```
+        // Solution(
+        //   bytes solution,
+        //   uint256 nonce
+        // )
+        // ```
+        //
+        // This is just the pre-computed "type-hash" that is needed for EIP-712
+        // message hashing and signing.
+        //
+        // <https://eips.ethereum.org/EIPS/eip-712>
+        // <https://goerli.etherscan.io/address/0xd29ae121ad58479c9eb8c4f235c618fcf42ecba0#code>
         const SOLUTION_TYPE_HASH: [u8; 32] =
             hex!("7014cf19af88c8fc5ee7e2c42ed71b7b8f804064f82f63de38c0d59473ce7d7c");
 
@@ -125,7 +144,7 @@ mod tests {
         let trampoline = Trampoline::initialize(settlement).await.unwrap();
 
         let solver = Account::Offline(env::var("SOLVER_ACCOUNT").unwrap().parse().unwrap(), None);
-        let settlement = Settlement::empty();
+        let settlement = Settlement::default();
 
         let call = trampoline.prepare_call(&solver, &settlement).await.unwrap();
         let simulation = tenderly

@@ -248,11 +248,6 @@ impl Settlement {
         }
     }
 
-    /// Creates an empty, but valid, settlement.
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
     /// .
     pub fn with_liquidity<L>(&mut self, liquidity: &L, execution: L::Execution) -> Result<()>
     where

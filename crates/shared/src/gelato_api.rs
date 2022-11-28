@@ -44,7 +44,7 @@ impl GelatoClient {
         ))
     }
 
-    pub async fn sponsored_call(&self, call: &Call) -> Result<TaskId> {
+    pub async fn sponsored_call(&self, call: &GelatoCall) -> Result<TaskId> {
         let response = self
             .client
             .post(self.base.join("relays/v2/sponsored-call")?)
@@ -85,7 +85,7 @@ impl GelatoClient {
 #[derive(Clone, Derivative, Default, Serialize)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Call {
+pub struct GelatoCall {
     pub chain_id: u64,
     pub target: H160,
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
@@ -146,7 +146,7 @@ pub enum TaskState {
 #[serde(rename_all = "camelCase")]
 struct CallWithKey<'a> {
     #[serde(flatten)]
-    call: &'a Call,
+    call: &'a GelatoCall,
     sponsor_api_key: &'a str,
 }
 
@@ -179,7 +179,7 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
 
         let gelato = GelatoClient::test_from_env().unwrap();
-        let call = Call {
+        let call = GelatoCall {
             chain_id: chain_id.as_u64(),
             target: weth.address(),
             data: weth.deposit().tx.data.unwrap().0,
