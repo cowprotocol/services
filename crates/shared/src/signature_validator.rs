@@ -124,7 +124,7 @@ impl SignatureValidating for Web3SignatureValidator {
 /// The Magical value as defined by EIP-1271
 const MAGICAL_VALUE: [u8; 4] = hex!("1626ba7e");
 
-fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValidationError> {
+pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValidationError> {
     if result.0 == MAGICAL_VALUE {
         Ok(())
     } else {

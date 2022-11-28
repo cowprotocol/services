@@ -240,11 +240,13 @@ pub async fn init(
             .into_iter()
             .zip(args.solver_token_owners_cache_update_intervals.clone())
         {
+            let identifier = url.to_string();
             let solver = Box::new(SolverConfiguration {
                 url,
                 client: http_factory.create(),
             });
-            let solver = AutoUpdatingSolverTokenOwnerFinder::new(solver, update_interval);
+            let solver =
+                AutoUpdatingSolverTokenOwnerFinder::new(solver, update_interval, identifier);
             proposers.push(Arc::new(solver));
         }
     }

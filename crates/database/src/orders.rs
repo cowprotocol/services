@@ -580,7 +580,7 @@ pub fn limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND (o.surplus_fee_timestamp < $2 OR o.surplus_fee_timestamp IS NULL) ",
+        "AND o.surplus_fee_timestamp < $2 ",
         ") AS o ",
         "WHERE NOT o.invalidated LIMIT 100",
     );
@@ -591,7 +591,7 @@ pub fn limit_orders_with_outdated_fees(
 }
 
 /// Count the number of valid limit orders belonging to a particular user.
-pub async fn count_limit_orders(
+pub async fn count_limit_orders_by_owner(
     ex: &mut PgConnection,
     min_valid_to: i64,
     owner: &Address,
@@ -642,6 +642,51 @@ pub async fn update_limit_order_fees(
         .execute(ex)
         .await?;
     Ok(())
+}
+
+pub async fn count_limit_orders(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+) -> Result<i64, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT COUNT(*) FROM (",
+        "SELECT ",
+        ORDERS_SELECT,
+        " FROM ",
+        ORDERS_FROM,
+        " WHERE o.valid_to >= $1 ",
+        "AND o.class = 'limit' ",
+        ") AS o ",
+        "WHERE NOT o.invalidated",
+    );
+    sqlx::query_scalar(QUERY)
+        .bind(min_valid_to)
+        .fetch_one(ex)
+        .await
+}
+
+pub async fn count_limit_orders_with_outdated_fees(
+    ex: &mut PgConnection,
+    max_fee_timestamp: DateTime<Utc>,
+    min_valid_to: i64,
+) -> Result<i64, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT COUNT(*) FROM (",
+        "SELECT ",
+        ORDERS_SELECT,
+        " FROM ",
+        ORDERS_FROM,
+        " WHERE o.valid_to >= $1 ",
+        "AND o.class = 'limit' ",
+        "AND o.surplus_fee_timestamp < $2 ",
+        ") AS o ",
+        "WHERE NOT o.invalidated",
+    );
+    sqlx::query_scalar(QUERY)
+        .bind(min_valid_to)
+        .bind(max_fee_timestamp)
+        .fetch_one(ex)
+        .await
 }
 
 #[cfg(test)]
@@ -1512,6 +1557,8 @@ mod tests {
                 uid: order_uid,
                 class: OrderClass::Limit,
                 valid_to: 3,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
                 ..Default::default()
             },
         )
@@ -1524,6 +1571,8 @@ mod tests {
                 uid: ByteArray([2; 56]),
                 class: OrderClass::Limit,
                 valid_to: 1,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
                 ..Default::default()
             },
         )
@@ -1537,6 +1586,8 @@ mod tests {
                 class: OrderClass::Limit,
                 valid_to: 1,
                 cancellation_timestamp: Some(Utc::now()),
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
                 ..Default::default()
             },
         )
@@ -1547,9 +1598,10 @@ mod tests {
             &mut db,
             &Order {
                 uid: ByteArray([4; 56]),
-                surplus_fee_timestamp: Some(timestamp),
                 class: OrderClass::Limit,
                 valid_to: 3,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(timestamp),
                 ..Default::default()
             },
         )
@@ -1611,5 +1663,92 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, Some(fee));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_limit_order_counting() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        let order_uid = ByteArray([1; 56]);
+        // Valid limit order with an outdated surplus fee.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: order_uid,
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Expired limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([2; 56]),
+                class: OrderClass::Limit,
+                valid_to: 1,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Cancelled limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([3; 56]),
+                class: OrderClass::Limit,
+                valid_to: 1,
+                cancellation_timestamp: Some(Utc::now()),
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(Default::default()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Limit order with a recent surplus fee timestamp.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([4; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Not a limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([5; 56]),
+                valid_to: 3,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(count_limit_orders(&mut db, 2).await.unwrap(), 2);
+        assert_eq!(
+            count_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+                .await
+                .unwrap(),
+            1
+        );
     }
 }

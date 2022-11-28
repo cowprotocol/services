@@ -5,11 +5,11 @@
 #[macro_use]
 mod onchain_components;
 mod deploy;
-mod eth_flow;
 mod local_node;
 mod services;
 
 // Each of the following modules contains tests.
+mod eth_flow;
 mod eth_integration;
 mod limit_orders;
 mod onchain_settlement;

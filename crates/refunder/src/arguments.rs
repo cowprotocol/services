@@ -38,11 +38,7 @@ pub struct Arguments {
     pub node_url: Url,
 
     /// Address of the ethflow contract
-    #[clap(
-        long,
-        env,
-        default_value = "0x76aAf674848311C7F21fc691B0b952f016dA49F3"
-    )]
+    #[clap(long, env)]
     pub ethflow_contract: H160,
 
     #[clap(long, env, hide_env_values = true)]
