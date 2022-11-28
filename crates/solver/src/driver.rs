@@ -182,7 +182,7 @@ impl Driver {
 
         // It doesn't make sense to solve the same auction again because we wouldn't be able to
         // store competition info etc.
-        if matches!(self.last_attempted_settlement, Some(id) if id == auction.id) {
+        if self.last_attempted_settlement == Some(auction.id) {
             tracing::debug!("skipping run because auction hasn't changed {}", auction.id);
             return Ok(());
         }
