@@ -28,18 +28,6 @@ mod tests {
             addr!("3e8468f66d30fc99f745481d4b383f89861702c6")
         );
 
-        // Rinkeby
-        let (rinkeby_pair_provider, _) = get_liquidity_source(&Mock::new(4).web3()).await.unwrap();
-        let rinkeby_pair = TokenPair::new(
-            addr!("a7D1C04fAF998F9161fC9F800a99A809b84cfc9D"),
-            addr!("c778417e063141139fce010982780140aa0cd5ab"),
-        )
-        .unwrap();
-        assert_eq!(
-            rinkeby_pair_provider.pair_address(&rinkeby_pair),
-            addr!("9B79462e2A47487856D5521963449c573e273E79")
-        );
-
         // Görli
         let (goerli_pair_provider, _) = get_liquidity_source(&Mock::new(5).web3()).await.unwrap();
         let goerli_pair = TokenPair::new(
