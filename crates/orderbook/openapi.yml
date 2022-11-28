@@ -7,10 +7,6 @@ servers:
     url: https://api.cow.fi/mainnet
   - description: Mainnet (Staging)
     url: https://barn.api.cow.fi/mainnet
-  - description: Rinkeby (Prod)
-    url: https://api.cow.fi/rinkeby
-  - description: Rinkeby (Staging)
-    url: https://barn.api.cow.fi/rinkeby
   - description: Görli (Prod)
     url: https://api.cow.fi/goerli
   - description: Görli (Staging)
