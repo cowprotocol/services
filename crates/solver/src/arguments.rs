@@ -169,6 +169,16 @@ pub struct Arguments {
     #[clap(long, env)]
     pub gelato_api_key: Option<String>,
 
+    /// The poll interval for checking status of Gelato tasks when using it as a
+    /// transaction submission strategy.
+    #[clap(
+        long,
+        env,
+        default_value = "5",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub gelato_submission_poll_interval: Duration,
+
     /// Which access list estimators to use. Multiple estimators are used in sequence if a previous one
     /// fails. Individual estimators might support different networks.
     /// `Tenderly`: supports every network.
@@ -334,6 +344,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         display_secret_option(f, "gelato_api_key", &self.gelato_api_key)?;
+        writeln!(
+            f,
+            "gelato_submission_poll_interval: {:?}",
+            &self.gelato_submission_poll_interval
+        )?;
         writeln!(
             f,
             "access_list_estimators: {:?}",

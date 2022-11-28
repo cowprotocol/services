@@ -267,6 +267,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                             &common.http_factory,
                             args.gelato_api_key.clone().unwrap(),
                         ),
+                        args.gelato_submission_poll_interval,
                     )
                     .await
                     .unwrap(),

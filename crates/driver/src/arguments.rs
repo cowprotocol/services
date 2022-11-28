@@ -103,6 +103,16 @@ pub struct Arguments {
     #[clap(long, env)]
     pub gelato_api_key: Option<String>,
 
+    /// The poll interval for checking status of Gelato tasks when using it as a
+    /// transaction submission strategy.
+    #[clap(
+        long,
+        env,
+        default_value = "5",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub gelato_submission_poll_interval: Duration,
+
     /// The API endpoint of the Eden network for transaction submission.
     #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
     pub eden_api_url: Url,
@@ -310,6 +320,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         display_secret_option(f, "gelato_api_key", &self.gelato_api_key)?;
+        writeln!(
+            f,
+            "gelato_submission_poll_interval: {:?}",
+            &self.gelato_submission_poll_interval
+        )?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
             f,

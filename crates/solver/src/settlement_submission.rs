@@ -133,7 +133,7 @@ impl TransactionStrategy {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
             TransactionStrategy::PublicMempool(args) => Some(args),
-            _ => None,
+            TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
         }
     }
 }
@@ -155,7 +155,7 @@ impl SolutionSubmitter {
         // account signing a raw transaction for a nonce, and waiting until that
         // nonce increases to detect that it actually mined. However, the
         // strategies below are **not** compatible with this. So if one of them
-        // is specified, use it exclusively for submitting and exist the loop.
+        // is specified, use it exclusively for submitting and exit the loop.
         // TODO(nlordell): We can refactor the `SolutionSubmitter` interface to
         // better reflect configuration incompatibilities like this.
         for strategy in &self.transaction_strategies {

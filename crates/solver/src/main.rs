@@ -410,6 +410,7 @@ async fn main() -> ! {
                         web3.clone(),
                         settlement_contract.clone(),
                         GelatoClient::new(&http_factory, args.gelato_api_key.clone().unwrap()),
+                        args.gelato_submission_poll_interval,
                     )
                     .await
                     .unwrap(),

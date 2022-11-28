@@ -24,13 +24,18 @@ pub struct GelatoSubmitter {
 }
 
 impl GelatoSubmitter {
-    pub async fn new(web3: Web3, settlement: GPv2Settlement, client: GelatoClient) -> Result<Self> {
+    pub async fn new(
+        web3: Web3,
+        settlement: GPv2Settlement,
+        client: GelatoClient,
+        poll_interval: Duration,
+    ) -> Result<Self> {
         let trampoline = Trampoline::initialize(settlement).await?;
         Ok(Self {
             web3,
             client,
             trampoline,
-            poll_interval: Duration::from_secs(5),
+            poll_interval,
         })
     }
 
@@ -99,7 +104,7 @@ mod tests {
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
         let client = GelatoClient::from_env().unwrap();
 
-        let gelato = GelatoSubmitter::new(web3, settlement, client)
+        let gelato = GelatoSubmitter::new(web3, settlement, client, Duration::from_secs(5))
             .await
             .unwrap();
 
