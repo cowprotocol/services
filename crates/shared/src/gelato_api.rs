@@ -36,7 +36,6 @@ impl GelatoClient {
         }
     }
 
-    #[cfg(test)]
     pub fn test_from_env() -> Result<Self> {
         Ok(Self::new(
             &HttpClientFactory::default(),

@@ -102,14 +102,14 @@ mod tests {
     async fn execute_relayed_settlement() {
         let web3 = Web3::new(create_env_test_transport());
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
-        let client = GelatoClient::from_env().unwrap();
+        let client = GelatoClient::test_from_env().unwrap();
 
         let gelato = GelatoSubmitter::new(web3, settlement, client, Duration::from_secs(5))
             .await
             .unwrap();
 
         let solver = Account::Offline(env::var("SOLVER_ACCOUNT").unwrap().parse().unwrap(), None);
-        let settlement = Settlement::empty();
+        let settlement = Settlement::default();
 
         let transaction = gelato.relay_settlement(solver, settlement).await.unwrap();
         println!("executed transaction {:?}", transaction.transaction_hash);
