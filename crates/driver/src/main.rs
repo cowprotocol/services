@@ -8,7 +8,7 @@ use driver::{
 use gas_estimation::GasPriceEstimating;
 use shared::{
     baseline_solver::BaseTokens,
-    current_block::{current_block_stream, CurrentBlockStream},
+    current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{self, Web3},
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
@@ -63,6 +63,7 @@ struct CommonComponents {
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     order_converter: Arc<OrderConverter>,
+    block_retriever: Arc<dyn BlockRetrieving>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     current_block_stream: CurrentBlockStream,
 }
@@ -110,17 +111,17 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         .await
         .expect("failed to create gas price estimator"),
     );
+    let block_retriever = args.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+
+    let current_block_stream = args.current_block.stream(web3.clone()).await.unwrap();
 
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     CommonComponents {
@@ -134,6 +135,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         access_list_estimator,
         gas_price_estimator,
         order_converter,
+        block_retriever,
         token_info_fetcher,
         current_block_stream,
     }
@@ -320,6 +322,7 @@ async fn build_auction_converter(
             let balancer_pool_fetcher = Arc::new(
                 BalancerPoolFetcher::new(
                     common.chain_id,
+                    common.block_retriever.clone(),
                     common.token_info_fetcher.clone(),
                     cache_config,
                     common.current_block_stream.clone(),
@@ -380,8 +383,9 @@ async fn build_auction_converter(
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
             match UniswapV3PoolFetcher::new(
                 common.chain_id,
-                common.http_factory.create(),
                 common.web3.clone(),
+                common.http_factory.create(),
+                common.block_retriever.clone(),
                 args.max_pools_to_initialize_cache,
             )
             .await
@@ -408,14 +412,14 @@ async fn build_auction_converter(
             (None, None)
         };
 
-    let maintainer = ServiceMaintenance {
-        maintainers: pool_caches
+    let maintainer = ServiceMaintenance::new(
+        pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
             .collect(),
-    };
+    );
     tokio::task::spawn(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );

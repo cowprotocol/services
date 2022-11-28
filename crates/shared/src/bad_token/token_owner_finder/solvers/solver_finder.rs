@@ -1,37 +1,75 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
-
 use super::TokenOwnerSolverApi;
 use crate::bad_token::token_owner_finder::TokenOwnerProposing;
 use anyhow::Result;
 use ethcontract::H160;
+use prometheus::{
+    core::{AtomicU64, GenericCounter},
+    IntCounterVec,
+};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 type Token = H160;
 type Owner = H160;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AutoUpdatingSolverTokenOwnerFinder {
-    cache: Arc<RwLock<HashMap<Token, Vec<Owner>>>>,
+    inner: Arc<Inner>,
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+struct Metrics {
+    /// Tracks how often a token owner update succeeded or failed.
+    #[metric(labels("identifier", "result"))]
+    token_owner_list_updates: IntCounterVec,
+}
+
+struct Inner {
+    solver: Box<dyn TokenOwnerSolverApi>,
+    cache: RwLock<HashMap<Token, Vec<Owner>>>,
+    metrics: &'static Metrics,
+    identifier: String,
+}
+
+impl Inner {
+    pub fn get_update_counter(&self, success: bool) -> GenericCounter<AtomicU64> {
+        let result = if success { "success" } else { "failure" };
+        self.metrics
+            .token_owner_list_updates
+            .with_label_values(&[&self.identifier, result])
+    }
 }
 
 impl AutoUpdatingSolverTokenOwnerFinder {
-    pub fn new(solver: Box<dyn TokenOwnerSolverApi>, update_interval: Duration) -> Self {
-        let cache = Arc::new(RwLock::new(Default::default()));
+    pub fn new(
+        solver: Box<dyn TokenOwnerSolverApi>,
+        update_interval: Duration,
+        identifier: String,
+    ) -> Self {
+        let inner = Arc::new(Inner {
+            solver,
+            cache: RwLock::new(Default::default()),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            identifier,
+        });
+
+        // reset metrics for consistent graphs in grafana
+        inner.get_update_counter(true).reset();
+        inner.get_update_counter(false).reset();
 
         // spawn a background task to regularly update cache
         {
-            let cache = cache.clone();
+            let inner = inner.clone();
             let updater = async move {
                 loop {
-                    match solver.get_token_owner_pairs().await {
-                        Ok(token_owner_pairs) => {
-                            let mut w = cache.write().unwrap();
-                            *w = token_owner_pairs;
-                        }
-                        Err(err) => tracing::error!(?err, "failed to update token list"),
+                    let result = inner.update().await;
+                    inner.get_update_counter(result.is_ok()).inc();
+                    if let Err(err) = result {
+                        tracing::warn!(?err, "failed to update token list");
                     }
                     tokio::time::sleep(update_interval).await;
                 }
@@ -39,7 +77,28 @@ impl AutoUpdatingSolverTokenOwnerFinder {
             tokio::task::spawn(updater);
         }
 
-        Self { cache }
+        Self { inner }
+    }
+
+    pub async fn update(&self) -> Result<()> {
+        self.inner.update().await
+    }
+}
+
+impl Inner {
+    async fn update(&self) -> Result<()> {
+        let token_owner_pairs = self.solver.get_token_owner_pairs().await?;
+
+        let mut cache = self.cache.write().unwrap();
+        *cache = token_owner_pairs;
+
+        Ok(())
+    }
+}
+
+impl Debug for Inner {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("Inner").field("cache", &self.cache).finish()
     }
 }
 
@@ -47,6 +106,7 @@ impl AutoUpdatingSolverTokenOwnerFinder {
 impl TokenOwnerProposing for AutoUpdatingSolverTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: Token) -> Result<Vec<Owner>> {
         Ok(self
+            .inner
             .cache
             .read()
             .unwrap()
@@ -73,8 +133,11 @@ mod tests {
             url: Url::from_str(&url).unwrap(),
             client: Client::new(),
         });
-        let finder =
-            AutoUpdatingSolverTokenOwnerFinder::new(configuration, Duration::from_secs(1000));
+        let finder = AutoUpdatingSolverTokenOwnerFinder::new(
+            configuration,
+            Duration::from_secs(1000),
+            "test".to_owned(),
+        );
         tokio::time::sleep(Duration::from_secs(10)).await;
         let owners = finder
             .find_candidate_owners(addr!("132d8D2C76Db3812403431fAcB00F3453Fc42125"))

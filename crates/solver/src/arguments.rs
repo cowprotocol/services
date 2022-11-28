@@ -1,7 +1,7 @@
 use crate::{
     liquidity::slippage,
     settlement_access_list::AccessListEstimatorType,
-    solver::{ExternalSolverArg, SolverAccountArg, SolverType},
+    solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
 };
 use primitive_types::H160;
 use reqwest::Url;
@@ -21,6 +21,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
+
+    #[clap(flatten)]
+    pub order_prioritization: single_order_solver::Arguments,
 
     /// The API endpoint to fetch the orderbook
     #[clap(long, env, default_value = "http://localhost:8080")]
@@ -127,11 +130,7 @@ pub struct Arguments {
 
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
-    #[clap(
-        long,
-        env,
-        default_value = "https://tokens.coingecko.com/uniswap/all.json"
-    )]
+    #[clap(long, env, default_value = "https://files.cow.fi/token_list.json")]
     pub market_makable_token_list: String,
 
     /// Time interval after which market makable list needs to be updated
@@ -293,6 +292,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.shared)?;
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.slippage)?;
+        write!(f, "{}", self.order_prioritization)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
         writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;

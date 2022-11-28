@@ -1,32 +1,18 @@
 use crate::{
+    onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
     services::{
-        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-        uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
+        create_orderbook_api, setup_naive_solver_uniswapv2_driver, wait_for_solvable_orders,
+        OrderbookServices, API_HOST,
     },
-    tx, tx_value,
+    tx,
 };
-use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
     order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{
-    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
-    sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
-    },
-};
-use std::{sync::Arc, time::Duration};
+use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
 use web3::signing::SecretKeyRef;
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
@@ -53,52 +39,20 @@ async fn eth_integration(web3: Web3) {
     let trader_buy_eth_b =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
 
-    // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_a.address(), to_wei(51))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_b.address(), to_wei(51))
-    );
+    // Create & mint tokens to trade, pools for fee connections
+    let token = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            token_amount: to_wei(100_000),
+            weth_amount: to_wei(100_000),
+        },
+    )
+    .await;
 
-    let weth = contracts.weth.clone();
-    tx_value!(solver_account, to_wei(100_000), weth.deposit());
-
-    // Create and fund Uniswap pool
-    tx!(
-        solver_account,
-        contracts
-            .uniswap_factory
-            .create_pair(token.address(), weth.address())
-    );
-    tx!(
-        solver_account,
-        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        weth.approve(contracts.uniswap_router.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        contracts.uniswap_router.add_liquidity(
-            token.address(),
-            weth.address(),
-            to_wei(100_000),
-            to_wei(100_000),
-            0_u64.into(),
-            0_u64.into(),
-            solver_account.address(),
-            U256::max_value(),
-        )
-    );
+    token.mint(trader_buy_eth_a.address(), to_wei(51)).await;
+    token.mint(trader_buy_eth_b.address(), to_wei(51)).await;
+    let token = token.contract;
 
     // Approve GPv2 for trading
     tx!(
@@ -144,7 +98,7 @@ async fn eth_integration(web3: Web3) {
     assert_eq!(fee_invalid_token.status(), 400);
 
     // Place Orders
-    assert_ne!(weth.address(), BUY_ETH_ADDRESS);
+    assert_ne!(contracts.weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderBuilder::default()
         .with_kind(OrderKind::Buy)
         .with_sell_token(token.address())
@@ -191,73 +145,14 @@ async fn eth_integration(web3: Web3) {
     wait_for_solvable_orders(&client, 2).await.unwrap();
 
     // Drive solution
-    let uniswap_pair_provider = uniswap_pair_provider(&contracts);
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
-        contracts.gp_settlement.clone(),
+    let mut driver = setup_naive_solver_uniswapv2_driver(
+        &web3,
+        &contracts,
         base_tokens,
-        web3.clone(),
-        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
-    );
-    let solver = solver::solver::naive_solver(solver_account);
-    let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
-    };
-    let network_id = web3.net().version().await.unwrap();
-    let submitted_transactions = GlobalTxPool::default();
-    let mut driver = solver::driver::Driver::new(
-        contracts.gp_settlement.clone(),
-        liquidity_collector,
-        vec![solver],
-        Arc::new(web3.clone()),
-        Duration::from_secs(30),
-        weth.address(),
-        Duration::from_secs(0),
-        Arc::new(NoopMetrics::default()),
-        web3.clone(),
-        network_id.clone(),
-        Duration::from_secs(30),
-        Default::default(),
         block_stream,
-        SolutionSubmitter {
-            web3: web3.clone(),
-            contract: contracts.gp_settlement.clone(),
-            gas_price_estimator: Arc::new(web3.clone()),
-            target_confirm_time: Duration::from_secs(1),
-            gas_price_cap: f64::MAX,
-            max_confirm_time: Duration::from_secs(120),
-            retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
-                }),
-            ],
-            access_list_estimator: Arc::new(
-                create_priority_estimator(
-                    &web3,
-                    &[AccessListEstimatorType::Web3],
-                    None,
-                    network_id,
-                )
-                .unwrap(),
-            ),
-        },
-        create_orderbook_api(),
-        create_order_converter(&web3, contracts.weth.address()),
-        0.0,
-        15000000u128,
-        1.0,
-        None,
-        None.into(),
-        None,
-        0,
-    );
+        solver_account,
+    )
+    .await;
     driver.single_run().await.unwrap();
 
     // Check matching

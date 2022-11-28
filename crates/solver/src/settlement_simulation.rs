@@ -276,7 +276,7 @@ mod tests {
         let settlements = vec![
             (
                 account.clone(),
-                Settlement::with_trades(Default::default(), vec![Default::default()], vec![]),
+                Settlement::with_trades(Default::default(), vec![Default::default()]),
                 None,
             ),
             (account.clone(), Settlement::new(Default::default()), None),
@@ -340,6 +340,7 @@ mod tests {
         let order_converter = OrderConverter {
             native_token: native_token_contract.clone(),
             fee_objective_scaling_factor: 0.91_f64,
+            min_order_age: std::time::Duration::from_secs(30),
         };
         let value = json!(
         {
@@ -516,8 +517,11 @@ mod tests {
                             "buy_token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
                             "exec_buy_amount": "21135750171",
                             "exec_plan": {
-                                "position": 0,
-                                "sequence": 0
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 0
+                                },
+                                "internal": false
                             },
                             "exec_sell_amount": "21129728791",
                             "sell_token": "0xdac17f958d2ee523a2206206994597c13d831ec7"
@@ -542,8 +546,11 @@ mod tests {
                             "buy_token": "0xdac17f958d2ee523a2206206994597c13d831ec7",
                             "exec_buy_amount": "7922480269",
                             "exec_plan": {
-                                "position": 1,
-                                "sequence": 0
+                                "coordinates": {
+                                    "sequence": 0,
+                                    "position": 1
+                                },
+                                "internal": false
                             },
                             "exec_sell_amount": "2005171356556612050",
                             "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"

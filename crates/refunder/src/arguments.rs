@@ -38,12 +38,11 @@ pub struct Arguments {
     pub node_url: Url,
 
     /// Address of the ethflow contract
-    #[clap(
-        long,
-        env,
-        default_value = "0x26c3801b4840dab317cedfd7aeaf9f45fdd22830"
-    )]
+    #[clap(long, env)]
     pub ethflow_contract: H160,
+
+    #[clap(long, env, hide_env_values = true)]
+    pub refunder_pk: String,
 }
 
 impl std::fmt::Display for Arguments {
@@ -55,6 +54,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
+        writeln!(f, "refunder_pk: SECRET")?;
         Ok(())
     }
 }

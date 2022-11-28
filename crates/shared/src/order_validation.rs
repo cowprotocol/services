@@ -158,8 +158,7 @@ impl From<SignatureValidationError> for ValidationError {
     fn from(err: SignatureValidationError) -> Self {
         match err {
             SignatureValidationError::Invalid => Self::InvalidSignature,
-            SignatureValidationError::Method(err) => Self::Other(err.into()),
-            SignatureValidationError::Execution(err) => Self::Other(err.into()),
+            SignatureValidationError::Other(err) => Self::Other(err),
         }
     }
 }
@@ -231,7 +230,7 @@ impl PreOrderData {
             signing_scheme,
             class: match (liquidity_owner, order.fee_amount.is_zero()) {
                 (false, false) => OrderClass::Market,
-                (false, true) => OrderClass::Limit,
+                (false, true) => OrderClass::Limit(Default::default()),
                 (true, _) => OrderClass::Liquidity,
             },
         }
@@ -274,6 +273,24 @@ impl OrderValidator {
     pub fn with_limit_orders(mut self, enable: bool) -> Self {
         self.enable_limit_orders = enable;
         self
+    }
+
+    async fn check_max_limit_orders(
+        &self,
+        owner: H160,
+        class: &OrderClass,
+    ) -> Result<(), ValidationError> {
+        if class.is_limit() {
+            let num_limit_orders = self
+                .limit_order_counter
+                .count(owner)
+                .await
+                .map_err(ValidationError::Other)?;
+            if num_limit_orders >= self.max_limit_orders_per_user {
+                return Err(ValidationError::TooManyLimitOrders);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -382,7 +399,7 @@ impl OrderValidating for OrderValidator {
         let class = if self.liquidity_order_owners.contains(&owner) {
             OrderClass::Liquidity
         } else if self.enable_limit_orders && order.data.fee_amount.is_zero() {
-            OrderClass::Limit
+            OrderClass::Limit(Default::default())
         } else {
             OrderClass::Market
         };
@@ -432,12 +449,7 @@ impl OrderValidating for OrderValidator {
 
         let full_fee_amount = quote
             .as_ref()
-            .map(|quote| {
-                quote
-                    .data
-                    .fee_parameters
-                    .unsubsidized_with_additional_cost(additional_gas)
-            })
+            .map(|quote| quote.full_fee_amount)
             .unwrap_or_default();
 
         let min_balance =
@@ -504,16 +516,7 @@ impl OrderValidating for OrderValidator {
             _ => class,
         };
 
-        if class == OrderClass::Limit {
-            let num_limit_orders = self
-                .limit_order_counter
-                .count(owner)
-                .await
-                .map_err(ValidationError::Other)?;
-            if num_limit_orders >= self.max_limit_orders_per_user {
-                return Err(ValidationError::TooManyLimitOrders);
-            }
-        }
+        self.check_max_limit_orders(owner, &class).await?;
 
         let order = Order::from_order_creation(
             &order,
@@ -522,6 +525,7 @@ impl OrderValidating for OrderValidator {
             full_fee_amount,
             class,
         )?;
+
         Ok((order, quote))
     }
 }
@@ -568,7 +572,7 @@ impl OrderValidPeriodConfiguration {
 
         match order.class {
             OrderClass::Market => self.max_market,
-            OrderClass::Limit => self.max_limit,
+            OrderClass::Limit(_) => self.max_limit,
             OrderClass::Liquidity => Duration::MAX,
         }
     }
@@ -932,7 +936,7 @@ mod tests {
                     valid_to: legit_valid_to
                         + validity_configuration.max_limit.as_secs() as u32
                         + 1,
-                    class: OrderClass::Limit,
+                    class: OrderClass::Limit(Default::default()),
                     ..Default::default()
                 })
                 .await,
@@ -1076,7 +1080,7 @@ mod tests {
             .is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
-                class: OrderClass::Limit,
+                class: OrderClass::Limit(Default::default()),
                 owner: liquidity_order_owner,
                 valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32
@@ -1116,6 +1120,7 @@ mod tests {
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
             .never();
+        let signature_validating = Arc::new(signature_validating);
 
         let max_limit_orders_per_user = 1;
 
@@ -1135,7 +1140,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
+            signature_validating,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
         );
@@ -1222,7 +1227,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(quote, None);
-        assert_eq!(order.metadata.class, OrderClass::Limit);
+        assert!(order.metadata.class.is_limit());
     }
 
     #[tokio::test]
@@ -1244,6 +1249,7 @@ mod tests {
         signature_validating
             .expect_validate_signature_and_get_additional_gas()
             .never();
+        let signature_validating = Arc::new(signature_validating);
 
         const MAX_LIMIT_ORDERS_PER_USER: u64 = 2;
 
@@ -1262,7 +1268,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
-            Arc::new(signature_validating),
+            signature_validating,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
         )
@@ -1712,7 +1718,6 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1954,7 +1959,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_errors_when_not_found_by_id() {
-        let quote_search_paramters = QuoteSearchParameters {
+        let quote_search_parameters = QuoteSearchParameters {
             ..Default::default()
         };
 
@@ -1965,7 +1970,7 @@ mod tests {
 
         let err = get_quote_and_check_fee(
             &order_quoter,
-            &quote_search_paramters,
+            &quote_search_parameters,
             Some(0),
             U256::zero(),
             QuoteSigningScheme::Eip712,

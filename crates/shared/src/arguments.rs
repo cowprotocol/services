@@ -1,6 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
-    ethrpc,
+    current_block, ethrpc,
     fee_subsidy::cow_token::SubsidyTiers,
     gas_price_estimation::GasEstimatorType,
     price_estimation::PriceEstimatorType,
@@ -115,6 +115,9 @@ pub struct Arguments {
     pub ethrpc: ethrpc::Arguments,
 
     #[clap(flatten)]
+    pub current_block: current_block::Arguments,
+
+    #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
     #[clap(
@@ -176,15 +179,6 @@ pub struct Arguments {
     /// How long to sleep in seconds between retries in the pool cache.
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
-
-    /// How often in seconds we poll the node to check if the current block has changed.
-    #[clap(
-        long,
-        env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
-    )]
-    pub block_stream_poll_interval_seconds: Duration,
 
     /// Special partner authentication for Paraswap API (allowing higher rater limits)
     #[clap(long, env)]
@@ -340,6 +334,7 @@ impl Display for OrderQuotingArguments {
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.ethrpc)?;
+        write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
@@ -363,11 +358,6 @@ impl Display for Arguments {
             f,
             "pool_cache_delay_between_retries_seconds: {:?}",
             self.pool_cache_delay_between_retries_seconds
-        )?;
-        writeln!(
-            f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds,
         )?;
         display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;

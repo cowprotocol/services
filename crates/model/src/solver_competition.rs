@@ -12,19 +12,27 @@ use std::collections::BTreeMap;
 /// stored in the database. This goes to the api through an unlisted and authenticated http endpoint
 /// because we do not want the driver to have a database connection.
 /// Once autopilot is handling the competition this will no longer be needed.
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
     pub auction: AuctionId,
-    pub transaction_hash: Option<H256>,
-    pub transaction: Option<Transaction>,
+    pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
-    pub rewards: Vec<(OrderUid, f64)>,
+    pub executions: Vec<(OrderUid, Execution)>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Transaction {
     pub account: H160,
     pub nonce: u64,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Execution {
+    pub reward: f64,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub surplus_fee: Option<U256>,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

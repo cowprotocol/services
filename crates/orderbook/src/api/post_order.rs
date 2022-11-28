@@ -1,6 +1,9 @@
 use crate::orderbook::{AddOrderError, Orderbook};
 use anyhow::Result;
-use model::order::{OrderCreation, OrderUid};
+use model::{
+    order::{OrderCreation, OrderUid},
+    quote::QuoteId,
+};
 use shared::{
     api::{error, extract_payload, internal_error, ApiReply, IntoWarpReply},
     order_validation::{OrderValidToError, PartialValidationError, ValidationError},
@@ -10,7 +13,7 @@ use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
 {
-    warp::path!("orders")
+    warp::path!("v1" / "orders")
         .and(warp::post())
         .and(extract_payload())
 }
@@ -195,9 +198,11 @@ impl IntoWarpReply for AddOrderError {
     }
 }
 
-pub fn create_order_response(result: Result<OrderUid, AddOrderError>) -> ApiReply {
+pub fn create_order_response(
+    result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
+) -> ApiReply {
     match result {
-        Ok(uid) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
+        Ok((uid, _)) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
         Err(err) => err.into_warp_reply(),
     }
 }
@@ -205,14 +210,17 @@ pub fn create_order_response(result: Result<OrderUid, AddOrderError>) -> ApiRepl
 pub fn post_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    create_order_request().and_then(move |order_payload: OrderCreation| {
+    create_order_request().and_then(move |order: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
-            let quote_id = order_payload.quote_id;
-            let result = orderbook.add_order(order_payload).await;
-            if let Ok(order_uid) = result {
-                tracing::debug!(%order_uid, ?quote_id, "order created");
+            let result = orderbook.add_order(order.clone()).await;
+            match &result {
+                Ok((order_uid, quote_id)) => {
+                    tracing::debug!(%order_uid, ?quote_id, "order created")
+                }
+                Err(err) => tracing::debug!(?order, ?err, "error creating order"),
             }
+
             Result::<_, Infallible>::Ok(create_order_response(result))
         }
     })
@@ -231,7 +239,7 @@ mod tests {
         let filter = create_order_request();
         let order_payload = OrderCreation::default();
         let request = request()
-            .path("/orders")
+            .path("/v1/orders")
             .method("POST")
             .header("content-type", "application/json")
             .json(&order_payload);
@@ -242,7 +250,7 @@ mod tests {
     #[tokio::test]
     async fn create_order_response_created() {
         let uid = OrderUid([1u8; 56]);
-        let response = create_order_response(Ok(uid)).into_response();
+        let response = create_order_response(Ok((uid, Some(42)))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();

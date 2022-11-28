@@ -153,6 +153,7 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
        networks: {
            hardhat: {
                initialBaseFeePerGas: 0,
+               initialDate: "2000-01-01T00:00:00.000+00:00",
                accounts: {
                    accountsBalance: "1000000000000000000000000"
                }

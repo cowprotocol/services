@@ -1,9 +1,13 @@
 pub mod ethflow_events;
 
-use super::{events::meta_to_event_index, Metrics, Postgres};
+use super::{
+    events::{bytes_to_order_uid, meta_to_event_index},
+    Metrics, Postgres,
+};
 use anyhow::{anyhow, bail, Context, Result};
 use contracts::cowswap_onchain_orders::{
-    event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
+    event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
+    Event as ContractEvent,
 };
 use database::{
     byte_array::ByteArray,
@@ -134,11 +138,14 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         let order_placement_events = events
+            .clone()
             .into_iter()
             .filter(|EthContractEvent { data, .. }| {
                 matches!(data, ContractEvent::OrderPlacement(_))
             })
             .collect();
+        let invalidation_events = get_invalidation_events(events)?;
+        let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
         let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
@@ -156,6 +163,20 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         )
         .await
         .context("mark_onchain_order_events failed")?;
+
+        database::onchain_invalidations::delete_invalidations(
+            &mut transaction,
+            *range.start() as i64,
+        )
+        .await
+        .context("invalidating_onchain_order_events failed")?;
+
+        database::onchain_invalidations::insert_onchain_invalidations(
+            &mut transaction,
+            invalided_order_uids.as_slice(),
+        )
+        .await
+        .context("insert_onchain_invalidations failed")?;
 
         self.custom_onchain_data_parser
             .append_custom_order_info_to_db(&mut transaction, custom_onchain_data)
@@ -182,11 +203,14 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
         let order_placement_events = events
+            .clone()
             .into_iter()
             .filter(|EthContractEvent { data, .. }| {
                 matches!(data, ContractEvent::OrderPlacement(_))
             })
             .collect();
+        let invalidation_events = get_invalidation_events(events)?;
+        let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
         let (custom_order_data, quotes, broadcasted_order_data, orders) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
@@ -197,6 +221,12 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .start_timer();
         let mut transaction = self.db.0.begin().await?;
 
+        database::onchain_invalidations::insert_onchain_invalidations(
+            &mut transaction,
+            invalided_order_uids.as_slice(),
+        )
+        .await
+        .context("insert_onchain_invalidations failed")?;
         database::onchain_broadcasted_orders::append(
             &mut transaction,
             broadcasted_order_data.as_slice(),
@@ -292,6 +322,45 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         );
         Ok(multiunzip(data_tuple))
     }
+}
+
+fn get_invalidation_events(
+    events: Vec<EthContractEvent<ContractEvent>>,
+) -> Result<Vec<(EventIndex, OrderInvalidation)>> {
+    events
+        .into_iter()
+        .filter_map(|EthContractEvent { data, meta }| {
+            let meta = match meta {
+                Some(meta) => meta,
+                None => return Some(Err(anyhow!("invalidation event without metadata"))),
+            };
+            let data = match data {
+                ContractEvent::OrderInvalidation(event) => event,
+                _ => {
+                    return None;
+                }
+            };
+            Some(Ok((meta_to_event_index(&meta), data)))
+        })
+        .collect()
+}
+
+fn extract_invalidated_order_uids(
+    invalidations: Vec<(EventIndex, OrderInvalidation)>,
+) -> Result<Vec<(EventIndex, database::OrderUid)>> {
+    invalidations
+        .into_iter()
+        .map(|(event_index, invalidation)| {
+            Ok((
+                event_index,
+                // The following conversion should not error, as the contract
+                // enforces that the enough bytes are sent
+                // If the error happens anyways, we want to stop indexing and
+                // hence escalate the error
+                bytes_to_order_uid(invalidation.order_uid.0.as_slice())?,
+            ))
+        })
+        .collect()
 }
 
 type GeneralOnchainOrderPlacementData = (
@@ -1137,6 +1206,7 @@ mod test {
             sell_amount,
             buy_amount,
             fee_amount,
+            full_fee_amount: 24.into(),
         };
         let cloned_quote = quote.clone();
         order_quoter

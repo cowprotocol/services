@@ -28,6 +28,8 @@ fn main() {
 fn run() -> Result<()> {
     let vendor = Vendor::new()?;
 
+    const ETHFLOW_VERSION: &str = "0.0.0-rc.3";
+
     vendor
         .full()
         .github(
@@ -54,6 +56,13 @@ fn run() -> Result<()> {
             "BalancerV2StablePoolFactory",
             "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/\
              pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
+        )?
+        .github(
+            "CoWSwapEthFlow",
+            &format!(
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
+                 hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+            ),
         )?
         .npm(
             "ERC20Mintable",
@@ -124,13 +133,10 @@ fn run() -> Result<()> {
         )?
         .github(
             "CoWSwapOnchainOrders",
-            "cowprotocol/ethflowcontract/v0.0.0-rc.1\
-            -artifacts/artifacts/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
-        )?
-        .github(
-            "CoWSwapEthFlow",
-            "cowprotocol/ethflowcontract/v0.0.0-rc.1\
-            -artifacts/artifacts/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+            &format!(
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
+                 hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+            )
         )?
         .npm(
             "ERC20",

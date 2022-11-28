@@ -7,10 +7,6 @@ servers:
     url: https://api.cow.fi/mainnet
   - description: Mainnet (Staging)
     url: https://barn.api.cow.fi/mainnet
-  - description: Rinkeby (Prod)
-    url: https://api.cow.fi/rinkeby
-  - description: Rinkeby (Staging)
-    url: https://barn.api.cow.fi/rinkeby
   - description: Görli (Prod)
     url: https://api.cow.fi/goerli
   - description: Görli (Staging)
@@ -608,20 +604,20 @@ components:
         Provides the additional data for ethflow orders
       type: object
       properties:
-        is_refunded:
+        isRefunded:
           description: |
-            Provides a flag that shows whether the refunding service has 
+            Provides a flag that shows whether the refunding service has
             refunded the order, in case it was not settled onchain
           type: boolean
-        user_valid_to:
+        userValidTo:
           description: |
            Describes the valid to of an order ethflow order.
            Note that for ethflow orders, the valid_to encoded in the smart
            contract is max(uint)
           type: integer
       required:
-        - expiration
-        - amount
+        - isRefunded
+        - userValidTo
     FeeInformation:
       description: |
         Provides the information to calculate the fees.
@@ -803,10 +799,14 @@ components:
           $ref: "#/components/schemas/EthflowData"
         onchainUser:
           description: |
-            If orders are placed as onchain orders, the owner of the order might 
-            specific smart contracts, but not the user placing the order. The 
+            If orders are placed as onchain orders, the owner of the order might
+            specific smart contracts, but not the user placing the order. The
             actual user will be provided in this field
           $ref: "#/components/schemas/Address"
+        executedSurplusFee:
+          description: "Surplus fee that the limit order was executed with."
+          $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - creationTime
         - owner

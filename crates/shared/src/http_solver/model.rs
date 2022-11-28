@@ -11,7 +11,7 @@ use num::BigRational;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use web3::types::AccessList;
 
 use crate::{
@@ -42,6 +42,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
     /// Signals if the order will be executed as an atomic unit. In that case the order's
@@ -138,7 +139,7 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Derivative, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
@@ -294,6 +295,16 @@ pub enum ExecutionPlan {
     Internal,
 }
 
+impl ExecutionPlan {
+    /// TODO: remove function when ExecutionPlan is refactored to a struct
+    pub fn internalizable(&self) -> bool {
+        match self {
+            ExecutionPlan::Coordinates(coords) => coords.internal,
+            ExecutionPlan::Internal => true,
+        }
+    }
+}
+
 /// A module for implementing `serde` (de)serialization for the execution plan
 /// enum.
 ///
@@ -324,10 +335,12 @@ mod execution_plan_internal {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
+    #[serde(default)]
+    pub internal: bool,
 }
 
 /// The result a given solver achieved in the auction
@@ -356,6 +369,10 @@ pub enum SolverRejectionReason {
 
     /// The solution violated a price constraint (ie. max deviation to external price vector)
     PriceViolation,
+
+    /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
+    /// Returns the list of not allowed tokens
+    NonBufferableTokensUsed(BTreeSet<H160>),
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
@@ -386,7 +403,8 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
@@ -399,6 +417,7 @@ pub struct SimulatedTransaction {
     /// GPv2 settlement contract address
     pub to: H160,
     /// Transaction input data
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
 }
@@ -436,6 +455,7 @@ mod tests {
             exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
+                internal: false,
             })),
             ..Default::default()
         };
@@ -504,6 +524,7 @@ mod tests {
             mandatory: false,
             has_atomic_execution: false,
             reward: 3.,
+            is_mature: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -659,7 +680,8 @@ mod tests {
               },
               "mandatory": false,
               "has_atomic_execution": false,
-              "reward": 3.0
+              "reward": 3.0,
+              "is_mature": false,
             },
           },
           "amms": {
@@ -832,6 +854,15 @@ mod tests {
                 ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 42,
                     position: 1337,
+                    internal: false,
+                }),
+            ),
+            (
+                r#"{ "sequence": 42, "position": 1337, "internal": false }"#,
+                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                    internal: false,
                 }),
             ),
         ] {
@@ -867,7 +898,11 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": "internal",
+                        "exec_plan": {
+                            "sequence": 0,
+                            "position": 0,
+                            "internal": true
+                        },
                         "cost": {
                             "amount": "1",
                             "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -894,7 +929,11 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                    internal: true,
+                })),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
@@ -981,6 +1020,21 @@ mod tests {
                 "data": "0x13fa49",
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_rejection_non_bufferable_tokens_used() {
+        assert_eq!(
+            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(
+                [H160::from_low_u64_be(1), H160::from_low_u64_be(2)]
+                    .into_iter()
+                    .collect()
+            ))
+            .unwrap(),
+            json!({
+                "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
             }),
         );
     }

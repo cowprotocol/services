@@ -1,12 +1,23 @@
-use crate::current_block::{self, Block, CurrentBlockStream};
+use crate::current_block::{self, BlockInfo, CurrentBlockStream};
 use anyhow::{ensure, Result};
-use futures::{future::join_all, Stream, StreamExt};
-use std::sync::Arc;
-use tracing::Instrument;
+use futures::{future::join_all, Stream, StreamExt as _};
+use std::{sync::Arc, time::Duration};
+use tokio::time;
+use tracing::Instrument as _;
 
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
-    pub maintainers: Vec<Arc<dyn Maintaining>>,
+    maintainers: Vec<Arc<dyn Maintaining>>,
+    retry_delay: Duration,
+}
+
+impl ServiceMaintenance {
+    pub fn new(maintainers: Vec<Arc<dyn Maintaining>>) -> Self {
+        Self {
+            maintainers,
+            retry_delay: Duration::from_secs(1),
+        }
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -32,36 +43,57 @@ impl Maintaining for ServiceMaintenance {
 }
 
 impl ServiceMaintenance {
-    async fn run_maintenance_for_block_stream(self, block_stream: impl Stream<Item = Block>) {
-        futures::pin_mut!(block_stream);
-
+    async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        for label in ["success", "failure"] {
+            metrics.runs.with_label_values(&[label]).reset();
+        }
 
-        while let Some(block) = block_stream.next().await {
+        let blocks = blocks.fuse();
+        futures::pin_mut!(blocks);
+
+        let mut retry_block = None;
+
+        while let Some(block) = match retry_block.take() {
+            // We have a pending retry to process. First see if there is a new
+            // block that becomes available within a certain retry delay, and if
+            // there is, prefer that over the old outdated block.
+            Some(block) => time::timeout(self.retry_delay, blocks.next())
+                .await
+                .unwrap_or(Some(block)),
+            None => blocks.next().await,
+        } {
             tracing::debug!(
-                "running maintenance on block number {:?} hash {:?}",
-                block.number,
-                block.hash
+                ?block.number, ?block.hash,
+                "running maintenance",
             );
 
-            let block = block.number.unwrap_or_default().as_u64();
-            metrics.last_seen_block.set(block as _);
+            metrics.last_seen_block.set(block.number as _);
 
-            if self
+            if let Err(err) = self
                 .run_maintenance()
-                .instrument(tracing::debug_span!("maintenance", block))
+                .instrument(tracing::debug_span!("maintenance", block = block.number))
                 .await
-                .is_ok()
             {
-                metrics.last_updated_block.set(block as _);
+                tracing::debug!(
+                    ?block.number, ?block.hash, ?err,
+                    "maintenance failed; queuing retry",
+                );
+
+                metrics.runs.with_label_values(&["failure"]).inc();
+                retry_block = Some(block);
+                continue;
             }
+
+            metrics.last_updated_block.set(block.number as _);
+            metrics.runs.with_label_values(&["success"]).inc();
         }
     }
 
     pub async fn run_maintenance_on_new_block(self, current_block_stream: CurrentBlockStream) -> ! {
-        self.run_maintenance_for_block_stream(current_block::into_stream(current_block_stream))
+        self.run_maintenance_for_blocks(current_block::into_stream(current_block_stream))
             .await;
-        unreachable!()
+        panic!("block stream unexpectedly dropped");
     }
 }
 
@@ -75,12 +107,18 @@ struct Metrics {
     /// Service maintenance last successfully updated block.
     #[metric()]
     last_updated_block: prometheus::IntGauge,
+
+    /// Service maintenance error counter
+    #[metric(labels("result"))]
+    runs: prometheus::IntCounterVec,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::bail;
+    use futures::stream;
+    use mockall::Sequence;
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {
@@ -106,6 +144,7 @@ mod tests {
                 Arc::new(err_mock_maintenance),
                 Arc::new(ok2_mock_maintenance),
             ],
+            retry_delay: Duration::default(),
         };
 
         assert!(service_maintenance.run_maintenance().await.is_err());
@@ -113,21 +152,63 @@ mod tests {
 
     #[tokio::test]
     async fn block_stream_maintenance() {
-        let block_count = 2;
-        let mut mock_maintenance = MockMaintaining::new();
+        let block_count = 5;
+
         // Mock interface is responsible for assertions here.
         // Will panic if run_maintenance is not called exactly `block_count` times.
+        let mut mock_maintenance = MockMaintaining::new();
         mock_maintenance
             .expect_run_maintenance()
             .times(block_count)
             .returning(|| Ok(()));
+
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(mock_maintenance)],
+            retry_delay: Duration::default(),
         };
 
-        let block_stream = futures::stream::repeat(Block::default()).take(block_count);
+        let block_stream = stream::repeat(BlockInfo::default()).take(block_count);
         service_maintenance
-            .run_maintenance_for_block_stream(block_stream)
+            .run_maintenance_for_blocks(block_stream)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn block_stream_retries_failed_blocks() {
+        crate::tracing::initialize("debug", tracing::Level::ERROR.into());
+
+        let mut mock_maintenance = MockMaintaining::new();
+        let mut sequence = Sequence::new();
+        mock_maintenance
+            .expect_run_maintenance()
+            .return_once(|| bail!("test"))
+            .times(1)
+            .in_sequence(&mut sequence);
+        mock_maintenance
+            .expect_run_maintenance()
+            .return_once(|| Ok(()))
+            .times(1)
+            .in_sequence(&mut sequence);
+        mock_maintenance
+            .expect_run_maintenance()
+            .return_once(|| Ok(()))
+            .times(1)
+            .in_sequence(&mut sequence);
+
+        let service_maintenance = ServiceMaintenance {
+            maintainers: vec![Arc::new(mock_maintenance)],
+            retry_delay: Duration::default(),
+        };
+
+        let block_stream = async_stream::stream! {
+            yield BlockInfo::default();
+
+            // Wait a bit to trigger a retry and not just go to the next block
+            time::sleep(Duration::from_millis(10)).await;
+            yield BlockInfo::default();
+        };
+        service_maintenance
+            .run_maintenance_for_blocks(block_stream)
             .await;
     }
 }

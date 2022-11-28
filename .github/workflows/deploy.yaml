@@ -55,7 +55,7 @@ jobs:
       - uses: cowprotocol/autodeploy-action@v1
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
-          pods: dfusion-v2-autopilot-goerli,dfusion-v2-api-goerli,dfusion-v2-solver-goerli,dfusion-v2-autopilot-mainnet,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-autopilot-xdai,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet
+          pods: dfusion-v2-autopilot-goerli,dfusion-v2-api-goerli,dfusion-v2-solver-goerli,dfusion-v2-autopilot-mainnet,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-autopilot-xdai,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet,dfusion-v2-refunder-goerli
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}

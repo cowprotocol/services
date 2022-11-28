@@ -4,7 +4,6 @@ use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9}
 use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
-    current_block::current_block_stream,
     ethrpc::{self, Web3},
     http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
@@ -32,6 +31,7 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
+    settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
@@ -43,7 +43,7 @@ use solver::{
 use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ! {
     let args = solver::arguments::Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
@@ -87,6 +87,7 @@ async fn main() {
         &args.shared.base_tokens,
     ));
 
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -101,10 +102,12 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
 
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
@@ -140,6 +143,7 @@ async fn main() {
             let balancer_pool_fetcher = Arc::new(
                 BalancerPoolFetcher::new(
                     chain_id,
+                    block_retriever.clone(),
                     token_info_fetcher.clone(),
                     cache_config,
                     current_block_stream.clone(),
@@ -211,6 +215,7 @@ async fn main() {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+        min_order_age: args.min_order_age,
     });
 
     let market_makable_token_list_configuration = TokenListConfiguration {
@@ -222,6 +227,14 @@ async fn main() {
     // updated in background task
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
+    let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
+        native_token_contract.address(),
+        web3.clone(),
+        args.weth_unwrap_factor,
+        settlement_contract.clone(),
+        market_makable_token_list.clone(),
+    ));
 
     let solver = solver::solver::create(
         web3.clone(),
@@ -253,7 +266,9 @@ async fn main() {
         args.max_settlements_per_solver,
         args.max_merged_settlements,
         &args.slippage,
-        market_makable_token_list.clone(),
+        market_makable_token_list,
+        &args.order_prioritization,
+        post_processing_pipeline,
     )
     .expect("failure creating solvers");
 
@@ -280,8 +295,9 @@ async fn main() {
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
             match UniswapV3PoolFetcher::new(
                 chain_id,
-                http_factory.create(),
                 web3.clone(),
+                http_factory.create(),
+                block_retriever,
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
@@ -434,12 +450,10 @@ async fn main() {
         web3,
         network_id,
         args.solver_time_limit,
-        market_makable_token_list.clone(),
         current_block_stream.clone(),
         solution_submitter,
         api,
         order_converter,
-        args.weth_unwrap_factor,
         args.simulation_gas_limit,
         args.fee_objective_scaling_factor,
         args.max_settlement_price_deviation
@@ -449,18 +463,18 @@ async fn main() {
         args.solution_comparison_decimal_cutoff,
     );
 
-    let maintainer = ServiceMaintenance {
-        maintainers: pool_caches
+    let maintainer = ServiceMaintenance::new(
+        pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
             .chain(uniswap_v3_maintainer)
             .collect(),
-    };
+    );
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
-    driver.run_forever().await;
+    driver.run_forever().await
 }
 
 async fn build_amm_artifacts(

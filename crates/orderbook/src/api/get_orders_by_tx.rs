@@ -6,7 +6,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
 pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Rejection> + Clone {
-    warp::path!("transactions" / H256 / "orders").and(warp::get())
+    warp::path!("v1" / "transactions" / H256 / "orders").and(warp::get())
 }
 
 pub fn get_orders_by_tx(
@@ -30,7 +30,7 @@ mod tests {
     async fn request_ok() {
         let hash_str = "0x0191dbb560e936bd3320d5a505c9c05580a0ebb7e12fe117551ac26e484f295e";
         let result = warp::test::request()
-            .path(&format!("/transactions/{:}/orders", hash_str))
+            .path(&format!("/v1/transactions/{:}/orders", hash_str))
             .method("GET")
             .filter(&get_orders_by_tx_request())
             .await

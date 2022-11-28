@@ -9,8 +9,8 @@ use model::{
     app_id::AppId,
     interaction::InteractionData,
     order::{
-        BuyTokenDestination, EthflowData, Interactions, Order, OrderClass, OrderData, OrderKind,
-        OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, LimitOrderClass, Order, OrderClass,
+        OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -28,7 +28,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         None
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
-    let class = order_class_from(order.class);
+    let class = order_class_from(&order);
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -49,16 +49,13 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
+        is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
-        is_liquidity_order: class == OrderClass::Liquidity,
-        surplus_fee: big_decimal_to_u256(&order.surplus_fee.unwrap_or_default())
-            .context("surplus_fee is not U256")?,
-        surplus_fee_timestamp: order.surplus_fee_timestamp.unwrap_or_default(),
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -113,19 +110,34 @@ pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
     }
 }
 
-pub fn order_class_into(class: OrderClass) -> DbOrderClass {
+pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
     match class {
         OrderClass::Market => DbOrderClass::Market,
         OrderClass::Liquidity => DbOrderClass::Liquidity,
-        OrderClass::Limit => DbOrderClass::Limit,
+        OrderClass::Limit(_) => DbOrderClass::Limit,
     }
 }
 
-pub fn order_class_from(class: DbOrderClass) -> OrderClass {
-    match class {
+pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
+    match order.class {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
-        DbOrderClass::Limit => OrderClass::Limit,
+        DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
+            surplus_fee: big_decimal_to_u256(
+                order
+                    .surplus_fee
+                    .as_ref()
+                    .expect("limit orders must have surplus fee set"),
+            )
+            .unwrap(),
+            surplus_fee_timestamp: order
+                .surplus_fee_timestamp
+                .expect("limit orders must have surplus fee timestamp set"),
+            executed_surplus_fee: order
+                .executed_surplus_fee
+                .as_ref()
+                .and_then(big_decimal_to_u256),
+        }),
     }
 }
 

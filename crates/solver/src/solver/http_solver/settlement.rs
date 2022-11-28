@@ -187,11 +187,11 @@ impl<'a> IntermediateSettlement<'a> {
         }
 
         for execution in &self.executions {
-            execution.add_to_settlement(
-                &mut settlement,
-                &self.slippage,
-                Some(&ExecutionPlan::Internal) == execution.execution_plan(),
-            )?;
+            let internalizable = execution
+                .execution_plan()
+                .map(|exec_plan| exec_plan.internalizable())
+                .unwrap_or_default();
+            execution.add_to_settlement(&mut settlement, &self.slippage, internalizable)?;
         }
 
         Ok(settlement)
@@ -374,7 +374,7 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
-        settlement::{CustomPriceTrade, EncoderTrade, Trade},
+        settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -496,6 +496,7 @@ mod tests {
                 exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 0,
                     position: 0,
+                    internal: false,
                 })),
             }],
             cost: Default::default(),
@@ -506,7 +507,11 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(1),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Internal),
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 1,
+                    position: 0,
+                    internal: true,
+                })),
             }],
             cost: Default::default(),
         };
@@ -517,8 +522,9 @@ mod tests {
                 exec_sell_amount: U256::from(2),
                 exec_buy_amount: U256::from(1),
                 exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 1,
+                    sequence: 2,
                     position: 0,
+                    internal: false,
                 })),
             }],
             cost: Default::default(),
@@ -530,8 +536,9 @@ mod tests {
                 exec_sell_amount: U256::from(6),
                 exec_buy_amount: U256::from(4),
                 exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 2,
+                    sequence: 3,
                     position: 0,
+                    internal: false,
                 })),
             }],
             cost: Default::default(),
@@ -567,9 +574,9 @@ mod tests {
         );
 
         assert_eq!(
-            settlement.encoder.trades().collect::<Vec<_>>(),
-            [EncoderTrade::CustomPrice(&CustomPriceTrade {
-                trade: Trade {
+            settlement.encoder.all_trades().collect::<Vec<_>>(),
+            [PricedTrade {
+                data: &Trade {
                     order: Order {
                         metadata: OrderMetadata {
                             owner: H160([99; 20]),
@@ -590,13 +597,12 @@ mod tests {
                         signature: Signature::PreSign,
                         ..Default::default()
                     },
-                    sell_token_index: 1,
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                buy_token_offset_index: 0,
+                sell_token_price: 11.into(),
                 buy_token_price: (10 * 102 / 101).into(),
-            })]
+            }]
         );
 
         assert_eq!(limit_handler.calls(), vec![7.into()]);
@@ -779,7 +785,8 @@ mod tests {
                             "exec_buy_amount": "354009510372389956",
                             "exec_plan": {
                                 "sequence": 0,
-                                "position": 1
+                                "position": 1,
+                                "internal": false
                             }
                         }
                     ]
@@ -793,7 +800,8 @@ mod tests {
                             "exec_buy_amount": "2",
                             "exec_plan": {
                                 "sequence": 0,
-                                "position": 2
+                                "position": 2,
+                                "internal": false
                             }
                         }
                     ]
@@ -823,7 +831,8 @@ mod tests {
                             "exec_buy_amount": "996570293625184642",
                             "exec_plan": {
                                 "sequence": 0,
-                                "position": 0
+                                "position": 0,
+                                "internal": false
                             }
                         }
                     ]
@@ -847,7 +856,8 @@ mod tests {
                             "exec_buy_amount": "4",
                             "exec_plan": {
                                 "sequence": 0,
-                                "position": 3
+                                "position": 3,
+                                "internal": false
                             }
                         }
                     ]
@@ -890,6 +900,7 @@ mod tests {
                     exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 0u32,
+                        internal: false,
                     })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
@@ -899,6 +910,7 @@ mod tests {
                     exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 1u32,
+                        internal: false,
                     })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
@@ -908,6 +920,7 @@ mod tests {
                     exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 2u32,
+                        internal: false,
                     })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
@@ -917,6 +930,7 @@ mod tests {
                     exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 3u32,
+                        internal: false,
                     })),
                 })),
             ],
@@ -942,6 +956,7 @@ mod tests {
             exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 2u32,
+                internal: false,
             })),
         }];
         let interactions = vec![InteractionData {
@@ -953,6 +968,7 @@ mod tests {
             exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 1u32,
+                internal: false,
             })),
             cost: None,
         }];

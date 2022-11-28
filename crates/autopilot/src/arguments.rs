@@ -22,17 +22,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract
-    #[clap(
-        long,
-        env,
-        default_value = "0x26c3801b4840dab317cedfd7aeaf9f45fdd22830"
-    )]
-    pub ethflow_contract: H160,
-
-    // Feature flag for ethflow
+    /// Address of the ethflow contract. If not specified, eth-flow orders are disabled.
     #[clap(long, env)]
-    pub enable_ethflow_orders: bool,
+    pub ethflow_contract: Option<H160>,
 
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
@@ -133,6 +125,10 @@ pub struct Arguments {
 
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
+
+    // Enable background quoting for limit orders.
+    #[clap(long, env)]
+    pub enable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -144,7 +140,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
-        writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
@@ -174,6 +169,7 @@ impl std::fmt::Display for Arguments {
         display_option(f, "cip_14_profit", &self.cip_14_profit)?;
         display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
         display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
+        writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
         Ok(())
     }
 }

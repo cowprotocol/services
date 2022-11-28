@@ -18,13 +18,12 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
-    current_block::current_block_stream,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
     gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
-    maintenance::ServiceMaintenance,
+    maintenance::{Maintaining, ServiceMaintenance},
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
@@ -50,7 +49,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::task;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ! {
     let args = orderbook::arguments::Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
@@ -194,10 +193,12 @@ async fn main() {
         .instrumented(),
     );
 
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
 
     let pool_aggregator = PoolAggregator { pool_fetchers };
 
@@ -216,6 +217,7 @@ async fn main() {
         )
         .expect("failed to create pool cache"),
     );
+    let block_retriver = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -229,6 +231,7 @@ async fn main() {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
+                block_retriver.clone(),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
@@ -247,8 +250,9 @@ async fn main() {
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
             chain_id,
-            http_factory.create(),
             web3.clone(),
+            http_factory.create(),
+            block_retriver,
             args.shared.max_pools_to_initialize_cache,
         )
         .await
@@ -423,15 +427,15 @@ async fn main() {
         database.as_ref().clone(),
         order_validator.clone(),
     ));
-    let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![pool_fetcher],
-    };
+
+    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
     if let Some(balancer) = balancer_pool_fetcher {
-        service_maintainer.maintainers.push(balancer);
+        maintainers.push(balancer);
     }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        service_maintainer.maintainers.push(uniswap_v3);
+        maintainers.push(uniswap_v3);
     }
+
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
@@ -448,8 +452,9 @@ async fn main() {
         args.shared.solver_competition_auth,
         native_price_estimator,
     );
-    let maintenance_task =
-        task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
+
+    let service_maintainer = ServiceMaintenance::new(maintainers);
+    task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -458,9 +463,8 @@ async fn main() {
 
     futures::pin_mut!(serve_api);
     tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
-        result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
-        result = metrics_task => tracing::error!(?result, "metrics task exited"),
+        result = &mut serve_api => panic!("API task exited {:?}", result),
+        result = metrics_task => panic!("metrics task exited {:?}", result),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
@@ -468,6 +472,7 @@ async fn main() {
                 Ok(inner) => inner.expect("API failed during shutdown"),
                 Err(_) => tracing::error!("API shutdown exceeded timeout"),
             }
+            std::process::exit(0);
         }
     };
 }

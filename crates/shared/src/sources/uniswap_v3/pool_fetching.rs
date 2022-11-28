@@ -1,17 +1,16 @@
+use super::{
+    event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
+    graph_api::{PoolData, Token, UniV3SubgraphClient},
+};
 use crate::{
-    current_block::RangeInclusive,
+    current_block::{BlockRetrieving, RangeInclusive},
     ethrpc::Web3,
     event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
     maintenance::Maintaining,
     recent_block_cache::Block,
 };
-
-use super::{
-    event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
-    graph_api::{PoolData, Token, UniV3SubgraphClient},
-};
 use anyhow::{Context, Result};
-use ethcontract::{BlockNumber, Event, H160, U256};
+use ethcontract::{Event, H160, U256};
 use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
 use num::{rational::Ratio, BigInt, Zero};
@@ -21,7 +20,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Neg,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 #[async_trait::async_trait]
@@ -244,36 +243,26 @@ pub struct UniswapV3PoolFetcher {
     /// Pools state on a specific block number in history considered reorg safe
     checkpoint: PoolsCheckpointHandler,
     /// Recent events used on top of pools_checkpoint to get the `latest_block` pools state.
-    events: tokio::sync::Mutex<EventHandler<Web3, UniswapV3PoolEventFetcher, RecentEventsCache>>,
+    events: tokio::sync::Mutex<EventHandler<UniswapV3PoolEventFetcher, RecentEventsCache>>,
 }
 
 impl UniswapV3PoolFetcher {
     pub async fn new(
         chain_id: u64,
-        client: Client,
         web3: Web3,
+        client: Client,
+        block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: u64,
     ) -> Result<Self> {
         let checkpoint =
             PoolsCheckpointHandler::new(chain_id, client, max_pools_to_initialize).await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
-        let init_block = web3
-            .eth()
-            .block(BlockNumber::Number(init_block.into()).into())
-            .await?
-            .context("missing block for fetched block number")?;
-        let init_block = (
-            init_block
-                .number
-                .context("missing fetched block number")?
-                .as_u64(),
-            init_block.hash.context("missing fetched block hash")?,
-        );
+        let init_block = block_retriever.block(init_block).await?;
 
         let events = tokio::sync::Mutex::new(EventHandler::new(
-            web3.clone(),
-            UniswapV3PoolEventFetcher(web3.clone()),
+            block_retriever,
+            UniswapV3PoolEventFetcher(web3),
             RecentEventsCache::default(),
             Some(init_block),
         ));
@@ -699,7 +688,8 @@ mod tests {
     async fn uniswap_v3_pool_fetcher_constructor_test() {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3, 100)
+        let block_retriever = Arc::new(web3.clone());
+        let fetcher = UniswapV3PoolFetcher::new(1, web3, Client::new(), block_retriever, 100)
             .await
             .unwrap();
 
@@ -718,9 +708,11 @@ mod tests {
     async fn fetch_test() {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone(), 100)
-            .await
-            .unwrap();
+        let block_retriever = Arc::new(web3.clone());
+        let fetcher =
+            UniswapV3PoolFetcher::new(1, web3.clone(), Client::new(), block_retriever, 100)
+                .await
+                .unwrap();
         fetcher.run_maintenance().await.unwrap();
         let token_pairs = HashSet::from([
             TokenPair::new(

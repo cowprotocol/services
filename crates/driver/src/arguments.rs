@@ -2,7 +2,7 @@ use primitive_types::{H160, H256};
 use reqwest::Url;
 use shared::{
     arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
-    ethrpc,
+    current_block, ethrpc,
     gas_price_estimation::GasEstimatorType,
     http_client,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
@@ -22,6 +22,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub ethrpc: ethrpc::Arguments,
+
+    #[clap(flatten)]
+    pub current_block: current_block::Arguments,
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
@@ -70,6 +73,17 @@ pub struct Arguments {
     /// likely, promoting more aggressive merging of single order settlements.
     #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
+
+    /// A settlement must contain at least one order older than this duration in seconds for it
+    /// to be applied.  Larger values delay individual settlements more but have a higher
+    /// coincidence of wants chance.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub min_order_age: Duration,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
@@ -222,15 +236,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
-    /// How often in seconds we poll the node to check if the current block has changed.
-    #[clap(
-        long,
-        env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
-    )]
-    pub block_stream_poll_interval_seconds: Duration,
-
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
@@ -274,6 +279,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.ethrpc)?;
+        write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
@@ -297,6 +303,7 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor,
         )?;
+        writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
@@ -352,11 +359,6 @@ impl std::fmt::Display for Arguments {
             f,
             "pool_cache_delay_between_retries_seconds: {:?}",
             self.pool_cache_delay_between_retries_seconds
-        )?;
-        writeln!(
-            f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds
         )?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         writeln!(
