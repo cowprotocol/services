@@ -33,11 +33,12 @@ impl From<QuoteSigningScheme> for SigningScheme {
     }
 }
 
-/// Signature over the EIP-712 hash of the order data. This hash is referred to as the order hash.
+/// Signature over the order data.
+/// All variants rely on the EIP-712 hash of the order data, referred to as the order hash.
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
 pub enum Signature {
-    /// The order hash is signed according to EIP-712.
+    /// The order struct is signed according to EIP-712.
     ///
     /// https://eips.ethereum.org/EIPS/eip-712
     Eip712(EcdsaSignature),
