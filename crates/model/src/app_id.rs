@@ -6,6 +6,9 @@ use std::{
     str::FromStr,
 };
 
+/// This allows arbitrary user data to be associated with an order. This type holds the
+/// hash of the data, while the data itself is uploaded to IPFS. The hash is signed along with the
+/// order.
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
 pub struct AppId(pub [u8; 32]);
 
