@@ -255,19 +255,12 @@ impl Driver {
             })
             .collect::<Vec<_>>();
         tracing::info!(?orders, "got {} orders", orders.len());
+        self.metrics.orders_fetched(&orders);
 
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
-
-        let liquidity = self
-            .liquidity_collector
-            .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
-            .await?;
-
-        self.metrics.orders_fetched(&orders);
-        self.metrics.liquidity_fetched(&liquidity);
 
         if !auction_preprocessing::has_at_least_one_user_order(&orders)
             || !auction_preprocessing::has_at_least_one_mature_order(&orders)
@@ -281,6 +274,12 @@ impl Driver {
             .await
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
+
+        let liquidity = self
+            .liquidity_collector
+            .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
+            .await?;
+        self.metrics.liquidity_fetched(&liquidity);
 
         let rewards = auction.rewards;
         let auction = Auction {
