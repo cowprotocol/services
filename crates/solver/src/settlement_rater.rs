@@ -1,19 +1,20 @@
 use crate::{
     driver::solver_settlements::RatedSettlement,
     settlement::{external_prices::ExternalPrices, Settlement},
-    settlement_access_list::AccessListEstimating,
+    settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
     settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
     solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::errors::ExecutionError;
+use futures::future::join_all;
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
-use shared::{ethrpc::Web3, http_solver::model::SimulatedTransaction};
-use std::sync::Arc;
+use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SimulatedTransaction};
+use std::{borrow::Borrow, sync::Arc};
 use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
@@ -48,6 +49,7 @@ pub trait SettlementRating: Send + Sync {
 
 pub struct SettlementRater {
     pub access_list_estimator: Arc<dyn AccessListEstimating>,
+    pub code_fetcher: Arc<dyn CodeFetching>,
     pub settlement_contract: GPv2Settlement,
     pub web3: Web3,
 }
@@ -58,33 +60,31 @@ impl SettlementRater {
         solver_settlements: Vec<(Arc<dyn Solver>, Settlement)>,
         gas_price: GasPrice1559,
     ) -> Vec<SettlementWithSolver> {
-        let txs = solver_settlements
-            .iter()
-            .map(|(solver, settlement)| {
-                settle_method(
-                    gas_price,
-                    &self.settlement_contract,
-                    settlement.clone(),
-                    solver.account().clone(),
-                )
-                .tx
-            })
-            .collect::<Vec<_>>();
-
-        let mut access_lists = self
-            .access_list_estimator
-            .estimate_access_lists(&txs)
-            .await
-            .unwrap_or_default()
-            .into_iter();
-
-        solver_settlements
-            .into_iter()
-            .map(|(solver, settlement)| {
-                let access_list = access_lists.next().and_then(|access_list| access_list.ok());
-                (solver, settlement, access_list)
-            })
-            .collect()
+        join_all(
+            solver_settlements
+                .into_iter()
+                .map(|(solver, settlement)| async {
+                    let tx = settle_method(
+                        gas_price,
+                        &self.settlement_contract,
+                        settlement.clone(),
+                        solver.account().clone(),
+                    )
+                    .tx;
+                    let access_list = estimate_settlement_access_list(
+                        self.access_list_estimator.borrow(),
+                        self.code_fetcher.borrow(),
+                        self.web3.clone(),
+                        solver.account().clone(),
+                        &settlement,
+                        &tx,
+                    )
+                    .await
+                    .ok();
+                    (solver, settlement, access_list)
+                }),
+        )
+        .await
     }
 }
 

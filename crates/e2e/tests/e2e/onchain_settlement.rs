@@ -17,8 +17,8 @@ use model::{
 };
 use secp256k1::SecretKey;
 use shared::{
-    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
-    sources::uniswap_v2::pool_fetching::PoolFetcher,
+    code_fetching::MockCodeFetching, ethrpc::Web3, http_client::HttpClientFactory,
+    maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher,
 };
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -234,6 +234,7 @@ async fn onchain_settlement(web3: Web3) {
                 )
                 .unwrap(),
             ),
+            code_fetcher: Arc::new(MockCodeFetching::new()),
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
@@ -243,6 +244,7 @@ async fn onchain_settlement(web3: Web3) {
         None.into(),
         None,
         0,
+        Arc::new(MockCodeFetching::new()),
     );
     driver.single_run().await.unwrap();
 

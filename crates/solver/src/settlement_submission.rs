@@ -15,7 +15,7 @@ use ethcontract::{
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::ethrpc::Web3;
+use shared::{code_fetching::CodeFetching, ethrpc::Web3};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -110,6 +110,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
+    pub code_fetcher: Arc<dyn CodeFetching>,
 }
 
 pub struct StrategyArgs {
@@ -255,6 +256,8 @@ impl SolutionSubmitter {
             &gas_price_estimator,
             self.access_list_estimator.as_ref(),
             strategy_args.sub_tx_pool.clone(),
+            self.web3.clone(),
+            self.code_fetcher.as_ref(),
         )?;
         submitter
             .submit(settlement, params)

@@ -127,6 +127,8 @@ pub struct SimulationRequest {
     pub generate_access_list: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_objects: Option<HashMap<H160, StateObject>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_list: Option<Vec<AccessListItem>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

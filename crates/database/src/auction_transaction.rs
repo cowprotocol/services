@@ -103,7 +103,6 @@ mod tests {
         let err = upsert_auction_transaction(&mut db, 0, &Default::default(), 1)
             .await
             .unwrap_err();
-        dbg!(&err);
         assert!(is_duplicate_auction_id_error(&err));
     }
 
