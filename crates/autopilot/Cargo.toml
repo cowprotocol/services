@@ -35,7 +35,9 @@ number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 shared = { path = "../shared" }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

@@ -5,6 +5,7 @@ pub mod event_updater;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
+pub mod driver_model;
 pub mod limit_orders;
 
 use crate::{
