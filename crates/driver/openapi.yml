@@ -248,7 +248,7 @@ components:
               uid:
                 $ref: "#/components/schemas/OrderUID"
               executedAmount:
-                $ref: "#/components/schemas/BigUint"
+                $ref: "#/components/schemas/TokenAmount"
         internalizedInteractions:
           type: array
           items:
@@ -267,12 +267,12 @@ components:
                 description: Mapping of hex token address to amount.
                 type: object
                 additionalProperties:
-                    $ref: "#/components/schemas/BigUint"
+                    $ref: "#/components/schemas/TokenAmount"
               outputs:
                 description: Mapping of token address to amount.
                 type: object
                 additionalProperties:
-                    $ref: "#/components/schemas/BigUint"
+                    $ref: "#/components/schemas/TokenAmount"
         calldata:
           description: hex encoded
           type: string
