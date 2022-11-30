@@ -140,7 +140,7 @@ pub struct Arguments {
 
     /// Enable buy ETH orders paying to smart contract wallets.
     #[clap(long, env, default_value = "false")]
-    pub enable_smart_contract_payments: bool,
+    pub enable_eth_smart_contract_payments: bool,
 }
 
 impl std::fmt::Display for Arguments {

@@ -186,7 +186,7 @@ pub struct OrderValidator {
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    pub enable_smart_contract_payments: bool,
+    pub enable_eth_smart_contract_payments: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -268,7 +268,7 @@ impl OrderValidator {
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
-            enable_smart_contract_payments: false,
+            enable_eth_smart_contract_payments: false,
         }
     }
 
@@ -277,8 +277,8 @@ impl OrderValidator {
         self
     }
 
-    pub fn with_smart_contract_payments(mut self, enable: bool) -> Self {
-        self.enable_smart_contract_payments = enable;
+    pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
+        self.enable_eth_smart_contract_payments = enable;
         self
     }
 
@@ -342,7 +342,7 @@ impl OrderValidating for OrderValidator {
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
-        if !self.enable_smart_contract_payments && order.buy_token == BUY_ETH_ADDRESS {
+        if !self.enable_eth_smart_contract_payments && order.buy_token == BUY_ETH_ADDRESS {
             let code_size = self
                 .code_fetcher
                 .code_size(order.receiver)

@@ -421,7 +421,7 @@ async fn main() -> ! {
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
         )
         .with_limit_orders(args.enable_limit_orders)
-        .with_smart_contract_payments(args.enable_smart_contract_payments),
+        .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments),
     );
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
