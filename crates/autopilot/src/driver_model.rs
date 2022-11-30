@@ -40,9 +40,8 @@ pub mod quote {
 }
 
 pub mod solve {
-    use bigdecimal::num_bigint::BigUint;
     use chrono::{DateTime, Utc};
-    use primitive_types::H160;
+    use primitive_types::{H160, U256};
     use serde::{Deserialize, Serialize};
     use serde_with::{serde_as, DisplayFromStr};
     use std::collections::BTreeMap;
@@ -56,11 +55,11 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
     pub struct Auction {
-        pub id: u64,
+        pub id: i64,
         pub block: u64,
         pub orders: Vec<Order>,
         #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub prices: BTreeMap<H160, BigUint>,
+        pub prices: BTreeMap<H160, U256>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
