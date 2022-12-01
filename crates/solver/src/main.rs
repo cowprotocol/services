@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
+use model::DomainSeparator;
 use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
@@ -239,6 +240,7 @@ async fn main() -> ! {
         market_makable_token_list.clone(),
     ));
 
+    let domain = DomainSeparator::new(chain_id, settlement_contract.address());
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -272,6 +274,7 @@ async fn main() -> ! {
         market_makable_token_list,
         &args.order_prioritization,
         post_processing_pipeline,
+        &domain,
     )
     .expect("failure creating solvers");
 
