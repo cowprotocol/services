@@ -1150,7 +1150,7 @@ pub mod tests {
                 tokens: TokenReference::CustomPrice {
                     // no price was changed, because custom price orders have their prices outside
                     // of UCP vector and their value is not correlated with UCP whatsoever.
-                    sell_token_price: 3.into(), 
+                    sell_token_price: 3.into(),
                     buy_token_price: 5.into(),
                 },
             }],
