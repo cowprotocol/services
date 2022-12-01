@@ -133,11 +133,10 @@ async fn main() -> ! {
             .expect("failed to load baseline source uniswap liquidity")
             .into_iter()
             .map(|(source, (_, pool_fetcher))| {
-                let pool_cache = Arc::new(
+                let pool_cache =
                     PoolCache::new(cache_config, pool_fetcher, current_block_stream.clone())
-                        .expect("failed to create pool cache"),
-                );
-                (source, pool_cache)
+                        .expect("failed to create pool cache");
+                (source, Arc::new(pool_cache))
             })
             .collect();
     maintainers.extend(pool_caches.values().cloned().map(|p| p as Arc<_>));
