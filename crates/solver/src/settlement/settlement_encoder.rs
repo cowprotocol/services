@@ -253,8 +253,7 @@ impl SettlementEncoder {
                 self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
             }
             OrderClass::Liquidity => {
-                let sell_price = order.data.buy_amount;
-                let buy_price = order.data.sell_amount;
+                let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
                 self.add_custom_price_trade(
                     order,
                     executed_amount,
@@ -349,14 +348,9 @@ impl SettlementEncoder {
             }
         };
 
-        Ok((
-            uniform_sell_price,
-            sell_amount
-                .checked_mul(uniform_sell_price)
-                .context("custom_buy_price computation failed")?
-                .checked_div(buy_amount)
-                .context("custom_buy_price computation failed")?,
-        ))
+        let adjusted_sell_price = buy_amount;
+        let adjusted_buy_price = sell_amount;
+        Ok((adjusted_sell_price, adjusted_buy_price))
     }
 
     fn add_custom_price_trade(
@@ -456,13 +450,7 @@ impl SettlementEncoder {
                         .token_index(self.trades[i].data.order.data.buy_token)
                         .expect("missing buy token for existing trade"),
                 },
-                TokenReference::CustomPrice {
-                    sell_token_price,
-                    buy_token_price,
-                } => TokenReference::CustomPrice {
-                    sell_token_price,
-                    buy_token_price,
-                },
+                original @ TokenReference::CustomPrice { .. } => original,
             };
         }
     }
