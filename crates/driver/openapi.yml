@@ -58,6 +58,36 @@ paths:
           $ref: "#/components/responses/BadRequest"
         500:
           $ref: "#/components/responses/InternalServerError"
+  /reveal:
+    post:
+      description: |
+        Reveal the details of the previously solved auction.
+
+        Called by Autopilot if this Solver's solution is the winner of the competition. After reveal
+        returns successfully Autopilot will call /execute.
+
+        The auction that should be revealed is identified through its id and was recently returned
+        by this Solver's solve endpoint.
+
+        By accepting the reveal request the Solver promises that the solution can be executed on
+        chain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevealRequest"
+      responses:
+        200:
+          description: Execution accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealResponse"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
   /execute:
     post:
       description: |
@@ -214,15 +244,15 @@ components:
 
             TODO: Decide what is signed and how it is signed.
           type: string
-    ExecuteRequest:
-      description: Request to the execute endpoint.
+    RevealRequest:
+      description: Request to the reveal endpoint.
       type: object
       properties:
         auctionId:
-          description: Id of the auction that should be executed.
+          description: Id of the auction that should be revealed.
           type: integer
-    ExecuteResponse:
-      description: Response of the execute endpoint.
+    RevealResponse:
+      description: Response of the reveal endpoint.
       type: object
       properties:
         account:
@@ -277,6 +307,23 @@ components:
           description: hex encoded
           type: string
           example: "0x01"
+        signature:
+          description: |
+            Signature confirming that the Solver revealed this auction.
+
+            TODO: Decide what is signed and how it is signed.
+          type: string
+    ExecuteRequest:
+      description: Request to the execute endpoint.
+      type: object
+      properties:
+        auctionId:
+          description: Id of the auction that should be executed.
+          type: integer
+    ExecuteResponse:
+      description: Response of the execute endpoint.
+      type: object
+      properties:
         signature:
           description: |
             Signature confirming that the Solver promised to execute this auction.

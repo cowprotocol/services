@@ -75,7 +75,7 @@ pub mod solve {
     }
 }
 
-pub mod execute {
+pub mod reveal {
     use model::{bytes_hex, order::OrderUid, u256_decimal};
     use primitive_types::{H160, U256};
     use serde::{Deserialize, Serialize};
@@ -120,5 +120,20 @@ pub mod execute {
         pub inputs: BTreeMap<H160, U256>,
         #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
         pub outputs: BTreeMap<H160, U256>,
+    }
+}
+
+pub mod execute {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Request {
+        pub auction_id: u64,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    pub struct Response {
+        pub signature: String,
     }
 }
