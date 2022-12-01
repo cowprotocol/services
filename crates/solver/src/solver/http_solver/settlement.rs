@@ -600,8 +600,8 @@ mod tests {
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                sell_token_price: 11.into(),
-                buy_token_price: (10 * 102 / 101).into(),
+                sell_token_price: 102.into(),
+                buy_token_price: 101.into(),
             }]
         );
 
