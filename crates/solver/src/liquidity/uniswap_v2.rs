@@ -1,9 +1,11 @@
-use super::{AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         UniswapInteraction,
     },
+    liquidity::Liquidity,
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::Result;
@@ -71,36 +73,6 @@ impl UniswapLikeLiquidity {
         }
     }
 
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    pub async fn get_liquidity(
-        &self,
-        offchain_orders: &[LimitOrder],
-        at_block: Block,
-    ) -> Result<Vec<ConstantProductOrder>> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut offchain_orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
-
-        let mut tokens = HashSet::new();
-        let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
-            tokens.insert(pool.tokens.get().0);
-            tokens.insert(pool.tokens.get().1);
-
-            result.push(ConstantProductOrder {
-                address: pool.address,
-                tokens: pool.tokens,
-                reserves: pool.reserves,
-                fee: pool.fee,
-                settlement_handling: self.inner.clone(),
-            })
-        }
-        self.cache_allowances(tokens).await?;
-        Ok(result)
-    }
-
     async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
         let router = self.inner.router.address();
         let allowances = self
@@ -115,6 +87,31 @@ impl UniswapLikeLiquidity {
             .extend(allowances)?;
 
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for UniswapLikeLiquidity {
+    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    async fn get_liquidity(&self, pairs: &[TokenPair], at_block: Block) -> Result<Vec<Liquidity>> {
+        let pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
+
+        let mut tokens = HashSet::new();
+        let mut result = Vec::new();
+        for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
+            tokens.insert(pool.tokens.get().0);
+            tokens.insert(pool.tokens.get().1);
+
+            result.push(Liquidity::ConstantProduct(ConstantProductOrder {
+                address: pool.address,
+                tokens: pool.tokens,
+                reserves: pool.reserves,
+                fee: pool.fee,
+                settlement_handling: self.inner.clone(),
+            }))
+        }
+        self.cache_allowances(tokens).await?;
+        Ok(result)
     }
 }
 
