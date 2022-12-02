@@ -110,9 +110,6 @@ impl LimitOrderQuoter {
                 },
             })
             .await?;
-        // Make quote last long enough to compute risk adjusted rewards for the order.
-        quote.data.expiration = Utc::now() + self.limit_order_age;
-        self.quoter.store_quote(quote.clone()).await?;
         self.database
             .update_limit_order_fees(
                 &order.metadata.uid,
@@ -121,7 +118,11 @@ impl LimitOrderQuoter {
                     full_fee_amount: quote.full_fee_amount,
                 },
             )
-            .await
+            .await?;
+        // Make quote last long enough to compute risk adjusted rewards for the order.
+        quote.data.expiration = Utc::now() + self.limit_order_age;
+        self.quoter.store_quote(quote).await?;
+        Ok(())
     }
 }
 
