@@ -22,7 +22,7 @@ use std::{
     fmt::{self, Debug, Display},
     str::FromStr,
 };
-use strum::EnumString;
+use strum::{AsRefStr, EnumString, EnumVariantNames};
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -644,7 +644,19 @@ pub enum OrderKind {
     Sell,
 }
 
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(
+    Eq,
+    PartialEq,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    Hash,
+    EnumString,
+    AsRefStr,
+    EnumVariantNames,
+)]
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]
 pub enum OrderClass {
