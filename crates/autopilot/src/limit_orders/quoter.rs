@@ -1,6 +1,6 @@
 use crate::database::{orders::FeeUpdate, Postgres};
 use anyhow::Result;
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use futures::future::join_all;
 use model::{
     order::{Order, OrderKind},
@@ -67,7 +67,7 @@ impl LimitOrderQuoter {
     }
 
     async fn update_surplus_fee(&self, order: &Order) -> Result<()> {
-        let quote = self
+        let mut quote = self
             .quoter
             .calculate_quote(QuoteParameters {
                 sell_token: order.data.sell_token,
@@ -110,6 +110,9 @@ impl LimitOrderQuoter {
                 },
             })
             .await?;
+        // Make quote last long enough to compute risk adjusted rewards for the order.
+        quote.data.expiration = Utc::now() + self.limit_order_age;
+        self.quoter.store_quote(quote.clone()).await?;
         self.database
             .update_limit_order_fees(
                 &order.metadata.uid,
