@@ -100,7 +100,9 @@ jobs:
       # tests requiring a Postgres instance.
       - run: cargo test postgres -- --ignored --test-threads 1
       # tests requiring a local ethereum node
-      - run: cargo test local_node -- --ignored --test-threads 1
+      # nocapture because tracing output isn't captured by the test runner which makes it confusing
+      # to debug failing e2e tests.
+      - run: cargo test local_node -- --ignored --test-threads 1 --nocapture
   openapi:
     timeout-minutes: 60
     runs-on: ubuntu-latest
