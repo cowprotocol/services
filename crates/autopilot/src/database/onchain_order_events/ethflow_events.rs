@@ -1,6 +1,4 @@
-use crate::{
-    database::events::meta_to_event_index, event_updater::sync_start_from_settlement_deployment,
-};
+use crate::database::events::meta_to_event_index;
 use anyhow::{anyhow, Context, Result};
 use contracts::cowswap_onchain_orders::{
     event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
@@ -15,7 +13,10 @@ use database::{
 };
 use ethcontract::Event as EthContractEvent;
 use hex_literal::hex;
-use shared::{current_block::BlockNumberHash, ethrpc::Web3};
+use shared::{
+    contracts::settlement_deployment_block_number_hash, current_block::BlockNumberHash,
+    ethrpc::Web3,
+};
 use sqlx::types::BigDecimal;
 use std::{collections::HashMap, convert::TryInto};
 
@@ -138,12 +139,17 @@ fn convert_to_quote_id_and_user_valid_to(
     Ok((quote_id, user_valid_to))
 }
 
+/// This function determines the block at which to start indexing eth-flow events.
+/// It returns a block that is guaranteed to be before any event emitted by the eth-flow contract *unless* an (optional)
+/// earliest sync start is specified: this parameter takes priority if later than the computed block.
 pub async fn ethflow_sync_start(
     web3: &Web3,
     chain_id: u64,
     earliest_sync_start: Option<BlockNumberHash>,
 ) -> BlockNumberHash {
-    let settlement_deployment_sync_start = sync_start_from_settlement_deployment(web3, chain_id)
+    // The eth-flow contract hardcodes the settlement contract in its code and should not be deployed before the
+    // settlement contract.
+    let settlement_deployment_sync_start = settlement_deployment_block_number_hash(web3, chain_id)
         .await
         .unwrap_or_else(|err| {
             panic!("Should be able to find settlement deployment block. Error: {err}")

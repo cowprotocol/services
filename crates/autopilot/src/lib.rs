@@ -16,10 +16,7 @@ use crate::{
         },
         Postgres,
     },
-    event_updater::{
-        sync_start_from_block_number, CoWSwapOnchainOrdersContract, EventUpdater,
-        GPv2SettlementContract,
-    },
+    event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
     limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
@@ -38,6 +35,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -383,7 +381,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
     })();
 
     let skip_event_sync_start = if args.skip_event_sync {
-        sync_start_from_block_number(&web3, BlockNumber::Latest).await
+        block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
     } else {
         None
     };
