@@ -1,6 +1,8 @@
-use anyhow::Result;
-use contracts::{cowswap_onchain_orders, gpv2_settlement};
+use anyhow::{anyhow, Result};
+use contracts::{cowswap_onchain_orders, gpv2_settlement, GPv2Settlement};
+use ethcontract::{BlockId, BlockNumber, Web3};
 use shared::{
+    contracts::deployment_block,
     current_block::{BlockNumberHash, BlockRetrieving},
     event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
@@ -8,6 +10,7 @@ use shared::{
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use web3::{types::U64, Transport};
 
 pub struct EventUpdater<
     Database: EventStoring<<W as EventRetrieving>::Event>,
@@ -51,4 +54,31 @@ where
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
     }
+}
+
+pub async fn sync_start_from_settlement_deployment<T: Transport>(
+    web3: &Web3<T>,
+    chain_id: u64,
+) -> Result<BlockNumberHash> {
+    let block_number = deployment_block(GPv2Settlement::raw_contract(), chain_id).await?;
+    sync_start_from_block_number(web3, U64::from(block_number).into())
+        .await
+        .ok_or_else(|| anyhow!("Deployment block not found"))
+}
+
+pub async fn sync_start_from_block_number<T: Transport>(
+    web3: &Web3<T>,
+    block_number: BlockNumber,
+) -> Option<BlockNumberHash> {
+    web3.eth()
+        .block(BlockId::Number(block_number))
+        .await
+        .ok()
+        .flatten()
+        .map(|block| {
+            (
+                block.number.expect("number must exist").as_u64(),
+                block.hash.expect("hash must exist"),
+            )
+        })
 }

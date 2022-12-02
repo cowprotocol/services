@@ -1,4 +1,6 @@
-use crate::database::events::meta_to_event_index;
+use crate::{
+    database::events::meta_to_event_index, event_updater::sync_start_from_settlement_deployment,
+};
 use anyhow::{anyhow, Context, Result};
 use contracts::cowswap_onchain_orders::{
     event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
@@ -13,6 +15,7 @@ use database::{
 };
 use ethcontract::Event as EthContractEvent;
 use hex_literal::hex;
+use shared::{current_block::BlockNumberHash, ethrpc::Web3};
 use sqlx::types::BigDecimal;
 use std::{collections::HashMap, convert::TryInto};
 
@@ -133,6 +136,23 @@ fn convert_to_quote_id_and_user_valid_to(
     let quote_id = i64::from_be_bytes(data[0..8].try_into().unwrap());
     let user_valid_to = u32::from_be_bytes(data[8..12].try_into().unwrap());
     Ok((quote_id, user_valid_to))
+}
+
+pub async fn ethflow_sync_start(
+    web3: &Web3,
+    chain_id: u64,
+    earliest_sync_start: Option<BlockNumberHash>,
+) -> BlockNumberHash {
+    let settlement_deployment_sync_start = sync_start_from_settlement_deployment(web3, chain_id)
+        .await
+        .unwrap_or_else(|err| {
+            panic!("Should be able to find settlement deployment block. Error: {err}")
+        });
+    [Some(settlement_deployment_sync_start), earliest_sync_start]
+        .into_iter()
+        .flat_map(|s| s.into_iter())
+        .max_by_key(|s| s.0)
+        .expect("Iterator has at least one element")
 }
 
 #[cfg(test)]

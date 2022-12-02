@@ -10,17 +10,23 @@ pub mod limit_orders;
 
 use crate::{
     database::{
-        onchain_order_events::{ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser},
+        onchain_order_events::{
+            ethflow_events::{ethflow_sync_start, EthFlowOnchainOrderParser},
+            OnchainOrderParser,
+        },
         Postgres,
     },
-    event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
+    event_updater::{
+        sync_start_from_block_number, CoWSwapOnchainOrdersContract, EventUpdater,
+        GPv2SettlementContract,
+    },
     limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
 };
-use ethcontract::{errors::DeployError, BlockId, BlockNumber};
+use ethcontract::{errors::DeployError, BlockNumber};
 use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -376,18 +382,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         })
     })();
 
-    let sync_start = if args.skip_event_sync {
-        web3.eth()
-            .block(BlockId::Number(BlockNumber::Latest))
-            .await
-            .ok()
-            .flatten()
-            .map(|block| {
-                (
-                    block.number.expect("number must exist").as_u64(),
-                    block.hash.expect("hash must exist"),
-                )
-            })
+    let skip_event_sync_start = if args.skip_event_sync {
+        sync_start_from_block_number(&web3, BlockNumber::Latest).await
     } else {
         None
     };
@@ -396,7 +392,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
         block_retriever.clone(),
-        sync_start,
+        skip_event_sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
@@ -475,7 +471,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
             onchain_order_event_parser,
             block_retriever,
-            sync_start,
+            Some(ethflow_sync_start(&web3, chain_id, skip_event_sync_start).await),
         ));
         maintainers.push(broadcaster_event_updater);
     }
