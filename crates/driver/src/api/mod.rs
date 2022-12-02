@@ -32,6 +32,7 @@ fn handle_all_routes(
 
     let mut routes = vec![];
     for (driver, name) in drivers.into_iter() {
+        // TODO This heresy is why we need to use axum instead of warp >:(
         // leak string to use it in tracing spans
         let name = Box::leak(name.into_boxed_str());
         routes.push(("solve", solve::post_solve(name, driver.clone()).boxed()));
