@@ -353,7 +353,7 @@ mod tests {
                 &[
                     TokenPair::new(H160([0x70; 20]), H160([0x71; 20])).unwrap(),
                     TokenPair::new(H160([0x70; 20]), H160([0x72; 20])).unwrap(),
-                    TokenPair::new(H160([0x0b; 20]), H160([0x73; 20])).unwrap(),
+                    TokenPair::new(H160([0xb0; 20]), H160([0x73; 20])).unwrap(),
                 ],
                 Block::Recent,
             )
