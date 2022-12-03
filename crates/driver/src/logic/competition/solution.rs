@@ -44,11 +44,7 @@ fn score(solution: &Solution) -> Score {
     todo!()
 }
 
+/// A unique solution ID. TODO Once this is finally decided, document what this
+/// ID is used for.
 #[derive(Debug, Clone, Copy)]
-pub struct SolverId(pub u64);
-
-impl From<u64> for SolverId {
-    fn from(inner: u64) -> Self {
-        Self(inner)
-    }
-}
+pub struct Id(pub u64);

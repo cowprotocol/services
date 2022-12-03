@@ -29,13 +29,6 @@ pub struct Solver {
 const MAX_NR_EXEC_ORDERS: &str = "100";
 const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 
-// TODO max_nr_exec_orders is always set to 100, so that can be a const for now
-// TODO For now the API key seems to never be set
-// TODO Ask about Objective - I think this is not needed anymore
-
-// TODO From the SolverConfig, it seems like only the
-// use_internal_buffers and objective fields are really used
-
 impl Solver {
     pub fn new(url: reqwest::Url, network_name: eth::NetworkName, chain_id: eth::ChainId) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
@@ -59,8 +52,6 @@ impl Solver {
     pub async fn solve(&self, auction: Auction) -> Result<Solution, Error> {
         // TODO Ask about all the `config` stuff in DefaultHttpSolverApi, what is every
         // field for exactly?
-        // TODO Respect auction deadline, leave a buffer of one second like
-        // DefaultHttpSolverApi does
         let mut url = self.url.join("solve").unwrap();
         let time_limit = auction.deadline.solver_time_limit()?;
         url.query_pairs_mut()

@@ -1,5 +1,6 @@
-// TODO Remove this ASAP
+// TODO Remove dead_code ASAP
 #![allow(dead_code)]
+#![forbid(unsafe_code)]
 
 pub mod arguments;
 pub mod auction_converter;

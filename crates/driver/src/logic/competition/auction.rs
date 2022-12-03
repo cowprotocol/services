@@ -7,7 +7,7 @@ use thiserror::Error;
 pub struct Auction {
     pub id: Id,
     pub deadline: Deadline,
-    // TODO This should contain the deadline as well
+    // TODO Other fields
 }
 
 /// Each auction has a deadline, limiting the maximum time that each solver may

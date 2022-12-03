@@ -55,7 +55,6 @@ where
     deserializer.deserialize_str(Visitor {})
 }
 
-// TODO This doesn't need to be public and further seems to be unused
 /// Converts an amount of units of an ERC20 token with the specified amount of
 /// decimals into its decimal representation as a string.
 ///

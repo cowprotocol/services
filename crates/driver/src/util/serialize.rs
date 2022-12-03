@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+/// Serializes [`ethereum_types::U256`] as a decimal string.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct U256(String);
 
-// TODO Test that to_string and parse do what you expect here. It seems like
-// they don't, they just convert to hex instead which is DUMB
 impl From<ethereum_types::U256> for U256 {
     fn from(x: ethereum_types::U256) -> Self {
         Self(x.to_string())
@@ -15,11 +14,11 @@ impl TryFrom<U256> for ethereum_types::U256 {
     type Error = &'static str;
 
     fn try_from(value: U256) -> Result<Self, Self::Error> {
-        // TODO Update this message, but check the above ^ first
-        value.0.parse().map_err(|_| "bad conversion")
+        Self::from_dec_str(&value.0).map_err(|_| "invalid 256-bit decimal")
     }
 }
 
+/// Serializes binary data as a hexadecimal string.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Hex(String);
 
