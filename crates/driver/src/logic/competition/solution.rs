@@ -40,7 +40,7 @@ pub async fn best(
 }
 
 /// Calculate the score of a solution.
-fn score(solution: &Solution) -> Score {
+fn score(_solution: &Solution) -> Score {
     todo!()
 }
 

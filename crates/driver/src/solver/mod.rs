@@ -74,7 +74,7 @@ impl Solver {
             "{now}_{}_{}_{}",
             self.network_name.0, self.chain_id.0, auction_id.0
         )
-        .replace(&[' ', '/'], "_")
+        .replace([' ', '/'], "_")
     }
 }
 

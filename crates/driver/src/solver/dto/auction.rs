@@ -10,7 +10,7 @@ use {
 // line, this is probably not good enough. But that will be implemented when the
 // `logic::liquidity` module is added.
 impl From<auction::Auction> for Auction {
-    fn from(auction: auction::Auction) -> Self {
+    fn from(_auction: auction::Auction) -> Self {
         todo!()
     }
 }

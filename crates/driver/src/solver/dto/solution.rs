@@ -6,7 +6,7 @@ use {
 };
 
 impl From<Solution> for solution::Solution {
-    fn from(solution: Solution) -> Self {
+    fn from(_solution: Solution) -> Self {
         todo!()
     }
 }
