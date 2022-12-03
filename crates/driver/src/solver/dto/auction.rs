@@ -1,13 +1,16 @@
 use {
-    crate::{logic::solution, util::serialize},
+    crate::{logic::competition::auction, util::serialize},
     ethereum_types::H160,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeMap,
 };
 
-impl From<solution::Auction> for Auction {
-    fn from(auction: solution::Auction) -> Self {
+// TODO Since building the auction will also require liquidity later down the
+// line, this is probably not good enough. But that will be implemented when the
+// `logic::liquidity` module is added.
+impl From<auction::Auction> for Auction {
+    fn from(auction: auction::Auction) -> Self {
         todo!()
     }
 }
@@ -54,7 +57,6 @@ struct Token {
     external_price: Option<f64>,
     normalize_priority: Option<u64>,
     internal_buffer: Option<serialize::U256>,
-    /// Is token in the external list containing only safe tokens
     accepted_for_internalization: bool,
 }
 

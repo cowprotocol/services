@@ -1,5 +1,5 @@
 use {
-    crate::{logic::solution, util::serialize},
+    crate::{logic::competition::solution, util::serialize},
     ethereum_types::H160,
     serde::Deserialize,
     std::collections::HashMap,

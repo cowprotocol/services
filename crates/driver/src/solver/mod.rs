@@ -1,14 +1,18 @@
-use crate::{
-    logic::{eth, solution::AuctionId},
-    util,
+use {
+    crate::{
+        logic::{
+            competition::{
+                auction::{self, Auction},
+                solution::Solution,
+            },
+            eth,
+        },
+        util,
+    },
+    thiserror::Error,
 };
 
 mod dto;
-
-use {
-    crate::logic::solution::{Auction, Solution},
-    thiserror::Error,
-};
 
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
@@ -16,7 +20,9 @@ use {
 pub struct Solver {
     url: reqwest::Url,
     client: reqwest::Client,
+    /// Used for building the instance name to send to the solver.
     network_name: eth::NetworkName,
+    /// Used for building the instance name to send to the solver.
     chain_id: eth::ChainId,
 }
 
@@ -56,22 +62,22 @@ impl Solver {
         // TODO Respect auction deadline, leave a buffer of one second like
         // DefaultHttpSolverApi does
         let mut url = self.url.join("solve").unwrap();
+        let time_limit = auction.deadline.solver_time_limit()?;
         url.query_pairs_mut()
             .append_pair("auction_id", &auction.id.0.to_string())
             .append_pair("instance_name", &self.instance_name(auction.id))
-            // TODO Should be based on auction timeout, fix this
-            .append_pair("time_limit", "0")
+            .append_pair("time_limit", &time_limit.as_secs().to_string())
             .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
         let body = serde_json::to_string(&dto::Auction::from(auction)).unwrap();
         tracing::trace!(%url, %body, "sending request to solver");
-        let req = self.client.post(url.clone()).body(body);
+        let req = self.client.post(url.clone()).body(body).timeout(time_limit);
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%url, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
         Ok(res.into())
     }
 
-    fn instance_name(&self, auction_id: AuctionId) -> String {
+    fn instance_name(&self, auction_id: auction::Id) -> String {
         let now = chrono::Utc::now();
         format!(
             "{now}_{}_{}_{}",
@@ -87,4 +93,6 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
+    #[error("the auction deadline was exceeded")]
+    DeadlineExceeded(#[from] auction::DeadlineExceeded),
 }

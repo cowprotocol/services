@@ -14,8 +14,8 @@ pub async fn send(limit_bytes: usize, req: reqwest::RequestBuilder) -> Result<St
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("request error: {0:?}")]
-    Request(#[from] reqwest::Error),
+    #[error("response error: {0:?}")]
+    Response(#[from] reqwest::Error),
     #[error("the response was too large, the limit was {limit_bytes} bytes")]
     ResponseTooLarge { limit_bytes: usize },
     #[error("the response could not be parsed as UTF-8: {0:?}")]

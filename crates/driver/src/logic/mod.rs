@@ -1,2 +1,2 @@
+pub mod competition;
 pub mod eth;
-pub mod solution;
