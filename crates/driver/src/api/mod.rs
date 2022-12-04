@@ -11,16 +11,6 @@ pub mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 32 * 1024;
 
-#[derive(Debug, Clone)]
-struct State(Arc<StateInner>);
-
-#[derive(Debug)]
-struct StateInner {
-    solvers: NonEmpty<Solver>,
-}
-
-type Router = axum::Router<State>;
-
 pub async fn serve(
     addr: &SocketAddr,
     shutdown: impl Future<Output = ()> + Send + 'static,
@@ -47,4 +37,20 @@ pub async fn serve(
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown)
         .await
+}
+
+type Router = axum::Router<State>;
+
+#[derive(Debug, Clone)]
+struct State(Arc<StateInner>);
+
+#[derive(Debug)]
+struct StateInner {
+    solvers: NonEmpty<Solver>,
+}
+
+impl State {
+    fn solvers(&self) -> &NonEmpty<Solver> {
+        &self.0.solvers
+    }
 }

@@ -1,12 +1,12 @@
 use {
-    crate::{logic::competition::solution, util::serialize},
+    crate::{logic, util::serialize},
     ethereum_types::{H160, U256},
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
 };
 
-impl From<Solution> for solution::Solution {
+impl From<Solution> for logic::competition::Solution {
     fn from(_solution: Solution) -> Self {
         todo!()
     }
@@ -160,11 +160,12 @@ struct Coordinates {
     internal: bool,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Signature {
     signing_scheme: SigningScheme,
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
 }
 

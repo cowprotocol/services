@@ -1,6 +1,6 @@
 use {
     crate::{
-        api::{execute::ExecuteError, solve::SolveError},
+        api::execute::ExecuteError,
         auction_converter::AuctionConverting,
         commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
     },
@@ -45,7 +45,7 @@ impl Driver {
     pub async fn on_auction_started(
         &self,
         auction: AuctionWithId,
-    ) -> Result<SettlementSummary, SolveError> {
+    ) -> Result<SettlementSummary, ()> {
         // TODO get deadline from autopilot auction
         let deadline = Instant::now() + Duration::from_secs(25);
         Self::solve_until_deadline(
@@ -56,7 +56,7 @@ impl Driver {
             deadline,
         )
         .await
-        .map_err(SolveError::from)
+        .map_err(|_| ())
     }
 
     /// Computes a solution with the liquidity collected from a given block.
