@@ -1,4 +1,4 @@
-//! Serialize and deserialize [`U256`] as a decimal string.
+//! Serialize and deserialize binary data as a hexadecimal string.
 
 use {
     serde::{de, Deserializer, Serializer},

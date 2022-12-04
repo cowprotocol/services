@@ -10,7 +10,6 @@ use {
         auction_converter::AuctionConverter,
         commit_reveal::CommitRevealSolver,
         driver::Driver,
-        serve_api,
     },
     gas_estimation::GasPriceEstimating,
     model::DomainSeparator,
@@ -88,7 +87,7 @@ async fn main() {
     tracing::info!("running driver with validated arguments:\n{}", args);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = serve_api(
+    let serve_api = driver::api::serve(
         &args.bind_address,
         async {
             let _ = shutdown_receiver.await;

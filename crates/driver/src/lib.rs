@@ -8,9 +8,9 @@ pub mod commit_reveal;
 pub mod driver;
 pub mod settlement_proposal;
 
-mod api;
+pub mod api;
 pub mod logic;
 mod solver;
 mod util;
 
-pub use {crate::solver::Solver, api::serve as serve_api};
+pub use crate::solver::Solver;
