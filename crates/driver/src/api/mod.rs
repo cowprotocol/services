@@ -9,6 +9,8 @@ pub mod execute;
 pub mod info;
 pub mod solve;
 
+const REQUEST_BODY_LIMIT: usize = 32 * 1024;
+
 #[derive(Debug, Clone)]
 struct State(Arc<StateInner>);
 
@@ -27,7 +29,9 @@ pub async fn serve(
     // Add middleware.
     let app = axum::Router::new().layer(
         tower::ServiceBuilder::new()
-            .layer(tower_http::limit::RequestBodyLimitLayer::new(32 * 1024))
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(
+                REQUEST_BODY_LIMIT,
+            ))
             .layer(tower_http::trace::TraceLayer::new_for_http()),
     );
 
@@ -38,6 +42,7 @@ pub async fn serve(
     // Add state.
     let app = app.with_state(State(Arc::new(StateInner { solvers })));
 
+    // Start the server.
     axum::Server::bind(addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown)

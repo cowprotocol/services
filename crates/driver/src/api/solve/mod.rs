@@ -25,7 +25,7 @@ async fn solve(
     auction: axum::extract::Json<dto::Auction>,
 ) -> axum::response::Json<String> {
     tracing::info!(?state, "state");
-    auction.0.example.into()
+    "example".to_owned().into()
 }
 
 fn post_solve_request(
