@@ -1,42 +1,45 @@
-pub mod execute;
-pub mod solve;
-
 use {
-    crate::driver::Driver,
+    crate::solver::Solver,
     futures::Future,
-    shared::api::finalize_router,
+    nonempty::NonEmpty,
     std::{net::SocketAddr, sync::Arc},
-    tokio::{task, task::JoinHandle},
-    warp::{Filter, Rejection, Reply},
 };
 
-pub fn serve_api(
-    address: SocketAddr,
-    shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    drivers: Vec<(Arc<Driver>, String)>,
-) -> JoinHandle<()> {
-    let filter = handle_all_routes(drivers).boxed();
-    tracing::info!(%address, "serving driver");
-    let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
-    task::spawn(server)
+pub mod execute;
+pub mod info;
+pub mod solve;
+
+#[derive(Debug, Clone)]
+struct State(Arc<StateInner>);
+
+#[derive(Debug)]
+struct StateInner {
+    solvers: NonEmpty<Solver>,
 }
 
-fn handle_all_routes(
-    drivers: Vec<(Arc<Driver>, String)>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    // Routes for api v1.
+type Router = axum::Router<State>;
 
-    // Note that we add a string with endpoint's name to all responses.
-    // This string will be used later to report metrics.
-    // It is not used to form the actual server response.
+pub async fn serve(
+    addr: &SocketAddr,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+    solvers: NonEmpty<Solver>,
+) -> Result<(), hyper::Error> {
+    // Add middleware.
+    let app = axum::Router::new().layer(
+        tower::ServiceBuilder::new()
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(32 * 1024))
+            .layer(tower_http::trace::TraceLayer::new_for_http()),
+    );
 
-    let mut routes = vec![];
-    for (driver, name) in drivers.into_iter() {
-        // leak string to use it in tracing spans
-        let name = Box::leak(name.into_boxed_str());
-        routes.push(("solve", solve::post_solve(name, driver.clone()).boxed()));
-        routes.push(("execute", execute::post_execute(name, driver).boxed()));
-    }
+    // Add routes.
+    let app = solve::route(app);
+    let app = info::route(app);
 
-    finalize_router(routes, "driver::api::request_summary")
+    // Add state.
+    let app = app.with_state(State(Arc::new(StateInner { solvers })));
+
+    axum::Server::bind(addr)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(shutdown)
+        .await
 }

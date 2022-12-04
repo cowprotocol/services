@@ -17,6 +17,7 @@ mod dto;
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
+#[derive(Debug)]
 pub struct Solver {
     url: reqwest::Url,
     client: reqwest::Client,

@@ -1,16 +1,20 @@
+// TODO Remove dead_code ASAP
+#![allow(dead_code)]
+
 use {
     anyhow::{Context, Result},
     clap::Parser,
     contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
     driver::{
-        api::serve_api,
         arguments::Arguments,
         auction_converter::AuctionConverter,
         commit_reveal::CommitRevealSolver,
         driver::Driver,
+        serve_api,
     },
     gas_estimation::GasPriceEstimating,
     model::DomainSeparator,
+    nonempty::NonEmpty,
     shared::{
         baseline_solver::BaseTokens,
         code_fetching::{CachedCodeFetcher, CodeFetching},
@@ -72,6 +76,43 @@ use {
     },
     std::{collections::HashMap, sync::Arc, time::Duration},
 };
+
+#[tokio::main]
+async fn main() {
+    let args = driver::arguments::Arguments::parse();
+    shared::tracing::initialize(
+        args.logging.log_filter.as_str(),
+        args.logging.log_stderr_threshold,
+    );
+    shared::exit_process_on_panic::set_panic_hook();
+    tracing::info!("running driver with validated arguments:\n{}", args);
+
+    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let serve_api = serve_api(
+        &args.bind_address,
+        async {
+            let _ = shutdown_receiver.await;
+        },
+        NonEmpty::new(driver::Solver::new(
+            "http://localhost:1232".parse().unwrap(),
+            driver::logic::eth::NetworkName("testnet".to_owned()),
+            driver::logic::eth::ChainId(0),
+        )),
+    );
+
+    futures::pin_mut!(serve_api);
+    tokio::select! {
+        result = &mut serve_api => tracing::error!(?result, "API task exited"),
+        _ = shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
+            shutdown_sender.send(()).expect("failed to send shutdown signal");
+            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
+                Ok(inner) => inner.expect("API failed during shutdown"),
+                Err(_) => tracing::error!("API shutdown exceeded timeout"),
+            }
+        }
+    };
+}
 
 struct CommonComponents {
     http_factory: HttpClientFactory,
@@ -563,45 +604,10 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         .collect()
 }
 
-#[tokio::main]
-async fn main() {
-    let args = driver::arguments::Arguments::parse();
-    shared::tracing::initialize(
-        args.logging.log_filter.as_str(),
-        args.logging.log_stderr_threshold,
-    );
-    shared::exit_process_on_panic::set_panic_hook();
-    tracing::info!("running driver with validated arguments:\n{}", args);
-    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
-    let common = init_common_components(&args).await;
-
-    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = serve_api(
-        args.bind_address,
-        async {
-            let _ = shutdown_receiver.await;
-        },
-        build_drivers(&common, &args).await,
-    );
-
-    futures::pin_mut!(serve_api);
-    tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
-        _ = shutdown_signal() => {
-            tracing::info!("Gracefully shutting down API");
-            shutdown_sender.send(()).expect("failed to send shutdown signal");
-            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
-                Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => tracing::error!("API shutdown exceeded timeout"),
-            }
-        }
-    };
-}
-
 #[cfg(unix)]
 async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
+    // Intercept main signals for graceful shutdown.
+    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
     let sigterm = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .unwrap()
@@ -621,6 +627,6 @@ async fn shutdown_signal() {
 
 #[cfg(windows)]
 async fn shutdown_signal() {
-    // We don't support signal handling on windows
+    // We don't support signal handling on Windows.
     std::future::pending().await
 }

@@ -14,6 +14,20 @@ use {
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
 
+mod dto;
+
+pub(super) fn route(app: super::Router) -> super::Router {
+    app.route("/solve", axum::routing::post(solve))
+}
+
+async fn solve(
+    state: axum::extract::State<super::State>,
+    auction: axum::extract::Json<dto::Auction>,
+) -> axum::response::Json<String> {
+    tracing::info!(?state, "state");
+    auction.0.example.into()
+}
+
 fn post_solve_request(
     prefix: &'static str,
 ) -> impl Filter<Extract = (AuctionWithId,), Error = Rejection> + Clone {

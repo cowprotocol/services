@@ -15,6 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+axum = "0.6"
 num = "0.4"
 tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
 futures = "0.3"
@@ -26,6 +27,9 @@ hex = "0.4"
 reqwest = "0.11"
 thiserror = "1.0"
 chrono = "0.4"
+tower = "0.4"
+tower-http = { version = "0.3", features = ["limit", "trace"] }
+hyper = "0.14"
 
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
