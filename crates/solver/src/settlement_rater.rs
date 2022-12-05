@@ -149,12 +149,12 @@ impl SettlementRating for SettlementRater {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
-        // first simulate settlements with internalizations to make sure they can be settled onchain
+        // first simulate settlements without internalizations to make sure they pass
         let simulations = self
             .simulate_settlements(
                 settlements,
                 gas_price,
-                InternalizationStrategy::SkipInternalizableInteraction,
+                InternalizationStrategy::EncodeAllInteractions,
             )
             .await?;
 
@@ -169,12 +169,12 @@ impl SettlementRating for SettlementRater {
                 Err(_) => Either::Right(simulation),
             });
 
-        // since rating is done without internalizations, repeat the simulations for previously succeeded simulations
+        // since rating is done with internalizations, repeat the simulations for previously succeeded simulations
         let mut simulations = self
             .simulate_settlements(
                 settlements,
                 gas_price,
-                InternalizationStrategy::EncodeAllInteractions,
+                InternalizationStrategy::SkipInternalizableInteraction,
             )
             .await?;
 
