@@ -215,7 +215,7 @@ impl DriverLogger {
              objective={:.2e} surplus={:.2e} \
              gas_estimate={:.2e} gas_price={:.2e} \
              unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-             access_list_addreses={}",
+             access_list_addreses={} solver_balance={:.2e}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value().to_f64().unwrap_or(f64::NAN),
@@ -229,7 +229,8 @@ impl DriverLogger {
                     .unscaled_subsidized_fee
                     .to_f64()
                     .unwrap_or(f64::NAN),
-                access_list.clone().unwrap_or_default().len()
+                access_list.clone().unwrap_or_default().len(),
+                settlement.solver_balance.to_f64_lossy()
             )
             .unwrap();
         }
