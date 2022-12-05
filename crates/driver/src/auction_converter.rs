@@ -1,22 +1,27 @@
-use anyhow::{Context, Result};
-use gas_estimation::GasPriceEstimating;
-use model::{auction::AuctionWithId as AuctionModel, TokenPair};
-use primitive_types::H160;
-use shared::recent_block_cache::Block;
-use solver::{
-    liquidity::order_converter::OrderConverter, liquidity_collector::LiquidityCollecting,
-    settlement::external_prices::ExternalPrices, solver::Auction,
-};
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
+use {
+    anyhow::{Context, Result},
+    gas_estimation::GasPriceEstimating,
+    model::{auction::AuctionWithId as AuctionModel, TokenPair},
+    primitive_types::H160,
+    shared::recent_block_cache::Block,
+    solver::{
+        liquidity::order_converter::OrderConverter,
+        liquidity_collector::LiquidityCollecting,
+        settlement::external_prices::ExternalPrices,
+        solver::Auction,
     },
-    time::{Duration, Instant},
+    std::{
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
+        time::{Duration, Instant},
+    },
 };
 
 // TODO eventually this has to be part of the auction coming from the autopilot.
-/// Determines how much time a solver has to compute solutions for an incoming `Auction`.
+/// Determines how much time a solver has to compute solutions for an incoming
+/// `Auction`.
 const RUN_DURATION: Duration = Duration::from_secs(15);
 
 #[async_trait::async_trait]
@@ -128,23 +133,28 @@ impl AuctionConverting for AuctionConverter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use contracts::WETH9;
-    use gas_estimation::GasPrice1559;
-    use maplit::btreemap;
-    use model::{
-        order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
-        TokenPair,
-    };
-    use num::rational::{BigRational, Ratio};
-    use primitive_types::U256;
-    use shared::{dummy_contract, gas_price_estimation::FakeGasPriceEstimator};
-    use solver::{
-        liquidity::{
-            AmmOrderExecution, ConstantProductOrder, Liquidity::ConstantProduct, SettlementHandling,
+    use {
+        super::*,
+        contracts::WETH9,
+        gas_estimation::GasPrice1559,
+        maplit::btreemap,
+        model::{
+            order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+            TokenPair,
         },
-        liquidity_collector::MockLiquidityCollecting,
-        settlement::SettlementEncoder,
+        num::rational::{BigRational, Ratio},
+        primitive_types::U256,
+        shared::{dummy_contract, gas_price_estimation::FakeGasPriceEstimator},
+        solver::{
+            liquidity::{
+                AmmOrderExecution,
+                ConstantProductOrder,
+                Liquidity::ConstantProduct,
+                SettlementHandling,
+            },
+            liquidity_collector::MockLiquidityCollecting,
+            settlement::SettlementEncoder,
+        },
     };
 
     struct DummySettlementHandler;

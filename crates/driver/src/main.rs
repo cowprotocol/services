@@ -1,60 +1,77 @@
-use anyhow::{Context, Result};
-use clap::Parser;
-use contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
-use driver::{
-    api::serve_api, arguments::Arguments, auction_converter::AuctionConverter,
-    commit_reveal::CommitRevealSolver, driver::Driver,
-};
-use gas_estimation::GasPriceEstimating;
-use model::DomainSeparator;
-use shared::{
-    baseline_solver::BaseTokens,
-    code_fetching::{CachedCodeFetcher, CodeFetching},
-    current_block::{BlockRetrieving, CurrentBlockStream},
-    ethrpc::{self, Web3},
-    gelato_api::GelatoClient,
-    http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
-    maintenance::{Maintaining, ServiceMaintenance},
-    recent_block_cache::CacheConfig,
-    sources::{
-        self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource,
+use {
+    anyhow::{Context, Result},
+    clap::Parser,
+    contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    driver::{
+        api::serve_api,
+        arguments::Arguments,
+        auction_converter::AuctionConverter,
+        commit_reveal::CommitRevealSolver,
+        driver::Driver,
     },
-    tenderly_api::TenderlyApi,
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
-    zeroex_api::DefaultZeroExApi,
-};
-use solver::{
-    arguments::TransactionStrategyArg,
-    driver_logger::DriverLogger,
-    interactions::allowances::AllowanceManager,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
-    },
-    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::Metrics,
-    settlement_access_list::AccessListEstimating,
-    settlement_ranker::SettlementRanker,
-    settlement_rater::SettlementRater,
-    settlement_submission::{
-        gelato::GelatoSubmitter,
-        submitter::{
-            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
-            Strategy,
+    gas_estimation::GasPriceEstimating,
+    model::DomainSeparator,
+    shared::{
+        baseline_solver::BaseTokens,
+        code_fetching::{CachedCodeFetcher, CodeFetching},
+        current_block::{BlockRetrieving, CurrentBlockStream},
+        ethrpc::{self, Web3},
+        gelato_api::GelatoClient,
+        http_client::HttpClientFactory,
+        http_solver::{DefaultHttpSolverApi, SolverConfig},
+        maintenance::{Maintaining, ServiceMaintenance},
+        recent_block_cache::CacheConfig,
+        sources::{
+            self,
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        tenderly_api::TenderlyApi,
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
+        zeroex_api::DefaultZeroExApi,
     },
     solver::{
-        http_solver::{buffers::BufferRetriever, HttpSolver, InstanceCache},
-        Solver,
+        arguments::TransactionStrategyArg,
+        driver_logger::DriverLogger,
+        interactions::allowances::AllowanceManager,
+        liquidity::{
+            balancer_v2::BalancerV2Liquidity,
+            order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity,
+            uniswap_v3::UniswapV3Liquidity,
+            zeroex::ZeroExLiquidity,
+        },
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::Metrics,
+        settlement_access_list::AccessListEstimating,
+        settlement_ranker::SettlementRanker,
+        settlement_rater::SettlementRater,
+        settlement_submission::{
+            gelato::GelatoSubmitter,
+            submitter::{
+                eden_api::EdenApi,
+                flashbots_api::FlashbotsApi,
+                public_mempool_api::PublicMempoolApi,
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+            TransactionStrategy,
+        },
+        solver::{
+            http_solver::{buffers::BufferRetriever, HttpSolver, InstanceCache},
+            Solver,
+        },
     },
+    std::{collections::HashMap, sync::Arc, time::Duration},
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
 
 struct CommonComponents {
     http_factory: HttpClientFactory,
