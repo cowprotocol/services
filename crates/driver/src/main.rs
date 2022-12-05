@@ -1,56 +1,77 @@
-use anyhow::{Context, Result};
-use clap::Parser;
-use contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
-use driver::{
-    api::serve_api, arguments::Arguments, auction_converter::AuctionConverter,
-    commit_reveal::CommitRevealSolver, driver::Driver,
-};
-use gas_estimation::GasPriceEstimating;
-use shared::{
-    baseline_solver::BaseTokens,
-    current_block::{current_block_stream, CurrentBlockStream},
-    ethrpc::{self, Web3},
-    http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
-    maintenance::{Maintaining, ServiceMaintenance},
-    recent_block_cache::CacheConfig,
-    sources::{
-        self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource,
+use {
+    anyhow::{Context, Result},
+    clap::Parser,
+    contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    driver::{
+        api::serve_api,
+        arguments::Arguments,
+        auction_converter::AuctionConverter,
+        commit_reveal::CommitRevealSolver,
+        driver::Driver,
     },
-    tenderly_api::TenderlyApi,
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
-    zeroex_api::DefaultZeroExApi,
-};
-use solver::{
-    arguments::TransactionStrategyArg,
-    driver_logger::DriverLogger,
-    interactions::allowances::AllowanceManager,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
-    },
-    liquidity_collector::LiquidityCollector,
-    metrics::Metrics,
-    settlement_access_list::AccessListEstimating,
-    settlement_ranker::SettlementRanker,
-    settlement_rater::SettlementRater,
-    settlement_submission::{
-        submitter::{
-            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
-            Strategy,
+    gas_estimation::GasPriceEstimating,
+    model::DomainSeparator,
+    shared::{
+        baseline_solver::BaseTokens,
+        code_fetching::{CachedCodeFetcher, CodeFetching},
+        current_block::{BlockRetrieving, CurrentBlockStream},
+        ethrpc::{self, Web3},
+        gelato_api::GelatoClient,
+        http_client::HttpClientFactory,
+        http_solver::{DefaultHttpSolverApi, SolverConfig},
+        maintenance::{Maintaining, ServiceMaintenance},
+        recent_block_cache::CacheConfig,
+        sources::{
+            self,
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        tenderly_api::TenderlyApi,
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
+        zeroex_api::DefaultZeroExApi,
     },
     solver::{
-        http_solver::{buffers::BufferRetriever, HttpSolver, InstanceCache},
-        Solver,
+        arguments::TransactionStrategyArg,
+        driver_logger::DriverLogger,
+        interactions::allowances::AllowanceManager,
+        liquidity::{
+            balancer_v2::BalancerV2Liquidity,
+            order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity,
+            uniswap_v3::UniswapV3Liquidity,
+            zeroex::ZeroExLiquidity,
+        },
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::Metrics,
+        settlement_access_list::AccessListEstimating,
+        settlement_ranker::SettlementRanker,
+        settlement_rater::SettlementRater,
+        settlement_submission::{
+            gelato::GelatoSubmitter,
+            submitter::{
+                eden_api::EdenApi,
+                flashbots_api::FlashbotsApi,
+                public_mempool_api::PublicMempoolApi,
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+            TransactionStrategy,
+        },
+        solver::{
+            http_solver::{buffers::BufferRetriever, HttpSolver, InstanceCache},
+            Solver,
+        },
     },
+    std::{collections::HashMap, sync::Arc, time::Duration},
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
 
 struct CommonComponents {
     http_factory: HttpClientFactory,
@@ -63,8 +84,10 @@ struct CommonComponents {
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     order_converter: Arc<OrderConverter>,
+    block_retriever: Arc<dyn BlockRetrieving>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     current_block_stream: CurrentBlockStream,
+    code_fetcher: Arc<dyn CodeFetching>,
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
@@ -110,13 +133,13 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         .await
         .expect("failed to create gas price estimator"),
     );
+    let block_retriever = args.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let current_block_stream =
-        current_block_stream(web3.clone(), args.block_stream_poll_interval_seconds)
-            .await
-            .unwrap();
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+
+    let current_block_stream = args.current_block.stream(web3.clone()).await.unwrap();
 
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
@@ -135,12 +158,15 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         access_list_estimator,
         gas_price_estimator,
         order_converter,
+        block_retriever,
         token_info_fetcher,
         current_block_stream,
+        code_fetcher,
     }
 }
 
 async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<dyn Solver>> {
+    let domain = DomainSeparator::new(common.chain_id, common.settlement_contract.address());
     let buffer_retriever = Arc::new(BufferRetriever::new(
         common.web3.clone(),
         common.settlement_contract.address(),
@@ -176,6 +202,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 false,
                 args.slippage.get_global_calculator(),
                 Default::default(),
+                domain,
             )) as Arc<dyn Solver>
         })
         .collect()
@@ -255,6 +282,21 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
+                    GelatoSubmitter::new(
+                        web3.clone(),
+                        common.settlement_contract.clone(),
+                        GelatoClient::new(
+                            &common.http_factory,
+                            args.gelato_api_key.clone().unwrap(),
+                        ),
+                        args.gelato_submission_poll_interval,
+                    )
+                    .await
+                    .unwrap(),
+                )))
+            }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
             }
@@ -271,6 +313,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator: common.access_list_estimator.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     })
 }
 
@@ -278,6 +321,9 @@ async fn build_auction_converter(
     common: &CommonComponents,
     args: &Arguments,
 ) -> Result<Arc<AuctionConverter>> {
+    let mut liquidity_sources: Vec<Box<dyn LiquidityCollecting>> = vec![];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![];
+
     let base_tokens = Arc::new(BaseTokens::new(
         common.native_token_contract.address(),
         &args.base_tokens,
@@ -309,42 +355,40 @@ async fn build_auction_converter(
                 (source, Arc::new(pool_cache))
             })
             .collect();
-    let (balancer_pool_maintainer, balancer_v2_liquidity) =
-        if baseline_sources.contains(&BaselineSource::BalancerV2) {
-            let factories = args
-                .balancer_factories
-                .clone()
-                .unwrap_or_else(|| BalancerFactoryKind::for_chain(common.chain_id));
-            let contracts = BalancerContracts::new(&common.web3, factories)
-                .await
-                .unwrap();
-            let balancer_pool_fetcher = Arc::new(
-                BalancerPoolFetcher::new(
-                    common.chain_id,
-                    common.token_info_fetcher.clone(),
-                    cache_config,
-                    common.current_block_stream.clone(),
-                    common.http_factory.create(),
-                    common.web3.clone(),
-                    &contracts,
-                    args.balancer_pool_deny_list.clone(),
-                )
-                .await
-                .expect("failed to create Balancer pool fetcher"),
-            );
-            (
-                Some(balancer_pool_fetcher.clone() as Arc<dyn Maintaining>),
-                Some(BalancerV2Liquidity::new(
-                    common.web3.clone(),
-                    balancer_pool_fetcher,
-                    base_tokens.clone(),
-                    common.settlement_contract.clone(),
-                    contracts.vault,
-                )),
+    maintainers.extend(pool_caches.values().cloned().map(|p| p as Arc<_>));
+
+    if baseline_sources.contains(&BaselineSource::BalancerV2) {
+        let factories = args
+            .balancer_factories
+            .clone()
+            .unwrap_or_else(|| BalancerFactoryKind::for_chain(common.chain_id));
+        let contracts = BalancerContracts::new(&common.web3, factories)
+            .await
+            .unwrap();
+        let balancer_pool_fetcher = Arc::new(
+            BalancerPoolFetcher::new(
+                common.chain_id,
+                common.block_retriever.clone(),
+                common.token_info_fetcher.clone(),
+                cache_config,
+                common.current_block_stream.clone(),
+                common.http_factory.create(),
+                common.web3.clone(),
+                &contracts,
+                args.balancer_pool_deny_list.clone(),
             )
-        } else {
-            (None, None)
-        };
+            .await
+            .expect("failed to create Balancer pool fetcher"),
+        );
+        maintainers.push(balancer_pool_fetcher.clone());
+        liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
+            common.web3.clone(),
+            balancer_pool_fetcher,
+            base_tokens.clone(),
+            common.settlement_contract.clone(),
+            contracts.vault,
+        )));
+    }
 
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
@@ -353,8 +397,9 @@ async fn build_auction_converter(
         common.web3.clone(),
     )
     .await;
+    liquidity_sources.extend(uniswap_like_liquidity.into_iter());
 
-    let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
+    if baseline_sources.contains(&BaselineSource::ZeroEx) {
         let zeroex_api = Arc::new(
             DefaultZeroExApi::new(
                 &common.http_factory,
@@ -366,67 +411,48 @@ async fn build_auction_converter(
             .unwrap(),
         );
 
-        Some(ZeroExLiquidity::new(
+        liquidity_sources.push(Box::new(ZeroExLiquidity::new(
             common.web3.clone(),
             zeroex_api,
             contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
             base_tokens.clone(),
             common.settlement_contract.clone(),
-        ))
-    } else {
-        None
-    };
+        )));
+    }
 
-    let (uniswap_v3_maintainer, uniswap_v3_liquidity) =
-        if baseline_sources.contains(&BaselineSource::UniswapV3) {
-            match UniswapV3PoolFetcher::new(
-                common.chain_id,
-                common.http_factory.create(),
-                common.web3.clone(),
-                args.max_pools_to_initialize_cache,
-            )
-            .await
-            {
-                Ok(uniswap_v3_pool_fetcher) => {
-                    let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
-                    (
-                        Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
-                        Some(UniswapV3Liquidity::new(
-                            UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
-                            common.settlement_contract.clone(),
-                            base_tokens.clone(),
-                            common.web3.clone(),
-                            uniswap_v3_pool_fetcher,
-                        )),
-                    )
-                }
-                Err(err) => {
-                    tracing::error!("failed to create UniswapV3 pool fetcher in driver: {}", err);
-                    (None, None)
-                }
+    if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        match UniswapV3PoolFetcher::new(
+            common.chain_id,
+            common.web3.clone(),
+            common.http_factory.create(),
+            common.block_retriever.clone(),
+            args.max_pools_to_initialize_cache,
+        )
+        .await
+        {
+            Ok(uniswap_v3_pool_fetcher) => {
+                let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
+                maintainers.push(uniswap_v3_pool_fetcher.clone());
+                liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
+                    UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
+                    common.settlement_contract.clone(),
+                    base_tokens.clone(),
+                    common.web3.clone(),
+                    uniswap_v3_pool_fetcher,
+                )));
             }
-        } else {
-            (None, None)
-        };
+            Err(err) => {
+                tracing::error!("failed to create UniswapV3 pool fetcher in driver: {}", err);
+            }
+        }
+    }
 
-    let maintainer = ServiceMaintenance::new(
-        pool_caches
-            .into_iter()
-            .map(|(_, cache)| cache as Arc<dyn Maintaining>)
-            .chain(balancer_pool_maintainer)
-            .chain(uniswap_v3_maintainer)
-            .collect(),
-    );
+    let maintainer = ServiceMaintenance::new(maintainers);
     tokio::task::spawn(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );
 
-    let liquidity_collector = Box::new(LiquidityCollector {
-        uniswap_like_liquidity,
-        balancer_v2_liquidity,
-        zeroex_liquidity,
-        uniswap_v3_liquidity,
-    });
+    let liquidity_collector = Box::new(LiquidityCollector { liquidity_sources });
     Ok(Arc::new(AuctionConverter::new(
         common.gas_price_estimator.clone(),
         liquidity_collector,
@@ -439,8 +465,8 @@ async fn build_amm_artifacts(
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: Arc<BaseTokens>,
     web3: Web3,
-) -> Vec<UniswapLikeLiquidity> {
-    let mut res = vec![];
+) -> Vec<Box<dyn LiquidityCollecting>> {
+    let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
     for (source, pool_cache) in sources {
         let router_address = match source {
             BaselineSource::UniswapV2 => contracts::UniswapV2Router02::deployed(&web3)
@@ -467,13 +493,13 @@ async fn build_amm_artifacts(
             BaselineSource::ZeroEx => continue,
             BaselineSource::UniswapV3 => continue,
         };
-        res.push(UniswapLikeLiquidity::new(
+        res.push(Box::new(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
             settlement_contract.clone(),
             base_tokens.clone(),
             web3.clone(),
             pool_cache.clone(),
-        ));
+        )));
     }
     res
 }
@@ -485,6 +511,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         access_list_estimator: common.access_list_estimator.clone(),
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
     let metrics = Arc::new(Metrics::new().unwrap());

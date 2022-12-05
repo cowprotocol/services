@@ -133,6 +133,10 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
             surplus_fee_timestamp: order
                 .surplus_fee_timestamp
                 .expect("limit orders must have surplus fee timestamp set"),
+            executed_surplus_fee: order
+                .executed_surplus_fee
+                .as_ref()
+                .and_then(big_decimal_to_u256),
         }),
     }
 }

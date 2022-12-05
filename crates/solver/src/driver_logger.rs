@@ -147,9 +147,13 @@ impl DriverLogger {
             let simulations = simulate_and_error_with_tenderly_link(
                 errors.iter().map(|simulation_with_error| {
                     let simulation = &simulation_with_error.simulation;
+                    let settlement = simulation
+                        .settlement
+                        .clone()
+                        .encode(simulation.transaction.internalization);
                     (
                         simulation.solver.account().clone(),
-                        simulation.settlement.clone(),
+                        settlement,
                         simulation.transaction.access_list.clone(),
                     )
                 }),
@@ -168,7 +172,7 @@ impl DriverLogger {
                         Simulation {
                             solver, settlement, ..
                         },
-                    ..
+                    error: error_at_latest_block,
                 },
                 result,
             ) in errors.iter().zip(simulations)
@@ -190,6 +194,12 @@ impl DriverLogger {
                     );
 
                     metrics.settlement_simulation(solver.name(), SolverSimulationOutcome::Failure);
+                } else {
+                    tracing::debug!(
+                        name = solver.name(),
+                        ?error_at_latest_block,
+                        "simulation only failed on the latest block but not on the block the auction started",
+                    );
                 }
             }
         };

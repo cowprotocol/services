@@ -204,7 +204,6 @@ mod tests {
     use super::*;
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
-        settlement::InternalizationStrategy,
         test::account,
     };
     use contracts::WETH9;
@@ -216,6 +215,7 @@ mod tests {
     use shared::{
         dummy_contract,
         ethrpc::create_env_test_transport,
+        http_solver::model::InternalizationStrategy,
         paraswap_api::MockParaswapApi,
         token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
     };

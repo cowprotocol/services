@@ -41,6 +41,13 @@ macro_rules! dummy_contract {
 }
 
 #[macro_export]
+macro_rules! bytecode {
+    ($contract:ty) => {
+        <$contract>::raw_contract().bytecode.to_bytes().unwrap()
+    };
+}
+
+#[macro_export]
 macro_rules! deployed_bytecode {
     ($contract:ty) => {
         <$contract>::raw_contract()

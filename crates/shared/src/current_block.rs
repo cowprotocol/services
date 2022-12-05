@@ -1,22 +1,19 @@
+mod arguments;
+mod eth_call;
+
+pub use self::arguments::Arguments;
 use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
     helpers,
-    types::{BlockId, BlockNumber},
+    types::{BlockId, BlockNumber, U64},
     BatchTransport, Transport,
 };
 
-pub type Block = web3::types::Block<H256>;
 pub type BlockNumberHash = (u64, H256);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +38,14 @@ impl<T: Ord> RangeInclusive<T> {
     }
 }
 
+/// Block information.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BlockInfo {
+    pub number: u64,
+    pub hash: H256,
+    pub parent_hash: H256,
+}
+
 /// Creates a cloneable stream that yields the current block whenever it changes.
 ///
 /// The stream is not guaranteed to yield *every* block individually without gaps but it does yield
@@ -52,55 +57,37 @@ impl<T: Ord> RangeInclusive<T> {
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
 pub async fn current_block_stream(
-    web3: Web3,
+    retreiver: Arc<dyn BlockRetrieving>,
     poll_interval: Duration,
-) -> Result<watch::Receiver<Block>> {
-    let first_block = web3.current_block().await?;
-    let first_hash = first_block.hash.context("missing hash")?;
-    let first_number = first_block.number.context("missing number")?;
-
-    let current_block_number = Arc::new(AtomicU64::new(first_number.as_u64()));
+) -> Result<CurrentBlockStream> {
+    let first_block = retreiver.current_block().await?;
 
     let (sender, receiver) = watch::channel(first_block);
-
     let update_future = async move {
-        let mut previous_hash = first_hash;
+        let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match web3.current_block().await {
+            let block = match retreiver.current_block().await {
                 Ok(block) => block,
                 Err(err) => {
                     tracing::warn!("failed to get current block: {:?}", err);
                     continue;
                 }
             };
-            let hash = match block.hash {
-                Some(hash) => hash,
-                None => {
-                    tracing::warn!("missing hash");
-                    continue;
-                }
-            };
-            if hash == previous_hash {
+
+            if previous_block == block {
                 continue;
             }
-            let number = match block.number {
-                Some(number) => number.as_u64(),
-                None => {
-                    tracing::warn!("missing block number");
-                    continue;
-                }
-            };
-
-            if !block_number_increased(current_block_number.as_ref(), number) {
+            if !block_number_increased(previous_block.number, block.number) {
                 continue;
             }
 
-            tracing::debug!(%number, %hash, "new block");
-            if sender.send(block.clone()).is_err() {
+            tracing::debug!(number =% block.number, hash =% block.hash, "new block");
+            if sender.send(block).is_err() {
                 break;
             }
-            previous_hash = hash;
+
+            previous_block = block;
         }
     };
 
@@ -110,42 +97,37 @@ pub async fn current_block_stream(
 
 /// A method for creating a block stream with an initial value that never observes any new blocks.
 /// This is useful for testing and creating "mock" components.
-pub fn mock_single_block(block: Block) -> CurrentBlockStream {
+pub fn mock_single_block(block: BlockInfo) -> CurrentBlockStream {
     let (sender, receiver) = watch::channel(block);
     // Make sure the `sender` never drops so the `receiver` stays open.
     std::mem::forget(sender);
     receiver
 }
 
-pub type CurrentBlockStream = watch::Receiver<Block>;
+pub type CurrentBlockStream = watch::Receiver<BlockInfo>;
 
-pub fn into_stream(receiver: watch::Receiver<Block>) -> WatchStream<Block> {
+pub fn into_stream(receiver: CurrentBlockStream) -> WatchStream<BlockInfo> {
     WatchStream::new(receiver)
-}
-
-pub fn block_number(block: &Block) -> Result<u64> {
-    block
-        .number
-        .map(|number| number.as_u64())
-        .context("no block number")
 }
 
 /// Trait for abstracting the retrieval of the block information such as the
 /// latest block number.
 #[async_trait::async_trait]
-pub trait BlockRetrieving {
-    async fn current_block(&self) -> Result<Block>;
+pub trait BlockRetrieving: Send + Sync + 'static {
+    async fn current_block(&self) -> Result<BlockInfo>;
+    async fn block(&self, number: u64) -> Result<BlockNumberHash>;
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
 impl BlockRetrieving for Web3 {
-    async fn current_block(&self) -> Result<Block> {
-        self.eth()
-            .block(BlockId::Number(BlockNumber::Latest))
-            .await
-            .context("failed to get current block")?
-            .context("no current block")
+    async fn current_block(&self) -> Result<BlockInfo> {
+        get_block_info_at_id(self, BlockNumber::Latest.into()).await
+    }
+
+    async fn block(&self, number: u64) -> Result<BlockNumberHash> {
+        let block = get_block_info_at_id(self, U64::from(number).into()).await?;
+        Ok((block.number, block.hash))
     }
 
     /// get blocks defined by the range (inclusive)
@@ -182,6 +164,21 @@ impl BlockRetrieving for Web3 {
     }
 }
 
+async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
+    let block = web3
+        .eth()
+        .block(id)
+        .await
+        .with_context(|| format!("failed to get block for {id:?}"))?
+        .with_context(|| format!("no block for {id:?}"))?;
+
+    Ok(BlockInfo {
+        number: block.number.context("block missing number")?.as_u64(),
+        hash: block.hash.context("block missing hash")?,
+        parent_hash: block.parent_hash,
+    })
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
     /// How much a new block number differs from the current block number.
@@ -191,8 +188,7 @@ pub struct Metrics {
 
 /// Only updates the current block if the new block number is strictly bigger than the current one.
 /// Updates metrics about the difference of the new block number compared to the current block.
-fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
-    let current_block = current_block.fetch_max(new_block, Ordering::SeqCst);
+fn block_number_increased(current_block: u64, new_block: u64) -> bool {
     let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
         .unwrap()
         .block_stream_update_delta;
@@ -222,13 +218,13 @@ mod tests {
         let node = std::env::var("NODE_URL").unwrap();
         let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);
-        let receiver = current_block_stream(web3, Duration::from_secs(1))
+        let receiver = current_block_stream(Arc::new(web3), Duration::from_secs(1))
             .await
             .unwrap();
         let mut stream = into_stream(receiver);
         for _ in 0..3 {
             let block = stream.next().await.unwrap();
-            println!("new block number {}", block.number.unwrap().as_u64());
+            println!("new block number {}", block.number);
         }
     }
 
@@ -267,18 +263,12 @@ mod tests {
 
     #[test]
     fn more_recent_block_gets_propagated() {
-        let current_block = AtomicU64::new(100);
-        assert!(block_number_increased(&current_block, 101));
-        assert_eq!(current_block.load(Ordering::SeqCst), 101);
+        assert!(block_number_increased(100, 101));
     }
 
     #[test]
     fn outdated_block_does_not_get_propagated() {
-        let current_block = AtomicU64::new(100);
-        assert!(!block_number_increased(&current_block, 100));
-        assert_eq!(current_block.load(Ordering::SeqCst), 100);
-
-        assert!(!block_number_increased(&current_block, 99));
-        assert_eq!(current_block.load(Ordering::SeqCst), 100);
+        assert!(!block_number_increased(100, 100));
+        assert!(!block_number_increased(100, 99));
     }
 }

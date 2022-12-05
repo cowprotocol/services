@@ -1,12 +1,14 @@
 pub mod execute;
 pub mod solve;
 
-use crate::driver::Driver;
-use futures::Future;
-use shared::api::finalize_router;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{task, task::JoinHandle};
-use warp::{Filter, Rejection, Reply};
+use {
+    crate::driver::Driver,
+    futures::Future,
+    shared::api::finalize_router,
+    std::{net::SocketAddr, sync::Arc},
+    tokio::{task, task::JoinHandle},
+    warp::{Filter, Rejection, Reply},
+};
 
 pub fn serve_api(
     address: SocketAddr,

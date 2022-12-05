@@ -20,7 +20,7 @@ use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
 // 4c84c1c8 is the identifier of the following function:
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
-const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
+pub const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
 
 pub struct EthFlowOnchainOrderParser;
 

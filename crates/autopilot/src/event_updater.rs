@@ -1,19 +1,18 @@
 use anyhow::Result;
 use contracts::{cowswap_onchain_orders, gpv2_settlement};
-use ethcontract::dyns::DynWeb3;
 use shared::{
-    current_block::BlockNumberHash,
-    ethrpc::Web3,
+    current_block::{BlockNumberHash, BlockRetrieving},
     event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
 };
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct EventUpdater<
     Database: EventStoring<<W as EventRetrieving>::Event>,
     W: EventRetrieving + Send + Sync,
->(Mutex<EventHandler<DynWeb3, W, Database>>);
+>(Mutex<EventHandler<W, Database>>);
 
 impl_event_retrieving! {
     pub GPv2SettlementContract for gpv2_settlement
@@ -31,11 +30,11 @@ where
     pub fn new(
         contract: W,
         db: Database,
-        web3: Web3,
+        block_retriever: Arc<dyn BlockRetrieving>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
         Self(Mutex::new(EventHandler::new(
-            web3,
+            block_retriever,
             contract,
             db,
             start_sync_at_block,

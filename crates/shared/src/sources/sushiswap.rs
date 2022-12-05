@@ -23,18 +23,6 @@ mod tests {
             addr!("41328fdba556c8c969418ccccb077b7b8d932aa5")
         );
 
-        // Rinkeby
-        let (rinkeby_pair_provider, _) = get_liquidity_source(&Mock::new(4).web3()).await.unwrap();
-        let rinkeby_pair = TokenPair::new(
-            addr!("b98Dd87589e460425Cfb5b535d2402E57579Bf40"),
-            addr!("d0593E8bafB8Ec2e70ceb1882617a42cfDFbfEbF"),
-        )
-        .unwrap();
-        assert_eq!(
-            rinkeby_pair_provider.pair_address(&rinkeby_pair),
-            addr!("7e22b2c7469789cf11e59fc8ddd56cf6109e0dd1")
-        );
-
         // Görli
         let (goerli_pair_provider, _) = get_liquidity_source(&Mock::new(5).web3()).await.unwrap();
         let goerli_pair = TokenPair::new(
@@ -47,15 +35,15 @@ mod tests {
             addr!("11985F5AbD9Dbda8DA77de82A474201683E39555")
         );
 
-        // xDai
-        let (xdai_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
-        let xdai_pair = TokenPair::new(
+        // Gnosis Chain
+        let (gnosis_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
+        let gnosis_pair = TokenPair::new(
             addr!("6a023ccd1ff6f2045c3309768ead9e68f978f6e1"),
             addr!("d3d47d5578e55c880505dc40648f7f9307c3e7a8"),
         )
         .unwrap();
         assert_eq!(
-            xdai_pair_provider.pair_address(&xdai_pair),
+            gnosis_pair_provider.pair_address(&gnosis_pair),
             addr!("3d0af734a22bfce7122dbc6f37464714557ef41f")
         );
     }

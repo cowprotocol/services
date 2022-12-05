@@ -1,19 +1,24 @@
-use primitive_types::{H160, H256};
-use reqwest::Url;
-use shared::{
-    arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
-    ethrpc,
-    gas_price_estimation::GasEstimatorType,
-    http_client,
-    sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
-    tenderly_api,
+use {
+    primitive_types::{H160, H256},
+    reqwest::Url,
+    shared::{
+        arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
+        current_block,
+        ethrpc,
+        gas_price_estimation::GasEstimatorType,
+        http_client,
+        sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+        tenderly_api,
+    },
+    solver::{
+        arguments::TransactionStrategyArg,
+        liquidity::slippage,
+        settlement_access_list::AccessListEstimatorType,
+        solver::ExternalSolverArg,
+    },
+    std::{net::SocketAddr, num::NonZeroU64, time::Duration},
+    tracing::level_filters::LevelFilter,
 };
-use solver::{
-    arguments::TransactionStrategyArg, liquidity::slippage,
-    settlement_access_list::AccessListEstimatorType, solver::ExternalSolverArg,
-};
-use std::{net::SocketAddr, num::NonZeroU64, time::Duration};
-use tracing::level_filters::LevelFilter;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -22,6 +27,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub ethrpc: ethrpc::Arguments,
+
+    #[clap(flatten)]
+    pub current_block: current_block::Arguments,
 
     #[clap(flatten)]
     pub slippage: slippage::Arguments,
@@ -54,13 +62,14 @@ pub struct Arguments {
     #[clap(long, env)]
     pub use_internal_buffers: bool,
 
-    /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
+    /// The RPC endpoints to use for submitting transaction to a custom set of
+    /// nodes.
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
-    /// Don't submit high revert risk (i.e. transactions that interact with on-chain
-    /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
-    /// transaction submission strategies are available.
+    /// Don't submit high revert risk (i.e. transactions that interact with
+    /// on-chain AMMs) to the public mempool. This can be enabled to avoid
+    /// MEV when private transaction submission strategies are available.
     #[clap(long, env)]
     pub disable_high_risk_public_mempool_transactions: bool,
 
@@ -71,9 +80,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
-    /// A settlement must contain at least one order older than this duration in seconds for it
-    /// to be applied.  Larger values delay individual settlements more but have a higher
-    /// coincidence of wants chance.
+    /// A settlement must contain at least one order older than this duration in
+    /// seconds for it to be applied.  Larger values delay individual
+    /// settlements more but have a higher coincidence of wants chance.
     #[clap(
         long,
         env,
@@ -85,7 +94,8 @@ pub struct Arguments {
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
-    /// 2. One or more values equal to any combination of enum variants except TransactionStrategyArg::DryRun
+    /// 2. One or more values equal to any combination of enum variants except
+    /// TransactionStrategyArg::DryRun
     #[clap(
         long,
         env,
@@ -96,11 +106,26 @@ pub struct Arguments {
     )]
     pub transaction_strategy: Vec<TransactionStrategyArg>,
 
+    /// The API key to use for the Gelato submission strategy.
+    #[clap(long, env)]
+    pub gelato_api_key: Option<String>,
+
+    /// The poll interval for checking status of Gelato tasks when using it as a
+    /// transaction submission strategy.
+    #[clap(
+        long,
+        env,
+        default_value = "5",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub gelato_submission_poll_interval: Duration,
+
     /// The API endpoint of the Eden network for transaction submission.
     #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
     pub eden_api_url: Url,
 
-    /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to eden above
+    /// regular gas price estimation
     #[clap(
         long,
         env,
@@ -109,7 +134,8 @@ pub struct Arguments {
     )]
     pub max_additional_eden_tip: f64,
 
-    /// Additional tip in percentage of max_fee_per_gas we are willing to give to miners above regular gas price estimation
+    /// Additional tip in percentage of max_fee_per_gas we are willing to give
+    /// to miners above regular gas price estimation
     #[clap(
         long,
         env,
@@ -119,7 +145,8 @@ pub struct Arguments {
     pub additional_tip_percentage: f64,
 
     /// The API endpoint of the Flashbots network for transaction submission.
-    /// Multiple values could be defined for different Flashbots endpoints (Flashbots Protect and Flashbots fast).
+    /// Multiple values could be defined for different Flashbots endpoints
+    /// (Flashbots Protect and Flashbots fast).
     #[clap(
         long,
         env,
@@ -128,7 +155,8 @@ pub struct Arguments {
     )]
     pub flashbots_api_url: Vec<Url>,
 
-    /// Maximum additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to flashbots
+    /// above regular gas price estimation
     #[clap(
         long,
         env,
@@ -137,20 +165,22 @@ pub struct Arguments {
     )]
     pub max_additional_flashbot_tip: f64,
 
-    /// Which access list estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators might support different networks.
-    /// `Tenderly`: supports every network.
+    /// Which access list estimators to use. Multiple estimators are used in
+    /// sequence if a previous one fails. Individual estimators might
+    /// support different networks. `Tenderly`: supports every network.
     /// `Web3`: supports every network.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// Gas limit for simulations. This parameter is important to set correctly, such that
-    /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
-    /// but at the same time we don't restrict solutions sizes too much
+    /// Gas limit for simulations. This parameter is important to set correctly,
+    /// such that there are no simulation errors due to: err: insufficient
+    /// funds for gas * price + value, but at the same time we don't
+    /// restrict solutions sizes too much
     #[clap(long, env, default_value = "15000000")]
     pub simulation_gas_limit: u128,
 
-    /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
+    /// The target confirmation time in seconds for settlement transactions used
+    /// to estimate gas price.
     #[clap(
         long,
         env,
@@ -159,8 +189,8 @@ pub struct Arguments {
     )]
     pub target_confirm_time: Duration,
 
-    /// The maximum time in seconds we spend trying to settle a transaction through the ethereum
-    /// network before going to back to solving.
+    /// The maximum time in seconds we spend trying to settle a transaction
+    /// through the ethereum network before going to back to solving.
     #[clap(
         long,
         env,
@@ -169,7 +199,8 @@ pub struct Arguments {
     )]
     pub max_submission_seconds: Duration,
 
-    /// Amount of time to wait before retrying to submit the tx to the ethereum network
+    /// Amount of time to wait before retrying to submit the tx to the ethereum
+    /// network
     #[clap(
         long,
         env,
@@ -178,7 +209,8 @@ pub struct Arguments {
     )]
     pub submission_retry_interval_seconds: Duration,
 
-    /// The maximum gas price in Gwei the solver is willing to pay in a settlement.
+    /// The maximum gas price in Gwei the solver is willing to pay in a
+    /// settlement.
     #[clap(
         long,
         env,
@@ -187,11 +219,11 @@ pub struct Arguments {
     )]
     pub gas_price_cap: f64,
 
-    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators support different networks.
-    /// `EthGasStation`: supports mainnet.
+    /// Which gas estimators to use. Multiple estimators are used in sequence if
+    /// a previous one fails. Individual estimators support different
+    /// networks. `EthGasStation`: supports mainnet.
     /// `GasNow`: supports mainnet.
-    /// `GnosisSafe`: supports mainnet, rinkeby and goerli.
+    /// `GnosisSafe`: supports mainnet and goerli.
     /// `Web3`: supports every network.
     /// `Native`: supports every network.
     #[clap(
@@ -204,7 +236,8 @@ pub struct Arguments {
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
-    /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
+    /// BlockNative requires api key to work. Optional since BlockNative could
+    /// be skipped in gas estimators.
     #[clap(long, env)]
     pub blocknative_api_key: Option<String>,
 
@@ -233,15 +266,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
-    /// How often in seconds we poll the node to check if the current block has changed.
-    #[clap(
-        long,
-        env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
-    )]
-    pub block_stream_poll_interval_seconds: Duration,
-
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
@@ -252,8 +276,8 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub balancer_pool_deny_list: Vec<H256>,
 
-    /// If liquidity pool fetcher has caching mechanism, this argument defines how old pool data is allowed
-    /// to be before updating
+    /// If liquidity pool fetcher has caching mechanism, this argument defines
+    /// how old pool data is allowed to be before updating
     #[clap(
         long,
         env,
@@ -270,9 +294,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
-    /// When comparing the objective value of different solutions, ignore the N least significant digits in base 10.
-    /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
-    /// value 0.0012 ETH and 0.0016 ETH equivalent.
+    /// When comparing the objective value of different solutions, ignore the N
+    /// least significant digits in base 10. Note, that objective values are
+    /// computed in wei. A value of 15 would consider solutions with with
+    /// objective value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
     pub solution_comparison_decimal_cutoff: u16,
 
@@ -285,6 +310,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.ethrpc)?;
+        write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
@@ -310,6 +336,12 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "min_order_age: {:?}", self.min_order_age,)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
+        display_secret_option(f, "gelato_api_key", &self.gelato_api_key)?;
+        writeln!(
+            f,
+            "gelato_submission_poll_interval: {:?}",
+            &self.gelato_submission_poll_interval
+        )?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
             f,
@@ -364,11 +396,6 @@ impl std::fmt::Display for Arguments {
             f,
             "pool_cache_delay_between_retries_seconds: {:?}",
             self.pool_cache_delay_between_retries_seconds
-        )?;
-        writeln!(
-            f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds
         )?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         writeln!(

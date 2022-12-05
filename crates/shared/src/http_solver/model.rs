@@ -11,7 +11,7 @@ use num::BigRational;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use web3::types::AccessList;
 
 use crate::{
@@ -139,7 +139,7 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Derivative, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
@@ -323,6 +323,10 @@ pub enum SolverRejectionReason {
     /// The solution violated a price constraint (ie. max deviation to external price vector)
     PriceViolation,
 
+    /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
+    /// Returns the list of not allowed tokens
+    NonBufferableTokensUsed(BTreeSet<H160>),
+
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
 }
@@ -352,11 +356,14 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
     pub block_number: u64,
+    /// Is transaction simulated with internalized interactions or without
+    pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
     pub access_list: Option<AccessList>,
@@ -365,8 +372,18 @@ pub struct SimulatedTransaction {
     /// GPv2 settlement contract address
     pub to: H160,
     /// Transaction input data
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
+}
+
+/// Whether or not internalizable interactions should be encoded as calldata
+#[derive(Debug, Copy, Clone, Serialize)]
+pub enum InternalizationStrategy {
+    #[serde(rename = "Disabled")]
+    EncodeAllInteractions,
+    #[serde(rename = "Enabled")]
+    SkipInternalizableInteraction,
 }
 
 #[cfg(test)]
@@ -936,6 +953,7 @@ mod tests {
                 from: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 data: vec![19, 250, 73],
+                internalization: InternalizationStrategy::SkipInternalizableInteraction,
             })
             .unwrap(),
             json!({
@@ -949,6 +967,22 @@ mod tests {
                 "data": "0x13fa49",
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+                "internalization": "Enabled",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_rejection_non_bufferable_tokens_used() {
+        assert_eq!(
+            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(
+                [H160::from_low_u64_be(1), H160::from_low_u64_be(2)]
+                    .into_iter()
+                    .collect()
+            ))
+            .unwrap(),
+            json!({
+                "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
             }),
         );
     }

@@ -1,22 +1,27 @@
-use anyhow::{Context, Result};
-use gas_estimation::GasPriceEstimating;
-use model::auction::AuctionWithId as AuctionModel;
-use primitive_types::H160;
-use shared::recent_block_cache::Block;
-use solver::{
-    liquidity::order_converter::OrderConverter, liquidity_collector::LiquidityCollecting,
-    settlement::external_prices::ExternalPrices, solver::Auction,
-};
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
+use {
+    anyhow::{Context, Result},
+    gas_estimation::GasPriceEstimating,
+    model::{auction::AuctionWithId as AuctionModel, TokenPair},
+    primitive_types::H160,
+    shared::recent_block_cache::Block,
+    solver::{
+        liquidity::order_converter::OrderConverter,
+        liquidity_collector::LiquidityCollecting,
+        settlement::external_prices::ExternalPrices,
+        solver::Auction,
     },
-    time::{Duration, Instant},
+    std::{
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
+        time::{Duration, Instant},
+    },
 };
 
 // TODO eventually this has to be part of the auction coming from the autopilot.
-/// Determines how much time a solver has to compute solutions for an incoming `Auction`.
+/// Determines how much time a solver has to compute solutions for an incoming
+/// `Auction`.
 const RUN_DURATION: Duration = Duration::from_secs(15);
 
 #[async_trait::async_trait]
@@ -90,9 +95,15 @@ impl AuctionConverting for AuctionConverter {
 
         tracing::info!(?orders, "got {} orders", orders.len());
 
+        let token_pairs: Vec<_> = orders
+            .iter()
+            .filter(|o| !o.is_liquidity_order)
+            .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
+            .collect();
+
         let liquidity = self
             .liquidity_collector
-            .get_liquidity_for_orders(&orders, Block::Number(block))
+            .get_liquidity(&token_pairs, Block::Number(block))
             .await?;
 
         let external_prices =
@@ -122,23 +133,28 @@ impl AuctionConverting for AuctionConverter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use contracts::WETH9;
-    use gas_estimation::GasPrice1559;
-    use maplit::btreemap;
-    use model::{
-        order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
-        TokenPair,
-    };
-    use num::rational::{BigRational, Ratio};
-    use primitive_types::U256;
-    use shared::{dummy_contract, gas_price_estimation::FakeGasPriceEstimator};
-    use solver::{
-        liquidity::{
-            AmmOrderExecution, ConstantProductOrder, Liquidity::ConstantProduct, SettlementHandling,
+    use {
+        super::*,
+        contracts::WETH9,
+        gas_estimation::GasPrice1559,
+        maplit::btreemap,
+        model::{
+            order::{Order, OrderClass, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+            TokenPair,
         },
-        liquidity_collector::MockLiquidityCollecting,
-        settlement::SettlementEncoder,
+        num::rational::{BigRational, Ratio},
+        primitive_types::U256,
+        shared::{dummy_contract, gas_price_estimation::FakeGasPriceEstimator},
+        solver::{
+            liquidity::{
+                AmmOrderExecution,
+                ConstantProductOrder,
+                Liquidity::ConstantProduct,
+                SettlementHandling,
+            },
+            liquidity_collector::MockLiquidityCollecting,
+            settlement::SettlementEncoder,
+        },
     };
 
     struct DummySettlementHandler;
@@ -167,6 +183,7 @@ mod tests {
             metadata: OrderMetadata {
                 full_fee_amount: 100.into(),
                 executed_buy_amount: if with_error { 100u8 } else { 1u8 }.into(),
+                class: OrderClass::Market,
                 ..Default::default()
             },
             ..Default::default()
@@ -180,14 +197,15 @@ mod tests {
         let native_token = dummy_contract!(WETH9, token(1));
         let mut liquidity_collector = MockLiquidityCollecting::new();
         liquidity_collector
-            .expect_get_liquidity_for_orders()
+            .expect_get_liquidity()
             .times(2)
-            .withf(move |orders, block| {
-                orders.len() == 2
-                    && orders[0].sell_token == token(1)
-                    && orders[0].buy_token == token(2)
-                    && orders[1].sell_token == token(2)
-                    && orders[1].buy_token == token(3)
+            .withf(move |pairs, block| {
+                [
+                    TokenPair::new(token(1), token(2)).unwrap(),
+                    TokenPair::new(token(2), token(3)).unwrap(),
+                ]
+                .iter()
+                .eq(pairs)
                     && block == &Block::Number(3)
             })
             .returning(move |_, _| {

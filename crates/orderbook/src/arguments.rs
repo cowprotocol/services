@@ -137,6 +137,10 @@ pub struct Arguments {
     /// Max number of limit orders per user.
     #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
+
+    /// Enable buy ETH orders paying to smart contract wallets.
+    #[clap(long, env, default_value = "false")]
+    pub enable_eth_smart_contract_payments: bool,
 }
 
 impl std::fmt::Display for Arguments {

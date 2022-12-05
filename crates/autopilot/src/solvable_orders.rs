@@ -11,7 +11,7 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use primitive_types::{H160, H256, U256};
-use prometheus::{IntCounter, IntGauge};
+use prometheus::{IntCounter, IntGaugeVec};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
@@ -25,6 +25,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
+use strum::VariantNames;
 use tokio::time::Instant;
 
 // When creating the auction after solvable orders change we need to fetch native prices for a
@@ -34,19 +35,21 @@ const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
-    /// auction creations
+    /// Auction creations.
     auction_creations: IntCounter,
 
-    /// auction solvable orders
-    auction_solvable_orders: IntGauge,
+    /// Auction solvable orders grouped by class.
+    #[metric(labels("class"))]
+    auction_solvable_orders: IntGaugeVec,
 
-    /// auction filtered orders
-    auction_filtered_orders: IntGauge,
+    /// Auction filtered orders grouped by class.
+    #[metric(labels("class"))]
+    auction_filtered_orders: IntGaugeVec,
 
-    /// auction errored price estimates
+    /// Auction errored price estimates.
     auction_errored_price_estimates: IntCounter,
 
-    /// auction price estimate timeouts
+    /// Auction price estimate timeouts.
     auction_price_estimate_timeouts: IntCounter,
 }
 
@@ -68,7 +71,7 @@ pub struct SolvableOrdersCache {
     metrics: &'static Metrics,
     // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
     reward_calculator: Option<risk_adjusted_rewards::Calculator>,
-    ethflow_contract_address: H160,
+    ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
 }
@@ -101,7 +104,7 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         reward_calculator: Option<risk_adjusted_rewards::Calculator>,
-        ethflow_contract_address: H160,
+        ethflow_contract_address: Option<H160>,
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
     ) -> Arc<Self> {
@@ -153,6 +156,7 @@ impl SolvableOrdersCache {
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -198,7 +202,7 @@ impl SolvableOrdersCache {
         )
         .await;
 
-        let orders = self.filter_mispriced_limit_orders(orders, &prices);
+        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
 
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
@@ -248,34 +252,6 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
-    }
-
-    /// Filter out limit orders which are far enough outside the estimated native token price.
-    fn filter_mispriced_limit_orders(
-        &self,
-        mut orders: Vec<Order>,
-        prices: &BTreeMap<H160, U256>,
-    ) -> Vec<Order> {
-        orders.retain(|order| {
-            if let OrderClass::Limit(limit) = &order.metadata.class {
-                // Convert the sell and buy price to the native token (ETH) and make sure that sell
-                // with the surplus fee is higher than buy with the configurable price factor.
-                let sell_native = (order.data.sell_amount + limit.surplus_fee)
-                    * prices.get(&order.data.sell_token).unwrap();
-                let buy_native = order.data.buy_amount * prices.get(&order.data.buy_token).unwrap();
-                let sell_native = u256_to_big_decimal(&sell_native);
-                let buy_native = u256_to_big_decimal(&buy_native);
-                if sell_native >= buy_native * self.limit_order_price_factor.clone() {
-                    true
-                } else {
-                    tracing::debug!(order_uid = %order.metadata.uid, "limit order is outside market price, skipping");
-                    false
-                }
-            } else {
-                true
-            }
-        });
-        orders
     }
 }
 
@@ -356,7 +332,7 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 fn solvable_orders(
     mut orders: Vec<Order>,
     balances: &Balances,
-    ethflow_contract: H160,
+    ethflow_contract: Option<H160>,
 ) -> Vec<Order> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
@@ -375,7 +351,7 @@ fn solvable_orders(
             // For ethflow orders, there is no need to check the balance. The contract
             // ensures that there will always be sufficient balance, after the wrapAll
             // pre_interaction has been called.
-            if order.metadata.owner == ethflow_contract {
+            if Some(order.metadata.owner) == ethflow_contract {
                 result.push(order);
                 continue;
             }
@@ -450,13 +426,7 @@ async fn update_task(
                 break;
             }
         };
-        let block = match current_block.borrow().number {
-            Some(block) => block.as_u64(),
-            None => {
-                tracing::error!("no block number");
-                continue;
-            }
-        };
+        let block = current_block.borrow().number;
         let start = Instant::now();
         match cache.update(block).await {
             Ok(()) => tracing::debug!(
@@ -475,7 +445,7 @@ async fn update_task(
 }
 
 async fn get_orders_with_native_prices(
-    mut orders: Vec<Order>,
+    orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
     metrics: &Metrics,
@@ -519,11 +489,10 @@ async fn get_orders_with_native_prices(
         }
     };
 
-    let original_order_count = orders.len() as u64;
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
-    orders.retain(|order| {
+    let (solvable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -541,19 +510,28 @@ async fn get_orders_with_native_prices(
         }
     });
 
-    let solvable_orders = orders.len() as u64;
-    let filtered_orders = original_order_count - solvable_orders;
     metrics.auction_creations.inc();
-    metrics.auction_solvable_orders.set(solvable_orders as i64);
+    OrderClass::VARIANTS.iter().for_each(|class| {
+        let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
+        let solvable_grouped_by_class = solvable.iter().filter(correct_class).count();
+        metrics
+            .auction_solvable_orders
+            .with_label_values(&[class])
+            .set(solvable_grouped_by_class as i64);
+        let filtered_grouped_by_class = filtered.iter().filter(correct_class).count();
+        metrics
+            .auction_filtered_orders
+            .with_label_values(&[class])
+            .set(filtered_grouped_by_class as i64);
+    });
     if timeout {
         metrics.auction_price_estimate_timeouts.inc();
     }
-    metrics.auction_filtered_orders.set(filtered_orders as i64);
     metrics
         .auction_errored_price_estimates
         .inc_by(errored_estimates);
 
-    (orders, used_prices)
+    (solvable, used_prices)
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
@@ -586,6 +564,65 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
+fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    orders.retain(|order| match &order.metadata.class {
+        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
+        _ => true,
+    });
+    orders
+}
+
+/// Filter out limit orders which are far enough outside the estimated native token price.
+fn filter_mispriced_limit_orders(
+    mut orders: Vec<Order>,
+    prices: &BTreeMap<H160, U256>,
+    price_factor: &BigDecimal,
+) -> Vec<Order> {
+    orders.retain(|order| {
+        let surplus_fee = match &order.metadata.class {
+            OrderClass::Limit(limit) => limit.surplus_fee,
+            _ => return true,
+        };
+
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
+        if effective_sell_amount.is_zero() {
+            return false;
+        }
+
+        let sell_price = *prices.get(&order.data.sell_token).unwrap();
+        let buy_price = *prices.get(&order.data.buy_token).unwrap();
+
+        // Convert the sell and buy price to the native token (ETH) and make sure that sell
+        // discounting the surplus fee is higher than buy with the configurable price factor.
+        let (sell_native, buy_native) = match (
+            effective_sell_amount.checked_mul(sell_price),
+            order.data.buy_amount.checked_mul(buy_price),
+        ) {
+            (Some(sell), Some(buy)) => (sell, buy),
+            _ => {
+                tracing::debug!(
+                    order_uid = %order.metadata.uid,
+                    "limit order overflow computing native amounts; skipping",
+                );
+                return false;
+            }
+        };
+
+        let sell_native = u256_to_big_decimal(&sell_native);
+        let buy_native = u256_to_big_decimal(&buy_native);
+        if sell_native >= buy_native * price_factor {
+            true
+        } else {
+            tracing::debug!(
+                order_uid = %order.metadata.uid,
+                "limit order is outside market price, skipping",
+            );
+            false
+        }
+    });
+    orders
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,7 +630,9 @@ mod tests {
     use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
-    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid};
+    use model::order::{
+        LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid,
+    };
     use primitive_types::H160;
     use shared::{
         bad_token::list_based::ListBasedDetector,
@@ -631,12 +670,12 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
+        let orders_ = solvable_orders(orders.clone(), &balances, None);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
         orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
-        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
+        let orders_ = solvable_orders(orders.clone(), &balances, None);
         assert_eq!(orders_, orders[1..]);
     }
 
@@ -658,7 +697,7 @@ mod tests {
         }];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = solvable_orders(orders.clone(), &balances, ethflow_address);
+        let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
         assert_eq!(orders_, orders);
     }
 
@@ -970,7 +1009,7 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, H160([1u8; 20]));
+        let mut filtered_orders = solvable_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
         assert_eq!(expected_result, filtered_orders);
@@ -1083,5 +1122,98 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
+    }
+
+    #[test]
+    fn filters_limit_orders_with_too_high_fees() {
+        let order = |sell_amount: u8, surplus_fee: u8| Order {
+            data: OrderData {
+                buy_amount: 1u8.into(),
+                sell_amount: sell_amount.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: surplus_fee.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orders = vec![
+            // Enough sell amout for the surplus fee.
+            order(100, 10),
+            // Surplus fee effectively turns order into a 0 sell amount order
+            order(100, 100),
+            // Surplus fee is higher than the sell amount.
+            order(100, 101),
+        ];
+
+        assert_eq!(
+            filter_limit_orders_with_insufficient_sell_amount(orders),
+            [order(100, 10)]
+        );
+    }
+
+    #[test]
+    fn filters_mispriced_orders() {
+        let sell_token = H160([1; 20]);
+        let buy_token = H160([2; 20]);
+
+        // Prices are set such that 1 sell token is equivalent to 2 buy tokens.
+        // Additionally, they are scaled to large values to allow for overflows.
+        let prices = btreemap! {
+            sell_token => U256::MAX / 100,
+            buy_token => U256::MAX / 200,
+        };
+        let price_factor = "0.95".parse().unwrap();
+
+        let order = |sell_amount: u8, buy_amount: u8, surplus_fee: u8| Order {
+            data: OrderData {
+                sell_token,
+                sell_amount: sell_amount.into(),
+                buy_token,
+                buy_amount: buy_amount.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: surplus_fee.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let valid_orders = vec![
+            // Reasonably priced order, doesn't get filtered.
+            order(101, 200, 1),
+            // Slightly out of price order, doesn't get filtered.
+            order(10, 21, 0),
+        ];
+
+        let invalid_orders = vec![
+            // Out of price order gets filtered out.
+            order(10, 100, 0),
+            // Reasonably priced order becomes out of price after fees and gets
+            // filtered out
+            order(10, 18, 5),
+            // Zero sell amount after fees gets filtered.
+            order(1, 1, 1),
+            // Overflow sell amount after fees gets filtered.
+            order(1, 1, 100),
+            // Overflow sell value gets filtered.
+            order(255, 1, 1),
+            // Overflow buy value gets filtered.
+            order(100, 255, 1),
+        ];
+
+        let orders = [valid_orders.clone(), invalid_orders].concat();
+        assert_eq!(
+            filter_mispriced_limit_orders(orders, &prices, &price_factor),
+            valid_orders,
+        );
     }
 }

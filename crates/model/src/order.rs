@@ -22,7 +22,7 @@ use std::{
     fmt::{self, Debug, Display},
     str::FromStr,
 };
-use strum::EnumString;
+use strum::{AsRefStr, EnumString, EnumVariantNames};
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -274,6 +274,9 @@ impl OrderData {
     pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
 
+    /// Returns the value of hashStruct() over the order data as defined by EIP-712.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-712#definition-of-hashstruct
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
@@ -641,7 +644,19 @@ pub enum OrderKind {
     Sell,
 }
 
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(
+    Eq,
+    PartialEq,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    Hash,
+    EnumString,
+    AsRefStr,
+    EnumVariantNames,
+)]
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]
 pub enum OrderClass {
@@ -667,12 +682,15 @@ impl OrderClass {
     }
 }
 
+#[serde_as]
 #[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
     #[serde(with = "u256_decimal")]
     pub surplus_fee: U256,
     pub surplus_fee_timestamp: DateTime<Utc>,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub executed_surplus_fee: Option<U256>,
 }
 
 impl OrderKind {
@@ -795,6 +813,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
+            "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
@@ -817,6 +836,7 @@ mod tests {
                 class: OrderClass::Limit(LimitOrderClass {
                     surplus_fee: U256::MAX,
                     surplus_fee_timestamp: Default::default(),
+                    executed_surplus_fee: Some(1.into()),
                 }),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),

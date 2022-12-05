@@ -5,6 +5,7 @@ use crate::{
         ZeroExInteraction,
     },
     liquidity::{Exchange, LimitOrder, Liquidity},
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::Result;
@@ -14,6 +15,7 @@ use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::BaseTokens,
     ethrpc::Web3,
+    recent_block_cache::Block,
     zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
 };
 use std::{
@@ -49,55 +51,6 @@ impl ZeroExLiquidity {
         }
     }
 
-    pub async fn get_liquidity(&self, user_orders: &[LimitOrder]) -> Result<Vec<Liquidity>> {
-        let queries = &[
-            // orders fillable by anyone
-            OrdersQuery::default(),
-            // orders fillable only by our settlement contract
-            OrdersQuery {
-                sender: Some(self.gpv2.address()),
-                ..Default::default()
-            },
-        ];
-
-        let zeroex_orders_results =
-            futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
-        let zeroex_orders = zeroex_orders_results
-            .into_iter()
-            .flat_map(|result| match result {
-                Ok(order_record_vec) => order_record_vec,
-                Err(err) => {
-                    tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
-                    vec![]
-                }
-            });
-
-        let user_order_pairs = user_orders
-            .iter()
-            .filter_map(|order| TokenPair::new(order.buy_token, order.sell_token));
-        let relevant_pairs = self.base_tokens.relevant_pairs(user_order_pairs);
-
-        let order_buckets = generate_order_buckets(zeroex_orders, relevant_pairs);
-        let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
-        let tokens: HashSet<_> = filtered_zeroex_orders
-            .iter()
-            .map(|o| o.order.taker_token)
-            .collect();
-
-        let allowances = Arc::new(
-            self.allowance_manager
-                .get_allowances(tokens, self.zeroex.address())
-                .await?,
-        );
-
-        let zeroex_liquidity_orders: Vec<_> = filtered_zeroex_orders
-            .into_iter()
-            .flat_map(|order| self.record_into_liquidity(order, allowances.clone()))
-            .collect();
-
-        Ok(zeroex_liquidity_orders)
-    }
-
     /// Turns 0x OrderRecord into liquidity which solvers can use.
     fn record_into_liquidity(
         &self,
@@ -131,6 +84,55 @@ impl ZeroExLiquidity {
             is_mature: false, // irrelevant for liquidity orders
         };
         Some(Liquidity::LimitOrder(limit_order))
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for ZeroExLiquidity {
+    async fn get_liquidity(&self, pairs: &[TokenPair], _block: Block) -> Result<Vec<Liquidity>> {
+        let queries = &[
+            // orders fillable by anyone
+            OrdersQuery::default(),
+            // orders fillable only by our settlement contract
+            OrdersQuery {
+                sender: Some(self.gpv2.address()),
+                ..Default::default()
+            },
+        ];
+
+        let zeroex_orders_results =
+            futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
+        let zeroex_orders = zeroex_orders_results
+            .into_iter()
+            .flat_map(|result| match result {
+                Ok(order_record_vec) => order_record_vec,
+                Err(err) => {
+                    tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
+                    vec![]
+                }
+            });
+
+        let relevant_pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
+
+        let order_buckets = generate_order_buckets(zeroex_orders, relevant_pairs);
+        let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
+        let tokens: HashSet<_> = filtered_zeroex_orders
+            .iter()
+            .map(|o| o.order.taker_token)
+            .collect();
+
+        let allowances = Arc::new(
+            self.allowance_manager
+                .get_allowances(tokens, self.zeroex.address())
+                .await?,
+        );
+
+        let zeroex_liquidity_orders: Vec<_> = filtered_zeroex_orders
+            .into_iter()
+            .flat_map(|order| self.record_into_liquidity(order, allowances.clone()))
+            .collect();
+
+        Ok(zeroex_liquidity_orders)
     }
 }
 
@@ -206,9 +208,12 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{interactions::allowances::Approval, settlement::InternalizationStrategy};
+    use crate::interactions::allowances::Approval;
     use maplit::hashmap;
-    use shared::{interaction::Interaction, zeroex_api::OrderMetadata};
+    use shared::{
+        http_solver::model::InternalizationStrategy, interaction::Interaction,
+        zeroex_api::OrderMetadata,
+    };
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
