@@ -69,7 +69,7 @@ impl Postgres {
             .with_label_values(&["update_limit_order_fees"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await?;
+        let mut ex = self.0.begin().await?;
         database::orders::update_limit_order_fees(
             &mut ex,
             &database::byte_array::ByteArray(order_uid.0),
@@ -93,6 +93,7 @@ impl Postgres {
             },
         )
         .await?;
+        ex.commit().await?;
         Ok(())
     }
 
