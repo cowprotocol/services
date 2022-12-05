@@ -160,7 +160,6 @@ mod tests {
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
         liquidity::{tests::CapturingSettlementHandler, LimitOrder},
-        settlement::InternalizationStrategy,
         test::account,
     };
     use contracts::{GPv2Settlement, WETH9};
@@ -169,6 +168,7 @@ mod tests {
     use model::order::{Order, OrderData, OrderKind};
     use shared::{
         ethrpc::{create_env_test_transport, create_test_transport},
+        http_solver::model::InternalizationStrategy,
         zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
     };
 

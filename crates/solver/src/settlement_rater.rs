@@ -13,7 +13,11 @@ use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
-use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SimulatedTransaction};
+use shared::{
+    code_fetching::CodeFetching,
+    ethrpc::Web3,
+    http_solver::model::{InternalizationStrategy, SimulatedTransaction},
+};
 use std::{borrow::Borrow, sync::Arc};
 use web3::types::AccessList;
 
@@ -44,6 +48,7 @@ pub trait SettlementRating: Send + Sync {
         &self,
         settlements: Vec<SolverSettlement>,
         gas_price: GasPrice1559,
+        internalization: InternalizationStrategy,
     ) -> Result<Vec<SimulationWithResult>>;
 }
 
@@ -59,6 +64,7 @@ impl SettlementRater {
         &self,
         solver_settlements: Vec<(Arc<dyn Solver>, Settlement)>,
         gas_price: GasPrice1559,
+        internalization: InternalizationStrategy,
     ) -> Vec<SettlementWithSolver> {
         join_all(
             solver_settlements
@@ -67,7 +73,7 @@ impl SettlementRater {
                     let tx = settle_method(
                         gas_price,
                         &self.settlement_contract,
-                        settlement.clone(),
+                        settlement.clone().encode(internalization),
                         solver.account().clone(),
                     )
                     .tx;
@@ -94,14 +100,17 @@ impl SettlementRating for SettlementRater {
         &self,
         settlements: Vec<(Arc<dyn Solver>, Settlement)>,
         gas_price: GasPrice1559,
+        internalization: InternalizationStrategy,
     ) -> Result<Vec<SimulationWithResult>> {
-        let settlements = self.append_access_lists(settlements, gas_price).await;
+        let settlements = self
+            .append_access_lists(settlements, gas_price, internalization)
+            .await;
         let block_number = self.web3.eth().block_number().await?.as_u64();
         let simulations = simulate_and_estimate_gas_at_current_block(
             settlements.iter().map(|(solver, settlement, access_list)| {
                 (
                     solver.account().clone(),
-                    settlement.clone(),
+                    settlement.clone().encode(internalization),
                     access_list.clone(),
                 )
             }),
@@ -118,11 +127,12 @@ impl SettlementRating for SettlementRater {
                 |((solver, settlement, access_list), simulation_result)| SimulationWithResult {
                     simulation: Simulation {
                         transaction: SimulatedTransaction {
+                            internalization,
                             access_list,
                             block_number,
                             to: self.settlement_contract.address(),
                             from: solver.account().address(),
-                            data: call_data(settlement.clone().into()),
+                            data: call_data(settlement.clone().encode(internalization)),
                         },
                         settlement,
                         solver,
@@ -140,7 +150,34 @@ impl SettlementRating for SettlementRater {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
-        let simulations = self.simulate_settlements(settlements, gas_price).await?;
+        // first simulate settlements without internalizations to make sure they pass
+        let simulations = self
+            .simulate_settlements(
+                settlements,
+                gas_price,
+                InternalizationStrategy::EncodeAllInteractions,
+            )
+            .await?;
+
+        // split simulations into succeeded and failed groups, then do the rating only for succeeded settlements
+        let (settlements, simulations_failed): (Vec<_>, Vec<_>) = simulations
+            .into_iter()
+            .partition_map(|simulation| match simulation.gas_estimate {
+                Ok(_) => Either::Left((
+                    simulation.simulation.solver,
+                    simulation.simulation.settlement,
+                )),
+                Err(_) => Either::Right(simulation),
+            });
+
+        // since rating is done with internalizations, repeat the simulations for previously succeeded simulations
+        let mut simulations = self
+            .simulate_settlements(
+                settlements,
+                gas_price,
+                InternalizationStrategy::SkipInternalizableInteraction,
+            )
+            .await?;
 
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
@@ -160,6 +197,7 @@ impl SettlementRating for SettlementRater {
             }
         };
 
+        simulations.extend(simulations_failed);
         Ok((simulations.into_iter().enumerate()).partition_map(
             |(
                 i,

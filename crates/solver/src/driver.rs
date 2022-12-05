@@ -31,8 +31,12 @@ use model::{
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    code_fetching::CodeFetching, current_block::CurrentBlockStream, ethrpc::Web3,
-    http_solver::model::SolverRunError, recent_block_cache::Block, tenderly_api::TenderlyApi,
+    code_fetching::CodeFetching,
+    current_block::CurrentBlockStream,
+    ethrpc::Web3,
+    http_solver::model::{InternalizationStrategy, SolverRunError},
+    recent_block_cache::Block,
+    tenderly_api::TenderlyApi,
 };
 use std::{
     sync::Arc,
@@ -354,7 +358,10 @@ impl Driver {
                         })
                         .collect(),
                     call_data: settlement_simulation::call_data(
-                        rated_settlement.settlement.clone().into(),
+                        rated_settlement
+                            .settlement
+                            .clone()
+                            .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
                     ),
                 })
                 .collect(),
