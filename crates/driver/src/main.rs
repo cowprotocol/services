@@ -6,6 +6,7 @@ use driver::{
     commit_reveal::CommitRevealSolver, driver::Driver,
 };
 use gas_estimation::GasPriceEstimating;
+use model::DomainSeparator;
 use shared::{
     baseline_solver::BaseTokens,
     code_fetching::{CachedCodeFetcher, CodeFetching},
@@ -148,6 +149,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
 }
 
 async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<dyn Solver>> {
+    let domain = DomainSeparator::new(common.chain_id, common.settlement_contract.address());
     let buffer_retriever = Arc::new(BufferRetriever::new(
         common.web3.clone(),
         common.settlement_contract.address(),
@@ -183,6 +185,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 false,
                 args.slippage.get_global_calculator(),
                 Default::default(),
+                domain,
             )) as Arc<dyn Solver>
         })
         .collect()

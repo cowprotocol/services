@@ -1471,13 +1471,17 @@ pub mod tests {
         // Note that for limit order **both** the uniform clearing price of the
         // buy token as well as the executed clearing price accounting for fees
         // are included.
-        assert_eq!(settlement.tokens, [sell_token, buy_token, buy_token]);
+        assert_eq!(
+            settlement.tokens,
+            [sell_token, buy_token, sell_token, buy_token]
+        );
         assert_eq!(
             settlement.clearing_prices,
             [
                 100_000_u128.into(),
                 100_000_u128.into(),
-                101_010_u128.into()
+                99_000_u128.into(),
+                100_000_u128.into(),
             ],
         );
     }
