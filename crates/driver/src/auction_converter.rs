@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use gas_estimation::GasPriceEstimating;
-use model::auction::AuctionWithId as AuctionModel;
+use model::{auction::AuctionWithId as AuctionModel, TokenPair};
 use primitive_types::H160;
 use shared::recent_block_cache::Block;
 use solver::{
@@ -90,9 +90,15 @@ impl AuctionConverting for AuctionConverter {
 
         tracing::info!(?orders, "got {} orders", orders.len());
 
+        let token_pairs: Vec<_> = orders
+            .iter()
+            .filter(|o| !o.is_liquidity_order)
+            .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
+            .collect();
+
         let liquidity = self
             .liquidity_collector
-            .get_liquidity_for_orders(&orders, Block::Number(block))
+            .get_liquidity(&token_pairs, Block::Number(block))
             .await?;
 
         let external_prices =
@@ -167,6 +173,7 @@ mod tests {
             metadata: OrderMetadata {
                 full_fee_amount: 100.into(),
                 executed_buy_amount: if with_error { 100u8 } else { 1u8 }.into(),
+                class: OrderClass::Market,
                 ..Default::default()
             },
             ..Default::default()
@@ -180,14 +187,15 @@ mod tests {
         let native_token = dummy_contract!(WETH9, token(1));
         let mut liquidity_collector = MockLiquidityCollecting::new();
         liquidity_collector
-            .expect_get_liquidity_for_orders()
+            .expect_get_liquidity()
             .times(2)
-            .withf(move |orders, block| {
-                orders.len() == 2
-                    && orders[0].sell_token == token(1)
-                    && orders[0].buy_token == token(2)
-                    && orders[1].sell_token == token(2)
-                    && orders[1].buy_token == token(3)
+            .withf(move |pairs, block| {
+                [
+                    TokenPair::new(token(1), token(2)).unwrap(),
+                    TokenPair::new(token(2), token(3)).unwrap(),
+                ]
+                .iter()
+                .eq(pairs)
                     && block == &Block::Number(3)
             })
             .returning(move |_, _| {
