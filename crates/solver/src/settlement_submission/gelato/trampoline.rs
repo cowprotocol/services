@@ -13,8 +13,10 @@ use model::{
     signature::{EcdsaSignature, EcdsaSigningScheme},
     DomainSeparator,
 };
-use shared::gelato_api::GelatoCall;
-use shared::http_solver::model::InternalizationStrategy::SkipInternalizableInteraction;
+use shared::{
+    gelato_api::GelatoCall,
+    http_solver::model::InternalizationStrategy::SkipInternalizableInteraction,
+};
 use web3::signing::{self, SecretKeyRef};
 
 pub struct Trampoline {
