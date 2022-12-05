@@ -1,9 +1,11 @@
-use super::{AmmOrderExecution, ConcentratedLiquidity, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         ExactOutputSingleParams, UniswapV3Interaction,
     },
+    liquidity::Liquidity,
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::{ensure, Context, Result};
@@ -77,44 +79,6 @@ impl UniswapV3Liquidity {
         }
     }
 
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    pub async fn get_liquidity(
-        &self,
-        offchain_orders: &[LimitOrder],
-        block: Block,
-    ) -> Result<Vec<ConcentratedLiquidity>> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut offchain_orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
-
-        let mut tokens = HashSet::new();
-        let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(&pairs, block).await? {
-            ensure!(
-                pool.tokens.len() == 2,
-                "two tokens required for uniswap v3 pools"
-            );
-            let token_pair =
-                TokenPair::new(pool.tokens[0].id, pool.tokens[1].id).context("cant create pair")?;
-
-            tokens.insert(pool.tokens[0].id);
-            tokens.insert(pool.tokens[1].id);
-
-            result.push(ConcentratedLiquidity {
-                tokens: token_pair,
-                settlement_handling: Arc::new(UniswapV3SettlementHandler {
-                    inner: self.inner.clone(),
-                    fee: Some(ratio_to_u32(pool.state.fee)?),
-                }),
-                pool,
-            })
-        }
-        self.cache_allowances(tokens).await?;
-        Ok(result)
-    }
-
     async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
         let router = self.inner.router.address();
         let allowances = self
@@ -129,6 +93,39 @@ impl UniswapV3Liquidity {
             .extend(allowances)?;
 
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for UniswapV3Liquidity {
+    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    async fn get_liquidity(&self, pairs: &[TokenPair], block: Block) -> Result<Vec<Liquidity>> {
+        let pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
+
+        let mut tokens = HashSet::new();
+        let mut result = Vec::new();
+        for pool in self.pool_fetcher.fetch(&pairs, block).await? {
+            ensure!(
+                pool.tokens.len() == 2,
+                "two tokens required for uniswap v3 pools"
+            );
+            let token_pair =
+                TokenPair::new(pool.tokens[0].id, pool.tokens[1].id).context("cant create pair")?;
+
+            tokens.insert(pool.tokens[0].id);
+            tokens.insert(pool.tokens[1].id);
+
+            result.push(Liquidity::Concentrated(ConcentratedLiquidity {
+                tokens: token_pair,
+                settlement_handling: Arc::new(UniswapV3SettlementHandler {
+                    inner: self.inner.clone(),
+                    fee: Some(ratio_to_u32(pool.state.fee)?),
+                }),
+                pool,
+            }))
+        }
+        self.cache_allowances(tokens).await?;
+        Ok(result)
     }
 }
 
