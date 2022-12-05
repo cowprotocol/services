@@ -17,7 +17,7 @@ use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use itertools::{Either, Itertools as _};
 use maplit::{btreemap, hashset};
-use model::{auction::AuctionId, order::OrderKind};
+use model::{auction::AuctionId, order::OrderKind, DomainSeparator};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::{
@@ -68,6 +68,7 @@ pub struct HttpSolver {
     filter_non_fee_connected_orders: bool,
     slippage_calculator: SlippageCalculator,
     market_makable_token_list: AutoUpdatingTokenList,
+    domain: DomainSeparator,
 }
 
 impl HttpSolver {
@@ -84,6 +85,7 @@ impl HttpSolver {
         filter_non_fee_connected_orders: bool,
         slippage_calculator: SlippageCalculator,
         market_makable_token_list: AutoUpdatingTokenList,
+        domain: DomainSeparator,
     ) -> Self {
         Self {
             solver,
@@ -97,6 +99,7 @@ impl HttpSolver {
             filter_non_fee_connected_orders,
             slippage_calculator,
             market_makable_token_list,
+            domain,
         }
     }
 
@@ -564,6 +567,7 @@ impl Solver for HttpSolver {
             self.allowance_manager.clone(),
             self.order_converter.clone(),
             slippage,
+            &self.domain,
         )
         .await
         {
@@ -665,6 +669,7 @@ mod tests {
             Default::default(),
             true,
             SlippageCalculator::default(),
+            Default::default(),
             Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
@@ -903,6 +908,7 @@ mod tests {
             Default::default(),
             false, // filter_non_fee_connected_orders
             SlippageCalculator::default(),
+            Default::default(),
             Default::default(),
         );
 
