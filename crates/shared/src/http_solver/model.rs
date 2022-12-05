@@ -374,6 +374,9 @@ pub enum SolverRejectionReason {
     /// Returns the list of not allowed tokens
     NonBufferableTokensUsed(BTreeSet<H160>),
 
+    /// Solver account does not have enough balance to send the transaction onchain
+    NoEnoughBalance,
+
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
 }

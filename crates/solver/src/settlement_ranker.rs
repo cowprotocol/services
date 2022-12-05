@@ -184,6 +184,26 @@ impl SettlementRanker {
                 )),
             );
         }
+
+        // Even though some settlements passed the simulation, we require from solvers to have
+        // a bit more ETH balance then needed at this moment, to cover the potential increase of
+        // cost of sending transaction onchain, because of the sudden gas price increase
+        let rated_settlements = rated_settlements
+            .into_iter()
+            .filter(|(solver, settlement, _)| {
+                let payable = settlement.is_payable();
+                if !payable {
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::NoEnoughBalance),
+                    );
+                }
+                payable
+            })
+            .collect::<Vec<_>>();
+
+        tracing::info!("{} settlements ranked", rated_settlements.len(),);
+
         for (i, (solver, _, _)) in enumerate(&rated_settlements) {
             let rank = rated_settlements.len() - i;
             solver.notify_auction_result(auction_id, AuctionResult::Ranked(rank));
@@ -228,6 +248,7 @@ mod tests {
                 scaled_unsubsidized_fee: Zero::zero(),
                 gas_estimate: U256::zero(),
                 gas_price: Zero::zero(),
+                solver_balance: U256::zero(),
             }
         }
     }

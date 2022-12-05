@@ -9,7 +9,7 @@ use shared::{
     conversions::U256Ext as _,
     http_solver::model::{AuctionResult, SolverRejectionReason},
 };
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, ops::Mul, sync::Arc, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement.user_trades().next().is_some()
@@ -26,6 +26,15 @@ pub struct RatedSettlement {
     pub scaled_unsubsidized_fee: BigRational, // In wei.
     pub gas_estimate: U256,                   // In gas units.
     pub gas_price: BigRational,               // In wei per gas unit.
+    pub solver_balance: U256,                 // In wei
+}
+
+impl RatedSettlement {
+    pub fn is_payable(&self) -> bool {
+        let cost = self.gas_estimate.to_big_rational() * &self.gas_price;
+        let multiplier = BigRational::new(3.into(), 1.into());
+        self.solver_balance.to_big_rational() > cost.mul(multiplier)
+    }
 }
 
 // Helper function for RatedSettlement to allow unit testing objective value computation

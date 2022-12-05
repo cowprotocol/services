@@ -7,14 +7,18 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::errors::ExecutionError;
+use ethcontract::{errors::ExecutionError, H160};
 use futures::future::join_all;
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
 use num::BigRational;
 use primitive_types::U256;
 use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SimulatedTransaction};
-use std::{borrow::Borrow, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
@@ -142,10 +146,16 @@ impl SettlementRating for SettlementRater {
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let simulations = self.simulate_settlements(settlements, gas_price).await?;
 
+        let solver_addresses = simulations
+            .iter()
+            .map(|simulation| simulation.simulation.solver.account().address())
+            .collect::<HashSet<_>>();
+        let solver_balances = solver_balances(&self.web3, solver_addresses).await?;
+
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
-        let rate_settlement = |id, settlement: Settlement, gas_estimate| {
+        let rate_settlement = |id, settlement: Settlement, gas_estimate, solver_balance| {
             let surplus = settlement.total_surplus(prices);
             let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
             let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
@@ -157,6 +167,7 @@ impl SettlementRating for SettlementRater {
                 scaled_unsubsidized_fee: scaled_solver_fees,
                 gas_estimate,
                 gas_price: gas_price.clone(),
+                solver_balance,
             }
         };
 
@@ -169,11 +180,17 @@ impl SettlementRating for SettlementRater {
                 },
             )| {
                 match gas_estimate {
-                    Ok(gas_estimate) => Either::Left((
-                        simulation.solver,
-                        rate_settlement(i, simulation.settlement, gas_estimate),
-                        simulation.transaction.access_list,
-                    )),
+                    Ok(gas_estimate) => {
+                        let solver_balance = solver_balances
+                            .get(&simulation.solver.account().address())
+                            .cloned()
+                            .expect("missing solver balance");
+                        Either::Left((
+                            simulation.solver,
+                            rate_settlement(i, simulation.settlement, gas_estimate, solver_balance),
+                            simulation.transaction.access_list,
+                        ))
+                    }
                     Err(err) => Either::Right(SimulationWithError {
                         simulation,
                         error: err,
@@ -181,5 +198,45 @@ impl SettlementRating for SettlementRater {
                 }
             },
         ))
+    }
+}
+
+async fn solver_balances(web3: &Web3, addresses: HashSet<H160>) -> Result<HashMap<H160, U256>> {
+    let addresses: Vec<H160> = addresses.into_iter().collect();
+    let futures = addresses
+        .iter()
+        .map(|address| web3.eth().balance(*address, None))
+        .collect::<Vec<_>>();
+
+    futures::future::join_all(futures)
+        .await
+        .into_iter()
+        .enumerate()
+        .map(|(index, result)| match result {
+            Ok(balance) => Ok((addresses[index], balance)),
+            Err(err) => Err(err.into()),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::{addr, ethrpc::create_env_test_transport};
+
+    #[tokio::test]
+    #[ignore]
+    async fn solver_balances_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+
+        let addreses = HashSet::from([
+            addr!("731a0A8ab2C6FcaD841e82D06668Af7f18e34970"),
+            addr!("b20B86C4e6DEEB432A22D773a221898bBBD03036"),
+            addr!("b20B86C4e6DEEB432A22D773a221898bBBD03036"),
+        ]);
+        let balances = solver_balances(&web3, addreses).await.unwrap();
+        dbg!(balances.clone());
+        assert_eq!(balances.len(), 2);
     }
 }
