@@ -147,9 +147,13 @@ impl DriverLogger {
             let simulations = simulate_and_error_with_tenderly_link(
                 errors.iter().map(|simulation_with_error| {
                     let simulation = &simulation_with_error.simulation;
+                    let settlement = simulation
+                        .settlement
+                        .clone()
+                        .encode(simulation.transaction.internalization);
                     (
                         simulation.solver.account().clone(),
-                        simulation.settlement.clone(),
+                        settlement,
                         simulation.transaction.access_list.clone(),
                     )
                 }),

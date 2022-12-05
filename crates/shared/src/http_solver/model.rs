@@ -412,6 +412,8 @@ pub struct TransactionWithError {
 pub struct SimulatedTransaction {
     /// The simulation was done on top of all transactions from the given block number
     pub block_number: u64,
+    /// Is transaction simulated with internalized interactions or without
+    pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some error happened while
     /// estimating the access list.
     pub access_list: Option<AccessList>,
@@ -423,6 +425,15 @@ pub struct SimulatedTransaction {
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
+}
+
+/// Whether or not internalizable interactions should be encoded as calldata
+#[derive(Debug, Copy, Clone, Serialize)]
+pub enum InternalizationStrategy {
+    #[serde(rename = "Disabled")]
+    EncodeAllInteractions,
+    #[serde(rename = "Enabled")]
+    SkipInternalizableInteraction,
 }
 
 #[cfg(test)]
@@ -1010,6 +1021,7 @@ mod tests {
                 from: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 data: vec![19, 250, 73],
+                internalization: InternalizationStrategy::SkipInternalizableInteraction,
             })
             .unwrap(),
             json!({
@@ -1023,6 +1035,7 @@ mod tests {
                 "data": "0x13fa49",
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+                "internalization": "Enabled",
             }),
         );
     }

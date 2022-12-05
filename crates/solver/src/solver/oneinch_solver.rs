@@ -193,7 +193,6 @@ mod tests {
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
         liquidity::LimitOrder,
-        settlement::InternalizationStrategy,
         solver::ExternalPrices,
         test::account,
     };
@@ -206,6 +205,7 @@ mod tests {
         conversions::U256Ext as _,
         dummy_contract,
         ethrpc::create_env_test_transport,
+        http_solver::model::InternalizationStrategy,
         oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
     };
 

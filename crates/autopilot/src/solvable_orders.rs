@@ -11,7 +11,7 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use primitive_types::{H160, H256, U256};
-use prometheus::{IntCounter, IntGauge};
+use prometheus::{IntCounter, IntGaugeVec};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
@@ -25,6 +25,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
+use strum::VariantNames;
 use tokio::time::Instant;
 
 // When creating the auction after solvable orders change we need to fetch native prices for a
@@ -37,11 +38,13 @@ pub struct Metrics {
     /// Auction creations.
     auction_creations: IntCounter,
 
-    /// Auction solvable orders.
-    auction_solvable_orders: IntGauge,
+    /// Auction solvable orders grouped by class.
+    #[metric(labels("class"))]
+    auction_solvable_orders: IntGaugeVec,
 
-    /// Auction filtered orders.
-    auction_filtered_orders: IntGauge,
+    /// Auction filtered orders grouped by class.
+    #[metric(labels("class"))]
+    auction_filtered_orders: IntGaugeVec,
 
     /// Auction errored price estimates.
     auction_errored_price_estimates: IntCounter,
@@ -442,7 +445,7 @@ async fn update_task(
 }
 
 async fn get_orders_with_native_prices(
-    mut orders: Vec<Order>,
+    orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
     metrics: &Metrics,
@@ -486,11 +489,10 @@ async fn get_orders_with_native_prices(
         }
     };
 
-    let original_order_count = orders.len() as u64;
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
-    orders.retain(|order| {
+    let (solvable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -508,19 +510,28 @@ async fn get_orders_with_native_prices(
         }
     });
 
-    let solvable_orders = orders.len() as u64;
-    let filtered_orders = original_order_count - solvable_orders;
     metrics.auction_creations.inc();
-    metrics.auction_solvable_orders.set(solvable_orders as i64);
+    OrderClass::VARIANTS.iter().for_each(|class| {
+        let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
+        let solvable_grouped_by_class = solvable.iter().filter(correct_class).count();
+        metrics
+            .auction_solvable_orders
+            .with_label_values(&[class])
+            .set(solvable_grouped_by_class as i64);
+        let filtered_grouped_by_class = filtered.iter().filter(correct_class).count();
+        metrics
+            .auction_filtered_orders
+            .with_label_values(&[class])
+            .set(filtered_grouped_by_class as i64);
+    });
     if timeout {
         metrics.auction_price_estimate_timeouts.inc();
     }
-    metrics.auction_filtered_orders.set(filtered_orders as i64);
     metrics
         .auction_errored_price_estimates
         .inc_by(errored_estimates);
 
-    (orders, used_prices)
+    (solvable, used_prices)
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
