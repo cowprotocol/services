@@ -1,6 +1,9 @@
-use crate::database::Postgres;
+use crate::database::{
+    orders::{FeeUpdate, LimitOrderQuote},
+    Postgres,
+};
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::Duration;
 use futures::future::join_all;
 use model::{
     order::{Order, OrderKind},
@@ -67,7 +70,7 @@ impl LimitOrderQuoter {
     }
 
     async fn update_surplus_fee(&self, order: &Order) -> Result<()> {
-        let mut quote = self
+        let quote = self
             .quoter
             .calculate_quote(QuoteParameters {
                 sell_token: order.data.sell_token,
@@ -110,13 +113,19 @@ impl LimitOrderQuoter {
                 },
             })
             .await?;
-        // In order to compute the rewards for this order while building the auction we need to have
-        // a valid quote for it in our database at that time. That means we have to:
-        // 1) make the quote valid for the entire time where the order could possibly make it into an auction
-        // 2) store the quote in the DB (which happens in `update_limit_order_fees()`)
-        quote.data.expiration = Utc::now() + self.limit_order_age;
         self.database
-            .update_limit_order_fees(&order.metadata.uid, &quote)
+            .update_limit_order_fees(
+                &order.metadata.uid,
+                &FeeUpdate {
+                    surplus_fee: quote.fee_amount,
+                    full_fee_amount: quote.full_fee_amount,
+                },
+                &LimitOrderQuote {
+                    fee_parameters: quote.data.fee_parameters,
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                },
+            )
             .await?;
         Ok(())
     }
