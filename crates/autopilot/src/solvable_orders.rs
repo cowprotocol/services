@@ -34,19 +34,19 @@ const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
-    /// auction creations
+    /// Auction creations.
     auction_creations: IntCounter,
 
-    /// auction solvable orders
+    /// Auction solvable orders.
     auction_solvable_orders: IntGauge,
 
-    /// auction filtered orders
+    /// Auction filtered orders.
     auction_filtered_orders: IntGauge,
 
-    /// auction errored price estimates
+    /// Auction errored price estimates.
     auction_errored_price_estimates: IntCounter,
 
-    /// auction price estimate timeouts
+    /// Auction price estimate timeouts.
     auction_price_estimate_timeouts: IntCounter,
 }
 
@@ -68,7 +68,7 @@ pub struct SolvableOrdersCache {
     metrics: &'static Metrics,
     // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
     reward_calculator: Option<risk_adjusted_rewards::Calculator>,
-    ethflow_contract_address: H160,
+    ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
 }
@@ -101,7 +101,7 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         reward_calculator: Option<risk_adjusted_rewards::Calculator>,
-        ethflow_contract_address: H160,
+        ethflow_contract_address: Option<H160>,
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
     ) -> Arc<Self> {
@@ -329,7 +329,7 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 fn solvable_orders(
     mut orders: Vec<Order>,
     balances: &Balances,
-    ethflow_contract: H160,
+    ethflow_contract: Option<H160>,
 ) -> Vec<Order> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
@@ -348,7 +348,7 @@ fn solvable_orders(
             // For ethflow orders, there is no need to check the balance. The contract
             // ensures that there will always be sufficient balance, after the wrapAll
             // pre_interaction has been called.
-            if order.metadata.owner == ethflow_contract {
+            if Some(order.metadata.owner) == ethflow_contract {
                 result.push(order);
                 continue;
             }
@@ -659,12 +659,12 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
+        let orders_ = solvable_orders(orders.clone(), &balances, None);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
         orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
-        let orders_ = solvable_orders(orders.clone(), &balances, H160([1u8; 20]));
+        let orders_ = solvable_orders(orders.clone(), &balances, None);
         assert_eq!(orders_, orders[1..]);
     }
 
@@ -686,7 +686,7 @@ mod tests {
         }];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = solvable_orders(orders.clone(), &balances, ethflow_address);
+        let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
         assert_eq!(orders_, orders);
     }
 
@@ -998,7 +998,7 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, H160([1u8; 20]));
+        let mut filtered_orders = solvable_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
         assert_eq!(expected_result, filtered_orders);

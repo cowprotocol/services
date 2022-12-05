@@ -66,4 +66,28 @@ impl Postgres {
         .await?;
         Ok(())
     }
+
+    pub async fn count_limit_orders(&self) -> Result<i64> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["count_limit_orders"])
+            .start_timer();
+        let mut ex = self.0.acquire().await?;
+        Ok(database::orders::count_limit_orders(&mut ex, now_in_epoch_seconds().into()).await?)
+    }
+
+    pub async fn count_limit_orders_with_outdated_fees(&self, age: Duration) -> Result<i64> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["count_limit_orders_with_outdated_fees"])
+            .start_timer();
+        let mut ex = self.0.acquire().await?;
+        let timestamp = Utc::now() - age;
+        Ok(database::orders::count_limit_orders_with_outdated_fees(
+            &mut ex,
+            timestamp,
+            now_in_epoch_seconds().into(),
+        )
+        .await?)
+    }
 }

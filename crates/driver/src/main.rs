@@ -6,10 +6,13 @@ use driver::{
     commit_reveal::CommitRevealSolver, driver::Driver,
 };
 use gas_estimation::GasPriceEstimating;
+use model::DomainSeparator;
 use shared::{
     baseline_solver::BaseTokens,
+    code_fetching::{CachedCodeFetcher, CodeFetching},
     current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{self, Web3},
+    gelato_api::GelatoClient,
     http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::{Maintaining, ServiceMaintenance},
@@ -39,6 +42,7 @@ use solver::{
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_submission::{
+        gelato::GelatoSubmitter,
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
@@ -66,6 +70,7 @@ struct CommonComponents {
     block_retriever: Arc<dyn BlockRetrieving>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     current_block_stream: CurrentBlockStream,
+    code_fetcher: Arc<dyn CodeFetching>,
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
@@ -115,6 +120,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let current_block_stream = args.current_block.stream(web3.clone()).await.unwrap();
 
@@ -138,10 +144,12 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         block_retriever,
         token_info_fetcher,
         current_block_stream,
+        code_fetcher,
     }
 }
 
 async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<dyn Solver>> {
+    let domain = DomainSeparator::new(common.chain_id, common.settlement_contract.address());
     let buffer_retriever = Arc::new(BufferRetriever::new(
         common.web3.clone(),
         common.settlement_contract.address(),
@@ -177,6 +185,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 false,
                 args.slippage.get_global_calculator(),
                 Default::default(),
+                domain,
             )) as Arc<dyn Solver>
         })
         .collect()
@@ -256,6 +265,21 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
+                    GelatoSubmitter::new(
+                        web3.clone(),
+                        common.settlement_contract.clone(),
+                        GelatoClient::new(
+                            &common.http_factory,
+                            args.gelato_api_key.clone().unwrap(),
+                        ),
+                        args.gelato_submission_poll_interval,
+                    )
+                    .await
+                    .unwrap(),
+                )))
+            }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
             }
@@ -272,6 +296,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator: common.access_list_estimator.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     })
 }
 
@@ -488,6 +513,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         access_list_estimator: common.access_list_estimator.clone(),
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
+        code_fetcher: common.code_fetcher.clone(),
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
     let metrics = Arc::new(Metrics::new().unwrap());

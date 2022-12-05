@@ -668,6 +668,7 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             SlippageContext::default(),
+            &Default::default(),
         )
         .await
         .map(|settlement| vec![settlement])

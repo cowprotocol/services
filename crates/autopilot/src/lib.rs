@@ -2,9 +2,11 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
+
+pub mod driver_model;
+pub mod limit_orders;
 
 use crate::{
     database::{
@@ -12,7 +14,7 @@ use crate::{
         Postgres,
     },
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
+    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
@@ -68,9 +70,9 @@ impl LivenessChecking for Liveness {
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) {
+pub async fn main(args: arguments::Arguments) -> ! {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
+    tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -455,11 +457,11 @@ pub async fn main(args: arguments::Arguments) {
             .unwrap(),
     ));
 
-    if args.enable_ethflow_orders {
+    if let Some(ethflow_contract) = args.ethflow_contract {
         // The events from the ethflow contract are read with the more generic contract
         // interface called CoWSwapOnchainOrders.
         let cowswap_onchain_order_contract_for_eth_flow =
-            contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
+            contracts::CoWSwapOnchainOrders::at(&web3, ethflow_contract);
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
@@ -485,7 +487,7 @@ pub async fn main(args: arguments::Arguments) {
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
-    let maintenance_task = tokio::task::spawn(
+    tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
@@ -522,7 +524,7 @@ pub async fn main(args: arguments::Arguments) {
         db: db.clone(),
         current_block: current_block_stream,
     };
-    let auction_transaction = tokio::task::spawn(
+    tokio::task::spawn(
         auction_transaction_updater
             .run_forever()
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
@@ -530,21 +532,24 @@ pub async fn main(args: arguments::Arguments) {
 
     if args.enable_limit_orders {
         let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+        let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
-            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
+            limit_order_age,
             loop_delay: args.max_surplus_fee_age / 2,
             quoter,
-            database: db,
+            database: db.clone(),
             signature_validator,
             domain_separator,
         }
         .spawn();
+        LimitOrderMetrics {
+            limit_order_age,
+            loop_delay: Duration::from_secs(5),
+            database: db,
+        }
+        .spawn();
     }
 
-    tokio::select! {
-        result = serve_metrics => panic!("serve_metrics exited {:?}", result),
-        result = db_metrics => panic!("db_metrics exited {:?}", result),
-        result = maintenance_task => panic!("maintenance exited {:?}", result),
-        result = auction_transaction => panic!("auction_transaction exited {:?}", result),
-    };
+    let result = serve_metrics.await;
+    panic!("serve_metrics exited {:?}", result);
 }

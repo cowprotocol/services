@@ -7,7 +7,10 @@ use crate::{
     settlement::Settlement,
 };
 use anyhow::{anyhow, Context as _, Result};
-use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
+use model::{
+    order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
+    DomainSeparator,
+};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -29,6 +32,7 @@ pub async fn convert_settlement(
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
+    domain: &DomainSeparator,
 ) -> Result<Settlement> {
     IntermediateSettlement::new(
         settled,
@@ -36,6 +40,7 @@ pub async fn convert_settlement(
         allowance_manager,
         order_converter,
         slippage,
+        domain,
     )
     .await?
     .into_settlement()
@@ -153,11 +158,15 @@ impl<'a> IntermediateSettlement<'a> {
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
+        domain: &DomainSeparator,
     ) -> Result<IntermediateSettlement<'a>> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
-        let foreign_liquidity_orders =
-            convert_foreign_liquidity_orders(order_converter, settled.foreign_liquidity_orders)?;
+        let foreign_liquidity_orders = convert_foreign_liquidity_orders(
+            order_converter,
+            settled.foreign_liquidity_orders,
+            domain,
+        )?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
@@ -224,6 +233,7 @@ fn match_prepared_and_settled_orders(
 fn convert_foreign_liquidity_orders(
     order_converter: Arc<OrderConverter>,
     foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
+    domain: &DomainSeparator,
 ) -> Result<Vec<ExecutedLimitOrder>> {
     foreign_liquidity_orders
         .into_iter()
@@ -235,9 +245,10 @@ fn convert_foreign_liquidity_orders(
                     // All foreign orders **MUST** be liquidity, this is
                     // important so they cannot be used to affect the objective.
                     class: OrderClass::Liquidity,
+                    // Not needed for encoding but nice to have for logs and competition info.
+                    uid: liquidity.order.data.uid(domain, &liquidity.order.from),
                     // These fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
-                    uid: Default::default(),
                     settlement_contract: Default::default(),
                     // For other metdata fields, the default value is correct.
                     ..Default::default()
@@ -487,6 +498,10 @@ mod tests {
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),
         };
+        let foreign_liquidity_order_uid = foreign_liquidity_order
+            .order
+            .data
+            .uid(&Default::default(), &foreign_liquidity_order.order.from);
         let updated_uniswap = UpdatedAmmModel {
             execution: vec![ExecutedAmmModel {
                 sell_token: t1,
@@ -565,6 +580,7 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(weth)),
             SlippageContext::default(),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -582,6 +598,7 @@ mod tests {
                             owner: H160([99; 20]),
                             full_fee_amount: 42.into(),
                             class: OrderClass::Liquidity,
+                            uid: foreign_liquidity_order_uid,
                             ..Default::default()
                         },
                         data: OrderData {
@@ -600,8 +617,8 @@ mod tests {
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                sell_token_price: 11.into(),
-                buy_token_price: (10 * 102 / 101).into(),
+                sell_token_price: 102.into(),
+                buy_token_price: 101.into(),
             }]
         );
 

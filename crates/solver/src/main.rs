@@ -1,10 +1,13 @@
 use anyhow::Context;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
+use model::DomainSeparator;
 use num::rational::Ratio;
 use shared::{
     baseline_solver::BaseTokens,
+    code_fetching::CachedCodeFetcher,
     ethrpc::{self, Web3},
+    gelato_api::GelatoClient,
     http_client::HttpClientFactory,
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
@@ -33,6 +36,7 @@ use solver::{
     orderbook::OrderBookApi,
     settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
+        gelato::GelatoSubmitter,
         submitter::{
             eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
@@ -43,7 +47,7 @@ use solver::{
 use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ! {
     let args = solver::arguments::Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
@@ -236,6 +240,7 @@ async fn main() {
         market_makable_token_list.clone(),
     ));
 
+    let domain = DomainSeparator::new(chain_id, settlement_contract.address());
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -269,6 +274,7 @@ async fn main() {
         market_makable_token_list,
         &args.order_prioritization,
         post_processing_pipeline,
+        &domain,
     )
     .expect("failure creating solvers");
 
@@ -402,6 +408,18 @@ async fn main() {
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
+                    GelatoSubmitter::new(
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        GelatoClient::new(&http_factory, args.gelato_api_key.clone().unwrap()),
+                        args.gelato_submission_poll_interval,
+                    )
+                    .await
+                    .unwrap(),
+                )))
+            }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
             }
@@ -421,6 +439,7 @@ async fn main() {
         )
         .expect("failed to create access list estimator"),
     );
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -431,6 +450,7 @@ async fn main() {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
+        code_fetcher: code_fetcher.clone(),
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
@@ -461,6 +481,7 @@ async fn main() {
         args.token_list_restriction_for_price_checks.into(),
         tenderly_api,
         args.solution_comparison_decimal_cutoff,
+        code_fetcher,
     );
 
     let maintainer = ServiceMaintenance::new(
@@ -474,7 +495,7 @@ async fn main() {
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
-    driver.run_forever().await;
+    driver.run_forever().await
 }
 
 async fn build_amm_artifacts(

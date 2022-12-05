@@ -22,17 +22,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract
-    #[clap(
-        long,
-        env,
-        default_value = "0x76aAf674848311C7F21fc691B0b952f016dA49F3"
-    )]
-    pub ethflow_contract: H160,
-
-    // Feature flag for ethflow.
+    /// Address of the ethflow contract. If not specified, eth-flow orders are disabled.
     #[clap(long, env)]
-    pub enable_ethflow_orders: bool,
+    pub ethflow_contract: Option<H160>,
 
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
@@ -148,7 +140,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
-        writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;

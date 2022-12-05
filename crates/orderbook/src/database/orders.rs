@@ -299,7 +299,7 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::count_limit_orders(
+        Ok(database::orders::count_limit_orders_by_owner(
             &mut ex,
             now_in_epoch_seconds().try_into().unwrap(),
             &ByteArray(owner.0),

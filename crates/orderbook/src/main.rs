@@ -18,6 +18,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    code_fetching::CachedCodeFetcher,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -49,7 +50,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::task;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ! {
     let args = orderbook::arguments::Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
@@ -402,7 +403,6 @@ async fn main() {
 
     let order_validator = Arc::new(
         OrderValidator::new(
-            Box::new(web3.clone()),
             native_token.clone(),
             args.banned_users.iter().copied().collect(),
             args.order_quoting
@@ -418,8 +418,10 @@ async fn main() {
             signature_validator,
             database.clone(),
             args.max_limit_orders_per_user,
+            Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
         )
-        .with_limit_orders(args.enable_limit_orders),
+        .with_limit_orders(args.enable_limit_orders)
+        .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments),
     );
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
@@ -454,8 +456,7 @@ async fn main() {
     );
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
-    let maintenance_task =
-        task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
+    task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -464,9 +465,8 @@ async fn main() {
 
     futures::pin_mut!(serve_api);
     tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
-        result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
-        result = metrics_task => tracing::error!(?result, "metrics task exited"),
+        result = &mut serve_api => panic!("API task exited {:?}", result),
+        result = metrics_task => panic!("metrics task exited {:?}", result),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
@@ -474,6 +474,7 @@ async fn main() {
                 Ok(inner) => inner.expect("API failed during shutdown"),
                 Err(_) => tracing::error!("API shutdown exceeded timeout"),
             }
+            std::process::exit(0);
         }
     };
 }
