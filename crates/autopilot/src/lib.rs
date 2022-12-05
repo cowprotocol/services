@@ -10,10 +10,7 @@ pub mod limit_orders;
 
 use crate::{
     database::{
-        onchain_order_events::{
-            ethflow_events::{ethflow_sync_start, EthFlowOnchainOrderParser},
-            OnchainOrderParser,
-        },
+        onchain_order_events::{ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser},
         Postgres,
     },
     event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
@@ -35,6 +32,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    contracts::settlement_deployment_block_number_hash,
     current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -469,7 +467,17 @@ pub async fn main(args: arguments::Arguments) -> ! {
             CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
             onchain_order_event_parser,
             block_retriever,
-            Some(ethflow_sync_start(&web3, chain_id, skip_event_sync_start).await),
+            Some(
+                skip_event_sync_start.unwrap_or(
+                    settlement_deployment_block_number_hash(&web3, chain_id)
+                        .await
+                        .unwrap_or_else(|err| {
+                            panic!(
+                                "Should be able to find settlement deployment block. Error: {err}"
+                            )
+                        }),
+                ),
+            ),
         ));
         maintainers.push(broadcaster_event_updater);
     }
