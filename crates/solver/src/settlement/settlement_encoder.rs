@@ -9,7 +9,9 @@ use model::{
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
-use shared::{conversions::U256Ext, interaction::Interaction};
+use shared::{
+    conversions::U256Ext, http_solver::model::InternalizationStrategy, interaction::Interaction,
+};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     iter,
@@ -87,12 +89,6 @@ pub struct PricedTrade<'a> {
     pub data: &'a Trade,
     pub sell_token_price: U256,
     pub buy_token_price: U256,
-}
-
-/// Whether or not internalizable interactions should be encoded as calldata
-pub enum InternalizationStrategy {
-    EncodeAllInteractions,
-    SkipInternalizableInteraction,
 }
 
 impl SettlementEncoder {
