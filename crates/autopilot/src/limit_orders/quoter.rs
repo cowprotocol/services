@@ -119,7 +119,10 @@ impl LimitOrderQuoter {
                 },
             )
             .await?;
-        // Make quote last long enough to compute risk adjusted rewards for the order.
+        // In order to compute the rewards for this order while building the auction we need to have
+        // a valid quote for it in our database at that time. That means we have to:
+        // 1) make the quote valid for the entire time where the order could possibly make it into an auction
+        // 2) store the quote in the DB
         quote.data.expiration = Utc::now() + self.limit_order_age;
         self.quoter.store_quote(quote).await?;
         Ok(())
