@@ -1,12 +1,18 @@
-use crate::driver::Driver;
-use anyhow::Result;
-use model::auction::AuctionWithId;
-use shared::api::{
-    convert_json_response, error, extract_payload_with_max_size, ApiReply, IntoWarpReply,
+use {
+    crate::driver::Driver,
+    anyhow::Result,
+    model::auction::AuctionWithId,
+    shared::api::{
+        convert_json_response,
+        error,
+        extract_payload_with_max_size,
+        ApiReply,
+        IntoWarpReply,
+    },
+    std::{convert::Infallible, sync::Arc},
+    tracing::Instrument,
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
-use std::{convert::Infallible, sync::Arc};
-use tracing::Instrument;
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 fn post_solve_request(
     prefix: &'static str,
