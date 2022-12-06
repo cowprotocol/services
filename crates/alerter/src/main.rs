@@ -19,7 +19,7 @@ use std::{
 use strum::VariantNames as _;
 use url::Url;
 
-#[derive(Debug, serde::Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct Order {
     kind: OrderKind,
@@ -34,6 +34,7 @@ struct Order {
     creation_date: DateTime<Utc>,
     partially_fillable: bool,
     is_liquidity_order: bool,
+    #[serde(flatten)]
     class: OrderClass,
 }
 
@@ -231,6 +232,25 @@ impl Alerter {
 
     pub async fn update(&mut self) -> Result<()> {
         self.update_open_orders().await?;
+        let matchable_orders = self.matchable_orders().await?;
+
+        let counts = matchable_orders.iter().fold(
+            OrderClass::VARIANTS
+                .iter()
+                .map(|class| (*class, 0_i64))
+                .collect::<HashMap<_, _>>(),
+            |mut counts, (order, _)| {
+                *counts.get_mut(order.class.as_ref()).unwrap() += 1;
+                counts
+            },
+        );
+        for (class, count) in counts {
+            self.metrics
+                .matchable_orders_count
+                .with_label_values(&[class])
+                .set(count);
+        }
+
         if self.last_observed_trade.elapsed() <= self.config.time_without_trade {
             self.metrics.no_trades_but_matchable_order.set(0);
             // Delete all matchable timestamps.
@@ -242,17 +262,35 @@ impl Alerter {
             // In this case we would alert immediately even though it could be the case that the
             // order wasn't matchable and just now became matchable again. We would wrongly assume
             // it has been matchable since t0 but we did not check this between now and then.
-            for (_, instant) in self.open_orders.iter_mut() {
+            for (_, instant) in &mut self.open_orders {
                 *instant = None;
             }
             return Ok(());
         }
 
-        let mut matchable_orders = OrderClass::VARIANTS
-            .iter()
-            .map(|class| (*class, 0_i64))
-            .collect::<HashMap<_, _>>();
+        if let Some((order, _)) = matchable_orders
+            .into_iter()
+            .find(|(_, solvable)| *solvable > self.config.min_order_solvable_time)
+        {
+            let should_alert = match self.last_alert {
+                None => true,
+                Some(instant) => instant.elapsed() >= self.config.min_alert_interval,
+            };
+            if should_alert {
+                self.last_alert = Some(Instant::now());
+                self.alert(&order);
+            }
 
+            self.metrics.no_trades_but_matchable_order.set(1);
+        } else {
+            self.metrics.no_trades_but_matchable_order.set(0);
+        }
+
+        Ok(())
+    }
+
+    async fn matchable_orders(&mut self) -> Result<Vec<(Order, Duration)>> {
+        let mut result = Vec::new();
         for (order, solvable_since) in &mut self.open_orders {
             let can_be_settled = self
                 .zeroex_api
@@ -263,49 +301,37 @@ impl Alerter {
             let now = Instant::now();
             if can_be_settled {
                 let solvable_since = *solvable_since.get_or_insert(now);
-                if now.duration_since(solvable_since) > self.config.min_order_solvable_time {
-                    let should_alert = match self.last_alert {
-                        None => true,
-                        Some(instant) => instant.elapsed() >= self.config.min_alert_interval,
-                    };
-                    if should_alert {
-                        self.last_alert = Some(now);
-                        alert(&self.config, order);
-                    }
-
-                    *matchable_orders.get_mut(order.class.as_ref()).unwrap() += 1;
-                }
+                result.push((order.clone(), now.duration_since(solvable_since)));
             } else {
                 *solvable_since = None;
             }
         }
 
-        self.metrics
-            .no_trades_but_matchable_order
-            .set(matchable_orders.values().any(|count| *count > 0) as _);
-        for (class, count) in matchable_orders {
-            self.metrics
-                .matchable_orders_count
-                .with_label_values(&[class])
-                .set(count);
-        }
-
-        Ok(())
+        Ok(result)
     }
-}
 
-fn alert(config: &AlertConfig, order: &Order) {
-    tracing::error!(
-        "No orders have been settled in the last {} seconds \
-         even though order {} is solvable and has a price that \
-         allows it to be settled according to 0x.",
-        config.time_without_trade.as_secs(),
-        order.uid,
-    );
+    fn alert(&self, order: &Order) {
+        tracing::error!(
+            "No orders have been settled in the last {} seconds \
+             even though order {} is solvable and has a price that \
+             allows it to be settled according to 0x.",
+            self.config.time_without_trade.as_secs(),
+            order.uid,
+        );
+    }
 }
 
 #[derive(Debug, Parser)]
 struct Arguments {
+    /// Alerter update interval.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    update_interval: Duration,
+
     /// Minimum time without a trade before alerting.
     #[clap(
         long,
@@ -384,6 +410,6 @@ async fn main() {
                 tracing::error!(?err, "alerter update error");
             }
         }
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(args.update_interval).await;
     }
 }
