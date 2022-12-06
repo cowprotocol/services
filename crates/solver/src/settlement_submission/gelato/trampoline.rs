@@ -13,7 +13,10 @@ use model::{
     signature::{EcdsaSignature, EcdsaSigningScheme},
     DomainSeparator,
 };
-use shared::gelato_api::GelatoCall;
+use shared::{
+    gelato_api::GelatoCall,
+    http_solver::model::InternalizationStrategy::SkipInternalizableInteraction,
+};
 use web3::signing::{self, SecretKeyRef};
 
 pub struct Trampoline {
@@ -58,7 +61,7 @@ impl Trampoline {
 
         let calldata = settle_method_builder(
             &self.contracts.settlement,
-            settlement.clone().into(),
+            settlement.clone().encode(SkipInternalizableInteraction),
             account.clone(),
         )
         .tx

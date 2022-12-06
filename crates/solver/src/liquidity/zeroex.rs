@@ -208,9 +208,12 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{interactions::allowances::Approval, settlement::InternalizationStrategy};
+    use crate::interactions::allowances::Approval;
     use maplit::hashmap;
-    use shared::{interaction::Interaction, zeroex_api::OrderMetadata};
+    use shared::{
+        http_solver::model::InternalizationStrategy, interaction::Interaction,
+        zeroex_api::OrderMetadata,
+    };
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
