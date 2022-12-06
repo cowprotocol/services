@@ -203,10 +203,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
+        liquidity_sources: vec![Box::new(uniswap_liquidity)],
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
@@ -457,10 +454,7 @@ async fn two_limit_orders_test(web3: Web3) {
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
+        liquidity_sources: vec![Box::new(uniswap_liquidity)],
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
@@ -713,10 +707,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
+        liquidity_sources: vec![Box::new(uniswap_liquidity)],
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();

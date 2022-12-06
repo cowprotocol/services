@@ -1,27 +1,30 @@
-use crate::{
-    api::{execute::ExecuteError, solve::SolveError},
-    auction_converter::AuctionConverting,
-    commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
-};
-use anyhow::{Context, Error, Result};
-use futures::StreamExt;
-use gas_estimation::GasPriceEstimating;
-use model::auction::AuctionWithId;
-use primitive_types::H256;
-use shared::{
-    current_block::{into_stream, BlockInfo, CurrentBlockStream},
-    ethrpc::Web3,
-};
-use solver::{
-    driver::submit_settlement,
-    driver_logger::DriverLogger,
-    settlement::Settlement,
-    settlement_rater::{SettlementRating, SimulationWithResult},
-    settlement_submission::{SolutionSubmitter, SubmissionError},
-};
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
+use {
+    crate::{
+        api::{execute::ExecuteError, solve::SolveError},
+        auction_converter::AuctionConverting,
+        commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
+    },
+    anyhow::{Context, Error, Result},
+    futures::StreamExt,
+    gas_estimation::GasPriceEstimating,
+    model::auction::AuctionWithId,
+    primitive_types::H256,
+    shared::{
+        current_block::{into_stream, BlockInfo, CurrentBlockStream},
+        ethrpc::Web3,
+        http_solver::model::InternalizationStrategy,
+    },
+    solver::{
+        driver::submit_settlement,
+        driver_logger::DriverLogger,
+        settlement::Settlement,
+        settlement_rater::{SettlementRating, SimulationWithResult},
+        settlement_submission::{SolutionSubmitter, SubmissionError},
+    },
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
 };
 
 pub struct Driver {
@@ -36,8 +39,8 @@ pub struct Driver {
 }
 
 impl Driver {
-    /// Does some sanity checks on the auction, collects some liquidity and prepares the auction
-    /// for the solver.
+    /// Does some sanity checks on the auction, collects some liquidity and
+    /// prepares the auction for the solver.
     pub async fn on_auction_started(
         &self,
         auction: AuctionWithId,
@@ -67,10 +70,11 @@ impl Driver {
         solver.commit(auction).await
     }
 
-    /// Keeps solving the auction in a loop with the latest known liquidity until the `deadline`
-    /// has been reached or the `block_stream` terminates.
-    /// This function uses a `WatchStream` to get notified about new blocks which will start with
-    /// yielding the current block immediately and will skip intermediate blocks if it observed
+    /// Keeps solving the auction in a loop with the latest known liquidity
+    /// until the `deadline` has been reached or the `block_stream`
+    /// terminates. This function uses a `WatchStream` to get notified about
+    /// new blocks which will start with yielding the current block
+    /// immediately and will skip intermediate blocks if it observed
     /// multiple blocks while computing a result.
     async fn solve_until_deadline(
         auction: AuctionWithId,
@@ -107,13 +111,18 @@ impl Driver {
         }
     }
 
-    /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
+    /// Validates that the `Settlement` satisfies expected fairness and
+    /// correctness properties.
     async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationWithResult> {
         let gas_price = self.gas_price_estimator.estimate().await?;
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
         let simulation_details = self
             .settlement_rater
-            .simulate_settlements(vec![(fake_solver, settlement)], gas_price)
+            .simulate_settlements(
+                vec![(fake_solver, settlement)],
+                gas_price,
+                InternalizationStrategy::SkipInternalizableInteraction,
+            )
             .await?
             .pop()
             .context("simulation returned no results")?;
@@ -124,8 +133,9 @@ impl Driver {
         Ok(simulation_details)
     }
 
-    /// When the solver won the competition it finalizes the `Settlement` and decides whether it
-    /// still wants to execute and submit that `Settlement`.
+    /// When the solver won the competition it finalizes the `Settlement` and
+    /// decides whether it still wants to execute and submit that
+    /// `Settlement`.
     pub async fn on_auction_won(&self, summary: SettlementSummary) -> Result<H256, ExecuteError> {
         tracing::info!("solver won the auction");
         let settlement = match self.solver.reveal(&summary).await? {
@@ -143,7 +153,8 @@ impl Driver {
             .map_err(|e| ExecuteError::from(e.into_anyhow()))
     }
 
-    /// Tries to submit the `Settlement` on chain. Returns a transaction hash if it was successful.
+    /// Tries to submit the `Settlement` on chain. Returns a transaction hash if
+    /// it was successful.
     async fn submit_settlement(
         &self,
         SimulationWithResult {
@@ -177,15 +188,17 @@ impl Driver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{auction_converter::MockAuctionConverting, commit_reveal::MockCommitRevealSolving};
-    use futures::FutureExt;
-    use shared::current_block;
-    use std::{
-        sync::Arc,
-        time::{Duration, Instant},
+    use {
+        super::*,
+        crate::{auction_converter::MockAuctionConverting, commit_reveal::MockCommitRevealSolving},
+        futures::FutureExt,
+        shared::current_block,
+        std::{
+            sync::Arc,
+            time::{Duration, Instant},
+        },
+        tokio::sync::watch,
     };
-    use tokio::sync::watch;
 
     fn block(number: u64) -> BlockInfo {
         BlockInfo {

@@ -6,8 +6,9 @@ use crate::{
         BalancerSwapGivenOutInteraction,
     },
     liquidity::{
-        AmmOrderExecution, LimitOrder, SettlementHandling, StablePoolOrder, WeightedProductOrder,
+        AmmOrderExecution, Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder,
     },
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::Result;
@@ -47,18 +48,12 @@ impl BalancerV2Liquidity {
         }
     }
 
-    /// Returns relevant Balancer V2 weighted pools given a list of off-chain
-    /// orders.
-    pub async fn get_liquidity(
+    async fn get_orders(
         &self,
-        orders: &[LimitOrder],
+        pairs: &[TokenPair],
         block: Block,
     ) -> Result<(Vec<StablePoolOrder>, Vec<WeightedProductOrder>)> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
+        let pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
         let tokens = pools.relevant_tokens();
@@ -101,6 +96,21 @@ impl BalancerV2Liquidity {
             .collect();
 
         Ok((stable_pool_orders, weighted_product_orders))
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for BalancerV2Liquidity {
+    /// Returns relevant Balancer V2 weighted pools given a list of off-chain
+    /// orders.
+    async fn get_liquidity(&self, pairs: &[TokenPair], block: Block) -> Result<Vec<Liquidity>> {
+        let (stable, weighted) = self.get_orders(pairs, block).await?;
+        let liquidity = stable
+            .into_iter()
+            .map(Liquidity::BalancerStable)
+            .chain(weighted.into_iter().map(Liquidity::BalancerWeighted))
+            .collect();
+        Ok(liquidity)
     }
 }
 
@@ -177,10 +187,7 @@ impl SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        settlement::InternalizationStrategy,
-    };
+    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
@@ -188,6 +195,7 @@ mod tests {
     use primitive_types::H160;
     use shared::{
         dummy_contract,
+        http_solver::model::InternalizationStrategy,
         interaction::Interaction,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter, CommonPoolState, FetchedBalancerPools,
@@ -339,23 +347,11 @@ mod tests {
             base_tokens,
         };
         let (stable_orders, weighted_orders) = liquidity_provider
-            .get_liquidity(
+            .get_orders(
                 &[
-                    LimitOrder {
-                        sell_token: H160([0x70; 20]),
-                        buy_token: H160([0x71; 20]),
-                        ..Default::default()
-                    },
-                    LimitOrder {
-                        sell_token: H160([0x70; 20]),
-                        buy_token: H160([0x72; 20]),
-                        ..Default::default()
-                    },
-                    LimitOrder {
-                        sell_token: H160([0xb0; 20]),
-                        buy_token: H160([0x73; 20]),
-                        ..Default::default()
-                    },
+                    TokenPair::new(H160([0x70; 20]), H160([0x71; 20])).unwrap(),
+                    TokenPair::new(H160([0x70; 20]), H160([0x72; 20])).unwrap(),
+                    TokenPair::new(H160([0xb0; 20]), H160([0x73; 20])).unwrap(),
                 ],
                 Block::Recent,
             )

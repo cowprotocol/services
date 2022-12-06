@@ -2,9 +2,7 @@ pub mod external_prices;
 mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
-pub use self::settlement_encoder::{
-    verify_executed_amount, InternalizationStrategy, PricedTrade, SettlementEncoder,
-};
+pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, SettlementEncoder};
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
@@ -14,7 +12,7 @@ use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
-use shared::conversions::U256Ext as _;
+use shared::{conversions::U256Ext as _, http_solver::model::InternalizationStrategy};
 use std::{
     collections::{HashMap, HashSet},
     ops::{Mul, Sub},
@@ -433,13 +431,9 @@ impl Settlement {
             Revertable::NoRisk
         }
     }
-}
 
-impl From<Settlement> for EncodedSettlement {
-    fn from(settlement: Settlement) -> Self {
-        settlement
-            .encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+    pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
+        self.encoder.finish(internalization_strategy)
     }
 }
 
@@ -1439,7 +1433,7 @@ pub mod tests {
         let sell_token = H160([1; 20]);
         let buy_token = H160([2; 20]);
 
-        let settlement = EncodedSettlement::from(test_settlement(
+        let settlement = test_settlement(
             hashmap! {
                 sell_token => 100_000_u128.into(),
                 buy_token => 100_000_u128.into(),
@@ -1466,7 +1460,8 @@ pub mod tests {
                 executed_amount: 100_000_u128.into(),
                 scaled_unsubsidized_fee: 1_000_u128.into(),
             }],
-        ));
+        )
+        .encode(InternalizationStrategy::SkipInternalizableInteraction);
 
         // Note that for limit order **both** the uniform clearing price of the
         // buy token as well as the executed clearing price accounting for fees
