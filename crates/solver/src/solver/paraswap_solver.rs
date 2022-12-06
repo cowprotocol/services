@@ -113,15 +113,17 @@ impl SingleOrderSolving for ParaswapSolver {
         });
         settlement.with_liquidity(&order, amount)?;
 
-        settlement.encoder.append_to_execution_plan(
-            self.allowance_fetcher
-                .get_approval(&ApprovalRequest {
-                    token: order.sell_token,
-                    spender: price_response.token_transfer_proxy,
-                    amount: price_response.src_amount,
-                })
-                .await?,
-        );
+        if let Some(approval) = self
+            .allowance_fetcher
+            .get_approval(&ApprovalRequest {
+                token: order.sell_token,
+                spender: price_response.token_transfer_proxy,
+                amount: price_response.src_amount,
+            })
+            .await?
+        {
+            settlement.encoder.append_to_execution_plan(approval);
+        }
         settlement.encoder.append_to_execution_plan(transaction);
         Ok(Some(settlement))
     }
@@ -275,7 +277,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         token_info.expect_get_token_infos().returning(move |_| {
             hashmap! {
@@ -368,10 +370,10 @@ mod tests {
                 amount: U256::from(100),
             }))
             .returning(move |_| {
-                Ok(Approval::Approve {
+                Ok(Some(Approval {
                     token: sell_token,
                     spender: token_transfer_proxy,
-                })
+                }))
             })
             .in_sequence(&mut seq);
         allowance_fetcher
@@ -382,7 +384,7 @@ mod tests {
                 spender: token_transfer_proxy,
                 amount: U256::from(100),
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient))
+            .returning(|_| Ok(None))
             .in_sequence(&mut seq);
 
         token_info.expect_get_token_infos().returning(move |_| {
@@ -496,7 +498,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         token_info.expect_get_token_infos().returning(move |_| {
             hashmap! {

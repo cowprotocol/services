@@ -120,7 +120,7 @@ impl Inner {
         &self,
         (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
-    ) -> (Approval, UniswapInteraction) {
+    ) -> (Option<Approval>, UniswapInteraction) {
         let approval = self
             .allowances
             .lock()
@@ -146,7 +146,9 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
     // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
-        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        if let Some(approval) = approval {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
@@ -181,21 +183,21 @@ mod tests {
 
         // Token A below, equal, above
         let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Token B below, equal, above
         let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) =
             inner.settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
+        assert_ne!(approval, None);
     }
 }
