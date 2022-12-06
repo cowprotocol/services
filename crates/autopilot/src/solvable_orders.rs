@@ -2,7 +2,8 @@ use crate::{database::Postgres, risk_adjusted_rewards};
 use anyhow::{Context as _, Result};
 use bigdecimal::BigDecimal;
 use chrono::Utc;
-use futures::StreamExt;
+use futures::{FutureExt as _, StreamExt as _};
+use itertools::Itertools;
 use model::{
     auction::Auction,
     order::{Order, OrderClass},
@@ -21,7 +22,9 @@ use shared::{
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    future::Future,
     iter::FromIterator,
+    mem,
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
@@ -43,7 +46,7 @@ pub struct Metrics {
     auction_solvable_orders: IntGaugeVec,
 
     /// Auction filtered orders grouped by class.
-    #[metric(labels("class"))]
+    #[metric(labels("class", "reason"))]
     auction_filtered_orders: IntGaugeVec,
 
     /// Auction errored price estimates.
@@ -152,11 +155,13 @@ impl SolvableOrdersCache {
                 Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
             )
             .await?;
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        let orders =
-            filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
-        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
+
+        let mut orders = OrderFilter::new(self.metrics, db_solvable_orders.orders);
+
+        filter_banned_user_orders(&mut orders, &self.banned_users);
+        filter_unsupported_tokens(&mut orders, self.bad_token_detector.as_ref()).await?;
+        filter_invalid_signature_orders(&mut orders, self.signature_validator.as_ref()).await;
+        filter_limit_orders_with_insufficient_sell_amount(&mut orders);
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -168,7 +173,7 @@ impl SolvableOrdersCache {
                 HashMap::new()
             }
         };
-        let (mut new_balances, missing_queries) = new_balances(&old_balances, &orders);
+        let (mut new_balances, missing_queries) = new_balances(&old_balances, orders.as_slice());
         let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
         for (query, balance) in missing_queries.into_iter().zip(fetched_balances) {
             let balance = match balance {
@@ -187,43 +192,49 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let mut orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
-        for order in &mut orders {
+        solvable_orders(&mut orders, &new_balances, self.ethflow_contract_address);
+        for order in orders.as_slice_mut() {
             let query = Query::from_order(order);
             order.metadata.available_balance = new_balances.get(&query).copied();
         }
 
         // create auction
-        let (orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
+        let prices = filter_orders_with_native_prices(
+            &mut orders,
             &*self.native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
             self.metrics,
         )
         .await;
 
-        let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
+        filter_mispriced_limit_orders(&mut orders, &prices, &self.limit_order_price_factor);
 
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
-                .calculate_many(&orders)
+                .calculate_many(orders.as_slice())
                 .await
                 .context("rewards")?;
             orders
-            .iter()
-            .zip(rewards)
-            .filter_map(|(order, reward)| match reward {
-                Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
-                Ok(_) => None,
-                Err(err) => {
-                    tracing::warn!(?order.metadata.uid, ?err, "error calculating risk adjusted reward");
-                    None
-                }
-            })
-            .collect()
+                .as_slice()
+                .iter()
+                .zip(rewards)
+                .filter_map(|(order, reward)| match reward {
+                    Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
+                    Ok(_) => None,
+                    Err(err) => {
+                        tracing::warn!(
+                            ?order.metadata.uid, ?err,
+                            "error calculating risk adjusted reward"
+                        );
+                        None
+                    }
+                })
+                .collect()
         } else {
             Default::default()
         };
+
+        let orders = orders.finish();
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -231,6 +242,7 @@ impl SolvableOrdersCache {
             prices,
             rewards,
         };
+
         let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {
             orders: SolvableOrders {
@@ -256,17 +268,19 @@ impl SolvableOrdersCache {
 }
 
 /// Filters all orders whose owners are in the set of "banned" users.
-fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
-    orders.retain(|order| !banned_users.contains(&order.metadata.owner));
-    orders
+fn filter_banned_user_orders(orders: &mut OrderFilter, banned_users: &HashSet<H160>) {
+    orders.retain("banned_user", |order| {
+        !banned_users.contains(&order.metadata.owner)
+    });
 }
 
 /// Filters EIP-1271 orders whose signatures are no longer validating.
 async fn filter_invalid_signature_orders(
-    orders: Vec<Order>,
+    orders: &mut OrderFilter,
     signature_validator: &dyn SignatureValidating,
-) -> Vec<Order> {
+) {
     let checks = orders
+        .as_slice()
         .iter()
         .filter_map(|order| match &order.signature {
             Signature::Eip1271(signature) => {
@@ -282,29 +296,34 @@ async fn filter_invalid_signature_orders(
         .collect::<Vec<_>>();
 
     if checks.is_empty() {
-        return orders;
+        return;
     }
 
     let mut validations = signature_validator
         .validate_signatures(checks)
         .await
         .into_iter();
-    orders
-        .into_iter()
-        .filter(|order| {
-            if let Signature::Eip1271(_) = &order.signature {
-                if let Err(err) = validations.next().unwrap() {
-                    tracing::warn!(
-                        order_uid =% order.metadata.uid, ?err,
-                        "filtered order because of invalid EIP-1271 signature"
-                    );
-                    return false;
-                }
-            }
 
-            true
+    let _ = orders
+        .filter_async("invalid_signature", |orders| async move {
+            Ok(orders
+                .into_iter()
+                .filter(|order| {
+                    if let Signature::Eip1271(_) = &order.signature {
+                        if let Err(err) = validations.next().unwrap() {
+                            tracing::warn!(
+                                order_uid =% order.metadata.uid, ?err,
+                                "filtered order because of invalid EIP-1271 signature"
+                            );
+                            return false;
+                        }
+                    }
+
+                    true
+                })
+                .collect())
         })
-        .collect()
+        .await;
 }
 
 /// Returns existing balances and Vec of queries that need to be performed.
@@ -329,66 +348,64 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 // The order book has to make a choice for which orders to include when a user has multiple orders
 // selling the same token but not enough balance for all of them.
 // Assumes balance fetcher is already tracking all balances.
-fn solvable_orders(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    ethflow_contract: Option<H160>,
-) -> Vec<Order> {
-    let mut orders_map = HashMap::<Query, Vec<Order>>::new();
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
-    for order in orders {
-        let key = Query::from_order(&order);
-        orders_map.entry(key).or_default().push(order);
-    }
-
-    let mut result = Vec::new();
-    for (key, orders) in orders_map {
-        let mut remaining_balance = match balances.get(&key) {
-            Some(balance) => *balance,
-            None => continue,
-        };
+fn solvable_orders(orders: &mut OrderFilter, balances: &Balances, ethflow_contract: Option<H160>) {
+    let _ = orders.filter("insufficient_balance", |mut orders| {
+        let mut orders_map = HashMap::<Query, Vec<Order>>::new();
+        orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
         for order in orders {
-            // For ethflow orders, there is no need to check the balance. The contract
-            // ensures that there will always be sufficient balance, after the wrapAll
-            // pre_interaction has been called.
-            if Some(order.metadata.owner) == ethflow_contract {
-                result.push(order);
-                continue;
-            }
-            // TODO: This is overly pessimistic for partially filled orders where the needed balance
-            // is lower. For partially fillable orders that cannot be fully filled because of the
-            // balance we could also give them as much balance as possible instead of skipping. For
-            // that we first need a way to communicate this to the solver. We could repurpose
-            // availableBalance for this.
-            let needed_balance = match max_transfer_out_amount(&order) {
-                // Should only ever happen if a partially fillable order has been filled completely
-                Ok(balance) if balance.is_zero() => continue,
-                Ok(balance) => balance,
-                Err(err) => {
-                    // This should only happen if we read bogus order data from
-                    // the database (either we allowed a bogus order to be
-                    // created or we updated a good order incorrectly), so raise
-                    // the alarm!
-                    tracing::error!(
-                        ?err,
-                        ?order,
-                        "error computing order max transfer out amount"
-                    );
+            let key = Query::from_order(&order);
+            orders_map.entry(key).or_default().push(order);
+        }
+
+        let mut result = Vec::new();
+        for (key, orders) in orders_map {
+            let mut remaining_balance = match balances.get(&key) {
+                Some(balance) => *balance,
+                None => continue,
+            };
+            for order in orders {
+                // For ethflow orders, there is no need to check the balance. The contract
+                // ensures that there will always be sufficient balance, after the wrapAll
+                // pre_interaction has been called.
+                if Some(order.metadata.owner) == ethflow_contract {
+                    result.push(order);
                     continue;
                 }
-            };
-            if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
-                remaining_balance = balance;
-                result.push(order);
-            } else {
-                tracing::debug!(
-                    order_uid = ?order.metadata.uid,
-                    "filtered order because of insufficient allowance/balance",
-                );
+                // TODO: This is overly pessimistic for partially filled orders where the needed balance
+                // is lower. For partially fillable orders that cannot be fully filled because of the
+                // balance we could also give them as much balance as possible instead of skipping. For
+                // that we first need a way to communicate this to the solver. We could repurpose
+                // availableBalance for this.
+                let needed_balance = match max_transfer_out_amount(&order) {
+                    // Should only ever happen if a partially fillable order has been filled completely
+                    Ok(balance) if balance.is_zero() => continue,
+                    Ok(balance) => balance,
+                    Err(err) => {
+                        // This should only happen if we read bogus order data from
+                        // the database (either we allowed a bogus order to be
+                        // created or we updated a good order incorrectly), so raise
+                        // the alarm!
+                        tracing::error!(
+                            ?err,
+                            ?order,
+                            "error computing order max transfer out amount"
+                        );
+                        continue;
+                    }
+                };
+                if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
+                    remaining_balance = balance;
+                    result.push(order);
+                } else {
+                    tracing::debug!(
+                        order_uid = ?order.metadata.uid,
+                        "filtered order because of insufficient allowance/balance",
+                    );
+                }
             }
         }
-    }
-    result
+        Ok(result)
+    });
 }
 
 /// Computes the maximum amount that can be transferred out for a given order.
@@ -444,18 +461,20 @@ async fn update_task(
     }
 }
 
-async fn get_orders_with_native_prices(
-    orders: Vec<Order>,
+async fn filter_orders_with_native_prices(
+    orders: &mut OrderFilter,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
     metrics: &Metrics,
-) -> (Vec<Order>, BTreeMap<H160, U256>) {
+) -> BTreeMap<H160, U256> {
     let traded_tokens = orders
+        .as_slice()
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+
     let mut prices = HashMap::new();
     let mut price_stream = native_price_estimator.estimate_native_prices(&traded_tokens);
     let mut errored_estimates: u64 = 0;
@@ -492,7 +511,7 @@ async fn get_orders_with_native_prices(
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
-    let (solvable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+    orders.retain("missing_native_price", |order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -510,20 +529,6 @@ async fn get_orders_with_native_prices(
         }
     });
 
-    metrics.auction_creations.inc();
-    OrderClass::VARIANTS.iter().for_each(|class| {
-        let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
-        let solvable_grouped_by_class = solvable.iter().filter(correct_class).count();
-        metrics
-            .auction_solvable_orders
-            .with_label_values(&[class])
-            .set(solvable_grouped_by_class as i64);
-        let filtered_grouped_by_class = filtered.iter().filter(correct_class).count();
-        metrics
-            .auction_filtered_orders
-            .with_label_values(&[class])
-            .set(filtered_grouped_by_class as i64);
-    });
     if timeout {
         metrics.auction_price_estimate_timeouts.inc();
     }
@@ -531,7 +536,7 @@ async fn get_orders_with_native_prices(
         .auction_errored_price_estimates
         .inc_by(errored_estimates);
 
-    (solvable, used_prices)
+    used_prices
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
@@ -546,39 +551,38 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 }
 
 async fn filter_unsupported_tokens(
-    mut orders: Vec<Order>,
+    orders: &mut OrderFilter,
     bad_token: &dyn BadTokenDetecting,
-) -> Result<Vec<Order>> {
-    // Can't use normal `retain` or `filter` because the bad token detection is async. So either
-    // this manual iteration or conversion to stream.
-    let mut index = 0;
-    'outer: while index < orders.len() {
-        for token in orders[index].data.token_pair().unwrap() {
-            if !bad_token.detect(token).await?.is_good() {
-                orders.swap_remove(index);
-                continue 'outer;
+) -> Result<()> {
+    orders
+        .try_retain_async("unsupported_token", |order| {
+            let token_pair = order.data.token_pair().unwrap();
+            async move {
+                for token in token_pair {
+                    if !bad_token.detect(token).await?.is_good() {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
             }
-        }
-        index += 1;
-    }
-    Ok(orders)
+        })
+        .await
 }
 
-fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    orders.retain(|order| match &order.metadata.class {
+fn filter_limit_orders_with_insufficient_sell_amount(orders: &mut OrderFilter) {
+    orders.retain("insufficient_sell", |order| match &order.metadata.class {
         OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
         _ => true,
     });
-    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native token price.
 fn filter_mispriced_limit_orders(
-    mut orders: Vec<Order>,
+    orders: &mut OrderFilter,
     prices: &BTreeMap<H160, U256>,
     price_factor: &BigDecimal,
-) -> Vec<Order> {
-    orders.retain(|order| {
+) {
+    orders.retain("mispriced", |order| {
         let surplus_fee = match &order.metadata.class {
             OrderClass::Limit(limit) => limit.surplus_fee,
             _ => return true,
@@ -620,7 +624,151 @@ fn filter_mispriced_limit_orders(
             false
         }
     });
-    orders
+}
+
+/// A helper struct to apply filters for orders and report metrics.
+struct OrderFilter {
+    metrics: &'static Metrics,
+    orders: Vec<Order>,
+    counts: HashMap<OrderClassName, ClassCount>,
+}
+
+type OrderClassName = &'static str;
+
+#[derive(Default)]
+struct ClassCount {
+    count: usize,
+    filtered: HashMap<&'static str, usize>,
+}
+
+impl OrderFilter {
+    /// Creates a new order filter.
+    fn new(metrics: &'static Metrics, orders: Vec<Order>) -> Self {
+        let counts = orders.iter().fold(
+            OrderClass::VARIANTS
+                .iter()
+                .map(|class| (*class, ClassCount::default()))
+                .collect::<HashMap<_, _>>(),
+            |mut counts, order| {
+                counts
+                    .get_mut(order.metadata.class.as_ref())
+                    .expect("count initialized for all order classes")
+                    .count += 1;
+                counts
+            },
+        );
+
+        Self {
+            metrics,
+            orders,
+            counts,
+        }
+    }
+
+    /// Helper method for creating an order filter for tests.
+    #[cfg(test)]
+    fn test(orders: Vec<Order>) -> Self {
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        Self::new(metrics, orders)
+    }
+
+    /// Returns a slice into the current orders in the filter.
+    fn as_slice(&self) -> &[Order] {
+        &self.orders
+    }
+
+    /// Returns a mutable slice into the current orders in the filter.
+    fn as_slice_mut(&mut self) -> &mut [Order] {
+        &mut self.orders
+    }
+
+    /// Retain orders based on a predicate.
+    fn retain(&mut self, reason: &'static str, predicate: impl FnMut(&Order) -> bool) {
+        let _ = self.filter(reason, |mut orders| {
+            orders.retain(predicate);
+            Ok(orders)
+        });
+    }
+
+    /// Retain orders based on an async predicate.
+    async fn try_retain_async<F, Fut>(
+        &mut self,
+        reason: &'static str,
+        mut predicate: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Order) -> Fut,
+        Fut: Future<Output = Result<bool>>,
+    {
+        self.filter_async(reason, |mut orders| async move {
+            let mut index = 0;
+            'outer: while index < orders.len() {
+                if !predicate(&orders[index]).await? {
+                    orders.swap_remove(index);
+                    continue 'outer;
+                }
+                index += 1;
+            }
+            Ok(orders)
+        })
+        .await
+    }
+
+    /// Filter orders and store metrics.
+    fn filter<F>(&mut self, reason: &'static str, apply: F) -> Result<()>
+    where
+        F: FnOnce(Vec<Order>) -> Result<Vec<Order>>,
+    {
+        self.filter_async(reason, |orders| async move { apply(orders) })
+            .now_or_never()
+            .expect("synchronous order filter did not resolve immediately")
+    }
+
+    /// Asyncronously filters orders and store metrics.
+    async fn filter_async<F, Fut>(&mut self, reason: &'static str, apply: F) -> Result<()>
+    where
+        F: FnOnce(Vec<Order>) -> Fut,
+        Fut: Future<Output = Result<Vec<Order>>>,
+    {
+        self.orders = apply(mem::take(&mut self.orders)).await?;
+
+        let new_counts = self
+            .orders
+            .iter()
+            .counts_by(|order| order.metadata.class.as_ref());
+        for (class, new_count) in new_counts {
+            let group = self
+                .counts
+                .get_mut(class)
+                .expect("count initialized for all order classes");
+            let filtered = group.count - new_count;
+
+            group.count = new_count;
+            *group.filtered.entry(reason).or_default() += filtered;
+        }
+
+        Ok(())
+    }
+
+    /// Finishes order filtering and reports metrics.
+    fn finish(self) -> Vec<Order> {
+        self.metrics.auction_creations.inc();
+        for class in OrderClass::VARIANTS {
+            let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
+            let solvable_grouped_by_class = self.orders.iter().filter(correct_class).count();
+            self.metrics
+                .auction_solvable_orders
+                .with_label_values(&[class])
+                .set(solvable_grouped_by_class as i64);
+            let filtered_grouped_by_class = self.orders.iter().filter(correct_class).count();
+            self.metrics
+                .auction_filtered_orders
+                .with_label_values(&[class])
+                .set(filtered_grouped_by_class as i64);
+        }
+
+        self.orders
+    }
 }
 
 #[cfg(test)]
@@ -697,8 +845,10 @@ mod tests {
         }];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
-        assert_eq!(orders_, orders);
+
+        let mut order_filter = OrderFilter::test(orders.clone());
+        solvable_orders(&mut order_filter, &balances, Some(ethflow_address));
+        assert_eq!(order_filter.finish(), orders);
     }
 
     #[test]
@@ -789,15 +939,16 @@ mod tests {
                 }
             });
 
-        let (filtered_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
+        let mut order_filter = OrderFilter::test(orders.clone());
+        let prices = filter_orders_with_native_prices(
+            &mut order_filter,
             &native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
             Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         )
         .await;
 
-        assert_eq!(filtered_orders, [orders[2].clone()]);
+        assert_eq!(order_filter.finish(), [orders[2].clone()]);
         assert_eq!(
             prices,
             btreemap! {
@@ -912,7 +1063,7 @@ mod tests {
         ];
         // last token price won't be available
         let deadline = Instant::now() + Duration::from_secs_f32(3.5);
-        let (orders_, prices) = get_orders_with_native_prices(
+        let (orders_, prices) = filter_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
             deadline,
@@ -1080,8 +1231,10 @@ mod tests {
             ]))
             .returning(|_| vec![Ok(()), Err(SignatureValidationError::Invalid), Ok(())]);
 
-        let filtered = filter_invalid_signature_orders(orders, &signature_validator).await;
-        let remaining_uids = filtered
+        let mut orders = OrderFilter::test(orders);
+        filter_invalid_signature_orders(&mut orders, &signature_validator).await;
+        let remaining_uids = orders
+            .as_slice()
             .iter()
             .map(|order| order.metadata.uid)
             .collect::<Vec<_>>();
@@ -1141,19 +1294,17 @@ mod tests {
             },
             ..Default::default()
         };
-        let orders = vec![
+        let mut orders = OrderFilter::test(vec![
             // Enough sell amout for the surplus fee.
             order(100, 10),
             // Surplus fee effectively turns order into a 0 sell amount order
             order(100, 100),
             // Surplus fee is higher than the sell amount.
             order(100, 101),
-        ];
+        ]);
+        filter_limit_orders_with_insufficient_sell_amount(&mut orders);
 
-        assert_eq!(
-            filter_limit_orders_with_insufficient_sell_amount(orders),
-            [order(100, 10)]
-        );
+        assert_eq!(orders.as_slice(), [order(100, 10)]);
     }
 
     #[test]
