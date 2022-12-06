@@ -4,24 +4,25 @@
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
 use super::{
-    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
+    single_order_solver::{
+        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+    },
     Auction,
 };
 use crate::{
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::Settlement,
 };
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::Account;
-use maplit::hashmap;
 use model::order::OrderKind;
 use primitive_types::H160;
 use reqwest::{Client, Url};
 use shared::{
     ethrpc::Web3,
+    interaction::Interaction,
     oneinch_api::{
         OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, SwapQuery,
     },
@@ -80,23 +81,28 @@ impl OneInchSolver {
         order: LimitOrder,
         protocols: Option<Vec<String>>,
         slippage: Slippage,
-    ) -> Result<Option<Settlement>, SettlementError> {
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         debug_assert_eq!(
             order.kind,
             OrderKind::Sell,
             "only sell orders should be passed to try_settle_order"
         );
 
+        let mut interactions: Vec<Box<dyn Interaction>> = Vec::new();
+
         let spender = self.client.get_spender().await?;
         // Fetching allowance before making the SwapQuery so that the Swap info is as recent as possible
-        let approval = self
+        if let Some(approval) = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
                 token: order.sell_token,
                 spender: spender.address,
                 amount: order.sell_amount,
             })
-            .await?;
+            .await?
+        {
+            interactions.push(Box::new(approval));
+        }
 
         let query = SwapQuery::with_default_options(
             order.sell_token,
@@ -117,25 +123,18 @@ impl OneInchSolver {
             }
             Err(error) => return Err(error.into()),
         };
-
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
             tracing::debug!("execution does not respect order");
             return Ok(None);
         }
+        let (sell_token_price, buy_token_price) = (swap.to_token_amount, swap.from_token_amount);
+        interactions.push(Box::new(swap));
 
-        let mut settlement = Settlement::new(hashmap! {
-            order.sell_token => swap.to_token_amount,
-            order.buy_token => swap.from_token_amount,
-        });
-
-        settlement.with_liquidity(&order, order.sell_amount)?;
-
-        if let Some(approval) = approval {
-            settlement.encoder.append_to_execution_plan(approval);
-        }
-        settlement.encoder.append_to_execution_plan(swap);
-
-        Ok(Some(settlement))
+        Ok(Some(SingleOrderSettlement {
+            sell_token_price,
+            buy_token_price,
+            interactions,
+        }))
     }
 }
 
@@ -145,7 +144,7 @@ impl SingleOrderSolving for OneInchSolver {
         &self,
         order: LimitOrder,
         auction: &Auction,
-    ) -> Result<Option<Settlement>, SettlementError> {
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         if order.kind != OrderKind::Sell {
             // 1Inch only supports sell orders
             return Ok(None);
@@ -201,13 +200,13 @@ mod tests {
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use futures::FutureExt as _;
+    use maplit::hashmap;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
     use shared::{
-        conversions::U256Ext as _,
+        conversions::U256Ext,
         dummy_contract,
         ethrpc::create_env_test_transport,
-        http_solver::model::InternalizationStrategy,
         oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
     };
 
@@ -312,17 +311,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result.clearing_prices(),
-            // Note that prices are the inverted amounts. Another way to look at
-            // it is if the swap requires 100 sell token to get only 99 buy
-            // token, then the sell token is worth less (i.e. lower price) than
-            // the buy token.
-            &hashmap! {
-                sell_token => 99.into(),
-                buy_token => 100.into(),
-            }
-        );
+        // Note that prices are the inverted amounts. Another way to look at
+        // it is if the swap requires 100 sell token to get only 99 buy
+        // token, then the sell token is worth less (i.e. lower price) than
+        // the buy token.
+        assert_eq!(result.sell_token_price, 99.into());
+        assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
             .try_settle_order(order_violating_limit, &auction)
@@ -468,14 +462,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            2
-        );
+        assert_eq!(result.interactions.len(), 2);
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -483,14 +470,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            1
-        )
+        assert_eq!(result.interactions.len(), 1)
     }
 
     #[tokio::test]

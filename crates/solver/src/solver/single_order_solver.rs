@@ -12,6 +12,7 @@ use num::ToPrimitive;
 use number_conversions::u256_to_big_rational;
 use primitive_types::U256;
 use rand::prelude::SliceRandom;
+use shared::interaction::Interaction;
 use std::{
     collections::VecDeque,
     fmt::{self, Display, Formatter},
@@ -86,7 +87,7 @@ pub trait SingleOrderSolving: Send + Sync + 'static {
         &self,
         order: LimitOrder,
         auction: &Auction,
-    ) -> Result<Option<Settlement>, SettlementError>;
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError>;
 
     /// Solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
@@ -138,10 +139,21 @@ impl Solver for SingleOrderSolver {
         let settle = async {
             while let Some(order) = orders.pop_front() {
                 match self.inner.try_settle_order(order.clone(), &auction).await {
-                    Ok(settlement) => {
+                    Ok(Some(settlement)) => {
                         self.metrics
                             .single_order_solver_succeeded(self.inner.name());
-                        settlements.extend(settlement)
+                        let settlement = match settlement.into_settlement(&order) {
+                            Ok(settlement) => settlement,
+                            Err(err) => {
+                                tracing::warn!(name = self.inner.name(), ?err, "encoding error");
+                                continue;
+                            }
+                        };
+                        settlements.push(settlement);
+                    }
+                    Ok(None) => {
+                        self.metrics
+                            .single_order_solver_succeeded(self.inner.name());
                     }
                     Err(err) => {
                         let name = self.inner.name();
@@ -184,6 +196,28 @@ impl Solver for SingleOrderSolver {
 
     fn name(&self) -> &'static str {
         self.inner.name()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SingleOrderSettlement {
+    pub sell_token_price: U256,
+    pub buy_token_price: U256,
+    pub interactions: Vec<Box<dyn Interaction>>,
+}
+
+impl SingleOrderSettlement {
+    fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
+        let prices = [
+            (order.sell_token, self.sell_token_price),
+            (order.buy_token, self.buy_token_price),
+        ];
+        let mut settlement = Settlement::new(prices.into_iter().collect());
+        settlement.with_liquidity(order, order.full_execution_amount())?;
+        for interaction in self.interactions {
+            settlement.encoder.append_to_execution_plan(interaction);
+        }
+        Ok(settlement)
     }
 }
 
@@ -270,12 +304,17 @@ pub fn execution_respects_order(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{liquidity::tests::CapturingSettlementHandler, metrics::NoopMetrics};
+    use crate::{
+        liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler},
+        metrics::NoopMetrics,
+    };
     use anyhow::anyhow;
+    use ethcontract::Bytes;
     use maplit::hashmap;
-    use model::order::OrderKind;
+    use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
     use num::{BigRational, FromPrimitive};
     use primitive_types::H160;
+    use shared::http_solver::model::InternalizationStrategy;
     use std::sync::Arc;
 
     fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
@@ -289,41 +328,114 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn uses_inner_solver() {
+    async fn merges() {
+        let native = H160::from_low_u64_be(0);
+        let converter = OrderConverter::test(native);
+        let buy_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                kind: OrderKind::Buy,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid([0u8; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let sell_order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(3),
+                buy_token: H160::from_low_u64_be(4),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid([1u8; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orders = [&buy_order, &sell_order]
+            .iter()
+            .map(|order| {
+                converter
+                    .normalize_limit_order(Order::clone(order))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
         let mut inner = MockSingleOrderSolving::new();
         inner
             .expect_try_settle_order()
-            .times(2)
-            .returning(|_, _| Ok(Some(Settlement::new(Default::default()))));
-        inner.expect_name().returning(|| "Mock Solver");
+            .returning(|order, _| match order.kind {
+                OrderKind::Buy => Ok(Some(SingleOrderSettlement {
+                    sell_token_price: 1.into(),
+                    buy_token_price: 2.into(),
+                    interactions: vec![Box::new((
+                        H160::from_low_u64_be(3),
+                        4.into(),
+                        Bytes(vec![5]),
+                    ))],
+                })),
+                OrderKind::Sell => Ok(Some(SingleOrderSettlement {
+                    sell_token_price: 6.into(),
+                    buy_token_price: 7.into(),
+                    interactions: vec![Box::new((
+                        H160::from_low_u64_be(8),
+                        9.into(),
+                        Bytes(vec![10]),
+                    ))],
+                })),
+            });
+        inner.expect_name().returning(|| "");
 
         let solver = test_solver(inner);
-        let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = LimitOrder {
-            settlement_handling: handler.clone(),
-            is_liquidity_order: false,
-            buy_amount: 1.into(),
-            ..Default::default()
-        };
-        let orders = vec![
-            LimitOrder {
-                id: 0.into(),
-                ..order.clone()
-            },
-            LimitOrder {
-                id: 1.into(),
-                ..order.clone()
-            },
-        ];
-
+        let external_prices = ExternalPrices::try_from_auction_prices(
+            native,
+            [
+                buy_order.data.sell_token,
+                buy_order.data.buy_token,
+                sell_order.data.sell_token,
+                sell_order.data.buy_token,
+            ]
+            .into_iter()
+            .map(|token| (token, U256::from(1)))
+            .collect(),
+        )
+        .unwrap();
         let settlements = solver
             .solve(Auction {
+                external_prices,
                 orders,
                 ..Default::default()
             })
             .await
             .unwrap();
         assert_eq!(settlements.len(), 3);
+
+        let merged = settlements.into_iter().nth(2).unwrap().encoder;
+        let merged = merged.finish(InternalizationStrategy::EncodeAllInteractions);
+        assert_eq!(merged.tokens.len(), 4);
+        let token_index = |token: &H160| -> usize {
+            merged
+                .tokens
+                .iter()
+                .position(|token_| token_ == token)
+                .unwrap()
+        };
+        let prices = &merged.clearing_prices;
+        assert_eq!(prices[token_index(&buy_order.data.sell_token)], 1.into());
+        assert_eq!(prices[token_index(&buy_order.data.buy_token)], 2.into());
+        assert_eq!(prices[token_index(&sell_order.data.sell_token)], 6.into());
+        assert_eq!(prices[token_index(&sell_order.data.buy_token)], 7.into());
+        assert_eq!(merged.trades.len(), 2);
+        assert_eq!(merged.interactions.iter().flatten().count(), 2);
     }
 
     #[tokio::test]
