@@ -304,26 +304,24 @@ async fn filter_invalid_signature_orders(
         .await
         .into_iter();
 
-    let _ = orders
-        .filter_async("invalid_signature", |orders| async move {
-            Ok(orders
-                .into_iter()
-                .filter(|order| {
-                    if let Signature::Eip1271(_) = &order.signature {
-                        if let Err(err) = validations.next().unwrap() {
-                            tracing::warn!(
-                                order_uid =% order.metadata.uid, ?err,
-                                "filtered order because of invalid EIP-1271 signature"
-                            );
-                            return false;
-                        }
+    orders.filter("invalid_signature", |orders| {
+        orders
+            .into_iter()
+            .filter(|order| {
+                if let Signature::Eip1271(_) = &order.signature {
+                    if let Err(err) = validations.next().unwrap() {
+                        tracing::warn!(
+                            order_uid =% order.metadata.uid, ?err,
+                            "filtered order because of invalid EIP-1271 signature"
+                        );
+                        return false;
                     }
+                }
 
-                    true
-                })
-                .collect())
-        })
-        .await;
+                true
+            })
+            .collect()
+    });
 }
 
 /// Returns existing balances and Vec of queries that need to be performed.
@@ -349,7 +347,7 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 // selling the same token but not enough balance for all of them.
 // Assumes balance fetcher is already tracking all balances.
 fn solvable_orders(orders: &mut OrderFilter, balances: &Balances, ethflow_contract: Option<H160>) {
-    let _ = orders.filter("insufficient_balance", |mut orders| {
+    orders.filter("insufficient_balance", |mut orders| {
         let mut orders_map = HashMap::<Query, Vec<Order>>::new();
         orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
         for order in orders {
@@ -404,7 +402,7 @@ fn solvable_orders(orders: &mut OrderFilter, balances: &Balances, ethflow_contra
                 }
             }
         }
-        Ok(result)
+        result
     });
 }
 
@@ -684,9 +682,9 @@ impl OrderFilter {
 
     /// Retain orders based on a predicate.
     fn retain(&mut self, reason: &'static str, predicate: impl FnMut(&Order) -> bool) {
-        let _ = self.filter(reason, |mut orders| {
+        self.filter(reason, |mut orders| {
             orders.retain(predicate);
-            Ok(orders)
+            orders
         });
     }
 
@@ -700,7 +698,7 @@ impl OrderFilter {
         F: FnMut(&Order) -> Fut,
         Fut: Future<Output = Result<bool>>,
     {
-        self.filter_async(reason, |mut orders| async move {
+        self.try_filter_async(reason, |mut orders| async move {
             let mut index = 0;
             'outer: while index < orders.len() {
                 if !predicate(&orders[index]).await? {
@@ -715,17 +713,25 @@ impl OrderFilter {
     }
 
     /// Filter orders and store metrics.
-    fn filter<F>(&mut self, reason: &'static str, apply: F) -> Result<()>
+    fn filter<F>(&mut self, reason: &'static str, apply: F)
+    where
+        F: FnOnce(Vec<Order>) -> Vec<Order>,
+    {
+        self.try_filter(reason, |orders| Ok(apply(orders))).unwrap();
+    }
+
+    /// Filter orders and store metrics propagating errors.
+    fn try_filter<F>(&mut self, reason: &'static str, apply: F) -> Result<()>
     where
         F: FnOnce(Vec<Order>) -> Result<Vec<Order>>,
     {
-        self.filter_async(reason, |orders| async move { apply(orders) })
+        self.try_filter_async(reason, |orders| async move { apply(orders) })
             .now_or_never()
             .expect("synchronous order filter did not resolve immediately")
     }
 
     /// Asyncronously filters orders and store metrics.
-    async fn filter_async<F, Fut>(&mut self, reason: &'static str, apply: F) -> Result<()>
+    async fn try_filter_async<F, Fut>(&mut self, reason: &'static str, apply: F) -> Result<()>
     where
         F: FnOnce(Vec<Order>) -> Fut,
         Fut: Future<Output = Result<Vec<Order>>>,
@@ -818,13 +824,18 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
+
+        let mut order_filter = OrderFilter::test(orders.clone());
+        solvable_orders(&mut order_filter, &balances, None);
         // Second order has lower timestamp so it isn't picked.
-        assert_eq!(orders_, orders[..1]);
+        assert_eq!(order_filter.finish(), orders[..1]);
+
         orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
-        assert_eq!(orders_, orders[1..]);
+
+        let mut order_filter = OrderFilter::test(orders.clone());
+        solvable_orders(&mut order_filter, &balances, None);
+        assert_eq!(order_filter.finish(), orders[1..]);
     }
 
     #[tokio::test]
@@ -1063,13 +1074,16 @@ mod tests {
         ];
         // last token price won't be available
         let deadline = Instant::now() + Duration::from_secs_f32(3.5);
-        let (orders_, prices) = filter_orders_with_native_prices(
-            orders.clone(),
+        let mut order_filter = OrderFilter::test(orders.clone());
+        let prices = filter_orders_with_native_prices(
+            &mut order_filter,
             &native_price_estimator,
             deadline,
             Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         )
         .await;
+
+        let orders_ = order_filter.finish();
         assert_eq!(orders_.len(), 1);
         // It is not guaranteed which order is the included one because the function uses a hashset
         // for the tokens.
@@ -1106,8 +1120,11 @@ mod tests {
         })
         .collect();
 
-        let filtered_orders = filter_banned_user_orders(orders, &banned_users);
-        let filtered_owners = filtered_orders
+        let mut order_filter = OrderFilter::test(orders);
+        filter_banned_user_orders(&mut order_filter, &banned_users);
+
+        let filtered_owners = order_filter
+            .as_slice()
             .iter()
             .map(|order| order.metadata.owner)
             .collect::<Vec<_>>();
@@ -1160,9 +1177,14 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, None);
+
+        let mut order_filter = OrderFilter::test(orders);
+        solvable_orders(&mut order_filter, &balances, None);
+
+        let mut filtered_orders = order_filter.finish();
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
+
         assert_eq!(expected_result, filtered_orders);
     }
 
@@ -1270,11 +1292,13 @@ mod tests {
                 .with_buy_token(token2)
                 .build(),
         ];
-        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
+
+        let mut order_filter = OrderFilter::test(orders.clone());
+        filter_unsupported_tokens(&mut order_filter, &bad_token)
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert_eq!(result, &orders[1..2]);
+        assert_eq!(order_filter.as_slice(), &orders[1..2]);
     }
 
     #[test]
@@ -1361,10 +1385,9 @@ mod tests {
             order(100, 255, 1),
         ];
 
-        let orders = [valid_orders.clone(), invalid_orders].concat();
-        assert_eq!(
-            filter_mispriced_limit_orders(orders, &prices, &price_factor),
-            valid_orders,
-        );
+        let mut orders = OrderFilter::test([valid_orders.clone(), invalid_orders].concat());
+        filter_mispriced_limit_orders(&mut orders, &prices, &price_factor);
+
+        assert_eq!(orders.as_slice(), valid_orders);
     }
 }
