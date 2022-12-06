@@ -29,6 +29,8 @@ struct Order {
     sell_token: H160,
     #[serde(with = "u256_decimal")]
     sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    fee_amount: U256,
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
@@ -36,6 +38,23 @@ struct Order {
     is_liquidity_order: bool,
     #[serde(flatten)]
     class: OrderClass,
+}
+
+impl Order {
+    fn effective_sell_amount(&self) -> U256 {
+        match &self.class {
+            OrderClass::Limit(limit) => {
+                // Use wrapping arithmetic. The orderbook should guarantee that
+                // the effective sell amount fits in a `U256`.
+                self.sell_amount
+                    .overflowing_add(self.fee_amount)
+                    .0
+                    .overflowing_sub(limit.surplus_fee)
+                    .0
+            }
+            _ => self.sell_amount,
+        }
+    }
 }
 
 struct OrderBookApi {
@@ -109,8 +128,9 @@ impl ZeroExApi {
         let mut url = self.base.join("swap/v1/price").unwrap();
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
-            OrderKind::Sell => ("sellAmount", order.sell_amount),
+            OrderKind::Sell => ("sellAmount", order.effective_sell_amount()),
         };
+
         let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
             .append_pair("sellToken", &format!("{:#x}", order.sell_token))
@@ -137,7 +157,13 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
+        let can_settle = response.sell_amount <= order.effective_sell_amount()
+            && response.buy_amount >= order.buy_amount;
+        if can_settle {
+            tracing::debug!(%order.uid, "marking order as settleable");
+        }
+
+        Ok(can_settle)
     }
 }
 
