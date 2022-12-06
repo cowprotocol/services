@@ -19,6 +19,7 @@ use {
         driver_logger::DriverLogger,
         settlement::Settlement,
         settlement_rater::{SettlementRating, SimulationWithResult},
+        settlement_simulation::MAX_BASE_GAS_FEE_INCREASE,
         settlement_submission::{SolutionSubmitter, SubmissionError},
     },
     std::{
@@ -114,7 +115,11 @@ impl Driver {
     /// Validates that the `Settlement` satisfies expected fairness and
     /// correctness properties.
     async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationWithResult> {
-        let gas_price = self.gas_price_estimator.estimate().await?;
+        let gas_price = self
+            .gas_price_estimator
+            .estimate()
+            .await?
+            .bump(MAX_BASE_GAS_FEE_INCREASE);
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
         let simulation_details = self
             .settlement_rater

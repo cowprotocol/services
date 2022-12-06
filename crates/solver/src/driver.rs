@@ -11,7 +11,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation,
+    settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, Solver, Solvers},
 };
@@ -279,7 +279,8 @@ impl Driver {
             .gas_price_estimator
             .estimate()
             .await
-            .context("failed to estimate gas price")?;
+            .context("failed to estimate gas price")?
+            .bump(MAX_BASE_GAS_FEE_INCREASE);
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
         let pairs: Vec<_> = orders
