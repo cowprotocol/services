@@ -1,9 +1,11 @@
-use crate::{commit_reveal::SettlementSummary, driver::Driver};
-use anyhow::Result;
-use shared::api::{convert_json_response, error, extract_payload, ApiReply, IntoWarpReply};
-use std::{convert::Infallible, sync::Arc};
-use tracing::Instrument;
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+use {
+    crate::{commit_reveal::SettlementSummary, driver::Driver},
+    anyhow::Result,
+    shared::api::{convert_json_response, error, extract_payload, ApiReply, IntoWarpReply},
+    std::{convert::Infallible, sync::Arc},
+    tracing::Instrument,
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+};
 
 fn post_execute_request(
     prefix: &'static str,

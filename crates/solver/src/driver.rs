@@ -26,12 +26,17 @@ use model::{
     solver_competition::{
         self, CompetitionAuction, Execution, Objective, SolverCompetitionDB, SolverSettlement,
     },
+    TokenPair,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
-    code_fetching::CodeFetching, current_block::CurrentBlockStream, ethrpc::Web3,
-    http_solver::model::SolverRunError, recent_block_cache::Block, tenderly_api::TenderlyApi,
+    code_fetching::CodeFetching,
+    current_block::CurrentBlockStream,
+    ethrpc::Web3,
+    http_solver::model::{InternalizationStrategy, SolverRunError},
+    recent_block_cache::Block,
+    tenderly_api::TenderlyApi,
 };
 use std::{
     sync::Arc,
@@ -277,9 +282,14 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
+        let pairs: Vec<_> = orders
+            .iter()
+            .filter(|o| !o.is_liquidity_order)
+            .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
+            .collect();
         let liquidity = self
             .liquidity_collector
-            .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
+            .get_liquidity(&pairs, Block::Number(current_block_during_liquidity_fetch))
             .await?;
         self.metrics.liquidity_fetched(&liquidity);
 
@@ -348,7 +358,10 @@ impl Driver {
                         })
                         .collect(),
                     call_data: settlement_simulation::call_data(
-                        rated_settlement.settlement.clone().into(),
+                        rated_settlement
+                            .settlement
+                            .clone()
+                            .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
                     ),
                 })
                 .collect(),
