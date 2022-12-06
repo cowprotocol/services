@@ -263,12 +263,14 @@ struct Solution {
 }
 
 impl Solution {
+    // TODO Did I just strike gold? NO, this is only the baseline solver.
     fn into_settlement(self, order: &LimitOrder, slippage: &SlippageContext) -> Result<Settlement> {
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => self.executed_buy_amount,
             order.buy_token => self.executed_sell_amount,
         });
 
+        // TODO Everything below this line is related to liquidity
         settlement.with_liquidity(order, order.full_execution_amount())?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);

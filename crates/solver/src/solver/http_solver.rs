@@ -482,6 +482,8 @@ impl Solver for HttpSolver {
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
+        // TODO I think this is the most important place to look
+        // TODO The mapping actually starts HERE and it's really complex (complicated?)
         if orders.is_empty() {
             return Ok(Vec::new());
         };

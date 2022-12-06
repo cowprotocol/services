@@ -20,6 +20,8 @@ pub struct Auction {
     block: u64,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
+    /// All prices in this trade denominated in the native token. For Ethereum,
+    /// these prices will be denominated in wei.
     #[serde_as(as = "HashMap<_, DisplayFromStr>")]
     prices: HashMap<H160, BigUint>,
 }

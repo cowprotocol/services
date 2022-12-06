@@ -70,6 +70,13 @@ impl SettlementRater {
             solver_settlements
                 .into_iter()
                 .map(|(solver, settlement)| async {
+                    // TODO So this settle_method function is what builds a transaction from a
+                    // settlement. I need to figure out how to build a settlement from a solution
+                    // and I've solved the problem. I just have to call this settle_method
+                    // function. The rest is just access list generation.
+                    //
+                    // And also, I need the settlement contract, which I think I will paste in for
+                    // now.
                     let tx = settle_method(
                         gas_price,
                         &self.settlement_contract,
@@ -186,11 +193,15 @@ impl SettlementRating for SettlementRater {
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
+        // TODO It might make sense to make this a legit pub fn
+        // Also have a bit of code at the boundary to convert a solution to a settlement
         let rate_settlement = |id, settlement: Settlement, gas_estimate| {
             let surplus = settlement.total_surplus(prices);
             let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
             let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
+            // RatedSettlement has an objective_value method which only takes self
             RatedSettlement {
+                // TODO The id is only used for logging
                 id,
                 settlement,
                 surplus,

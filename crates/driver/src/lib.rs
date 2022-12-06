@@ -9,8 +9,11 @@ pub mod driver;
 pub mod settlement_proposal;
 
 pub mod api;
+pub mod boundary;
 pub mod logic;
+mod node;
+mod simulator;
 mod solver;
 mod util;
 
-pub use crate::solver::Solver;
+pub use {crate::solver::Solver, node::EthNode, simulator::Simulator};
