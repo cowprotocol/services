@@ -13,9 +13,11 @@ global-metrics = { path = "../global-metrics" }
 model = { path = "../model" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 shared = { path = "../shared" }
+strum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

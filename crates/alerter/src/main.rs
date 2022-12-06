@@ -6,13 +6,17 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use model::{
-    order::{OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     u256_decimal,
 };
 use primitive_types::{H160, U256};
-use prometheus::IntGauge;
+use prometheus::{IntGauge, IntGaugeVec};
 use reqwest::Client;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use strum::VariantNames as _;
 use url::Url;
 
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
@@ -30,6 +34,7 @@ struct Order {
     creation_date: DateTime<Utc>,
     partially_fillable: bool,
     is_liquidity_order: bool,
+    class: OrderClass,
 }
 
 struct OrderBookApi {
@@ -143,12 +148,7 @@ struct Alerter {
     last_alert: Option<Instant>,
     // order and for how long it has been matchable
     open_orders: Vec<(Order, Option<Instant>)>,
-    // Expose a prometheus metric so that we can use our Grafana alert infrastructure.
-    //
-    // Set to 0 or 1 depending on whether our alert condition is satisfied which is that there
-    // hasn't been a trade for some time and that there is an order that has been matchable for some
-    // time.
-    no_trades_but_matchable_order: IntGauge,
+    metrics: &'static Metrics,
 }
 
 struct AlertConfig {
@@ -160,14 +160,21 @@ struct AlertConfig {
     min_alert_interval: Duration,
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// Set to 0 or 1 depending on whether our alert condition is satisfied
+    /// which is that there hasn't been a trade for some time and that there is
+    /// an order that has been matchable for some time.
+    no_trades_but_matchable_order: IntGauge,
+
+    /// Gauge for counting the number of matchable but open trades in the
+    /// orderbook.
+    #[metric(labels("class"))]
+    matchable_orders_count: IntGaugeVec,
+}
+
 impl Alerter {
     pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
-        let registry = global_metrics::get_metrics_registry();
-        let no_trades_but_matchable_order =
-            IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
-        registry
-            .register(Box::new(no_trades_but_matchable_order.clone()))
-            .unwrap();
         Self {
             orderbook_api,
             zeroex_api,
@@ -175,7 +182,7 @@ impl Alerter {
             last_observed_trade: Instant::now(),
             last_alert: None,
             open_orders: Vec::new(),
-            no_trades_but_matchable_order,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         }
     }
 
@@ -196,10 +203,16 @@ impl Alerter {
                 (order, existing_time)
             })
             .collect::<Vec<_>>();
+
         tracing::debug!("found {} open orders", orders.len());
+
         std::mem::swap(&mut self.open_orders, &mut orders);
         // Keep only orders that were open last update and are not open this update.
-        orders.retain(|order| !self.open_orders.contains(order));
+        orders.retain(|(order, _)| {
+            self.open_orders
+                .iter()
+                .all(|(open_order, _)| open_order.uid != order.uid)
+        });
         for closed_order in orders {
             let order = self.orderbook_api.order(&closed_order.0.uid).await?;
             if order.status == OrderStatus::Fulfilled {
@@ -211,22 +224,15 @@ impl Alerter {
                 break;
             }
         }
+
         tracing::debug!("found no fulfilled orders");
         Ok(())
-    }
-
-    fn alert(&self, order: &Order) {
-        tracing::error!(
-            "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to 0x.",
-            self.config.time_without_trade.as_secs(),
-            order.uid,
-        );
     }
 
     pub async fn update(&mut self) -> Result<()> {
         self.update_open_orders().await?;
         if self.last_observed_trade.elapsed() <= self.config.time_without_trade {
-            self.no_trades_but_matchable_order.set(0);
+            self.metrics.no_trades_but_matchable_order.set(0);
             // Delete all matchable timestamps.
             //
             // If we didn't do this what could happen is that first we mark an order as matchable
@@ -241,15 +247,22 @@ impl Alerter {
             }
             return Ok(());
         }
-        for i in 0..self.open_orders.len() {
+
+        let mut matchable_orders = OrderClass::VARIANTS
+            .iter()
+            .map(|class| (*class, 0_i64))
+            .collect::<HashMap<_, _>>();
+
+        for (order, solvable_since) in &mut self.open_orders {
             let can_be_settled = self
                 .zeroex_api
-                .can_be_settled(&self.open_orders[i].0)
+                .can_be_settled(order)
                 .await
                 .context("can_be_settled")?;
+
             let now = Instant::now();
             if can_be_settled {
-                let solvable_since = *self.open_orders[i].1.get_or_insert(now);
+                let solvable_since = *solvable_since.get_or_insert(now);
                 if now.duration_since(solvable_since) > self.config.min_order_solvable_time {
                     let should_alert = match self.last_alert {
                         None => true,
@@ -257,18 +270,38 @@ impl Alerter {
                     };
                     if should_alert {
                         self.last_alert = Some(now);
-                        self.alert(&self.open_orders[i].0);
+                        alert(&self.config, order);
                     }
-                    self.no_trades_but_matchable_order.set(1);
+
+                    *matchable_orders.get_mut(order.class.as_ref()).unwrap() += 1;
                 }
-                return Ok(());
             } else {
-                self.open_orders[i].1 = None;
+                *solvable_since = None;
             }
         }
-        self.no_trades_but_matchable_order.set(0);
+
+        self.metrics
+            .no_trades_but_matchable_order
+            .set(matchable_orders.values().any(|count| *count > 0) as _);
+        for (class, count) in matchable_orders {
+            self.metrics
+                .matchable_orders_count
+                .with_label_values(&[class])
+                .set(count);
+        }
+
         Ok(())
     }
+}
+
+fn alert(config: &AlertConfig, order: &Order) {
+    tracing::error!(
+        "No orders have been settled in the last {} seconds \
+         even though order {} is solvable and has a price that \
+         allows it to be settled according to 0x.",
+        config.time_without_trade.as_secs(),
+        order.uid,
+    );
 }
 
 #[derive(Debug, Parser)]
