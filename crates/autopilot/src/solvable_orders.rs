@@ -759,18 +759,17 @@ impl OrderFilter {
     /// Finishes order filtering and reports metrics.
     fn finish(self) -> Vec<Order> {
         self.metrics.auction_creations.inc();
-        for class in OrderClass::VARIANTS {
-            let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
-            let solvable_grouped_by_class = self.orders.iter().filter(correct_class).count();
+        for (class, group) in self.counts {
             self.metrics
                 .auction_solvable_orders
                 .with_label_values(&[class])
-                .set(solvable_grouped_by_class as i64);
-            let filtered_grouped_by_class = self.orders.iter().filter(correct_class).count();
-            self.metrics
-                .auction_filtered_orders
-                .with_label_values(&[class])
-                .set(filtered_grouped_by_class as i64);
+                .set(group.count as i64);
+            for (reason, count) in group.filtered {
+                self.metrics
+                    .auction_filtered_orders
+                    .with_label_values(&[class, reason])
+                    .set(count as i64);
+            }
         }
 
         self.orders
