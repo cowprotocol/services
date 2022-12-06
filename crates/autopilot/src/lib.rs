@@ -20,7 +20,7 @@ use crate::{
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
 };
-use ethcontract::{errors::DeployError, BlockId, BlockNumber};
+use ethcontract::{errors::DeployError, BlockNumber};
 use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -32,6 +32,8 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    contracts::settlement_deployment_block_number_hash,
+    current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -376,18 +378,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         })
     })();
 
-    let sync_start = if args.skip_event_sync {
-        web3.eth()
-            .block(BlockId::Number(BlockNumber::Latest))
-            .await
-            .ok()
-            .flatten()
-            .map(|block| {
-                (
-                    block.number.expect("number must exist").as_u64(),
-                    block.hash.expect("hash must exist"),
-                )
-            })
+    let skip_event_sync_start = if args.skip_event_sync {
+        block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
     } else {
         None
     };
@@ -396,7 +388,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
         block_retriever.clone(),
-        sync_start,
+        skip_event_sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
@@ -475,7 +467,17 @@ pub async fn main(args: arguments::Arguments) -> ! {
             CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
             onchain_order_event_parser,
             block_retriever,
-            sync_start,
+            Some(
+                skip_event_sync_start.unwrap_or(
+                    settlement_deployment_block_number_hash(&web3, chain_id)
+                        .await
+                        .unwrap_or_else(|err| {
+                            panic!(
+                                "Should be able to find settlement deployment block. Error: {err}"
+                            )
+                        }),
+                ),
+            ),
         ));
         maintainers.push(broadcaster_event_updater);
     }
