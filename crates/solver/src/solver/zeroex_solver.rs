@@ -18,18 +18,18 @@
 //! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
 
 use super::{
-    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
+    single_order_solver::{
+        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+    },
     Auction,
 };
 use crate::{
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::Settlement,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
 use ethcontract::Account;
-use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
     ethrpc::Web3,
@@ -83,7 +83,7 @@ impl SingleOrderSolving for ZeroExSolver {
         &self,
         order: LimitOrder,
         auction: &Auction,
-    ) -> Result<Option<Settlement>, SettlementError> {
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let (buy_amount, sell_amount) = match order.kind {
             OrderKind::Buy => (Some(order.buy_amount), None),
             OrderKind::Sell => (None, Some(order.sell_amount)),
@@ -109,26 +109,25 @@ impl SingleOrderSolving for ZeroExSolver {
             return Ok(None);
         }
 
-        let mut settlement = Settlement::new(hashmap! {
-            order.sell_token => swap.price.buy_amount,
-            order.buy_token => swap.price.sell_amount,
-        });
-        let spender = swap.price.allowance_target;
-
-        settlement.with_liquidity(&order, order.full_execution_amount())?;
+        let mut settlement = SingleOrderSettlement {
+            sell_token_price: swap.price.buy_amount,
+            buy_token_price: swap.price.sell_amount,
+            interactions: Vec::new(),
+        };
 
         if let Some(approval) = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
                 token: order.sell_token,
-                spender,
+                spender: swap.price.allowance_target,
                 amount: swap.price.sell_amount,
             })
             .await?
         {
-            settlement.encoder.append_to_execution_plan(approval);
+            settlement.interactions.push(Box::new(approval));
         }
-        settlement.encoder.append_to_execution_plan(swap);
+        settlement.interactions.push(Box::new(swap));
+
         Ok(Some(settlement))
     }
 
@@ -161,7 +160,7 @@ mod tests {
     use super::*;
     use crate::{
         interactions::allowances::{Approval, MockAllowanceManaging},
-        liquidity::{tests::CapturingSettlementHandler, LimitOrder},
+        liquidity::LimitOrder,
         test::account,
     };
     use contracts::{GPv2Settlement, WETH9};
@@ -170,7 +169,6 @@ mod tests {
     use model::order::{Order, OrderData, OrderKind};
     use shared::{
         ethrpc::{create_env_test_transport, create_test_transport},
-        http_solver::model::InternalizationStrategy,
         zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
     };
 
@@ -346,13 +344,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result.clearing_prices(),
-            &hashmap! {
-                sell_token => 91.into(),
-                buy_token => 100.into(),
-            }
-        );
+        assert_eq!(result.sell_token_price, 91.into());
+        assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
             .try_settle_order(sell_order_violating_limit, &Auction::default())
@@ -365,13 +358,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result.clearing_prices(),
-            &hashmap! {
-                sell_token => 91.into(),
-                buy_token => 100.into(),
-            }
-        );
+        assert_eq!(result.sell_token_price, 91.into());
+        assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
             .try_settle_order(buy_order_violating_limit, &Auction::default())
@@ -473,14 +461,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            2
-        );
+        assert_eq!(result.interactions.len(), 2);
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -488,91 +469,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            1
-        )
-    }
-
-    #[tokio::test]
-    async fn sets_execution_amount_based_on_kind() {
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        let mut client = MockZeroExApi::new();
-        client.expect_get_swap().returning(|_| {
-            async move {
-                Ok(SwapResponse {
-                    price: PriceResponse {
-                        sell_amount: 1000.into(),
-                        buy_amount: 5000.into(),
-                        allowance_target: shared::addr!("0000000000000000000000000000000000000000"),
-                        price: 0.,
-                        estimated_gas: Default::default(),
-                    },
-                    to: shared::addr!("0000000000000000000000000000000000000000"),
-                    data: vec![],
-                    value: 0.into(),
-                })
-            }
-            .boxed()
-        });
-
-        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
-        allowance_fetcher
-            .expect_get_approval()
-            .returning(|_| Ok(None));
-
-        let solver = ZeroExSolver {
-            account: account(),
-            api: Arc::new(client),
-            allowance_fetcher,
-            excluded_sources: Default::default(),
-            slippage_calculator: Default::default(),
-        };
-
-        let order = LimitOrder {
-            sell_token,
-            buy_token,
-            sell_amount: 1234.into(),
-            buy_amount: 4321.into(),
-            ..Default::default()
-        };
-
-        // Sell orders are fully executed
-        let handler = CapturingSettlementHandler::arc();
-        solver
-            .try_settle_order(
-                LimitOrder {
-                    kind: OrderKind::Sell,
-                    settlement_handling: handler.clone(),
-                    ..order.clone()
-                },
-                &Auction::default(),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(handler.calls(), vec![1234.into()]);
-
-        // Buy orders are fully executed
-        let handler = CapturingSettlementHandler::arc();
-        solver
-            .try_settle_order(
-                LimitOrder {
-                    kind: OrderKind::Buy,
-                    settlement_handling: handler.clone(),
-                    ..order
-                },
-                &Auction::default(),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(handler.calls(), vec![4321.into()]);
+        assert_eq!(result.interactions.len(), 1)
     }
 }
