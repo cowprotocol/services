@@ -135,7 +135,7 @@ impl UniswapV3SettlementHandler {
         (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
         fee: u32,
-    ) -> (Approval, UniswapV3Interaction) {
+    ) -> (Option<Approval>, UniswapV3Interaction) {
         let approval = self
             .inner
             .allowances
@@ -175,7 +175,9 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
             execution.output,
             self.fee.context("missing fee")?,
         );
-        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        if let Some(approval) = approval {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
@@ -215,20 +217,20 @@ mod tests {
         // Token A below, equal, above
         let (approval, _) =
             settlement_handler.settle((token_a, 50.into()), (token_b, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) =
             settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Token B below, equal, above
         let (approval, _) =
             settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) =
             settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) = settlement_handler.settle(
@@ -236,7 +238,7 @@ mod tests {
             (token_a, 100.into()),
             10,
         );
-        assert_ne!(approval, Approval::AllowanceSufficient);
+        assert_ne!(approval, None);
     }
 
     #[test]

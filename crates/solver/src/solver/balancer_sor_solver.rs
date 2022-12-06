@@ -129,7 +129,9 @@ impl SingleOrderSolving for BalancerSorSolver {
 
         let mut settlement = Settlement::new(prices);
         settlement.with_liquidity(&order, order.full_execution_amount())?;
-        settlement.encoder.append_to_execution_plan(approval);
+        if let Some(approval) = approval {
+            settlement.encoder.append_to_execution_plan(approval);
+        }
         settlement.encoder.append_to_execution_plan(batch_swap);
 
         Ok(Some(settlement))
@@ -227,7 +229,7 @@ impl Interaction for BatchSwap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging};
+    use crate::interactions::allowances::{AllowanceManager, MockAllowanceManaging};
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
     use model::order::{Order, OrderData};
@@ -312,7 +314,7 @@ mod tests {
                 spender: vault.address(),
                 amount: sell_amount,
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),
@@ -435,7 +437,7 @@ mod tests {
                 spender: vault.address(),
                 amount: sell_amount * 1001 / 1000,
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),
