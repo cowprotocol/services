@@ -422,6 +422,12 @@ pub struct SimulatedTransaction {
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
+    /// Gas price can influence the success of simulation if sender balance
+    /// is not enough for paying the costs of executing the transaction onchain
+    #[serde(with = "u256_decimal")]
+    pub max_fee_per_gas: U256,
+    #[serde(with = "u256_decimal")]
+    pub max_priority_fee_per_gas: U256,
 }
 
 /// Whether or not internalizable interactions should be encoded as calldata
@@ -1019,6 +1025,8 @@ mod tests {
                 to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 data: vec![19, 250, 73],
                 internalization: InternalizationStrategy::SkipInternalizableInteraction,
+                max_fee_per_gas: U256::from(100),
+                max_priority_fee_per_gas: U256::from(10),
             })
             .unwrap(),
             json!({
@@ -1033,6 +1041,8 @@ mod tests {
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "internalization": "Enabled",
+                "maxFeePerGas": "100",
+                "maxPriorityFeePerGas": "10",
             }),
         );
     }
