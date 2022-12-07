@@ -20,6 +20,12 @@ use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
+// We require from solvers to have a bit more ETH balance then needed
+// at the moment of simulating the transaction, to cover the potential increase
+// of the cost of sending transaction onchain, because of the sudden gas price increase.
+// To simulate this sudden increase of gas price during simulation, we artificially multiply
+// the gas price with this factor.
+const SOLVER_BALANCE_MULTIPLIER: f64 = 3.;
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
@@ -133,6 +139,8 @@ impl SettlementRanker {
         gas_price: GasPrice1559,
         auction_id: AuctionId,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
+        let gas_price = gas_price.bump(SOLVER_BALANCE_MULTIPLIER);
+
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
