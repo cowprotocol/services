@@ -54,6 +54,7 @@ impl Liquidity {
         }
     }
 
+    /// Returns the pool address on the blockchain containing this liquidity
     pub fn address(&self) -> Option<H160> {
         match self {
             Liquidity::ConstantProduct(amm) => Some(amm.address),

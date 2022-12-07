@@ -1,7 +1,9 @@
 //! Solver using the Balancer SOR.
 
 use super::{
-    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
+    single_order_solver::{
+        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+    },
     Auction,
 };
 use crate::{
@@ -10,12 +12,10 @@ use crate::{
         balancer_v2::{self, SwapKind},
     },
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::Settlement,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{Account, Bytes, I256, U256};
-use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
     balancer_sor_api::{BalancerSorApi, Query, Quote},
@@ -59,7 +59,7 @@ impl SingleOrderSolving for BalancerSorSolver {
         &self,
         order: LimitOrder,
         auction: &Auction,
-    ) -> Result<Option<Settlement>, SettlementError> {
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let amount = match order.kind {
             OrderKind::Sell => order.sell_amount,
             OrderKind::Buy => order.buy_amount,
@@ -102,18 +102,24 @@ impl SingleOrderSolving for BalancerSorSolver {
             ),
         };
 
-        let prices = hashmap! {
-            order.sell_token => quoted_buy_amount,
-            order.buy_token => quoted_sell_amount,
+        let mut settlement = SingleOrderSettlement {
+            sell_token_price: quoted_buy_amount,
+            buy_token_price: quoted_sell_amount,
+            interactions: Vec::new(),
         };
-        let approval = self
+
+        if let Some(approval) = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
                 token: order.sell_token,
                 spender: self.vault.address(),
                 amount: quoted_sell_amount_with_slippage,
             })
-            .await?;
+            .await?
+        {
+            settlement.interactions.push(Box::new(approval));
+        }
+
         let limits = compute_swap_limits(
             &quote,
             quoted_sell_amount_with_slippage,
@@ -126,11 +132,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             quote,
             limits,
         };
-
-        let mut settlement = Settlement::new(prices);
-        settlement.with_liquidity(&order, order.full_execution_amount())?;
-        settlement.encoder.append_to_execution_plan(approval);
-        settlement.encoder.append_to_execution_plan(batch_swap);
+        settlement.interactions.push(Box::new(batch_swap));
 
         Ok(Some(settlement))
     }
@@ -227,7 +229,7 @@ impl Interaction for BatchSwap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging};
+    use crate::interactions::allowances::{AllowanceManager, MockAllowanceManaging};
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
     use model::order::{Order, OrderData};
@@ -237,7 +239,6 @@ mod tests {
         balancer_sor_api::{DefaultBalancerSorApi, MockBalancerSorApi, Swap},
         dummy_contract,
         ethrpc::{create_env_test_transport, Web3},
-        http_solver::model::InternalizationStrategy,
     };
     use std::env;
 
@@ -312,7 +313,7 @@ mod tests {
                 spender: vault.address(),
                 amount: sell_amount,
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),
@@ -344,17 +345,15 @@ mod tests {
             )
             .await
             .unwrap()
-            .unwrap()
-            .encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction);
+            .unwrap();
 
-        assert_eq!(result.tokens, [buy_token, sell_token]);
-        assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
+        assert_eq!(result.buy_token_price, sell_amount);
+        assert_eq!(result.sell_token_price, buy_amount);
 
-        let Bytes(calldata) = &result.interactions[1][0].2;
+        let calldata: &[u8] = &result.interactions[0].encode()[0].2 .0;
         assert_eq!(
             calldata,
-            &vault
+            vault
                 .methods()
                 .batch_swap(
                     SwapKind::GivenIn as _,
@@ -435,7 +434,7 @@ mod tests {
                 spender: vault.address(),
                 amount: sell_amount * 1001 / 1000,
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),
@@ -467,17 +466,15 @@ mod tests {
             )
             .await
             .unwrap()
-            .unwrap()
-            .encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction);
+            .unwrap();
 
-        assert_eq!(result.tokens, [buy_token, sell_token]);
-        assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
+        assert_eq!(result.buy_token_price, sell_amount);
+        assert_eq!(result.sell_token_price, buy_amount);
 
-        let Bytes(calldata) = &result.interactions[1][0].2;
+        let calldata: &[u8] = &result.interactions[0].encode()[0].2 .0;
         assert_eq!(
             calldata,
-            &vault
+            vault
                 .methods()
                 .batch_swap(
                     SwapKind::GivenOut as _,

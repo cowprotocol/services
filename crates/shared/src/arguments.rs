@@ -21,6 +21,20 @@ use std::{
 use tracing::level_filters::LevelFilter;
 use url::Url;
 
+#[macro_export]
+macro_rules! logging_args_with_default_filter {
+    ($struct_name:ident ,$default_filter:literal) => {
+        #[derive(clap::Parser)]
+        pub struct $struct_name {
+            #[clap(long, env, default_value = $default_filter)]
+            pub log_filter: String,
+
+            #[clap(long, env, default_value = "error")]
+            pub log_stderr_threshold: LevelFilter,
+        }
+    };
+}
+
 // The following arguments are used to configure the order creation process
 // The arguments are shared between the orderbook crate and the autopilot crate,
 // as both crates can create orders
@@ -108,6 +122,11 @@ pub struct OrderQuotingArguments {
     pub cow_fee_factors: Option<SubsidyTiers>,
 }
 
+logging_args_with_default_filter!(
+    LoggingArguments,
+    "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug"
+);
+
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
@@ -120,15 +139,8 @@ pub struct Arguments {
     #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
-    #[clap(
-        long,
-        env,
-        default_value = "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug"
-    )]
-    pub log_filter: String,
-
-    #[clap(long, env, default_value = "error")]
-    pub log_stderr_threshold: LevelFilter,
+    #[clap(flatten)]
+    pub logging: LoggingArguments,
 
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
@@ -336,8 +348,12 @@ impl Display for Arguments {
         write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.tenderly)?;
-        writeln!(f, "log_filter: {}", self.log_filter)?;
-        writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
+        writeln!(f, "log_filter: {}", self.logging.log_filter)?;
+        writeln!(
+            f,
+            "log_stderr_threshold: {}",
+            self.logging.log_stderr_threshold
+        )?;
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;

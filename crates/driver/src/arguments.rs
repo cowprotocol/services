@@ -7,6 +7,7 @@ use {
         ethrpc,
         gas_price_estimation::GasEstimatorType,
         http_client,
+        logging_args_with_default_filter,
         sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
         tenderly_api,
     },
@@ -19,6 +20,11 @@ use {
     std::{net::SocketAddr, num::NonZeroU64, time::Duration},
     tracing::level_filters::LevelFilter,
 };
+
+logging_args_with_default_filter!(
+    LoggingArguments,
+    "warn,driver=debug,solver=debug,shared=debug"
+);
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -37,18 +43,11 @@ pub struct Arguments {
     #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
+    #[clap(flatten)]
+    pub logging: LoggingArguments,
+
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
-
-    #[clap(
-        long,
-        env,
-        default_value = "warn,driver=debug,solver=debug,shared=debug"
-    )]
-    pub log_filter: String,
-
-    #[clap(long, env, default_value = "error")]
-    pub log_stderr_threshold: LevelFilter,
 
     /// List of solvers in the form of `name|url|account`.
     #[clap(long, env, use_value_delimiter = true)]
@@ -314,8 +313,12 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.tenderly)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
-        writeln!(f, "log_filter: {}", self.log_filter)?;
-        writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
+        writeln!(f, "log_filter: {}", self.logging.log_filter)?;
+        writeln!(
+            f,
+            "log_stderr_threshold: {}",
+            self.logging.log_stderr_threshold
+        )?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;

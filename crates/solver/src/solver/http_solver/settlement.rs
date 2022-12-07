@@ -6,7 +6,7 @@ use crate::{
     },
     settlement::Settlement,
 };
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{anyhow, ensure, Context as _, Result};
 use model::{
     order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
     DomainSeparator,
@@ -57,18 +57,15 @@ enum Execution {
 impl Execution {
     fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
-            Execution::Amm(executed_amm) => &executed_amm.exec_plan,
-            Execution::CustomInteraction(interaction) => &interaction.exec_plan,
-            Execution::LimitOrder(order) => &order.exec_plan,
+            Execution::Amm(executed_amm) => Some(&executed_amm.exec_plan),
+            Execution::CustomInteraction(interaction) => interaction.exec_plan.as_ref(),
+            Execution::LimitOrder(order) => order.exec_plan.as_ref(),
         }
-        .as_ref()
     }
 
     fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
-        match self.execution_plan()? {
-            ExecutionPlan::Coordinates(coords) => Some(coords.clone()),
-            _ => None,
-        }
+        self.execution_plan()
+            .map(|exec_plan| exec_plan.coordinates.clone())
     }
 
     fn add_to_settlement(
@@ -148,7 +145,7 @@ struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
     order: Liquidity,
-    exec_plan: Option<ExecutionPlan>,
+    exec_plan: ExecutionPlan,
 }
 
 impl<'a> IntermediateSettlement<'a> {
@@ -198,7 +195,7 @@ impl<'a> IntermediateSettlement<'a> {
         for execution in &self.executions {
             let internalizable = execution
                 .execution_plan()
-                .map(|exec_plan| exec_plan.internalizable())
+                .map(|exec_plan| exec_plan.internal)
                 .unwrap_or_default();
             execution.add_to_settlement(&mut settlement, &self.slippage, internalizable)?;
         }
@@ -220,6 +217,19 @@ fn match_prepared_and_settled_orders(
             let prepared = prepared_orders
                 .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
+            match prepared.id {
+                crate::liquidity::LimitOrderUid::OrderUid(_) => {}
+                crate::liquidity::LimitOrderUid::ZeroEx(_) => {
+                    if let Some(internalizable) =
+                        settled.exec_plan.as_ref().map(|plan| plan.internal)
+                    {
+                        ensure!(
+                            !internalizable,
+                            "liquidity orders are not allowed to be internalizable"
+                        )
+                    }
+                }
+            }
             Ok(ExecutedLimitOrder {
                 order: prepared.clone(),
                 executed_buy_amount: settled.exec_buy_amount,
@@ -508,11 +518,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(9),
                 exec_buy_amount: U256::from(8),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 0,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -522,11 +534,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(1),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 1,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 1,
+                        position: 0,
+                    },
                     internal: true,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -536,11 +550,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(2),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 2,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 2,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -550,11 +566,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(6),
                 exec_buy_amount: U256::from(4),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 3,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 3,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -914,41 +932,49 @@ mod tests {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 0u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 0,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 1u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 1,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 2u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 2,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 3u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 3,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
             ],
         );
@@ -970,11 +996,13 @@ mod tests {
             order: Liquidity::ConstantProduct(cpo_1),
             input: (token_a, U256::from(2_u8)),
             output: (token_b, U256::from(1_u8)),
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 2u32,
+            exec_plan: ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 2u32,
+                },
                 internal: false,
-            })),
+            },
         }];
         let interactions = vec![InteractionData {
             target: H160::zero(),
@@ -982,11 +1010,13 @@ mod tests {
             call_data: Vec::new(),
             inputs: vec![],
             outputs: vec![],
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 1u32,
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 1u32,
+                },
                 internal: false,
-            })),
+            }),
             cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
@@ -1034,12 +1064,7 @@ mod tests {
                             (H160([2; 20]), H160([0xf2; 20])) => U256::from(5),
                         }
             })
-            .returning(|requests| {
-                Ok(requests
-                    .iter()
-                    .map(|_| Approval::AllowanceSufficient)
-                    .collect())
-            });
+            .returning(|_| Ok(Vec::new()));
 
         assert_eq!(
             compute_approvals(
@@ -1074,7 +1099,7 @@ mod tests {
             )
             .await
             .unwrap(),
-            vec![Approval::AllowanceSufficient; 4],
+            Vec::new(),
         );
     }
 

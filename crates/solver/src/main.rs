@@ -50,8 +50,8 @@ use std::{collections::HashMap, sync::Arc};
 async fn main() -> ! {
     let args = solver::arguments::Arguments::parse();
     shared::tracing::initialize(
-        args.shared.log_filter.as_str(),
-        args.shared.log_stderr_threshold,
+        args.shared.logging.log_filter.as_str(),
+        args.shared.logging.log_stderr_threshold,
     );
     shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running solver with validated arguments:\n{}", args);
