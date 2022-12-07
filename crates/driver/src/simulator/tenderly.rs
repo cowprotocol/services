@@ -1,10 +1,10 @@
-use crate::logic::eth;
+use crate::logic::{competition::solution, eth};
 
 #[derive(Debug)]
 pub struct Tenderly;
 
 impl Tenderly {
-    pub async fn access_list(&self, tx: &eth::Tx) -> eth::AccessList {
+    pub async fn access_list(&self, _settlement: &solution::Settlement) -> eth::AccessList {
         todo!()
     }
 }

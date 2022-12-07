@@ -8,7 +8,7 @@ pub mod commit_reveal;
 pub mod driver;
 pub mod settlement_proposal;
 
-pub mod api;
+mod api;
 pub mod boundary;
 pub mod logic;
 mod node;
@@ -16,4 +16,4 @@ mod simulator;
 mod solver;
 mod util;
 
-pub use {crate::solver::Solver, node::EthNode, simulator::Simulator};
+pub use {crate::solver::Solver, api::Api, node::EthNode, simulator::Simulator};

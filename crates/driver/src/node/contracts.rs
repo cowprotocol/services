@@ -1,1 +1,1 @@
-pub use crate::boundary::contracts::ERC20;
+pub use crate::boundary::contracts::{GPv2Settlement, ERC20};

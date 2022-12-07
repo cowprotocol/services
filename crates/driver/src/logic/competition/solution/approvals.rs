@@ -8,11 +8,7 @@
 // node module and there should be specific types there for calling various
 // methods. Probably have an enum for it or something. See how it works out.
 
-use {
-    crate::{logic::eth, node, EthNode},
-    primitive_types::U256,
-    std::collections::HashMap,
-};
+use {crate::logic::eth, primitive_types::U256, std::collections::HashMap};
 
 /// A set of ERC20 approvals required by the [`super::Solution`]. This type
 /// guarantees that there is only one approval per [`eth::Spender`] and that the
@@ -35,21 +31,6 @@ impl Approvals {
             .collect();
         normalized.sort();
         Self(normalized)
-    }
-
-    // TODO Move this into Settlement::encode
-    async fn filter(
-        node: &EthNode,
-        approvals: Vec<eth::Approval>,
-    ) -> Result<Vec<eth::Approval>, node::Error> {
-        let spenders = approvals.iter().map(|approval| approval.spender);
-        let allowances = node.allowances(spenders).await?;
-        Ok(approvals
-            .into_iter()
-            .zip(allowances)
-            .filter(|(approval, allowance)| !approval.is_approved(allowance))
-            .map(|(approval, allowance)| approval)
-            .collect())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &eth::Approval> {

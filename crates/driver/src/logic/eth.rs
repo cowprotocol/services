@@ -1,7 +1,4 @@
-use {
-    crate::logic::competition::Solution,
-    primitive_types::{H160, U256},
-};
+use primitive_types::{H160, U256};
 
 // TODO Constructing this type should probably do some validation, or maybe this
 // should be an enum with a Display implementation
@@ -14,15 +11,6 @@ pub struct NetworkName(pub String);
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Debug, Clone, Copy)]
 pub struct ChainId(pub u64);
-
-/// An Ethereum transaction.
-#[derive(Debug)]
-pub struct Tx(
-    // Currently, this is being "faked". Ideally this should be an agnostic representation of the
-    // data needed by a transaction, but this is done as-is now to make the [`crate::boundary`]
-    // integration easier.
-    pub Solution,
-);
 
 /// Gas amount.
 #[derive(Debug, Clone, Copy)]
@@ -41,7 +29,7 @@ pub struct GasPrice(pub U256);
 pub struct AccessList(pub web3::types::AccessList);
 
 impl AccessList {
-    pub fn merge(other: Self) -> Self {
+    pub fn merge(_other: Self) -> Self {
         todo!()
     }
 }
@@ -56,6 +44,12 @@ pub struct Simulation {
 /// An address. Can be an EOA or a smart contract address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(pub H160);
+
+impl From<H160> for Address {
+    fn from(inner: H160) -> Self {
+        Self(inner)
+    }
+}
 
 /// An ERC20 token.
 ///

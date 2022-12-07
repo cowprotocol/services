@@ -1,7 +1,6 @@
 use {
     super::auction::Auction,
     crate::{
-        logic::eth,
         solver::{self, Solver},
         EthNode,
         Simulator,
@@ -27,31 +26,16 @@ pub struct Solution {
     pub approvals: Approvals,
 }
 
-impl Solution {
-    fn tx(&self) -> eth::Tx {
-        todo!()
-    }
-}
-
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
     solver: &Solver,
-    simulator: &Simulator,
     node: &EthNode,
-    auction: Auction,
+    simulator: &Simulator,
+    auction: &Auction,
 ) -> Result<Score, solver::Error> {
     let solution = solver.solve(auction).await?;
-    Ok(score(simulator, node, &solution).await)
-}
-
-/// Calculate the score of a solution.
-async fn score(simulator: &Simulator, node: &EthNode, solution: &Solution) -> Score {
-    // TODO So in order to calculate the objective value, it seems the algorithm
-    // needs to know the prices of all tokens with ExternalPrices. I need to figure
-    // out how that type works and when the values are calculated, etc.
-    // ExternalPrices is built from the prices passed in as part of the auction,
-    // Auction::prices.
-    todo!()
+    let settlement = Settlement::encode(node, auction, solution).await;
+    Ok(settlement.score(simulator))
 }
 
 /// A unique solution ID. TODO Once this is finally decided, document what this
