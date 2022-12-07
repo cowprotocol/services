@@ -217,17 +217,12 @@ fn match_prepared_and_settled_orders(
             let prepared = prepared_orders
                 .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
-            match prepared.id {
-                crate::liquidity::LimitOrderUid::OrderUid(_) => {}
-                crate::liquidity::LimitOrderUid::ZeroEx(_) => {
-                    if let Some(internalizable) =
-                        settled.exec_plan.as_ref().map(|plan| plan.internal)
-                    {
-                        ensure!(
-                            !internalizable,
-                            "liquidity orders are not allowed to be internalizable"
-                        )
-                    }
+            if prepared.is_liquidity_order() {
+                if let Some(internalizable) = settled.exec_plan.as_ref().map(|plan| plan.internal) {
+                    ensure!(
+                        !internalizable,
+                        "liquidity orders are not allowed to be internalizable"
+                    )
                 }
             }
             Ok(ExecutedLimitOrder {
@@ -338,7 +333,7 @@ fn match_settled_prices(
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
     let executed_tokens = executed_limit_orders.iter().flat_map(|order| {
-        if order.order.is_liquidity_order {
+        if order.order.is_liquidity_order() {
             vec![order.order.sell_token]
         } else {
             vec![order.order.buy_token, order.order.sell_token]
@@ -392,14 +387,18 @@ mod tests {
     use crate::{
         interactions::allowances::MockAllowanceManaging,
         liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
-            WeightedProductOrder,
+            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderUid,
+            StablePoolOrder, WeightedProductOrder,
         },
         settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
-    use model::{order::OrderData, signature::Signature, TokenPair};
+    use model::{
+        order::{OrderData, OrderUid},
+        signature::Signature,
+        TokenPair,
+    };
     use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
@@ -697,7 +696,9 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderUid::ZeroEx("1".to_string()),
+            id: crate::liquidity::LimitOrderUid::Liquidity(LiquidityOrderUid::User(
+                OrderUid::from_integer(1),
+            )),
             sell_token: token_a,
             buy_token: token_a,
             sell_amount: U256::from(996570293625199060u128),

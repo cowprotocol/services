@@ -1,4 +1,4 @@
-use super::{LimitOrderUid, SettlementHandling};
+use super::{LimitOrderUid, LiquidityOrderUid, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances},
@@ -64,7 +64,9 @@ impl ZeroExLiquidity {
         }
 
         let limit_order = LimitOrder {
-            id: LimitOrderUid::ZeroEx(hex::encode(&record.metadata.order_hash)),
+            id: LimitOrderUid::Liquidity(LiquidityOrderUid::ZeroEx(hex::encode(
+                &record.metadata.order_hash,
+            ))),
             sell_token: record.order.maker_token,
             buy_token: record.order.taker_token,
             sell_amount,
@@ -73,7 +75,6 @@ impl ZeroExLiquidity {
             partially_fillable: true,
             unscaled_subsidized_fee: U256::zero(),
             scaled_unsubsidized_fee: U256::zero(),
-            is_liquidity_order: true,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order: record.order,
                 zeroex: self.zeroex.clone(),

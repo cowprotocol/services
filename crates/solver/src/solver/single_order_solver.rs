@@ -261,7 +261,7 @@ fn get_prioritized_orders(
     // settle them together with a user order.
     let mut user_orders: Vec<_> = orders
         .iter()
-        .filter(|o| !o.is_liquidity_order)
+        .filter(|o| !o.is_liquidity_order())
         .cloned()
         .collect();
     if user_orders.len() <= 1 {
@@ -305,7 +305,10 @@ pub fn execution_respects_order(
 mod tests {
     use super::*;
     use crate::{
-        liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler},
+        liquidity::{
+            order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderUid,
+            LiquidityOrderUid,
+        },
         metrics::NoopMetrics,
     };
     use anyhow::anyhow;
@@ -534,19 +537,22 @@ mod tests {
     fn spread_orders_get_prioritized() {
         let token = H160::from_low_u64_be;
         let amount = U256::from;
-        let order = |sell_amount: u128, is_liquidity_order: bool| LimitOrder {
+        let order = |sell_amount: u128, id: LimitOrderUid| LimitOrder {
+            id,
             sell_token: token(1),
             sell_amount: amount(sell_amount),
             buy_token: token(2),
             buy_amount: amount(100),
-            is_liquidity_order,
             ..Default::default()
         };
         let orders = [
-            order(500, true),
-            order(90, false),
-            order(100, false),
-            order(130, false),
+            order(
+                500,
+                LimitOrderUid::Liquidity(LiquidityOrderUid::User(OrderUid::from_integer(1))),
+            ), //liquidity order
+            order(90, Default::default()),  //market order
+            order(100, Default::default()), //market order
+            order(130, Default::default()), //market order
         ];
         let prices = ExternalPrices::new(
             token(0),
@@ -577,15 +583,19 @@ mod tests {
     fn tight_orders_get_prioritized() {
         let token = H160::from_low_u64_be;
         let amount = U256::from;
-        let order = |sell_amount: u128, is_liquidity_order: bool| LimitOrder {
+        let order = |sell_amount: u128, id: LimitOrderUid| LimitOrder {
+            id,
             sell_token: token(1),
             sell_amount: amount(sell_amount),
             buy_token: token(2),
             buy_amount: amount(100),
-            is_liquidity_order,
             ..Default::default()
         };
-        let orders = [order(105, false), order(103, false), order(101, false)];
+        let orders = [
+            order(105, Default::default()), //market order
+            order(103, Default::default()), //market order
+            order(101, Default::default()), //market order
+        ];
         let prices = ExternalPrices::new(
             token(0),
             hashmap! {

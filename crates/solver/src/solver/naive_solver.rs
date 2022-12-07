@@ -71,7 +71,7 @@ fn settle_pair(
     orders: Vec<LimitOrder>,
     uniswaps: &HashMap<TokenPair, ConstantProductOrder>,
 ) -> Option<Settlement> {
-    if orders.iter().all(|order| order.is_liquidity_order) {
+    if orders.iter().all(|order| order.is_liquidity_order()) {
         tracing::debug!(?pair, "no user orders");
         return None;
     }
@@ -121,10 +121,15 @@ fn extract_deepest_amm_liquidity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler};
+    use crate::liquidity::{
+        order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderUid,
+        LiquidityOrderUid,
+    };
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
+    use model::order::{
+        Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid, BUY_ETH_ADDRESS,
+    };
     use num::rational::Ratio;
     use shared::addr;
 
@@ -198,7 +203,7 @@ mod tests {
                 ..Default::default()
             }),
             LimitOrder {
-                is_liquidity_order: true,
+                id: LimitOrderUid::Liquidity(LiquidityOrderUid::User(OrderUid::from_integer(1))),
                 ..LimitOrder::from(Order {
                     data: OrderData {
                         sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),

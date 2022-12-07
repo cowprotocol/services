@@ -1,4 +1,4 @@
-use super::{Exchange, LimitOrder, SettlementHandling};
+use super::{Exchange, LimitOrder, LimitOrderUid, LiquidityOrderUid, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::{Context, Result};
 use contracts::WETH9;
@@ -43,7 +43,6 @@ impl OrderConverter {
                 .to_f64_lossy()
                 * self.fee_objective_scaling_factor,
         );
-        let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
         let is_mature = order.metadata.creation_date
             + chrono::Duration::from_std(self.min_order_age).unwrap()
             <= chrono::offset::Utc::now();
@@ -55,8 +54,15 @@ impl OrderConverter {
             _ => (order.data.sell_amount, order.data.fee_amount),
         };
 
+        let id = match order.metadata.class {
+            OrderClass::Market => LimitOrderUid::Market(order.metadata.uid),
+            OrderClass::Liquidity => {
+                LimitOrderUid::Liquidity(LiquidityOrderUid::User(order.metadata.uid))
+            }
+            OrderClass::Limit(_) => LimitOrderUid::Limit(order.metadata.uid),
+        };
         Ok(LimitOrder {
-            id: order.metadata.uid.into(),
+            id,
             sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.remaining(sell_amount)?,
@@ -65,7 +71,6 @@ impl OrderConverter {
             partially_fillable: order.data.partially_fillable,
             unscaled_subsidized_fee: remaining.remaining(fee_amount)?,
             scaled_unsubsidized_fee: scaled_fee_amount,
-            is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token,
