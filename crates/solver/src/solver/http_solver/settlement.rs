@@ -189,8 +189,6 @@ impl<'a> IntermediateSettlement<'a> {
             domain,
         )?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
-        // TODO The approvals are minified before being encoded. They're also checked, such that if
-        // the amount is already approved, the approval is not encoded in the settlement
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
 
@@ -216,7 +214,6 @@ impl<'a> IntermediateSettlement<'a> {
         })
     }
 
-    // TODO This is the right place to see how a solution is turned into a settlement
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
         settlement.submitter = self.submitter;
@@ -233,14 +230,8 @@ impl<'a> IntermediateSettlement<'a> {
                 .execution_plan()
                 .map(|exec_plan| exec_plan.internal)
                 .unwrap_or_default();
-            // TODO For the most part, this adds liquidity stuff, except for when the execution is
-            // "custom". It's "custom" if it's in the `interaction_data` of the DTO. So I can focus
-            // on that case only. It doesn't seem that difficult to do.
             execution.add_to_settlement(&mut settlement, &self.slippage, internalizable)?;
         }
-
-        // TODO For this mapping, all I need to look at are the prices, the approvals, and the
-        // interaction data. Everything else is related to liquidity and will be tackled later.
 
         Ok(settlement)
     }

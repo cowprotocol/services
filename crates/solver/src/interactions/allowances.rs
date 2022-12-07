@@ -181,8 +181,6 @@ where
     T::Batch: Send,
     T::Out: Send,
 {
-    // TODO I have to figure out what the owner is, but presumably it's the solver account
-    // Nope, it's the settlement contract address. Interesting.
     let mut batch = CallBatch::new(web3.transport());
     let results: Vec<_> = spender_tokens
         .into_iter()
@@ -223,7 +221,7 @@ fn is_batch_error(err: &ExecutionError) -> bool {
         ExecutionError::Web3(web3::Error::Transport(TransportError::Message(message))) => {
             // Currently, there is no sure-fire way to determine if a Web3 error
             // is caused because of a failing batch request, or some a call
-            // specific error, so we test that the message starts with "Batch"
+            // specific error, so we test that the method starts with "Batch"
             // string as a best guess.
             // <https://github.com/gnosis/ethcontract-rs/issues/550>
             message.starts_with("Batch")
