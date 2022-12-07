@@ -133,6 +133,10 @@ impl SettlementRating for SettlementRater {
                             to: self.settlement_contract.address(),
                             from: solver.account().address(),
                             data: call_data(settlement.clone().encode(internalization)),
+                            max_fee_per_gas: U256::from_f64_lossy(gas_price.max_fee_per_gas),
+                            max_priority_fee_per_gas: U256::from_f64_lossy(
+                                gas_price.max_priority_fee_per_gas,
+                            ),
                         },
                         settlement,
                         solver,

@@ -15,6 +15,7 @@ use {
         driver_logger::DriverLogger,
         settlement::Settlement,
         settlement_ranker::SettlementRanker,
+        settlement_simulation::MAX_BASE_GAS_FEE_INCREASE,
         solver::{Auction, Solver},
     },
     std::sync::{Arc, Mutex},
@@ -101,7 +102,11 @@ impl CommitRevealSolver {
             Err(_timeout) => Err(SolverRunError::Timeout),
         };
 
-        let gas_price = self.gas_estimator.estimate().await?;
+        let gas_price = self
+            .gas_estimator
+            .estimate()
+            .await?
+            .bump(MAX_BASE_GAS_FEE_INCREASE);
         let (mut rated_settlements, errors) = self
             .settlement_ranker
             .rank_legal_settlements(

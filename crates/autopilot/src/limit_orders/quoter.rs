@@ -1,4 +1,7 @@
-use crate::database::{orders::FeeUpdate, Postgres};
+use crate::database::{
+    orders::{FeeUpdate, LimitOrderQuote},
+    Postgres,
+};
 use anyhow::Result;
 use chrono::Duration;
 use futures::future::join_all;
@@ -117,8 +120,14 @@ impl LimitOrderQuoter {
                     surplus_fee: quote.fee_amount,
                     full_fee_amount: quote.full_fee_amount,
                 },
+                &LimitOrderQuote {
+                    fee_parameters: quote.data.fee_parameters,
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                },
             )
-            .await
+            .await?;
+        Ok(())
     }
 }
 

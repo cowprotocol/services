@@ -34,7 +34,12 @@ const SIMULATE_BATCH_SIZE: usize = 10;
 /// Example of this in action:
 /// [Block 12998225](https://etherscan.io/block/12998225) with base fee of `43.353224173` and ~100% over the gas target.
 /// Next [block 12998226](https://etherscan.io/block/12998226) has base fee of `48.771904644` which is an increase of ~12.5%.
-const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
+///
+/// Increase the gas price by the highest possible base gas fee increase. This
+/// is done because the between retrieving the gas price and executing the simulation,
+/// a block may have been mined that increases the base gas fee and causes the
+/// `eth_call` simulation to fail with `max fee per gas less than block base fee`.
+pub const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 
 pub async fn simulate_and_estimate_gas_at_current_block(
     settlements: impl Iterator<Item = (Account, EncodedSettlement, Option<AccessList>)>,
@@ -168,11 +173,6 @@ pub fn settle_method(
     settlement: EncodedSettlement,
     account: Account,
 ) -> MethodBuilder<DynTransport, ()> {
-    // Increase the gas price by the highest possible base gas fee increase. This
-    // is done because the between retrieving the gas price and executing the simulation,
-    // a block may have been mined that increases the base gas fee and causes the
-    // `eth_call` simulation to fail with `max fee per gas less than block base fee`.
-    let gas_price = gas_price.bump(MAX_BASE_GAS_FEE_INCREASE);
     settle_method_builder(contract, settlement, account)
         .gas_price(crate::into_gas_price(&gas_price))
 }

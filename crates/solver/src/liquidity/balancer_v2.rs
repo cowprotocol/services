@@ -159,10 +159,9 @@ impl SettlementHandler {
         let (asset_in, amount_in_max) = execution.input_max;
         let (asset_out, amount_out) = execution.output;
 
-        encoder.append_to_execution_plan_internalizable(
-            self.allowances.approve_token(asset_in, amount_in_max)?,
-            execution.internalizable,
-        );
+        if let Some(approval) = self.allowances.approve_token(asset_in, amount_in_max)? {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(
             BalancerSwapGivenOutInteraction {
                 settlement: self.settlement.clone(),
@@ -422,7 +421,7 @@ mod tests {
         assert_eq!(
             interactions,
             [
-                Approval::Approve {
+                Approval {
                     token: H160([0x70; 20]),
                     spender: vault.address(),
                 }
@@ -438,7 +437,6 @@ mod tests {
                     user_data: Default::default(),
                 }
                 .encode(),
-                Approval::AllowanceSufficient.encode(),
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault,
