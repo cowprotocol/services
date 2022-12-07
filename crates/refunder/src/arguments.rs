@@ -1,8 +1,11 @@
 use clap::Parser;
 use ethcontract::H160;
-use shared::{ethrpc, http_client};
+use shared::{ethrpc, http_client, logging_args_with_default_filter};
 use std::time::Duration;
+use tracing::level_filters::LevelFilter;
 use url::Url;
+
+logging_args_with_default_filter!(LoggingArguments, "warn,refunder=debug,shared=debug");
 
 #[derive(Parser)]
 pub struct Arguments {
@@ -11,6 +14,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub ethrpc: ethrpc::Arguments,
+
+    #[clap(flatten)]
+    pub logging: LoggingArguments,
 
     /// Minimum time in seconds an order must have been valid for
     /// to be eligible for refunding
