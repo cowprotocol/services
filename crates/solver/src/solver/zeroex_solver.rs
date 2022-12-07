@@ -117,15 +117,17 @@ impl SingleOrderSolving for ZeroExSolver {
 
         settlement.with_liquidity(&order, order.full_execution_amount())?;
 
-        settlement.encoder.append_to_execution_plan(
-            self.allowance_fetcher
-                .get_approval(&ApprovalRequest {
-                    token: order.sell_token,
-                    spender,
-                    amount: swap.price.sell_amount,
-                })
-                .await?,
-        );
+        if let Some(approval) = self
+            .allowance_fetcher
+            .get_approval(&ApprovalRequest {
+                token: order.sell_token,
+                spender,
+                amount: swap.price.sell_amount,
+            })
+            .await?
+        {
+            settlement.encoder.append_to_execution_plan(approval);
+        }
         settlement.encoder.append_to_execution_plan(swap);
         Ok(Some(settlement))
     }
@@ -292,10 +294,10 @@ mod tests {
                 amount: U256::from(100),
             }))
             .returning(move |_| {
-                Ok(Approval::Approve {
+                Ok(Some(Approval {
                     token: sell_token,
                     spender: allowance_target,
-                })
+                }))
             });
 
         let solver = ZeroExSolver {
@@ -437,16 +439,16 @@ mod tests {
                 amount: U256::from(100),
             }))
             .returning(move |_| {
-                Ok(Approval::Approve {
+                Ok(Some(Approval {
                     token: sell_token,
                     spender: allowance_target,
-                })
+                }))
             })
             .in_sequence(&mut seq);
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .returning(|_| Ok(Approval::AllowanceSufficient))
+            .returning(|_| Ok(None))
             .in_sequence(&mut seq);
 
         let solver = ZeroExSolver {
@@ -523,7 +525,7 @@ mod tests {
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = ZeroExSolver {
             account: account(),

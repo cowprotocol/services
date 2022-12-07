@@ -179,6 +179,23 @@ async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
     })
 }
 
+pub async fn block_number_to_block_number_hash(
+    web3: &Web3,
+    block_number: BlockNumber,
+) -> Option<BlockNumberHash> {
+    web3.eth()
+        .block(BlockId::Number(block_number))
+        .await
+        .ok()
+        .flatten()
+        .map(|block| {
+            (
+                block.number.expect("number must exist").as_u64(),
+                block.hash.expect("hash must exist"),
+            )
+        })
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
     /// How much a new block number differs from the current block number.

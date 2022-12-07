@@ -1034,12 +1034,7 @@ mod tests {
                             (H160([2; 20]), H160([0xf2; 20])) => U256::from(5),
                         }
             })
-            .returning(|requests| {
-                Ok(requests
-                    .iter()
-                    .map(|_| Approval::AllowanceSufficient)
-                    .collect())
-            });
+            .returning(|_| Ok(Vec::new()));
 
         assert_eq!(
             compute_approvals(
@@ -1074,7 +1069,7 @@ mod tests {
             )
             .await
             .unwrap(),
-            vec![Approval::AllowanceSufficient; 4],
+            Vec::new(),
         );
     }
 

@@ -192,10 +192,12 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         if executed_amount > u128::MAX.into() {
             anyhow::bail!("0x only supports executed amounts of size u128");
         }
-        encoder.append_to_execution_plan(
-            self.allowances
-                .approve_token(self.order.taker_token, executed_amount)?,
-        );
+        if let Some(approval) = self
+            .allowances
+            .approve_token(self.order.taker_token, executed_amount)?
+        {
+            encoder.append_to_execution_plan(approval);
+        }
         encoder.append_to_execution_plan(ZeroExInteraction {
             taker_token_fill_amount: executed_amount.as_u128(),
             order: self.order.clone(),
@@ -364,7 +366,7 @@ pub mod tests {
         assert_eq!(
             interactions,
             [
-                Approval::Approve {
+                Approval {
                     token: sell_token,
                     spender: zeroex.address(),
                 }
@@ -402,15 +404,12 @@ pub mod tests {
             .interactions;
         assert_eq!(
             interactions,
-            [
-                Approval::AllowanceSufficient.encode(),
-                ZeroExInteraction {
-                    order,
-                    taker_token_fill_amount: 100,
-                    zeroex
-                }
-                .encode(),
-            ]
+            [ZeroExInteraction {
+                order,
+                taker_token_fill_amount: 100,
+                zeroex
+            }
+            .encode(),]
             .concat(),
         );
     }

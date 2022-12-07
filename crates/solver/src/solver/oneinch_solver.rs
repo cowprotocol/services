@@ -130,7 +130,9 @@ impl OneInchSolver {
 
         settlement.with_liquidity(&order, order.sell_amount)?;
 
-        settlement.encoder.append_to_execution_plan(approval);
+        if let Some(approval) = approval {
+            settlement.encoder.append_to_execution_plan(approval);
+        }
         settlement.encoder.append_to_execution_plan(swap);
 
         Ok(Some(settlement))
@@ -273,7 +275,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         let solver = dummy_solver(client, allowance_fetcher);
 
@@ -336,7 +338,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(None));
 
         client.expect_get_liquidity_sources().returning(|| {
             async {
@@ -420,10 +422,10 @@ mod tests {
                 amount: U256::from(100),
             }))
             .returning(move |_| {
-                Ok(Approval::Approve {
+                Ok(Some(Approval {
                     token: sell_token,
                     spender,
-                })
+                }))
             })
             .in_sequence(&mut seq);
         allowance_fetcher
@@ -434,7 +436,7 @@ mod tests {
                 spender,
                 amount: U256::from(100),
             }))
-            .returning(|_| Ok(Approval::AllowanceSufficient))
+            .returning(|_| Ok(None))
             .in_sequence(&mut seq);
 
         let solver = dummy_solver(client, allowance_fetcher);
