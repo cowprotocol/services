@@ -21,6 +21,7 @@ pub enum Error {
 pub struct EthNode(Web3<DynTransport>);
 
 impl EthNode {
+    /// The address of our settlement contract.
     pub async fn settlement_contract(&self) -> Result<eth::Address, Error> {
         Ok(contracts::GPv2Settlement::deployed(&self.0)
             .await?
@@ -29,15 +30,12 @@ impl EthNode {
     }
 
     /// Fetch the ERC20 allowances for each spender. The allowances are returned
-    /// in the same order as the input spenders.
+    /// in the same order as the input spenders. See the allowance method in
+    /// EIP-20.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-20#methods
     pub async fn allowances(
         &self,
-        // TODO For my use case, this should be the settlement contract address. The fact that the
-        // solution module needs to know this is a clear indication that this filtering should
-        // happen in the settlement module, not the solution module. I think that Approvals should
-        // ensure that the approvals are normalized and sorted, while the filtering should happen
-        // in the settlement module, probably in settlement::encode since it is a detail of the
-        // encoding process
         owner: eth::Address,
         spenders: impl Iterator<Item = eth::Spender>,
     ) -> Result<Vec<eth::Allowance>, Error> {

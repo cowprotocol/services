@@ -17,8 +17,7 @@ pub struct ChainId(pub u64);
 pub struct Gas(pub U256);
 
 /// Gas price.
-/// TODO This might need to be different, autopilot uses GasPrice1559 which must
-/// have something to do with EIP-1559
+/// TODO This will probably need to be different, autopilot uses GasPrice1559
 #[derive(Debug, Clone, Copy)]
 pub struct GasPrice(pub U256);
 

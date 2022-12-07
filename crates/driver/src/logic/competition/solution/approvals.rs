@@ -1,13 +1,3 @@
-// TODO approval will need to be submodule of solution. It should be implemented
-// such that the Approvals are only those approvals which are not already
-// covered by allowances (word this better or just read ERC20 and use their
-// terminology, also leave the EIP-20 link there) and also Approvals doesn't
-// have any duplicates.
-//
-// TODO I think that all the onchain contract stuff should be defined in the
-// node module and there should be specific types there for calling various
-// methods. Probably have an enum for it or something. See how it works out.
-
 use {crate::logic::eth, primitive_types::U256, std::collections::HashMap};
 
 /// A set of ERC20 approvals required by the [`super::Solution`]. This type
