@@ -9,7 +9,7 @@ pub mod execute;
 pub mod info;
 pub mod solve;
 
-const REQUEST_BODY_LIMIT: usize = 32 * 1024;
+const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub async fn serve(
     addr: &SocketAddr,

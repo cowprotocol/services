@@ -29,7 +29,7 @@ pub struct Auction {
 #[derive(Debug, Deserialize)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
-    id: Vec<u8>,
+    uid: Vec<u8>,
     from: H160,
     sell_token: H160,
     buy_token: H160,
@@ -41,7 +41,7 @@ struct Order {
     buy_amount: U256,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
-    app_data: Vec<u8>,
+    app_data: [u8; 32],
     #[serde_as(as = "serialize::U256")]
     fee_amount: U256,
     kind: OrderKind,
@@ -57,7 +57,6 @@ struct Order {
     #[serde(flatten)]
     class: OrderClass,
     #[serde_as(as = "serialize::U256")]
-    // TODO Is this correct?
     executed_amount: U256,
     #[serde(default)]
     interactions: Interactions,

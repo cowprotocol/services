@@ -1,11 +1,10 @@
-//! Serialize and deserialize [`U256`] as a decimal string.
-
 use {
     ethereum_types,
     serde::{de, Deserializer, Serializer},
     serde_with::{DeserializeAs, SerializeAs},
 };
 
+/// Serialize and deserialize [`primitive_types::U256`] as a decimal string.
 #[derive(Debug)]
 pub struct U256;
 
