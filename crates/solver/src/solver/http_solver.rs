@@ -9,7 +9,7 @@ use crate::{
         Liquidity,
     },
     settlement::{external_prices::ExternalPrices, Settlement},
-    solver::{Auction, Solver},
+    solver::{http_solver::settlement::ConversionError, Auction, Solver},
 };
 use anyhow::{Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
@@ -570,7 +570,13 @@ impl Solver for HttpSolver {
                     name = %self.name(), ?settled, ?err,
                     "failed to process HTTP solver result",
                 );
-                Err(err)
+                if matches!(err, ConversionError::InvalidExecutionPlans(_)) {
+                    self.notify_auction_result(
+                        id,
+                        AuctionResult::Rejected(SolverRejectionReason::InvalidExecutionPlans),
+                    );
+                }
+                Err(err.into())
             }
         }
     }
