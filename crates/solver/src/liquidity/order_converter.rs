@@ -1,4 +1,4 @@
-use super::{Exchange, LimitOrder, LimitOrderUid, LiquidityOrderUid, SettlementHandling};
+use super::{Exchange, LimitOrder, LimitOrderId, LiquidityOrderId, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::{Context, Result};
 use contracts::WETH9;
@@ -55,11 +55,11 @@ impl OrderConverter {
         };
 
         let id = match order.metadata.class {
-            OrderClass::Market => LimitOrderUid::Market(order.metadata.uid),
+            OrderClass::Market => LimitOrderId::Market(order.metadata.uid),
             OrderClass::Liquidity => {
-                LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(order.metadata.uid))
+                LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(order.metadata.uid))
             }
-            OrderClass::Limit(_) => LimitOrderUid::Limit(order.metadata.uid),
+            OrderClass::Limit(_) => LimitOrderId::Limit(order.metadata.uid),
         };
         Ok(LimitOrder {
             id,

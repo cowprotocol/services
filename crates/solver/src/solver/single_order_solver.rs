@@ -306,8 +306,8 @@ mod tests {
     use super::*;
     use crate::{
         liquidity::{
-            order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderUid,
-            LiquidityOrderUid,
+            order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
+            LiquidityOrderId,
         },
         metrics::NoopMetrics,
     };
@@ -537,7 +537,7 @@ mod tests {
     fn spread_orders_get_prioritized() {
         let token = H160::from_low_u64_be;
         let amount = U256::from;
-        let order = |sell_amount: u128, id: LimitOrderUid| LimitOrder {
+        let order = |sell_amount: u128, id: LimitOrderId| LimitOrder {
             id,
             sell_token: token(1),
             sell_amount: amount(sell_amount),
@@ -548,7 +548,7 @@ mod tests {
         let orders = [
             order(
                 500,
-                LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(
+                LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(
                     OrderUid::from_integer(1),
                 )),
             ), //liquidity order
@@ -585,7 +585,7 @@ mod tests {
     fn tight_orders_get_prioritized() {
         let token = H160::from_low_u64_be;
         let amount = U256::from;
-        let order = |sell_amount: u128, id: LimitOrderUid| LimitOrder {
+        let order = |sell_amount: u128, id: LimitOrderId| LimitOrder {
             id,
             sell_token: token(1),
             sell_amount: amount(sell_amount),

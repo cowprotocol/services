@@ -2,7 +2,7 @@ use crate::{
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        LimitOrderUid, Liquidity,
+        LimitOrderId, Liquidity,
     },
     settlement::Settlement,
 };
@@ -335,9 +335,9 @@ fn match_settled_prices(
     let executed_tokens = executed_limit_orders
         .iter()
         .flat_map(|order| match order.order.id {
-            LimitOrderUid::Market(_) => vec![order.order.buy_token, order.order.sell_token],
-            LimitOrderUid::Limit(_) => vec![],
-            LimitOrderUid::Liquidity(_) => vec![],
+            LimitOrderId::Market(_) => vec![order.order.buy_token, order.order.sell_token],
+            LimitOrderId::Limit(_) => vec![],
+            LimitOrderId::Liquidity(_) => vec![],
         });
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
@@ -387,7 +387,7 @@ mod tests {
     use crate::{
         interactions::allowances::MockAllowanceManaging,
         liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderUid,
+            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
             StablePoolOrder, WeightedProductOrder,
         },
         settlement::{PricedTrade, Trade},
@@ -696,7 +696,7 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(
+            id: crate::liquidity::LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(
                 OrderUid::from_integer(1),
             )),
             sell_token: token_a,

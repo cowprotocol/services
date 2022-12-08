@@ -94,10 +94,10 @@ pub enum Exchange {
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
-pub enum LimitOrderUid {
+pub enum LimitOrderId {
     Market(OrderUid),
     Limit(OrderUid),
-    Liquidity(LiquidityOrderUid),
+    Liquidity(LiquidityOrderId),
 }
 
 /// Three different types of liquidity orders exist:
@@ -110,7 +110,7 @@ pub enum LimitOrderUid {
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
-pub enum LiquidityOrderUid {
+pub enum LiquidityOrderId {
     /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
     /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
     ProtocolOrForeign(OrderUid),
@@ -118,27 +118,27 @@ pub enum LiquidityOrderUid {
 }
 
 #[cfg(test)]
-impl Default for LimitOrderUid {
+impl Default for LimitOrderId {
     fn default() -> Self {
         Self::Market(Default::default())
     }
 }
 
-impl LimitOrderUid {
+impl LimitOrderId {
     pub fn order_uid(&self) -> Option<OrderUid> {
         match self {
-            LimitOrderUid::Market(uid) => Some(*uid),
-            LimitOrderUid::Limit(uid) => Some(*uid),
-            LimitOrderUid::Liquidity(order) => match order {
-                LiquidityOrderUid::ProtocolOrForeign(uid) => Some(*uid),
-                LiquidityOrderUid::ZeroEx(_) => None,
+            LimitOrderId::Market(uid) => Some(*uid),
+            LimitOrderId::Limit(uid) => Some(*uid),
+            LimitOrderId::Liquidity(order) => match order {
+                LiquidityOrderId::ProtocolOrForeign(uid) => Some(*uid),
+                LiquidityOrderId::ZeroEx(_) => None,
             },
         }
     }
 }
 
 #[cfg(test)]
-impl From<u32> for LimitOrderUid {
+impl From<u32> for LimitOrderId {
     fn from(uid: u32) -> Self {
         Self::Market(OrderUid::from_integer(uid))
     }
@@ -150,7 +150,7 @@ impl From<u32> for LimitOrderUid {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
-    pub id: LimitOrderUid,
+    pub id: LimitOrderId,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -177,7 +177,7 @@ pub struct LimitOrder {
 
 impl LimitOrder {
     pub fn is_liquidity_order(&self) -> bool {
-        matches!(self.id, LimitOrderUid::Liquidity(_))
+        matches!(self.id, LimitOrderId::Liquidity(_))
     }
 }
 

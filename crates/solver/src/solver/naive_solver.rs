@@ -122,8 +122,8 @@ fn extract_deepest_amm_liquidity(
 mod tests {
     use super::*;
     use crate::liquidity::{
-        order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderUid,
-        LiquidityOrderUid,
+        order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
+        LiquidityOrderId,
     };
     use ethcontract::H160;
     use maplit::hashmap;
@@ -203,7 +203,7 @@ mod tests {
                 ..Default::default()
             }),
             LimitOrder {
-                id: LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(
+                id: LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(
                     OrderUid::from_integer(1),
                 )),
                 ..LimitOrder::from(Order {
