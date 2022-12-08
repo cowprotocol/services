@@ -203,9 +203,7 @@ mod tests {
                 ..Default::default()
             }),
             LimitOrder {
-                id: LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(
-                    OrderUid::from_integer(1),
-                )),
+                id: LimitOrderId::Liquidity(LiquidityOrderId::Protocol(OrderUid::from_integer(1))),
                 ..LimitOrder::from(Order {
                     data: OrderData {
                         sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),

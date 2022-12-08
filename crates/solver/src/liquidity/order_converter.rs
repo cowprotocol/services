@@ -57,7 +57,7 @@ impl OrderConverter {
         let id = match order.metadata.class {
             OrderClass::Market => LimitOrderId::Market(order.metadata.uid),
             OrderClass::Liquidity => {
-                LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(order.metadata.uid))
+                LimitOrderId::Liquidity(LiquidityOrderId::Protocol(order.metadata.uid))
             }
             OrderClass::Limit(_) => LimitOrderId::Limit(order.metadata.uid),
         };

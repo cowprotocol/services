@@ -113,7 +113,8 @@ pub enum LimitOrderId {
 pub enum LiquidityOrderId {
     /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
     /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
-    ProtocolOrForeign(OrderUid),
+    /// Contains protocol and foreign liquidity orders
+    Protocol(OrderUid),
     ZeroEx(String),
 }
 
@@ -130,7 +131,7 @@ impl LimitOrderId {
             LimitOrderId::Market(uid) => Some(*uid),
             LimitOrderId::Limit(uid) => Some(*uid),
             LimitOrderId::Liquidity(order) => match order {
-                LiquidityOrderId::ProtocolOrForeign(uid) => Some(*uid),
+                LiquidityOrderId::Protocol(uid) => Some(*uid),
                 LiquidityOrderId::ZeroEx(_) => None,
             },
         }

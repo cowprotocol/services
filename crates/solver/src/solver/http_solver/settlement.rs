@@ -335,8 +335,9 @@ fn match_settled_prices(
     let executed_tokens = executed_limit_orders
         .iter()
         .flat_map(|order| match order.order.id {
-            LimitOrderId::Market(_) => vec![order.order.buy_token, order.order.sell_token],
-            LimitOrderId::Limit(_) => vec![order.order.buy_token, order.order.sell_token],
+            LimitOrderId::Market(_) | LimitOrderId::Limit(_) => {
+                vec![order.order.buy_token, order.order.sell_token]
+            }
             LimitOrderId::Liquidity(_) => vec![],
         });
     for token in executed_tokens {
@@ -696,7 +697,7 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderId::Liquidity(LiquidityOrderId::ProtocolOrForeign(
+            id: crate::liquidity::LimitOrderId::Liquidity(LiquidityOrderId::Protocol(
                 OrderUid::from_integer(1),
             )),
             sell_token: token_a,
