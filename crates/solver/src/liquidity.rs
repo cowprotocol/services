@@ -100,13 +100,20 @@ pub enum LimitOrderUid {
     Liquidity(LiquidityOrderUid),
 }
 
+/// Three different types of liquidity orders exist:
+/// 1. Protocol - liquidity orders from the auction model of solvable orders
+/// 2. ZeroEx  - liquidity orders from the zeroex api liquidity collector
+/// 3. Foreign - liquidity orders received as part of the solution from searchers
+///
+/// (1) and (2) are gathered when the auction is cut and they are sent to searchers
+/// (3) are received from searchers as part of the solution.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub enum LiquidityOrderUid {
-    /// Originates from the auction model of solvable orders
-    User(OrderUid),
-    /// Originates from the zeroex api liquidity collector
+    /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
+    /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
+    ProtocolOrForeign(OrderUid),
     ZeroEx(String),
 }
 
@@ -123,7 +130,7 @@ impl LimitOrderUid {
             LimitOrderUid::Market(uid) => Some(*uid),
             LimitOrderUid::Limit(uid) => Some(*uid),
             LimitOrderUid::Liquidity(order) => match order {
-                LiquidityOrderUid::User(uid) => Some(*uid),
+                LiquidityOrderUid::ProtocolOrForeign(uid) => Some(*uid),
                 LiquidityOrderUid::ZeroEx(_) => None,
             },
         }

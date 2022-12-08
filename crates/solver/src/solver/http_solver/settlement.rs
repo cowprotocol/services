@@ -2,7 +2,7 @@ use crate::{
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        Liquidity,
+        LimitOrderUid, Liquidity,
     },
     settlement::Settlement,
 };
@@ -332,13 +332,13 @@ fn match_settled_prices(
     solver_prices: HashMap<H160, U256>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
-    let executed_tokens = executed_limit_orders.iter().flat_map(|order| {
-        if order.order.is_liquidity_order() {
-            vec![order.order.sell_token]
-        } else {
-            vec![order.order.buy_token, order.order.sell_token]
-        }
-    });
+    let executed_tokens = executed_limit_orders
+        .iter()
+        .flat_map(|order| match order.order.id {
+            LimitOrderUid::Market(_) => vec![order.order.buy_token, order.order.sell_token],
+            LimitOrderUid::Limit(_) => vec![],
+            LimitOrderUid::Liquidity(_) => vec![],
+        });
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices
@@ -696,7 +696,7 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderUid::Liquidity(LiquidityOrderUid::User(
+            id: crate::liquidity::LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(
                 OrderUid::from_integer(1),
             )),
             sell_token: token_a,

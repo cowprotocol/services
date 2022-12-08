@@ -548,7 +548,9 @@ mod tests {
         let orders = [
             order(
                 500,
-                LimitOrderUid::Liquidity(LiquidityOrderUid::User(OrderUid::from_integer(1))),
+                LimitOrderUid::Liquidity(LiquidityOrderUid::ProtocolOrForeign(
+                    OrderUid::from_integer(1),
+                )),
             ), //liquidity order
             order(90, Default::default()),  //market order
             order(100, Default::default()), //market order
