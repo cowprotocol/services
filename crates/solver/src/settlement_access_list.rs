@@ -66,6 +66,8 @@ pub async fn estimate_settlement_access_list(
     settlement: &Settlement,
     tx: &TransactionBuilder<DynTransport>,
 ) -> Result<AccessList> {
+    tracing::debug!(?settlement, "generating access list for settlement");
+
     // Generate partial access lists for all smart contracts
     let partial_access_lists = try_join_all(settlement.trades().map(|trade| async {
         let buy_token = trade.order.data.buy_token;
@@ -92,6 +94,12 @@ pub async fn estimate_settlement_access_list(
         Result::<_>::Ok(partial_access_list)
     }))
     .await?;
+
+    tracing::debug!(
+        ?settlement,
+        ?partial_access_lists,
+        "generated partial access lists"
+    );
 
     // Merge the partial access lists together
     let mut partial_access_list: HashMap<H160, HashSet<H256>> = Default::default();
