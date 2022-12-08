@@ -29,7 +29,7 @@ pub struct Auction {
 #[derive(Debug, Deserialize)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
-    uid: Vec<u8>,
+    uid: [u8; 56],
     from: H160,
     sell_token: H160,
     buy_token: H160,
