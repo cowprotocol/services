@@ -1164,65 +1164,47 @@ mod tests {
         .is_err());
     }
 
+    fn interaction_with_coordinate(
+        coordinates: Option<ExecutionPlanCoordinatesModel>,
+    ) -> Execution {
+        Execution::CustomInteraction(Box::new(InteractionData {
+            exec_plan: coordinates.map(|coordinates| ExecutionPlan {
+                coordinates,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+    }
+
     #[test]
     pub fn duplicate_coordinates_false() {
-        let execution_1 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: None,
-            ..Default::default()
-        }));
-        let execution_2 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan {
-                coordinates: ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
-                },
-                internal: false,
-            }),
-            ..Default::default()
-        }));
-        let execution_3 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan {
-                coordinates: ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 1,
-                },
-                internal: false,
-            }),
-            ..Default::default()
-        }));
-
-        let executions = vec![execution_1, execution_2, execution_3];
-        assert!(!duplicate_coordinates(&executions))
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 1,
+            })),
+        ];
+        assert!(!duplicate_coordinates(&executions));
     }
 
     #[test]
     pub fn duplicate_coordinates_true() {
-        let execution_1 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: None,
-            ..Default::default()
-        }));
-        let execution_2 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan {
-                coordinates: ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
-                },
-                internal: false,
-            }),
-            ..Default::default()
-        }));
-        let execution_3 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan {
-                coordinates: ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
-                },
-                internal: false,
-            }),
-            ..Default::default()
-        }));
-
-        let executions = vec![execution_1, execution_2, execution_3];
-        assert!(duplicate_coordinates(&executions))
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+        ];
+        assert!(duplicate_coordinates(&executions));
     }
 }
