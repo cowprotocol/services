@@ -15,26 +15,34 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+num = "0.4"
+tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
+futures = "0.3"
+serde = "1.0"
+serde_json = "1.0"
+nonempty = "0.8"
+ethereum-types = "0.14"
+hex = "0.4"
+reqwest = "0.11"
+thiserror = "1.0"
+chrono = "0.4"
+
+# TODO These either need to be removed or changed to be direct
+# dependencies rather than workspace dependencies
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+# TODO I think I can get rid of this
+serde_with = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
-futures = { workspace = true }
 gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
 model = { path = "../model" }
-num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_with = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
