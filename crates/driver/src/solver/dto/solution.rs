@@ -135,7 +135,6 @@ enum ExecutionPlan {
 struct Coordinates {
     sequence: u32,
     position: u32,
-    #[serde(default)]
     internal: bool,
 }
 

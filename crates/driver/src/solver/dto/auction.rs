@@ -37,7 +37,6 @@ struct Order {
     cost: TokenAmount,
     is_liquidity_order: bool,
     is_mature: bool,
-    #[serde(default)]
     mandatory: bool,
     has_atomic_execution: bool,
     reward: f64,
