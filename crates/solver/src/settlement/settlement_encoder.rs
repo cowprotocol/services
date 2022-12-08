@@ -469,8 +469,7 @@ impl SettlementEncoder {
             .iter()
             .flat_map(|trade| {
                 // For user order trades, always keep uniform clearing prices
-                // for all tokens (even if we could technically drop the buy
-                // token for limit orders).
+                // for all tokens (even if we could technically skip limit orders).
                 if trade.data.order.is_user_order() {
                     Either::Left(
                         [
