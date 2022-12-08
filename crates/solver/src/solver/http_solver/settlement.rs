@@ -336,7 +336,7 @@ fn match_settled_prices(
         .iter()
         .flat_map(|order| match order.order.id {
             LimitOrderId::Market(_) => vec![order.order.buy_token, order.order.sell_token],
-            LimitOrderId::Limit(_) => vec![],
+            LimitOrderId::Limit(_) => vec![order.order.buy_token, order.order.sell_token],
             LimitOrderId::Liquidity(_) => vec![],
         });
     for token in executed_tokens {
