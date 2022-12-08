@@ -418,12 +418,12 @@ async fn compute_approvals(
 /// Check if executions contain execution plans with the same coordinates
 fn duplicate_coordinates(executions: &[Execution]) -> bool {
     let mut exec_plans = HashSet::new();
-    executions
-        .iter()
-        .any(|execution| match execution.coordinates() {
-            Some(coordinates) => !exec_plans.insert(coordinates),
-            None => false,
-        })
+    executions.iter().any(|execution| {
+        execution
+            .coordinates()
+            .map(|coordinates| !exec_plans.insert(coordinates))
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]
