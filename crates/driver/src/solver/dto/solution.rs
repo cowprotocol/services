@@ -1,16 +1,18 @@
 use {
-    crate::{logic::competition::solution, util::serialize},
-    ethereum_types::H160,
+    crate::{logic, util::serialize},
+    ethereum_types::{H160, U256},
     serde::Deserialize,
+    serde_with::serde_as,
     std::collections::HashMap,
 };
 
-impl From<Solution> for solution::Solution {
+impl From<Solution> for logic::competition::Solution {
     fn from(_solution: Solution) -> Self {
         todo!()
     }
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct Solution {
     orders: HashMap<usize, Order>,
@@ -19,7 +21,8 @@ pub struct Solution {
     #[serde(default)]
     amms: HashMap<H160, Amm>,
     ref_token: Option<H160>,
-    prices: HashMap<H160, serialize::U256>,
+    #[serde_as(as = "HashMap<_, serialize::U256>")]
+    prices: HashMap<H160, U256>,
     #[serde(default)]
     approvals: Vec<Approval>,
     #[serde(default)]
@@ -27,35 +30,47 @@ pub struct Solution {
     metadata: Option<Metadata>,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct Order {
-    exec_sell_amount: serialize::U256,
-    exec_buy_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_sell_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_buy_amount: U256,
     cost: Option<TokenAmount>,
     fee: Option<TokenAmount>,
     exec_plan: Option<ExecutionPlan>,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct TokenAmount {
-    amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    amount: U256,
     token: H160,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct ForeignLiquidityOrder {
     order: LiquidityOrder,
-    exec_sell_amount: serialize::U256,
-    exec_buy_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_sell_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_buy_amount: U256,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct Amm {
     order: LiquidityOrder,
-    exec_sell_amount: serialize::U256,
-    exec_buy_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_sell_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    exec_buy_amount: U256,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct LiquidityOrder {
     from: H160,
@@ -63,11 +78,14 @@ struct LiquidityOrder {
     buy_token: H160,
     #[serde(default)]
     receiver: Option<H160>,
-    sell_amount: serialize::U256,
-    buy_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    sell_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    buy_amount: U256,
     valid_to: u32,
     app_data: [u8; 32],
-    fee_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    fee_amount: U256,
     kind: OrderKind,
     partially_fillable: bool,
     #[serde(default)]
@@ -78,11 +96,13 @@ struct LiquidityOrder {
     signature: Signature,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 struct Approval {
     token: H160,
     spender: H160,
-    amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    amount: U256,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,11 +129,13 @@ enum BuyTokenDestination {
     Internal,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: H160,
-    value: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    value: U256,
     call_data: Vec<u8>,
 }
 
@@ -138,11 +160,13 @@ struct Coordinates {
     internal: bool,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Signature {
     signing_scheme: SigningScheme,
-    signature: serialize::Hex,
+    #[serde_as(as = "serialize::Hex")]
+    signature: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize)]

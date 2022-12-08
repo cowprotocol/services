@@ -1,6 +1,6 @@
 use {
-    crate::{logic::competition::auction, util::serialize},
-    ethereum_types::H160,
+    crate::{logic, util::serialize},
+    ethereum_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -9,8 +9,8 @@ use {
 // TODO Since building the auction will also require liquidity later down the
 // line, this is probably not good enough. But that will be implemented when the
 // `logic::liquidity` module is added.
-impl From<auction::Auction> for Auction {
-    fn from(_auction: auction::Auction) -> Self {
+impl From<logic::competition::Auction> for Auction {
+    fn from(_auction: logic::competition::Auction) -> Self {
         todo!()
     }
 }
@@ -23,14 +23,17 @@ pub struct Auction {
     metadata: Option<Metadata>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 struct Order {
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
     sell_token: H160,
     buy_token: H160,
-    sell_amount: serialize::U256,
-    buy_amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    sell_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    buy_amount: U256,
     allow_partial_fill: bool,
     is_sell_order: bool,
     fee: TokenAmount,
@@ -42,9 +45,11 @@ struct Order {
     reward: f64,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 struct TokenAmount {
-    amount: serialize::U256,
+    #[serde_as(as = "serialize::U256")]
+    amount: U256,
     token: H160,
 }
 
@@ -55,7 +60,8 @@ struct Token {
     alias: Option<String>,
     external_price: Option<f64>,
     normalize_priority: Option<u64>,
-    internal_buffer: Option<serialize::U256>,
+    #[serde_as(as = "Option<serialize::U256>")]
+    internal_buffer: Option<U256>,
     accepted_for_internalization: bool,
 }
 

@@ -8,8 +8,9 @@ pub mod commit_reveal;
 pub mod driver;
 pub mod settlement_proposal;
 
-// TODO api doesn't need to be pub
 pub mod api;
-mod logic;
+pub mod logic;
 mod solver;
-pub mod util;
+mod util;
+
+pub use crate::solver::Solver;
