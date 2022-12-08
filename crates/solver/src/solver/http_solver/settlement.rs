@@ -1171,14 +1171,26 @@ mod tests {
             ..Default::default()
         }));
         let execution_2 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan { coordinates: ExecutionPlanCoordinatesModel { sequence: 0, position: 0 }, internal: false }),
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                },
+                internal: false,
+            }),
             ..Default::default()
         }));
         let execution_3 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan { coordinates: ExecutionPlanCoordinatesModel { sequence: 0, position: 1 }, internal: false }),
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 1,
+                },
+                internal: false,
+            }),
             ..Default::default()
         }));
-        
+
         let executions = vec![execution_1, execution_2, execution_3];
         assert!(!duplicate_coordinates(&executions))
     }
@@ -1190,14 +1202,26 @@ mod tests {
             ..Default::default()
         }));
         let execution_2 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan { coordinates: ExecutionPlanCoordinatesModel { sequence: 0, position: 0 }, internal: false }),
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                },
+                internal: false,
+            }),
             ..Default::default()
         }));
         let execution_3 = Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: Some(ExecutionPlan { coordinates: ExecutionPlanCoordinatesModel { sequence: 0, position: 0 }, internal: false }),
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 0,
+                    position: 0,
+                },
+                internal: false,
+            }),
             ..Default::default()
         }));
-        
+
         let executions = vec![execution_1, execution_2, execution_3];
         assert!(duplicate_coordinates(&executions))
     }
