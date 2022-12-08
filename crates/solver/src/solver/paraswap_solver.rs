@@ -1,17 +1,17 @@
 use super::{
-    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
+    single_order_solver::{
+        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+    },
     Auction,
 };
 use crate::{
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::SlippageCalculator, LimitOrder},
-    settlement::Settlement,
 };
 use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::{Account, H160, U256};
-use maplit::hashmap;
+use ethcontract::{Account, H160};
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::{
@@ -90,12 +90,12 @@ impl SingleOrderSolving for ParaswapSolver {
         &self,
         order: LimitOrder,
         auction: &Auction,
-    ) -> Result<Option<Settlement>, SettlementError> {
+    ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let token_info = self
             .token_info
             .get_token_infos(&[order.sell_token, order.buy_token])
             .await;
-        let (price_response, amount) = self.get_price_for_order(&order, &token_info).await?;
+        let price_response = self.get_price_for_order(&order, &token_info).await?;
         if !execution_respects_order(
             &order,
             price_response.src_amount,
@@ -107,12 +107,11 @@ impl SingleOrderSolving for ParaswapSolver {
         let transaction_query =
             self.transaction_query_from(auction, &order, &price_response, &token_info)?;
         let transaction = self.client.transaction(transaction_query).await?;
-        let mut settlement = Settlement::new(hashmap! {
-            order.sell_token => price_response.dest_amount,
-            order.buy_token => price_response.src_amount,
-        });
-        settlement.with_liquidity(&order, amount)?;
-
+        let mut settlement = SingleOrderSettlement {
+            sell_token_price: price_response.dest_amount,
+            buy_token_price: price_response.src_amount,
+            interactions: Vec::new(),
+        };
         if let Some(approval) = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
@@ -122,9 +121,9 @@ impl SingleOrderSolving for ParaswapSolver {
             })
             .await?
         {
-            settlement.encoder.append_to_execution_plan(approval);
+            settlement.interactions.push(Box::new(approval));
         }
-        settlement.encoder.append_to_execution_plan(transaction);
+        settlement.interactions.push(Box::new(transaction));
         Ok(Some(settlement))
     }
 
@@ -142,7 +141,7 @@ impl ParaswapSolver {
         &self,
         order: &LimitOrder,
         token_info: &HashMap<H160, TokenInfo>,
-    ) -> Result<(PriceResponse, U256)> {
+    ) -> Result<PriceResponse> {
         let (amount, side) = match order.kind {
             model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
             model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
@@ -158,7 +157,7 @@ impl ParaswapSolver {
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
         let price_response = self.client.price(price_query).await?;
-        Ok((price_response, amount))
+        Ok(price_response)
     }
 
     fn transaction_query_from(
@@ -211,13 +210,13 @@ mod tests {
     use contracts::WETH9;
     use ethcontract::U256;
     use futures::FutureExt as _;
+    use maplit::hashmap;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
     use reqwest::Client;
     use shared::{
         dummy_contract,
         ethrpc::create_env_test_transport,
-        http_solver::model::InternalizationStrategy,
         paraswap_api::MockParaswapApi,
         token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
     };
@@ -318,13 +317,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result.clearing_prices(),
-            &hashmap! {
-                sell_token => 99.into(),
-                buy_token => 100.into(),
-            }
-        );
+        assert_eq!(result.sell_token_price, 99.into());
+        assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
             .try_settle_order(order_violating_limit, &Auction::default())
@@ -418,14 +412,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            2
-        );
+        assert_eq!(result.interactions.len(), 2);
 
         // On second run we have only have one main interactions (swap)
         let result = solver
@@ -433,14 +420,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            result
-                .encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1]
-                .len(),
-            1
-        )
+        assert_eq!(result.interactions.len(), 1)
     }
 
     #[tokio::test]

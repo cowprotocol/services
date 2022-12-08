@@ -9,6 +9,12 @@ pub trait Interaction: std::fmt::Debug + Send + Sync {
     fn encode(&self) -> Vec<EncodedInteraction>;
 }
 
+impl Interaction for Box<dyn Interaction> {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        self.as_ref().encode()
+    }
+}
+
 pub type EncodedInteraction = (
     H160,           // target
     U256,           // value

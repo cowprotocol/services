@@ -458,7 +458,7 @@ fn non_bufferable_tokens_used(
             interaction
                 .exec_plan
                 .as_ref()
-                .map(|plan| plan.internalizable())
+                .map(|plan| plan.internal)
                 .unwrap_or_default()
         })
         .flat_map(|interaction| &interaction.inputs)
@@ -519,15 +519,8 @@ impl Solver for HttpSolver {
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
-        let settled = self.solver.solve(&model, timeout).await?;
-
-        if !settled.has_execution_plan() {
-            tracing::debug!(
-                name = %self.name(), ?settled,
-                "ignoring settlement without execution plan",
-            );
-            return Ok(Vec::new());
-        }
+        let mut settled = self.solver.solve(&model, timeout).await?;
+        settled.add_missing_execution_plans();
 
         tracing::debug!(
             "Solution received from http solver {} (json):\n{:}",
@@ -708,15 +701,7 @@ mod tests {
         let execution = &uniswap.execution[0];
         assert!(execution.exec_buy_amount.gt(&U256::zero()));
         assert_eq!(execution.exec_sell_amount, U256::from(base(2)));
-        assert!(execution.exec_plan.is_some());
-        assert!(matches!(
-            execution.exec_plan.as_ref().unwrap(),
-            ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 0,
-                internal: false,
-            }),
-        ));
+        assert_eq!(execution.exec_plan, ExecutionPlan::default());
 
         assert_eq!(settled.prices.len(), 2);
     }
@@ -1002,7 +987,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan::Internal),
+            exec_plan: Some(ExecutionPlan {
+                internal: true,
+                ..Default::default()
+            }),
             ..Default::default()
         }];
 
@@ -1025,7 +1013,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan::Internal),
+            exec_plan: Some(ExecutionPlan {
+                internal: true,
+                ..Default::default()
+            }),
             ..Default::default()
         }];
 
@@ -1048,9 +1039,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan::Coordinates(
-                ExecutionPlanCoordinatesModel::default(),
-            )),
+            exec_plan: Some(ExecutionPlan {
+                internal: false,
+                ..Default::default()
+            }),
             ..Default::default()
         }];
 

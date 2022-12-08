@@ -523,10 +523,8 @@ mod tests {
                             "buy_token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
                             "exec_buy_amount": "21135750171",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 0
-                                },
+                                "sequence": 0,
+                                "position": 0,
                                 "internal": false
                             },
                             "exec_sell_amount": "21129728791",
@@ -552,10 +550,8 @@ mod tests {
                             "buy_token": "0xdac17f958d2ee523a2206206994597c13d831ec7",
                             "exec_buy_amount": "7922480269",
                             "exec_plan": {
-                                "coordinates": {
-                                    "sequence": 0,
-                                    "position": 1
-                                },
+                                "sequence": 0,
+                                "position": 1,
                                 "internal": false
                             },
                             "exec_sell_amount": "2005171356556612050",

@@ -159,6 +159,7 @@ pub struct InteractionData {
     ///
     /// `AMM -> GPv2Settlement`
     pub outputs: Vec<TokenAmount>,
+    // TODO remove Option once all external solvers conform to sending exec plans instead of null.
     pub exec_plan: Option<ExecutionPlan>,
     pub cost: Option<TokenAmount>,
 }
@@ -188,19 +189,22 @@ pub struct SettledBatchAuctionModel {
 }
 
 impl SettledBatchAuctionModel {
-    pub fn has_execution_plan(&self) -> bool {
-        // Its a bit weird that we expect all entries to contain an execution plan. Could make
-        // execution plan required and assert that the vector of execution updates is non-empty
-        // - NOTE(nlordell): This was done as a way for the HTTP solvers to say "look, we found
-        //   a solution but don't know how to order the AMMs to execute it". I think that we
-        //   can, as the parent comment suggests, clean this up and just make the field required.
-
-        // **Intentionally** allow interactions without execution plans.
-
-        self.amms
-            .values()
-            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan))
-            .all(|ex| ex.is_some())
+    // TODO remove this function once all solvers conform to sending the
+    // execution plan for their custom interactions!
+    pub fn add_missing_execution_plans(&mut self) {
+        for (index, interaction) in self.interaction_data.iter_mut().enumerate() {
+            if interaction.exec_plan.is_none() {
+                // if no exec plan is provided, convert to the default exec plan by setting the
+                // position coordinate to the position of the exec plan in the interactions vector
+                interaction.exec_plan = Some(ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: u32::MAX,
+                        position: index as u32,
+                    },
+                    internal: false,
+                })
+            }
+        }
     }
 }
 
@@ -264,10 +268,7 @@ pub struct ExecutedAmmModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
-    /// The exec plan is allowed to be optional because the http solver isn't always
-    /// able to determine and order of execution. That is, solver may have a solution
-    /// which it wants to share with the driver even if it couldn't derive an execution plan.
-    pub exec_plan: Option<ExecutionPlan>,
+    pub exec_plan: ExecutionPlan,
 }
 
 impl UpdatedAmmModel {
@@ -282,65 +283,17 @@ impl UpdatedAmmModel {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum ExecutionPlan {
-    /// The coordinates at which the interaction should be included within a
-    /// settlement.
-    Coordinates(ExecutionPlanCoordinatesModel),
-
-    /// The interaction should **not** be included in the settlement as
-    /// internal buffers will be used instead.
-    #[serde(with = "execution_plan_internal")]
-    Internal,
-}
-
-impl ExecutionPlan {
-    /// TODO: remove function when ExecutionPlan is refactored to a struct
-    pub fn internalizable(&self) -> bool {
-        match self {
-            ExecutionPlan::Coordinates(coords) => coords.internal,
-            ExecutionPlan::Internal => true,
-        }
-    }
-}
-
-/// A module for implementing `serde` (de)serialization for the execution plan
-/// enum.
-///
-/// This is a work-around for untagged enum serialization not supporting empty
-/// variants <https://github.com/serde-rs/serde/issues/1560>.
-mod execution_plan_internal {
-    use super::*;
-
-    #[derive(Deserialize, Serialize)]
-    enum Kind {
-        #[serde(rename = "internal")]
-        Internal,
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Kind::deserialize(deserializer)?;
-        Ok(())
-    }
-
-    pub fn serialize<S>(serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        Kind::Internal.serialize(serializer)
-    }
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct ExecutionPlan {
+    #[serde(flatten)]
+    pub coordinates: ExecutionPlanCoordinatesModel,
+    pub internal: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
-    #[serde(default)]
-    pub internal: bool,
 }
 
 /// The result a given solver achieved in the auction
@@ -463,25 +416,10 @@ mod tests {
         }
         .is_non_trivial());
 
-        let trivial_execution_without_plan = ExecutedAmmModel {
-            exec_plan: None,
-            ..Default::default()
-        };
-
-        let trivial_execution_with_plan = ExecutedAmmModel {
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 0,
-                internal: false,
-            })),
-            ..Default::default()
-        };
+        let trivial_execution = ExecutedAmmModel::default();
 
         assert!(!UpdatedAmmModel {
-            execution: vec![
-                trivial_execution_with_plan.clone(),
-                trivial_execution_without_plan
-            ],
+            execution: vec![trivial_execution.clone()],
             cost: Default::default(),
         }
         .is_non_trivial());
@@ -510,7 +448,7 @@ mod tests {
 
         assert!(UpdatedAmmModel {
             // One trivial and one non-trivial -> non-trivial
-            execution: vec![execution_with_buy, trivial_execution_with_plan],
+            execution: vec![trivial_execution, execution_with_buy],
             cost: Default::default(),
         }
         .is_non_trivial());
@@ -864,30 +802,25 @@ mod tests {
 
     #[test]
     fn decode_execution_plan() {
-        for (json, expected) in [
-            (r#""internal""#, ExecutionPlan::Internal),
-            (
-                r#"{ "sequence": 42, "position": 1337 }"#,
-                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+        assert_eq!(
+            serde_json::from_str::<ExecutionPlan>(
+                r#"
+                    {
+                        "sequence": 42,
+                        "position": 1337,
+                        "internal": true
+                    }
+                "#,
+            )
+            .unwrap(),
+            ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 42,
                     position: 1337,
-                    internal: false,
-                }),
-            ),
-            (
-                r#"{ "sequence": 42, "position": 1337, "internal": false }"#,
-                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 42,
-                    position: 1337,
-                    internal: false,
-                }),
-            ),
-        ] {
-            assert_eq!(
-                serde_json::from_str::<ExecutionPlan>(json).unwrap(),
-                expected,
-            );
-        }
+                },
+                internal: true
+            }
+        );
     }
 
     #[test]
@@ -946,11 +879,13 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
+                exec_plan: Some(ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 0,
+                        position: 0,
+                    },
                     internal: true,
-                })),
+                }),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
