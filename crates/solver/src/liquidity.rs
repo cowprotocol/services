@@ -90,40 +90,58 @@ pub enum Exchange {
 }
 
 /// Used to differentiate between different types of orders that can be sent to solvers.
-/// User orders containing OrderUid are the orders from the orderbook.
+/// User orders (market + limit) containing OrderUid are the orders from the orderbook.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
-pub enum LimitOrderUid {
-    OrderUid(OrderUid),
+pub enum LimitOrderId {
+    Market(OrderUid),
+    Limit(OrderUid),
+    Liquidity(LiquidityOrderId),
+}
+
+/// Three different types of liquidity orders exist:
+/// 1. Protocol - liquidity orders from the auction model of solvable orders
+/// 2. ZeroEx  - liquidity orders from the zeroex api liquidity collector
+/// 3. Foreign - liquidity orders received as part of the solution from searchers
+///
+/// (1) and (2) are gathered when the auction is cut and they are sent to searchers
+/// (3) are received from searchers as part of the solution.
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
+pub enum LiquidityOrderId {
+    /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
+    /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
+    /// Contains protocol and foreign liquidity orders
+    Protocol(OrderUid),
     ZeroEx(String),
 }
 
-impl Default for LimitOrderUid {
+#[cfg(test)]
+impl Default for LimitOrderId {
     fn default() -> Self {
-        Self::OrderUid(Default::default())
+        Self::Market(Default::default())
     }
 }
 
-impl LimitOrderUid {
+impl LimitOrderId {
     pub fn order_uid(&self) -> Option<OrderUid> {
         match self {
-            LimitOrderUid::OrderUid(uid) => Some(*uid),
-            _ => None,
+            LimitOrderId::Market(uid) => Some(*uid),
+            LimitOrderId::Limit(uid) => Some(*uid),
+            LimitOrderId::Liquidity(order) => match order {
+                LiquidityOrderId::Protocol(uid) => Some(*uid),
+                LiquidityOrderId::ZeroEx(_) => None,
+            },
         }
     }
 }
 
-impl From<OrderUid> for LimitOrderUid {
-    fn from(uid: OrderUid) -> Self {
-        Self::OrderUid(uid)
-    }
-}
-
 #[cfg(test)]
-impl From<u32> for LimitOrderUid {
+impl From<u32> for LimitOrderId {
     fn from(uid: u32) -> Self {
-        Self::OrderUid(OrderUid::from_integer(uid))
+        Self::Market(OrderUid::from_integer(uid))
     }
 }
 
@@ -133,7 +151,7 @@ impl From<u32> for LimitOrderUid {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
-    pub id: LimitOrderUid,
+    pub id: LimitOrderId,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -148,7 +166,6 @@ pub struct LimitOrder {
     /// factor to make matching orders more valuable from an objective value
     /// perspective.
     pub scaled_unsubsidized_fee: U256,
-    pub is_liquidity_order: bool,
     /// Indicator if the order is mature at the creation of the Auction. Relevant to user orders.
     pub is_mature: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
@@ -157,6 +174,12 @@ pub struct LimitOrder {
     // TODO: decide how reward works for partially fillable orders
     /// CIP-14 risk adjusted solver reward
     pub reward: f64,
+}
+
+impl LimitOrder {
+    pub fn is_liquidity_order(&self) -> bool {
+        matches!(self.id, LimitOrderId::Liquidity(_))
+    }
 }
 
 impl std::fmt::Debug for LimitOrder {
@@ -205,7 +228,6 @@ impl Default for LimitOrder {
             unscaled_subsidized_fee: Default::default(),
             scaled_unsubsidized_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
-            is_liquidity_order: false,
             is_mature: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
