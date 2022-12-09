@@ -119,6 +119,7 @@ struct IntermediateSettlement<'a> {
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
+    submitter: SubmissionPreference,
 }
 
 #[derive(Clone, Debug)]
@@ -173,17 +174,20 @@ impl<'a> IntermediateSettlement<'a> {
             settled.interaction_data,
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
+        let submitter = settled.submitter;
 
         Ok(Self {
             executions,
             prices,
             approvals,
             slippage,
+            submitter,
         })
     }
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
+        settlement.submitter = self.submitter;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
