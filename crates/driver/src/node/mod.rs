@@ -37,8 +37,8 @@ impl EthNode {
     pub async fn allowances(
         &self,
         owner: eth::Address,
-        spenders: impl Iterator<Item = eth::Spender>,
-    ) -> Result<Vec<eth::Allowance>, Error> {
+        spenders: impl Iterator<Item = eth::allowance::Spender>,
+    ) -> Result<Vec<eth::allowance::Existing>, Error> {
         let mut batch = ethcontract::batch::CallBatch::new(self.0.transport());
         let calls: Vec<_> = spenders
             .map(|spender| {
@@ -54,7 +54,7 @@ impl EthNode {
         let mut allowances = Vec::new();
         for (spender, call) in calls {
             match call.await {
-                Ok(amount) => allowances.push(eth::Allowance { spender, amount }),
+                Ok(amount) => allowances.push(eth::Allowance { spender, amount }.into()),
                 Err(err) if Self::is_batch_error(&err.inner) => return Err(err.into()),
                 Err(err) => {
                     tracing::warn!(

@@ -1,5 +1,5 @@
 use {
-    super::Approvals,
+    super::Allowances,
     crate::{
         boundary,
         logic::{competition, eth},
@@ -32,38 +32,15 @@ impl Settlement {
     ) -> Self {
         let mut settlement = boundary::Settlement::new(solution.prices);
         // TODO No unwrap
-        let approvals = Self::filter_approvals(node, &solution.approvals)
-            .await
-            .unwrap();
+        let approvals = Self::approvals(node, solution.allowances).await.unwrap();
         for approval in approvals {
             settlement
                 .encoder
-                .append_to_execution_plan(boundary::Approval {
-                    token: approval.spender.token.0,
-                    spender: approval.spender.address.0,
-                });
+                .append_to_execution_plan(boundary::Approval::from(approval));
         }
         // TODO Encode the remaining executions, I believe the auction is needed for
         // this
         Self(settlement)
-    }
-
-    /// Filter out approvals which have already been approved.
-    async fn filter_approvals(
-        node: &EthNode,
-        approvals: &Approvals,
-    ) -> Result<Vec<eth::Approval>, node::Error> {
-        let spenders = approvals.iter().map(|approval| approval.spender);
-        let allowances = node
-            .allowances(node.settlement_contract().await?, spenders)
-            .await?;
-        Ok(approvals
-            .iter()
-            .copied()
-            .zip(allowances)
-            .filter(|(approval, allowance)| !approval.is_approved(allowance))
-            .map(|(approval, _)| approval)
-            .collect())
     }
 
     /// Calculate the score for this settlement. This is the score of the
@@ -78,5 +55,20 @@ impl Settlement {
         // TODO I intend to do the access list generation and gas estimation in driver
         // though, that will not be part of the boundary
         todo!()
+    }
+
+    /// Generate the ERC-20 approvals needed by this settlement.
+    async fn approvals(
+        node: &EthNode,
+        allowances: Allowances,
+    ) -> Result<Vec<eth::allowance::Approval>, node::Error> {
+        let existing_allowances = node
+            .allowances(node.settlement_contract().await?, allowances.spenders())
+            .await?;
+        Ok(allowances
+            .into_iter()
+            .zip(existing_allowances.into_iter())
+            .filter_map(|(required, existing)| required.approval(&existing))
+            .collect())
     }
 }
