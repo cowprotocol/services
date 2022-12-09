@@ -20,7 +20,7 @@ use web3::{
     BatchTransport, Transport,
 };
 
-use crate::settlement::Settlement;
+use crate::{settlement::Settlement, settlement_simulation::tenderly_link};
 
 #[async_trait::async_trait]
 pub trait AccessListEstimating: Send + Sync {
@@ -66,8 +66,6 @@ pub async fn estimate_settlement_access_list(
     settlement: &Settlement,
     tx: &TransactionBuilder<DynTransport>,
 ) -> Result<AccessList> {
-    tracing::debug!(?settlement, "generating access list for settlement");
-
     // Generate partial access lists for all smart contracts
     let partial_access_lists = try_join_all(settlement.trades().map(|trade| async {
         let buy_token = trade.order.data.buy_token;
@@ -76,18 +74,22 @@ pub async fn estimate_settlement_access_list(
             .data
             .receiver
             .unwrap_or(trade.order.metadata.owner);
+        let order_uid = trade.order.metadata.uid;
         let partial_access_list =
             if buy_token == BUY_ETH_ADDRESS && is_smart_contract(code_fetcher, receiver).await? {
-                estimator
-                    .estimate_access_list(
-                        &TransactionBuilder::new(web3.clone())
-                            .data(Default::default())
-                            .from(solver_account.clone())
-                            .to(receiver)
-                            .value(1.into()),
-                        None,
-                    )
-                    .await?
+                let tx = TransactionBuilder::new(web3.clone())
+                    .data(Default::default())
+                    .from(solver_account.clone())
+                    .to(receiver)
+                    .value(1.into());
+                let simulation_link = tenderly_link(
+                    web3.eth().block_number().await?.as_u64(),
+                    &web3.net().version().await?,
+                    tx.clone(),
+                    None
+                );
+                tracing::debug!(%simulation_link, ?order_uid, "generating partial access list for trade");
+                estimator.estimate_access_list(&tx, None).await?
             } else {
                 Default::default()
             };
@@ -118,6 +120,14 @@ pub async fn estimate_settlement_access_list(
             storage_keys: storage_keys.into_iter().collect(),
         })
         .collect_vec();
+
+    let simulation_link = tenderly_link(
+        web3.eth().block_number().await?.as_u64(),
+        &web3.net().version().await?,
+        tx.clone(),
+        Some(partial_access_list.clone()),
+    );
+    tracing::debug!(?settlement, %simulation_link, "generating access list for settlement");
 
     // Generate the final access list
     estimator
