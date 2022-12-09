@@ -353,7 +353,9 @@ where
                 let bubble_up_errors = |events: Vec<Result<EthcontractEvent<_>, _>>| {
                     events
                         .into_iter()
-                        .filter(|event| filter_decoding_errors(event, self.on_event_decoding_error))
+                        .filter(|event| {
+                            reject_expected_decoding_errors(event, self.on_event_decoding_error)
+                        })
                         .collect::<Result<Vec<_>, _>>()
                 };
                 self.contract
@@ -397,7 +399,10 @@ where
             .query_paginated()
             .await?
             .filter(move |event: &Result<EthcontractEvent<_>, ExecutionError>| {
-                future::ready(filter_decoding_errors(event, on_event_decoding_error))
+                future::ready(reject_expected_decoding_errors(
+                    event,
+                    on_event_decoding_error,
+                ))
             })
             .map_err(Error::from))
     }
@@ -435,7 +440,7 @@ where
 /// Filter function that always returns true unless set to ignore event decoding
 /// errors. In this latter case, all errors are preserved except those that come
 /// from decoding an invalid event for the contract.
-fn filter_decoding_errors<Event>(
+fn reject_expected_decoding_errors<Event>(
     event: &Result<Event, ExecutionError>,
     on_event_decoding_error: OnEventDecodingError,
 ) -> bool {
