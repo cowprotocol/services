@@ -38,7 +38,14 @@ impl Api {
         });
         for solver in self.solvers {
             let name = solver.name().clone();
-            app = app.nest(&name.0, Self::multiplex(solver, Arc::clone(&shared)));
+            let router = axum::Router::new();
+            let router = solve::route(router);
+            let router = info::route(router);
+            let router = router.with_state(State {
+                solver: Arc::new(solver),
+                shared: Arc::clone(&shared),
+            });
+            app = app.nest(&name.0, router);
         }
 
         // Start the server.
@@ -46,16 +53,6 @@ impl Api {
             .serve(app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await
-    }
-
-    fn multiplex(solver: Solver, shared: Arc<SharedState>) -> axum::Router {
-        let router = axum::Router::new();
-        let router = solve::route(router);
-        let router = info::route(router);
-        router.with_state(State {
-            solver: Arc::new(solver),
-            shared,
-        })
     }
 }
 
