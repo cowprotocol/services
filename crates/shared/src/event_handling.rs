@@ -435,8 +435,8 @@ where
 /// Filter function that always returns true unless set to ignore event decoding
 /// errors. In this latter case, all errors are preserved except those that come
 /// from decoding an invalid event for the contract.
-fn filter_decoding_errors<E>(
-    event: &Result<E, ExecutionError>,
+fn filter_decoding_errors<Event>(
+    event: &Result<Event, ExecutionError>,
     on_event_decoding_error: OnEventDecodingError,
 ) -> bool {
     on_event_decoding_error != OnEventDecodingError::Ignore || {
