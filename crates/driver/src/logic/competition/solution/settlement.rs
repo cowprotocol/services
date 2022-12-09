@@ -38,7 +38,7 @@ impl Settlement {
         for approval in approvals {
             settlement
                 .encoder
-                .append_to_execution_plan(boundary::Approval::Approve {
+                .append_to_execution_plan(boundary::Approval {
                     token: approval.spender.token.0,
                     spender: approval.spender.address.0,
                 });
