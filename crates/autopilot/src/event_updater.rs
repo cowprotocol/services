@@ -2,7 +2,7 @@ use anyhow::Result;
 use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use shared::{
     current_block::{BlockNumberHash, BlockRetrieving},
-    event_handling::{EventHandler, EventRetrieving, EventStoring},
+    event_handling::{EventHandler, EventRetrieving, EventStoring, OnEventDecodingError},
     impl_event_retrieving,
     maintenance::Maintaining,
 };
@@ -32,12 +32,14 @@ where
         db: Database,
         block_retriever: Arc<dyn BlockRetrieving>,
         start_sync_at_block: Option<BlockNumberHash>,
+        on_event_decoding_error: OnEventDecodingError,
     ) -> Self {
         Self(Mutex::new(EventHandler::new(
             block_retriever,
             contract,
             db,
             start_sync_at_block,
+            on_event_decoding_error,
         )))
     }
 }

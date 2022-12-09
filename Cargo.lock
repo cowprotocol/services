@@ -1046,8 +1046,7 @@ dependencies = [
 [[package]]
 name = "ethcontract"
 version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7236691dcb4b9b3672808fa072a413c67d025fd113681f1550e3379c299dd810"
+source = "git+https://github.com/fedgiac/ethcontract-rs?branch=keep-errors-in-event-query#17c9c8e61b840701c3ce0e90aefe4e33f726dceb"
 dependencies = [
  "arrayvec",
  "ethcontract-common",
@@ -1070,8 +1069,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-common"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8312590754c75b14aa2e7f0f759f3dc68817398ab5bb1115552fea2751b623fc"
+source = "git+https://github.com/fedgiac/ethcontract-rs?branch=keep-errors-in-event-query#17c9c8e61b840701c3ce0e90aefe4e33f726dceb"
 dependencies = [
  "ethabi",
  "hex",
@@ -1086,8 +1084,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-derive"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942653d82ad2ade8fcf25dc065516653d1c965cf6c1982de5cc079fdd6dba93c"
+source = "git+https://github.com/fedgiac/ethcontract-rs?branch=keep-errors-in-event-query#17c9c8e61b840701c3ce0e90aefe4e33f726dceb"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -1100,8 +1097,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-generate"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdaf86f28ebe51e92aaab1d477458f8bd991880bf557881b4daae69529c76e42"
+source = "git+https://github.com/fedgiac/ethcontract-rs?branch=keep-errors-in-event-query#17c9c8e61b840701c3ce0e90aefe4e33f726dceb"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -1116,8 +1112,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-mock"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c248f7d5b465507f3d45df5fa91dd0fc743f2b9580cab2117b861e4242fee589"
+source = "git+https://github.com/fedgiac/ethcontract-rs?branch=keep-errors-in-event-query#17c9c8e61b840701c3ce0e90aefe4e33f726dceb"
 dependencies = [
  "ethcontract",
  "hex",

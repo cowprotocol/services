@@ -5,7 +5,7 @@ use super::{
 use crate::{
     current_block::{BlockRetrieving, RangeInclusive},
     ethrpc::Web3,
-    event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+    event_handling::{EventHandler, EventStoring, OnEventDecodingError, MAX_REORG_BLOCK_COUNT},
     maintenance::Maintaining,
     recent_block_cache::Block,
 };
@@ -265,6 +265,7 @@ impl UniswapV3PoolFetcher {
             UniswapV3PoolEventFetcher(web3),
             RecentEventsCache::default(),
             Some(init_block),
+            OnEventDecodingError::Error,
         ));
 
         Ok(Self { checkpoint, events })

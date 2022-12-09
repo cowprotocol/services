@@ -6,7 +6,7 @@ use crate::{
     current_block::{BlockNumberHash, BlockRetrieving},
     ethcontract_error::EthcontractErrorType,
     ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
-    event_handling::EventHandler,
+    event_handling::{EventHandler, OnEventDecodingError},
     impl_event_retrieving,
     maintenance::Maintaining,
     recent_block_cache::Block,
@@ -52,6 +52,7 @@ where
         factory_instance: &Instance<Web3Transport>,
         initial_pools: Vec<Factory::PoolInfo>,
         start_sync_at_block: Option<BlockNumberHash>,
+        on_event_decoding_error: OnEventDecodingError,
     ) -> Self {
         let web3 = factory_instance.web3();
         let updater = Mutex::new(EventHandler::new(
@@ -59,6 +60,7 @@ where
             BasePoolFactoryContract(base_pool_factory(factory_instance)),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
+            on_event_decoding_error,
         ));
         Self {
             web3,

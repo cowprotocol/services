@@ -24,6 +24,7 @@ use super::{
 use crate::{
     current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{Web3, Web3Transport},
+    event_handling::OnEventDecodingError,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig},
     token_info::TokenInfoFetching,
@@ -404,6 +405,7 @@ where
         factory_instance,
         initial_pools,
         start_sync_at_block,
+        OnEventDecodingError::Error,
     )))
 }
 

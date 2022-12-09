@@ -34,6 +34,7 @@ use shared::{
     baseline_solver::BaseTokens,
     contracts::settlement_deployment_block_number_hash,
     current_block::block_number_to_block_number_hash,
+    event_handling::OnEventDecodingError,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -389,6 +390,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         db.clone(),
         block_retriever.clone(),
         skip_event_sync_start,
+        OnEventDecodingError::Error,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
@@ -478,6 +480,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
                         }),
                 ),
             ),
+            OnEventDecodingError::Ignore,
         ));
         maintainers.push(broadcaster_event_updater);
     }

@@ -22,6 +22,7 @@ use shared::{
     code_fetching::{CachedCodeFetcher, MockCodeFetching},
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
+    event_handling::OnEventDecodingError,
     fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
     order_quoting::{
@@ -97,6 +98,7 @@ impl OrderbookServices {
             autopilot_db.clone(),
             block_retriever.clone(),
             None,
+            OnEventDecodingError::Error,
         ));
         let pair_provider = uniswap_pair_provider(contracts);
         let current_block_stream =
@@ -219,6 +221,7 @@ impl OrderbookServices {
             onchain_order_event_parser,
             block_retriever,
             None,
+            OnEventDecodingError::Ignore,
         ));
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,

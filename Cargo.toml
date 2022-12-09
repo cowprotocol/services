@@ -10,9 +10,9 @@ cached = { version = "0.39", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
 derivative = "2"
-ethcontract = { version = "0.23.1", default-features = false }
-ethcontract-generate = { version = "0.23", default-features = false }
-ethcontract-mock = { version = "0.23", default-features = false }
+ethcontract = { git = "https://github.com/fedgiac/ethcontract-rs", branch = "keep-errors-in-event-query" , default-features = false }
+ethcontract-generate = { git = "https://github.com/fedgiac/ethcontract-rs", branch = "keep-errors-in-event-query" , default-features = false }
+ethcontract-mock = { git = "https://github.com/fedgiac/ethcontract-rs", branch = "keep-errors-in-event-query" , default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
