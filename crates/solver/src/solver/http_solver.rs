@@ -243,7 +243,7 @@ fn map_tokens_for_solver(
 }
 
 fn order_fee(order: &LimitOrder) -> TokenAmount {
-    let amount = match order.is_liquidity_order {
+    let amount = match order.is_liquidity_order() {
         true => order.unscaled_subsidized_fee,
         false => order.scaled_unsubsidized_fee,
     };
@@ -315,7 +315,7 @@ fn order_models(
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
                     fee: order_fee(order),
                     cost,
-                    is_liquidity_order: order.is_liquidity_order,
+                    is_liquidity_order: order.is_liquidity_order(),
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,

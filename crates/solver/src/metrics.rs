@@ -286,7 +286,7 @@ impl SolverMetrics for Metrics {
     fn orders_fetched(&self, orders: &[LimitOrder]) {
         let user_orders = orders
             .iter()
-            .filter(|order| !order.is_liquidity_order)
+            .filter(|order| !order.is_liquidity_order())
             .count();
         let liquidity_orders = orders.len() - user_orders;
 

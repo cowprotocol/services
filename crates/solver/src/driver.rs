@@ -285,7 +285,7 @@ impl Driver {
 
         let pairs: Vec<_> = orders
             .iter()
-            .filter(|o| !o.is_liquidity_order)
+            .filter(|o| !o.is_liquidity_order())
             .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
             .collect();
         let liquidity = self

@@ -11,6 +11,7 @@ use ethcontract::{
 };
 use futures::FutureExt;
 use gas_estimation::GasPrice1559;
+use itertools::Itertools;
 use primitive_types::{H160, H256, U256};
 use shared::{
     ethrpc::Web3,
@@ -107,7 +108,7 @@ pub async fn simulate_and_error_with_tenderly_link(
         .into_iter()
         .map(|(future, transaction_builder)| {
             future.now_or_never().unwrap().map(|_| ()).map_err(|err| {
-                Error::new(err).context(tenderly_link(block, network_id, transaction_builder))
+                Error::new(err).context(tenderly_link(block, network_id, transaction_builder, None))
             })
         })
         .collect()
@@ -210,6 +211,7 @@ pub fn tenderly_link(
     current_block: u64,
     network_id: &str,
     tx: TransactionBuilder<DynTransport>,
+    access_list: Option<AccessList>,
 ) -> String {
     // Tenderly simulates transactions for block N at transaction index 0, while
     // `eth_call` simulates transactions "on top" of the block (i.e. after the
@@ -217,14 +219,34 @@ pub fn tenderly_link(
     // to be as close as possible to the `eth_call`, we want to create it on the
     // next block (since `block_N{tx_last} ~= block_(N+1){tx_0}`).
     let next_block = current_block + 1;
-    format!(
+    let link = format!(
         "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
         next_block,
         tx.from.unwrap().address(),
         tx.to.unwrap(),
         network_id,
         hex::encode(tx.data.unwrap().0)
-    )
+    );
+    if let Some(access_list) = access_list {
+        let access_list = access_list
+            .into_iter()
+            .map(|item| {
+                (
+                    format!("0x{:x}", item.address),
+                    item.storage_keys
+                        .into_iter()
+                        .map(|key| format!("0x{:x}", key))
+                        .collect_vec(),
+                )
+            })
+            .collect_vec();
+        format!(
+            "{link}&accessList={}",
+            serde_json::to_string(&access_list).unwrap()
+        )
+    } else {
+        link
+    }
 }
 
 #[cfg(test)]
@@ -677,7 +699,7 @@ mod tests {
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
             "Tenderly simulation for generated tx: {:?}",
-            tenderly_link(13830346u64, &network_id, settlement)
+            tenderly_link(13830346u64, &network_id, settlement, None)
         );
     }
 
