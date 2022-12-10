@@ -3,7 +3,7 @@ use {
     thiserror::Error,
 };
 
-mod node;
+mod ethereum;
 mod tenderly;
 
 #[derive(Debug, Error)]
@@ -27,22 +27,17 @@ impl Simulator {
 
 #[derive(Debug)]
 enum Inner {
-    Tenderly {
-        tenderly: tenderly::Tenderly,
-        node: node::Node,
-    },
-    Node(node::Node),
+    /// Simulate transactions on [Tenderly](https://tenderly.co/).
+    Tenderly(tenderly::Tenderly),
+    /// Simulate transactions on an Ethereum node.
+    Ethereum(ethereum::Ethereum),
 }
 
 impl Inner {
     async fn access_list(&self, settlement: &solution::Settlement) -> eth::AccessList {
-        // The driver provides the users with an option of doing access list simulation
-        // on Tenderly because the eth_createAccessList endpoint seems to not be
-        // very widely supported yet. When that endpoint becomes more common, it
-        // might make sense to drop Tenderly entirely.
         match self {
-            Self::Tenderly { tenderly, .. } => tenderly.access_list(settlement).await,
-            Self::Node(node) => node.access_list(settlement).await,
+            Self::Tenderly(tenderly) => tenderly.access_list(settlement).await,
+            Self::Ethereum(eth) => eth.access_list(settlement).await,
         }
     }
 
@@ -51,12 +46,9 @@ impl Inner {
         settlement: &solution::Settlement,
         access_list: &eth::AccessList,
     ) -> eth::Gas {
-        // Gas estimation is always done using the node because it's faster than
-        // Tenderly and the driver has a connection to a node anyway.
-        let node = match self {
-            Self::Tenderly { node, .. } => node,
-            Self::Node(node) => node,
-        };
-        node.gas(settlement, access_list).await
+        match self {
+            Self::Tenderly(tenderly) => tenderly.gas(settlement, access_list).await,
+            Self::Ethereum(eth) => eth.gas(settlement, access_list).await,
+        }
     }
 }

@@ -1,9 +1,9 @@
 use crate::logic::{competition::solution, eth};
 
 #[derive(Debug)]
-pub struct Node;
+pub struct Ethereum;
 
-impl Node {
+impl Ethereum {
     pub async fn access_list(&self, _settlement: &solution::Settlement) -> eth::AccessList {
         todo!()
     }

@@ -932,6 +932,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "url",
  "warp",
  "web3",
 ]

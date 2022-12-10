@@ -2,7 +2,7 @@ use {
     super::auction::Auction,
     crate::{
         solver::{self, Solver},
-        EthNode,
+        Ethereum,
         Simulator,
     },
     primitive_types::{H160, U256},
@@ -29,12 +29,12 @@ pub struct Solution {
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
     solver: &Solver,
-    node: &EthNode,
+    eth: &Ethereum,
     simulator: &Simulator,
     auction: &Auction,
 ) -> Result<Score, solver::Error> {
     let solution = solver.solve(auction).await?;
-    let settlement = Settlement::encode(node, auction, solution).await;
+    let settlement = Settlement::encode(eth, auction, solution).await;
     Ok(settlement.score(simulator))
 }
 

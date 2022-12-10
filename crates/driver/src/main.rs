@@ -94,7 +94,7 @@ async fn main() {
             driver::logic::eth::ChainId(0),
         )],
         simulator: simulator(),
-        node: node(),
+        eth: ethereum(),
         addr: args.bind_address,
     }
     .serve(async {
@@ -119,7 +119,7 @@ fn simulator() -> driver::Simulator {
     todo!()
 }
 
-fn node() -> driver::EthNode {
+fn ethereum() -> driver::Ethereum {
     todo!()
 }
 

@@ -1,5 +1,5 @@
 use {
-    crate::{solver::Solver, EthNode, Simulator},
+    crate::{solver::Solver, Ethereum, Simulator},
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
 };
@@ -13,7 +13,7 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub simulator: Simulator,
-    pub node: EthNode,
+    pub eth: Ethereum,
     pub addr: SocketAddr,
 }
 
@@ -34,7 +34,7 @@ impl Api {
         // Multiplex each solver as part of the API.
         let shared = Arc::new(SharedState {
             simulator: self.simulator,
-            node: self.node,
+            eth: self.eth,
         });
         for solver in self.solvers {
             let name = solver.name().clone();
@@ -71,8 +71,8 @@ impl State {
         &self.shared.simulator
     }
 
-    fn node(&self) -> &EthNode {
-        &self.shared.node
+    fn ethereum(&self) -> &Ethereum {
+        &self.shared.eth
     }
 }
 
@@ -80,5 +80,5 @@ impl State {
 #[derive(Debug)]
 struct SharedState {
     simulator: Simulator,
-    node: EthNode,
+    eth: Ethereum,
 }

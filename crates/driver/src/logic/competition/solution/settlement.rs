@@ -1,10 +1,10 @@
 use {
     super::Allowances,
     crate::{
+        blockchain,
         boundary,
         logic::{competition, eth},
-        node,
-        EthNode,
+        Ethereum,
         Simulator,
     },
     futures::future::try_join_all,
@@ -27,13 +27,13 @@ impl From<Score> for f64 {
 impl Settlement {
     /// Encode a solution into an onchain settlement.
     pub async fn encode(
-        node: &EthNode,
+        eth: &Ethereum,
         _auction: &competition::Auction,
         solution: competition::Solution,
     ) -> Self {
         let mut settlement = boundary::Settlement::new(solution.prices);
         // TODO No unwrap
-        let approvals = Self::approvals(node, solution.allowances).await.unwrap();
+        let approvals = Self::approvals(eth, solution.allowances).await.unwrap();
         for approval in approvals {
             settlement
                 .encoder
@@ -60,12 +60,12 @@ impl Settlement {
 
     /// Generate the ERC-20 approvals needed by this settlement.
     async fn approvals(
-        node: &EthNode,
+        eth: &Ethereum,
         allowances: Allowances,
-    ) -> Result<Vec<eth::allowance::Approval>, node::Error> {
-        let settlement_contract = node.settlement_contract().await?;
+    ) -> Result<Vec<eth::allowance::Approval>, blockchain::Error> {
+        let settlement_contract = eth.settlement_contract().await?;
         let allowances = try_join_all(allowances.into_iter().map(|required| async move {
-            node.allowance(settlement_contract, required.0.spender)
+            eth.allowance(settlement_contract, required.0.spender)
                 .await
                 .map(|existing| (required, existing))
         }))

@@ -12,9 +12,13 @@ async fn solve(
 ) -> axum::response::Json<dto::Solution> {
     let auction = auction.0.into();
     // TODO Report errors instead of unwrapping
-    let score =
-        logic::competition::solve(state.solver(), state.node(), state.simulator(), &auction)
-            .await
-            .unwrap();
+    let score = logic::competition::solve(
+        state.solver(),
+        state.ethereum(),
+        state.simulator(),
+        &auction,
+    )
+    .await
+    .unwrap();
     axum::response::Json(score.into())
 }

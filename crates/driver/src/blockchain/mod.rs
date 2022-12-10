@@ -2,6 +2,7 @@ use {
     crate::logic::eth,
     ethcontract::{transport::DynTransport, Web3},
     thiserror::Error,
+    url::Url,
 };
 
 pub mod contracts;
@@ -16,11 +17,16 @@ pub enum Error {
     Deploy(#[from] ethcontract::errors::DeployError),
 }
 
-/// The Ethereum node.
+/// The Ethereum blockchain.
 #[derive(Debug)]
-pub struct EthNode(Web3<DynTransport>);
+pub struct Ethereum(Web3<DynTransport>);
 
-impl EthNode {
+impl Ethereum {
+    /// Access the Ethereum blockchain through the RPC API of a node.
+    pub fn node(_url: Url) -> Self {
+        todo!()
+    }
+
     /// The address of our settlement contract.
     pub async fn settlement_contract(&self) -> Result<eth::Address, Error> {
         Ok(contracts::GPv2Settlement::deployed(&self.0)
