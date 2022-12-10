@@ -400,6 +400,7 @@ pub enum SubmissionPreference {
     #[default]
     ProtocolDefault,
     Flashbots,
+    PublicMempool,
 }
 
 #[cfg(test)]

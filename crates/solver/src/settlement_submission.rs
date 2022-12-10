@@ -186,7 +186,18 @@ impl SolutionSubmitter {
                     .position(|strategy| matches!(strategy, TransactionStrategy::Flashbots(_)));
                 match position {
                     Some(index) => &self.transaction_strategies[index..index + 1],
-                    // if flasbots are disabled by protocol, default to protocol strategies
+                    // if flashbots are disabled by protocol, default to protocol strategies
+                    None => self.transaction_strategies.as_slice(),
+                }
+            }
+            SubmissionPreference::PublicMempool => {
+                let position = self
+                    .transaction_strategies
+                    .iter()
+                    .position(|strategy| matches!(strategy, TransactionStrategy::PublicMempool(_)));
+                match position {
+                    Some(index) => &self.transaction_strategies[index..index + 1],
+                    // if public mempool is disabled by protocol, default to protocol strategies
                     None => self.transaction_strategies.as_slice(),
                 }
             }
