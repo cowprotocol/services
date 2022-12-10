@@ -14,7 +14,7 @@ use model::{
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -33,7 +33,7 @@ pub async fn convert_settlement(
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
     domain: &DomainSeparator,
-) -> Result<Settlement> {
+) -> Result<Settlement, ConversionError> {
     IntermediateSettlement::new(
         settled,
         context,
@@ -44,6 +44,7 @@ pub async fn convert_settlement(
     )
     .await?
     .into_settlement()
+    .map_err(Into::into)
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +122,28 @@ struct IntermediateSettlement<'a> {
     slippage: SlippageContext<'a>,
 }
 
+// Conversion error happens during building a settlement from a solution received from searcher
+#[derive(Debug)]
+pub enum ConversionError {
+    InvalidExecutionPlans(anyhow::Error),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ConversionError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+impl From<ConversionError> for anyhow::Error {
+    fn from(err: ConversionError) -> Self {
+        match err {
+            ConversionError::InvalidExecutionPlans(err) => err,
+            ConversionError::Other(err) => err,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 struct ExecutedLimitOrder {
@@ -156,7 +179,7 @@ impl<'a> IntermediateSettlement<'a> {
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
         domain: &DomainSeparator,
-    ) -> Result<IntermediateSettlement<'a>> {
+    ) -> Result<IntermediateSettlement<'a>, ConversionError> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
         let foreign_liquidity_orders = convert_foreign_liquidity_orders(
@@ -173,6 +196,12 @@ impl<'a> IntermediateSettlement<'a> {
             settled.interaction_data,
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
+
+        if duplicate_coordinates(&executions) {
+            return Err(ConversionError::InvalidExecutionPlans(anyhow!(
+                "Duplicate coordinates found."
+            )));
+        }
 
         Ok(Self {
             executions,
@@ -380,6 +409,17 @@ async fn compute_approvals(
         .collect::<Vec<_>>();
 
     allowance_manager.get_approvals(&requests).await
+}
+
+/// Check if executions contain execution plans with the same coordinates
+fn duplicate_coordinates(executions: &[Execution]) -> bool {
+    let mut coordinates = HashSet::new();
+    executions.iter().any(|execution| {
+        execution
+            .coordinates()
+            .map(|coordinate| !coordinates.insert(coordinate))
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]
@@ -1124,5 +1164,49 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    fn interaction_with_coordinate(
+        coordinates: Option<ExecutionPlanCoordinatesModel>,
+    ) -> Execution {
+        Execution::CustomInteraction(Box::new(InteractionData {
+            exec_plan: coordinates.map(|coordinates| ExecutionPlan {
+                coordinates,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_false() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 1,
+            })),
+        ];
+        assert!(!duplicate_coordinates(&executions));
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_true() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+        ];
+        assert!(duplicate_coordinates(&executions));
     }
 }
