@@ -7,6 +7,7 @@ use {
         EthNode,
         Simulator,
     },
+    futures::future::try_join_all,
     num::{BigRational, ToPrimitive},
 };
 
@@ -62,13 +63,17 @@ impl Settlement {
         node: &EthNode,
         allowances: Allowances,
     ) -> Result<Vec<eth::allowance::Approval>, node::Error> {
-        let existing_allowances = node
-            .allowances(node.settlement_contract().await?, allowances.spenders())
-            .await?;
-        Ok(allowances
+        let settlement_contract = node.settlement_contract().await?;
+        let allowances = try_join_all(allowances.into_iter().map(|required| async move {
+            node.allowance(settlement_contract, required.0.spender)
+                .await
+                .map(|existing| (required, existing))
+        }))
+        .await?;
+        let approvals = allowances
             .into_iter()
-            .zip(existing_allowances.into_iter())
             .filter_map(|(required, existing)| required.approval(&existing))
-            .collect())
+            .collect();
+        Ok(approvals)
     }
 }

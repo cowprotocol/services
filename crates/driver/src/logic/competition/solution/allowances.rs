@@ -25,10 +25,6 @@ impl Allowances {
         normalized.sort();
         Self(normalized)
     }
-
-    pub fn spenders(&self) -> impl Iterator<Item = eth::allowance::Spender> + '_ {
-        self.0.iter().map(|allowance| allowance.0.spender)
-    }
 }
 
 impl IntoIterator for Allowances {

@@ -29,66 +29,19 @@ impl EthNode {
             .into())
     }
 
-    /// Fetch the ERC20 allowances for each spender. The allowances are returned
-    /// in the same order as the input spenders. See the allowance method in
+    /// Fetch the ERC20 allowance for the spender. See the allowance method in
     /// EIP-20.
     ///
     /// https://eips.ethereum.org/EIPS/eip-20#methods
-    pub async fn allowances(
+    pub async fn allowance(
         &self,
         owner: eth::Address,
-        spenders: impl Iterator<Item = eth::allowance::Spender>,
-    ) -> Result<Vec<eth::allowance::Existing>, Error> {
-        let mut batch = ethcontract::batch::CallBatch::new(self.0.transport());
-        let calls: Vec<_> = spenders
-            .map(|spender| {
-                (
-                    spender,
-                    contracts::ERC20::at(&self.0, spender.token.0)
-                        .allowance(owner.0, spender.address.0)
-                        .batch_call(&mut batch),
-                )
-            })
-            .collect();
-        batch.execute_all(MAX_BATCH_SIZE).await;
-        let mut allowances = Vec::new();
-        for (spender, call) in calls {
-            match call.await {
-                Ok(amount) => allowances.push(eth::Allowance { spender, amount }.into()),
-                Err(err) if Self::is_batch_error(&err.inner) => return Err(err.into()),
-                Err(err) => {
-                    tracing::warn!(
-                        "error retrieving allowance for {spender:?} and owner {owner:?}: {err:?}"
-                    );
-                    continue;
-                }
-            };
-        }
-        Ok(allowances)
-    }
-
-    fn is_batch_error(err: &ethcontract::errors::ExecutionError) -> bool {
-        match &err {
-            ethcontract::errors::ExecutionError::Web3(web3::Error::Transport(
-                web3::error::TransportError::Message(message),
-            )) => {
-                // Currently, there is no reliable way to determine if a Web3 error
-                // is caused because of a failing batch request, or some call
-                // specific error, so test that the message starts with "Batch"
-                // as a best guess.
-                //
-                // https://github.com/gnosis/ethcontract-rs/issues/550
-                message.starts_with("Batch")
-            }
-            _ => false,
-        }
-    }
-}
-
-pub struct Contracts<'a>(&'a Web3<DynTransport>);
-
-impl Contracts<'_> {
-    pub fn erc20(self, token: eth::Token) -> contracts::ERC20 {
-        contracts::ERC20::at(self.0, token.0)
+        spender: eth::allowance::Spender,
+    ) -> Result<eth::allowance::Existing, Error> {
+        let amount = contracts::ERC20::at(&self.0, spender.token.0)
+            .allowance(owner.0, spender.address.0)
+            .call()
+            .await?;
+        Ok(eth::Allowance { spender, amount }.into())
     }
 }
