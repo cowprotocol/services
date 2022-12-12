@@ -1,5 +1,5 @@
 use crate::{
-    driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
+    driver::solver_settlements::{self, RatedSettlement},
     metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
@@ -16,7 +16,7 @@ use shared::http_solver::model::{
     AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
     TransactionWithError,
 };
-use std::{cmp::Ordering, sync::Arc, time::Duration};
+use std::{cmp::Ordering, sync::Arc};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
@@ -29,9 +29,6 @@ const SOLVER_BALANCE_MULTIPLIER: f64 = 3.;
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
-    // TODO: these should probably come from the autopilot to make the test parameters identical for
-    // everyone.
-    pub min_order_age: Duration,
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
@@ -116,18 +113,16 @@ impl SettlementRanker {
         prices: &ExternalPrices,
         auction_id: AuctionId,
     ) -> Vec<(Arc<dyn Solver>, Settlement)> {
-        let mut solver_settlements = vec![];
-        for (solver, settlements) in settlements {
-            let settlements =
-                self.discard_illegal_settlements(&solver, settlements, prices, auction_id);
-            for settlement in settlements {
-                solver_settlements.push((solver.clone(), settlement));
-            }
-        }
-
-        // TODO this needs to move into the autopilot eventually.
-        // filters out all non-mature settlements
-        retain_mature_settlements(self.min_order_age, solver_settlements, auction_id)
+        settlements
+            .into_iter()
+            .flat_map(|(solver, settlements)| {
+                let settlements =
+                    self.discard_illegal_settlements(&solver, settlements, prices, auction_id);
+                settlements
+                    .into_iter()
+                    .map(move |settlement| (solver.clone(), settlement))
+            })
+            .collect()
     }
 
     /// Determines legal settlements and ranks them by simulating them.

@@ -53,7 +53,6 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     #[serde(default)]
     full_fee_amount: U256,
-    is_mature: bool,
     #[serde(flatten)]
     class: OrderClass,
     #[serde_as(as = "serialize::U256")]

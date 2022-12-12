@@ -184,7 +184,6 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
-        min_order_age: args.min_order_age,
     });
 
     CommonComponents {
@@ -565,7 +564,6 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
     let settlement_ranker = Arc::new(SettlementRanker {
         metrics: metrics.clone(),
         settlement_rater: settlement_rater.clone(),
-        min_order_age: std::time::Duration::from_secs(30),
         max_settlement_price_deviation: None,
         token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
         decimal_cutoff: args.solution_comparison_decimal_cutoff,

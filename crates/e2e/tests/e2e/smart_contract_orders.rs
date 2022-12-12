@@ -220,7 +220,6 @@ async fn smart_contract_orders(web3: Web3) {
         Arc::new(web3.clone()),
         Duration::from_secs(30),
         contracts.weth.address(),
-        Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
         network_id.clone(),

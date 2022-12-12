@@ -220,7 +220,6 @@ mod tests {
         let order_converter = Arc::new(OrderConverter {
             native_token: native_token.clone(),
             fee_objective_scaling_factor: 2.,
-            min_order_age: Duration::from_secs(30),
         });
         let converter = AuctionConverter::new(
             gas_estimator,

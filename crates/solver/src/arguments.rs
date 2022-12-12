@@ -100,17 +100,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub external_solvers: Option<Vec<ExternalSolverArg>>,
 
-    /// A settlement must contain at least one order older than this duration in seconds for it
-    /// to be applied.  Larger values delay individual settlements more but have a higher
-    /// coincidence of wants chance.
-    #[clap(
-        long,
-        env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
-    )]
-    pub min_order_age: Duration,
-
     /// The port at which we serve our metrics
     #[clap(long, env, default_value = "9587")]
     pub metrics_port: u16,
@@ -332,7 +321,6 @@ impl std::fmt::Display for Arguments {
                 .flatten()
                 .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
         )?;
-        writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
         writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;

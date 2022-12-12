@@ -39,7 +39,6 @@ struct Order {
     fee: TokenAmount,
     cost: TokenAmount,
     is_liquidity_order: bool,
-    is_mature: bool,
     mandatory: bool,
     has_atomic_execution: bool,
     reward: f64,
