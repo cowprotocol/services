@@ -16,6 +16,7 @@ use shared::{
     signature_validator::{SignatureCheck, SignatureValidating},
 };
 use std::sync::Arc;
+use tracing::Instrument as _;
 
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
 /// to the fee returned by the quoting process. If quoting fails, the corresponding
@@ -53,7 +54,13 @@ impl LimitOrderQuoter {
             }
             for chunk in orders.chunks(10) {
                 failed_orders += join_all(chunk.iter().map(|order| async move {
-                    let update_result = self.update_surplus_fee(order).await;
+                    let update_result = self
+                        .update_surplus_fee(order)
+                        .instrument(tracing::debug_span!(
+                            "surplus_fee",
+                            order =% order.metadata.uid
+                        ))
+                        .await;
                     if let Err(err) = &update_result {
                         let order_uid = &order.metadata.uid;
                         tracing::warn!(%order_uid, ?err, "skipped limit order due to error");

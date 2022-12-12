@@ -139,7 +139,13 @@ impl SettlementEncoder {
             tokens: self.tokens.clone(),
             clearing_prices: self.clearing_prices.clone(),
             trades: self.trades.clone(),
-            execution_plan: Vec::new(),
+            execution_plan: self
+                .execution_plan
+                .iter()
+                // Instead of simply dropping the executions we mark all the interactions as
+                // internalizable.
+                .map(|(execution, _)| (execution.clone(), true))
+                .collect(),
             pre_interactions: self.pre_interactions.clone(),
             unwraps: self.unwraps.clone(),
         }

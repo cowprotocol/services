@@ -292,7 +292,7 @@ pub struct ExecutionPlan {
     pub internal: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize, Hash)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
@@ -328,6 +328,9 @@ pub enum SolverRejectionReason {
     /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
     /// Returns the list of not allowed tokens
     NonBufferableTokensUsed(BTreeSet<H160>),
+
+    /// The solution contains non unique execution plans (duplicated coordinates)
+    InvalidExecutionPlans,
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),

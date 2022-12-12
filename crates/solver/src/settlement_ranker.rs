@@ -63,6 +63,7 @@ impl SettlementRanker {
                         return None;
                     }
 
+                    // Do not continue with settlements that contain prices too different from external prices.
                     if let Some(max_settlement_price_deviation) = &self.max_settlement_price_deviation {
                         if !
                             settlement.satisfies_price_checks(
