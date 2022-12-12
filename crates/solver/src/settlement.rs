@@ -7,7 +7,7 @@ use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
 };
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
@@ -433,6 +433,7 @@ impl Settlement {
 
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
+        ensure!(self.submitter == other.submitter, "different submitters");
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self {
             encoder: merged,
