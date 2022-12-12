@@ -20,7 +20,7 @@ pub async fn log_settlement(
     let network = web3.net().version().await?;
     let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
     let settlement = settle_method_builder(contract, settlement, account).tx;
-    let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement);
+    let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement, None);
 
     tracing::info!("not submitting transaction in dry-run mode");
     tracing::debug!("transaction simulation: {}", simulation_link);

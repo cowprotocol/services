@@ -181,6 +181,7 @@ mod tests {
         let prices = hashmap! {token0 => 1u8.into(), token1 => 1u8.into()};
         let settlement = Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
+            ..Default::default()
         };
 
         let mut inflight = InFlightOrders::default();
