@@ -1,13 +1,13 @@
 use crate::{
     eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-    local_node::{AccountAssigner, TestNodeApi},
+    local_node::{blockchain_time, AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
     services::{OrderbookServices, API_HOST},
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use ethcontract::{BlockNumber, H160, U256};
+use ethcontract::{H160, U256};
 use model::quote::{
     OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity,
 };
@@ -129,14 +129,4 @@ async fn refunder_tx(web3: Web3) {
         ethflow_order.status(&contracts).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
-}
-
-async fn blockchain_time(web3: &Web3) -> u32 {
-    web3.eth()
-        .block(BlockNumber::Latest.into())
-        .await
-        .expect("Unable to query block from node")
-        .expect("Block should exist")
-        .timestamp
-        .as_u32()
 }

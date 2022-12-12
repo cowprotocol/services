@@ -10,10 +10,13 @@ pub mod limit_orders;
 
 use crate::{
     database::{
-        onchain_order_events::{ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser},
+        onchain_order_events::{
+            ethflow_events::EthFlowOnchainOrderParser,
+            event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
+        },
         Postgres,
     },
-    event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
+    event_updater::{EventUpdater, GPv2SettlementContract},
     limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
@@ -450,10 +453,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
-        // The events from the ethflow contract are read with the more generic contract
-        // interface called CoWSwapOnchainOrders.
-        let cowswap_onchain_order_contract_for_eth_flow =
-            contracts::CoWSwapOnchainOrders::at(&web3, ethflow_contract);
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
@@ -464,7 +463,9 @@ pub async fn main(args: arguments::Arguments) -> ! {
             liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
+            // The events from the ethflow contract are read with the more generic contract
+            // interface called CoWSwapOnchainOrders.
+            CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
             onchain_order_event_parser,
             block_retriever,
             Some(

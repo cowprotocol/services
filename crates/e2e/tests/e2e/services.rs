@@ -3,13 +3,14 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
     database::onchain_order_events::{
-        ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser,
+        ethflow_events::EthFlowOnchainOrderParser, event_retriever::CoWSwapOnchainOrdersContract,
+        OnchainOrderParser,
     },
-    event_updater::{CoWSwapOnchainOrdersContract, GPv2SettlementContract},
+    event_updater::GPv2SettlementContract,
     limit_orders::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
-use contracts::{CoWSwapOnchainOrders, IUniswapLikeRouter, WETH9};
+use contracts::{IUniswapLikeRouter, WETH9};
 use database::quotes::QuoteId;
 use ethcontract::{Account, H160, U256};
 use model::{quote::QuoteSigningScheme, DomainSeparator};
@@ -212,10 +213,8 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             HashSet::new(),
         );
-        let cow_onchain_order_contract =
-            CoWSwapOnchainOrders::at(web3, contracts.ethflow.address());
         let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cow_onchain_order_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), contracts.ethflow.address()),
             onchain_order_event_parser,
             block_retriever,
             None,
