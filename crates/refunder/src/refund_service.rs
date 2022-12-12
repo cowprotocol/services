@@ -175,7 +175,7 @@ impl RefundService {
             // In exceptional cases, e.g. if the refunder tries to refund orders from a previous contract,
             // the order_owners could be zero
             tracing::warn!(
-                "following Uids have a invalid owner (=0x0..0) stored onchain: {:?}",
+                "Following ethflow uids have a invalid owner (=0x0..0) stored onchain: {:?}",
                 invalid_uids
             );
         }
