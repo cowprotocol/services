@@ -714,6 +714,7 @@ mod tests {
         let trade = Trade {
             out_amount: 2_000_000_u128.into(),
             gas_estimate: 133_700,
+            interactions: vec![Default::default()],
             ..Default::default()
         };
 
@@ -763,6 +764,7 @@ mod tests {
         };
         let trade = Trade {
             out_amount: 203_u64.into(),
+            interactions: vec![Default::default()],
             ..Default::default()
         };
 
