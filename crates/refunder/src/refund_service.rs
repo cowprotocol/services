@@ -145,7 +145,7 @@ impl RefundService {
                     };
                     let refund_status = match order_owner {
                         Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
-                        Some(bytes) if bytes == H160::zero() => RefundStatus::Invalid,
+                        Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
                         // any other owner
                         _ => RefundStatus::NotYetRefunded,
                     };
@@ -157,28 +157,27 @@ impl RefundService {
         batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
         type TupleWithRefundStatus = (Vec<(OrderUid, RefundStatus)>, Vec<(OrderUid, RefundStatus)>);
-        let (refunded_uids, uid_with_latest_refundablility): TupleWithRefundStatus =
-            uid_with_latest_refundablility
-                .into_iter()
-                .flatten()
-                .partition(|(_, refund_status)| *refund_status == RefundStatus::Refunded);
-        let (to_be_refunded_uids, invalid_uids): TupleWithRefundStatus =
-            uid_with_latest_refundablility
-                .into_iter()
-                .partition(|(_, refund_status)| *refund_status == RefundStatus::NotYetRefunded);
-        let refunded_uids: Vec<OrderUid> = refunded_uids.into_iter().map(|(uid, _)| uid).collect();
-        let to_be_refunded_uids: Vec<OrderUid> = to_be_refunded_uids
-            .into_iter()
-            .map(|(uid, _)| uid)
-            .collect();
+        let mut refunded_uids = Vec::new();
+        let mut to_be_refunded_uids = Vec::new();
+        let mut invalid_uids = Vec::new();
+        for (uid, refund_status) in uid_with_latest_refundablility.into_iter().flatten() {
+            match refund_status {
+                RefundStatus::Refunded => refunded_uids.push(uid),
+                RefundStatus::Invalid => invalid_uids.push(uid),
+                RefundStatus::NotYetRefunded => to_be_refunded_uids.push(uid),
+            }
+        }
         if !invalid_uids.is_empty() {
             // In exceptional cases, e.g. if the refunder tries to refund orders from a previous contract,
             // the order_owners could be zero
             tracing::warn!(
-                "Following ethflow uids have a invalid owner (=0x0..0) stored onchain: {:?}",
+                "Trying to invalidate orders that weren't created in the current contract. Uids: {:?}",
                 invalid_uids
             );
         }
+        // Invalid uids will also be marked as refunded, as otherwise, the service will revisit
+        // these invalid uids every loop.
+        refunded_uids.append(&mut invalid_uids);
         let result = SplittedOrderUids {
             refunded: refunded_uids,
             to_be_refunded: to_be_refunded_uids,
