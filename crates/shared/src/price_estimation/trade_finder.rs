@@ -145,7 +145,7 @@ impl TradeVerifier {
             .settle(
                 vec![query.sell_token, query.buy_token],
                 vec![buy_amount, sell_amount],
-                trade.encode(),
+                trade.encode()?,
                 sell_amount,
             )
             .tx;

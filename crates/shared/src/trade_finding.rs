@@ -6,6 +6,7 @@ pub mod paraswap;
 pub mod zeroex;
 
 use crate::price_estimation::Query;
+use anyhow::Result;
 use contracts::ERC20;
 use ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256};
 use thiserror::Error;
@@ -39,7 +40,11 @@ pub struct Trade {
 
 impl Trade {
     /// Converts a trade into a set of interactions for settlements.
-    pub fn encode(&self) -> SettlementInteractions {
+    pub fn encode(&self) -> Result<SettlementInteractions> {
+        anyhow::ensure!(
+            !self.interactions.is_empty(),
+            "trade must be settled with at least 1 interaction"
+        );
         let pre_interactions = match self.approval {
             Some((token, spender)) => {
                 let token = dummy_contract!(ERC20, token);
@@ -55,7 +60,7 @@ impl Trade {
         };
         let intra_interactions = self.interactions.iter().map(|i| i.encode()).collect();
 
-        [pre_interactions, intra_interactions, vec![]]
+        Ok([pre_interactions, intra_interactions, vec![]])
     }
 }
 
@@ -148,7 +153,7 @@ mod tests {
         };
 
         assert_eq!(
-            trade.encode(),
+            trade.encode().unwrap(),
             [
                 vec![
                     (
