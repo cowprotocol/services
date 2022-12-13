@@ -26,6 +26,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
 
+    /// Timestamp at which we should start indexing eth-flow contract events.
+    /// If there are already events in the database for a date later than this, then this date is
+    /// ignored and can be omitted.
+    #[clap(long, env)]
+    pub ethflow_indexing_start: Option<u64>,
+
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
