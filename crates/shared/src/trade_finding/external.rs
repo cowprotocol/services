@@ -3,7 +3,7 @@ use crate::{
     price_estimation::{
         rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
-    rate_limiter::{RateLimiter, RateLimitingStrategy},
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     trade_finding::{Quote, Trade, TradeError, TradeFinding},
 };
@@ -34,13 +34,12 @@ impl ExternalTradeFinder {
     pub fn new(
         driver: Url,
         client: Client,
-        name: String,
-        rate_limiter: RateLimitingStrategy,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             quote_endpoint: driver.join("/quote").unwrap(),
             sharing: Default::default(),
-            rate_limiter: Arc::new(RateLimiter::from_strategy(rate_limiter, name)),
+            rate_limiter,
             client,
         }
     }

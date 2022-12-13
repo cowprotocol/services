@@ -228,14 +228,19 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn get_external_estimator(&mut self, driver: &Driver) -> Result<&EstimatorEntry> {
         #[allow(clippy::map_entry)]
         if !self.external_estimators.contains_key(&driver.name) {
+            let rate_limiting_strategy = self
+                .args
+                .price_estimation_rate_limiter
+                .clone()
+                .unwrap_or_default();
+            let rate_limiter = Arc::new(RateLimiter::from_strategy(
+                rate_limiting_strategy,
+                format!("{}_estimator", driver.name),
+            ));
             let estimator = Arc::new(ExternalTradeFinder::new(
                 driver.url.clone(),
                 self.components.http_factory.create(),
-                driver.name.clone(),
-                self.args
-                    .price_estimation_rate_limiter
-                    .clone()
-                    .unwrap_or_default(),
+                rate_limiter,
             ));
             let entry = EstimatorEntry {
                 optimal: estimator.clone(),
