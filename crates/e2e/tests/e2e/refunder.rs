@@ -101,6 +101,11 @@ async fn refunder_tx(web3: Web3) {
         ))
         .await
         .expect("Must be able to set block timestamp");
+    // mine next block to push time forward
+    web3.api::<TestNodeApi<_>>()
+        .mine_pending_block()
+        .await
+        .expect("Unable to mine next block");
 
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
