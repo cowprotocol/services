@@ -425,11 +425,11 @@ mod tests {
             out_amount: 2_000_000_u128.into(),
             gas_estimate: 133_700,
             approval: None,
-            interaction: Interaction {
+            interactions: vec![Interaction {
                 target: H160([0x7; 20]),
                 value: 0_u64.into(),
                 data: vec![1, 2, 3, 4],
-            },
+            }],
         };
         let sell_token_code = bytes!("05060708");
 
@@ -564,6 +564,7 @@ mod tests {
         };
         let trade = Trade {
             out_amount: 1_000_000_u128.into(),
+            interactions: vec![Default::default()],
             ..Default::default()
         };
 

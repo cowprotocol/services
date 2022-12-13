@@ -34,7 +34,7 @@ pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub approval: Option<(H160, H160)>,
-    pub interaction: Interaction,
+    pub interactions: Vec<Interaction>,
 }
 
 impl Trade {
@@ -53,7 +53,7 @@ impl Trade {
             }
             None => vec![],
         };
-        let intra_interactions = vec![self.interaction.encode()];
+        let intra_interactions = self.interactions.iter().map(|i| i.encode()).collect();
 
         [pre_interactions, intra_interactions, vec![]]
     }
@@ -133,11 +133,18 @@ mod tests {
             out_amount: Default::default(),
             gas_estimate: 0,
             approval: Some((H160([0xdd; 20]), H160([0xee; 20]))),
-            interaction: Interaction {
-                target: H160([0xaa; 20]),
-                value: 42.into(),
-                data: vec![1, 2, 3, 4],
-            },
+            interactions: vec![
+                Interaction {
+                    target: H160([0xaa; 20]),
+                    value: 42.into(),
+                    data: vec![1, 2, 3, 4],
+                },
+                Interaction {
+                    target: H160([0xbb; 20]),
+                    value: 43.into(),
+                    data: vec![5, 6, 7, 8],
+                },
+            ],
         };
 
         assert_eq!(
@@ -169,7 +176,10 @@ mod tests {
                         ),
                     )
                 ],
-                vec![(H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4]))],
+                vec![
+                    (H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4])),
+                    (H160([0xbb; 20]), U256::from(43), Bytes(vec![5, 6, 7, 8])),
+                ],
                 vec![],
             ]
         );

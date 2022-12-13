@@ -132,11 +132,11 @@ impl Inner {
             out_amount: quote.data.out_amount,
             gas_estimate: quote.data.gas_estimate,
             approval: Some((query.sell_token, quote.price.token_transfer_proxy)),
-            interaction: Interaction {
+            interactions: vec![Interaction {
                 target: tx.to,
                 value: tx.value,
                 data: tx.data,
-            },
+            }],
         })
     }
 }
