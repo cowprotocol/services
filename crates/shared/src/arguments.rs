@@ -57,7 +57,7 @@ pub struct OrderQuotingArguments {
 
     /// A list of external drivers in the following format:
     /// `<NAME>|<URL>,<NAME>|<URL>`
-    #[clap(long, env, value_parser = parse_drivers)]
+    #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<Driver>,
 
     /// The configured addresses whose orders should be considered liquidity and
@@ -461,23 +461,19 @@ pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     Ok(in_gwei * 1e9)
 }
 
-fn parse_drivers(s: &str) -> Result<Vec<Driver>> {
-    if s.is_empty() {
-        return Ok(vec![]);
-    }
+impl FromStr for Driver {
+    type Err = anyhow::Error;
 
-    let mut drivers = vec![];
-    for driver in s.split(',') {
+    fn from_str(driver: &str) -> Result<Self> {
         let (name, url) = driver
             .split_once('|')
             .context("not enough arguments for driver")?;
         let url: Url = url.parse()?;
-        drivers.push(Driver {
+        Ok(Driver {
             name: name.to_owned(),
             url,
-        });
+        })
     }
-    Ok(drivers)
 }
 
 impl FromStr for RateLimitingStrategy {
@@ -575,48 +571,26 @@ mod test {
     }
 
     #[test]
-    fn parse_empty_drivers() {
-        assert!(parse_drivers("").unwrap().is_empty());
-    }
-
-    #[test]
-    fn parse_single_driver() {
+    fn parse_driver() {
         let argument = "name1|http://localhost:8080";
-        let drivers = parse_drivers(argument).unwrap();
-        let expected = vec![Driver {
+        let driver = Driver::from_str(argument).unwrap();
+        let expected = Driver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-        }];
-        assert_eq!(drivers, expected);
-    }
-
-    #[test]
-    fn parse_list_of_drivers() {
-        let argument = "name1|http://localhost:8080,name2|http://localhost:8081";
-        let drivers = parse_drivers(argument).unwrap();
-        let expected = vec![
-            Driver {
-                name: "name1".into(),
-                url: Url::parse("http://localhost:8080").unwrap(),
-            },
-            Driver {
-                name: "name2".into(),
-                url: Url::parse("http://localhost:8081").unwrap(),
-            },
-        ];
-        assert_eq!(drivers, expected);
+        };
+        assert_eq!(driver, expected);
     }
 
     #[test]
     fn parse_drivers_wrong_arguments() {
         // too few arguments
-        assert!(parse_drivers(",").is_err());
-        assert!(parse_drivers("name").is_err());
+        assert!(Driver::from_str("").is_err());
+        assert!(Driver::from_str("name").is_err());
 
         // broken URL
-        assert!(parse_drivers("name1|sdfsdfds").is_err());
+        assert!(Driver::from_str("name1|sdfsdfds").is_err());
 
         // too many arguments
-        assert!(parse_drivers("name1|http://localhost:8080|additional_argument").is_err());
+        assert!(Driver::from_str("name1|http://localhost:8080|additional_argument").is_err());
     }
 }
