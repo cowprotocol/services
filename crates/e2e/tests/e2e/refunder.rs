@@ -93,15 +93,7 @@ async fn refunder_tx(web3: Web3) {
     // Run autopilot indexing loop
     services.maintenance.run_maintenance().await.unwrap();
 
-    // The blockchain is in the past for this test. We validate this assumption here, if this assertion fails then the
-    // original test conditions should be restored.
-    let now = chrono::offset::Utc::now().timestamp();
-    assert!(
-        (valid_to as i64) < now,
-        "Order should be expired from the point of view of the refunder."
-    );
-    let time_after_expiration = now + 60;
-
+    let time_after_expiration = valid_to as i64 + 60;
     web3.api::<TestNodeApi<_>>()
         .set_next_block_timestamp(&DateTime::from_utc(
             NaiveDateTime::from_timestamp(time_after_expiration, 0),
