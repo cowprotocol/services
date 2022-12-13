@@ -55,7 +55,7 @@ pub struct OrderQuotingArguments {
     )]
     pub price_estimators: Vec<PriceEstimatorType>,
 
-    /// A list of external drivers in the following format:
+    /// A list of external drivers used for price estimation in the following format:
     /// `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<Driver>,

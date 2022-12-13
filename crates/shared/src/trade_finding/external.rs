@@ -31,11 +31,7 @@ pub struct ExternalTradeFinder {
 
 impl ExternalTradeFinder {
     #[allow(dead_code)]
-    pub fn new(
-        driver: Url,
-        client: Client,
-        rate_limiter: Arc<RateLimiter>,
-    ) -> Self {
+    pub fn new(driver: Url, client: Client, rate_limiter: Arc<RateLimiter>) -> Self {
         Self {
             quote_endpoint: driver.join("/quote").unwrap(),
             sharing: Default::default(),
