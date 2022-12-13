@@ -114,7 +114,7 @@ async fn refunder_tx(web3: Web3) {
         pg_pool,
         web3,
         contracts.ethflow.clone(),
-        validity_duration as i64 - 1,
+        validity_duration as i64 - 10,
         10u64,
         refunder_account,
     );
