@@ -175,9 +175,6 @@ impl RefundService {
                 invalid_uids
             );
         }
-        // Invalid uids will also be marked as refunded, as otherwise, the service will revisit
-        // these invalid uids every loop.
-        refunded_uids.append(&mut invalid_uids);
         let result = SplittedOrderUids {
             refunded: refunded_uids,
             to_be_refunded: to_be_refunded_uids,
