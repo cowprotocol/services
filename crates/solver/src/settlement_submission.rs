@@ -15,7 +15,7 @@ use ethcontract::{
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::{code_fetching::CodeFetching, ethrpc::Web3};
+use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -176,9 +176,35 @@ impl SolutionSubmitter {
             }
         }
 
+        // combine protocol enabled strategies with settlement prefered strategies
+        let strategies = match settlement.submitter {
+            SubmissionPreference::ProtocolDefault => self.transaction_strategies.as_slice(),
+            SubmissionPreference::Flashbots => {
+                let position = self
+                    .transaction_strategies
+                    .iter()
+                    .position(|strategy| matches!(strategy, TransactionStrategy::Flashbots(_)));
+                match position {
+                    Some(index) => &self.transaction_strategies[index..index + 1],
+                    // if flashbots are disabled by protocol, default to protocol strategies
+                    None => self.transaction_strategies.as_slice(),
+                }
+            }
+            SubmissionPreference::PublicMempool => {
+                let position = self
+                    .transaction_strategies
+                    .iter()
+                    .position(|strategy| matches!(strategy, TransactionStrategy::PublicMempool(_)));
+                match position {
+                    Some(index) => &self.transaction_strategies[index..index + 1],
+                    // if public mempool is disabled by protocol, default to protocol strategies
+                    None => self.transaction_strategies.as_slice(),
+                }
+            }
+        };
+
         let network_id = self.web3.net().version().await?;
-        let mut futures = self
-            .transaction_strategies
+        let mut futures = strategies
             .iter()
             .enumerate()
             .map(|(i, strategy)| {

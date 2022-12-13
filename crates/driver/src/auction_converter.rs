@@ -89,7 +89,7 @@ impl AuctionConverting for AuctionConverter {
             })
             .collect::<Vec<_>>();
         anyhow::ensure!(
-            orders.iter().any(|o| !o.is_liquidity_order),
+            orders.iter().any(|o| !o.is_liquidity_order()),
             "auction contains no user orders"
         );
 
@@ -97,7 +97,7 @@ impl AuctionConverting for AuctionConverter {
 
         let token_pairs: Vec<_> = orders
             .iter()
-            .filter(|o| !o.is_liquidity_order)
+            .filter(|o| !o.is_liquidity_order())
             .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
             .collect();
 

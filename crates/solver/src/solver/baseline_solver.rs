@@ -131,7 +131,7 @@ impl BaselineSolver {
         liquidity: Vec<Liquidity>,
         slippage: SlippageContext,
     ) -> Vec<Settlement> {
-        limit_orders.retain(|order| !order.is_liquidity_order);
+        limit_orders.retain(|order| !order.is_liquidity_order());
         let user_orders = limit_orders;
         let amm_map =
             liquidity

@@ -2,7 +2,7 @@ use crate::{
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        Liquidity,
+        LimitOrderId, Liquidity,
     },
     settlement::Settlement,
 };
@@ -14,7 +14,7 @@ use model::{
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -33,7 +33,7 @@ pub async fn convert_settlement(
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
     domain: &DomainSeparator,
-) -> Result<Settlement> {
+) -> Result<Settlement, ConversionError> {
     IntermediateSettlement::new(
         settled,
         context,
@@ -44,6 +44,7 @@ pub async fn convert_settlement(
     )
     .await?
     .into_settlement()
+    .map_err(Into::into)
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +120,29 @@ struct IntermediateSettlement<'a> {
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
+    submitter: SubmissionPreference,
+}
+
+// Conversion error happens during building a settlement from a solution received from searcher
+#[derive(Debug)]
+pub enum ConversionError {
+    InvalidExecutionPlans(anyhow::Error),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ConversionError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+impl From<ConversionError> for anyhow::Error {
+    fn from(err: ConversionError) -> Self {
+        match err {
+            ConversionError::InvalidExecutionPlans(err) => err,
+            ConversionError::Other(err) => err,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -156,7 +180,7 @@ impl<'a> IntermediateSettlement<'a> {
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
         domain: &DomainSeparator,
-    ) -> Result<IntermediateSettlement<'a>> {
+    ) -> Result<IntermediateSettlement<'a>, ConversionError> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
         let foreign_liquidity_orders = convert_foreign_liquidity_orders(
@@ -173,17 +197,26 @@ impl<'a> IntermediateSettlement<'a> {
             settled.interaction_data,
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
+        let submitter = settled.submitter;
+
+        if duplicate_coordinates(&executions) {
+            return Err(ConversionError::InvalidExecutionPlans(anyhow!(
+                "Duplicate coordinates found."
+            )));
+        }
 
         Ok(Self {
             executions,
             prices,
             approvals,
             slippage,
+            submitter,
         })
     }
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
+        settlement.submitter = self.submitter;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
@@ -217,17 +250,12 @@ fn match_prepared_and_settled_orders(
             let prepared = prepared_orders
                 .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
-            match prepared.id {
-                crate::liquidity::LimitOrderUid::OrderUid(_) => {}
-                crate::liquidity::LimitOrderUid::ZeroEx(_) => {
-                    if let Some(internalizable) =
-                        settled.exec_plan.as_ref().map(|plan| plan.internal)
-                    {
-                        ensure!(
-                            !internalizable,
-                            "liquidity orders are not allowed to be internalizable"
-                        )
-                    }
+            if prepared.is_liquidity_order() {
+                if let Some(internalizable) = settled.exec_plan.as_ref().map(|plan| plan.internal) {
+                    ensure!(
+                        !internalizable,
+                        "liquidity orders are not allowed to be internalizable"
+                    )
                 }
             }
             Ok(ExecutedLimitOrder {
@@ -337,13 +365,14 @@ fn match_settled_prices(
     solver_prices: HashMap<H160, U256>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
-    let executed_tokens = executed_limit_orders.iter().flat_map(|order| {
-        if order.order.is_liquidity_order {
-            vec![order.order.sell_token]
-        } else {
-            vec![order.order.buy_token, order.order.sell_token]
-        }
-    });
+    let executed_tokens = executed_limit_orders
+        .iter()
+        .flat_map(|order| match order.order.id {
+            LimitOrderId::Market(_) | LimitOrderId::Limit(_) => {
+                vec![order.order.buy_token, order.order.sell_token]
+            }
+            LimitOrderId::Liquidity(_) => vec![],
+        });
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices
@@ -386,20 +415,35 @@ async fn compute_approvals(
     allowance_manager.get_approvals(&requests).await
 }
 
+/// Check if executions contain execution plans with the same coordinates
+fn duplicate_coordinates(executions: &[Execution]) -> bool {
+    let mut coordinates = HashSet::new();
+    executions.iter().any(|execution| {
+        execution
+            .coordinates()
+            .map(|coordinate| !coordinates.insert(coordinate))
+            .unwrap_or(false)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         interactions::allowances::MockAllowanceManaging,
         liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
-            WeightedProductOrder,
+            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
+            StablePoolOrder, WeightedProductOrder,
         },
         settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
-    use model::{order::OrderData, signature::Signature, TokenPair};
+    use model::{
+        order::{OrderData, OrderUid},
+        signature::Signature,
+        TokenPair,
+    };
     use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
@@ -697,7 +741,9 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderUid::ZeroEx("1".to_string()),
+            id: crate::liquidity::LimitOrderId::Liquidity(LiquidityOrderId::Protocol(
+                OrderUid::from_integer(1),
+            )),
             sell_token: token_a,
             buy_token: token_a,
             sell_amount: U256::from(996570293625199060u128),
@@ -1122,5 +1168,49 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    fn interaction_with_coordinate(
+        coordinates: Option<ExecutionPlanCoordinatesModel>,
+    ) -> Execution {
+        Execution::CustomInteraction(Box::new(InteractionData {
+            exec_plan: coordinates.map(|coordinates| ExecutionPlan {
+                coordinates,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_false() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 1,
+            })),
+        ];
+        assert!(!duplicate_coordinates(&executions));
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_true() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+        ];
+        assert!(duplicate_coordinates(&executions));
     }
 }

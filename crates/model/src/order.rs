@@ -376,6 +376,7 @@ impl From<Order> for OrderCreation {
 
 /// Cancellation of multiple orders.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderCancellations {
     pub order_uids: Vec<OrderUid>,
 }
@@ -403,6 +404,7 @@ impl OrderCancellations {
 
 /// Signed order cancellations.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignedOrderCancellations {
     #[serde(flatten)]
     pub data: OrderCancellations,
