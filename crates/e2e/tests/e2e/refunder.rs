@@ -23,7 +23,7 @@ const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
 #[tokio::test]
 #[ignore]
 async fn local_node_refunder_tx() {
-    crate::local_node::test_node_in_the_past(refunder_tx).await;
+    crate::local_node::test(refunder_tx).await;
 }
 
 async fn refunder_tx(web3: Web3) {
@@ -81,7 +81,8 @@ async fn refunder_tx(web3: Web3) {
     assert_eq!(quoting.status(), 200);
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
-    let valid_to = blockchain_time(&web3).await.unwrap() + 60;
+    let validity_duration = 60;
+    let valid_to = blockchain_time(&web3).await.unwrap() + validity_duration;
     // Accounting for slippage is necesary for the order to be picked up by the refunder
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
@@ -113,7 +114,7 @@ async fn refunder_tx(web3: Web3) {
         pg_pool,
         web3,
         contracts.ethflow.clone(),
-        i64::MIN, // Needs to be negative, as valid to was chosen to be in the past
+        validity_duration as i64 - 1,
         10u64,
         refunder_account,
     );
