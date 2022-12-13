@@ -14,12 +14,12 @@ pub mod trade_finder;
 pub mod zeroex;
 
 use crate::{
-    arguments::{display_option, display_list},
+    arguments::display_option,
     bad_token::BadTokenDetecting,
     conversions::U256Ext,
     rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
 };
-use anyhow::{Result, Context};
+use anyhow::Result;
 use clap::ValueEnum;
 use ethcontract::{H160, U256};
 use futures::{stream::BoxStream, StreamExt};
@@ -127,11 +127,6 @@ pub struct Arguments {
     /// This helps debugging reverted quote simulations.
     #[clap(long, env)]
     pub tenderly_save_failed_trade_simulations: bool,
-
-    /// A list of external drivers in the following format:
-    /// `<NAME>|<URL>,<NAME>|<URL>`
-    #[clap(long, env, value_parser = parse_drivers)]
-    pub price_estimation_drivers: Vec<Driver>,
 }
 
 impl Display for Arguments {
@@ -177,7 +172,6 @@ impl Display for Arguments {
             "tenderly_save_failed_trade_simulations: {}",
             self.tenderly_save_failed_trade_simulations
         )?;
-        display_list(f, "price_estimation_drivers", &self.price_estimation_drivers)?;
 
         Ok(())
     }
@@ -399,87 +393,5 @@ pub mod mocks {
         ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
             futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Driver {
-    name: String,
-    url: Url,
-}
-
-impl Display for Driver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({})", self.name, self.url)
-    }
-}
-
-fn parse_drivers(s: &str) -> Result<Vec<Driver>> {
-    if s.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut drivers = vec![];
-    for driver in s.split(',') {
-        let (name, url) = driver
-            .split_once('|')
-            .context("not enough arguments for driver")?;
-        let url: Url = url.parse()?;
-        drivers.push(Driver {
-            name: name.to_owned(),
-            url,
-        });
-    }
-    Ok(drivers)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn parse_empty_drivers() {
-        assert!(parse_drivers("").unwrap().is_empty());
-    }
-
-    #[test]
-    fn parse_single_driver() {
-        let argument = "name1|http://localhost:8080";
-        let drivers = parse_drivers(argument).unwrap();
-        let expected = vec![Driver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-        }];
-        assert_eq!(drivers, expected);
-    }
-
-    #[test]
-    fn parse_list_of_drivers() {
-        let argument = "name1|http://localhost:8080,name2|http://localhost:8081";
-        let drivers = parse_drivers(argument).unwrap();
-        let expected = vec![
-            Driver {
-                name: "name1".into(),
-                url: Url::parse("http://localhost:8080").unwrap(),
-            },
-            Driver {
-                name: "name2".into(),
-                url: Url::parse("http://localhost:8081").unwrap(),
-            },
-        ];
-        assert_eq!(drivers, expected);
-    }
-
-    #[test]
-    fn parse_drivers_wrong_arguments() {
-        // too few arguments
-        assert!(parse_drivers(",").is_err());
-        assert!(parse_drivers("name").is_err());
-
-        // broken URL
-        assert!(parse_drivers("name1|sdfsdfds").is_err());
-
-        // too many arguments
-        assert!(parse_drivers("name1|http://localhost:8080|additional_argument").is_err());
     }
 }

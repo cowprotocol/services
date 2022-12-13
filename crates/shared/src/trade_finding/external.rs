@@ -1,12 +1,14 @@
 //! A trade finder that uses an external driver.
 use crate::{
-    price_estimation::{rate_limited, Query},
+    price_estimation::{
+        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+    },
     rate_limiter::{RateLimiter, RateLimitingStrategy},
     request_sharing::RequestSharing,
     trade_finding::{Quote, Trade, TradeError, TradeFinding},
 };
 use anyhow::Context;
-use futures::{future::BoxFuture, FutureExt};
+use futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt};
 use reqwest::{header, Client};
 use std::sync::Arc;
 use url::Url;
@@ -95,5 +97,25 @@ impl From<reqwest::Error> for TradeError {
 impl From<serde_json::Error> for TradeError {
     fn from(error: serde_json::Error) -> Self {
         Self::Other(anyhow::anyhow!(error.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl PriceEstimating for ExternalTradeFinder {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
+        futures::stream::iter(queries)
+            .then(|query| self.shared_query(query))
+            .map(|result| match result {
+                Ok(trade) => Ok(Estimate {
+                    out_amount: trade.out_amount,
+                    gas: trade.gas_estimate,
+                }),
+                Err(err) => Err(PriceEstimationError::from(err)),
+            })
+            .enumerate()
+            .boxed()
     }
 }
