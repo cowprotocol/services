@@ -12,9 +12,18 @@ use std::sync::Arc;
 use url::Url;
 
 pub struct ExternalTradeFinder {
+    /// URL to call to in the driver to get a quote with call data for a trade.
     quote_endpoint: Url,
+
+    /// Utility to make sure no 2 identical requests are in-flight at the same time.
+    /// Instead of issuing a duplicated request this awaits the response of the in-flight request.
     sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, TradeError>>>,
+
+    /// Utility to temporarily drop requests when the driver responds too slowly to not slow down
+    /// the whole price estimation logic.
     rate_limiter: Arc<RateLimiter>,
+
+    /// Client to issue http requests with.
     client: Client,
 }
 
