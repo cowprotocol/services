@@ -1,6 +1,6 @@
 use crate::{
     deploy::Contracts,
-    local_node::{blockchain_time, AccountAssigner, TestNodeApi},
+    local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
@@ -36,8 +36,8 @@ use refunder::{
 };
 use reqwest::Client;
 use shared::{
-    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
-    signature_validator::check_erc1271_result,
+    current_block::blockchain_time, ethrpc::Web3, http_client::HttpClientFactory,
+    maintenance::Maintaining, signature_validator::check_erc1271_result,
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
@@ -170,7 +170,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
 
     // Create an order that only exists to be refunded, which triggers an event in the eth-flow contract that is not
     // included in the ABI of `CoWSwapOnchainOrders`.
-    let valid_to = blockchain_time(&web3).await + 60;
+    let valid_to = blockchain_time(&web3).await.unwrap() + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &submit_quote(
             &(EthFlowTradeIntent {
@@ -201,7 +201,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let buy_token = dai.address();
     let receiver = H160([0x42; 20]);
     let sell_amount = to_wei(1);
-    let valid_to = blockchain_time(&web3).await + 60;
+    let valid_to = blockchain_time(&web3).await.unwrap() + 60;
     let ethflow_order = ExtendedEthFlowOrder::from_quote(
         &submit_quote(
             &(EthFlowTradeIntent {

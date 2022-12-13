@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use ethcontract::{futures::FutureExt, Account, Address, BlockNumber, U256};
+use ethcontract::{futures::FutureExt, Account, Address, U256};
 use lazy_static::lazy_static;
 use shared::ethrpc::{create_test_transport, Web3};
 use std::{
@@ -173,14 +173,4 @@ impl AccountAssigner {
     pub fn assign_free_account(&mut self) -> Account {
         self.free_accounts.pop().expect("No testing accounts available, consider increasing the number of testing account in the test node")
     }
-}
-
-pub async fn blockchain_time(web3: &Web3) -> u32 {
-    web3.eth()
-        .block(BlockNumber::Latest.into())
-        .await
-        .expect("Unable to query block from node")
-        .expect("Block should exist")
-        .timestamp
-        .as_u32()
 }

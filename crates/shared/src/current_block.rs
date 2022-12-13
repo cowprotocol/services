@@ -179,6 +179,17 @@ async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
     })
 }
 
+pub async fn blockchain_time(web3: &Web3) -> Result<u32> {
+    Ok(web3
+        .eth()
+        .block(BlockNumber::Latest.into())
+        .await
+        .context("failed to get latest block")?
+        .context("block should exists")?
+        .timestamp
+        .as_u32())
+}
+
 pub async fn block_number_to_block_number_hash(
     web3: &Web3,
     block_number: BlockNumber,

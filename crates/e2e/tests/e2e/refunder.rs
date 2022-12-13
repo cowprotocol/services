@@ -1,6 +1,6 @@
 use crate::{
     eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-    local_node::{blockchain_time, AccountAssigner, TestNodeApi},
+    local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
@@ -12,7 +12,10 @@ use model::quote::{
     OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity,
 };
 use refunder::refund_service::RefundService;
-use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
+use shared::{
+    current_block::blockchain_time, ethrpc::Web3, http_client::HttpClientFactory,
+    maintenance::Maintaining,
+};
 use sqlx::PgPool;
 
 const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
@@ -78,7 +81,7 @@ async fn refunder_tx(web3: Web3) {
     assert_eq!(quoting.status(), 200);
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
-    let valid_to = blockchain_time(&web3).await + 60;
+    let valid_to = blockchain_time(&web3).await.unwrap() + 60;
     // Accounting for slippage is necesary for the order to be picked up by the refunder
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
