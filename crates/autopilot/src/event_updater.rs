@@ -1,5 +1,5 @@
 use anyhow::Result;
-use contracts::{cowswap_onchain_orders, gpv2_settlement};
+use contracts::gpv2_settlement;
 use shared::{
     current_block::{BlockNumberHash, BlockRetrieving},
     event_handling::{EventHandler, EventRetrieving, EventStoring},
@@ -16,10 +16,6 @@ pub struct EventUpdater<
 
 impl_event_retrieving! {
     pub GPv2SettlementContract for gpv2_settlement
-}
-
-impl_event_retrieving! {
-    pub CoWSwapOnchainOrdersContract for cowswap_onchain_orders
 }
 
 impl<Database, W> EventUpdater<Database, W>

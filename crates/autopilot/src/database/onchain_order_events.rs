@@ -1,4 +1,5 @@
 pub mod ethflow_events;
+pub mod event_retriever;
 
 use super::{
     events::{bytes_to_order_uid, meta_to_event_index},
