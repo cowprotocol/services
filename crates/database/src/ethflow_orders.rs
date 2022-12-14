@@ -8,17 +8,17 @@ pub struct EthOrderPlacement {
     pub is_refunded: bool,
 }
 
-pub async fn append(
+pub async fn insert_or_overwrite_orders(
     ex: &mut PgTransaction<'_>,
     events: &[EthOrderPlacement],
 ) -> Result<(), sqlx::Error> {
     for event in events {
-        insert_ethflow_order(ex, event).await?;
+        insert_or_overwrite_ethflow_order(ex, event).await?;
     }
     Ok(())
 }
 
-pub async fn insert_ethflow_order(
+pub async fn insert_or_overwrite_ethflow_order(
     ex: &mut PgConnection,
     event: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
@@ -121,7 +121,9 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = EthOrderPlacement::default();
-        insert_ethflow_order(&mut db, &order).await.unwrap();
+        insert_or_overwrite_ethflow_order(&mut db, &order)
+            .await
+            .unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
     }
@@ -139,7 +141,7 @@ mod tests {
             ..Default::default()
         };
 
-        append(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
+        insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
         let order_ = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
@@ -164,7 +166,7 @@ mod tests {
             is_refunded: false,
         };
 
-        append(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
+        insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
         mark_eth_orders_as_refunded(&mut db, vec![order_1.uid, order_2.uid].as_slice())
@@ -195,7 +197,7 @@ mod tests {
             is_refunded: false,
         };
 
-        append(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
+        insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
         mark_eth_order_as_refunded(&mut db, &order_1.uid)
@@ -249,7 +251,7 @@ mod tests {
         }
         async fn insert_order_parts_in_db(db: &mut PgConnection, order_parts: &EthflowOrderParts) {
             insert_order(db, &order_parts.order).await.unwrap();
-            insert_ethflow_order(db, &order_parts.eth_order)
+            insert_or_overwrite_ethflow_order(db, &order_parts.eth_order)
                 .await
                 .unwrap();
             insert_quote(db, &order_parts.quote).await.unwrap();
@@ -357,7 +359,9 @@ mod tests {
                 valid_to: i as i64,
                 is_refunded: (i % 10u32 == 0),
             };
-            insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
+            insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
+                .await
+                .unwrap();
             let order = Order {
                 uid: order_uid,
                 owner,
