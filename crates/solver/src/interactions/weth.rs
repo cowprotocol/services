@@ -1,9 +1,8 @@
-use crate::encoding::EncodedInteraction;
 use anyhow::{ensure, Result};
 use contracts::WETH9;
 use ethcontract::Bytes;
 use primitive_types::U256;
-use shared::interaction::Interaction;
+use shared::interaction::{EncodedInteraction, Interaction};
 
 #[derive(Clone, Debug)]
 pub struct UnwrapWethInteraction {

@@ -717,12 +717,15 @@ pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{encoding::EncodedInteraction, settlement::NoopInteraction};
+    use crate::settlement::NoopInteraction;
     use contracts::WETH9;
     use ethcontract::Bytes;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderData};
-    use shared::{dummy_contract, interaction::Interaction};
+    use shared::{
+        dummy_contract,
+        interaction::{EncodedInteraction, Interaction},
+    };
 
     #[test]
     pub fn encode_trades_finds_token_index() {
