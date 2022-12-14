@@ -424,7 +424,6 @@ async fn build_auction_converter(
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
             common.web3.clone(),
             balancer_pool_fetcher,
-            base_tokens.clone(),
             common.settlement_contract.clone(),
             contracts.vault,
         )));
@@ -433,7 +432,6 @@ async fn build_auction_converter(
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         common.settlement_contract.clone(),
-        base_tokens.clone(),
         common.web3.clone(),
     )
     .await;
@@ -455,7 +453,6 @@ async fn build_auction_converter(
             common.web3.clone(),
             zeroex_api,
             contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens.clone(),
             common.settlement_contract.clone(),
         )));
     }
@@ -476,7 +473,6 @@ async fn build_auction_converter(
                 liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
                     UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
                     common.settlement_contract.clone(),
-                    base_tokens.clone(),
                     common.web3.clone(),
                     uniswap_v3_pool_fetcher,
                 )));
@@ -492,7 +488,10 @@ async fn build_auction_converter(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );
 
-    let liquidity_collector = Box::new(LiquidityCollector { liquidity_sources });
+    let liquidity_collector = Box::new(LiquidityCollector {
+        liquidity_sources,
+        base_tokens,
+    });
     Ok(Arc::new(AuctionConverter::new(
         common.gas_price_estimator.clone(),
         liquidity_collector,
@@ -503,7 +502,6 @@ async fn build_auction_converter(
 async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
-    base_tokens: Arc<BaseTokens>,
     web3: Web3,
 ) -> Vec<Box<dyn LiquidityCollecting>> {
     let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
@@ -536,7 +534,6 @@ async fn build_amm_artifacts(
         res.push(Box::new(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
             settlement_contract.clone(),
-            base_tokens.clone(),
             web3.clone(),
             pool_cache.clone(),
         )));

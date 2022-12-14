@@ -13,8 +13,7 @@ use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use model::TokenPair;
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
-    sources::uniswap_v2::pool_fetching::PoolFetching,
+    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v2::pool_fetching::PoolFetching,
 };
 use std::{
     collections::HashSet,
@@ -25,7 +24,6 @@ pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
     settlement_allowances: Box<dyn AllowanceManaging>,
-    base_tokens: Arc<BaseTokens>,
 }
 
 pub struct Inner {
@@ -54,7 +52,6 @@ impl UniswapLikeLiquidity {
     pub fn new(
         router: IUniswapLikeRouter,
         gpv2_settlement: GPv2Settlement,
-        base_tokens: Arc<BaseTokens>,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
@@ -69,7 +66,6 @@ impl UniswapLikeLiquidity {
             }),
             pool_fetcher,
             settlement_allowances,
-            base_tokens,
         }
     }
 
@@ -93,9 +89,11 @@ impl UniswapLikeLiquidity {
 #[async_trait::async_trait]
 impl LiquidityCollecting for UniswapLikeLiquidity {
     /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    async fn get_liquidity(&self, pairs: &[TokenPair], at_block: Block) -> Result<Vec<Liquidity>> {
-        let pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
-
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        at_block: Block,
+    ) -> Result<Vec<Liquidity>> {
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
         for pool in self.pool_fetcher.fetch(pairs, at_block).await? {

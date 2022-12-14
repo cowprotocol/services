@@ -167,19 +167,13 @@ async fn main() -> ! {
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
             web3.clone(),
             balancer_pool_fetcher,
-            base_tokens.clone(),
             settlement_contract.clone(),
             contracts.vault,
         )));
     }
 
-    let uniswap_like_liquidity = build_amm_artifacts(
-        &pool_caches,
-        settlement_contract.clone(),
-        base_tokens.clone(),
-        web3.clone(),
-    )
-    .await;
+    let uniswap_like_liquidity =
+        build_amm_artifacts(&pool_caches, settlement_contract.clone(), web3.clone()).await;
     liquidity_sources.extend(uniswap_like_liquidity);
 
     let solvers = {
@@ -291,7 +285,6 @@ async fn main() -> ! {
             web3.clone(),
             zeroex_api,
             contracts::IZeroEx::deployed(&web3).await.unwrap(),
-            base_tokens.clone(),
             settlement_contract.clone(),
         )));
     }
@@ -312,7 +305,6 @@ async fn main() -> ! {
                 liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
                     UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
                     settlement_contract.clone(),
-                    base_tokens.clone(),
                     web3.clone(),
                     uniswap_v3_pool_fetcher,
                 )));
@@ -323,7 +315,10 @@ async fn main() -> ! {
         }
     }
 
-    let liquidity_collector = LiquidityCollector { liquidity_sources };
+    let liquidity_collector = LiquidityCollector {
+        liquidity_sources,
+        base_tokens,
+    };
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
@@ -482,7 +477,6 @@ async fn main() -> ! {
 async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
-    base_tokens: Arc<BaseTokens>,
     web3: Web3,
 ) -> Vec<Box<dyn LiquidityCollecting>> {
     let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
@@ -515,7 +509,6 @@ async fn build_amm_artifacts(
         res.push(Box::new(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
             settlement_contract.clone(),
-            base_tokens.clone(),
             web3.clone(),
             pool_cache.clone(),
         )));

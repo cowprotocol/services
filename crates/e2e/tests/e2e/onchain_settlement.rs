@@ -183,13 +183,13 @@ async fn onchain_settlement(web3: Web3) {
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
         contracts.gp_settlement.clone(),
-        base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         liquidity_sources: vec![Box::new(uniswap_liquidity)],
+        base_tokens,
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
