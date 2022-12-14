@@ -14,6 +14,15 @@ use {
 
 mod dto;
 
+#[derive(Debug, Clone)]
+pub struct Name(pub String);
+
+impl From<String> for Name {
+    fn from(inner: String) -> Self {
+        Self(inner)
+    }
+}
+
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
@@ -21,6 +30,8 @@ mod dto;
 pub struct Solver {
     url: reqwest::Url,
     client: reqwest::Client,
+    /// The name of this solver.
+    name: Name,
     /// Used for building the instance name to send to the solver.
     network_name: eth::NetworkName,
     /// Used for building the instance name to send to the solver.
@@ -31,7 +42,12 @@ const MAX_NR_EXEC_ORDERS: &str = "100";
 const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 
 impl Solver {
-    pub fn new(url: reqwest::Url, network_name: eth::NetworkName, chain_id: eth::ChainId) -> Self {
+    pub fn new(
+        url: reqwest::Url,
+        name: Name,
+        network_name: eth::NetworkName,
+        chain_id: eth::ChainId,
+    ) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -41,6 +57,7 @@ impl Solver {
         // TODO(#907) Also add an auth header
         Self {
             url,
+            name,
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()
@@ -50,7 +67,11 @@ impl Solver {
         }
     }
 
-    pub async fn solve(&self, auction: Auction) -> Result<Solution, Error> {
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
         // TODO Ask about all the `config` stuff in DefaultHttpSolverApi, what is every
         // field for exactly?
         let mut url = self.url.join("solve").unwrap();
@@ -60,7 +81,9 @@ impl Solver {
             .append_pair("instance_name", &self.instance_name(auction.id))
             .append_pair("time_limit", &time_limit.as_secs().to_string())
             .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
-        let body = serde_json::to_string(&dto::Auction::from(auction)).unwrap();
+        // TODO Should this really be From? Maybe this should take a reference, and both
+        // Auction and Solution shouldn't be Clone, think a bit more about this
+        let body = serde_json::to_string(&dto::Auction::from(auction.clone())).unwrap();
         tracing::trace!(%url, %body, "sending request to solver");
         let req = self.client.post(url.clone()).body(body).timeout(time_limit);
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;

@@ -1,8 +1,7 @@
-use crate::encoding::EncodedInteraction;
 use contracts::UniswapV3SwapRouter;
 use ethcontract::Bytes;
 use primitive_types::{H160, U256};
-use shared::interaction::Interaction;
+use shared::interaction::{EncodedInteraction, Interaction};
 
 #[derive(Debug)]
 pub struct UniswapV3Interaction {

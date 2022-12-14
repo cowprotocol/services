@@ -100,17 +100,17 @@ pub struct Order {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
-pub async fn insert_pre_interactions(
+pub async fn insert_or_overwrite_pre_interactions(
     ex: &mut PgConnection,
     uid_and_pre_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
     for (index, (order_uid, pre_interaction)) in uid_and_pre_interaction.iter().enumerate() {
-        insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
+        insert_or_overwrite_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
     }
     Ok(())
 }
 
-pub async fn insert_pre_interaction(
+pub async fn insert_or_overwrite_pre_interaction(
     ex: &mut PgConnection,
     index: i64,
     pre_interaction: &Interaction,
@@ -125,6 +125,9 @@ INSERT INTO interactions (
     data
 )
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (order_uid, index) DO UPDATE
+SET target = $3, 
+value = $4, data = $5    
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
@@ -694,7 +697,7 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
-        ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
+        ethflow_orders::{insert_or_overwrite_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         onchain_invalidations::insert_onchain_invalidation,
@@ -755,7 +758,7 @@ mod tests {
         let order = Order::default();
         let user_valid_to = 4i64;
         let is_refunded = true;
-        insert_ethflow_order(
+        insert_or_overwrite_ethflow_order(
             &mut db,
             &EthOrderPlacement {
                 uid: OrderUid::default(),
@@ -788,10 +791,10 @@ mod tests {
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
         };
-        insert_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        insert_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+        insert_or_overwrite_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -828,6 +831,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
+
+        let pre_interaction_overwrite = Interaction {
+            target: ByteArray([2; 20]),
+            value: BigDecimal::new(100.into(), 1),
+            data: vec![0u8, 2u8],
+        };
+        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_overwrite, &order.uid)
+            .await
+            .unwrap();
+        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+            .await
+            .unwrap();
+        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_overwrite);
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
     }
 
@@ -1205,7 +1222,9 @@ mod tests {
             valid_to: 2,
             is_refunded: false,
         };
-        insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
+        insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
+            .await
+            .unwrap();
 
         assert!(get_order(&mut db, 3).await.is_none());
         assert!(get_order(&mut db, 2).await.is_some());
