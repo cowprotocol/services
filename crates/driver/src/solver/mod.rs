@@ -14,8 +14,17 @@ use {
 
 mod dto;
 
+const MAX_NR_EXEC_ORDERS: &str = "100";
+const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
+
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
+
+#[derive(Debug)]
+pub struct Slippage {
+    pub relative: num::BigRational,
+    pub absolute: Option<eth::Ether>,
+}
 
 impl From<String> for Name {
     fn from(inner: String) -> Self {
@@ -36,18 +45,21 @@ pub struct Solver {
     network_name: eth::NetworkName,
     /// Used for building the instance name to send to the solver.
     chain_id: eth::ChainId,
+    /// The slippage configured for this solver.
+    slippage: Slippage,
 }
 
-const MAX_NR_EXEC_ORDERS: &str = "100";
-const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
+#[derive(Debug)]
+pub struct Config {
+    pub url: reqwest::Url,
+    pub name: Name,
+    pub network_name: eth::NetworkName,
+    pub chain_id: eth::ChainId,
+    pub slippage: Slippage,
+}
 
 impl Solver {
-    pub fn new(
-        url: reqwest::Url,
-        name: Name,
-        network_name: eth::NetworkName,
-        chain_id: eth::ChainId,
-    ) -> Self {
+    pub fn new(config: Config) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -56,19 +68,24 @@ impl Solver {
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
         // TODO(#907) Also add an auth header
         Self {
-            url,
-            name,
+            url: config.url,
+            name: config.name,
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()
                 .unwrap(),
-            network_name,
-            chain_id,
+            network_name: config.network_name,
+            chain_id: config.chain_id,
+            slippage: config.slippage,
         }
     }
 
     pub fn name(&self) -> &Name {
         &self.name
+    }
+
+    pub fn slippage(&self) -> &Slippage {
+        &self.slippage
     }
 
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
@@ -83,7 +100,7 @@ impl Solver {
             .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
         // TODO Should this really be From? Maybe this should take a reference, and both
         // Auction and Solution shouldn't be Clone, think a bit more about this
-        let body = serde_json::to_string(&dto::Auction::from(auction.clone())).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(auction.clone())).unwrap();
         tracing::trace!(%url, %body, "sending request to solver");
         let req = self.client.post(url.clone()).body(body).timeout(time_limit);
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
@@ -110,4 +127,6 @@ pub enum Error {
     Deserialize(#[from] serde_json::Error),
     #[error("the auction deadline was exceeded")]
     DeadlineExceeded(#[from] auction::DeadlineExceeded),
+    #[error("settlement encoding error: {0:?}")]
+    SettlementEncoding(#[from] anyhow::Error),
 }

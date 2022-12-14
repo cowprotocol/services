@@ -20,13 +20,13 @@ pub struct Solution {
     foreign_liquidity_orders: Vec<ForeignLiquidityOrder>,
     #[serde(default)]
     amms: HashMap<H160, Amm>,
-    ref_token: Option<H160>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<H160, U256>,
     #[serde(default)]
     approvals: Vec<Approval>,
     #[serde(default)]
     interaction_data: Vec<Interaction>,
+    // TODO What is this?
     metadata: Option<Metadata>,
 }
 
@@ -39,6 +39,7 @@ struct Order {
     exec_buy_amount: U256,
     cost: Option<TokenAmount>,
     fee: Option<TokenAmount>,
+    // TODO: #831 should get rid of this
     exec_plan: Option<ExecutionPlan>,
 }
 
@@ -63,11 +64,20 @@ struct ForeignLiquidityOrder {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct Amm {
-    order: LiquidityOrder,
+    execution: Vec<AmmExecution>,
+}
+
+// TODO Will be fixed after #831
+#[serde_as]
+#[derive(Debug, Deserialize)]
+struct AmmExecution {
+    sell_token: H160,
+    buy_token: H160,
     #[serde_as(as = "serialize::U256")]
     exec_sell_amount: U256,
     #[serde_as(as = "serialize::U256")]
     exec_buy_amount: U256,
+    exec_plan: ExecutionPlan,
 }
 
 #[serde_as]
@@ -88,10 +98,12 @@ struct LiquidityOrder {
     fee_amount: U256,
     kind: OrderKind,
     partially_fillable: bool,
+
     #[serde(default)]
     sell_token_balance: SellTokenSource,
     #[serde(default)]
     buy_token_balance: BuyTokenDestination,
+
     #[serde(flatten)]
     signature: Signature,
 }
@@ -137,6 +149,8 @@ struct Interaction {
     #[serde_as(as = "serialize::U256")]
     value: U256,
     call_data: Vec<u8>,
+    inputs: Vec<TokenAmount>,
+    outputs: Vec<TokenAmount>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,15 +160,7 @@ struct Metadata {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum ExecutionPlan {
-    Coordinates(Coordinates),
-    #[serde(deserialize_with = "execution_plan_internal")]
-    Internal,
-}
-
-#[derive(Debug, Deserialize)]
-struct Coordinates {
+struct ExecutionPlan {
     sequence: u32,
     position: u32,
     internal: bool,
