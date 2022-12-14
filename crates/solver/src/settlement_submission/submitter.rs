@@ -32,6 +32,7 @@ use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::{
     code_fetching::CodeFetching,
+    conversions::into_gas_price,
     ethrpc::{Web3, Web3Transport},
     http_solver::model::InternalizationStrategy,
     submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
@@ -508,7 +509,7 @@ impl<'a> Submitter<'a> {
         settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
     }
 
     /// Estimate access list and validate
@@ -559,7 +560,7 @@ impl<'a> Submitter<'a> {
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
             .gas(21000.into())
     }
 
