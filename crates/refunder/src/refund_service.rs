@@ -11,7 +11,7 @@ use database::{
 use ethcontract::{Account, H160};
 use futures::{stream, StreamExt};
 use shared::{
-    current_block::blockchain_time,
+    current_block::timestamp_of_current_block_in_seconds,
     ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
 };
 use sqlx::PgPool;
@@ -102,7 +102,7 @@ impl RefundService {
     }
 
     pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
-        let block_time = blockchain_time(&self.web3).await? as i64;
+        let block_time = timestamp_of_current_block_in_seconds(&self.web3).await? as i64;
 
         let mut ex = self.db.acquire().await?;
         refundable_orders(

@@ -13,8 +13,8 @@ use model::quote::{
 };
 use refunder::refund_service::RefundService;
 use shared::{
-    current_block::blockchain_time, ethrpc::Web3, http_client::HttpClientFactory,
-    maintenance::Maintaining,
+    current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3,
+    http_client::HttpClientFactory, maintenance::Maintaining,
 };
 use sqlx::PgPool;
 
@@ -82,7 +82,7 @@ async fn refunder_tx(web3: Web3) {
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
     let validity_duration = 60;
-    let valid_to = blockchain_time(&web3).await.unwrap() + validity_duration;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
     // Accounting for slippage is necesary for the order to be picked up by the refunder
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);

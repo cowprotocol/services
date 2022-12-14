@@ -179,7 +179,7 @@ async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
     })
 }
 
-pub async fn blockchain_time(web3: &Web3) -> Result<u32> {
+pub async fn timestamp_of_current_block_in_seconds(web3: &Web3) -> Result<u32> {
     Ok(web3
         .eth()
         .block(BlockNumber::Latest.into())
