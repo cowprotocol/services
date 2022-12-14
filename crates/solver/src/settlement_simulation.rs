@@ -14,6 +14,7 @@ use gas_estimation::GasPrice1559;
 use itertools::Itertools;
 use primitive_types::{H160, H256, U256};
 use shared::{
+    conversions::into_gas_price,
     ethrpc::Web3,
     tenderly_api::{SimulationRequest, TenderlyApi},
 };
@@ -174,8 +175,7 @@ pub fn settle_method(
     settlement: EncodedSettlement,
     account: Account,
 ) -> MethodBuilder<DynTransport, ()> {
-    settle_method_builder(contract, settlement, account)
-        .gas_price(crate::into_gas_price(&gas_price))
+    settle_method_builder(contract, settlement, account).gas_price(into_gas_price(&gas_price))
 }
 
 pub fn settle_method_builder(

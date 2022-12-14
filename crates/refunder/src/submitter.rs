@@ -14,17 +14,16 @@ use contracts::CoWSwapEthFlow;
 use database::OrderUid;
 use ethcontract::{
     transaction::{confirm::ConfirmParams, ResolveCondition},
-    Account, GasPrice, U256,
+    Account, U256,
 };
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use shared::{
+    conversions::into_gas_price,
     ethrpc::Web3,
     submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
 };
 
-// Max gas used for submitting transactions
-// If the gas price is higher than this value,
-// the service will temporarily not refund users
+// Max gas price used for submitting transactions
 const MAX_GAS_PRICE: u64 = 800_000_000_000;
 
 // The gas price buffer determines the gas price buffer used to
@@ -32,18 +31,19 @@ const MAX_GAS_PRICE: u64 = 800_000_000_000;
 // Example: If the prevailing gas is 10Gwei and the buffer factor is 1.20
 // then the gas_price used will be 12.
 const GAS_PRICE_BUFFER_FACTOR: f64 = 1.3;
-// Max priority fee that the refunder is willing to pay. (=2 Gwei)
-const MAX_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
-// In order to resubmit a new tx with the same nonce, the gas price needs to
-// be increased by at least 10 percent. We increase it by 12 percent
-const GAS_PRICE_BUMP: f64 = 1.12;
+// Starting priority fee that the refunder is willing to pay. (=2 Gwei)
+const START_PRIORITY_FEE_TIP: u64 = 2_000_000_000;
+
+// In order to resubmit a new tx with the same nonce, the gas tip and
+// max_fee_per_gas needs to be increased by at least 10 percent.
+const GAS_PRICE_BUMP: f64 = 1.125;
 
 pub struct Submitter {
     pub web3: Web3,
     pub ethflow_contract: CoWSwapEthFlow,
     pub account: Account,
     pub gas_estimator: Box<dyn GasPriceEstimating>,
-    pub gas_price_of_last_submission: Option<U256>,
+    pub gas_parameters_of_last_tx: Option<GasPrice1559>,
     pub nonce_of_last_submission: Option<U256>,
 }
 
@@ -71,38 +71,18 @@ impl Submitter {
         let gas_price_estimation = self.gas_estimator.estimate().await?;
         let nonce = self.get_submission_nonce().await?;
         let gas_price = calculate_submission_gas_price(
-            self.gas_price_of_last_submission,
+            self.gas_parameters_of_last_tx,
             gas_price_estimation,
             nonce,
             self.nonce_of_last_submission,
         )?;
-        let max_fee_per_gas = match gas_price {
-            GasPrice::Eip1559 {
-                max_fee_per_gas, ..
-            } => max_fee_per_gas,
-            _ => {
-                return Err(anyhow!(
-                    "Unreachable state while accessing the max_fee_per_gas"
-                ))
-            }
-        };
 
-        // Gas prices are capped at MAX_GAS_PRICE
-        if max_fee_per_gas > U256::from(MAX_GAS_PRICE) {
-            tracing::warn!(
-                "Refunding txs are not started, as the current gas price {:?} \
-                            is higher than MAX_GAS_PRICE specified {:?}",
-                max_fee_per_gas,
-                MAX_GAS_PRICE
-            );
-            return Ok(());
-        }
-        self.gas_price_of_last_submission = Some(max_fee_per_gas);
+        self.gas_parameters_of_last_tx = Some(gas_price);
         self.nonce_of_last_submission = Some(nonce);
         let tx_result = self
             .ethflow_contract
             .invalidate_orders_ignoring_not_allowed(encoded_ethflow_orders)
-            .gas_price(gas_price)
+            .gas_price(into_gas_price(&gas_price))
             .from(self.account.clone())
             .nonce(nonce)
             .into_inner()
@@ -125,15 +105,13 @@ impl Submitter {
                     tracing::debug!(?err, "transaction already mined");
                 } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
                     // This case means that the node is already aware of the tx
-                    // This can only happen after restarts, as usually we would always increase
-                    // the gas price compared to previous tx.
-                    // In this situation, we restart the submission loop with double the
-                    // previous gas. Due to the nature of EIP1559 this will not increase the
-                    // cost of the tx
-                    // todo: Finding last tx and its gas price would be nicer
-                    self.gas_price_of_last_submission = Some(max_fee_per_gas * 2);
+                    // This can only happen after restarts, or close to the MAX_GAS_PRICE
+                    // as usually we would always increase the gas tip compared to previous tx.
+                    // Hence, we irgnore the warning and just retry.
                     tracing::debug!(?err, "transaction already known");
                 } else {
+                    // Todo: Handle the error "replacement transaction underpriced"
+                    // This could happen after restarts or close to the MAX_GAS_PRICE
                     tracing::warn!(?err, "submission failed");
                 }
             }
@@ -143,39 +121,48 @@ impl Submitter {
 }
 
 fn calculate_submission_gas_price(
-    gas_price_of_last_submission: Option<U256>,
+    gas_price_of_last_submission: Option<GasPrice1559>,
     web3_gas_estimation: GasPrice1559,
     newest_nonce: U256,
     nonce_of_last_submission: Option<U256>,
-) -> Result<GasPrice> {
-    let GasPrice1559 {
-        max_fee_per_gas, ..
-    }: gas_estimation::GasPrice1559 = web3_gas_estimation;
+) -> Result<GasPrice1559> {
     // The gas price of the refund tx is the current prevailing gas price
     // of the web3 gas estimation plus a buffer.
-    // Since we are using Eip1559 gas specification,
-    // we will only pay the buffer if it is used
-    let mut new_max_fee_per_gas = max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR;
+    let mut new_gas_price = web3_gas_estimation.bump(GAS_PRICE_BUFFER_FACTOR);
+    // limit the prio_fee to max_fee_per_gas as otherwise tx is invalid
+    new_gas_price.max_priority_fee_per_gas =
+        (START_PRIORITY_FEE_TIP as f64).min(new_gas_price.max_fee_per_gas);
+
     // If tx from the previous submission was not mined,
-    // we incease the gas price
+    // we incease the tip and max_gas_fee for miners
+    // in order to avoid "tx underpriced errors"
     if Some(newest_nonce) == nonce_of_last_submission {
-        // Increase the gas price to last submission's
-        // gas price plus an additional 12 %
-        if let Some(previous_gas_price) = gas_price_of_last_submission {
-            new_max_fee_per_gas = f64::max(
-                new_max_fee_per_gas,
-                previous_gas_price.to_f64_lossy() * GAS_PRICE_BUMP,
-            );
+        if let Some(gas_price_of_last_submission) = gas_price_of_last_submission {
+            let gas_price_of_last_submission = gas_price_of_last_submission.bump(GAS_PRICE_BUMP);
+            new_gas_price.max_fee_per_gas = new_gas_price
+                .max_fee_per_gas
+                .max(gas_price_of_last_submission.max_fee_per_gas);
+            new_gas_price.max_priority_fee_per_gas = new_gas_price
+                .max_priority_fee_per_gas
+                .max(gas_price_of_last_submission.max_priority_fee_per_gas);
         }
     }
-    let max_fee_per_gas = U256::from_f64_lossy(new_max_fee_per_gas);
-    let gas_price = GasPrice::Eip1559 {
-        max_fee_per_gas,
-        // The max_priority_fee_per_gas should normally allways be equal to MAX_PRIORITY_FEE_TIP
-        // Just in case the max_fee_per_gas is even lower than the constant, we need to adapt it
-        max_priority_fee_per_gas: U256::min(max_fee_per_gas, U256::from(MAX_PRIORITY_FEE_TIP)),
-    };
-    Ok(gas_price)
+
+    if new_gas_price.max_fee_per_gas > MAX_GAS_PRICE as f64 {
+        tracing::warn!(
+            "Refunding txs are likely not mined in time, as the current gas price {:?} \
+                            is higher than MAX_GAS_PRICE specified {:?}",
+            new_gas_price.max_fee_per_gas,
+            MAX_GAS_PRICE
+        );
+        new_gas_price.max_fee_per_gas =
+            f64::min(MAX_GAS_PRICE as f64, new_gas_price.max_fee_per_gas);
+    }
+    new_gas_price.max_priority_fee_per_gas = f64::min(
+        new_gas_price.max_priority_fee_per_gas,
+        new_gas_price.max_fee_per_gas,
+    );
+    Ok(new_gas_price)
 }
 
 #[cfg(test)]
@@ -201,24 +188,53 @@ mod tests {
             nonce_of_last_submission,
         )
         .unwrap();
-        let expected_result = GasPrice::Eip1559 {
-            max_fee_per_gas: U256::from((max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR) as u64),
-            max_priority_fee_per_gas: U256::from(MAX_PRIORITY_FEE_TIP),
+        let expected_result = GasPrice1559 {
+            max_fee_per_gas: max_fee_per_gas * GAS_PRICE_BUFFER_FACTOR,
+            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
+            base_fee_per_gas: 2_000_000_000f64,
         };
         assert_eq!(result, expected_result);
-        // Second case: Preivous tx was not successful
+        // Second case: Previous tx was not successful
         let nonce_of_last_submission = Some(newest_nonce);
-        let gas_price_of_last_submission = 5_000_000_000f64;
+        let max_fee_per_gas_of_last_tx = max_fee_per_gas * 2f64;
+        let gas_price_of_last_submission = GasPrice1559 {
+            max_fee_per_gas: max_fee_per_gas_of_last_tx,
+            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
+            base_fee_per_gas: 2_000_000_000f64,
+        };
         let result = calculate_submission_gas_price(
-            Some(U256::from(gas_price_of_last_submission as u64)),
+            Some(gas_price_of_last_submission),
             web3_gas_estimation,
             newest_nonce,
             nonce_of_last_submission,
         )
         .unwrap();
-        let expected_result = GasPrice::Eip1559 {
-            max_fee_per_gas: U256::from((gas_price_of_last_submission * GAS_PRICE_BUMP) as u64),
-            max_priority_fee_per_gas: U256::from(MAX_PRIORITY_FEE_TIP),
+        let expected_result = GasPrice1559 {
+            max_fee_per_gas: max_fee_per_gas_of_last_tx * GAS_PRICE_BUMP,
+            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64 * GAS_PRICE_BUMP,
+            base_fee_per_gas: 2_000_000_000f64,
+        };
+        assert_eq!(result, expected_result);
+        // Thrid case: MAX_GAS_PRICE is not exceeded
+        let max_fee_per_gas = MAX_GAS_PRICE as f64 + 1000f64;
+        let web3_gas_estimation = GasPrice1559 {
+            base_fee_per_gas: 2_000_000_000f64,
+            max_fee_per_gas,
+            max_priority_fee_per_gas: 3_000_000_000f64,
+        };
+        let nonce_of_last_submission = None;
+        let gas_price_of_last_submission = None;
+        let result = calculate_submission_gas_price(
+            gas_price_of_last_submission,
+            web3_gas_estimation,
+            newest_nonce,
+            nonce_of_last_submission,
+        )
+        .unwrap();
+        let expected_result = GasPrice1559 {
+            base_fee_per_gas: 2_000_000_000f64,
+            max_fee_per_gas: MAX_GAS_PRICE as f64,
+            max_priority_fee_per_gas: START_PRIORITY_FEE_TIP as f64,
         };
         assert_eq!(result, expected_result);
     }

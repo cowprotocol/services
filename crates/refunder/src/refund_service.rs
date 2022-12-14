@@ -64,7 +64,7 @@ impl RefundService {
                 ethflow_contract,
                 account,
                 gas_estimator: Box::new(web3),
-                gas_price_of_last_submission: None,
+                gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
             },
         }
