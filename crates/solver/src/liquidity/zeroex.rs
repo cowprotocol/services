@@ -13,7 +13,6 @@ use contracts::{GPv2Settlement, IZeroEx};
 use model::{order::OrderKind, TokenPair};
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens,
     ethrpc::Web3,
     recent_block_cache::Block,
     zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
@@ -26,7 +25,6 @@ use std::{
 pub struct ZeroExLiquidity {
     pub api: Arc<dyn ZeroExApi>,
     pub zeroex: IZeroEx,
-    pub base_tokens: Arc<BaseTokens>,
     pub gpv2: GPv2Settlement,
     pub allowance_manager: Box<dyn AllowanceManaging>,
 }
@@ -34,18 +32,11 @@ pub struct ZeroExLiquidity {
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
-    pub fn new(
-        web3: Web3,
-        api: Arc<dyn ZeroExApi>,
-        zeroex: IZeroEx,
-        base_tokens: Arc<BaseTokens>,
-        gpv2: GPv2Settlement,
-    ) -> Self {
+    pub fn new(web3: Web3, api: Arc<dyn ZeroExApi>, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
         let allowance_manager = AllowanceManager::new(web3, gpv2.address());
         Self {
             api,
             zeroex,
-            base_tokens,
             gpv2,
             allowance_manager: Box::new(allowance_manager),
         }
@@ -90,7 +81,11 @@ impl ZeroExLiquidity {
 
 #[async_trait::async_trait]
 impl LiquidityCollecting for ZeroExLiquidity {
-    async fn get_liquidity(&self, pairs: &[TokenPair], _block: Block) -> Result<Vec<Liquidity>> {
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        _block: Block,
+    ) -> Result<Vec<Liquidity>> {
         let queries = &[
             // orders fillable by anyone
             OrdersQuery::default(),
@@ -113,9 +108,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
                 }
             });
 
-        let relevant_pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
-
-        let order_buckets = generate_order_buckets(zeroex_orders, relevant_pairs);
+        let order_buckets = generate_order_buckets(zeroex_orders, pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
@@ -214,8 +207,8 @@ pub mod tests {
     use crate::interactions::allowances::Approval;
     use maplit::hashmap;
     use shared::{
-        http_solver::model::InternalizationStrategy, interaction::Interaction,
-        zeroex_api::OrderMetadata,
+        baseline_solver::BaseTokens, http_solver::model::InternalizationStrategy,
+        interaction::Interaction, zeroex_api::OrderMetadata,
     };
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
