@@ -70,7 +70,7 @@ pub struct Contract(pub H160);
 
 impl From<H160> for Contract {
     fn from(inner: H160) -> Self {
-        Self(inner.into())
+        Self(inner)
     }
 }
 

@@ -246,8 +246,8 @@ fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctio
                             .map(|amm| ExecutedAmmModel {
                                 sell_token: amm.sell.token.into(),
                                 buy_token: amm.buy.token.into(),
-                                exec_sell_amount: amm.sell.amount.into(),
-                                exec_buy_amount: amm.buy.amount.into(),
+                                exec_sell_amount: amm.sell.amount,
+                                exec_buy_amount: amm.buy.amount,
                                 exec_plan: ExecutionPlan {
                                     coordinates: ExecutionPlanCoordinatesModel {
                                         sequence: amm.sequence,

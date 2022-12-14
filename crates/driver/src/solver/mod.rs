@@ -89,8 +89,6 @@ impl Solver {
     }
 
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        // TODO Ask about all the `config` stuff in DefaultHttpSolverApi, what is every
-        // field for exactly?
         let mut url = self.url.join("solve").unwrap();
         let time_limit = auction.deadline.solver_time_limit()?;
         url.query_pairs_mut()
@@ -98,9 +96,7 @@ impl Solver {
             .append_pair("instance_name", &self.instance_name(auction.id))
             .append_pair("time_limit", &time_limit.as_secs().to_string())
             .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
-        // TODO Should this really be From? Maybe this should take a reference, and both
-        // Auction and Solution shouldn't be Clone, think a bit more about this
-        let body = serde_json::to_string(&dto::Auction::new(auction.clone())).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(auction)).unwrap();
         tracing::trace!(%url, %body, "sending request to solver");
         let req = self.client.post(url.clone()).body(body).timeout(time_limit);
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
