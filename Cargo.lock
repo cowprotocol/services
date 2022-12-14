@@ -914,10 +914,10 @@ dependencies = [
  "global-metrics",
  "hex",
  "hyper",
+ "itertools",
  "maplit",
  "mockall",
  "model",
- "nonempty",
  "num",
  "number-conversions",
  "primitive-types 0.10.1",
@@ -932,6 +932,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "url",
  "warp",
  "web3",
 ]
@@ -2043,12 +2044,6 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
-
-[[package]]
-name = "nonempty"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f1f8e5676e1a1f2ee8b21f38238e1243c827531c9435624c7bfb305102cee4"
 
 [[package]]
 name = "normalize-line-endings"
