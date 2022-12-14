@@ -1,5 +1,6 @@
+mod merge;
+
 use crate::{
-    driver::solver_settlements::merge_settlements,
     liquidity::LimitOrder,
     metrics::SolverMetrics,
     settlement::{external_prices::ExternalPrices, Settlement},
@@ -181,7 +182,7 @@ impl Solver for SingleOrderSolver {
         settlements.shuffle(&mut rand::thread_rng());
         settlements.truncate(self.max_settlements_per_solver);
 
-        merge_settlements(
+        merge::merge_settlements(
             self.max_merged_settlements,
             &auction.external_prices,
             &mut settlements,
