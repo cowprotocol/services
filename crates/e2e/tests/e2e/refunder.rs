@@ -81,7 +81,7 @@ async fn refunder_tx(web3: Web3) {
     assert_eq!(quoting.status(), 200);
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
-    let validity_duration = 60;
+    let validity_duration = 600;
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
     // Accounting for slippage is necesary for the order to be picked up by the refunder
     let ethflow_order =
@@ -114,7 +114,7 @@ async fn refunder_tx(web3: Web3) {
         pg_pool,
         web3,
         contracts.ethflow.clone(),
-        validity_duration as i64 - 10,
+        validity_duration as i64 / 2,
         10u64,
         refunder_account,
     );
