@@ -13,7 +13,6 @@ use {
     },
     gas_estimation::GasPriceEstimating,
     model::DomainSeparator,
-    nonempty::NonEmpty,
     shared::{
         baseline_solver::BaseTokens,
         code_fetching::{CachedCodeFetcher, CodeFetching},
@@ -87,30 +86,41 @@ async fn main() {
     tracing::info!("running driver with validated arguments:\n{}", args);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = driver::api::serve(
-        &args.bind_address,
-        async {
-            let _ = shutdown_receiver.await;
-        },
-        NonEmpty::new(driver::Solver::new(
+    let serve = driver::Api {
+        solvers: vec![driver::Solver::new(
             "http://localhost:1232".parse().unwrap(),
+            "solver".to_owned().into(),
             driver::logic::eth::NetworkName("testnet".to_owned()),
             driver::logic::eth::ChainId(0),
-        )),
-    );
+        )],
+        simulator: simulator(),
+        eth: ethereum(),
+        addr: args.bind_address,
+    }
+    .serve(async {
+        let _ = shutdown_receiver.await;
+    });
 
-    futures::pin_mut!(serve_api);
+    futures::pin_mut!(serve);
     tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
+        result = &mut serve => tracing::error!(?result, "API task exited"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
-            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
+            match tokio::time::timeout(Duration::from_secs(10), serve).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
                 Err(_) => tracing::error!("API shutdown exceeded timeout"),
             }
         }
     };
+}
+
+fn simulator() -> driver::Simulator {
+    todo!()
+}
+
+fn ethereum() -> driver::Ethereum {
+    todo!()
 }
 
 struct CommonComponents {

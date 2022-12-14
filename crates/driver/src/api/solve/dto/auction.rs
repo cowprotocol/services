@@ -1,9 +1,8 @@
 use {
     crate::{logic, util::serialize},
     ethereum_types::{H160, U256},
-    num::BigUint,
     serde::Deserialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::serde_as,
     std::collections::HashMap,
 };
 
@@ -20,8 +19,9 @@ pub struct Auction {
     block: u64,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
-    #[serde_as(as = "HashMap<_, DisplayFromStr>")]
-    prices: HashMap<H160, BigUint>,
+    /// All prices in this trade denominated in the native token.
+    #[serde_as(as = "HashMap<_, serialize::U256>")]
+    prices: HashMap<H160, U256>,
 }
 
 // TODO Should we rename kind to side and class to kind in this interface?
