@@ -26,6 +26,7 @@ use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
 use num::BigRational;
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Eq, PartialEq},
     fmt::{self, Display, Formatter},
@@ -210,7 +211,7 @@ impl Clone for PriceEstimationError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Query {
     /// Optional `from` address that would be executing the query.
     pub from: Option<H160>,
@@ -221,7 +222,7 @@ pub struct Query {
     pub kind: OrderKind,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
@@ -343,12 +344,16 @@ pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRation
     ))
 }
 
-const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
+pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
 
-pub async fn rate_limited<T>(
+pub async fn rate_limited<T, E>(
     rate_limiter: Arc<RateLimiter>,
-    estimation: impl Future<Output = Result<T, PriceEstimationError>>,
-) -> Result<T, PriceEstimationError> {
+    estimation: impl Future<Output = Result<T, E>>,
+) -> Result<T, E>
+where
+    E: From<anyhow::Error>,
+    E: From<RateLimiterError>,
+{
     let timed_estimation = async move {
         let start = Instant::now();
         let result = estimation.await;
@@ -362,7 +367,7 @@ pub async fn rate_limited<T>(
         // return original PriceEstimationError
         Ok((_estimation_time, Err(err))) => Err(err),
         // convert the RateLimiterError to a PriceEstimationError
-        Err(err) => Err(PriceEstimationError::from(err)),
+        Err(err) => Err(E::from(err)),
     }
 }
 
