@@ -341,7 +341,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            refund_tx: refund_tx.map(|hash| H256(hash.0))
+            refund_tx: refund_tx.map(|hash| H256(hash.0)),
         })
     } else {
         None

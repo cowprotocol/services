@@ -459,6 +459,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
+        tracing::error!("init ehflow stuff");
         let start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,

@@ -47,28 +47,55 @@ pub async fn read_order(
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+#[derive(Debug, Clone)]
+pub struct Refund {
+    pub order_uid: OrderUid,
+    pub tx_hash: TransactionHash,
+    pub block_number: u64,
+}
+
+/// Used to delete refunds in case of a reorg.
+pub async fn delete_refunds(
+    ex: &mut PgTransaction<'_>,
+    from_block: i64,
+    to_block: i64
+) -> Result<(), sqlx::Error> {
+    const DELETE_REFUNDS: &str = "\
+    DELETE FROM ethflow_refunds \
+    WHERE block_number >= $1 and block_number <= $2;";
+    ex.execute(sqlx::query(DELETE_REFUNDS).bind(from_block).bind(to_block))
+        .await?;
+    Ok(())
+}
+
+/// Returns the last blcok where an ethflow refund transaction has been indexed.
+pub async fn last_indexed_block(ex: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+    const QUERY: &str = r#"
+        SELECT block_number from ethflow_refunds ORDER BY block_number DESC LIMIT 1;
+    "#;
+    sqlx::query_scalar(QUERY).fetch_optional(ex).await
+}
+
 pub async fn mark_eth_orders_as_refunded(
     ex: &mut PgTransaction<'_>,
-    uids: &[(OrderUid, TransactionHash)],
+    refunds: &[Refund],
 ) -> Result<(), sqlx::Error> {
-    for (uid, refund_tx) in uids.iter() {
-        mark_eth_order_as_refunded(ex, uid, refund_tx).await?;
+    for refund in refunds.iter() {
+        mark_eth_order_as_refunded(ex, refund).await?;
     }
     Ok(())
 }
 
 pub async fn mark_eth_order_as_refunded(
     ex: &mut PgTransaction<'_>,
-    uid: &OrderUid,
-    refund_tx: &TransactionHash,
+    refund: &Refund
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        UPDATE ethflow_orders
-        SET refund_tx = $1
-        WHERE uid = $2
+        INSERT INTO ethflow_refunds (uid, block_number, tx_hash) VALUES($1, $2, $3)
     "#;
 
-    ex.execute(sqlx::query(QUERY).bind(uid).bind(refund_tx)).await?;
+    ex.execute(sqlx::query(QUERY).bind(refund.order_uid).bind(refund.block_number as i64).bind(refund.tx_hash))
+        .await?;
     Ok(())
 }
 
@@ -173,9 +200,12 @@ mod tests {
             .await
             .unwrap();
         let refund_tx = Default::default();
-        mark_eth_orders_as_refunded(&mut db, vec![(order_1.uid, refund_tx), (order_2.uid, refund_tx)].as_slice())
-            .await
-            .unwrap();
+        mark_eth_orders_as_refunded(
+            &mut db,
+            vec![(order_1.uid, refund_tx), (order_2.uid, refund_tx)].as_slice(),
+        )
+        .await
+        .unwrap();
         // Check that `refund_tx` was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
         assert_eq!(order_1.refund_tx, Some(refund_tx));

@@ -72,10 +72,9 @@ impl RefundService {
             .await?;
 
         // self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
-            // .await?;
+        // .await?;
 
-        self.send_out_refunding_tx(to_be_refunded_uids)
-            .await?;
+        self.send_out_refunding_tx(to_be_refunded_uids).await?;
         Ok(())
     }
 
