@@ -295,7 +295,7 @@ impl LimitOrderCounting for Postgres {
     async fn count(&self, owner: H160) -> Result<u64> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["count_limit_orders"])
+            .with_label_values(&["count_limit_orders_by_owner"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
