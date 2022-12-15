@@ -171,8 +171,12 @@ where
     ) -> Result<Factory::PoolInfo> {
         let common_pool_info = self
             .fetch_common_pool_info(pool_address, block_created)
-            .await?;
-        self.factory.specialize_pool_info(common_pool_info).await
+            .await
+            .context("fetch_common_pool_info")?;
+        self.factory
+            .specialize_pool_info(common_pool_info)
+            .await
+            .context("specialize_pool_info")
     }
 
     fn fetch_pool(
@@ -189,11 +193,11 @@ where
                 .fetch_pool_state(pool_info, common_pool_state_ok.boxed(), batch, block);
 
         async move {
-            let common_pool_state = common_pool_state.await?;
+            let common_pool_state = common_pool_state.await.context("common_pool_state")?;
             if common_pool_state.paused {
                 return Ok(PoolStatus::Paused);
             }
-            let pool_state = match pool_state.await? {
+            let pool_state = match pool_state.await.context("pool_state")? {
                 Some(state) => state,
                 None => return Ok(PoolStatus::Disabled),
             };

@@ -220,12 +220,15 @@ impl PoolsCheckpointHandler {
         let pools = self
             .graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await?;
+            .await
+            .context("get_pools_with_tick_by_ids")?;
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for pool in pools {
             checkpoint.missing_pools.remove(&pool.id);
-            checkpoint.pools.insert(pool.id, pool.try_into()?);
+            checkpoint
+                .pools
+                .insert(pool.id, pool.try_into().context("try_into")?);
         }
 
         tracing::debug!("number of cached pools is {}", checkpoint.pools.len());
@@ -272,7 +275,14 @@ impl UniswapV3PoolFetcher {
 
     /// Moves the checkpoint to the block `latest_block - MAX_REORG_BLOCK_COUNT`
     async fn move_checkpoint_to_future(&self) -> Result<()> {
-        let last_event_block = self.events.lock().await.store().last_event_block().await?;
+        let last_event_block = self
+            .events
+            .lock()
+            .await
+            .store()
+            .last_event_block()
+            .await
+            .context("last_event_block")?;
         let old_checkpoint_block = self
             .checkpoint
             .pools_checkpoint
@@ -287,7 +297,8 @@ impl UniswapV3PoolFetcher {
         if new_checkpoint_block > old_checkpoint_block {
             {
                 let block_range =
-                    RangeInclusive::try_new(old_checkpoint_block + 1, new_checkpoint_block)?;
+                    RangeInclusive::try_new(old_checkpoint_block + 1, new_checkpoint_block)
+                        .context("try_new")?;
                 let events = self.events.lock().await.store().get_events(block_range);
                 let mut checkpoint = self.checkpoint.pools_checkpoint.lock().unwrap();
                 append_events(&mut checkpoint.pools, events);
@@ -354,7 +365,8 @@ impl PoolFetching for UniswapV3PoolFetcher {
         let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
 
         if block_number > checkpoint_block_number {
-            let block_range = RangeInclusive::try_new(checkpoint_block_number + 1, block_number)?;
+            let block_range = RangeInclusive::try_new(checkpoint_block_number + 1, block_number)
+                .context("try_new")?;
             let events = self.events.lock().await.store().get_events(block_range);
             append_events(&mut checkpoint, events);
         }
@@ -448,8 +460,18 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
 impl Maintaining for UniswapV3PoolFetcher {
     async fn run_maintenance(&self) -> Result<()> {
         let (result1, result2) = futures::join!(
-            self.events.run_maintenance(),
-            self.checkpoint.update_missing_pools()
+            async {
+                self.events
+                    .run_maintenance()
+                    .await
+                    .context("run_maintenance")
+            },
+            async {
+                self.checkpoint
+                    .update_missing_pools()
+                    .await
+                    .context("update_missing_pools")
+            }
         );
         result1.and(result2)?;
         self.move_checkpoint_to_future().await

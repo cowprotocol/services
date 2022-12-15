@@ -437,12 +437,12 @@ async fn main() -> ! {
         order_validator.clone(),
     ));
 
-    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
+    let mut maintainers = vec![(pool_fetcher as Arc<dyn Maintaining>, "pool_fetcher")];
     if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
+        maintainers.push((balancer, "balancer_pool_fetcher"));
     }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
+        maintainers.push((uniswap_v3, "univ3_pool_fetcher"));
     }
 
     check_database_connection(orderbook.as_ref()).await;

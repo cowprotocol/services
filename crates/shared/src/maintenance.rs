@@ -1,5 +1,5 @@
 use crate::current_block::{self, BlockInfo, CurrentBlockStream};
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use futures::{future::join_all, Stream, StreamExt as _};
 use std::{sync::Arc, time::Duration};
 use tokio::time;
@@ -7,12 +7,12 @@ use tracing::Instrument as _;
 
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
-    maintainers: Vec<Arc<dyn Maintaining>>,
+    maintainers: Vec<(Arc<dyn Maintaining>, &'static str)>,
     retry_delay: Duration,
 }
 
 impl ServiceMaintenance {
-    pub fn new(maintainers: Vec<Arc<dyn Maintaining>>) -> Self {
+    pub fn new(maintainers: Vec<(Arc<dyn Maintaining>, &'static str)>) -> Self {
         Self {
             maintainers,
             retry_delay: Duration::from_secs(1),
@@ -30,9 +30,15 @@ pub trait Maintaining: Send + Sync {
 impl Maintaining for ServiceMaintenance {
     async fn run_maintenance(&self) -> Result<()> {
         let mut no_error = true;
-        for result in join_all(self.maintainers.iter().map(|m| m.run_maintenance())).await {
+        for result in join_all(
+            self.maintainers
+                .iter()
+                .map(|(m, name)| async move { m.run_maintenance().await.context(*name) }),
+        )
+        .await
+        {
             if let Err(err) = result {
-                tracing::warn!("Service Maintenance Error: {:?}", err);
+                tracing::warn!(?err, "service maintenance error");
                 no_error = false;
             }
         }
@@ -140,9 +146,9 @@ mod tests {
 
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![
-                Arc::new(ok1_mock_maintenance),
-                Arc::new(err_mock_maintenance),
-                Arc::new(ok2_mock_maintenance),
+                (Arc::new(ok1_mock_maintenance), ""),
+                (Arc::new(err_mock_maintenance), ""),
+                (Arc::new(ok2_mock_maintenance), ""),
             ],
             retry_delay: Duration::default(),
         };
@@ -163,7 +169,7 @@ mod tests {
             .returning(|| Ok(()));
 
         let service_maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(mock_maintenance)],
+            maintainers: vec![(Arc::new(mock_maintenance), "")],
             retry_delay: Duration::default(),
         };
 
@@ -196,7 +202,7 @@ mod tests {
             .in_sequence(&mut sequence);
 
         let service_maintenance = ServiceMaintenance {
-            maintainers: vec![Arc::new(mock_maintenance)],
+            maintainers: vec![(Arc::new(mock_maintenance), "")],
             retry_delay: Duration::default(),
         };
 

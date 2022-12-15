@@ -399,8 +399,11 @@ pub async fn main(args: arguments::Arguments) -> ! {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+    let mut maintainers: Vec<(Arc<dyn Maintaining>, &'static str)> = vec![
+        (pool_fetcher.clone(), "pool_fetcher"),
+        (event_updater, "event_updater"),
+        (Arc::new(db.clone()), "db"),
+    ];
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -486,13 +489,13 @@ pub async fn main(args: arguments::Arguments) -> ! {
             .await
             .expect("Should be able to initialize event updater. Database read issues?"),
         );
-        maintainers.push(broadcaster_event_updater);
+        maintainers.push((broadcaster_event_updater, "broadcaster_event_updater"));
     }
     if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
+        maintainers.push((balancer, "balancer_pool_fetcher"));
     }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
+        maintainers.push((uniswap_v3, "uniswap_v3_pool_fetcher"));
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);

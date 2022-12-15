@@ -7,7 +7,7 @@ use crate::{
     event_handling::MAX_REORG_BLOCK_COUNT,
     subgraph::{ContainsId, SubgraphClient},
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use num::BigInt;
@@ -126,11 +126,14 @@ impl UniV3SubgraphClient {
 
     /// Retrieves the pool data for all existing pools from the subgraph.
     pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
-        let block_number = self.get_safe_block().await?;
+        let block_number = self.get_safe_block().await.context("get_safe_block")?;
         let variables = json_map! {
             "block" => block_number,
         };
-        let pools = self.get_pools(ALL_POOLS_QUERY, variables).await?;
+        let pools = self
+            .get_pools(ALL_POOLS_QUERY, variables)
+            .await
+            .context("get_pools")?;
         Ok(RegisteredPools {
             fetched_block_number: block_number,
             pools,
@@ -147,7 +150,10 @@ impl UniV3SubgraphClient {
             "block" => block_number,
             "pool_ids" => json!(pool_ids)
         };
-        let pools = self.get_pools(POOLS_BY_IDS_QUERY, variables).await?;
+        let pools = self
+            .get_pools(POOLS_BY_IDS_QUERY, variables)
+            .await
+            .context("get_pools")?;
         Ok(pools)
     }
 
@@ -164,7 +170,8 @@ impl UniV3SubgraphClient {
         let result = self
             .0
             .paginated_query(TICKS_BY_POOL_IDS_QUERY, variables)
-            .await?;
+            .await
+            .context("paginated_query")?;
         Ok(result)
     }
 
@@ -175,8 +182,16 @@ impl UniV3SubgraphClient {
         block_number: u64,
     ) -> Result<Vec<PoolData>> {
         let (pools, ticks) = futures::try_join!(
-            self.get_pools_by_pool_ids(ids, block_number),
-            self.get_ticks_by_pools_ids(ids, block_number)
+            async {
+                self.get_pools_by_pool_ids(ids, block_number)
+                    .await
+                    .context("get_pools_by_pool_ids")
+            },
+            async {
+                self.get_ticks_by_pools_ids(ids, block_number)
+                    .await
+                    .context("get_ticks_by_pools_ids")
+            }
         )?;
 
         // group ticks by pool ids
@@ -209,7 +224,8 @@ impl UniV3SubgraphClient {
         Ok(self
             .0
             .query::<block_number_query::Data>(block_number_query::QUERY, None)
-            .await?
+            .await
+            .context("query")?
             .meta
             .block
             .number

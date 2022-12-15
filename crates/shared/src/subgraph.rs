@@ -1,6 +1,6 @@
 //! A module implementing a client for querying subgraphs.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -106,7 +106,8 @@ impl SubgraphClient {
         loop {
             let page = self
                 .query::<Data<T>>(query, Some(variables.clone()))
-                .await?
+                .await
+                .context("query")?
                 .inner;
             let no_more_pages = page.len() != QUERY_PAGE_SIZE;
             if let Some(last_elem) = page.last() {

@@ -226,9 +226,9 @@ impl OrderbookServices {
             order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance::new(vec![
-            Arc::new(autopilot_db.clone()),
-            ethflow_event_updater,
-            gpv2_event_updater,
+            (Arc::new(autopilot_db.clone()), "autopilot_db"),
+            (ethflow_event_updater, "ethflow_event_update"),
+            (gpv2_event_updater, "gpv2_event_updater"),
         ]);
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(

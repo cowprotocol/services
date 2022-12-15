@@ -130,7 +130,8 @@ where
         let pool = self
             .pool_info_fetcher
             .fetch_pool_info(pool_creation.pool, block_created)
-            .await?;
+            .await
+            .context("fetch_pool_info")?;
         self.insert_pool(pool);
 
         Ok(())
@@ -200,7 +201,8 @@ where
             let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
 
             self.index_pool_creation(pool_created, block_created)
-                .await?;
+                .await
+                .context("index_pool_creation")?;
         }
 
         Ok(())

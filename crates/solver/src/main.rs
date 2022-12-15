@@ -125,7 +125,7 @@ async fn main() -> ! {
     });
 
     let mut liquidity_sources: Vec<Box<dyn LiquidityCollecting>> = vec![];
-    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![];
+    let mut maintainers: Vec<(Arc<dyn Maintaining>, &'static str)> = vec![];
 
     tracing::info!(?baseline_sources, "using baseline sources");
     let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
@@ -140,7 +140,12 @@ async fn main() -> ! {
                 (source, Arc::new(pool_cache))
             })
             .collect();
-    maintainers.extend(pool_caches.values().cloned().map(|p| p as Arc<_>));
+    maintainers.extend(pool_caches.iter().map(|(source, cache)| {
+        (
+            cache.clone() as Arc<_>,
+            Box::leak(format!("{:?}", source).into_boxed_str()) as &'static str,
+        )
+    }));
 
     if baseline_sources.contains(&BaselineSource::BalancerV2) {
         let factories = args
@@ -163,7 +168,7 @@ async fn main() -> ! {
             .await
             .expect("failed to create Balancer pool fetcher"),
         );
-        maintainers.push(balancer_pool_fetcher.clone());
+        maintainers.push((balancer_pool_fetcher.clone(), "balancer_pool_fetcher"));
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
             web3.clone(),
             balancer_pool_fetcher,
@@ -301,7 +306,7 @@ async fn main() -> ! {
         {
             Ok(uniswap_v3_pool_fetcher) => {
                 let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
-                maintainers.push(uniswap_v3_pool_fetcher.clone());
+                maintainers.push((uniswap_v3_pool_fetcher.clone(), "univ3_pool_fetcher"));
                 liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
                     UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
                     settlement_contract.clone(),
