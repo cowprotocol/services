@@ -455,7 +455,9 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
     LIMIT 1
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
-(SELECT (eth_o.refund_tx, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
+    left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
+    where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
 "#;

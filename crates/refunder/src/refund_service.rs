@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
     ethflow_orders::{
-        mark_eth_orders_as_refunded, read_order, refundable_orders, EthOrderPlacement,
+        read_order, refundable_orders, EthOrderPlacement,
     },
     orders::read_order as read_db_order,
     OrderUid,
@@ -71,30 +71,9 @@ impl RefundService {
             .identify_uids_refunding_status_via_web3_calls(refundable_order_uids)
             .await?;
 
-        // self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
-        // .await?;
-
         self.send_out_refunding_tx(to_be_refunded_uids).await?;
         Ok(())
     }
-
-    // this should now happen in the autopilot
-    // async fn update_already_refunded_orders_in_db(
-    //     &self,
-    //     refunded_uids: Vec<OrderUid>,
-    // ) -> Result<()> {
-    //     let mut transaction = self.db.begin().await?;
-    //     mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
-    //         .await
-    //         .map_err(|err| {
-    //             anyhow!(
-    //                 "Error while retrieving updating the already refunded orders:{:?}",
-    //                 err
-    //             )
-    //         })?;
-
-    //     Ok(transaction.commit().await?)
-    // }
 
     pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
         let block_time = timestamp_of_current_block_in_seconds(&self.web3).await? as i64;

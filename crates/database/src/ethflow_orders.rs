@@ -25,12 +25,11 @@ pub async fn insert_or_overwrite_ethflow_order(
     event: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO ethflow_orders (uid, valid_to, refund_tx) VALUES ($1, $2, $3) \
-        ON CONFLICT (uid) DO UPDATE SET valid_to = $2, refund_tx = $3;";
+        INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) \
+        ON CONFLICT (uid) DO UPDATE SET valid_to = $2;";
     sqlx::query(QUERY)
         .bind(event.uid)
         .bind(event.valid_to)
-        .bind(event.refund_tx)
         .execute(ex)
         .await?;
     Ok(())
@@ -41,13 +40,14 @@ pub async fn read_order(
     id: &OrderUid,
 ) -> Result<Option<EthOrderPlacement>, sqlx::Error> {
     const QUERY: &str = r#"
-        SELECT * FROM ethflow_orders
+        SELECT uid, valid_to, ethflow_refunds.tx_hash as refund_tx FROM ethflow_orders
+        LEFT JOIN ethflow_refunds ON ethflow_orders.uid = ethflow_refunds.order_uid
         WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Refund {
     pub order_uid: OrderUid,
     pub tx_hash: TransactionHash,
@@ -91,7 +91,7 @@ pub async fn mark_eth_order_as_refunded(
     refund: &Refund
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        INSERT INTO ethflow_refunds (uid, block_number, tx_hash) VALUES($1, $2, $3)
+        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3)
     "#;
 
     ex.execute(sqlx::query(QUERY).bind(refund.order_uid).bind(refund.block_number as i64).bind(refund.tx_hash))
@@ -178,6 +178,13 @@ mod tests {
         assert_eq!(order_2, order_);
     }
 
+    fn refund(order_uid: OrderUid) -> Refund {
+        Refund {
+            order_uid,
+            ..Default::default()
+        }
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_mark_eth_orders_as_refunded() {
@@ -199,18 +206,17 @@ mod tests {
         insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
-        let refund_tx = Default::default();
         mark_eth_orders_as_refunded(
             &mut db,
-            vec![(order_1.uid, refund_tx), (order_2.uid, refund_tx)].as_slice(),
+            &[refund(order_1.uid), refund(order_2.uid)]
         )
         .await
         .unwrap();
         // Check that `refund_tx` was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
-        assert_eq!(order_1.refund_tx, Some(refund_tx));
+        assert_eq!(order_1.refund_tx, Some(Default::default()));
         let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
-        assert_eq!(order_2.refund_tx, Some(refund_tx));
+        assert_eq!(order_2.refund_tx, Some(Default::default()));
     }
 
     #[tokio::test]
@@ -235,7 +241,7 @@ mod tests {
             .await
             .unwrap();
         let refund_tx = Default::default();
-        mark_eth_order_as_refunded(&mut db, &order_1.uid, &refund_tx)
+        mark_eth_order_as_refunded(&mut db, &refund(order_1.uid))
             .await
             .unwrap();
         // Check that `refund_tx` was changed
@@ -243,7 +249,7 @@ mod tests {
         assert_eq!(order_1.refund_tx, Some(refund_tx));
         // Check that other orders are not affected from the change
         let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
-        assert!(!order_2.refund_tx.is_none());
+        assert!(order_2.refund_tx.is_none());
     }
 
     #[tokio::test]
