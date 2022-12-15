@@ -849,15 +849,16 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_insert_same_order_twice_fails() {
+    async fn postgres_insert_same_order_twice_results_in_only_one_order() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
-        let err = insert_order(&mut db, &order).await.unwrap_err();
-        assert!(is_duplicate_record_error(&err));
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
     }
 
     #[tokio::test]
