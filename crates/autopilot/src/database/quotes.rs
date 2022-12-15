@@ -1,6 +1,6 @@
 use super::Postgres;
 use anyhow::{Context, Result};
-use shared::maintenance::Maintaining;
+use shared::maintenance::{Maintainer, Maintaining};
 use sqlx::types::chrono::{DateTime, Utc};
 
 impl Postgres {
@@ -22,5 +22,9 @@ impl Maintaining for Postgres {
         self.remove_expired_quotes(Utc::now())
             .await
             .context("fee measurement maintenance error")
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::Postgres
     }
 }

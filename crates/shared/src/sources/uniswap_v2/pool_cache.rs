@@ -1,6 +1,6 @@
 use crate::{
     current_block::CurrentBlockStream,
-    maintenance::Maintaining,
+    maintenance::{Maintainer, Maintaining},
     recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
     sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
@@ -54,5 +54,9 @@ impl PoolFetching for PoolCache {
 impl Maintaining for PoolCache {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.update_cache().await
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::UniswapV2PoolFetcher
     }
 }

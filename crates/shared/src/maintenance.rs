@@ -2,13 +2,40 @@ use crate::current_block::{self, BlockInfo, CurrentBlockStream};
 use anyhow::{ensure, Result};
 use futures::{future::join_all, Stream, StreamExt as _};
 use std::{sync::Arc, time::Duration};
+use strum::IntoEnumIterator;
 use tokio::time;
 use tracing::Instrument as _;
 
+/// List of all possible maintainers in the system
+#[derive(strum::EnumIter)]
+pub enum Maintainer {
+    ServiceMaintenance,
+    EventHandler,
+    EventUpdater,
+    Postgres,
+    BalancerPoolFetcher,
+    UniswapV2PoolFetcher,
+    UniswapV3PoolFetcher,
+}
+
+impl Maintainer {
+    fn label(&self) -> &'static str {
+        match self {
+            Maintainer::ServiceMaintenance => "ServiceMaintenance",
+            Maintainer::EventHandler => "EventHandler",
+            Maintainer::EventUpdater => "EventUpdater",
+            Maintainer::Postgres => "Postgres",
+            Maintainer::BalancerPoolFetcher => "BalancerPoolFetcher",
+            Maintainer::UniswapV2PoolFetcher => "UniswapV2PoolFetcher",
+            Maintainer::UniswapV3PoolFetcher => "UniswapV3PoolFetcher",
+        }
+    }
+}
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
     maintainers: Vec<Arc<dyn Maintaining>>,
     retry_delay: Duration,
+    metrics: &'static Metrics,
 }
 
 impl ServiceMaintenance {
@@ -16,6 +43,7 @@ impl ServiceMaintenance {
         Self {
             maintainers,
             retry_delay: Duration::from_secs(1),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         }
     }
 }
@@ -24,6 +52,7 @@ impl ServiceMaintenance {
 #[async_trait::async_trait]
 pub trait Maintaining: Send + Sync {
     async fn run_maintenance(&self) -> Result<()>;
+    fn name(&self) -> Maintainer;
 }
 
 #[async_trait::async_trait]
@@ -34,19 +63,33 @@ impl Maintaining for ServiceMaintenance {
             if let Err(err) = result {
                 tracing::warn!("Service Maintenance Error: {:?}", err);
                 no_error = false;
+                self.metrics
+                    .runs
+                    .with_label_values(&["failure", self.name().label()])
+                    .inc();
             }
         }
 
         ensure!(no_error, "maintenance encounted one or more errors");
         Ok(())
     }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::ServiceMaintenance
+    }
 }
 
 impl ServiceMaintenance {
     async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
-        for label in ["success", "failure"] {
-            metrics.runs.with_label_values(&[label]).reset();
+        self.metrics
+            .runs
+            .with_label_values(&["success", Maintainer::ServiceMaintenance.label()])
+            .reset();
+        for maintainer in Maintainer::iter() {
+            self.metrics
+                .runs
+                .with_label_values(&["failure", maintainer.label()])
+                .reset();
         }
 
         let blocks = blocks.fuse();
@@ -68,7 +111,7 @@ impl ServiceMaintenance {
                 "running maintenance",
             );
 
-            metrics.last_seen_block.set(block.number as _);
+            self.metrics.last_seen_block.set(block.number as _);
 
             if let Err(err) = self
                 .run_maintenance()
@@ -80,13 +123,15 @@ impl ServiceMaintenance {
                     "maintenance failed; queuing retry",
                 );
 
-                metrics.runs.with_label_values(&["failure"]).inc();
                 retry_block = Some(block);
                 continue;
             }
 
-            metrics.last_updated_block.set(block.number as _);
-            metrics.runs.with_label_values(&["success"]).inc();
+            self.metrics.last_updated_block.set(block.number as _);
+            self.metrics
+                .runs
+                .with_label_values(&["success", self.name().label()])
+                .inc();
         }
     }
 
@@ -109,7 +154,7 @@ struct Metrics {
     last_updated_block: prometheus::IntGauge,
 
     /// Service maintenance error counter
-    #[metric(labels("result"))]
+    #[metric(labels("result", "maintainer"))]
     runs: prometheus::IntCounterVec,
 }
 
@@ -145,6 +190,7 @@ mod tests {
                 Arc::new(ok2_mock_maintenance),
             ],
             retry_delay: Duration::default(),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         };
 
         assert!(service_maintenance.run_maintenance().await.is_err());
@@ -165,6 +211,7 @@ mod tests {
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(mock_maintenance)],
             retry_delay: Duration::default(),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         };
 
         let block_stream = stream::repeat(BlockInfo::default()).take(block_count);
@@ -198,6 +245,7 @@ mod tests {
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(mock_maintenance)],
             retry_delay: Duration::default(),
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         };
 
         let block_stream = async_stream::stream! {

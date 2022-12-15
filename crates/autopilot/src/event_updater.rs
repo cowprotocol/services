@@ -4,7 +4,7 @@ use shared::{
     current_block::{BlockNumberHash, BlockRetrieving},
     event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
-    maintenance::Maintaining,
+    maintenance::{Maintainer, Maintaining},
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -73,5 +73,9 @@ where
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::EventUpdater
     }
 }

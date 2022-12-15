@@ -8,7 +8,7 @@ use crate::{
     ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
     event_handling::EventHandler,
     impl_event_retrieving,
-    maintenance::Maintaining,
+    maintenance::{Maintainer, Maintaining},
     recent_block_cache::Block,
     sources::balancer_v2::pools::{common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus},
 };
@@ -105,6 +105,10 @@ where
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.updater.run_maintenance().await
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::BalancerPoolFetcher
     }
 }
 

@@ -6,7 +6,7 @@ use crate::{
     current_block::{BlockRetrieving, RangeInclusive},
     ethrpc::Web3,
     event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
-    maintenance::Maintaining,
+    maintenance::{Maintainer, Maintaining},
     recent_block_cache::Block,
 };
 use anyhow::{Context, Result};
@@ -453,6 +453,10 @@ impl Maintaining for UniswapV3PoolFetcher {
         );
         result1.and(result2)?;
         self.move_checkpoint_to_future().await
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::UniswapV3PoolFetcher
     }
 }
 

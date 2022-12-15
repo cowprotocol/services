@@ -1,6 +1,6 @@
 use crate::{
     current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    maintenance::Maintaining,
+    maintenance::{Maintainer, Maintaining},
 };
 use anyhow::{Context, Error, Result};
 use ethcontract::{
@@ -475,6 +475,10 @@ where
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.lock().await.update_events().await
+    }
+
+    fn name(&self) -> Maintainer {
+        Maintainer::EventHandler
     }
 }
 
