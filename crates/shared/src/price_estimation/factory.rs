@@ -14,7 +14,7 @@ use super::{
     Arguments, PriceEstimating, PriceEstimatorType, TradeValidatorKind,
 };
 use crate::{
-    arguments,
+    arguments::{self, Driver},
     bad_token::BadTokenDetecting,
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
@@ -32,6 +32,7 @@ use crate::{
         uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
     },
     token_info::TokenInfoFetching,
+    trade_finding::external::ExternalTradeFinder,
     zeroex_api::ZeroExApi,
 };
 use anyhow::{Context as _, Result};
@@ -48,6 +49,7 @@ pub struct PriceEstimatorFactory<'a> {
     components: Components,
     trade_verifier: Option<TradeVerifier>,
     estimators: HashMap<PriceEstimatorType, EstimatorEntry>,
+    external_estimators: HashMap<String, EstimatorEntry>,
 }
 
 #[derive(Clone)]
@@ -123,6 +125,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             components,
             trade_verifier,
             estimators: HashMap::new(),
+            external_estimators: Default::default(),
         })
     }
 
@@ -222,6 +225,33 @@ impl<'a> PriceEstimatorFactory<'a> {
         Ok(&self.estimators[&kind])
     }
 
+    fn get_external_estimator(&mut self, driver: &Driver) -> Result<&EstimatorEntry> {
+        #[allow(clippy::map_entry)]
+        if !self.external_estimators.contains_key(&driver.name) {
+            let rate_limiting_strategy = self
+                .args
+                .price_estimation_rate_limiter
+                .clone()
+                .unwrap_or_default();
+            let rate_limiter = Arc::new(RateLimiter::from_strategy(
+                rate_limiting_strategy,
+                format!("{}_estimator", driver.name),
+            ));
+            let estimator = Arc::new(ExternalTradeFinder::new(
+                driver.url.clone(),
+                self.components.http_factory.create(),
+                rate_limiter,
+            ));
+            let entry = EstimatorEntry {
+                optimal: estimator.clone(),
+                fast: estimator.clone(),
+                native: estimator,
+            };
+            self.external_estimators.insert(driver.name.clone(), entry);
+        }
+        Ok(&self.external_estimators[&driver.name])
+    }
+
     fn get_estimators(
         &mut self,
         kinds: &[PriceEstimatorType],
@@ -231,6 +261,23 @@ impl<'a> PriceEstimatorFactory<'a> {
             .iter()
             .copied()
             .map(|kind| Ok((kind.name(), select(self.get_estimator(kind)?).clone())))
+            .collect()
+    }
+
+    fn get_external_estimators(
+        &mut self,
+        drivers: &[Driver],
+        select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
+    ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
+        drivers
+            .iter()
+            .cloned()
+            .map(|driver| {
+                Ok((
+                    driver.name.clone(),
+                    select(self.get_external_estimator(&driver)?).clone(),
+                ))
+            })
             .collect()
     }
 
@@ -245,8 +292,10 @@ impl<'a> PriceEstimatorFactory<'a> {
     pub fn price_estimator(
         &mut self,
         kinds: &[PriceEstimatorType],
+        drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
+        let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
+        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.optimal)?);
         Ok(Arc::new(
             self.sanitized(CompetitionPriceEstimator::new(estimators)),
         ))
@@ -256,8 +305,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         kinds: &[PriceEstimatorType],
         fast_price_estimation_results_required: NonZeroUsize,
+        drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(kinds, |entry| &entry.fast)?;
+        let mut estimators = self.get_estimators(kinds, |entry| &entry.fast)?;
+        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.fast)?);
         Ok(Arc::new(self.sanitized(
             RacingCompetitionPriceEstimator::new(
                 estimators,
@@ -269,8 +320,10 @@ impl<'a> PriceEstimatorFactory<'a> {
     pub fn native_price_estimator(
         &mut self,
         kinds: &[PriceEstimatorType],
+        drivers: &[Driver],
     ) -> Result<Arc<dyn NativePriceEstimating>> {
-        let estimators = self.get_estimators(kinds, |entry| &entry.native)?;
+        let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
+        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
                 Arc::new(self.sanitized(CompetitionPriceEstimator::new(estimators))),
