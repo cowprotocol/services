@@ -1,4 +1,4 @@
-pub(super) fn route(app: super::Router) -> super::Router {
+pub(super) fn route(app: axum::Router<super::State>) -> axum::Router<super::State> {
     app.route("/", axum::routing::get(info))
 }
 

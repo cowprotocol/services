@@ -185,6 +185,8 @@ pub struct SettledBatchAuctionModel {
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
+    #[serde(default)]
+    pub submitter: SubmissionPreference,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -393,6 +395,15 @@ pub enum InternalizationStrategy {
     EncodeAllInteractions,
     #[serde(rename = "Enabled")]
     SkipInternalizableInteraction,
+}
+
+/// Searchers can override submission strategy of the protocol
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum SubmissionPreference {
+    #[default]
+    ProtocolDefault,
+    Flashbots,
+    PublicMempool,
 }
 
 #[cfg(test)]
@@ -801,6 +812,25 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
+    }
+
+    #[test]
+    fn decode_submitter_flashbots() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "metadata": {
+                    "environment": null
+                },
+                "ref_token": null,
+                "prices": {},
+                "uniswaps": {},
+                "submitter": "Flashbots"
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(deserialized.submitter, SubmissionPreference::Flashbots);
     }
 
     #[test]

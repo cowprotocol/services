@@ -2,12 +2,16 @@
 //! and interactions to query allowances to various contracts as well as keep
 //! generate interactions for them.
 
-use crate::{encoding::EncodedInteraction, interactions::Erc20ApproveInteraction};
+use crate::interactions::Erc20ApproveInteraction;
 use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashmap;
-use shared::{dummy_contract, ethrpc::Web3, interaction::Interaction};
+use shared::{
+    dummy_contract,
+    ethrpc::Web3,
+    interaction::{EncodedInteraction, Interaction},
+};
 use std::{
     collections::{HashMap, HashSet},
     slice,

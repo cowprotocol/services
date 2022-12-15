@@ -4,6 +4,7 @@ use model::{
     signature::{Signature, SigningScheme},
 };
 use primitive_types::{H160, U256};
+use shared::interaction::EncodedInteraction;
 
 pub type EncodedTrade = (
     U256,            // sellTokenIndex
@@ -72,12 +73,6 @@ fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
     } << 5;
     result.into()
 }
-
-pub type EncodedInteraction = (
-    H160,           // target
-    U256,           // value
-    Bytes<Vec<u8>>, // callData
-);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncodedSettlement {
