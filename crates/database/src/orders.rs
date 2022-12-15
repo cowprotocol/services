@@ -157,17 +157,12 @@ pub async fn insert_orders_and_ignore_conflicts(
     orders: &[Order],
 ) -> Result<(), sqlx::Error> {
     for order in orders {
-        match insert_order(ex, order).await {
-            Ok(_) => (),
-            Err(err) if is_duplicate_record_error(&err) => (),
-            Err(err) => return Err(err),
-        }
+        insert_order_and_ignore_conflicts(ex, order).await?;
     }
     Ok(())
 }
 
-pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
+const INSERT_ORDER_QUERY: &str = r#"
 INSERT INTO orders (
     uid,
     owner,
@@ -195,7 +190,25 @@ INSERT INTO orders (
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     "#;
-    sqlx::query(QUERY)
+
+pub async fn insert_order_and_ignore_conflicts(
+    ex: &mut PgConnection,
+    order: &Order,
+) -> Result<(), sqlx::Error> {
+    // To be used only for the ethflow contract order placement, where reorgs force us to update
+    // orders
+    // Since each order has a unique UID even after a reorg onchain placed orders have the same
+    // data. Hence, we can disregard any conflicts.
+    const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
+    insert_order_execute_sqlx(QUERY, ex, order).await
+}
+
+async fn insert_order_execute_sqlx(
+    query_str: &str,
+    ex: &mut PgConnection,
+    order: &Order,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(query_str)
         .bind(&order.uid)
         .bind(&order.owner)
         .bind(order.creation_timestamp)
@@ -222,6 +235,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
         .execute(ex)
         .await?;
     Ok(())
+}
+
+pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
+    insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await
 }
 
 pub async fn read_order(
@@ -723,6 +740,21 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn postgres_order_roundtrip_with_function_irgnoring_duplications() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order_and_ignore_conflicts(&mut db, &order)
+            .await
+            .unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn postgres_onchain_user_order_roundtrip() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
@@ -859,6 +891,22 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let err = insert_order(&mut db, &order).await.unwrap_err();
         assert!(is_duplicate_record_error(&err));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_same_order_twice_results_in_only_one_order() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        insert_order_and_ignore_conflicts(&mut db, &order)
+            .await
+            .unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
     }
 
     #[tokio::test]
