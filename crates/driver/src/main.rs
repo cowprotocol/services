@@ -13,7 +13,6 @@ use {
     },
     gas_estimation::GasPriceEstimating,
     model::DomainSeparator,
-    nonempty::NonEmpty,
     shared::{
         baseline_solver::BaseTokens,
         code_fetching::{CachedCodeFetcher, CodeFetching},
@@ -87,30 +86,41 @@ async fn main() {
     tracing::info!("running driver with validated arguments:\n{}", args);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = driver::api::serve(
-        &args.bind_address,
-        async {
-            let _ = shutdown_receiver.await;
-        },
-        NonEmpty::new(driver::Solver::new(
+    let serve = driver::Api {
+        solvers: vec![driver::Solver::new(
             "http://localhost:1232".parse().unwrap(),
+            "solver".to_owned().into(),
             driver::logic::eth::NetworkName("testnet".to_owned()),
             driver::logic::eth::ChainId(0),
-        )),
-    );
+        )],
+        simulator: simulator(),
+        eth: ethereum(),
+        addr: args.bind_address,
+    }
+    .serve(async {
+        let _ = shutdown_receiver.await;
+    });
 
-    futures::pin_mut!(serve_api);
+    futures::pin_mut!(serve);
     tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
+        result = &mut serve => tracing::error!(?result, "API task exited"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
-            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
+            match tokio::time::timeout(Duration::from_secs(10), serve).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
                 Err(_) => tracing::error!("API shutdown exceeded timeout"),
             }
         }
     };
+}
+
+fn simulator() -> driver::Simulator {
+    todo!()
+}
+
+fn ethereum() -> driver::Ethereum {
+    todo!()
 }
 
 struct CommonComponents {
@@ -424,7 +434,6 @@ async fn build_auction_converter(
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
             common.web3.clone(),
             balancer_pool_fetcher,
-            base_tokens.clone(),
             common.settlement_contract.clone(),
             contracts.vault,
         )));
@@ -433,7 +442,6 @@ async fn build_auction_converter(
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         common.settlement_contract.clone(),
-        base_tokens.clone(),
         common.web3.clone(),
     )
     .await;
@@ -455,7 +463,6 @@ async fn build_auction_converter(
             common.web3.clone(),
             zeroex_api,
             contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens.clone(),
             common.settlement_contract.clone(),
         )));
     }
@@ -476,7 +483,6 @@ async fn build_auction_converter(
                 liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
                     UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
                     common.settlement_contract.clone(),
-                    base_tokens.clone(),
                     common.web3.clone(),
                     uniswap_v3_pool_fetcher,
                 )));
@@ -492,7 +498,10 @@ async fn build_auction_converter(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );
 
-    let liquidity_collector = Box::new(LiquidityCollector { liquidity_sources });
+    let liquidity_collector = Box::new(LiquidityCollector {
+        liquidity_sources,
+        base_tokens,
+    });
     Ok(Arc::new(AuctionConverter::new(
         common.gas_price_estimator.clone(),
         liquidity_collector,
@@ -503,7 +512,6 @@ async fn build_auction_converter(
 async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
-    base_tokens: Arc<BaseTokens>,
     web3: Web3,
 ) -> Vec<Box<dyn LiquidityCollecting>> {
     let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
@@ -536,7 +544,6 @@ async fn build_amm_artifacts(
         res.push(Box::new(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
             settlement_contract.clone(),
-            base_tokens.clone(),
             web3.clone(),
             pool_cache.clone(),
         )));

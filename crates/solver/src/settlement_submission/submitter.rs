@@ -32,6 +32,7 @@ use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::{
     code_fetching::CodeFetching,
+    conversions::into_gas_price,
     ethrpc::{Web3, Web3Transport},
     http_solver::model::InternalizationStrategy,
     submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
@@ -508,7 +509,7 @@ impl<'a> Submitter<'a> {
         settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
     }
 
     /// Estimate access list and validate
@@ -526,27 +527,41 @@ impl<'a> Submitter<'a> {
             tx,
         )
         .await?;
-        let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
+        let (without_access_list, with_access_list) = futures::join!(
+            // This call will fail for orders paying ETH to SC wallets
             tx.clone().estimate_gas(),
             tx.clone().access_list(access_list.clone()).estimate_gas()
-        )?;
+        );
 
-        ensure!(
-            gas_before_access_list > gas_after_access_list,
-            "access list exist but does not lower the gas usage"
-        );
-        let gas_percent_saved = (gas_before_access_list.to_f64_lossy()
-            - gas_after_access_list.to_f64_lossy())
-            / gas_before_access_list.to_f64_lossy()
-            * 100.;
-        tracing::debug!(
-            "gas before/after access list: {}/{}, access_list: {:?}, gas percent saved: {}",
-            gas_before_access_list,
-            gas_after_access_list,
-            access_list,
-            gas_percent_saved
-        );
-        Ok(access_list)
+        match (without_access_list, with_access_list) {
+            (Err(_), Ok(_)) => {
+                tracing::debug!("using an access list made the transaction executable");
+                Ok(access_list)
+            }
+            (Ok(_), Err(_)) => {
+                anyhow::bail!("access list caused the transaction to fail");
+            }
+            (Ok(gas_without), Ok(gas_with)) => {
+                ensure!(
+                    gas_without > gas_with,
+                    "access list exists but does not lower the gas usage"
+                );
+                let gas_percent_saved = (gas_without.to_f64_lossy() - gas_with.to_f64_lossy())
+                    / gas_without.to_f64_lossy()
+                    * 100.;
+                tracing::debug!(
+                    "gas before/after access list: {}/{}, access_list: {:?}, gas percent saved: {}",
+                    gas_without,
+                    gas_with,
+                    access_list,
+                    gas_percent_saved
+                );
+                Ok(access_list)
+            }
+            (Err(_), Err(_)) => {
+                anyhow::bail!("transaction would revert with and without access list");
+            }
+        }
     }
 
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
@@ -559,7 +574,7 @@ impl<'a> Submitter<'a> {
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
             .gas(21000.into())
     }
 

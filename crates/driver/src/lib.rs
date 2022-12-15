@@ -8,9 +8,12 @@ pub mod commit_reveal;
 pub mod driver;
 pub mod settlement_proposal;
 
-pub mod api;
+mod api;
+mod blockchain;
+pub mod boundary;
 pub mod logic;
+mod simulator;
 mod solver;
 mod util;
 
-pub use crate::solver::Solver;
+pub use {crate::solver::Solver, api::Api, blockchain::Ethereum, simulator::Simulator};
