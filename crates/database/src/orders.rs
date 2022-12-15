@@ -157,16 +157,14 @@ pub async fn insert_orders_and_ignore_conflicts(
     orders: &[Order],
 ) -> Result<(), sqlx::Error> {
     for order in orders {
-        match insert_order(ex, order).await {
-            Ok(_) => (),
-            Err(err) if is_duplicate_record_error(&err) => (),
-            Err(err) => return Err(err),
-        }
+        insert_order(ex, order).await?;
     }
     Ok(())
 }
 
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
+    // Since each order has a unique UID even after a reorg onchain placed orders have the same
+    // data. Hence, we can disregard any conflicts.
     const QUERY: &str = r#"
 INSERT INTO orders (
     uid,
@@ -194,6 +192,7 @@ INSERT INTO orders (
     surplus_fee_timestamp
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+ON CONFLICT (uid) DO NOTHING
     "#;
     sqlx::query(QUERY)
         .bind(&order.uid)
