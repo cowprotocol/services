@@ -39,11 +39,6 @@ enum RefundStatus {
     Invalid,
 }
 
-struct SplittedOrderUids {
-    refunded: Vec<OrderUid>,
-    to_be_refunded: Vec<OrderUid>,
-}
-
 impl RefundService {
     pub fn new(
         db: PgPool,
@@ -72,34 +67,35 @@ impl RefundService {
     pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
-        let order_uids_per_status = self
+        let to_be_refunded_uids = self
             .identify_uids_refunding_status_via_web3_calls(refundable_order_uids)
             .await?;
 
-        self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
-            .await?;
+        // self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
+            // .await?;
 
-        self.send_out_refunding_tx(order_uids_per_status.to_be_refunded)
+        self.send_out_refunding_tx(to_be_refunded_uids)
             .await?;
         Ok(())
     }
 
-    async fn update_already_refunded_orders_in_db(
-        &self,
-        refunded_uids: Vec<OrderUid>,
-    ) -> Result<()> {
-        let mut transaction = self.db.begin().await?;
-        mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
-            .await
-            .map_err(|err| {
-                anyhow!(
-                    "Error while retrieving updating the already refunded orders:{:?}",
-                    err
-                )
-            })?;
+    // this should now happen in the autopilot
+    // async fn update_already_refunded_orders_in_db(
+    //     &self,
+    //     refunded_uids: Vec<OrderUid>,
+    // ) -> Result<()> {
+    //     let mut transaction = self.db.begin().await?;
+    //     mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
+    //         .await
+    //         .map_err(|err| {
+    //             anyhow!(
+    //                 "Error while retrieving updating the already refunded orders:{:?}",
+    //                 err
+    //             )
+    //         })?;
 
-        Ok(transaction.commit().await?)
-    }
+    //     Ok(transaction.commit().await?)
+    // }
 
     pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
         let block_time = timestamp_of_current_block_in_seconds(&self.web3).await? as i64;
@@ -123,7 +119,7 @@ impl RefundService {
     async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
-    ) -> Result<SplittedOrderUids> {
+    ) -> Result<Vec<OrderUid>> {
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let futures = refundable_order_uids
             .iter()
@@ -162,12 +158,11 @@ impl RefundService {
         batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
         type TupleWithRefundStatus = (Vec<(OrderUid, RefundStatus)>, Vec<(OrderUid, RefundStatus)>);
-        let mut refunded_uids = Vec::new();
         let mut to_be_refunded_uids = Vec::new();
         let mut invalid_uids = Vec::new();
         for (uid, refund_status) in uid_with_latest_refundablility.into_iter().flatten() {
             match refund_status {
-                RefundStatus::Refunded => refunded_uids.push(uid),
+                RefundStatus::Refunded => (),
                 RefundStatus::Invalid => invalid_uids.push(uid),
                 RefundStatus::NotYetRefunded => to_be_refunded_uids.push(uid),
             }
@@ -180,11 +175,7 @@ impl RefundService {
                 invalid_uids
             );
         }
-        let result = SplittedOrderUids {
-            refunded: refunded_uids,
-            to_be_refunded: to_be_refunded_uids,
-        };
-        Ok(result)
+        Ok(to_be_refunded_uids)
     }
 
     async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EthflowOrder> {

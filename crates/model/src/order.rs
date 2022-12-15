@@ -490,7 +490,7 @@ pub struct CancellationPayload {
 #[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
-    pub is_refunded: bool,
+    pub refund_tx: Option<H256>,
 }
 
 /// An order as provided to the orderbook by the frontend.

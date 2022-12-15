@@ -12,7 +12,7 @@ use crate::{
     database::{
         onchain_order_events::{
             ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
-            event_retriever::CoWSwapOnchainOrdersContract,
+            event_retriever::{CoWSwapOnchainOrdersContract, EthFlowContract},
             OnchainOrderParser,
         },
         Postgres,
@@ -459,6 +459,29 @@ pub async fn main(args: arguments::Arguments) -> ! {
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
+        let start_block = determine_ethflow_indexing_start(
+            &skip_event_sync_start,
+            args.ethflow_indexing_start,
+            &web3,
+            chain_id,
+        )
+        .await;
+
+        let refund_event_handler = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // This cares only about refund events which are not part of the generic
+                // OnChainOrder interface.
+                EthFlowContract::new(web3.clone(), ethflow_contract),
+                // TODO: make sure that the correct implementation gets used.
+                db.clone(),
+                block_retriever.clone(),
+                start_block,
+            )
+            .await
+            .unwrap(),
+        );
+        maintainers.push(refund_event_handler);
+
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
@@ -475,13 +498,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
                 CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
                 onchain_order_event_parser,
                 block_retriever,
-                determine_ethflow_indexing_start(
-                    &skip_event_sync_start,
-                    args.ethflow_indexing_start,
-                    &web3,
-                    chain_id,
-                )
-                .await,
+                start_block,
             )
             .await
             .expect("Should be able to initialize event updater. Database read issues?"),

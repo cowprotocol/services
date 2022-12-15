@@ -604,11 +604,12 @@ components:
         Provides the additional data for ethflow orders
       type: object
       properties:
-        isRefunded:
+        refundTx:
           description: |
-            Provides a flag that shows whether the refunding service has
-            refunded the order, in case it was not settled onchain
-          type: boolean
+            Specifies in which transaction the order was refunded. If
+            this field is null the order was not yet refunded.
+          $ref: "#/components/schemas/TransactionHash"
+          nullable: true
         userValidTo:
           description: |
            Describes the valid to of an order ethflow order.
@@ -616,7 +617,7 @@ components:
            contract is max(uint)
           type: integer
       required:
-        - isRefunded
+        - refundTx
         - userValidTo
     FeeInformation:
       description: |
