@@ -1,13 +1,15 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
 
+pub mod external;
 pub mod oneinch;
 pub mod paraswap;
 pub mod zeroex;
 
-use crate::price_estimation::Query;
+use crate::{price_estimation::Query, rate_limiter::RateLimiterError};
 use contracts::ERC20;
 use ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256};
+use serde::Deserialize;
 use thiserror::Error;
 
 /// Find a trade for a token pair.
@@ -22,14 +24,14 @@ pub trait TradeFinding: Send + Sync + 'static {
 }
 
 /// A quote.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
 }
 
 /// A trade.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
@@ -60,7 +62,7 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
@@ -109,6 +111,9 @@ pub enum TradeError {
     UnsupportedOrderType,
 
     #[error(transparent)]
+    RateLimited(#[from] RateLimiterError),
+
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
@@ -117,6 +122,7 @@ impl Clone for TradeError {
         match self {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::RateLimited(err) => Self::RateLimited(err.clone()),
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }

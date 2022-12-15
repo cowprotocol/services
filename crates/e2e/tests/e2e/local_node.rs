@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use ethcontract::{futures::FutureExt, Account, Address, BlockNumber, U256};
+use ethcontract::{futures::FutureExt, Account, Address, U256};
 use lazy_static::lazy_static;
 use shared::ethrpc::{create_test_transport, Web3};
 use std::{
@@ -16,46 +16,12 @@ lazy_static! {
 
 const NODE_HOST: &str = "http://127.0.0.1:8545";
 
-pub async fn test<F, Fut>(test_function: F)
-where
-    F: FnOnce(Web3) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    revert_node_state_after(|web3| async move {
-        // We want all tests run with the node starting to mine at the current time.
-        web3.api::<TestNodeApi<_>>()
-            .set_next_block_timestamp(&chrono::offset::Utc::now())
-            .await
-            .expect("Could not set block timestamp");
-
-        // Mine an empty block. This writes the current time to the blockchain, also it can be retrieved from the latest
-        // block.
-        web3.api::<TestNodeApi<_>>()
-            .mine_pending_block()
-            .await
-            .expect("Could not mine empty block");
-
-        // Run the actual test function.
-        test_function(web3.clone()).await;
-    })
-    .await;
-}
-
-pub async fn test_node_in_the_past<F, Fut>(test_function: F)
-where
-    F: FnOnce(Web3) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    // Use the node timestamp provided by default
-    revert_node_state_after(test_function).await;
-}
-
 /// *Testing* function that takes a closure and runs it on a local testing node.
 /// Before each test, it creates a snapshot of the current state of the chain.
 /// The saved state is restored at the end of the test.
 ///
 /// Note that tests calling with this function will not be run simultaneously.
-pub async fn revert_node_state_after<F, Fut>(f: F)
+pub async fn test<F, Fut>(f: F)
 where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
@@ -173,14 +139,4 @@ impl AccountAssigner {
     pub fn assign_free_account(&mut self) -> Account {
         self.free_accounts.pop().expect("No testing accounts available, consider increasing the number of testing account in the test node")
     }
-}
-
-pub async fn blockchain_time(web3: &Web3) -> u32 {
-    web3.eth()
-        .block(BlockNumber::Latest.into())
-        .await
-        .expect("Unable to query block from node")
-        .expect("Block should exist")
-        .timestamp
-        .as_u32()
 }

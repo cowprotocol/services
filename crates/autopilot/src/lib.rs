@@ -339,10 +339,16 @@ pub async fn main(args: arguments::Arguments) -> ! {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(&args.order_quoting.price_estimators)
+        .price_estimator(
+            &args.order_quoting.price_estimators,
+            &args.order_quoting.price_estimation_drivers,
+        )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(&args.native_price_estimators)
+        .native_price_estimator(
+            &args.native_price_estimators,
+            &args.order_quoting.price_estimation_drivers,
+        )
         .unwrap();
 
     let risk_adjusted_rewards = (|| {

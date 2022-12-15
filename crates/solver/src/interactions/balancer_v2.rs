@@ -1,8 +1,7 @@
-use crate::encoding::EncodedInteraction;
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{Bytes, H160, H256};
 use primitive_types::U256;
-use shared::interaction::Interaction;
+use shared::interaction::{EncodedInteraction, Interaction};
 
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {

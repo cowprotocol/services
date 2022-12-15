@@ -27,11 +27,3 @@ use shared::ethrpc::Web3;
 pub async fn get_settlement_contract(web3: &Web3) -> Result<contracts::GPv2Settlement> {
     Ok(contracts::GPv2Settlement::deployed(web3).await?)
 }
-
-pub fn into_gas_price(gas_price: &gas_estimation::GasPrice1559) -> ethcontract::GasPrice {
-    (
-        gas_price.max_fee_per_gas,
-        gas_price.max_priority_fee_per_gas,
-    )
-        .into()
-}

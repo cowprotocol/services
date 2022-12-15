@@ -1,7 +1,9 @@
-use crate::encoding::EncodedInteraction;
 use contracts::IZeroEx;
 use ethcontract::Bytes;
-use shared::{interaction::Interaction, zeroex_api::Order};
+use shared::{
+    interaction::{EncodedInteraction, Interaction},
+    zeroex_api::Order,
+};
 
 #[derive(Clone, Debug)]
 pub struct ZeroExInteraction {

@@ -94,10 +94,10 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 )
             })
             .unzip();
-        database::ethflow_orders::append(ex, eth_order_placements.as_slice())
+        database::ethflow_orders::insert_or_overwrite_orders(ex, eth_order_placements.as_slice())
             .await
             .context("append_ethflow_orders failed during appending eth order placement data")?;
-        database::orders::insert_pre_interactions(ex, pre_interactions_data.as_slice())
+        database::orders::insert_or_overwrite_pre_interactions(ex, pre_interactions_data.as_slice())
             .await
             .context("append_ethflow_orders failed during appending pre_interactions")
     }

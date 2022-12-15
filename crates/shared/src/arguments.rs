@@ -35,6 +35,12 @@ macro_rules! logging_args_with_default_filter {
     };
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Driver {
+    pub name: String,
+    pub url: Url,
+}
+
 // The following arguments are used to configure the order creation process
 // The arguments are shared between the orderbook crate and the autopilot crate,
 // as both crates can create orders
@@ -48,6 +54,11 @@ pub struct OrderQuotingArguments {
         use_value_delimiter = true
     )]
     pub price_estimators: Vec<PriceEstimatorType>,
+
+    /// A list of external drivers used for price estimation in the following format:
+    /// `<NAME>|<URL>,<NAME>|<URL>`
+    #[clap(long, env, use_value_delimiter = true)]
+    pub price_estimation_drivers: Vec<Driver>,
 
     /// The configured addresses whose orders should be considered liquidity and
     /// not regular user orders.
@@ -333,6 +344,11 @@ impl Display for OrderQuotingArguments {
         )?;
         writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
         writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
+        display_list(
+            f,
+            "price_estimation_drivers",
+            &self.price_estimation_drivers,
+        )?;
         writeln!(
             f,
             "liquidity_order_owners: {:?}",
@@ -414,6 +430,12 @@ impl Display for Arguments {
     }
 }
 
+impl Display for Driver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({})", self.name, self.url)
+    }
+}
+
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
     let factor = f64::from_str(s)?;
     ensure!(factor.is_finite() && factor >= 0.);
@@ -437,6 +459,21 @@ pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     let in_gwei: f64 = s.parse()?;
     Ok(in_gwei * 1e9)
+}
+
+impl FromStr for Driver {
+    type Err = anyhow::Error;
+
+    fn from_str(driver: &str) -> Result<Self> {
+        let (name, url) = driver
+            .split_once('|')
+            .context("not enough arguments for driver")?;
+        let url: Url = url.parse()?;
+        Ok(Driver {
+            name: name.to_owned(),
+            url,
+        })
+    }
 }
 
 impl FromStr for RateLimitingStrategy {
@@ -531,5 +568,29 @@ mod test {
     #[test]
     fn parse_partner_fee_factor_ok_on_empty() {
         assert!(parse_partner_fee_factor("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_driver() {
+        let argument = "name1|http://localhost:8080";
+        let driver = Driver::from_str(argument).unwrap();
+        let expected = Driver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_drivers_wrong_arguments() {
+        // too few arguments
+        assert!(Driver::from_str("").is_err());
+        assert!(Driver::from_str("name").is_err());
+
+        // broken URL
+        assert!(Driver::from_str("name1|sdfsdfds").is_err());
+
+        // too many arguments
+        assert!(Driver::from_str("name1|http://localhost:8080|additional_argument").is_err());
     }
 }
