@@ -403,7 +403,7 @@ components:
         - tokens
         - orders
         - liquidity
-        - gasPrice
+        - effectiveGasPrice
       properties:
         id:
           type: integer
@@ -468,8 +468,6 @@ components:
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
         validTo:
-          description: |
-            Unix timestamp until which the order is valid.
           type: integer
         appData:
           $ref: "#/components/schemas/AppData"
