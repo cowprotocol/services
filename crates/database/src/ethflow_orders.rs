@@ -297,14 +297,15 @@ mod tests {
             }
         }
         async fn insert_order_parts_in_db(db: &mut PgConnection, order_parts: &EthflowOrderParts) {
-            let mut ex = db.begin().await.unwrap();
-            insert_order(&mut ex, &order_parts.order).await.unwrap();
-            insert_or_overwrite_ethflow_order(&mut ex, &order_parts.eth_order)
+            insert_order(db, &order_parts.order).await.unwrap();
+            insert_or_overwrite_ethflow_order(db, &order_parts.eth_order)
                 .await
                 .unwrap();
-            insert_quote(&mut ex, &order_parts.quote).await.unwrap();
+            insert_quote(db, &order_parts.quote).await.unwrap();
             if let Some(refund) = &order_parts.refund {
+                let mut ex = db.begin().await.unwrap();
                 mark_eth_order_as_refunded(&mut ex, refund).await.unwrap();
+                ex.commit().await.unwrap();
             }
         }
         let order_uid_1 = ByteArray([1u8; 56]);
