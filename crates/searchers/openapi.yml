@@ -263,6 +263,8 @@ components:
             allOf:
               - $ref: "#/components/schemas/TokenReserve"
               - type: object
+                required:
+                  - weight
                 properties:
                   weight:
                     $ref: "#/components/schemas/Decimal"
@@ -288,6 +290,8 @@ components:
             allOf:
               - $ref: "#/components/schemas/TokenReserve"
               - type: object
+                required:
+                  - scalingFactor
                 properties:
                   scalingFactor:
                     $ref: "#/components/schemas/BigInt"
@@ -515,7 +519,7 @@ components:
       type: object
       required:
         - kind
-        - index
+        - id
         - inputToken
         - outputToken
         - inputAmount
