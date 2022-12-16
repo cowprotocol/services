@@ -547,6 +547,7 @@ fn convert_onchain_order_placement(
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
         sender: ByteArray(order_placement.sender.0),
+        placement_error: None,
     };
     Ok((onchain_order_placement_event, order))
 }
@@ -796,6 +797,7 @@ mod test {
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
             sender: ByteArray(order_placement.sender.0),
+            placement_error: None,
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
@@ -906,6 +908,7 @@ mod test {
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
             sender: ByteArray(order_placement.sender.0),
+            placement_error: None,
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
@@ -1016,6 +1019,7 @@ mod test {
         let expected_onchain_order_placement = OnchainOrderPlacement {
             order_uid: ByteArray(order_uid.0),
             sender: ByteArray(order_placement.sender.0),
+            placement_error: None,
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
@@ -1281,6 +1285,7 @@ mod test {
                 OnchainOrderPlacement {
                     order_uid: ByteArray(expected_uid.0),
                     sender: ByteArray(sender.0),
+                    placement_error: None,
                 },
             )]
         );

@@ -493,6 +493,27 @@ pub struct EthflowData {
     pub is_refunded: bool,
 }
 
+#[serde_as]
+#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum OnchainOrderPlacementError {
+    QuoteIdNotFound,
+    ValidToTooFarInTheFuture,
+    OrderClassNotAccepted,
+    NotAllowedBuyToken,
+}
+
+// stores all data related to onchain order palcement
+#[serde_as]
+#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OnchainOrderData {
+    pub user: H160,
+    pub placement_error: Option<OnchainOrderPlacementError>,
+}
+
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
@@ -524,7 +545,7 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub onchain_user: Option<H160>,
+    pub onchain_order_data: Option<OnchainOrderData>,
     pub is_liquidity_order: bool,
 }
 

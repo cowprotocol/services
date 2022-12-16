@@ -246,6 +246,7 @@ mod tests {
         let onchain_order = OnchainOrderPlacement {
             order_uid: ByteArray(order_ids[0].0),
             sender: owners[3],
+            placement_error: None,
         };
         let event_index = EventIndex::default();
         insert_onchain_order(&mut db, &event_index, &onchain_order)
@@ -257,6 +258,7 @@ mod tests {
         let onchain_order = OnchainOrderPlacement {
             order_uid: ByteArray(order_ids[3].0),
             sender: owners[3],
+            placement_error: None,
         };
         insert_onchain_order(&mut db, &event_index_1, &onchain_order)
             .await
