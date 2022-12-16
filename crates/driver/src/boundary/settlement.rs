@@ -63,14 +63,14 @@ impl Settlement {
         solution: competition::Solution,
         auction: &competition::Auction,
     ) -> Result<Self> {
-        let native_token = eth.contracts().weth().await?;
+        let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
             // Fee is already scaled by the autopilot, so this can be set to exactly 1.
             fee_objective_scaling_factor: 1.,
             min_order_age: Default::default(),
         };
-        let settlement_contract = eth.contracts().settlement().await?;
+        let settlement_contract = eth.contracts().settlement();
         let domain = eth.domain_separator(settlement_contract.clone().address().into());
         let limit_orders = auction
             .orders
@@ -143,7 +143,7 @@ impl Settlement {
         gas: eth::Gas,
     ) -> Result<competition::solution::Score> {
         let prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().await?.address(),
+            eth.contracts().weth().address(),
             auction
                 .prices
                 .iter()
