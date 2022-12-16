@@ -2,9 +2,7 @@ use super::ethflow_order::order_to_ethflow_data;
 use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
-    ethflow_orders::{
-        read_order, refundable_orders, EthOrderPlacement,
-    },
+    ethflow_orders::{read_order, refundable_orders, EthOrderPlacement},
     orders::read_order as read_db_order,
     OrderUid,
 };

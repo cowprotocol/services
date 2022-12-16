@@ -8,7 +8,7 @@ use shared::{
     event_handling::{EventRetrieving, EventStoring},
 };
 
-use crate::database::{Postgres, events::bytes_to_order_uid};
+use crate::database::{events::bytes_to_order_uid, Postgres};
 
 const ORDER_PLACEMENT_TOPIC: H256 = H256(hex!(
     "cf5f9de2984132265203b5c335b25727702ca77262ff622e136baa7362bf1da9"
@@ -79,9 +79,7 @@ impl EventRetrieving for EthFlowContract {
     }
 }
 
-fn get_refunds(
-    events: Vec<ethcontract::Event<EthFlowEvent>>,
-) -> Result<Vec<Refund>> {
+fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refund>> {
     events
         .into_iter()
         .filter_map(|event| {
@@ -95,12 +93,12 @@ fn get_refunds(
             };
             let order_uid = match bytes_to_order_uid(&order_uid.0) {
                 Ok(uid) => uid,
-                Err(err) => return Some(Err(err))
+                Err(err) => return Some(Err(err)),
             };
             Some(Ok(Refund {
                 order_uid,
                 tx_hash: database::byte_array::ByteArray(tx_hash.0),
-                block_number
+                block_number,
             }))
         })
         .collect()
@@ -119,7 +117,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
     async fn append_events(&mut self, events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<()> {
         let refunds = match get_refunds(events)? {
             refunds if !refunds.is_empty() => refunds,
-            _ => return Ok(())
+            _ => return Ok(()),
         };
         let _timer = crate::database::Metrics::get()
             .database_queries
@@ -142,7 +140,12 @@ impl EventStoring<EthFlowEvent> for Postgres {
             .with_label_values(&["replace_ethflow_refund_events"])
             .start_timer();
         let mut ex = self.0.begin().await?;
-        database::ethflow_orders::delete_refunds(&mut ex, *range.start() as i64, *range.end() as i64).await?;
+        database::ethflow_orders::delete_refunds(
+            &mut ex,
+            *range.start() as i64,
+            *range.end() as i64,
+        )
+        .await?;
         database::ethflow_orders::mark_eth_orders_as_refunded(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())

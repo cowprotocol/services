@@ -716,7 +716,10 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
-        ethflow_orders::{insert_or_overwrite_ethflow_order, EthOrderPlacement},
+        ethflow_orders::{
+            insert_or_overwrite_ethflow_order, mark_eth_order_as_refunded, EthOrderPlacement,
+            Refund,
+        },
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         onchain_invalidations::insert_onchain_invalidation,
@@ -791,23 +794,33 @@ mod tests {
 
         let order = Order::default();
         let user_valid_to = 4i64;
-        let refund_tx = Default::default();
         insert_or_overwrite_ethflow_order(
             &mut db,
             &EthOrderPlacement {
                 uid: OrderUid::default(),
                 valid_to: user_valid_to,
-                refund_tx: Some(refund_tx),
             },
         )
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
+        mark_eth_order_as_refunded(
+            &mut db,
+            &Refund {
+                order_uid: order.uid,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(Some((Some(refund_tx), user_valid_to)), order_.ethflow_data);
+        assert_eq!(
+            Some((Some(Default::default()), user_valid_to)),
+            order_.ethflow_data
+        );
     }
 
     #[tokio::test]
@@ -1270,7 +1283,6 @@ mod tests {
         let ethflow_order = EthOrderPlacement {
             uid: order.uid,
             valid_to: 2,
-            refund_tx: None,
         };
         insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
             .await

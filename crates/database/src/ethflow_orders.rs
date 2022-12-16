@@ -5,9 +5,6 @@ use sqlx::{Executor, PgConnection};
 pub struct EthOrderPlacement {
     pub uid: OrderUid,
     pub valid_to: i64,
-    // todo: it's not needed to pass a refund_tx for order creation but because read_order returns
-    // this type (that needs refund_tx) it's easier to just have it for now.
-    pub refund_tx: Option<TransactionHash>,
 }
 
 pub async fn insert_or_overwrite_orders(
@@ -35,10 +32,17 @@ pub async fn insert_or_overwrite_ethflow_order(
     Ok(())
 }
 
+#[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
+pub struct EthOrderData {
+    pub uid: OrderUid,
+    pub valid_to: i64,
+    pub refund_tx: Option<TransactionHash>,
+}
+
 pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
-) -> Result<Option<EthOrderPlacement>, sqlx::Error> {
+) -> Result<Option<EthOrderData>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT uid, valid_to, ethflow_refunds.tx_hash as refund_tx FROM ethflow_orders
         LEFT JOIN ethflow_refunds ON ethflow_orders.uid = ethflow_refunds.order_uid
@@ -58,7 +62,7 @@ pub struct Refund {
 pub async fn delete_refunds(
     ex: &mut PgTransaction<'_>,
     from_block: i64,
-    to_block: i64
+    to_block: i64,
 ) -> Result<(), sqlx::Error> {
     const DELETE_REFUNDS: &str = "\
     DELETE FROM ethflow_refunds \
@@ -88,14 +92,19 @@ pub async fn mark_eth_orders_as_refunded(
 
 pub async fn mark_eth_order_as_refunded(
     ex: &mut PgTransaction<'_>,
-    refund: &Refund
+    refund: &Refund,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
         INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3)
     "#;
 
-    ex.execute(sqlx::query(QUERY).bind(refund.order_uid).bind(refund.block_number as i64).bind(refund.tx_hash))
-        .await?;
+    ex.execute(
+        sqlx::query(QUERY)
+            .bind(refund.order_uid)
+            .bind(refund.block_number as i64)
+            .bind(refund.tx_hash),
+    )
+    .await?;
     Ok(())
 }
 
@@ -106,14 +115,14 @@ pub async fn refundable_orders(
     min_slippage: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT eo.uid, eo.valid_to, o_ref.tx_hash as refund_tx from orders o
+SELECT eo.uid, eo.valid_to from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
 INNER JOIN order_quotes oq on o.uid = oq.order_uid
 LEFT JOIN trades t on o.uid = t.order_uid
 LEFT JOIN onchain_order_invalidations o_inv on o.uid = o_inv.uid
 LEFT JOIN ethflow_refunds o_ref on o.uid = o_ref.order_uid
 WHERE 
-eo.refund_tx is null
+o_ref.tx_hash is null
 AND o_inv.uid is null
 AND o.partially_fillable = false
 AND t.order_uid is null
@@ -156,7 +165,8 @@ mod tests {
             .await
             .unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(order, order_);
+        assert_eq!(order.uid, order_.uid);
+        assert_eq!(order.valid_to, order_.valid_to);
     }
 
     #[tokio::test]
@@ -176,7 +186,8 @@ mod tests {
             .await
             .unwrap();
         let order_ = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
-        assert_eq!(order_2, order_);
+        assert_eq!(order_2.uid, order_.uid);
+        assert_eq!(order_2.valid_to, order_.valid_to);
     }
 
     fn refund(order_uid: OrderUid) -> Refund {
@@ -196,23 +207,18 @@ mod tests {
         let order_1 = EthOrderPlacement {
             uid: ByteArray([1u8; 56]),
             valid_to: 1,
-            refund_tx: None,
         };
         let order_2 = EthOrderPlacement {
             uid: ByteArray([2u8; 56]),
             valid_to: 2,
-            refund_tx: None,
         };
 
         insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
-        mark_eth_orders_as_refunded(
-            &mut db,
-            &[refund(order_1.uid), refund(order_2.uid)]
-        )
-        .await
-        .unwrap();
+        mark_eth_orders_as_refunded(&mut db, &[refund(order_1.uid), refund(order_2.uid)])
+            .await
+            .unwrap();
         // Check that `refund_tx` was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
         assert_eq!(order_1.refund_tx, Some(Default::default()));
@@ -230,12 +236,10 @@ mod tests {
         let order_1 = EthOrderPlacement {
             uid: ByteArray([1u8; 56]),
             valid_to: 1,
-            refund_tx: None,
         };
         let order_2 = EthOrderPlacement {
             uid: ByteArray([2u8; 56]),
             valid_to: 2,
-            refund_tx: None,
         };
 
         insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
@@ -264,13 +268,13 @@ mod tests {
             eth_order: EthOrderPlacement,
             order: Order,
             quote: Quote,
+            refund: Option<Refund>,
         }
 
         fn create_standard_ethflow_order_parts(order_uid: ByteArray<56>) -> EthflowOrderParts {
             let eth_order = EthOrderPlacement {
                 uid: order_uid,
                 valid_to: 4,
-                refund_tx: None,
             };
             let order = Order {
                 uid: order_uid,
@@ -289,14 +293,19 @@ mod tests {
                 eth_order,
                 order,
                 quote,
+                refund: None,
             }
         }
         async fn insert_order_parts_in_db(db: &mut PgConnection, order_parts: &EthflowOrderParts) {
-            insert_order(db, &order_parts.order).await.unwrap();
-            insert_or_overwrite_ethflow_order(db, &order_parts.eth_order)
+            let mut ex = db.begin().await.unwrap();
+            insert_order(&mut ex, &order_parts.order).await.unwrap();
+            insert_or_overwrite_ethflow_order(&mut ex, &order_parts.eth_order)
                 .await
                 .unwrap();
-            insert_quote(db, &order_parts.quote).await.unwrap();
+            insert_quote(&mut ex, &order_parts.quote).await.unwrap();
+            if let Some(refund) = &order_parts.refund {
+                mark_eth_order_as_refunded(&mut ex, refund).await.unwrap();
+            }
         }
         let order_uid_1 = ByteArray([1u8; 56]);
         let order_parts = create_standard_ethflow_order_parts(order_uid_1);
@@ -325,8 +334,10 @@ mod tests {
         assert_eq!(orders, Vec::new());
         let order_uid_2 = ByteArray([2u8; 56]);
         let mut order_parts = create_standard_ethflow_order_parts(order_uid_2);
-        let refund_tx = Default::default();
-        order_parts.eth_order.refund_tx = refund_tx;
+        order_parts.refund = Some(Refund {
+            order_uid: order_parts.eth_order.uid,
+            ..Default::default()
+        });
         insert_order_parts_in_db(&mut db, &order_parts).await;
         // order was not refunded
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
