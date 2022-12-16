@@ -64,6 +64,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .context("full_fee_amount is not U256")?,
         ethflow_data,
+        onchain_user,
         onchain_order_data,
     };
     let data = OrderData {

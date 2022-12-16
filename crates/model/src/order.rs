@@ -546,6 +546,8 @@ pub struct OrderMetadata {
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_order_data: Option<OnchainOrderData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
 }
 
