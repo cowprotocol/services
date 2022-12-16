@@ -113,15 +113,6 @@ pub struct Arguments {
     )]
     pub max_surplus_fee_age: Duration,
 
-    /// The interval between successive limit order surplus fee updating loops in seconds.
-    #[clap(
-        long,
-        env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
-    )]
-    pub surplus_fee_update_interval: Duration,
-
     #[clap(long, env)]
     pub cip_14_beta: Option<f64>,
     #[clap(long, env)]
@@ -184,11 +175,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
         writeln!(f, "max_surplus_fee_age: {:?}", self.max_surplus_fee_age)?;
-        writeln!(
-            f,
-            "surplus_fee_update_interval: {:?}",
-            self.surplus_fee_update_interval
-        )?;
         display_option(f, "cip_14_beta", &self.cip_14_beta)?;
         display_option(f, "cip_14_alpha1", &self.cip_14_alpha1)?;
         display_option(f, "cip_14_alpha2", &self.cip_14_alpha2)?;

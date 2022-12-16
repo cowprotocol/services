@@ -594,6 +594,7 @@ pub fn limit_orders_with_most_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
+    limit: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         "SELECT * FROM (",
@@ -607,11 +608,12 @@ pub fn limit_orders_with_most_outdated_fees(
         "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
         ") AS o ",
         "WHERE NOT o.invalidated ",
-        "LIMIT 100 ",
+        "LIMIT $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(limit)
         .fetch(ex)
 }
 
@@ -1718,7 +1720,7 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
