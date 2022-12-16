@@ -87,7 +87,7 @@ components:
           $ref: "#/components/schemas/TokenAmount"
           description: |
             The balance held by the Settlement contract that is available
-            during a setttlement.
+            during a settlement.
         trusted:
           type: boolean
           description: |
