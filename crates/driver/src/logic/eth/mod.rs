@@ -107,8 +107,7 @@ pub struct Asset {
     pub token: Token,
 }
 
-// TODO Do some web browsing to improve this doc comment.
-/// An amount of native Ether tokens.
+/// An amount of native Ether tokens denominated in wei.
 #[derive(Debug, Clone, Copy)]
 pub struct Ether(pub U256);
 
@@ -134,6 +133,6 @@ pub struct BlockNo(pub u64);
 #[derive(Debug)]
 pub struct Interaction {
     pub target: Address,
-    pub value: U256,
+    pub value: Ether,
     pub call_data: Vec<u8>,
 }
