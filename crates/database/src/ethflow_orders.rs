@@ -339,7 +339,7 @@ mod tests {
             ..Default::default()
         });
         insert_order_parts_in_db(&mut db, &order_parts).await;
-        // order was not refunded
+        // order was refunded
         let orders = refundable_orders(&mut db, 5, 1, 0.01).await.unwrap();
         assert_eq!(orders, Vec::new());
 
