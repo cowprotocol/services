@@ -294,7 +294,7 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/TokenAmount"
           description: |
-            A map of tick indices to there liquidity values.
+            A map of tick indices to their liquidity values.
         fee:
           $ref: "#/components/schemas/Decimal"
 
