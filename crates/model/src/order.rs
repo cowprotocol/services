@@ -491,6 +491,10 @@ pub struct CancellationPayload {
 pub struct EthflowData {
     pub user_valid_to: i64,
     pub refund_tx: Option<H256>,
+    // This field only exists for compatibilty reasons.
+    // It only really matters during serialization but implementing that with `serde`
+    // would get very annoying.
+    pub is_refunded: bool,
 }
 
 /// An order as provided to the orderbook by the frontend.

@@ -342,6 +342,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         Some(EthflowData {
             user_valid_to,
             refund_tx: refund_tx.map(|hash| H256(hash.0)),
+            is_refunded: refund_tx.is_some(),
         })
     } else {
         None

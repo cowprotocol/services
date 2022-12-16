@@ -432,6 +432,7 @@ async fn test_order_parameters(
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
             refund_tx: None,
+            is_refunded: false,
         })
     );
     assert_eq!(response.metadata.onchain_user, Some(*owner));
