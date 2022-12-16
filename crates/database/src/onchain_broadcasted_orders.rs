@@ -175,7 +175,7 @@ mod tests {
             log_index: event_index.log_index,
         };
         assert_eq!(expected_row, row);
-        // round trip with not accepted order class error 
+        // round trip with not accepted order class error
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = OnchainOrderPlacement {
