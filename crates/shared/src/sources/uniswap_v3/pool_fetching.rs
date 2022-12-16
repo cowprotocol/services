@@ -454,6 +454,10 @@ impl Maintaining for UniswapV3PoolFetcher {
         result1.and(result2)?;
         self.move_checkpoint_to_future().await
     }
+
+    fn name(&self) -> &str {
+        "UniswapV3PoolFetcher"
+    }
 }
 
 #[cfg(test)]

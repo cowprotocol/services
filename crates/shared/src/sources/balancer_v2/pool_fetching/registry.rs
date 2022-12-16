@@ -106,6 +106,10 @@ where
     async fn run_maintenance(&self) -> Result<()> {
         self.updater.run_maintenance().await
     }
+
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
+    }
 }
 
 fn base_pool_factory(contract_instance: &Instance<Web3Transport>) -> BalancerV2BasePoolFactory {

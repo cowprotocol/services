@@ -23,4 +23,8 @@ impl Maintaining for Postgres {
             .await
             .context("fee measurement maintenance error")
     }
+
+    fn name(&self) -> &str {
+        "Postgres"
+    }
 }

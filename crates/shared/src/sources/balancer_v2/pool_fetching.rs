@@ -298,6 +298,10 @@ impl Maintaining for BalancerPoolFetcher {
     async fn run_maintenance(&self) -> Result<()> {
         self.fetcher.run_maintenance().await
     }
+
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
+    }
 }
 
 /// Creates an aggregate fetcher for all supported pool factories.

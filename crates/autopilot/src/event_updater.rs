@@ -74,4 +74,8 @@ where
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
     }
+
+    fn name(&self) -> &str {
+        "EventUpdater"
+    }
 }
