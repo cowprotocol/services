@@ -99,7 +99,7 @@ pub struct JitOrder {
     pub valid_to: util::Timestamp,
     pub app_data: competition::AppData,
     pub side: competition::Side,
-    pub partial: bool,
+    pub partially_fillable: bool,
 
     // TODO There needs to be some formal structure for "partial orders" and not just random fields
     // scattered around, think about this more

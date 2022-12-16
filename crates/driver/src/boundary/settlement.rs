@@ -155,7 +155,7 @@ fn into_boundary_order(order: &competition::auction::Order) -> Order {
                 .iter()
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),
-                    value: interaction.value,
+                    value: interaction.value.into(),
                     call_data: interaction.call_data.clone(),
                 })
                 .collect(),
@@ -209,7 +209,7 @@ fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctio
                             competition::Side::Buy => OrderKind::Buy,
                             competition::Side::Sell => OrderKind::Sell,
                         },
-                        partially_fillable: jit.partial,
+                        partially_fillable: jit.partially_fillable,
                         sell_token_balance: match jit.sell_source {
                             competition::solution::SellSource::Erc20 => SellTokenSource::Erc20,
                             competition::solution::SellSource::Internal => {
@@ -286,7 +286,7 @@ fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctio
             .into_iter()
             .map(|interaction| InteractionData {
                 target: interaction.inner.target.into(),
-                value: interaction.inner.value,
+                value: interaction.inner.value.into(),
                 call_data: interaction.inner.call_data,
                 inputs: interaction
                     .inputs
