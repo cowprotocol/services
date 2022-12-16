@@ -106,11 +106,12 @@ pub async fn refundable_orders(
     min_slippage: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT eo.uid, eo.valid_to, eo.refund_tx from orders o 
+SELECT eo.uid, eo.valid_to, o_ref.tx_hash as refund_tx from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
 INNER JOIN order_quotes oq on o.uid = oq.order_uid
 LEFT JOIN trades t on o.uid = t.order_uid
 LEFT JOIN onchain_order_invalidations o_inv on o.uid = o_inv.uid
+LEFT JOIN ethflow_refunds o_ref on o.uid = o_ref.order_uid
 WHERE 
 eo.refund_tx is null
 AND o_inv.uid is null
