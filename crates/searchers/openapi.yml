@@ -406,11 +406,11 @@ components:
         - effectiveGasPrice
       properties:
         id:
-          type: integer
+          type: string
           description: |
-            The identifier for the auction. Will be set to `null` for requests
-            that are not part of an auction (when quoting token prices for
-            example).
+            An opaque identifier for the auction. Will be set to `null` for
+            requests that are not part of an auction (when quoting token prices
+            for example).
         tokens:
           type: object
           additionalProperties:
