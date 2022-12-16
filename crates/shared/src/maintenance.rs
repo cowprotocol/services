@@ -152,6 +152,8 @@ mod tests {
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {
+        crate::tracing::initialize("debug", tracing::Level::ERROR.into());
+
         let mut ok1_mock_maintenance = MockMaintaining::new();
         let mut err_mock_maintenance = MockMaintaining::new();
         let mut ok2_mock_maintenance = MockMaintaining::new();
@@ -165,7 +167,7 @@ mod tests {
             .returning(|| bail!("Failed maintenance"));
         err_mock_maintenance
             .expect_name()
-            .times(1)
+            .times(2)
             .return_const("test".to_string());
         ok2_mock_maintenance
             .expect_run_maintenance()
