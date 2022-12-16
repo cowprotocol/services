@@ -476,6 +476,10 @@ where
     async fn run_maintenance(&self) -> Result<()> {
         self.lock().await.update_events().await
     }
+
+    fn name(&self) -> &str {
+        "EventHandler"
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
