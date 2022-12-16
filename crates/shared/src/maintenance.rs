@@ -46,11 +46,12 @@ impl Maintaining for ServiceMaintenance {
                     self.maintainers[i].name(),
                     err
                 );
-                no_error = false;
                 self.metrics
                     .runs
                     .with_label_values(&["failure", self.maintainers[i].name()])
                     .inc();
+
+                no_error = false;
             }
         }
 
@@ -162,6 +163,10 @@ mod tests {
             .expect_run_maintenance()
             .times(1)
             .returning(|| bail!("Failed maintenance"));
+        err_mock_maintenance
+            .expect_name()
+            .times(1)
+            .return_const("test".to_string());
         ok2_mock_maintenance
             .expect_run_maintenance()
             .times(1)
@@ -188,6 +193,10 @@ mod tests {
         // Will panic if run_maintenance is not called exactly `block_count` times.
         let mut mock_maintenance = MockMaintaining::new();
         mock_maintenance
+            .expect_name()
+            .times(1)
+            .return_const("test".to_string());
+        mock_maintenance
             .expect_run_maintenance()
             .times(block_count)
             .returning(|| Ok(()));
@@ -211,9 +220,19 @@ mod tests {
         let mut mock_maintenance = MockMaintaining::new();
         let mut sequence = Sequence::new();
         mock_maintenance
+            .expect_name()
+            .times(1)
+            .return_const("test".to_string())
+            .in_sequence(&mut sequence);
+        mock_maintenance
             .expect_run_maintenance()
             .return_once(|| bail!("test"))
             .times(1)
+            .in_sequence(&mut sequence);
+        mock_maintenance
+            .expect_name()
+            .times(2)
+            .return_const("test".to_string())
             .in_sequence(&mut sequence);
         mock_maintenance
             .expect_run_maintenance()
