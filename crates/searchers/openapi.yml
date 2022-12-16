@@ -107,6 +107,9 @@ components:
       description: |
         A token address with an amount.
       type: object
+      required:
+        - token
+        - amount
       properties:
         token:
           $ref: "#/components/schemas/Token"
