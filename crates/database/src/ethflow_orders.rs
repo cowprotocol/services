@@ -68,7 +68,7 @@ pub async fn delete_refunds(
     Ok(())
 }
 
-/// Returns the last blcok where an ethflow refund transaction has been indexed.
+/// Returns the last block where an ethflow refund transaction has been indexed.
 pub async fn last_indexed_block(ex: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT block_number from ethflow_refunds ORDER BY block_number DESC LIMIT 1;

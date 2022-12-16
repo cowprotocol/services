@@ -459,7 +459,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
-        tracing::error!("init ehflow stuff");
         let start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,
@@ -470,10 +469,9 @@ pub async fn main(args: arguments::Arguments) -> ! {
 
         let refund_event_handler = Arc::new(
             EventUpdater::new_skip_blocks_before(
-                // This cares only about refund events which are not part of the generic
-                // OnChainOrder interface.
+                // This cares only about ethflow refund events because all the other ethflow
+                // events are already indexed by the OnchainOrderParser.
                 EthFlowContract::new(web3.clone(), ethflow_contract),
-                // TODO: make sure that the correct implementation gets used.
                 db.clone(),
                 block_retriever.clone(),
                 start_block,
