@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Searcher API
   description: |
@@ -284,8 +284,9 @@ components:
             allOf:
               - $ref: "#/components/schemas/TokenReserve"
               - type: object
-                scalingFactor:
-                  $ref: "#/components/schemas/BigInt"
+                properties:
+                  scalingFactor:
+                    $ref: "#/components/schemas/BigInt"
           description: |
             A mapping of token address to token balance and scaling rate.
         amplificationParameter:
@@ -472,21 +473,6 @@ components:
         - $ref: "#/components/schemas/OrderUid"
         - $ref: "#/components/schemas/JitOrder"
 
-    LiquidityInteraction:
-      description: |
-        Interaction representing the execution of liquidity that was passed in
-        with the auction.
-      type: object
-      properties:
-        inputToken:
-          $ref: "#/components/schemas/Token"
-        outputToken:
-          $ref: "#/components/schemas/Token"
-        inputAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        outputAmount:
-          $ref: "#/components/schemas/TokenAmount"
-
     ApprovalInteraction:
       description: |
         A requested approval from the settlement contract to some spender.
@@ -585,7 +571,7 @@ components:
         - interactions
       properties:
         prices:
-          descrption: |
+          description: |
             A clearing price map of token address to price. The price can have
             arbitrary denomination.
           type: object
