@@ -10,9 +10,10 @@ pub mod limit_orders;
 
 use crate::{
     database::{
+        ethflow_events::event_retriever::EthFlowContract,
         onchain_order_events::{
             ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
-            event_retriever::{CoWSwapOnchainOrdersContract, EthFlowContract},
+            event_retriever::CoWSwapOnchainOrdersContract,
             OnchainOrderParser,
         },
         Postgres,

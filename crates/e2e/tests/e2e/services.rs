@@ -2,10 +2,12 @@ use crate::{deploy::Contracts, onchain_components::uniswap_pair_provider};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
-    database::onchain_order_events::{
-        ethflow_events::EthFlowOnchainOrderParser,
-        event_retriever::{CoWSwapOnchainOrdersContract, EthFlowContract},
-        OnchainOrderParser,
+    database::{
+        ethflow_events::event_retriever::EthFlowContract,
+        onchain_order_events::{
+            ethflow_events::EthFlowOnchainOrderParser,
+            event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
+        },
     },
     event_updater::GPv2SettlementContract,
     limit_orders::LimitOrderQuoter,
