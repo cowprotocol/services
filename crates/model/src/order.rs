@@ -493,9 +493,7 @@ pub struct EthflowData {
     pub is_refunded: bool,
 }
 
-#[serde_as]
-#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
+#[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OnchainOrderPlacementError {
     QuoteIdNotFound,
