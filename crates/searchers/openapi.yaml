@@ -573,7 +573,7 @@ components:
                 $ref: "#/components/schemas/OrderReference"
               executedAmount:
                 description: |
-                  The amount of the order that was executed. This id denoted in
+                  The amount of the order that was executed. This is denoted in
                   "sellToken" for sell orders, and "buyToken" for buy orders.
                 $ref: "#/components/schemas/TokenAmount"
         interactions:
