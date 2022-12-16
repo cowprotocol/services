@@ -485,6 +485,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
+            web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, settlement_contract.address()),
