@@ -380,65 +380,74 @@ mod tests {
         assert_eq!(orders, Vec::new());
     }
 
-    // TODO refactor test with `refund_tx`
-    // #[tokio::test]
-    // #[ignore]
-    // async fn postgres_refundable_orders_performance() {
-    //     // The following test can be used as performance test,
-    //     // if the limit is set to->100000u32, the query should still finish
-    //     // below 13 ms
-    //     let mut db = PgConnection::connect("postgresql://").await.unwrap();
-    //     let mut db = db.begin().await.unwrap();
-    //     crate::clear_DANGER_(&mut db).await.unwrap();
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_refundable_orders_performance() {
+        // The following test can be used as performance test,
+        // if the limit is set to->100000u32, the query should still finish
+        // below 13 ms
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
 
-    //     let limit = 10u32;
-    //     for i in 0..limit {
-    //         let mut owner_bytes = i.to_ne_bytes().to_vec();
-    //         owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-    //         let owner = ByteArray(owner_bytes.try_into().unwrap());
-    //         let mut i_as_bytes = i.to_ne_bytes().to_vec();
-    //         let mut order_uid_info = vec![0; 56 - i_as_bytes.len()];
-    //         i_as_bytes.append(&mut order_uid_info);
-    //         let order_uid = ByteArray(i_as_bytes.try_into().unwrap());
-    //         let trade = Trade {
-    //             order_uid,
-    //             ..Default::default()
-    //         };
-    //         // for 3/4 of the orders, we assume that they are actually settling
-    //         if i > limit / 4 * 3 {
-    //             let event_index = EventIndex::default();
-    //             insert_trade(&mut db, &event_index, &trade).await.unwrap();
-    //         }
-    //         let ethflow_order = EthOrderPlacement {
-    //             uid: order_uid,
-    //             valid_to: i as i64,
-    //             is_refunded: (i % 10u32 == 0),
-    //         };
-    //         insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
-    //             .await
-    //             .unwrap();
-    //         let order = Order {
-    //             uid: order_uid,
-    //             owner,
-    //             creation_timestamp: Utc::now(),
-    //             buy_amount: BigDecimal::from(100u32),
-    //             sell_amount: BigDecimal::from(100u32),
-    //             ..Default::default()
-    //         };
-    //         insert_order(&mut db, &order).await.unwrap();
-    //         let quote = Quote {
-    //             order_uid,
-    //             buy_amount: BigDecimal::from(100u32 - i % 3),
-    //             sell_amount: BigDecimal::from(100u32),
-    //             ..Default::default()
-    //         };
-    //         insert_quote(&mut db, &quote).await.unwrap();
-    //     }
+        let limit = 10u32;
+        for i in 0..limit {
+            let mut owner_bytes = i.to_ne_bytes().to_vec();
+            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+            let owner = ByteArray(owner_bytes.try_into().unwrap());
+            let mut i_as_bytes = i.to_ne_bytes().to_vec();
+            let mut order_uid_info = vec![0; 56 - i_as_bytes.len()];
+            i_as_bytes.append(&mut order_uid_info);
+            let order_uid = ByteArray(i_as_bytes.try_into().unwrap());
+            let trade = Trade {
+                order_uid,
+                ..Default::default()
+            };
+            // for 3/4 of the orders, we assume that they are actually settling
+            if i > limit / 4 * 3 {
+                let event_index = EventIndex::default();
+                insert_trade(&mut db, &event_index, &trade).await.unwrap();
+            }
+            let ethflow_order = EthOrderPlacement {
+                uid: order_uid,
+                valid_to: i as i64,
+            };
+            insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
+                .await
+                .unwrap();
+            if i % 10u32 == 0 {
+                mark_eth_order_as_refunded(
+                    &mut db,
+                    &Refund {
+                        order_uid,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+            }
+            let order = Order {
+                uid: order_uid,
+                owner,
+                creation_timestamp: Utc::now(),
+                buy_amount: BigDecimal::from(100u32),
+                sell_amount: BigDecimal::from(100u32),
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
+            let quote = Quote {
+                order_uid,
+                buy_amount: BigDecimal::from(100u32 - i % 3),
+                sell_amount: BigDecimal::from(100u32),
+                ..Default::default()
+            };
+            insert_quote(&mut db, &quote).await.unwrap();
+        }
 
-    //     let now = std::time::Instant::now();
-    //     refundable_orders(&mut db, 1, 1, 1.0).await.unwrap();
-    //     let elapsed = now.elapsed();
-    //     println!("{:?}", elapsed);
-    //     assert!(elapsed < std::time::Duration::from_secs(1));
-    // }
+        let now = std::time::Instant::now();
+        refundable_orders(&mut db, 1, 1, 1.0).await.unwrap();
+        let elapsed = now.elapsed();
+        println!("{:?}", elapsed);
+        assert!(elapsed < std::time::Duration::from_secs(1));
+    }
 }
