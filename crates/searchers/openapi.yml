@@ -429,10 +429,11 @@ components:
             $ref: "#/components/schemas/Liquidity"
           description: |
             On-chain liquidity that can be used by the solution.
-        gasPrice:
+        effectiveGasPrice:
           description: |
-            The current estimated gas price. This is the price that will be used
-            for solution scoring.
+            The current estimated gas price that will be paid when executing a
+            settlement. Additionally, this is the gas price that is multiplied
+            with a settlement's gas estimate for solution scoring.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
 
