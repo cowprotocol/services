@@ -26,6 +26,8 @@ pub struct Order {
     /// The autopilot marks orders as mature after a certain time period. The
     /// solvers can use heuristics on this field to optimize solution sizes.
     pub mature: bool,
+    /// Executed amount. For sell orders this will be denominated in the sell
+    /// token, for buy orders in the buy token.
     pub executed: U256,
     /// The onchain calls necessary to fulfill this order. These are set by the
     /// user and included in the settlement transaction.
