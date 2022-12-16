@@ -35,11 +35,15 @@ pub trait Maintaining: Send + Sync {
 impl Maintaining for ServiceMaintenance {
     async fn run_maintenance(&self) -> Result<()> {
         let mut no_error = true;
-        for result in join_all(self.maintainers.iter().map(|m| m.run_maintenance())).await {
+        for (i, result) in join_all(self.maintainers.iter().map(|m| m.run_maintenance()))
+            .await
+            .into_iter()
+            .enumerate()
+        {
             if let Err(err) = result {
                 tracing::warn!(
                     "Service Maintenance Error for maintainer {}: {:?}",
-                    self.name().to_string(),
+                    self.maintainers[i].name(),
                     err
                 );
                 no_error = false;
