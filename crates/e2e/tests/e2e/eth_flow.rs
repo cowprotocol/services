@@ -431,8 +431,7 @@ async fn test_order_parameters(
         response.metadata.ethflow_data,
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
-            refund_tx: None,
-            is_refunded: false,
+            refund_tx_hash: None,
         })
     );
     assert_eq!(response.metadata.onchain_user, Some(*owner));

@@ -22,8 +22,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            refund_tx: refund_tx.map(|hash| H256::from(hash.0)),
-            is_refunded: refund_tx.is_some(),
+            refund_tx_hash: refund_tx.map(|hash| H256::from(hash.0)),
         })
     } else {
         None
