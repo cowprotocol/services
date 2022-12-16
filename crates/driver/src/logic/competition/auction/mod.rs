@@ -12,6 +12,7 @@ pub struct Auction {
     pub block: eth::BlockNo,
     pub orders: Vec<Order>,
     pub deadline: Deadline,
+    pub gas_price: eth::EffectiveGasPrice,
     pub prices: HashMap<eth::Token, eth::Ether>,
 }
 

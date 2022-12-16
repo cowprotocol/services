@@ -17,6 +17,7 @@ mod dto;
 const MAX_NR_EXEC_ORDERS: &str = "100";
 const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 
+/// The solver name. The user can configure this to be anything that they like.
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
 
@@ -37,25 +38,23 @@ impl From<String> for Name {
 /// on the Ethereum blockchain.
 #[derive(Debug)]
 pub struct Solver {
-    url: reqwest::Url,
     client: reqwest::Client,
-    /// The name of this solver.
-    name: Name,
-    /// Used for building the instance name to send to the solver.
-    network_name: eth::NetworkName,
-    /// Used for building the instance name to send to the solver.
-    chain_id: eth::ChainId,
-    /// The slippage configured for this solver.
-    slippage: Slippage,
+    config: Config,
 }
 
 #[derive(Debug)]
 pub struct Config {
     pub url: reqwest::Url,
     pub name: Name,
+    // TODO After #831 these might not be necessary? Is that correct?
+    /// Used for building the instance name to send to the solver.
     pub network_name: eth::NetworkName,
+    /// Used for building the instance name to send to the solver.
     pub chain_id: eth::ChainId,
+    /// The acceptable slippage for this solver.
     pub slippage: Slippage,
+    /// The account of this solver.
+    pub account: eth::Account,
 }
 
 impl Solver {
@@ -68,28 +67,28 @@ impl Solver {
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
         // TODO(#907) Also add an auth header
         Self {
-            url: config.url,
-            name: config.name,
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()
                 .unwrap(),
-            network_name: config.network_name,
-            chain_id: config.chain_id,
-            slippage: config.slippage,
+            config,
         }
     }
 
     pub fn name(&self) -> &Name {
-        &self.name
+        &self.config.name
     }
 
     pub fn slippage(&self) -> &Slippage {
-        &self.slippage
+        &self.config.slippage
+    }
+
+    pub fn account(&self) -> eth::Account {
+        self.config.account
     }
 
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        let mut url = self.url.join("solve").unwrap();
+        let mut url = self.config.url.join("solve").unwrap();
         let time_limit = auction.deadline.solver_time_limit()?;
         url.query_pairs_mut()
             .append_pair("auction_id", &auction.id.0.to_string())
@@ -109,7 +108,7 @@ impl Solver {
         let now = chrono::Utc::now();
         format!(
             "{now}_{}_{}_{}",
-            self.network_name.0, self.chain_id.0, auction_id.0
+            self.config.network_name.0, self.config.chain_id.0, auction_id.0
         )
         .replace([' ', '/'], "_")
     }

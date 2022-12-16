@@ -1,6 +1,8 @@
 use {
     crate::{
+        boundary,
         logic::{competition, eth},
+        simulator,
         solver::{self, Solver},
         util,
         Ethereum,
@@ -131,19 +133,39 @@ impl From<Score> for f64 {
     }
 }
 
+impl From<num::BigRational> for Score {
+    fn from(inner: num::BigRational) -> Self {
+        Self(inner)
+    }
+}
+
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
     solver: &Solver,
     eth: &Ethereum,
     simulator: &Simulator,
     auction: &competition::Auction,
-) -> Result<Score, solver::Error> {
+) -> Result<Score, Error> {
     let solution = solver.solve(auction).await?;
+    let simulation = simulator.simulate(&solution).await?;
     let settlement = Settlement::encode(solver, eth, auction, solution).await?;
-    Ok(settlement.score(simulator))
+    settlement
+        .score(eth, auction, simulation.gas)
+        .await
+        .map_err(Into::into)
 }
 
 /// A unique solution ID. TODO Once this is finally decided, document what this
 /// ID is used for.
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub u64);
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("solver error: {0:?}")]
+    Solver(#[from] solver::Error),
+    #[error("simulation error: {0:?}")]
+    Simulation(#[from] simulator::Error),
+    #[error("boundary error: {0:?}")]
+    Boundary(#[from] boundary::Error),
+}

@@ -41,8 +41,8 @@ impl Approvals {
         allowances: impl Iterator<Item = eth::allowance::Required>,
     ) -> Result<impl Iterator<Item = eth::allowance::Approval>, blockchain::Error> {
         let settlement_contract = eth.contracts().settlement().await?;
-        let allowances = try_join_all(allowances.map(|required| async move {
-            eth.allowance(settlement_contract.into(), required.0.spender)
+        let allowances = try_join_all(allowances.map(|required| async {
+            eth.allowance(settlement_contract.address().into(), required.0.spender)
                 .await
                 .map(|existing| (required, existing))
         }))

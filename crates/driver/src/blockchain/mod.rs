@@ -61,11 +61,10 @@ pub struct Contracts<'a>(&'a Ethereum);
 
 impl Contracts<'_> {
     /// The settlement contract.
-    pub async fn settlement(&self) -> Result<eth::Contract, Error> {
-        Ok(contracts::GPv2Settlement::deployed(&self.0.web3)
-            .await?
-            .address()
-            .into())
+    pub async fn settlement(&self) -> Result<contracts::GPv2Settlement, Error> {
+        contracts::GPv2Settlement::deployed(&self.0.web3)
+            .await
+            .map_err(Into::into)
     }
 
     /// The WETH contract. This should return [`eth::Contract`] in the future.

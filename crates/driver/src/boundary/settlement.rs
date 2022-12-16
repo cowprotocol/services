@@ -1,6 +1,9 @@
-pub use solver::settlement::Settlement;
 use {
-    crate::{logic::competition, Ethereum, Solver},
+    crate::{
+        logic::{competition, eth},
+        Ethereum,
+        Solver,
+    },
     anyhow::Result,
     async_trait::async_trait,
     model::{
@@ -19,77 +22,162 @@ use {
         },
         DomainSeparator,
     },
+    number_conversions::u256_to_big_rational,
     primitive_types::H160,
-    shared::http_solver::model::*,
+    shared::http_solver::model::{
+        ApprovalModel,
+        ExecutedAmmModel,
+        ExecutedLiquidityOrderModel,
+        ExecutedOrderModel,
+        ExecutionPlan,
+        ExecutionPlanCoordinatesModel,
+        InteractionData,
+        InternalizationStrategy,
+        NativeLiquidityOrder,
+        SettledBatchAuctionModel,
+        TokenAmount,
+        UpdatedAmmModel,
+    },
     solver::{
+        driver::solver_settlements::RatedSettlement,
         interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
         liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
         settlement::external_prices::ExternalPrices,
+        settlement_simulation::settle_method_builder,
         solver::http_solver::settlement::{convert_settlement, SettlementContext},
     },
     std::{collections::HashSet, sync::Arc},
 };
 
-pub async fn encode(
-    eth: &Ethereum,
-    solver: &Solver,
-    solution: competition::Solution,
-    auction: &competition::Auction,
-) -> Result<Settlement> {
-    let native_token = eth.contracts().weth().await?;
-    let order_converter = OrderConverter {
-        native_token: native_token.clone(),
-        // Fee is already scaled by the autopilot, so this can be set to exactly 1.
-        fee_objective_scaling_factor: 1.,
-        min_order_age: Default::default(),
-    };
-    let domain = eth.domain_separator(eth.contracts().settlement().await?);
-    let limit_orders = auction
-        .orders
-        .iter()
-        .filter_map(|order| {
-            let boundary_order = into_boundary_order(order);
-            match order_converter.normalize_limit_order(boundary_order) {
-                Ok(order) => {
-                    // TODO I don't think this matters?
-                    // The reward doesn't matter for objective value computation, right?
-                    // order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
-                    Some(order)
+#[derive(Debug)]
+pub struct Settlement {
+    settlement: solver::settlement::Settlement,
+    contract: contracts::GPv2Settlement,
+    solver_account: eth::Account,
+}
+
+impl Settlement {
+    pub async fn encode(
+        eth: &Ethereum,
+        solver: &Solver,
+        solution: competition::Solution,
+        auction: &competition::Auction,
+    ) -> Result<Self> {
+        let native_token = eth.contracts().weth().await?;
+        let order_converter = OrderConverter {
+            native_token: native_token.clone(),
+            // Fee is already scaled by the autopilot, so this can be set to exactly 1.
+            fee_objective_scaling_factor: 1.,
+            min_order_age: Default::default(),
+        };
+        let settlement_contract = eth.contracts().settlement().await?;
+        let domain = eth.domain_separator(settlement_contract.clone().address().into());
+        let limit_orders = auction
+            .orders
+            .iter()
+            .filter_map(|order| {
+                let boundary_order = into_boundary_order(order);
+                match order_converter.normalize_limit_order(boundary_order) {
+                    Ok(order) => {
+                        // TODO I don't think this matters?
+                        // The reward doesn't matter for objective value computation, right?
+                        // order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
+                        Some(order)
+                    }
+                    Err(err) => {
+                        // This should never happen unless we are getting malformed
+                        // orders from the API - so raise an alert if this happens.
+                        tracing::error!(?err, "error normalizing limit order");
+                        None
+                    }
                 }
-                Err(err) => {
-                    // This should never happen unless we are getting malformed
-                    // orders from the API - so raise an alert if this happens.
-                    tracing::error!(?err, "error normalizing limit order");
-                    None
-                }
+            })
+            .collect();
+        let settlement = convert_settlement(
+            into_boundary_solution(solution),
+            SettlementContext {
+                orders: limit_orders,
+                // TODO: #899
+                liquidity: Default::default(),
+            },
+            Arc::new(AllowanceManager),
+            Arc::new(order_converter),
+            SlippageCalculator {
+                relative: solver.slippage().relative.clone(),
+                absolute: solver.slippage().absolute.map(Into::into),
             }
+            .context(&ExternalPrices::try_from_auction_prices(
+                native_token.address(),
+                auction
+                    .prices
+                    .iter()
+                    .map(|(&token, &amount)| (token.into(), amount.into()))
+                    .collect(),
+            )?),
+            &DomainSeparator(domain.0),
+        )
+        .await?;
+        Ok(Self {
+            settlement,
+            contract: settlement_contract,
+            solver_account: solver.account(),
         })
-        .collect();
-    convert_settlement(
-        into_boundary_solution(solution),
-        SettlementContext {
-            orders: limit_orders,
-            // TODO: #899
-            liquidity: Default::default(),
-        },
-        Arc::new(AllowanceManager),
-        Arc::new(order_converter),
-        SlippageCalculator {
-            relative: solver.slippage().relative.clone(),
-            absolute: solver.slippage().absolute.map(Into::into),
+    }
+
+    pub async fn tx(self) -> eth::Tx {
+        let encoded_settlement = self
+            .settlement
+            .encode(InternalizationStrategy::SkipInternalizableInteraction);
+        let builder = settle_method_builder(
+            &self.contract,
+            encoded_settlement,
+            match self.solver_account {
+                eth::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
+                    ethcontract::PrivateKey::from_raw(private_key.into())
+                        .expect("private key was already validated"),
+                    None,
+                ),
+                eth::Account::Address(address) => ethcontract::Account::Local(address.into(), None),
+            },
+        );
+        let tx = builder.into_inner();
+        eth::Tx {
+            from: tx.from.unwrap().address().into(),
+            to: tx.to.unwrap().into(),
+            value: tx.value.unwrap().into(),
+            input: tx.data.unwrap().0,
         }
-        .context(&ExternalPrices::try_from_auction_prices(
-            native_token.address(),
+    }
+
+    pub async fn score(
+        self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+        gas: eth::Gas,
+    ) -> Result<competition::solution::Score> {
+        let prices = ExternalPrices::try_from_auction_prices(
+            eth.contracts().weth().await?.address(),
             auction
                 .prices
                 .iter()
                 .map(|(&token, &amount)| (token.into(), amount.into()))
                 .collect(),
-        )?),
-        &DomainSeparator(domain.0),
-    )
-    .await
-    .map_err(Into::into)
+        )?;
+        let surplus = self.settlement.total_surplus(&prices);
+        let scaled_solver_fees = self.settlement.total_scaled_unsubsidized_fees(&prices);
+        let unscaled_subsidized_fee = self.settlement.total_unscaled_subsidized_fees(&prices);
+        Ok(RatedSettlement {
+            id: 0,
+            settlement: self.settlement,
+            surplus,
+            unscaled_subsidized_fee,
+            scaled_unsubsidized_fee: scaled_solver_fees,
+            gas_estimate: gas.into(),
+            gas_price: u256_to_big_rational(&auction.gas_price.into()),
+        }
+        .objective_value()
+        .into())
+    }
 }
 
 fn into_boundary_order(order: &competition::auction::Order) -> Order {

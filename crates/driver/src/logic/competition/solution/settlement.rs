@@ -1,4 +1,9 @@
-use crate::{boundary, logic::competition, Ethereum, Simulator, Solver};
+use crate::{
+    boundary,
+    logic::{competition, eth},
+    Ethereum,
+    Solver,
+};
 
 /// A transaction calling into our settlement contract on the blockchain.
 ///
@@ -18,7 +23,7 @@ impl Settlement {
         auction: &competition::Auction,
         solution: competition::Solution,
     ) -> anyhow::Result<Self> {
-        boundary::settlement::encode(eth, solver, solution, auction)
+        boundary::Settlement::encode(eth, solver, solution, auction)
             .await
             .map(Self)
     }
@@ -26,15 +31,12 @@ impl Settlement {
     /// Calculate the score for this settlement. This method is here only
     /// temporarily, in the future the entire scoring formula should operate on
     /// a [`super::Solution`].
-    pub(super) fn score(&self, _simulator: &Simulator) -> super::Score {
-        // TODO This will also call into the boundary because the objective value
-        // calculation is tricky and difficult to get right. This is a short-term
-        // solution, I'd like to revisit that logic because it seems a bit convoluted
-        // and I wonder if we can make it correspond more closely to the descriptions
-        // and formulas that we have on docs.cow.fi
-        //
-        // TODO I intend to do the access list generation and gas estimation in driver
-        // though, that will not be part of the boundary
-        todo!()
+    pub(super) async fn score(
+        self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+        gas: eth::Gas,
+    ) -> Result<super::Score, boundary::Error> {
+        self.0.score(eth, auction, gas).await
     }
 }
