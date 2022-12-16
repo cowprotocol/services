@@ -93,6 +93,11 @@ impl Postgres {
                 }),
             ),
             FeeUpdate::Failure { timestamp } => (
+                // Note that the surplus fee must be removed so that the order does not count as
+                // solvable. In order to be solvable the timestamp must be recent and the fee must
+                // be set. We don't reset the timestamp because it indicates the last update time
+                // (regardless of error or success). This is needed so that we can query the least
+                // recently updated limit orders. See #965 .
                 database::orders::FeeUpdate {
                     surplus_fee: None,
                     surplus_fee_timestamp: *timestamp,
