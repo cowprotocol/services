@@ -505,13 +505,13 @@ impl ::serde::Serialize for EthflowData {
         #[serde(rename_all = "camelCase")]
         struct Extended {
             user_valid_to: i64,
-            refund_tx: Option<H256>,
+            refund_tx_hash: Option<H256>,
             is_refunded: bool,
         }
 
         let ext = Extended {
             user_valid_to: self.user_valid_to,
-            refund_tx: self.refund_tx_hash,
+            refund_tx_hash: self.refund_tx_hash,
             is_refunded: self.refund_tx_hash.is_some(),
         };
 

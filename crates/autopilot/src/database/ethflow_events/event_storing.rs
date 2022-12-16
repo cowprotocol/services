@@ -49,7 +49,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
             .with_label_values(&["append_ethflow_refund_events"])
             .start_timer();
         let mut ex = self.0.begin().await?;
-        database::ethflow_orders::mark_eth_orders_as_refunded(&mut ex, &refunds).await?;
+        database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())
     }
@@ -71,7 +71,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
             *range.end() as i64,
         )
         .await?;
-        database::ethflow_orders::mark_eth_orders_as_refunded(&mut ex, &refunds).await?;
+        database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())
     }

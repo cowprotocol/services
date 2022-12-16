@@ -717,8 +717,7 @@ mod tests {
     use crate::{
         byte_array::ByteArray,
         ethflow_orders::{
-            insert_or_overwrite_ethflow_order, mark_eth_order_as_refunded, EthOrderPlacement,
-            Refund,
+            insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
         },
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
@@ -804,7 +803,7 @@ mod tests {
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
-        mark_eth_order_as_refunded(
+        insert_refund_tx_hash(
             &mut db,
             &Refund {
                 order_uid: order.uid,

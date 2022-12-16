@@ -610,11 +610,6 @@ components:
             this field is null the order was not yet refunded.
           $ref: "#/components/schemas/TransactionHash"
           nullable: true
-        isRefunded:
-          description: |
-            Provides a flag that shows whether the refunding service has 
-            refunded the order, in case it was not settled onchain
-          type: boolean
         userValidTo:
           description: |
            Describes the valid to of an order ethflow order.

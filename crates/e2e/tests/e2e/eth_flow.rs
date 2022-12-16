@@ -576,7 +576,7 @@ impl ExtendedEthFlowOrder {
         ))
     }
 
-    async fn uid(&self, contracts: &Contracts) -> OrderUid {
+    pub async fn uid(&self, contracts: &Contracts) -> OrderUid {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement

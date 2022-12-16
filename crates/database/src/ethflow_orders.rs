@@ -80,22 +80,23 @@ pub async fn last_indexed_block(ex: &mut PgConnection) -> Result<Option<i64>, sq
     sqlx::query_scalar(QUERY).fetch_optional(ex).await
 }
 
-pub async fn mark_eth_orders_as_refunded(
+pub async fn insert_refund_tx_hashes(
     ex: &mut PgTransaction<'_>,
     refunds: &[Refund],
 ) -> Result<(), sqlx::Error> {
     for refund in refunds.iter() {
-        mark_eth_order_as_refunded(ex, refund).await?;
+        insert_refund_tx_hash(ex, refund).await?;
     }
     Ok(())
 }
 
-pub async fn mark_eth_order_as_refunded(
+pub async fn insert_refund_tx_hash(
     ex: &mut PgTransaction<'_>,
     refund: &Refund,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3)
+        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3) 
+        ON CONFLICT (order_uid) DO UPDATE SET block_number = $2, tx_hash = $3
     "#;
 
     ex.execute(
@@ -216,7 +217,7 @@ mod tests {
         insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
             .await
             .unwrap();
-        mark_eth_orders_as_refunded(&mut db, &[refund(order_1.uid), refund(order_2.uid)])
+        insert_refund_tx_hashes(&mut db, &[refund(order_1.uid), refund(order_2.uid)])
             .await
             .unwrap();
         // Check that `refund_tx` was changed
@@ -246,7 +247,7 @@ mod tests {
             .await
             .unwrap();
         let refund_tx = Default::default();
-        mark_eth_order_as_refunded(&mut db, &refund(order_1.uid))
+        insert_refund_tx_hash(&mut db, &refund(order_1.uid))
             .await
             .unwrap();
         // Check that `refund_tx` was changed
@@ -304,7 +305,7 @@ mod tests {
             insert_quote(db, &order_parts.quote).await.unwrap();
             if let Some(refund) = &order_parts.refund {
                 let mut ex = db.begin().await.unwrap();
-                mark_eth_order_as_refunded(&mut ex, refund).await.unwrap();
+                insert_refund_tx_hash(&mut ex, refund).await.unwrap();
                 ex.commit().await.unwrap();
             }
         }
@@ -417,7 +418,7 @@ mod tests {
                 .await
                 .unwrap();
             if i % 10u32 == 0 {
-                mark_eth_order_as_refunded(
+                insert_refund_tx_hash(
                     &mut db,
                     &Refund {
                         order_uid,
