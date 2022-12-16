@@ -49,7 +49,7 @@ impl Maintaining for ServiceMaintenance {
                 no_error = false;
                 self.metrics
                     .runs
-                    .with_label_values(&["failure", self.name()])
+                    .with_label_values(&["failure", self.maintainers[i].name()])
                     .inc();
             }
         }
