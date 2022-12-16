@@ -347,7 +347,7 @@ components:
             gasEstimate:
               type: integer
               description: |
-                A rough approximation in the number gas units required to
+                A rough approximation of gas units required to
                 use this liquidity on-chain.
 
     Auction:
