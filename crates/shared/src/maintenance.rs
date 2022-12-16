@@ -41,14 +41,15 @@ impl Maintaining for ServiceMaintenance {
             .enumerate()
         {
             if let Err(err) = result {
+                let maintainer = self.maintainers[i].name();
                 tracing::warn!(
                     "Service Maintenance Error for maintainer {}: {:?}",
-                    self.maintainers[i].name(),
+                    maintainer,
                     err
                 );
                 self.metrics
                     .runs
-                    .with_label_values(&["failure", self.maintainers[i].name()])
+                    .with_label_values(&["failure", maintainer])
                     .inc();
 
                 no_error = false;
@@ -152,8 +153,6 @@ mod tests {
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {
-        crate::tracing::initialize("debug", tracing::Level::ERROR.into());
-
         let mut ok1_mock_maintenance = MockMaintaining::new();
         let mut err_mock_maintenance = MockMaintaining::new();
         let mut ok2_mock_maintenance = MockMaintaining::new();
@@ -167,7 +166,7 @@ mod tests {
             .returning(|| bail!("Failed maintenance"));
         err_mock_maintenance
             .expect_name()
-            .times(2)
+            .times(1)
             .return_const("test".to_string());
         ok2_mock_maintenance
             .expect_run_maintenance()
@@ -233,7 +232,7 @@ mod tests {
             .in_sequence(&mut sequence);
         mock_maintenance
             .expect_name()
-            .times(2)
+            .times(1)
             .return_const("test".to_string())
             .in_sequence(&mut sequence);
         mock_maintenance
