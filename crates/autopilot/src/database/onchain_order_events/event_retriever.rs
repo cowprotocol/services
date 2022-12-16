@@ -117,7 +117,14 @@ impl EventStoring<EthFlowEvent> for Postgres {
     }
 
     async fn append_events(&mut self, events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<()> {
-        let refunds = get_refunds(events)?;
+        let refunds = match get_refunds(events)? {
+            refunds if !refunds.is_empty() => refunds,
+            _ => return Ok(())
+        };
+        let _timer = crate::database::Metrics::get()
+            .database_queries
+            .with_label_values(&["append_ethflow_refund_events"])
+            .start_timer();
         let mut ex = self.0.begin().await?;
         database::ethflow_orders::mark_eth_orders_as_refunded(&mut ex, &refunds).await?;
         ex.commit().await?;
@@ -130,6 +137,10 @@ impl EventStoring<EthFlowEvent> for Postgres {
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         let refunds = get_refunds(events)?;
+        let _timer = crate::database::Metrics::get()
+            .database_queries
+            .with_label_values(&["replace_ethflow_refund_events"])
+            .start_timer();
         let mut ex = self.0.begin().await?;
         database::ethflow_orders::delete_refunds(&mut ex, *range.start() as i64, *range.end() as i64).await?;
         database::ethflow_orders::mark_eth_orders_as_refunded(&mut ex, &refunds).await?;
