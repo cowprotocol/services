@@ -62,18 +62,18 @@ components:
       type: string
       example: "13.37"
 
+    Digest:
+      description: |
+        A hex-encoded 32 byte digest.
+      type: string
+      example: "0x1e66721bb1bd77d2641c77ea1d61e8abb92bf69c64fcc90c2c6ad518d1b50db1"
+
     NativePrice:
       description: |
         The price in wei of the native token (Ether on Mainnet for example) to
         buy 10**18 of a token.
       type: string
       example: "1234567890"
-
-    Digest:
-      description: |
-        A hex-encoded 32 byte digest.
-      type: string
-      example: "0x1e66721bb1bd77d2641c77ea1d61e8abb92bf69c64fcc90c2c6ad518d1b50db1"
 
     TokenInfo:
       description: |
@@ -91,10 +91,11 @@ components:
         referencePrice:
           $ref: "#/components/schemas/NativePrice"
         availableBalance:
-          $ref: "#/components/schemas/TokenAmount"
           description: |
             The balance held by the Settlement contract that is available
             during a settlement.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         trusted:
           type: boolean
           description: |
@@ -177,7 +178,7 @@ components:
         - feeAmount
         - side
         - partiallyFillable
-        - class
+        - kind
         - reward
       properties:
         uid:
@@ -335,6 +336,7 @@ components:
       type: object
       required:
         - kind
+        - hash
         - makerToken
         - takerToken
         - makerAmount
@@ -373,6 +375,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/LiquidityParameters"
         - type: object
+          required:
+            - id
+            - address
+            - gasEstimate
           properties:
             id:
               description: |
@@ -386,8 +392,8 @@ components:
             gasEstimate:
               type: integer
               description: |
-                A rough approximation of gas units required to
-                use this liquidity on-chain.
+                A rough approximation of gas units required to use this
+                liquidity on-chain.
 
     Auction:
       description: |
@@ -427,12 +433,28 @@ components:
           description: |
             The current estimated gas price. This is the price that will be used
             for solution scoring.
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
 
     JitOrder:
       description: |
         A just-in-time liquidity order included in a settlement.
       type: object
+      required:
+        - sellToken
+        - buyToken
+        - receiver
+        - sellAmount
+        - buyAmount
+        - validTo
+        - appData
+        - feeAmount
+        - kind
+        - partiallyFillable
+        - sellTokenBalance
+        - buyTokenBalance
+        - signingScheme
+        - signature
       properties:
         sellToken:
           $ref: "#/components/schemas/Token"
@@ -465,33 +487,24 @@ components:
         signature:
           $ref: "#/components/schemas/Signature"
 
-    ExecutedOrder:
+    Trade:
       description: |
-        An executed order included in a solution. Can either be a reference by
-        UID to an order included in the auction, or a JIT liquidity order.
-      oneOf:
-        - $ref: "#/components/schemas/OrderUid"
-        - $ref: "#/components/schemas/JitOrder"
-
-    ApprovalInteraction:
-      description: |
-        A requested approval from the settlement contract to some spender.
+        A trade for a CoW Protocol order included in a solution.
       type: object
-      required:
-        - kind
-        - token
-        - spender
-        - minAmount
       properties:
-        kind:
-          type: string
-          enum: [approval]
-        token:
-          $ref: "#/components/schemas/Token"
-        spender:
-          $ref: "#/components/schemas/Address"
-        minAmount:
-          $ref: "#/components/schemas/TokenAmount"
+        order:
+          description: |
+            The order to execute in a solution. Can either be a reference by UID
+            to an order included in the auction, or a JIT liquidity order.
+          oneOf:
+            - $ref: "#/components/schemas/OrderUid"
+            - $ref: "#/components/schemas/JitOrder"
+        executedAmount:
+          description: |
+            The amount of the order that was executed. This is denoted in
+            "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
 
     LiquidityInteraction:
       description: |
@@ -522,6 +535,26 @@ components:
         outputAmount:
           $ref: "#/components/schemas/TokenAmount"
 
+    Approval:
+      description: |
+        A requested approval from the settlement contract to some spender.
+      type: object
+      required:
+        - kind
+        - token
+        - spender
+        - minAmount
+      properties:
+        kind:
+          type: string
+          enum: [approval]
+        token:
+          $ref: "#/components/schemas/Token"
+        spender:
+          $ref: "#/components/schemas/Address"
+        minAmount:
+          $ref: "#/components/schemas/TokenAmount"
+
     CustomInteraction:
       description: |
         A searcher-specified custom interaction to be included in the final
@@ -547,6 +580,12 @@ components:
             The EVM calldata bytes.
           type: string
           example: "0x01020304"
+        approvals:
+          description: |
+            ERC20 approvals that are required for this custom interaction.
+          type: array
+          items:
+            $ref: "#/components/schemas/Approval"
         inputs:
           type: array
           items:
@@ -567,7 +606,7 @@ components:
       type: object
       required:
         - prices
-        - fulfillments
+        - trades
         - interactions
       properties:
         prices:
@@ -578,25 +617,11 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/BigInt"
         trades:
-          type: array
-          items:
-            type: object
-            properties:
-              order:
-                $ref: "#/components/schemas/ExecutedOrder"
-              executedAmount:
-                description: |
-                  The amount of the order that was executed. This is denoted in
-                  "sellToken" for sell orders, and "buyToken" for buy orders.
-                $ref: "#/components/schemas/TokenAmount"
-        approvals:
           description: |
-            Approval interactions required for the executing the solution. These
-            are kept separate from the other interactions as they may be
-            combined and reordered when optimizing on-chain settlements.
+            CoW Protocol order trades included in the solution.
           type: array
           items:
-            $ref: "#/components/schemas/Interaction"
+            $ref: "#/components/schemas/Trade"
         interactions:
           description: |
             Interactions to encode within a settlement.
