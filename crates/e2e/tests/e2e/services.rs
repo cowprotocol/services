@@ -207,6 +207,7 @@ impl OrderbookServices {
         let chain_id = web3.eth().chain_id().await.unwrap();
         let onchain_order_event_parser = OnchainOrderParser::new(
             autopilot_db.clone(),
+            web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id.as_u64(), contracts.gp_settlement.address()),
