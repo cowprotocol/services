@@ -597,9 +597,19 @@ components:
             $ref: "#/components/schemas/Asset"
 
     Interaction:
-      oneOf:
-        - $ref: "#/components/schemas/LiquidityInteraction"
-        - $ref: "#/components/schemas/CustomInteraction"
+      description: |
+        An interaction to execute as part of a settlement.
+      allOf:
+        - type: object
+          properties:
+            internalize:
+              description: |
+                A flag indicating that the interaction should be "internalized",
+                as specified by CIP-2.
+              type: boolean
+        - oneOf:
+            - $ref: "#/components/schemas/LiquidityInteraction"
+            - $ref: "#/components/schemas/CustomInteraction"
 
     Solution:
       description: |
