@@ -77,20 +77,7 @@ impl Settlement {
             .iter()
             .filter_map(|order| {
                 let boundary_order = into_boundary_order(order);
-                match order_converter.normalize_limit_order(boundary_order) {
-                    Ok(order) => {
-                        // TODO I don't think this matters?
-                        // The reward doesn't matter for objective value computation, right?
-                        // order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
-                        Some(order)
-                    }
-                    Err(err) => {
-                        // This should never happen unless we are getting malformed
-                        // orders from the API - so raise an alert if this happens.
-                        tracing::error!(?err, "error normalizing limit order");
-                        None
-                    }
-                }
+                order_converter.normalize_limit_order(boundary_order).ok()
             })
             .collect();
         let settlement = convert_settlement(

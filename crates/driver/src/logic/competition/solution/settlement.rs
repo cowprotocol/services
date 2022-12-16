@@ -8,7 +8,7 @@ use crate::{
 /// A transaction calling into our settlement contract on the blockchain.
 ///
 /// Currently, this represents a wrapper around the [`boundary::Settlement`]
-/// concept from the shared part of the codebase. This isn't a well-defined
+/// concept from the shared part of the codebase. This isn't well-defined
 /// enough, it's an intermediate state between a solution and an onchain
 /// settlement. The intention with this type is to represent the settlement
 /// transaction itself, not an intermediate state.
