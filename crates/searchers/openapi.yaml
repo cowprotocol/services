@@ -236,7 +236,7 @@ components:
 
     StablePool:
       description: |
-        A Curve-like stable N-token stable pool.
+        A Curve-like stable pool of N tokens.
       type: object
       required:
         - kind
