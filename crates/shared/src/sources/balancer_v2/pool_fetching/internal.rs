@@ -2,9 +2,7 @@
 //! strategies.
 
 use crate::{
-    maintenance::{Maintainer, Maintaining},
-    recent_block_cache::Block,
-    sources::balancer_v2::pools::Pool,
+    maintenance::Maintaining, recent_block_cache::Block, sources::balancer_v2::pools::Pool,
 };
 use anyhow::Result;
 use ethcontract::H256;
@@ -41,8 +39,8 @@ mockall::mock! {
     #[async_trait::async_trait]
     impl Maintaining for InternalPoolFetcher {
         async fn run_maintenance(&self) -> Result<()>;
-        fn name(&self) -> Maintainer {
-            Maintainer::BalancerPoolFetcher
+        fn name(&self) -> &str {
+            "BalancerPoolFetcher"
         }
     }
 }

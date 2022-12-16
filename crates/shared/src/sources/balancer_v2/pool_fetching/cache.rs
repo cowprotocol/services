@@ -6,7 +6,7 @@
 use super::internal::InternalPoolFetching;
 use crate::{
     current_block::CurrentBlockStream,
-    maintenance::{Maintainer, Maintaining},
+    maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
     sources::balancer_v2::pools::Pool,
 };
@@ -70,8 +70,8 @@ where
         Ok(())
     }
 
-    fn name(&self) -> Maintainer {
-        Maintainer::BalancerPoolFetcher
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
     }
 }
 

@@ -24,7 +24,7 @@ use super::{
 use crate::{
     current_block::{BlockRetrieving, CurrentBlockStream},
     ethrpc::{Web3, Web3Transport},
-    maintenance::{Maintainer, Maintaining},
+    maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig},
     token_info::TokenInfoFetching,
 };
@@ -299,8 +299,8 @@ impl Maintaining for BalancerPoolFetcher {
         self.fetcher.run_maintenance().await
     }
 
-    fn name(&self) -> Maintainer {
-        Maintainer::BalancerPoolFetcher
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
     }
 }
 

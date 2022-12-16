@@ -3,9 +3,7 @@
 
 use super::internal::InternalPoolFetching;
 use crate::{
-    maintenance::{Maintainer, Maintaining},
-    recent_block_cache::Block,
-    sources::balancer_v2::pools::Pool,
+    maintenance::Maintaining, recent_block_cache::Block, sources::balancer_v2::pools::Pool,
 };
 use anyhow::Result;
 use ethcontract::H256;
@@ -65,7 +63,7 @@ impl Maintaining for Aggregate {
         Ok(())
     }
 
-    fn name(&self) -> Maintainer {
-        Maintainer::BalancerPoolFetcher
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
     }
 }

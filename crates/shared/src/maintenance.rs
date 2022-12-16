@@ -2,21 +2,8 @@ use crate::current_block::{self, BlockInfo, CurrentBlockStream};
 use anyhow::{ensure, Result};
 use futures::{future::join_all, Stream, StreamExt as _};
 use std::{sync::Arc, time::Duration};
-use strum::{Display, EnumIter, IntoEnumIterator};
 use tokio::time;
 use tracing::Instrument as _;
-
-/// List of all possible maintainers in the system
-#[derive(Display, Debug, EnumIter)]
-pub enum Maintainer {
-    ServiceMaintenance,
-    EventHandler,
-    EventUpdater,
-    Postgres,
-    BalancerPoolFetcher,
-    UniswapV2PoolFetcher,
-    UniswapV3PoolFetcher,
-}
 
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
@@ -24,6 +11,8 @@ pub struct ServiceMaintenance {
     retry_delay: Duration,
     metrics: &'static Metrics,
 }
+
+const SERVICE_MAINTENANCE_NAME: &str = "ServiceMaintenance";
 
 impl ServiceMaintenance {
     pub fn new(maintainers: Vec<Arc<dyn Maintaining>>) -> Self {
@@ -39,7 +28,7 @@ impl ServiceMaintenance {
 #[async_trait::async_trait]
 pub trait Maintaining: Send + Sync {
     async fn run_maintenance(&self) -> Result<()>;
-    fn name(&self) -> Maintainer;
+    fn name(&self) -> &str;
 }
 
 #[async_trait::async_trait]
@@ -56,7 +45,7 @@ impl Maintaining for ServiceMaintenance {
                 no_error = false;
                 self.metrics
                     .runs
-                    .with_label_values(&["failure", &self.name().to_string()])
+                    .with_label_values(&["failure", self.name()])
                     .inc();
             }
         }
@@ -65,8 +54,8 @@ impl Maintaining for ServiceMaintenance {
         Ok(())
     }
 
-    fn name(&self) -> Maintainer {
-        Maintainer::ServiceMaintenance
+    fn name(&self) -> &str {
+        SERVICE_MAINTENANCE_NAME
     }
 }
 
@@ -74,12 +63,12 @@ impl ServiceMaintenance {
     async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
         self.metrics
             .runs
-            .with_label_values(&["success", &Maintainer::ServiceMaintenance.to_string()])
+            .with_label_values(&["success", SERVICE_MAINTENANCE_NAME])
             .reset();
-        for maintainer in Maintainer::iter() {
+        for maintainer in self.maintainers.iter().map(|maintainer| maintainer.name()) {
             self.metrics
                 .runs
-                .with_label_values(&["failure", &maintainer.to_string()])
+                .with_label_values(&["failure", maintainer])
                 .reset();
         }
 
@@ -121,7 +110,7 @@ impl ServiceMaintenance {
             self.metrics.last_updated_block.set(block.number as _);
             self.metrics
                 .runs
-                .with_label_values(&["success", &self.name().to_string()])
+                .with_label_values(&["success", self.name()])
                 .inc();
         }
     }

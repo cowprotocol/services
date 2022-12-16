@@ -3121,7 +3121,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 2.0.1",
- "strum",
  "testlib",
  "thiserror",
  "time 0.3.14",
