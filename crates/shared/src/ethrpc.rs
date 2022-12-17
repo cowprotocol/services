@@ -3,6 +3,7 @@ pub mod dummy;
 pub mod extensions;
 pub mod http;
 pub mod mock;
+pub mod multicall;
 
 use self::{buffered::BufferedTransport, http::HttpTransport};
 use crate::{arguments::duration_from_seconds, http_client::HttpClientFactory};

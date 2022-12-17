@@ -308,6 +308,9 @@ fn main() {
 
     // Support contract used for global block stream.
     generate_contract("FetchBlock");
+
+    // Contract for batching multiple `eth_call`s into a single one.
+    generate_contract("Multicall");
 }
 
 fn generate_contract(name: &str) {
