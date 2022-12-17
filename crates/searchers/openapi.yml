@@ -79,6 +79,8 @@ components:
       description: |
         Information about a token relavant to the auction.
       type: object
+      required:
+        - trusted
       properties:
         decimals:
           type: integer
@@ -131,9 +133,9 @@ components:
       type: string
       enum: [sell, buy]
 
-    OrderKind:
+    OrderClass:
       description: |
-        The type of CoW Protocol order.
+        How the CoW Protocol order was classified.
       type: string
       enum: [market, limit, liquidity]
 
@@ -204,8 +206,8 @@ components:
             then the order is a "fill-or-kill" order, meaning it needs to be
             completely filled or not at all.
           type: boolean
-        kind:
-          $ref: "#/components/schemas/OrderKind"
+        class:
+          $ref: "#/components/schemas/OrderClass"
         reward:
           type: number
           description: |
@@ -395,7 +397,11 @@ components:
                 matching interactions with the executed liquidity.
               type: string
             address:
-              $ref: "#/components/schemas/Address"
+              description: |
+                The Ethereum public address of the liquidity. The actual address
+                that is specified is dependent on the kind of liquidity.
+              allOf:
+                - $ref: "#/components/schemas/Address"
             gasEstimate:
               type: integer
               description: |
@@ -541,9 +547,10 @@ components:
         outputAmount:
           $ref: "#/components/schemas/TokenAmount"
 
-    Approval:
+    Allowance:
       description: |
-        A requested approval from the settlement contract to some spender.
+        An ERC20 allowance from the settlement contract to some spender that is
+        required for a custom interaction.
       type: object
       required:
         - kind
@@ -558,7 +565,7 @@ components:
           $ref: "#/components/schemas/Token"
         spender:
           $ref: "#/components/schemas/Address"
-        minAmount:
+        amount:
           $ref: "#/components/schemas/TokenAmount"
 
     CustomInteraction:
@@ -586,12 +593,12 @@ components:
             The EVM calldata bytes.
           type: string
           example: "0x01020304"
-        approvals:
+        allowances:
           description: |
             ERC20 approvals that are required for this custom interaction.
           type: array
           items:
-            $ref: "#/components/schemas/Approval"
+            $ref: "#/components/schemas/Allowance"
         inputs:
           type: array
           items:
