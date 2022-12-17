@@ -112,7 +112,6 @@ pub enum ValidationError {
 pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrderPlacementError {
     match error {
         ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
-        ValidationError::TransferSimulationFailed => OnchainOrderPlacementError::PreValidationError,
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
         ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,

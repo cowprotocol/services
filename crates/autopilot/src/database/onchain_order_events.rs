@@ -1209,14 +1209,12 @@ mod test {
             &Default::default(),
         )
         .await;
-        assert_eq!(result_vec.len(), 1);
-        let first_element = result_vec.get(0).unwrap();
+        assert_eq!(result_vec.len(), 2);
+        let first_element = result_vec.get(1).unwrap();
+        assert_eq!(first_element.1, None);
         assert_eq!(
-            first_element.0,
-            EventIndex {
-                block_number: 1,
-                log_index: 0i64
-            }
+            first_element.2.placement_error,
+            Some(OnchainOrderPlacementError::QuoteNotFound),
         );
     }
 
