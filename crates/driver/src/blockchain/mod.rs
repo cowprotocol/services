@@ -21,7 +21,10 @@ impl Ethereum {
         todo!()
     }
 
-    pub fn domain_separator(&self, verifying_contract: eth::Contract) -> eth::DomainSeparator {
+    pub fn domain_separator(
+        &self,
+        verifying_contract: eth::ContractAddress,
+    ) -> eth::DomainSeparator {
         eth::DomainSeparator::new(self.chain_id, verifying_contract)
     }
 

@@ -87,35 +87,35 @@ impl From<Address> for H160 {
 
 /// A contract address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Contract(pub H160);
+pub struct ContractAddress(pub H160);
 
-impl From<H160> for Contract {
+impl From<H160> for ContractAddress {
     fn from(inner: H160) -> Self {
         Self(inner)
     }
 }
 
-impl From<Contract> for ethereum_types::H160 {
-    fn from(contract: Contract) -> Self {
+impl From<ContractAddress> for ethereum_types::H160 {
+    fn from(contract: ContractAddress) -> Self {
         contract.0 .0.into()
     }
 }
 
 /// The contract is an address on the blockchain.
-impl From<Contract> for Address {
-    fn from(contract: Contract) -> Self {
+impl From<ContractAddress> for Address {
+    fn from(contract: ContractAddress) -> Self {
         contract.0.into()
     }
 }
 
-/// An ERC20 token.
+/// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Token(pub H160);
+pub struct TokenAddress(pub H160);
 
-impl From<Token> for H160 {
-    fn from(token: Token) -> Self {
+impl From<TokenAddress> for H160 {
+    fn from(token: TokenAddress) -> Self {
         token.0
     }
 }
@@ -125,7 +125,7 @@ impl From<Token> for H160 {
 #[derive(Debug, Clone, Copy)]
 pub struct Asset {
     pub amount: U256,
-    pub token: Token,
+    pub token: TokenAddress,
 }
 
 /// An amount of native Ether tokens denominated in wei.

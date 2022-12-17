@@ -9,7 +9,7 @@
 pub struct DomainSeparator(pub [u8; 32]);
 
 impl DomainSeparator {
-    pub fn new(chain_id: super::ChainId, verifying_contract: super::Contract) -> Self {
+    pub fn new(chain_id: super::ChainId, verifying_contract: super::ContractAddress) -> Self {
         let abi_string = ethabi::encode(&[
             ethabi::Token::Uint(web3::signing::keccak256(b"Gnosis Protocol").into()),
             ethabi::Token::Uint(web3::signing::keccak256(b"v2").into()),

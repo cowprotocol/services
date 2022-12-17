@@ -90,9 +90,12 @@ impl Solver {
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
         let mut url = self.config.url.join("solve").unwrap();
         let time_limit = auction.deadline.solver_time_limit()?;
+        if let Some(id) = auction.id {
+            url.query_pairs_mut()
+                .append_pair("auction_id", &id.0.to_string())
+                .append_pair("instance_name", &self.instance_name(id));
+        }
         url.query_pairs_mut()
-            .append_pair("auction_id", &auction.id.0.to_string())
-            .append_pair("instance_name", &self.instance_name(auction.id))
             .append_pair("time_limit", &time_limit.as_secs().to_string())
             .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
         let body = serde_json::to_string(&dto::Auction::new(auction)).unwrap();

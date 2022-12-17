@@ -21,7 +21,7 @@ impl Settlement {
         solver: &Solver,
         eth: &Ethereum,
         auction: &competition::Auction,
-        solution: competition::Solution,
+        solution: &competition::Solution,
     ) -> anyhow::Result<Self> {
         boundary::Settlement::encode(eth, solver, solution, auction)
             .await

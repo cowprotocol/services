@@ -1,19 +1,34 @@
-pub use order::Order;
-use {crate::logic::eth, std::collections::HashMap, thiserror::Error};
-
-pub mod order;
+use {
+    crate::logic::{competition, eth, liquidity},
+    primitive_types::U256,
+    thiserror::Error,
+};
 
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
-    pub id: Id,
-    pub block: eth::BlockNo,
-    pub orders: Vec<Order>,
-    pub deadline: Deadline,
+    /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
+    /// used for competition.
+    pub id: Option<Id>,
+    pub tokens: Vec<Token>,
+    pub orders: Vec<competition::Order>,
+    pub liquidity: Vec<liquidity::Liquidity>,
     pub gas_price: eth::EffectiveGasPrice,
-    pub prices: HashMap<eth::Token, eth::Ether>,
+    pub deadline: Deadline,
+}
+
+#[derive(Debug)]
+pub struct Token {
+    pub decimals: u32,
+    pub symbol: String,
+    pub address: eth::TokenAddress,
+    pub price: competition::Price,
+    /// The balance of this token available in our settlement contract.
+    pub available_balance: U256,
+    /// Is this token well-known and trusted by the protocol?
+    pub trusted: bool,
 }
 
 /// Each auction has a deadline, limiting the maximum time that each solver may
