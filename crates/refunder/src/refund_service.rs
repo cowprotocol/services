@@ -139,7 +139,7 @@ impl RefundService {
                     let order_owner = match order.await {
                         Ok(order) => Some(order.0),
                         Err(err) => {
-                            tracing::error!(
+                            tracing::debug!(
                                 "Error while getting the current\
                                             onchain status of orderhash {:?}, {:?}",
                                 order_hash,
