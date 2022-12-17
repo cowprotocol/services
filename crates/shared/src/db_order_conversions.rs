@@ -144,6 +144,15 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
             Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
         }
+        Some(DbOnchainOrderPlacementError::QuoteNotValidForOrder) => {
+            Some(OnchainOrderPlacementError::QuoteNotValidForOrder)
+        }
+        Some(DbOnchainOrderPlacementError::QuoteExpired) => {
+            Some(OnchainOrderPlacementError::QuoteExpired)
+        }
+        Some(DbOnchainOrderPlacementError::FeeNotSufficient) => {
+            Some(OnchainOrderPlacementError::FeeNotSufficient)
+        }
         None => None,
     }
 }

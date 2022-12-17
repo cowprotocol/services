@@ -9,6 +9,9 @@ pub enum OnchainOrderPlacementError {
     NotAllowedBuyToken,
     NonAcceptedOrderClass,
     ValidToTooFarInFuture,
+    QuoteNotValidForOrder,
+    QuoteExpired,
+    FeeNotSufficient,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

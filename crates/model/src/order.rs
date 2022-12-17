@@ -500,6 +500,9 @@ pub enum OnchainOrderPlacementError {
     ValidToTooFarInTheFuture,
     OrderClassNotAccepted,
     NotAllowedBuyToken,
+    QuoteNotValidForOrder,
+    QuoteExpired,
+    FeeNotSufficient,
 }
 
 // stores all data related to onchain order palcement
