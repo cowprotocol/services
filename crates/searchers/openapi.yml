@@ -377,7 +377,7 @@ components:
     Liquidity:
       description: |
         On-chain liquidity that can be used in a solution. This liquidity is
-        provided to facilitate onboarding new solvers. Additional liquidy that
+        provided to facilitate onboarding new solvers. Additional liquidity that
         is not included in this set may still be used in solutions.
       allOf:
         - $ref: "#/components/schemas/LiquidityParameters"
