@@ -132,27 +132,28 @@ pub fn onchain_order_placement_error_from(
     order: &FullOrderDb,
 ) -> Option<OnchainOrderPlacementError> {
     match order.onchain_placement_error {
-        Some(DbOnchainOrderPlacementError::QuoteIdNotFound) => {
-            Some(OnchainOrderPlacementError::QuoteIdNotFound)
+        Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
+            Some(OnchainOrderPlacementError::InvalidOrderData)
         }
-        Some(DbOnchainOrderPlacementError::NotAllowedBuyToken) => {
-            Some(OnchainOrderPlacementError::NotAllowedBuyToken)
+        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
+            Some(OnchainOrderPlacementError::QuoteNotFound)
         }
-        Some(DbOnchainOrderPlacementError::NonAcceptedOrderClass) => {
+        Some(DbOnchainOrderPlacementError::PreValidationError) => {
+            Some(OnchainOrderPlacementError::PreValidationError)
+        }
+        Some(DbOnchainOrderPlacementError::InvalidOrderClass) => {
             Some(OnchainOrderPlacementError::OrderClassNotAccepted)
         }
         Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
             Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
         }
-        Some(DbOnchainOrderPlacementError::QuoteNotValidForOrder) => {
-            Some(OnchainOrderPlacementError::QuoteNotValidForOrder)
+        Some(DbOnchainOrderPlacementError::InvalidQuote) => {
+            Some(OnchainOrderPlacementError::InvalidQuote)
         }
-        Some(DbOnchainOrderPlacementError::QuoteExpired) => {
-            Some(OnchainOrderPlacementError::QuoteExpired)
+        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
+            Some(OnchainOrderPlacementError::InsufficientFee)
         }
-        Some(DbOnchainOrderPlacementError::FeeNotSufficient) => {
-            Some(OnchainOrderPlacementError::FeeNotSufficient)
-        }
+        Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
         None => None,
     }
 }

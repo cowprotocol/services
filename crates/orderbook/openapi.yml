@@ -615,9 +615,9 @@ components:
           type: string
           enum:
             [
-              QuoteIdNotFound,
+              QuoteNotFound,
               ValidToTooFarInFuture,
-              NotAllowedBuyToken,
+              PreValidationError,
               ...,
             ]
       required:

@@ -5,13 +5,14 @@ use sqlx::{Executor, PgConnection};
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
 pub enum OnchainOrderPlacementError {
-    QuoteIdNotFound,
-    NotAllowedBuyToken,
-    NonAcceptedOrderClass,
+    QuoteNotFound,
+    InvalidQuote,
+    PreValidationError,
+    InvalidOrderClass,
     ValidToTooFarInFuture,
-    QuoteNotValidForOrder,
-    QuoteExpired,
-    FeeNotSufficient,
+    InvalidOrderData,
+    InsufficientFee,
+    Other,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -110,7 +111,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::QuoteIdNotFound),
+            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
             ..Default::default()
         };
         let event_index = EventIndex::default();
@@ -124,7 +125,7 @@ mod tests {
         let expected_row = OnchainOrderPlacementRow {
             uid: order.order_uid,
             sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::QuoteIdNotFound),
+            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
             is_reorged: false,
             block_number: event_index.block_number,
             log_index: event_index.log_index,
@@ -134,7 +135,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::NotAllowedBuyToken),
+            placement_error: Some(OnchainOrderPlacementError::PreValidationError),
             ..Default::default()
         };
         let event_index = EventIndex::default();
@@ -148,7 +149,7 @@ mod tests {
         let expected_row = OnchainOrderPlacementRow {
             uid: order.order_uid,
             sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::NotAllowedBuyToken),
+            placement_error: Some(OnchainOrderPlacementError::PreValidationError),
             is_reorged: false,
             block_number: event_index.block_number,
             log_index: event_index.log_index,
@@ -182,7 +183,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::NonAcceptedOrderClass),
+            placement_error: Some(OnchainOrderPlacementError::InvalidOrderClass),
             ..Default::default()
         };
         let event_index = EventIndex::default();
@@ -196,7 +197,7 @@ mod tests {
         let expected_row = OnchainOrderPlacementRow {
             uid: order.order_uid,
             sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::NonAcceptedOrderClass),
+            placement_error: Some(OnchainOrderPlacementError::InvalidOrderClass),
             is_reorged: false,
             block_number: event_index.block_number,
             log_index: event_index.log_index,

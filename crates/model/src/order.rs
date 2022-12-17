@@ -496,13 +496,14 @@ pub struct EthflowData {
 #[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OnchainOrderPlacementError {
-    QuoteIdNotFound,
+    QuoteNotFound,
     ValidToTooFarInTheFuture,
     OrderClassNotAccepted,
-    NotAllowedBuyToken,
-    QuoteNotValidForOrder,
-    QuoteExpired,
-    FeeNotSufficient,
+    PreValidationError,
+    InvalidQuote,
+    InsufficientFee,
+    InvalidOrderData,
+    Other,
 }
 
 // stores all data related to onchain order palcement
