@@ -25,7 +25,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Solution"
         400:
-          description: There is something wrong with the requests.
+          description: There is something wrong with the request.
         500:
           description: Something went wrong when handling the request.
 
