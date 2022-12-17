@@ -14,7 +14,7 @@ use contracts::cowswap_onchain_orders::{
 use database::{
     byte_array::ByteArray,
     events::EventIndex,
-    onchain_broadcasted_orders::OnchainOrderPlacement,
+    onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
     orders::{insert_quotes, Order, OrderClass},
     PgTransaction,
 };
@@ -38,7 +38,7 @@ use shared::{
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
     order_validation::{
         convert_signing_scheme_into_quote_signing_scheme, get_quote_and_check_fee,
-        is_order_outside_market_price,
+        is_order_outside_market_price, onchain_order_placement_error_from,
     },
 };
 use std::{
@@ -197,9 +197,15 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .await
         .context("append_onchain_orders failed")?;
 
-        insert_quotes(&mut transaction, quotes.as_slice())
-            .await
-            .context("appending quotes for onchain orders failed")?;
+        // It's okay to not store quotes for orders is with placement_errors as
+        // only orders that will be used in auctions need a quote stored
+        // to calcualte the rewards.
+        insert_quotes(
+            &mut transaction,
+            quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
+        )
+        .await
+        .context("appending quotes for onchain orders failed")?;
 
         database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
@@ -246,9 +252,15 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("append_custom_onchain_orders failed")?;
 
-        insert_quotes(&mut transaction, quotes.as_slice())
-            .await
-            .context("appending quotes for onchain orders failed")?;
+        // It's okay to not store quotes for orders is with placement_errors as
+        // only orders that will be used in auctions need a quote stored
+        // to calcualte the rewards.
+        insert_quotes(
+            &mut transaction,
+            quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
+        )
+        .await
+        .context("appending quotes for onchain orders failed")?;
 
         database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
@@ -278,7 +290,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         events: Vec<EthContractEvent<ContractEvent>>,
     ) -> Result<(
         Vec<W>,
-        Vec<database::orders::Quote>,
+        Vec<Option<database::orders::Quote>>,
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
     )> {
@@ -409,7 +421,7 @@ fn extract_invalidated_order_uids(
 
 type GeneralOnchainOrderPlacementData = (
     EventIndex,
-    database::orders::Quote,
+    Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
 );
@@ -437,25 +449,37 @@ async fn parse_general_onchain_order_placement_data(
             let (order_data, owner, signing_scheme, order_uid) =
                 extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
 
-            let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
+            let quote_result =
+                get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
+            let mut placement_error = None;
+            let mut quote = None;
+            match quote_result.clone() {
+                Ok(found_quote) => quote = Some(found_quote),
+                Err(err) => placement_error = Some(err),
+            }
             let order_data = convert_onchain_order_placement(
                 &event,
                 event_timestamp,
-                quote.clone(),
+                quote,
                 order_data,
                 signing_scheme,
                 order_uid,
                 owner,
                 settlement_contract,
                 liquidity_order_owners,
+                placement_error,
             )?;
-            let quote = database::orders::Quote {
-                order_uid: order_data.1.uid,
-                gas_amount: quote.data.fee_parameters.gas_amount,
-                gas_price: quote.data.fee_parameters.gas_price,
-                sell_token_price: quote.data.fee_parameters.sell_token_price,
-                sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                buy_amount: u256_to_big_decimal(&quote.buy_amount),
+            let quote = if let Ok(quote) = quote_result {
+                Some(database::orders::Quote {
+                    order_uid: order_data.1.uid,
+                    gas_amount: quote.data.fee_parameters.gas_amount,
+                    gas_price: quote.data.fee_parameters.gas_price,
+                    sell_token_price: quote.data.fee_parameters.sell_token_price,
+                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                })
+            } else {
+                None
             };
             Ok((
                 meta_to_event_index(&meta),
@@ -485,7 +509,7 @@ async fn get_quote(
     signing_scheme: SigningScheme,
     order_placement: &ContractOrderPlacement,
     quote_id: &i64,
-) -> Result<Quote> {
+) -> Result<Quote, OnchainOrderPlacementError> {
     let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
         signing_scheme,
         false,
@@ -495,7 +519,7 @@ async fn get_quote(
         // For general orders, this could result in a too big subsidy.
         0u64,
     )
-    .map_err(|err| anyhow!("Error invalid signature transformation: {:?}", err))?;
+    .map_err(onchain_order_placement_error_from)?;
 
     let parameters = QuoteSearchParameters {
         sell_token: H160::from(order_data.sell_token.0),
@@ -516,36 +540,39 @@ async fn get_quote(
         quote_signing_scheme,
     )
     .await
-    .map_err(|err| {
-        anyhow!(
-            "Error while fetching the quote {:?} error: {:?}",
-            parameters,
-            err
-        )
-    })
+    .map_err(onchain_order_placement_error_from)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn convert_onchain_order_placement(
     order_placement: &ContractOrderPlacement,
     event_timestamp: i64,
-    quote: Quote,
+    quote: Option<Quote>,
     order_data: OrderData,
     signing_scheme: SigningScheme,
     order_uid: OrderUid,
     owner: H160,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
+    placement_error: Option<OnchainOrderPlacementError>,
 ) -> Result<(OnchainOrderPlacement, Order)> {
-    let full_fee_amount = quote.data.fee_parameters.unsubsidized();
-
-    let is_outside_market_price =
+    let full_fee_amount = if let Some(ref quote) = quote {
+        quote.data.fee_parameters.unsubsidized()
+    } else {
+        // Since the order will anways have an order_placement_error,
+        // we can set an "arbitrary amount"
+        order_data.fee_amount
+    };
+    let is_outside_market_price = if let Some(quote) = quote {
         if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, &quote) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             true
         } else {
             false
-        };
+        }
+    } else {
+        false
+    };
 
     let liquidity_owner = if liquidity_order_owners.contains(&owner) {
         tracing::debug!(%order_uid, ?owner, "order being flagged as placed by liquidity order owner");
@@ -592,7 +619,7 @@ fn convert_onchain_order_placement(
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
         sender: ByteArray(order_placement.sender.0),
-        placement_error: None,
+        placement_error,
     };
     Ok((onchain_order_placement_event, order))
 }
@@ -819,13 +846,14 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             event_timestamp,
-            quote,
+            Some(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &Default::default(),
+            None,
         )
         .unwrap();
         let expected_order_data = OrderData {
@@ -932,13 +960,14 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             event_timestamp,
-            quote,
+            Some(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &hashset! {owner},
+            None,
         )
         .unwrap();
         let expected_order_data = OrderData {
@@ -1044,13 +1073,14 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             345634,
-            quote,
+            Some(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &Default::default(),
+            None,
         )
         .unwrap();
         let expected_order_data = OrderData {
@@ -1332,7 +1362,7 @@ mod test {
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
         };
-        assert_eq!(result.1, vec![expected_quote]);
+        assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
             result.2,
             vec![(

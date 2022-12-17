@@ -12,7 +12,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use contracts::WETH9;
-use database::quotes::QuoteKind;
+use database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind};
 use ethcontract::{H160, U256};
 use model::{
     order::{
@@ -107,6 +107,26 @@ pub enum ValidationError {
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     Other(anyhow::Error),
+}
+
+pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrderPlacementError {
+    match error {
+        ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
+        ValidationError::TransferSimulationFailed => OnchainOrderPlacementError::PreValidationError,
+        ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
+        ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
+        ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
+        _ => OnchainOrderPlacementError::Other,
+    }
+}
+
+impl ValidationError {
+    pub fn from(error: OnchainOrderPlacementError) -> Self {
+        match error {
+            OnchainOrderPlacementError::QuoteNotFound => ValidationError::QuoteNotFound,
+            _ => ValidationError::Other(anyhow!("non classified onchain placement error")),
+        }
+    }
 }
 
 impl From<VerificationError> for ValidationError {
