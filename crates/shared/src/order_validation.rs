@@ -172,7 +172,6 @@ pub trait LimitOrderCounting: Send + Sync {
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
-    code_fetcher: Box<dyn CodeFetching>,
     native_token: WETH9,
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
@@ -186,6 +185,8 @@ pub struct OrderValidator {
     enable_limit_orders: bool,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
+    pub code_fetcher: Arc<dyn CodeFetching>,
+    pub enable_eth_smart_contract_payments: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -240,7 +241,6 @@ impl PreOrderData {
 impl OrderValidator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        code_fetcher: Box<dyn CodeFetching>,
         native_token: WETH9,
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
@@ -252,9 +252,9 @@ impl OrderValidator {
         signature_validator: Arc<dyn SignatureValidating>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
+        code_fetcher: Arc<dyn CodeFetching>,
     ) -> Self {
         Self {
-            code_fetcher,
             native_token,
             banned_users,
             liquidity_order_owners,
@@ -267,11 +267,18 @@ impl OrderValidator {
             enable_limit_orders: false,
             limit_order_counter,
             max_limit_orders_per_user,
+            code_fetcher,
+            enable_eth_smart_contract_payments: false,
         }
     }
 
     pub fn with_limit_orders(mut self, enable: bool) -> Self {
         self.enable_limit_orders = enable;
+        self
+    }
+
+    pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
+        self.enable_eth_smart_contract_payments = enable;
         self
     }
 
@@ -335,7 +342,7 @@ impl OrderValidating for OrderValidator {
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
-        if order.buy_token == BUY_ETH_ADDRESS {
+        if !self.enable_eth_smart_contract_payments && order.buy_token == BUY_ETH_ADDRESS {
             let code_size = self
                 .code_fetcher
                 .code_size(order.receiver)
@@ -827,7 +834,6 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_err() {
-        let mut code_fetcher = Box::new(MockCodeFetching::new());
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
@@ -837,14 +843,9 @@ mod tests {
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
-        code_fetcher
-            .expect_code_size()
-            .times(1)
-            .return_once(|_| Ok(1));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            code_fetcher,
             native_token,
             banned_users,
             hashset!(),
@@ -856,6 +857,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         assert!(matches!(
             validator
@@ -959,16 +961,6 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
-                    buy_token: BUY_ETH_ADDRESS,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::TransferEthToContract)
-        ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
                     sell_token: BUY_ETH_ADDRESS,
                     ..Default::default()
                 })
@@ -984,44 +976,6 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::UnsupportedSignature)
-        ));
-
-        let mut code_fetcher = Box::new(MockCodeFetching::new());
-        let _err = anyhow!("Failed to fetch Code Size!");
-        code_fetcher
-            .expect_code_size()
-            .times(1)
-            .return_once(|_| Err(_err));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            code_fetcher,
-            dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
-            hashset!(),
-            OrderValidPeriodConfiguration {
-                min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
-            },
-            SignatureConfiguration::off_chain(),
-            Arc::new(MockBadTokenDetecting::new()),
-            Arc::new(MockOrderQuoting::new()),
-            Arc::new(MockBalanceFetching::new()),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-        );
-
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
-                    buy_token: BUY_ETH_ADDRESS,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::Other(_err))
         ));
     }
 
@@ -1047,7 +1001,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(liquidity_order_owner),
@@ -1059,6 +1012,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1127,7 +1081,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1143,6 +1096,7 @@ mod tests {
             signature_validating,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
+            Arc::new(MockCodeFetching::new()),
         );
 
         let creation = OrderCreation {
@@ -1259,7 +1213,6 @@ mod tests {
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1271,6 +1224,7 @@ mod tests {
             signature_validating,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
+            Arc::new(MockCodeFetching::new()),
         )
         .with_limit_orders(true);
 
@@ -1308,7 +1262,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1320,6 +1273,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1358,7 +1312,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1370,6 +1323,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1413,7 +1367,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1425,6 +1378,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1467,7 +1421,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1479,6 +1432,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1515,7 +1469,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1527,6 +1480,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1566,7 +1520,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1578,6 +1531,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1620,7 +1574,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1632,6 +1585,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1669,7 +1623,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1681,6 +1634,7 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1721,7 +1675,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(),
@@ -1733,6 +1686,7 @@ mod tests {
             Arc::new(signature_validator),
             Arc::new(limit_order_counter),
             0,
+            Arc::new(MockCodeFetching::new()),
         );
 
         let creation = OrderCreation {
@@ -1777,7 +1731,6 @@ mod tests {
                 let mut limit_order_counter = MockLimitOrderCounting::new();
                 limit_order_counter.expect_count().returning(|_| Ok(0u64));
                 let validator = OrderValidator::new(
-                    Box::new(MockCodeFetching::new()),
                     dummy_contract!(WETH9, [0xef; 20]),
                     hashset!(),
                     hashset!(),
@@ -1789,6 +1742,7 @@ mod tests {
                     Arc::new(MockSignatureValidating::new()),
                     Arc::new(limit_order_counter),
                     0,
+                    Arc::new(MockCodeFetching::new()),
                 );
 
                 let order = OrderBuilder::default()

@@ -2,16 +2,19 @@ use crate::{
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{
         order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        Liquidity,
+        LimitOrderId, Liquidity,
     },
     settlement::Settlement,
 };
-use anyhow::{anyhow, Context as _, Result};
-use model::order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata};
+use anyhow::{anyhow, ensure, Context as _, Result};
+use model::{
+    order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
+    DomainSeparator,
+};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -29,16 +32,19 @@ pub async fn convert_settlement(
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
-) -> Result<Settlement> {
+    domain: &DomainSeparator,
+) -> Result<Settlement, ConversionError> {
     IntermediateSettlement::new(
         settled,
         context,
         allowance_manager,
         order_converter,
         slippage,
+        domain,
     )
     .await?
     .into_settlement()
+    .map_err(Into::into)
 }
 
 #[derive(Clone, Debug)]
@@ -52,18 +58,15 @@ enum Execution {
 impl Execution {
     fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
-            Execution::Amm(executed_amm) => &executed_amm.exec_plan,
-            Execution::CustomInteraction(interaction) => &interaction.exec_plan,
-            Execution::LimitOrder(order) => &order.exec_plan,
+            Execution::Amm(executed_amm) => Some(&executed_amm.exec_plan),
+            Execution::CustomInteraction(interaction) => interaction.exec_plan.as_ref(),
+            Execution::LimitOrder(order) => order.exec_plan.as_ref(),
         }
-        .as_ref()
     }
 
     fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
-        match self.execution_plan()? {
-            ExecutionPlan::Coordinates(coords) => Some(coords.clone()),
-            _ => None,
-        }
+        self.execution_plan()
+            .map(|exec_plan| exec_plan.coordinates.clone())
     }
 
     fn add_to_settlement(
@@ -117,6 +120,29 @@ struct IntermediateSettlement<'a> {
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
+    submitter: SubmissionPreference,
+}
+
+// Conversion error happens during building a settlement from a solution received from searcher
+#[derive(Debug)]
+pub enum ConversionError {
+    InvalidExecutionPlans(anyhow::Error),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ConversionError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+impl From<ConversionError> for anyhow::Error {
+    fn from(err: ConversionError) -> Self {
+        match err {
+            ConversionError::InvalidExecutionPlans(err) => err,
+            ConversionError::Other(err) => err,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -143,7 +169,7 @@ struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
     order: Liquidity,
-    exec_plan: Option<ExecutionPlan>,
+    exec_plan: ExecutionPlan,
 }
 
 impl<'a> IntermediateSettlement<'a> {
@@ -153,11 +179,15 @@ impl<'a> IntermediateSettlement<'a> {
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
-    ) -> Result<IntermediateSettlement<'a>> {
+        domain: &DomainSeparator,
+    ) -> Result<IntermediateSettlement<'a>, ConversionError> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
-        let foreign_liquidity_orders =
-            convert_foreign_liquidity_orders(order_converter, settled.foreign_liquidity_orders)?;
+        let foreign_liquidity_orders = convert_foreign_liquidity_orders(
+            order_converter,
+            settled.foreign_liquidity_orders,
+            domain,
+        )?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
@@ -167,17 +197,26 @@ impl<'a> IntermediateSettlement<'a> {
             settled.interaction_data,
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
+        let submitter = settled.submitter;
+
+        if duplicate_coordinates(&executions) {
+            return Err(ConversionError::InvalidExecutionPlans(anyhow!(
+                "Duplicate coordinates found."
+            )));
+        }
 
         Ok(Self {
             executions,
             prices,
             approvals,
             slippage,
+            submitter,
         })
     }
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
+        settlement.submitter = self.submitter;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
@@ -189,7 +228,7 @@ impl<'a> IntermediateSettlement<'a> {
         for execution in &self.executions {
             let internalizable = execution
                 .execution_plan()
-                .map(|exec_plan| exec_plan.internalizable())
+                .map(|exec_plan| exec_plan.internal)
                 .unwrap_or_default();
             execution.add_to_settlement(&mut settlement, &self.slippage, internalizable)?;
         }
@@ -211,6 +250,14 @@ fn match_prepared_and_settled_orders(
             let prepared = prepared_orders
                 .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
+            if prepared.is_liquidity_order() {
+                if let Some(internalizable) = settled.exec_plan.as_ref().map(|plan| plan.internal) {
+                    ensure!(
+                        !internalizable,
+                        "liquidity orders are not allowed to be internalizable"
+                    )
+                }
+            }
             Ok(ExecutedLimitOrder {
                 order: prepared.clone(),
                 executed_buy_amount: settled.exec_buy_amount,
@@ -224,6 +271,7 @@ fn match_prepared_and_settled_orders(
 fn convert_foreign_liquidity_orders(
     order_converter: Arc<OrderConverter>,
     foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
+    domain: &DomainSeparator,
 ) -> Result<Vec<ExecutedLimitOrder>> {
     foreign_liquidity_orders
         .into_iter()
@@ -235,9 +283,10 @@ fn convert_foreign_liquidity_orders(
                     // All foreign orders **MUST** be liquidity, this is
                     // important so they cannot be used to affect the objective.
                     class: OrderClass::Liquidity,
+                    // Not needed for encoding but nice to have for logs and competition info.
+                    uid: liquidity.order.data.uid(domain, &liquidity.order.from),
                     // These fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
-                    uid: Default::default(),
                     settlement_contract: Default::default(),
                     // For other metdata fields, the default value is correct.
                     ..Default::default()
@@ -316,13 +365,14 @@ fn match_settled_prices(
     solver_prices: HashMap<H160, U256>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
-    let executed_tokens = executed_limit_orders.iter().flat_map(|order| {
-        if order.order.is_liquidity_order {
-            vec![order.order.sell_token]
-        } else {
-            vec![order.order.buy_token, order.order.sell_token]
-        }
-    });
+    let executed_tokens = executed_limit_orders
+        .iter()
+        .flat_map(|order| match order.order.id {
+            LimitOrderId::Market(_) | LimitOrderId::Limit(_) => {
+                vec![order.order.buy_token, order.order.sell_token]
+            }
+            LimitOrderId::Liquidity(_) => vec![],
+        });
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices
@@ -365,20 +415,35 @@ async fn compute_approvals(
     allowance_manager.get_approvals(&requests).await
 }
 
+/// Check if executions contain execution plans with the same coordinates
+fn duplicate_coordinates(executions: &[Execution]) -> bool {
+    let mut coordinates = HashSet::new();
+    executions.iter().any(|execution| {
+        execution
+            .coordinates()
+            .map(|coordinate| !coordinates.insert(coordinate))
+            .unwrap_or(false)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         interactions::allowances::MockAllowanceManaging,
         liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
-            WeightedProductOrder,
+            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
+            StablePoolOrder, WeightedProductOrder,
         },
         settlement::{PricedTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
-    use model::{order::OrderData, signature::Signature, TokenPair};
+    use model::{
+        order::{OrderData, OrderUid},
+        signature::Signature,
+        TokenPair,
+    };
     use num::{rational::Ratio, BigRational};
     use shared::sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
@@ -487,17 +552,23 @@ mod tests {
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),
         };
+        let foreign_liquidity_order_uid = foreign_liquidity_order
+            .order
+            .data
+            .uid(&Default::default(), &foreign_liquidity_order.order.from);
         let updated_uniswap = UpdatedAmmModel {
             execution: vec![ExecutedAmmModel {
                 sell_token: t1,
                 buy_token: t0,
                 exec_sell_amount: U256::from(9),
                 exec_buy_amount: U256::from(8),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 0,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 0,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -507,11 +578,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(1),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 1,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 1,
+                        position: 0,
+                    },
                     internal: true,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -521,11 +594,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(2),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 2,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 2,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -535,11 +610,13 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(6),
                 exec_buy_amount: U256::from(4),
-                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                    sequence: 3,
-                    position: 0,
+                exec_plan: ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: 3,
+                        position: 0,
+                    },
                     internal: false,
-                })),
+                },
             }],
             cost: Default::default(),
         };
@@ -565,6 +642,7 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(weth)),
             SlippageContext::default(),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -582,6 +660,7 @@ mod tests {
                             owner: H160([99; 20]),
                             full_fee_amount: 42.into(),
                             class: OrderClass::Liquidity,
+                            uid: foreign_liquidity_order_uid,
                             ..Default::default()
                         },
                         data: OrderData {
@@ -600,8 +679,8 @@ mod tests {
                     executed_amount: 101.into(),
                     scaled_unsubsidized_fee: 42.into(),
                 },
-                sell_token_price: 11.into(),
-                buy_token_price: (10 * 102 / 101).into(),
+                sell_token_price: 102.into(),
+                buy_token_price: 101.into(),
             }]
         );
 
@@ -662,7 +741,9 @@ mod tests {
         };
 
         let lo_1 = LimitOrder {
-            id: crate::liquidity::LimitOrderUid::ZeroEx("1".to_string()),
+            id: crate::liquidity::LimitOrderId::Liquidity(LiquidityOrderId::Protocol(
+                OrderUid::from_integer(1),
+            )),
             sell_token: token_a,
             buy_token: token_a,
             sell_amount: U256::from(996570293625199060u128),
@@ -897,41 +978,49 @@ mod tests {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 0u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 0,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 1u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 1,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 2u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 2,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
-                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                        sequence: 0u32,
-                        position: 3u32,
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: 3,
+                        },
                         internal: false,
-                    })),
+                    }
                 })),
             ],
         );
@@ -953,11 +1042,13 @@ mod tests {
             order: Liquidity::ConstantProduct(cpo_1),
             input: (token_a, U256::from(2_u8)),
             output: (token_b, U256::from(1_u8)),
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 2u32,
+            exec_plan: ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 2u32,
+                },
                 internal: false,
-            })),
+            },
         }];
         let interactions = vec![InteractionData {
             target: H160::zero(),
@@ -965,11 +1056,13 @@ mod tests {
             call_data: Vec::new(),
             inputs: vec![],
             outputs: vec![],
-            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 1u32,
+            exec_plan: Some(ExecutionPlan {
+                coordinates: ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 1u32,
+                },
                 internal: false,
-            })),
+            }),
             cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
@@ -1017,12 +1110,7 @@ mod tests {
                             (H160([2; 20]), H160([0xf2; 20])) => U256::from(5),
                         }
             })
-            .returning(|requests| {
-                Ok(requests
-                    .iter()
-                    .map(|_| Approval::AllowanceSufficient)
-                    .collect())
-            });
+            .returning(|_| Ok(Vec::new()));
 
         assert_eq!(
             compute_approvals(
@@ -1057,7 +1145,7 @@ mod tests {
             )
             .await
             .unwrap(),
-            vec![Approval::AllowanceSufficient; 4],
+            Vec::new(),
         );
     }
 
@@ -1080,5 +1168,49 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    fn interaction_with_coordinate(
+        coordinates: Option<ExecutionPlanCoordinatesModel>,
+    ) -> Execution {
+        Execution::CustomInteraction(Box::new(InteractionData {
+            exec_plan: coordinates.map(|coordinates| ExecutionPlan {
+                coordinates,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_false() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 1,
+            })),
+        ];
+        assert!(!duplicate_coordinates(&executions));
+    }
+
+    #[test]
+    pub fn duplicate_coordinates_true() {
+        let executions = vec![
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            })),
+        ];
+        assert!(duplicate_coordinates(&executions));
     }
 }

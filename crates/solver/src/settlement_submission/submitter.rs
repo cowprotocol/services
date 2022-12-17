@@ -20,7 +20,8 @@ pub mod public_mempool_api;
 
 use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
-    settlement::Settlement, settlement_access_list::AccessListEstimating,
+    settlement::Settlement,
+    settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
     settlement_simulation::settle_method_builder,
 };
 use anyhow::{anyhow, ensure, Context, Result};
@@ -30,7 +31,10 @@ use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::{
+    code_fetching::CodeFetching,
+    conversions::into_gas_price,
     ethrpc::{Web3, Web3Transport},
+    http_solver::model::InternalizationStrategy,
     submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
 };
 use std::{
@@ -171,10 +175,13 @@ pub struct Submitter<'a> {
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
+    code_fetcher: &'a dyn CodeFetching,
     submitted_transactions: SubTxPoolRef,
+    web3: Web3,
 }
 
 impl<'a> Submitter<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         contract: &'a GPv2Settlement,
         account: &'a Account,
@@ -183,6 +190,8 @@ impl<'a> Submitter<'a> {
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
+        web3: Web3,
+        code_fetcher: &'a dyn CodeFetching,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -192,6 +201,8 @@ impl<'a> Submitter<'a> {
             gas_price_estimator,
             access_list_estimator,
             submitted_transactions,
+            web3,
+            code_fetcher,
         })
     }
 }
@@ -400,7 +411,7 @@ impl<'a> Submitter<'a> {
 
             let method = match access_list.as_ref() {
                 Some(access_list) => method.access_list(access_list.clone()),
-                None => match self.estimate_access_list(&method.tx).await {
+                None => match self.estimate_access_list(&settlement, &method.tx).await {
                     Ok(new_access_list) => {
                         access_list = Some(new_access_list.clone());
                         method.access_list(new_access_list)
@@ -494,39 +505,63 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<Web3Transport, ()> {
-        settle_method_builder(self.contract, settlement.into(), self.account.clone())
+        let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
+        settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
     }
 
     /// Estimate access list and validate
     async fn estimate_access_list(
         &self,
+        settlement: &Settlement,
         tx: &TransactionBuilder<Web3Transport>,
     ) -> Result<AccessList> {
-        let access_list = self.access_list_estimator.estimate_access_list(tx).await?;
-        let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
+        let access_list = estimate_settlement_access_list(
+            self.access_list_estimator,
+            self.code_fetcher,
+            self.web3.clone(),
+            self.account.clone(),
+            settlement,
+            tx,
+        )
+        .await?;
+        let (without_access_list, with_access_list) = futures::join!(
+            // This call will fail for orders paying ETH to SC wallets
             tx.clone().estimate_gas(),
             tx.clone().access_list(access_list.clone()).estimate_gas()
-        )?;
+        );
 
-        ensure!(
-            gas_before_access_list > gas_after_access_list,
-            "access list exist but does not lower the gas usage"
-        );
-        let gas_percent_saved = (gas_before_access_list.to_f64_lossy()
-            - gas_after_access_list.to_f64_lossy())
-            / gas_before_access_list.to_f64_lossy()
-            * 100.;
-        tracing::debug!(
-            "gas before/after access list: {}/{}, access_list: {:?}, gas percent saved: {}",
-            gas_before_access_list,
-            gas_after_access_list,
-            access_list,
-            gas_percent_saved
-        );
-        Ok(access_list)
+        match (without_access_list, with_access_list) {
+            (Err(_), Ok(_)) => {
+                tracing::debug!("using an access list made the transaction executable");
+                Ok(access_list)
+            }
+            (Ok(_), Err(_)) => {
+                anyhow::bail!("access list caused the transaction to fail");
+            }
+            (Ok(gas_without), Ok(gas_with)) => {
+                ensure!(
+                    gas_without > gas_with,
+                    "access list exists but does not lower the gas usage"
+                );
+                let gas_percent_saved = (gas_without.to_f64_lossy() - gas_with.to_f64_lossy())
+                    / gas_without.to_f64_lossy()
+                    * 100.;
+                tracing::debug!(
+                    "gas before/after access list: {}/{}, access_list: {:?}, gas percent saved: {}",
+                    gas_without,
+                    gas_with,
+                    access_list,
+                    gas_percent_saved
+                );
+                Ok(access_list)
+            }
+            (Err(_), Err(_)) => {
+                anyhow::bail!("transaction would revert with and without access list");
+            }
+        }
     }
 
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
@@ -539,7 +574,7 @@ impl<'a> Submitter<'a> {
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(into_gas_price(gas_price))
             .gas(21000.into())
     }
 
@@ -628,7 +663,10 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
-    use shared::{ethrpc::create_env_test_transport, gas_price_estimation::FakeGasPriceEstimator};
+    use shared::{
+        code_fetching::MockCodeFetching, ethrpc::create_env_test_transport,
+        gas_price_estimation::FakeGasPriceEstimator,
+    };
     use std::sync::Arc;
     use tracing::level_filters::LevelFilter;
 
@@ -676,11 +714,18 @@ mod tests {
             )
             .unwrap(),
         );
+        let code_fetcher = MockCodeFetching::new();
 
         let settlement = Settlement::new(Default::default());
         let gas_estimate =
             crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
-                std::iter::once((account.clone(), settlement.clone(), None)),
+                std::iter::once((
+                    account.clone(),
+                    settlement
+                        .clone()
+                        .encode(InternalizationStrategy::SkipInternalizableInteraction),
+                    None,
+                )),
                 &contract,
                 Default::default(),
             )
@@ -701,6 +746,8 @@ mod tests {
             &gas_price_estimator,
             access_list_estimator.as_ref(),
             submitted_transactions,
+            web3.clone(),
+            &code_fetcher,
         )
         .unwrap();
 

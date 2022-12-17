@@ -22,17 +22,15 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract
-    #[clap(
-        long,
-        env,
-        default_value = "0x76aAf674848311C7F21fc691B0b952f016dA49F3"
-    )]
-    pub ethflow_contract: H160,
-
-    // Feature flag for ethflow.
+    /// Address of the ethflow contract. If not specified, eth-flow orders are disabled.
     #[clap(long, env)]
-    pub enable_ethflow_orders: bool,
+    pub ethflow_contract: Option<H160>,
+
+    /// Timestamp at which we should start indexing eth-flow contract events.
+    /// If there are already events in the database for a date later than this, then this date is
+    /// ignored and can be omitted.
+    #[clap(long, env)]
+    pub ethflow_indexing_start: Option<u64>,
 
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
@@ -115,6 +113,15 @@ pub struct Arguments {
     )]
     pub max_surplus_fee_age: Duration,
 
+    /// The interval between successive limit order surplus fee updating loops in seconds.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub surplus_fee_update_interval: Duration,
+
     #[clap(long, env)]
     pub cip_14_beta: Option<f64>,
     #[clap(long, env)]
@@ -147,8 +154,12 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
-        writeln!(f, "enable_ethflow_orders: {}", self.enable_ethflow_orders)?;
+        writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
+        writeln!(
+            f,
+            "ethflow_indexing_start: {:?}",
+            self.ethflow_indexing_start
+        )?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
@@ -172,12 +183,23 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
+        writeln!(f, "max_surplus_fee_age: {:?}", self.max_surplus_fee_age)?;
+        writeln!(
+            f,
+            "surplus_fee_update_interval: {:?}",
+            self.surplus_fee_update_interval
+        )?;
         display_option(f, "cip_14_beta", &self.cip_14_beta)?;
         display_option(f, "cip_14_alpha1", &self.cip_14_alpha1)?;
         display_option(f, "cip_14_alpha2", &self.cip_14_alpha2)?;
         display_option(f, "cip_14_profit", &self.cip_14_profit)?;
         display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
         display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
+        writeln!(
+            f,
+            "limit_order_price_factor: {:?}",
+            self.limit_order_price_factor
+        )?;
         writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
         Ok(())
     }

@@ -153,6 +153,7 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
        networks: {
            hardhat: {
                initialBaseFeePerGas: 0,
+               initialDate: "2000-01-01T00:00:00.000+00:00",
                accounts: {
                    accountsBalance: "1000000000000000000000000"
                }
@@ -168,7 +169,7 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
 
 Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third-party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
-Because services are only run on Mainnet, Rinkeby, Görli, and Gnosis Chain you need to select one of those.
+Because services are only run on Mainnet, Görli, and Gnosis Chain you need to select one of those.
 
 Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
 
@@ -227,8 +228,6 @@ To make things more interesting and see some real orders you can connect the `so
 |-------------------------------------|--------------|-------------|
 | https://barn.api.cow.fi/mainnet/api | Mainnet      | Staging     |
 | https://api.cow.fi/mainnet/api      | Mainnet      | Production  |
-| https://barn.api.cow.fi/rinkeby/api | Rinkeby      | Staging     |
-| https://api.cow.fi/rinkeby/api      | Rinkeby      | Production  |
 | https://barn.api.cow.fi/goerli/api  | Görli        | Staging     |
 | https://api.cow.fi/goerli/api       | Görli        | Production  |
 | https://barn.api.cow.fi/xdai/api    | Gnosis Chain | Staging     |

@@ -1,8 +1,7 @@
-use crate::encoding::EncodedInteraction;
 use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use ethcontract::Bytes;
 use primitive_types::{H160, U256};
-use shared::interaction::Interaction;
+use shared::interaction::{EncodedInteraction, Interaction};
 
 #[derive(Debug)]
 pub struct UniswapInteraction {

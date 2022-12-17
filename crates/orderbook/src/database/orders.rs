@@ -295,11 +295,11 @@ impl LimitOrderCounting for Postgres {
     async fn count(&self, owner: H160) -> Result<u64> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["count_limit_orders"])
+            .with_label_values(&["count_limit_orders_by_owner"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::count_limit_orders(
+        Ok(database::orders::count_limit_orders_by_owner(
             &mut ex,
             now_in_epoch_seconds().try_into().unwrap(),
             &ByteArray(owner.0),
@@ -471,6 +471,7 @@ mod tests {
             onchain_user: None,
             surplus_fee: Default::default(),
             surplus_fee_timestamp: Default::default(),
+            executed_surplus_fee: Default::default(),
         };
 
         // Open - sell (filled - 0%)

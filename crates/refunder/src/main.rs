@@ -4,8 +4,8 @@ use clap::Parser;
 async fn main() {
     let args = refunder::arguments::Arguments::parse();
     shared::tracing::initialize(
-        "warn,refunder=debug,shared=debug",
-        tracing::Level::ERROR.into(),
+        args.logging.log_filter.as_str(),
+        args.logging.log_stderr_threshold,
     );
     shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running refunder with validated arguments:\n{}", args);

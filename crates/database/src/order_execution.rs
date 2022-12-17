@@ -1,20 +1,23 @@
 use crate::{auction::AuctionId, OrderUid};
+use bigdecimal::BigDecimal;
 use sqlx::PgConnection;
 
 pub async fn save(
     ex: &mut PgConnection,
-    order: OrderUid,
+    order: &OrderUid,
     auction: AuctionId,
     reward: f64,
+    surplus_fee: Option<&BigDecimal>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_rewards (order_uid, auction_id, reward)
-VALUES ($1, $2, $3)
+INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee)
+VALUES ($1, $2, $3, $4)
     ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
         .bind(reward)
+        .bind(surplus_fee)
         .execute(ex)
         .await?;
     Ok(())
@@ -32,11 +35,16 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        save(&mut db, &Default::default(), 0, 0., None)
+            .await
+            .unwrap();
+
         save(
             &mut db,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            &Default::default(),
+            1,
+            0.,
+            Some(&Default::default()),
         )
         .await
         .unwrap();

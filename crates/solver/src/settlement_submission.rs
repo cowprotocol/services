@@ -1,4 +1,5 @@
 mod dry_run;
+pub mod gelato;
 pub mod submitter;
 
 use crate::{
@@ -14,7 +15,7 @@ use ethcontract::{
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::ethrpc::Web3;
+use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -26,6 +27,8 @@ use submitter::{
 };
 use tracing::Instrument;
 use web3::types::TransactionReceipt;
+
+use self::gelato::GelatoSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
@@ -107,6 +110,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
+    pub code_fetcher: Arc<dyn CodeFetching>,
 }
 
 pub struct StrategyArgs {
@@ -120,6 +124,7 @@ pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
     PublicMempool(StrategyArgs),
+    Gelato(Arc<GelatoSubmitter>),
     DryRun,
 }
 
@@ -129,7 +134,7 @@ impl TransactionStrategy {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
             TransactionStrategy::PublicMempool(args) => Some(args),
-            TransactionStrategy::DryRun => None,
+            TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
         }
     }
 }
@@ -147,44 +152,84 @@ impl SolutionSubmitter {
         account: Account,
         nonce: U256,
     ) -> Result<TransactionReceipt, SubmissionError> {
-        let is_dry_run: bool = self
-            .transaction_strategies
-            .iter()
-            .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
+        // Other transaction strategies than the ones below, depend on an
+        // account signing a raw transaction for a nonce, and waiting until that
+        // nonce increases to detect that it actually mined. However, the
+        // strategies below are **not** compatible with this. So if one of them
+        // is specified, use it exclusively for submitting and exit the loop.
+        // TODO(nlordell): We can refactor the `SolutionSubmitter` interface to
+        // better reflect configuration incompatibilities like this.
+        for strategy in &self.transaction_strategies {
+            match strategy {
+                TransactionStrategy::DryRun => {
+                    return Ok(dry_run::log_settlement(account, &self.contract, settlement).await?);
+                }
+                TransactionStrategy::Gelato(gelato) => {
+                    return tokio::time::timeout(
+                        self.max_confirm_time,
+                        gelato.relay_settlement(account, settlement),
+                    )
+                    .await
+                    .map_err(|_| SubmissionError::Timeout)?;
+                }
+                _ => {}
+            }
+        }
+
+        // combine protocol enabled strategies with settlement prefered strategies
+        let strategies = match settlement.submitter {
+            SubmissionPreference::ProtocolDefault => self.transaction_strategies.as_slice(),
+            SubmissionPreference::Flashbots => {
+                let position = self
+                    .transaction_strategies
+                    .iter()
+                    .position(|strategy| matches!(strategy, TransactionStrategy::Flashbots(_)));
+                match position {
+                    Some(index) => &self.transaction_strategies[index..index + 1],
+                    // if flashbots are disabled by protocol, default to protocol strategies
+                    None => self.transaction_strategies.as_slice(),
+                }
+            }
+            SubmissionPreference::PublicMempool => {
+                let position = self
+                    .transaction_strategies
+                    .iter()
+                    .position(|strategy| matches!(strategy, TransactionStrategy::PublicMempool(_)));
+                match position {
+                    Some(index) => &self.transaction_strategies[index..index + 1],
+                    // if public mempool is disabled by protocol, default to protocol strategies
+                    None => self.transaction_strategies.as_slice(),
+                }
+            }
+        };
 
         let network_id = self.web3.net().version().await?;
+        let mut futures = strategies
+            .iter()
+            .enumerate()
+            .map(|(i, strategy)| {
+                self.settle_with_strategy(
+                    strategy,
+                    &account,
+                    nonce,
+                    gas_estimate,
+                    network_id.clone(),
+                    settlement.clone(),
+                    i,
+                )
+                .boxed()
+            })
+            .collect::<Vec<_>>();
 
-        if is_dry_run {
-            Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
-        } else {
-            let mut futures = self
-                .transaction_strategies
-                .iter()
-                .enumerate()
-                .map(|(i, strategy)| {
-                    self.settle_with_strategy(
-                        strategy,
-                        &account,
-                        nonce,
-                        gas_estimate,
-                        network_id.clone(),
-                        settlement.clone(),
-                        i,
-                    )
-                    .boxed()
-                })
-                .collect::<Vec<_>>();
-
-            loop {
-                let (result, _index, rest) = futures::future::select_all(futures).await;
-                match result {
-                    Ok(receipt) => return Ok(receipt),
-                    Err(err) if rest.is_empty() || err.is_transaction_mined() => {
-                        return Err(err);
-                    }
-                    Err(_) => {
-                        futures = rest;
-                    }
+        loop {
+            let (result, _index, rest) = futures::future::select_all(futures).await;
+            match result {
+                Ok(receipt) => return Ok(receipt),
+                Err(err) if rest.is_empty() || err.is_transaction_mined() => {
+                    return Err(err);
+                }
+                Err(_) => {
+                    futures = rest;
                 }
             }
         }
@@ -210,7 +255,7 @@ impl SolutionSubmitter {
                 }
             }
             TransactionStrategy::PublicMempool(_) => {}
-            TransactionStrategy::DryRun => unreachable!(),
+            _ => unreachable!(),
         };
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");
@@ -237,6 +282,8 @@ impl SolutionSubmitter {
             &gas_price_estimator,
             self.access_list_estimator.as_ref(),
             strategy_args.sub_tx_pool.clone(),
+            self.web3.clone(),
+            self.code_fetcher.as_ref(),
         )?;
         submitter
             .submit(settlement, params)

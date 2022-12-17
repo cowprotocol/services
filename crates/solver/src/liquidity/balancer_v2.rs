@@ -6,8 +6,9 @@ use crate::{
         BalancerSwapGivenOutInteraction,
     },
     liquidity::{
-        AmmOrderExecution, LimitOrder, SettlementHandling, StablePoolOrder, WeightedProductOrder,
+        AmmOrderExecution, Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder,
     },
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::Result;
@@ -15,10 +16,10 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::H256;
 use model::TokenPair;
 use shared::{
-    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
+    ethrpc::Web3, recent_block_cache::Block,
     sources::balancer_v2::pool_fetching::BalancerPoolFetching,
 };
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 /// A liquidity provider for Balancer V2 weighted pools.
 pub struct BalancerV2Liquidity {
@@ -26,14 +27,12 @@ pub struct BalancerV2Liquidity {
     vault: BalancerV2Vault,
     pool_fetcher: Arc<dyn BalancerPoolFetching>,
     allowance_manager: Box<dyn AllowanceManaging>,
-    base_tokens: Arc<BaseTokens>,
 }
 
 impl BalancerV2Liquidity {
     pub fn new(
         web3: Web3,
         pool_fetcher: Arc<dyn BalancerPoolFetching>,
-        base_tokens: Arc<BaseTokens>,
         settlement: GPv2Settlement,
         vault: BalancerV2Vault,
     ) -> Self {
@@ -43,22 +42,14 @@ impl BalancerV2Liquidity {
             vault,
             pool_fetcher,
             allowance_manager: Box::new(allowance_manager),
-            base_tokens,
         }
     }
 
-    /// Returns relevant Balancer V2 weighted pools given a list of off-chain
-    /// orders.
-    pub async fn get_liquidity(
+    async fn get_orders(
         &self,
-        orders: &[LimitOrder],
+        pairs: HashSet<TokenPair>,
         block: Block,
     ) -> Result<(Vec<StablePoolOrder>, Vec<WeightedProductOrder>)> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
         let tokens = pools.relevant_tokens();
@@ -101,6 +92,25 @@ impl BalancerV2Liquidity {
             .collect();
 
         Ok((stable_pool_orders, weighted_product_orders))
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for BalancerV2Liquidity {
+    /// Returns relevant Balancer V2 weighted pools given a list of off-chain
+    /// orders.
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        block: Block,
+    ) -> Result<Vec<Liquidity>> {
+        let (stable, weighted) = self.get_orders(pairs, block).await?;
+        let liquidity = stable
+            .into_iter()
+            .map(Liquidity::BalancerStable)
+            .chain(weighted.into_iter().map(Liquidity::BalancerWeighted))
+            .collect();
+        Ok(liquidity)
     }
 }
 
@@ -149,10 +159,9 @@ impl SettlementHandler {
         let (asset_in, amount_in_max) = execution.input_max;
         let (asset_out, amount_out) = execution.output;
 
-        encoder.append_to_execution_plan_internalizable(
-            self.allowances.approve_token(asset_in, amount_in_max)?,
-            execution.internalizable,
-        );
+        if let Some(approval) = self.allowances.approve_token(asset_in, amount_in_max)? {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(
             BalancerSwapGivenOutInteraction {
                 settlement: self.settlement.clone(),
@@ -177,17 +186,16 @@ impl SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        settlement::InternalizationStrategy,
-    };
+    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
     use num::BigRational;
     use primitive_types::H160;
     use shared::{
+        baseline_solver::BaseTokens,
         dummy_contract,
+        http_solver::model::InternalizationStrategy,
         interaction::Interaction,
         sources::balancer_v2::pool_fetching::{
             AmplificationParameter, CommonPoolState, FetchedBalancerPools,
@@ -329,36 +337,23 @@ mod tests {
             )
             .returning(|_, _| Ok(Allowances::empty(H160([0xc1; 20]))));
 
-        let base_tokens = Arc::new(BaseTokens::new(H160([0xb0; 20]), &[]));
+        let base_tokens = BaseTokens::new(H160([0xb0; 20]), &[]);
+        let traded_pairs = [
+            TokenPair::new(H160([0x70; 20]), H160([0x71; 20])).unwrap(),
+            TokenPair::new(H160([0x70; 20]), H160([0x72; 20])).unwrap(),
+            TokenPair::new(H160([0xb0; 20]), H160([0x73; 20])).unwrap(),
+        ];
+        let pairs = base_tokens.relevant_pairs(traded_pairs.into_iter());
+
         let (settlement, vault) = dummy_contracts();
         let liquidity_provider = BalancerV2Liquidity {
             settlement,
             vault,
             pool_fetcher: Arc::new(pool_fetcher),
             allowance_manager: Box::new(allowance_manager),
-            base_tokens,
         };
         let (stable_orders, weighted_orders) = liquidity_provider
-            .get_liquidity(
-                &[
-                    LimitOrder {
-                        sell_token: H160([0x70; 20]),
-                        buy_token: H160([0x71; 20]),
-                        ..Default::default()
-                    },
-                    LimitOrder {
-                        sell_token: H160([0x70; 20]),
-                        buy_token: H160([0x72; 20]),
-                        ..Default::default()
-                    },
-                    LimitOrder {
-                        sell_token: H160([0xb0; 20]),
-                        buy_token: H160([0x73; 20]),
-                        ..Default::default()
-                    },
-                ],
-                Block::Recent,
-            )
+            .get_orders(pairs, Block::Recent)
             .await
             .unwrap();
 
@@ -426,7 +421,7 @@ mod tests {
         assert_eq!(
             interactions,
             [
-                Approval::Approve {
+                Approval {
                     token: H160([0x70; 20]),
                     spender: vault.address(),
                 }
@@ -442,7 +437,6 @@ mod tests {
                     user_data: Default::default(),
                 }
                 .encode(),
-                Approval::AllowanceSufficient.encode(),
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault,

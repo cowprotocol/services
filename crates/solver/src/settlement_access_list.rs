@@ -1,35 +1,142 @@
-use anyhow::{anyhow, ensure, Context, Result};
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, H256};
+use anyhow::{anyhow, Context, Result};
+use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Account, H160, H256};
+use futures::future::try_join_all;
+use itertools::Itertools;
+use model::order::BUY_ETH_ADDRESS;
 use serde::Deserialize;
 use shared::{
     addr,
+    code_fetching::CodeFetching,
     ethrpc::Web3,
-    tenderly_api::{SimulationRequest, TenderlyApi},
+    tenderly_api::{self, SimulationRequest, TenderlyApi},
 };
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use web3::{
     helpers,
-    types::{AccessList, Bytes, CallRequest},
+    types::{AccessList, AccessListItem, Bytes, CallRequest},
     BatchTransport, Transport,
 };
+
+use crate::{settlement::Settlement, settlement_simulation::tenderly_link};
 
 #[async_trait::async_trait]
 pub trait AccessListEstimating: Send + Sync {
     async fn estimate_access_list(
         &self,
         tx: &TransactionBuilder<DynTransport>,
+        partial_access_list: Option<AccessList>,
     ) -> Result<AccessList> {
-        self.estimate_access_lists(std::slice::from_ref(tx))
+        self.estimate_access_lists(std::slice::from_ref(tx), partial_access_list)
             .await?
             .into_iter()
             .next()
             .unwrap()
     }
-    /// The function guarantees the same size and order of input and output containers
+
+    // TODO This method should not be needed anymore, refactor it in a follow-up.
+    /// Guarantees the same length and order of input and output values.
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
+        partial_access_list: Option<AccessList>,
     ) -> Result<Vec<Result<AccessList>>>;
+}
+
+/// Does access list estimation for a transaction interacting with our settlement contract. In
+/// particular, our settlement contract will fail if the receiver is a smart contract. Because of
+/// this, if the receiver is a smart contract and we try to estimate the access list, the access
+/// list estimation will also fail.
+///
+/// The reason why this failure happens is because the Ethereum protocol sets a hard gas limit on
+/// transferring ETH into a smart contract, which some contracts exceed unless the access list is
+/// already specified.
+///
+/// The solution is to do access list estimation in two steps: first, simulate moving 1 wei
+/// into every smart contract to get a partial access list, and then simulate the full access list,
+/// passing the partial access list into the simulation. This way the settlement contract does not
+/// fail, and hence the full access list estimation also does not fail.
+pub async fn estimate_settlement_access_list(
+    estimator: &dyn AccessListEstimating,
+    code_fetcher: &dyn CodeFetching,
+    web3: Web3,
+    solver_account: Account,
+    settlement: &Settlement,
+    tx: &TransactionBuilder<DynTransport>,
+) -> Result<AccessList> {
+    // Generate partial access lists for all smart contracts
+    let partial_access_lists = try_join_all(settlement.trades().map(|trade| async {
+        let buy_token = trade.order.data.buy_token;
+        let receiver = trade
+            .order
+            .data
+            .receiver
+            .unwrap_or(trade.order.metadata.owner);
+        let order_uid = trade.order.metadata.uid;
+        let partial_access_list =
+            if buy_token == BUY_ETH_ADDRESS && is_smart_contract(code_fetcher, receiver).await? {
+                let tx = TransactionBuilder::new(web3.clone())
+                    .data(Default::default())
+                    .from(solver_account.clone())
+                    .to(receiver)
+                    .value(1.into());
+                let simulation_link = tenderly_link(
+                    web3.eth().block_number().await?.as_u64(),
+                    &web3.net().version().await?,
+                    tx.clone(),
+                    None
+                );
+                tracing::debug!(%simulation_link, ?order_uid, "generating partial access list for trade");
+                estimator.estimate_access_list(&tx, None).await?
+            } else {
+                Default::default()
+            };
+        Result::<_>::Ok(partial_access_list)
+    }))
+    .await?;
+
+    tracing::debug!(
+        ?settlement,
+        ?partial_access_lists,
+        "generated partial access lists"
+    );
+
+    // Merge the partial access lists together
+    let mut partial_access_list: HashMap<H160, HashSet<H256>> = Default::default();
+    for access_list in partial_access_lists {
+        for item in access_list {
+            partial_access_list
+                .entry(item.address)
+                .or_default()
+                .extend(item.storage_keys.into_iter());
+        }
+    }
+    let partial_access_list = partial_access_list
+        .into_iter()
+        .map(|(address, storage_keys)| AccessListItem {
+            address,
+            storage_keys: storage_keys.into_iter().collect(),
+        })
+        .collect_vec();
+
+    let simulation_link = tenderly_link(
+        web3.eth().block_number().await?.as_u64(),
+        &web3.net().version().await?,
+        tx.clone(),
+        Some(partial_access_list.clone()),
+    );
+    tracing::debug!(?settlement, %simulation_link, "generating access list for settlement");
+
+    // Generate the final access list
+    estimator
+        .estimate_access_list(tx, Some(partial_access_list))
+        .await
+}
+
+async fn is_smart_contract(code_fetching: &dyn CodeFetching, address: H160) -> Result<bool> {
+    Ok(code_fetching.code_size(address).await? != 0)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +161,7 @@ impl AccessListEstimating for NodeAccessList {
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
+        partial_access_list: Option<AccessList>,
     ) -> Result<Vec<Result<AccessList>>> {
         if txs.is_empty() {
             return Ok(Default::default());
@@ -66,6 +174,7 @@ impl AccessListEstimating for NodeAccessList {
                     from: Some(from),
                     to: Some(to),
                     data: Some(data),
+                    access_list: partial_access_list.clone(),
                     ..Default::default()
                 };
                 let params = helpers::serialize(&request);
@@ -123,6 +232,7 @@ impl AccessListEstimating for TenderlyAccessList {
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
+        partial_access_list: Option<AccessList>,
     ) -> Result<Vec<Result<AccessList>>> {
         Ok(futures::future::join_all(txs.iter().map(|tx| async {
             let (from, to, input) = resolve_call_request(tx)?;
@@ -136,6 +246,15 @@ impl AccessListEstimating for TenderlyAccessList {
                 input,
                 to,
                 generate_access_list: Some(true),
+                access_list: partial_access_list.as_ref().map(|access_list| {
+                    access_list
+                        .iter()
+                        .map(|item| tenderly_api::AccessListItem {
+                            address: item.address,
+                            storage_keys: item.storage_keys.clone(),
+                        })
+                        .collect()
+                }),
                 ..Default::default()
             };
 
@@ -143,7 +262,6 @@ impl AccessListEstimating for TenderlyAccessList {
             let access_list = response
                 .generated_access_list
                 .context("missing access list")?;
-            ensure!(!access_list.is_empty(), "empty access list");
 
             Ok(access_list.into_iter().map(Into::into).collect())
         }))
@@ -186,7 +304,7 @@ fn filter_access_list(access_list: AccessList) -> AccessList {
         .collect()
 }
 
-/// Contains multiple estimators, and uses them one by one until the first of them returns successfull result.
+/// Contains multiple estimators, and uses them one by one until the first of them returns successful result.
 /// Also does the filtering of the access list
 pub struct PriorityAccessListEstimating {
     estimators: Vec<Box<dyn AccessListEstimating>>,
@@ -203,9 +321,13 @@ impl AccessListEstimating for PriorityAccessListEstimating {
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
+        partial_access_list: Option<AccessList>,
     ) -> Result<Vec<Result<AccessList>>> {
         for (i, estimator) in self.estimators.iter().enumerate() {
-            match estimator.estimate_access_lists(txs).await {
+            match estimator
+                .estimate_access_lists(txs, partial_access_list.clone())
+                .await
+            {
                 Ok(result) => {
                     // result is valid if access list exist for at least one of the transactions
                     let is_valid = result.iter().any(|access_list| access_list.is_ok());
@@ -291,9 +413,12 @@ mod tests {
             TenderlyAccessList::new(TenderlyHttpApi::test_from_env(), "1".to_string());
 
         let tx = example_tx();
-        let access_lists = tenderly_api.estimate_access_lists(&[tx]).await.unwrap();
+        let access_lists = tenderly_api
+            .estimate_access_lists(&[tx], None)
+            .await
+            .unwrap();
         dbg!(access_lists);
-        let access_lists = tenderly_api.estimate_access_lists(&[]).await.unwrap();
+        let access_lists = tenderly_api.estimate_access_lists(&[], None).await.unwrap();
         dbg!(access_lists);
     }
 
@@ -306,9 +431,9 @@ mod tests {
 
         let tx = example_tx();
 
-        let access_lists = node_api.estimate_access_lists(&[tx]).await.unwrap();
+        let access_lists = node_api.estimate_access_lists(&[tx], None).await.unwrap();
         dbg!(access_lists);
-        let access_lists = node_api.estimate_access_lists(&[]).await.unwrap();
+        let access_lists = node_api.estimate_access_lists(&[], None).await.unwrap();
         dbg!(access_lists);
     }
 
@@ -324,7 +449,7 @@ mod tests {
         let tx3 = example_tx();
 
         let access_lists = node_api
-            .estimate_access_lists(&[tx, tx2, tx3])
+            .estimate_access_lists(&[tx, tx2, tx3], None)
             .await
             .unwrap();
         dbg!(access_lists);

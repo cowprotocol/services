@@ -2,12 +2,16 @@
 //! and interactions to query allowances to various contracts as well as keep
 //! generate interactions for them.
 
-use crate::{encoding::EncodedInteraction, interactions::Erc20ApproveInteraction};
+use crate::interactions::Erc20ApproveInteraction;
 use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashmap;
-use shared::{dummy_contract, ethrpc::Web3, interaction::Interaction};
+use shared::{
+    dummy_contract,
+    ethrpc::Web3,
+    interaction::{EncodedInteraction, Interaction},
+};
 use std::{
     collections::{HashMap, HashSet},
     slice,
@@ -25,17 +29,13 @@ pub trait AllowanceManaging: Send + Sync {
     async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances>;
 
     /// Returns the approval interaction for the specified token and spender for
-    /// at least the specified amount.
-    async fn get_approval(&self, request: &ApprovalRequest) -> Result<Approval> {
-        Ok(self
-            .get_approvals(slice::from_ref(request))
-            .await?
-            .pop()
-            .expect("missing single approval result"))
+    /// at least the specified amount, if an approval is required.
+    async fn get_approval(&self, request: &ApprovalRequest) -> Result<Option<Approval>> {
+        Ok(self.get_approvals(slice::from_ref(request)).await?.pop())
     }
 
-    /// Returns the approval interaction for the specified token and spender for
-    /// at least the specified amount.
+    /// Returns the requried approval interaction for the requests.
+    /// Does not return approvals when they aren't required.
     async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>>;
 }
 
@@ -65,7 +65,7 @@ impl Allowances {
     }
 
     /// Gets the approval interaction for the specified token and amount.
-    pub fn approve_token(&self, token: H160, amount: U256) -> Result<Approval> {
+    pub fn approve_token(&self, token: H160, amount: U256) -> Result<Option<Approval>> {
         let allowance = self
             .allowances
             .get(&token)
@@ -73,23 +73,22 @@ impl Allowances {
             .ok_or_else(|| anyhow!("missing allowance for token {:?}", token))?;
 
         Ok(if allowance < amount {
-            Approval::Approve {
+            Some(Approval {
                 token,
                 spender: self.spender,
-            }
+            })
         } else {
-            Approval::AllowanceSufficient
+            None
         })
     }
 
     /// Gets the token approval, unconditionally approving in case the token
     /// allowance is missing.
-    pub fn approve_token_or_default(&self, token: H160, amount: U256) -> Approval {
-        self.approve_token(token, amount)
-            .unwrap_or(Approval::Approve {
-                token,
-                spender: self.spender,
-            })
+    pub fn approve_token_or_default(&self, token: H160, amount: U256) -> Option<Approval> {
+        self.approve_token(token, amount).unwrap_or(Some(Approval {
+            token,
+            spender: self.spender,
+        }))
     }
 
     /// Extends the allowance cache with another.
@@ -106,35 +105,25 @@ impl Allowances {
 
 /// An ERC20 approval interaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Approval {
-    /// The existing allowance is sufficient, so no additional `approve` is required.
-    AllowanceSufficient,
-
-    /// An ERC20 approve is needed. This interaction always approves U256::MAX
-    /// in order to save gas by allowing approvals to be used over multiple
-    /// settlements.
-    Approve { token: H160, spender: H160 },
+pub struct Approval {
+    pub token: H160,
+    pub spender: H160,
 }
 
 impl Interaction for Approval {
     fn encode(&self) -> Vec<EncodedInteraction> {
-        match self {
-            Approval::AllowanceSufficient => vec![],
-            Approval::Approve { token, spender } => {
-                // Use a "dummy" contract - unfortunately `ethcontract` doesn't
-                // allow you use the generated contract intances to encode
-                // transaction data without a `Web3` instance. Hopefully, this
-                // limitation will be lifted soon to clean up stuff like this.
-                let token = dummy_contract!(ERC20, *token);
-                let approve = Erc20ApproveInteraction {
-                    token,
-                    spender: *spender,
-                    amount: U256::max_value(),
-                };
+        // Use a "dummy" contract - unfortunately `ethcontract` doesn't
+        // allow you use the generated contract intances to encode
+        // transaction data without a `Web3` instance. Hopefully, this
+        // limitation will be lifted soon to clean up stuff like this.
+        let token = dummy_contract!(ERC20, self.token);
+        let approve = Erc20ApproveInteraction {
+            token,
+            spender: self.spender,
+            amount: U256::max_value(),
+        };
 
-                approve.encode()
-            }
-        }
+        approve.encode()
     }
 }
 
@@ -174,17 +163,15 @@ impl AllowanceManaging for AllowanceManager {
         }
 
         let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
-        requests
-            .iter()
-            .map(|request| {
-                allowances
-                    .get(&request.spender)
-                    .with_context(|| {
-                        format!("no allowances found for spender {}", request.spender)
-                    })?
-                    .approve_token(request.token, request.amount)
-            })
-            .collect()
+        let mut result = Vec::new();
+        for request in requests {
+            let allowance = allowances
+                .get(&request.spender)
+                .with_context(|| format!("no allowances found for spender {}", request.spender))?
+                .approve_token(request.token, request.amount)?;
+            result.extend(allowance);
+        }
+        Ok(result)
     }
 }
 
@@ -269,14 +256,8 @@ mod tests {
             },
         );
 
-        assert_eq!(
-            allowances.approve_token(token, 42.into()).unwrap(),
-            Approval::AllowanceSufficient
-        );
-        assert_eq!(
-            allowances.approve_token(token, 100.into()).unwrap(),
-            Approval::AllowanceSufficient
-        );
+        assert_eq!(allowances.approve_token(token, 42.into()).unwrap(), None);
+        assert_eq!(allowances.approve_token(token, 100.into()).unwrap(), None);
     }
 
     #[test]
@@ -292,7 +273,7 @@ mod tests {
 
         assert_eq!(
             allowances.approve_token(token, 1337.into()).unwrap(),
-            Approval::Approve { token, spender }
+            Some(Approval { token, spender })
         );
     }
 
@@ -318,7 +299,7 @@ mod tests {
 
         assert_eq!(
             allowances.approve_token_or_default(token, 1337.into()),
-            Approval::Approve { token, spender }
+            Some(Approval { token, spender })
         );
     }
 
@@ -361,12 +342,10 @@ mod tests {
 
     #[test]
     fn approval_encode_interaction() {
-        assert_eq!(Approval::AllowanceSufficient.encode(), vec![]);
-
         let token = H160([0x01; 20]);
         let spender = H160([0x02; 20]);
         assert_eq!(
-            Approval::Approve { token, spender }.encode(),
+            Approval { token, spender }.encode(),
             vec![(
                 token,
                 0.into(),

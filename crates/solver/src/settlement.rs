@@ -2,19 +2,20 @@ pub mod external_prices;
 mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
-pub use self::settlement_encoder::{
-    verify_executed_amount, InternalizationStrategy, PricedTrade, SettlementEncoder,
-};
+pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, SettlementEncoder};
 use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
 };
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
-use shared::conversions::U256Ext as _;
+use shared::{
+    conversions::U256Ext as _,
+    http_solver::model::{InternalizationStrategy, SubmissionPreference},
+};
 use std::{
     collections::{HashMap, HashSet},
     ops::{Mul, Sub},
@@ -217,6 +218,7 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
+    pub submitter: SubmissionPreference,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -245,6 +247,7 @@ impl Settlement {
     pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
         Self {
             encoder: SettlementEncoder::new(clearing_prices),
+            ..Default::default()
         }
     }
 
@@ -260,13 +263,19 @@ impl Settlement {
 
     pub fn without_onchain_liquidity(&self) -> Self {
         let encoder = self.encoder.without_onchain_liquidity();
-        Self { encoder }
+        Self {
+            encoder,
+            submitter: self.submitter.clone(),
+        }
     }
 
     #[cfg(test)]
     pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
+        Self {
+            encoder,
+            ..Default::default()
+        }
     }
 
     #[cfg(test)]
@@ -277,7 +286,10 @@ impl Settlement {
             .map(|token| (token, U256::from(1_000_000_000_000_000_000_u128)))
             .collect();
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
+        Self {
+            encoder,
+            ..Default::default()
+        }
     }
 
     /// Returns the clearing prices map.
@@ -421,8 +433,12 @@ impl Settlement {
 
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
+        ensure!(self.submitter == other.submitter, "different submitters");
         let merged = self.encoder.merge(other.encoder)?;
-        Ok(Self { encoder: merged })
+        Ok(Self {
+            encoder: merged,
+            submitter: self.submitter,
+        })
     }
 
     // Calculates the risk level for settlement to be reverted
@@ -433,13 +449,9 @@ impl Settlement {
             Revertable::NoRisk
         }
     }
-}
 
-impl From<Settlement> for EncodedSettlement {
-    fn from(settlement: Settlement) -> Self {
-        settlement
-            .encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+    pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
+        self.encoder.finish(internalization_strategy)
     }
 }
 
@@ -551,6 +563,7 @@ pub mod tests {
     fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
+            ..Default::default()
         }
     }
 
@@ -1382,7 +1395,7 @@ pub mod tests {
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
                                 surplus_fee: 1_000_u128.into(),
-                                surplus_fee_timestamp: Default::default(),
+                                ..Default::default()
                             }),
                             ..Default::default()
                         },
@@ -1416,7 +1429,7 @@ pub mod tests {
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
                                 surplus_fee: 1_000_u128.into(),
-                                surplus_fee_timestamp: Default::default(),
+                                ..Default::default()
                             }),
                             ..Default::default()
                         },
@@ -1439,7 +1452,7 @@ pub mod tests {
         let sell_token = H160([1; 20]);
         let buy_token = H160([2; 20]);
 
-        let settlement = EncodedSettlement::from(test_settlement(
+        let settlement = test_settlement(
             hashmap! {
                 sell_token => 100_000_u128.into(),
                 buy_token => 100_000_u128.into(),
@@ -1457,7 +1470,7 @@ pub mod tests {
                     metadata: OrderMetadata {
                         class: OrderClass::Limit(LimitOrderClass {
                             surplus_fee: 1_000_u128.into(),
-                            surplus_fee_timestamp: Default::default(),
+                            ..Default::default()
                         }),
                         ..Default::default()
                     },
@@ -1466,18 +1479,23 @@ pub mod tests {
                 executed_amount: 100_000_u128.into(),
                 scaled_unsubsidized_fee: 1_000_u128.into(),
             }],
-        ));
+        )
+        .encode(InternalizationStrategy::SkipInternalizableInteraction);
 
         // Note that for limit order **both** the uniform clearing price of the
         // buy token as well as the executed clearing price accounting for fees
         // are included.
-        assert_eq!(settlement.tokens, [sell_token, buy_token, buy_token]);
+        assert_eq!(
+            settlement.tokens,
+            [sell_token, buy_token, sell_token, buy_token]
+        );
         assert_eq!(
             settlement.clearing_prices,
             [
                 100_000_u128.into(),
                 100_000_u128.into(),
-                101_010_u128.into()
+                99_000_u128.into(),
+                100_000_u128.into(),
             ],
         );
     }

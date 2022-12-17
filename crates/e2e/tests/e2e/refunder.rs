@@ -1,17 +1,21 @@
 use crate::{
     eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-    local_node::AccountAssigner,
+    local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
     services::{OrderbookServices, API_HOST},
 };
+use chrono::{DateTime, NaiveDateTime, Utc};
 use ethcontract::{H160, U256};
 use model::quote::{
     OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity,
 };
 use refunder::refund_service::RefundService;
-use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
+use shared::{
+    current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3,
+    http_client::HttpClientFactory, maintenance::Maintaining,
+};
 use sqlx::PgPool;
 
 const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
@@ -77,8 +81,8 @@ async fn refunder_tx(web3: Web3) {
     assert_eq!(quoting.status(), 200);
     let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
-    // A valid_to in the past is chosen, such that the refunder can refund it immediately
-    let valid_to = chrono::offset::Utc::now().timestamp() as u32 - 1;
+    let validity_duration = 600;
+    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
     // Accounting for slippage is necesary for the order to be picked up by the refunder
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
@@ -90,13 +94,27 @@ async fn refunder_tx(web3: Web3) {
     // Run autopilot indexing loop
     services.maintenance.run_maintenance().await.unwrap();
 
+    let time_after_expiration = valid_to as i64 + 60;
+    web3.api::<TestNodeApi<_>>()
+        .set_next_block_timestamp(&DateTime::from_utc(
+            NaiveDateTime::from_timestamp(time_after_expiration, 0),
+            Utc,
+        ))
+        .await
+        .expect("Must be able to set block timestamp");
+    // mine next block to push time forward
+    web3.api::<TestNodeApi<_>>()
+        .mine_pending_block()
+        .await
+        .expect("Unable to mine next block");
+
     // Create the refund service and execute the refund tx
     let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
         contracts.ethflow.clone(),
-        -3i64, // Needs to be negative, as valid to was chosen to be in the past
+        validity_duration as i64 / 2,
         10u64,
         refunder_account,
     );

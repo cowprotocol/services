@@ -1,9 +1,11 @@
-use super::{AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         UniswapInteraction,
     },
+    liquidity::Liquidity,
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::Result;
@@ -11,8 +13,7 @@ use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use model::TokenPair;
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
-    sources::uniswap_v2::pool_fetching::PoolFetching,
+    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v2::pool_fetching::PoolFetching,
 };
 use std::{
     collections::HashSet,
@@ -23,7 +24,6 @@ pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
     settlement_allowances: Box<dyn AllowanceManaging>,
-    base_tokens: Arc<BaseTokens>,
 }
 
 pub struct Inner {
@@ -52,7 +52,6 @@ impl UniswapLikeLiquidity {
     pub fn new(
         router: IUniswapLikeRouter,
         gpv2_settlement: GPv2Settlement,
-        base_tokens: Arc<BaseTokens>,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
@@ -67,38 +66,7 @@ impl UniswapLikeLiquidity {
             }),
             pool_fetcher,
             settlement_allowances,
-            base_tokens,
         }
-    }
-
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    pub async fn get_liquidity(
-        &self,
-        offchain_orders: &[LimitOrder],
-        at_block: Block,
-    ) -> Result<Vec<ConstantProductOrder>> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut offchain_orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
-
-        let mut tokens = HashSet::new();
-        let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
-            tokens.insert(pool.tokens.get().0);
-            tokens.insert(pool.tokens.get().1);
-
-            result.push(ConstantProductOrder {
-                address: pool.address,
-                tokens: pool.tokens,
-                reserves: pool.reserves,
-                fee: pool.fee,
-                settlement_handling: self.inner.clone(),
-            })
-        }
-        self.cache_allowances(tokens).await?;
-        Ok(result)
     }
 
     async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
@@ -118,12 +86,39 @@ impl UniswapLikeLiquidity {
     }
 }
 
+#[async_trait::async_trait]
+impl LiquidityCollecting for UniswapLikeLiquidity {
+    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        at_block: Block,
+    ) -> Result<Vec<Liquidity>> {
+        let mut tokens = HashSet::new();
+        let mut result = Vec::new();
+        for pool in self.pool_fetcher.fetch(pairs, at_block).await? {
+            tokens.insert(pool.tokens.get().0);
+            tokens.insert(pool.tokens.get().1);
+
+            result.push(Liquidity::ConstantProduct(ConstantProductOrder {
+                address: pool.address,
+                tokens: pool.tokens,
+                reserves: pool.reserves,
+                fee: pool.fee,
+                settlement_handling: self.inner.clone(),
+            }))
+        }
+        self.cache_allowances(tokens).await?;
+        Ok(result)
+    }
+}
+
 impl Inner {
     fn settle(
         &self,
         (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
-    ) -> (Approval, UniswapInteraction) {
+    ) -> (Option<Approval>, UniswapInteraction) {
         let approval = self
             .allowances
             .lock()
@@ -149,7 +144,9 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
     // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
-        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        if let Some(approval) = approval {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
@@ -184,21 +181,21 @@ mod tests {
 
         // Token A below, equal, above
         let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Token B below, equal, above
         let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()));
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) =
             inner.settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
-        assert_ne!(approval, Approval::AllowanceSufficient);
+        assert_ne!(approval, None);
     }
 }

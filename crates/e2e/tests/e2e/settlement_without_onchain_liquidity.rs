@@ -16,6 +16,7 @@ use model::{
 };
 use secp256k1::SecretKey;
 use shared::{
+    code_fetching::MockCodeFetching,
     ethrpc::Web3,
     http_client::HttpClientFactory,
     maintenance::Maintaining,
@@ -166,16 +167,13 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
         contracts.gp_settlement.clone(),
-        base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
 
     let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
+        liquidity_sources: vec![Box::new(uniswap_liquidity)],
+        base_tokens,
     };
     let network_id = web3.net().version().await.unwrap();
     let market_makable_token_list = AutoUpdatingTokenList::new(maplit::hashmap! {
@@ -237,6 +235,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 )
                 .unwrap(),
             ),
+            code_fetcher: Arc::new(MockCodeFetching::new()),
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
@@ -246,6 +245,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         None.into(),
         None,
         0,
+        Arc::new(MockCodeFetching::new()),
     );
     driver.single_run().await.unwrap();
 

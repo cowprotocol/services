@@ -23,7 +23,7 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256};
-use model::auction::AuctionId;
+use model::{auction::AuctionId, DomainSeparator};
 use num::BigRational;
 use reqwest::Url;
 use shared::{
@@ -56,7 +56,6 @@ mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
 pub mod single_order_solver;
-pub mod uni_v3_router_solver;
 mod zeroex_solver;
 
 /// Interface that all solvers must implement.
@@ -282,6 +281,7 @@ pub fn create(
     market_makable_token_list: AutoUpdatingTokenList,
     order_prioritization_config: &single_order_solver::Arguments,
     post_processing_pipeline: Arc<dyn PostProcessing>,
+    domain: &DomainSeparator,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -336,6 +336,7 @@ pub fn create(
             filter_non_fee_connected_orders,
             slippage_calculator,
             market_makable_token_list.clone(),
+            *domain,
         )
     };
 

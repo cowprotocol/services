@@ -2,23 +2,29 @@ pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
 pub mod event_updater;
-pub mod limit_order_quoter;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
+pub mod driver_model;
+pub mod limit_orders;
+
 use crate::{
     database::{
-        onchain_order_events::{ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser},
+        onchain_order_events::{
+            ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
+            event_retriever::CoWSwapOnchainOrdersContract,
+            OnchainOrderParser,
+        },
         Postgres,
     },
-    event_updater::{CoWSwapOnchainOrdersContract, EventUpdater, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
+    event_updater::{EventUpdater, GPv2SettlementContract},
+    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
 };
-use ethcontract::{errors::DeployError, BlockId, BlockNumber};
+use ethcontract::{errors::DeployError, BlockNumber};
 use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -30,6 +36,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -68,9 +75,9 @@ impl LivenessChecking for Liveness {
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) {
+pub async fn main(args: arguments::Arguments) -> ! {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    let db_metrics = tokio::task::spawn(crate::database::database_metrics(db.clone()));
+    tokio::task::spawn(crate::database::database_metrics(db.clone()));
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -332,10 +339,16 @@ pub async fn main(args: arguments::Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(&args.order_quoting.price_estimators)
+        .price_estimator(
+            &args.order_quoting.price_estimators,
+            &args.order_quoting.price_estimation_drivers,
+        )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(&args.native_price_estimators)
+        .native_price_estimator(
+            &args.native_price_estimators,
+            &args.order_quoting.price_estimation_drivers,
+        )
         .unwrap();
 
     let risk_adjusted_rewards = (|| {
@@ -374,18 +387,8 @@ pub async fn main(args: arguments::Arguments) {
         })
     })();
 
-    let sync_start = if args.skip_event_sync {
-        web3.eth()
-            .block(BlockId::Number(BlockNumber::Latest))
-            .await
-            .ok()
-            .flatten()
-            .map(|block| {
-                (
-                    block.number.expect("number must exist").as_u64(),
-                    block.hash.expect("hash must exist"),
-                )
-            })
+    let skip_event_sync_start = if args.skip_event_sync {
+        block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
     } else {
         None
     };
@@ -394,7 +397,7 @@ pub async fn main(args: arguments::Arguments) {
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
         block_retriever.clone(),
-        sync_start,
+        skip_event_sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
@@ -455,26 +458,35 @@ pub async fn main(args: arguments::Arguments) {
             .unwrap(),
     ));
 
-    if args.enable_ethflow_orders {
-        // The events from the ethflow contract are read with the more generic contract
-        // interface called CoWSwapOnchainOrders.
-        let cowswap_onchain_order_contract_for_eth_flow =
-            contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
+    if let Some(ethflow_contract) = args.ethflow_contract {
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
+            web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, settlement_contract.address()),
             settlement_contract.address(),
             liquidity_order_owners,
         );
-        let broadcaster_event_updater = Arc::new(EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow),
-            onchain_order_event_parser,
-            block_retriever,
-            sync_start,
-        ));
+        let broadcaster_event_updater = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // The events from the ethflow contract are read with the more generic contract
+                // interface called CoWSwapOnchainOrders.
+                CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
+                onchain_order_event_parser,
+                block_retriever,
+                determine_ethflow_indexing_start(
+                    &skip_event_sync_start,
+                    args.ethflow_indexing_start,
+                    &web3,
+                    chain_id,
+                )
+                .await,
+            )
+            .await
+            .expect("Should be able to initialize event updater. Database read issues?"),
+        );
         maintainers.push(broadcaster_event_updater);
     }
     if let Some(balancer) = balancer_pool_fetcher {
@@ -485,7 +497,7 @@ pub async fn main(args: arguments::Arguments) {
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
-    let maintenance_task = tokio::task::spawn(
+    tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
@@ -522,7 +534,7 @@ pub async fn main(args: arguments::Arguments) {
         db: db.clone(),
         current_block: current_block_stream,
     };
-    let auction_transaction = tokio::task::spawn(
+    tokio::task::spawn(
         auction_transaction_updater
             .run_forever()
             .instrument(tracing::info_span!("AuctionTransactionUpdater")),
@@ -530,21 +542,24 @@ pub async fn main(args: arguments::Arguments) {
 
     if args.enable_limit_orders {
         let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+        let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
-            limit_order_age: chrono::Duration::from_std(args.max_surplus_fee_age).unwrap(),
-            loop_delay: args.max_surplus_fee_age / 2,
+            limit_order_age,
+            loop_delay: args.surplus_fee_update_interval,
             quoter,
-            database: db,
+            database: db.clone(),
             signature_validator,
             domain_separator,
         }
         .spawn();
+        LimitOrderMetrics {
+            limit_order_age,
+            loop_delay: Duration::from_secs(5),
+            database: db,
+        }
+        .spawn();
     }
 
-    tokio::select! {
-        result = serve_metrics => panic!("serve_metrics exited {:?}", result),
-        result = db_metrics => panic!("db_metrics exited {:?}", result),
-        result = maintenance_task => panic!("maintenance exited {:?}", result),
-        result = auction_transaction => panic!("auction_transaction exited {:?}", result),
-    };
+    let result = serve_metrics.await;
+    panic!("serve_metrics exited {:?}", result);
 }

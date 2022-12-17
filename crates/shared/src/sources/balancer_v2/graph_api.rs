@@ -35,7 +35,6 @@ impl BalancerSubgraphClient {
     pub fn for_chain(chain_id: u64, client: Client) -> Result<Self> {
         let subgraph_name = match chain_id {
             1 => "balancer-v2",
-            4 => "balancer-rinkeby-v2",
             5 => "balancer-goerli-v2",
             _ => bail!("unsupported chain {}", chain_id),
         };
@@ -442,7 +441,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_subgraph_query() {
-        for (network_name, chain_id) in [("Mainnet", 1), ("Rinkeby", 4)] {
+        for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5)] {
             println!("### {}", network_name);
 
             let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();

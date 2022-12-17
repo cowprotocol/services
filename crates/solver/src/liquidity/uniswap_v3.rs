@@ -1,9 +1,11 @@
-use super::{AmmOrderExecution, ConcentratedLiquidity, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
         ExactOutputSingleParams, UniswapV3Interaction,
     },
+    liquidity::Liquidity,
+    liquidity_collector::LiquidityCollecting,
     settlement::SettlementEncoder,
 };
 use anyhow::{ensure, Context, Result};
@@ -12,8 +14,7 @@ use model::TokenPair;
 use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
-    sources::uniswap_v3::pool_fetching::PoolFetching,
+    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v3::pool_fetching::PoolFetching,
 };
 use std::{
     collections::HashSet,
@@ -27,7 +28,6 @@ pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
     settlement_allowances: Box<dyn AllowanceManaging>,
-    base_tokens: Arc<BaseTokens>,
 }
 pub struct Inner {
     router: UniswapV3SwapRouter,
@@ -58,7 +58,6 @@ impl UniswapV3Liquidity {
     pub fn new(
         router: UniswapV3SwapRouter,
         gpv2_settlement: GPv2Settlement,
-        base_tokens: Arc<BaseTokens>,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
@@ -73,46 +72,7 @@ impl UniswapV3Liquidity {
             }),
             pool_fetcher,
             settlement_allowances,
-            base_tokens,
         }
-    }
-
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    pub async fn get_liquidity(
-        &self,
-        offchain_orders: &[LimitOrder],
-        block: Block,
-    ) -> Result<Vec<ConcentratedLiquidity>> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut offchain_orders
-                .iter()
-                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
-        );
-
-        let mut tokens = HashSet::new();
-        let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(&pairs, block).await? {
-            ensure!(
-                pool.tokens.len() == 2,
-                "two tokens required for uniswap v3 pools"
-            );
-            let token_pair =
-                TokenPair::new(pool.tokens[0].id, pool.tokens[1].id).context("cant create pair")?;
-
-            tokens.insert(pool.tokens[0].id);
-            tokens.insert(pool.tokens[1].id);
-
-            result.push(ConcentratedLiquidity {
-                tokens: token_pair,
-                settlement_handling: Arc::new(UniswapV3SettlementHandler {
-                    inner: self.inner.clone(),
-                    fee: Some(ratio_to_u32(pool.state.fee)?),
-                }),
-                pool,
-            })
-        }
-        self.cache_allowances(tokens).await?;
-        Ok(result)
     }
 
     async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
@@ -132,13 +92,48 @@ impl UniswapV3Liquidity {
     }
 }
 
+#[async_trait::async_trait]
+impl LiquidityCollecting for UniswapV3Liquidity {
+    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        block: Block,
+    ) -> Result<Vec<Liquidity>> {
+        let mut tokens = HashSet::new();
+        let mut result = Vec::new();
+        for pool in self.pool_fetcher.fetch(&pairs, block).await? {
+            ensure!(
+                pool.tokens.len() == 2,
+                "two tokens required for uniswap v3 pools"
+            );
+            let token_pair =
+                TokenPair::new(pool.tokens[0].id, pool.tokens[1].id).context("cant create pair")?;
+
+            tokens.insert(pool.tokens[0].id);
+            tokens.insert(pool.tokens[1].id);
+
+            result.push(Liquidity::Concentrated(ConcentratedLiquidity {
+                tokens: token_pair,
+                settlement_handling: Arc::new(UniswapV3SettlementHandler {
+                    inner: self.inner.clone(),
+                    fee: Some(ratio_to_u32(pool.state.fee)?),
+                }),
+                pool,
+            }))
+        }
+        self.cache_allowances(tokens).await?;
+        Ok(result)
+    }
+}
+
 impl UniswapV3SettlementHandler {
     fn settle(
         &self,
         (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
         fee: u32,
-    ) -> (Approval, UniswapV3Interaction) {
+    ) -> (Option<Approval>, UniswapV3Interaction) {
         let approval = self
             .inner
             .allowances
@@ -178,7 +173,9 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
             execution.output,
             self.fee.context("missing fee")?,
         );
-        encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        if let Some(approval) = approval {
+            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+        }
         encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
@@ -218,20 +215,20 @@ mod tests {
         // Token A below, equal, above
         let (approval, _) =
             settlement_handler.settle((token_a, 50.into()), (token_b, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) =
             settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Token B below, equal, above
         let (approval, _) =
             settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         let (approval, _) =
             settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
-        assert_eq!(approval, Approval::AllowanceSufficient);
+        assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) = settlement_handler.settle(
@@ -239,7 +236,7 @@ mod tests {
             (token_a, 100.into()),
             10,
         );
-        assert_ne!(approval, Approval::AllowanceSufficient);
+        assert_ne!(approval, None);
     }
 
     #[test]

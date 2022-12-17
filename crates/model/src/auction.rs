@@ -34,7 +34,8 @@ pub struct Auction {
     /// valid on this block.
     pub block: u64,
 
-    /// The latest block on which a settlement has been processed.
+    /// The latest block on which a settlement has been processed. This field is used to tell which
+    /// orders are still in-flight. See [`InFlightOrders`].
     ///
     /// Note that under certain conditions it is possible for a settlement to
     /// have been mined as part of [`block`] but not have yet been processed.

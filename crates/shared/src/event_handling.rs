@@ -33,7 +33,7 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 /// 3. If this range is too big, split it into two subranges, one to update the deep history blocks, second one
 /// to update the latest blocks (last X canonical blocks)
 /// 4. Do the history update, and if successful, update `last_handled_blocks` to make sure the data is consistent.
-/// 5. If history update is successful, procceed with latest update, and if successful update `last_handled_blocks`.  
+/// 5. If history update is successful, procceed with latest update, and if successful update `last_handled_blocks`.
 pub struct EventHandler<C, S>
 where
     C: EventRetrieving,
@@ -78,6 +78,7 @@ pub trait EventRetrieving {
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
 }
 
+#[derive(Debug)]
 struct EventRange {
     /// Optional block number range for fetching reorg safe history
     history_range: Option<RangeInclusive<u64>>,
@@ -109,6 +110,29 @@ where
                 }
             },
         }
+    }
+
+    /// Creates a new instance of the event handler that does not index events appearing in blocks before the specified
+    /// input date. Note that this is a different behavior compared to [`Self::new()`]: that function always restarts
+    /// indexing from the specified input block on creation; this function only indexes from the specified input block
+    /// if there are no more recent events in the database.
+    pub async fn new_skip_blocks_before(
+        block_retriever: Arc<dyn BlockRetrieving>,
+        contract: C,
+        store: S,
+        skip_blocks_before: BlockNumberHash,
+    ) -> Result<Self> {
+        let last_handled_block = store.last_event_block().await?;
+        Ok(Self::new(
+            block_retriever,
+            contract,
+            store,
+            if last_handled_block >= skip_blocks_before.0 {
+                None
+            } else {
+                Some(skip_blocks_before)
+            },
+        ))
     }
 
     pub fn store(&self) -> &S {
@@ -452,6 +476,10 @@ where
     async fn run_maintenance(&self) -> Result<()> {
         self.lock().await.update_events().await
     }
+
+    fn name(&self) -> &str {
+        "EventHandler"
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -522,7 +550,10 @@ fn track_block_range(range: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ethrpc::{create_env_test_transport, Web3};
+    use crate::{
+        current_block::block_number_to_block_number_hash,
+        ethrpc::{create_env_test_transport, Web3},
+    };
     use contracts::{gpv2_settlement, GPv2Settlement};
     use ethcontract::{BlockNumber, H256};
     use std::str::FromStr;
@@ -533,7 +564,7 @@ mod tests {
 
     /// Simple event storage for testing purposes of EventHandler
     struct EventStorage<T> {
-        events: Vec<EthcontractEvent<T>>,
+        pub events: Vec<EthcontractEvent<T>>,
     }
 
     #[async_trait::async_trait]
@@ -746,5 +777,119 @@ mod tests {
         );
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn optional_block_skipping() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+
+        let current_block = web3.eth().block_number().await.unwrap();
+        // In this test we query for events multiple times. Newer events might be included
+        // each time we query again for the same events, but we want to disregard them.
+        let remove_events_after_test_start = |v: Vec<EthcontractEvent<_>>| {
+            v.into_iter()
+                .filter(|e| {
+                    // We make the test robust against reorgs by removing events that are too new
+                    e.meta.as_ref().unwrap().block_number
+                        <= (current_block - MAX_REORG_BLOCK_COUNT).as_u64()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // We expect that in the past ~24h intervals there have been two events in the settlement
+        // contract that are at least MAX_REORG_BLOCK_COUNT apart.
+        const RANGE_SIZE: u64 = 24 * 3600 / 12;
+
+        let storage_empty = EventStorage { events: vec![] };
+        let event_start =
+            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
+                .await
+                .unwrap();
+        let mut base_event_handler = EventHandler::new(
+            Arc::new(web3.clone()),
+            GPv2SettlementContract(contract.clone()),
+            storage_empty,
+            Some(event_start),
+        );
+        base_event_handler
+            .update_events()
+            .await
+            .expect("Should update events");
+        let base_all_events =
+            remove_events_after_test_start(base_event_handler.store().events.clone());
+
+        // We collect events again with an event handler generated from the same start date but
+        // using `new_skip_blocks_before` if there are no events
+        let storage_empty = EventStorage { events: vec![] };
+        let event_start =
+            block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
+                .await
+                .unwrap();
+        let mut base_block_skip_event_handler = EventHandler::new_skip_blocks_before(
+            Arc::new(web3.clone()),
+            GPv2SettlementContract(contract.clone()),
+            storage_empty,
+            event_start,
+        )
+        .await
+        .expect("Should be able to create event handler");
+        base_block_skip_event_handler
+            .update_events()
+            .await
+            .expect("Should update events");
+        let base_block_skip_all_events =
+            remove_events_after_test_start(base_event_handler.store().events.clone());
+
+        // No events already in storage means that we expect to have the same events available
+        assert_eq!(base_all_events, base_block_skip_all_events);
+
+        // Events are ordered by date: first is oldest, last is most recent
+        let first_event = base_all_events
+            .first()
+            .expect("Should have some events")
+            .clone();
+        let last_event = base_all_events
+            .last()
+            .expect("Should have some events")
+            .clone();
+        assert!(
+            first_event.meta.as_ref().unwrap().block_number + MAX_REORG_BLOCK_COUNT + 1
+                < last_event.meta.as_ref().unwrap().block_number,
+            "Test assumption broken"
+        );
+
+        // Recreate the same event handler with the last event already in storage.
+        let storage_nonempty = EventStorage {
+            events: vec![last_event.clone()],
+        };
+        let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
+            Arc::new(web3.clone()),
+            GPv2SettlementContract(contract),
+            storage_nonempty,
+            // Same event start as for the two previous event handlers. The test checks that this
+            // is disregarded.
+            event_start,
+        )
+        .await
+        .unwrap();
+        nonempty_event_handler
+            .update_events()
+            .await
+            .expect("Should update events");
+        let nonempty_all_events =
+            remove_events_after_test_start(nonempty_event_handler.store().events.clone());
+
+        // Nonempty-storage event handler should not index all events, but all of them should have
+        // been captured in (any of the) the event handlers that started indexing earlier
+        for event in nonempty_all_events.iter() {
+            assert!(base_block_skip_all_events.contains(event));
+        }
+        // Also, older events shouldn't be available
+        assert!(!nonempty_all_events.contains(&first_event))
+        // However, some events slightly older than last_event's block might be there because of
+        // reorg protection.
     }
 }

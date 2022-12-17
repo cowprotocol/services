@@ -3,6 +3,7 @@ use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCo
 use anyhow::{Context, Result};
 use database::byte_array::ByteArray;
 use model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB};
+use number_conversions::u256_to_big_decimal;
 use primitive_types::H256;
 
 #[async_trait::async_trait]
@@ -31,10 +32,17 @@ impl SolverCompetitionStoring for Postgres {
         .await
         .context("upsert_auction_transaction")?;
 
-        for (order, reward) in request.rewards {
-            database::order_rewards::save(&mut ex, ByteArray(order.0), request.auction, reward)
-                .await
-                .context("order_rewards::save")?;
+        for (order, execution) in request.executions {
+            let surplus_fee = execution.surplus_fee.as_ref().map(u256_to_big_decimal);
+            database::order_execution::save(
+                &mut ex,
+                &ByteArray(order.0),
+                request.auction,
+                execution.reward,
+                surplus_fee.as_ref(),
+            )
+            .await
+            .context("order_rewards::save")?;
         }
 
         ex.commit().await.context("commit")
@@ -114,7 +122,7 @@ mod tests {
                     call_data: vec![1, 2],
                 }],
             },
-            rewards: Default::default(),
+            executions: Default::default(),
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();

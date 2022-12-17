@@ -11,6 +11,7 @@ use web3::{
     types::Recovery,
 };
 
+/// See [`Signature`].
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -32,12 +33,29 @@ impl From<QuoteSigningScheme> for SigningScheme {
     }
 }
 
+/// Signature over the order data.
+/// All variants rely on the EIP-712 hash of the order data, referred to as the order hash.
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
 pub enum Signature {
+    /// The order struct is signed according to EIP-712.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-712
     Eip712(EcdsaSignature),
+    /// The order hash is signed according to EIP-191's personal_sign signature format.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-191
     EthSign(EcdsaSignature),
+    /// Signature verified according to EIP-1271, which facilitates a way for contracts to
+    /// verify signatures using an arbitrary method. This allows smart contracts to sign and
+    /// place orders. The order hash is passed to the verification method, along with this
+    /// signature.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-1271
     Eip1271(Vec<u8>),
+    /// For these signatures, the user broadcasts a transaction onchain. This transaction contains
+    /// a signature of the order hash. Because this onchain transaction is also signed, it proves
+    /// that the user indeed signed the order.
     PreSign,
 }
 
@@ -261,6 +279,7 @@ fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8;
     signing::keccak256(&message)
 }
 
+/// Orders are always hashed into 32 bytes according to EIP-712.
 fn hashed_signing_message(
     signing_scheme: EcdsaSigningScheme,
     domain_separator: &DomainSeparator,

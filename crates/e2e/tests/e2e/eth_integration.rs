@@ -1,35 +1,18 @@
 use crate::{
-    onchain_components::{
-        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
-    },
+    onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
     services::{
-        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
-        API_HOST,
+        create_orderbook_api, setup_naive_solver_uniswapv2_driver, wait_for_solvable_orders,
+        OrderbookServices, API_HOST,
     },
     tx,
 };
-use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
     order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::{
-    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
-    sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
-    },
-};
-use std::{sync::Arc, time::Duration};
+use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
 use web3::signing::SecretKeyRef;
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
@@ -162,71 +145,14 @@ async fn eth_integration(web3: Web3) {
     wait_for_solvable_orders(&client, 2).await.unwrap();
 
     // Drive solution
-    let uniswap_pair_provider = uniswap_pair_provider(&contracts);
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
-        contracts.gp_settlement.clone(),
+    let mut driver = setup_naive_solver_uniswapv2_driver(
+        &web3,
+        &contracts,
         base_tokens,
-        web3.clone(),
-        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
-    );
-    let solver = solver::solver::naive_solver(solver_account);
-    let liquidity_collector = LiquidityCollector {
-        uniswap_like_liquidity: vec![uniswap_liquidity],
-        balancer_v2_liquidity: None,
-        zeroex_liquidity: None,
-        uniswap_v3_liquidity: None,
-    };
-    let network_id = web3.net().version().await.unwrap();
-    let submitted_transactions = GlobalTxPool::default();
-    let mut driver = solver::driver::Driver::new(
-        contracts.gp_settlement.clone(),
-        liquidity_collector,
-        vec![solver],
-        Arc::new(web3.clone()),
-        Duration::from_secs(30),
-        contracts.weth.address(),
-        Duration::from_secs(0),
-        Arc::new(NoopMetrics::default()),
-        web3.clone(),
-        network_id.clone(),
-        Duration::from_secs(30),
         block_stream,
-        SolutionSubmitter {
-            web3: web3.clone(),
-            contract: contracts.gp_settlement.clone(),
-            gas_price_estimator: Arc::new(web3.clone()),
-            target_confirm_time: Duration::from_secs(1),
-            gas_price_cap: f64::MAX,
-            max_confirm_time: Duration::from_secs(120),
-            retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
-                }),
-            ],
-            access_list_estimator: Arc::new(
-                create_priority_estimator(
-                    &web3,
-                    &[AccessListEstimatorType::Web3],
-                    None,
-                    network_id,
-                )
-                .unwrap(),
-            ),
-        },
-        create_orderbook_api(),
-        create_order_converter(&web3, contracts.weth.address()),
-        15000000u128,
-        1.0,
-        None,
-        None.into(),
-        None,
-        0,
-    );
+        solver_account,
+    )
+    .await;
     driver.single_run().await.unwrap();
 
     // Check matching

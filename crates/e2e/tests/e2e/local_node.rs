@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use ethcontract::{futures::FutureExt, Account, Address, U256};
 use lazy_static::lazy_static;
 use shared::ethrpc::{create_test_transport, Web3};
@@ -15,18 +16,18 @@ lazy_static! {
 
 const NODE_HOST: &str = "http://127.0.0.1:8545";
 
-/// *Testing* function that takes a closure and executes it on Ganache.
+/// *Testing* function that takes a closure and runs it on a local testing node.
 /// Before each test, it creates a snapshot of the current state of the chain.
 /// The saved state is restored at the end of the test.
 ///
-/// Note that tests calling with this function will not be run aymultaneously.
+/// Note that tests calling with this function will not be run simultaneously.
 pub async fn test<F, Fut>(f: F)
 where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
     // The mutex guarantees that no more than a test at a time is running on
-    // Ganache.
+    // the testing node.
     // Note that the mutex is expected to become poisoned if a test panics. This
     // is not relevant for us as we are not interested in the data stored in
     // it but rather in the locked state.
@@ -50,25 +51,25 @@ where
 }
 
 struct Resetter<T> {
-    ganache: EvmApi<T>,
+    test_node_api: TestNodeApi<T>,
     snapshot_id: U256,
 }
 
 impl<T: Transport> Resetter<T> {
     async fn new(web3: &web3::Web3<T>) -> Self {
-        let ganache = web3.api::<EvmApi<_>>();
-        let snapshot_id = ganache
+        let test_node_api = web3.api::<TestNodeApi<_>>();
+        let snapshot_id = test_node_api
             .snapshot()
             .await
             .expect("Test network must support evm_snapshot");
         Self {
-            ganache,
+            test_node_api,
             snapshot_id,
         }
     }
 
     async fn reset(&self) {
-        self.ganache
+        self.test_node_api
             .revert(&self.snapshot_id)
             .await
             .expect("Test network must support evm_revert");
@@ -76,16 +77,16 @@ impl<T: Transport> Resetter<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct EvmApi<T> {
+pub struct TestNodeApi<T> {
     transport: T,
 }
 
-impl<T: Transport> Namespace<T> for EvmApi<T> {
+impl<T: Transport> Namespace<T> for TestNodeApi<T> {
     fn new(transport: T) -> Self
     where
         Self: Sized,
     {
-        EvmApi { transport }
+        TestNodeApi { transport }
     }
 
     fn transport(&self) -> &T {
@@ -93,7 +94,11 @@ impl<T: Transport> Namespace<T> for EvmApi<T> {
     }
 }
 
-impl<T: Transport> EvmApi<T> {
+/// Implements functions that are only available in a testing node.
+///
+/// Relevant RPC calls for the Hardhat network can be found at:
+/// https://hardhat.org/hardhat-network/docs/reference#special-testing/debugging-methods
+impl<T: Transport> TestNodeApi<T> {
     pub fn snapshot(&self) -> CallFuture<U256, T::Out> {
         CallFuture::new(self.transport.execute("evm_snapshot", vec![]))
     }
@@ -101,6 +106,18 @@ impl<T: Transport> EvmApi<T> {
     pub fn revert(&self, snapshot_id: &U256) -> CallFuture<bool, T::Out> {
         let value_id = serde_json::json!(snapshot_id);
         CallFuture::new(self.transport.execute("evm_revert", vec![value_id]))
+    }
+
+    pub fn set_next_block_timestamp(&self, datetime: &DateTime<Utc>) -> CallFuture<String, T::Out> {
+        let json_timestamp = serde_json::json!(datetime.timestamp());
+        CallFuture::new(
+            self.transport
+                .execute("evm_setNextBlockTimestamp", vec![json_timestamp]),
+        )
+    }
+
+    pub fn mine_pending_block(&self) -> CallFuture<String, T::Out> {
+        CallFuture::new(self.transport.execute("evm_mine", vec![]))
     }
 }
 

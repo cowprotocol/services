@@ -1,4 +1,7 @@
-use crate::database::{orders::FeeUpdate, Postgres};
+use crate::database::{
+    orders::{FeeUpdate, LimitOrderQuote},
+    Postgres,
+};
 use anyhow::Result;
 use chrono::Duration;
 use futures::future::join_all;
@@ -13,22 +16,7 @@ use shared::{
     signature_validator::{SignatureCheck, SignatureValidating},
 };
 use std::sync::Arc;
-
-#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "limit_order_quoter")]
-struct Metrics {
-    /// Counter for failed limit orders.
-    failed: prometheus::IntCounter,
-}
-
-impl Metrics {
-    fn on_failed(failed: u64) {
-        Self::instance(global_metrics::get_metric_storage_registry())
-            .unwrap()
-            .failed
-            .inc_by(failed);
-    }
-}
+use tracing::Instrument as _;
 
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
 /// to the fee returned by the quoting process. If quoting fails, the corresponding
@@ -66,7 +54,13 @@ impl LimitOrderQuoter {
             }
             for chunk in orders.chunks(10) {
                 failed_orders += join_all(chunk.iter().map(|order| async move {
-                    let update_result = self.update_surplus_fee(order).await;
+                    let update_result = self
+                        .update_surplus_fee(order)
+                        .instrument(tracing::debug_span!(
+                            "surplus_fee",
+                            order =% order.metadata.uid
+                        ))
+                        .await;
                     if let Err(err) = &update_result {
                         let order_uid = &order.metadata.uid;
                         tracing::warn!(%order_uid, ?err, "skipped limit order due to error");
@@ -133,7 +127,29 @@ impl LimitOrderQuoter {
                     surplus_fee: quote.fee_amount,
                     full_fee_amount: quote.full_fee_amount,
                 },
+                &LimitOrderQuote {
+                    fee_parameters: quote.data.fee_parameters,
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                },
             )
-            .await
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "limit_order_quoter")]
+struct Metrics {
+    /// Counter for failed limit orders.
+    failed: prometheus::IntCounter,
+}
+
+impl Metrics {
+    fn on_failed(failed: u64) {
+        Self::instance(global_metrics::get_metric_storage_registry())
+            .unwrap()
+            .failed
+            .inc_by(failed);
     }
 }

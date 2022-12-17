@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use ethcontract::Account;
+use shared::http_solver::model::InternalizationStrategy;
 use web3::types::TransactionReceipt;
 
 pub async fn log_settlement(
@@ -17,8 +18,9 @@ pub async fn log_settlement(
     let web3 = contract.raw_instance().web3();
     let current_block = web3.eth().block_number().await?;
     let network = web3.net().version().await?;
-    let settlement = settle_method_builder(contract, settlement.into(), account).tx;
-    let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement);
+    let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
+    let settlement = settle_method_builder(contract, settlement, account).tx;
+    let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement, None);
 
     tracing::info!("not submitting transaction in dry-run mode");
     tracing::debug!("transaction simulation: {}", simulation_link);

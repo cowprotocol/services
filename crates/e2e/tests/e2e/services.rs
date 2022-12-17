@@ -3,15 +3,16 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
     database::onchain_order_events::{
-        ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser,
+        ethflow_events::EthFlowOnchainOrderParser, event_retriever::CoWSwapOnchainOrdersContract,
+        OnchainOrderParser,
     },
-    event_updater::{CoWSwapOnchainOrdersContract, GPv2SettlementContract},
-    limit_order_quoter::LimitOrderQuoter,
+    event_updater::GPv2SettlementContract,
+    limit_orders::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
-use contracts::{CoWSwapOnchainOrders, WETH9};
+use contracts::{IUniswapLikeRouter, WETH9};
 use database::quotes::QuoteId;
-use ethcontract::{H160, U256};
+use ethcontract::{Account, H160, U256};
 use model::{quote::QuoteSigningScheme, DomainSeparator};
 use orderbook::{database::Postgres, orderbook::Orderbook};
 use reqwest::{Client, StatusCode};
@@ -19,6 +20,7 @@ use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
+    code_fetching::{CachedCodeFetcher, MockCodeFetching},
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
     fee_subsidy::Subsidy,
@@ -37,7 +39,17 @@ use shared::{
     signature_validator::Web3SignatureValidator,
     sources::uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
 };
-use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
+use solver::{
+    liquidity::{order_converter::OrderConverter, uniswap_v2::UniswapLikeLiquidity},
+    liquidity_collector::LiquidityCollector,
+    metrics::NoopMetrics,
+    orderbook::OrderBookApi,
+    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+    settlement_submission::{
+        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
+        GlobalTxPool, SolutionSubmitter, StrategyArgs,
+    },
+};
 use std::{
     collections::HashSet,
     future::pending,
@@ -156,7 +168,7 @@ impl OrderbookServices {
             signature_validator.clone(),
             Duration::from_secs(1),
             None,
-            H160::zero(),
+            Some(contracts.ethflow.address()),
             Duration::from_secs(5),
             Default::default(),
         );
@@ -172,9 +184,10 @@ impl OrderbookServices {
             domain_separator: contracts.domain_separator,
         }
         .spawn();
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher.expect_code_size().returning(|_| Ok(0));
         let order_validator = Arc::new(
             OrderValidator::new(
-                Box::new(web3.clone()),
                 contracts.weth.clone(),
                 HashSet::default(),
                 HashSet::default(),
@@ -186,6 +199,7 @@ impl OrderbookServices {
                 signature_validator,
                 api_db.clone(),
                 1,
+                Arc::new(code_fetcher),
             )
             .with_limit_orders(enable_limit_orders),
         );
@@ -193,16 +207,15 @@ impl OrderbookServices {
         let chain_id = web3.eth().chain_id().await.unwrap();
         let onchain_order_event_parser = OnchainOrderParser::new(
             autopilot_db.clone(),
+            web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id.as_u64(), contracts.gp_settlement.address()),
             contracts.gp_settlement.address(),
             HashSet::new(),
         );
-        let cow_onchain_order_contract =
-            CoWSwapOnchainOrders::at(web3, contracts.ethflow.address());
         let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cow_onchain_order_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), contracts.ethflow.address()),
             onchain_order_event_parser,
             block_retriever,
             None,
@@ -238,6 +251,76 @@ impl OrderbookServices {
             base_tokens,
         }
     }
+}
+
+pub async fn setup_naive_solver_uniswapv2_driver(
+    web3: &Web3,
+    contracts: &Contracts,
+    base_tokens: Arc<BaseTokens>,
+    block_stream: CurrentBlockStream,
+    solver_account: Account,
+) -> solver::driver::Driver {
+    let uniswap_pair_provider = uniswap_pair_provider(contracts);
+    let uniswap_liquidity = UniswapLikeLiquidity::new(
+        IUniswapLikeRouter::at(web3, contracts.uniswap_router.address()),
+        contracts.gp_settlement.clone(),
+        web3.clone(),
+        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
+    );
+    let solver = solver::solver::naive_solver(solver_account);
+    let liquidity_collector = LiquidityCollector {
+        liquidity_sources: vec![Box::new(uniswap_liquidity)],
+        base_tokens,
+    };
+    let network_id = web3.net().version().await.unwrap();
+    let submitted_transactions = GlobalTxPool::default();
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+
+    solver::driver::Driver::new(
+        contracts.gp_settlement.clone(),
+        liquidity_collector,
+        vec![solver],
+        Arc::new(web3.clone()),
+        Duration::from_secs(30),
+        contracts.weth.address(),
+        Duration::from_secs(0),
+        Arc::new(NoopMetrics::default()),
+        web3.clone(),
+        network_id.clone(),
+        Duration::from_secs(30),
+        block_stream,
+        SolutionSubmitter {
+            web3: web3.clone(),
+            contract: contracts.gp_settlement.clone(),
+            gas_price_estimator: Arc::new(web3.clone()),
+            target_confirm_time: Duration::from_secs(1),
+            gas_price_cap: f64::MAX,
+            max_confirm_time: Duration::from_secs(120),
+            retry_interval: Duration::from_secs(5),
+            transaction_strategies: vec![
+                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
+                }),
+            ],
+            access_list_estimator: Arc::new(
+                create_priority_estimator(web3, &[AccessListEstimatorType::Web3], None, network_id)
+                    .unwrap(),
+            ),
+            code_fetcher: code_fetcher.clone(),
+        },
+        create_orderbook_api(),
+        create_order_converter(web3, contracts.weth.address()),
+        15000000u128,
+        1.0,
+        None,
+        None.into(),
+        None,
+        0,
+        code_fetcher,
+    )
 }
 
 /// Returns error if communicating with the api fails or if a timeout is reached.

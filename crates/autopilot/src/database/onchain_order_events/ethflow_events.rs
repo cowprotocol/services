@@ -13,6 +13,11 @@ use database::{
 };
 use ethcontract::Event as EthContractEvent;
 use hex_literal::hex;
+use shared::{
+    contracts::settlement_deployment_block_number_hash,
+    current_block::{block_number_to_block_number_hash, BlockNumberHash},
+    ethrpc::Web3,
+};
 use sqlx::types::BigDecimal;
 use std::{collections::HashMap, convert::TryInto};
 
@@ -20,7 +25,7 @@ use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
 // 4c84c1c8 is the identifier of the following function:
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
-const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
+pub const WRAP_ALL_SELECTOR: [u8; 4] = hex!("4c84c1c8");
 
 pub struct EthFlowOnchainOrderParser;
 
@@ -89,10 +94,10 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 )
             })
             .unzip();
-        database::ethflow_orders::append(ex, eth_order_placements.as_slice())
+        database::ethflow_orders::insert_or_overwrite_orders(ex, eth_order_placements.as_slice())
             .await
             .context("append_ethflow_orders failed during appending eth order placement data")?;
-        database::orders::insert_pre_interactions(ex, pre_interactions_data.as_slice())
+        database::orders::insert_or_overwrite_pre_interactions(ex, pre_interactions_data.as_slice())
             .await
             .context("append_ethflow_orders failed during appending pre_interactions")
     }
@@ -219,4 +224,28 @@ mod test {
             .unwrap();
         assert_eq!(result.len(), 0);
     }
+}
+
+/// The block from which to start indexing eth-flow events. Note that this function is expected to
+/// be used at the start of the services and will panic if it cannot retrieve the information it
+/// needs.
+pub async fn determine_ethflow_indexing_start(
+    skip_event_sync_start: &Option<BlockNumberHash>,
+    ethflow_indexing_start: Option<u64>,
+    web3: &Web3,
+    chain_id: u64,
+) -> BlockNumberHash {
+    if let Some(block_number_hash) = skip_event_sync_start {
+        return *block_number_hash;
+    }
+    if let Some(block_number) = ethflow_indexing_start {
+        return block_number_to_block_number_hash(web3, block_number.into())
+            .await
+            .expect("Should be able to find block at specified indexing start");
+    }
+    settlement_deployment_block_number_hash(web3, chain_id)
+        .await
+        .unwrap_or_else(|err| {
+            panic!("Should be able to find settlement deployment block. Error: {err}")
+        })
 }
