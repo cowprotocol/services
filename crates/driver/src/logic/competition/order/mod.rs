@@ -1,14 +1,26 @@
-use crate::{logic::eth, util};
+use {
+    crate::{logic::eth, util},
+    primitive_types::H160,
+};
 
 pub mod signature;
 
 pub use signature::Signature;
 
+use crate::{blockchain, Ethereum};
+
+/// Address used in place of an actual buy token address in an order which buys
+/// ETH.
+const BUY_ETH_ADDRESS: eth::TokenAddress = eth::TokenAddress(H160([0xee; 20]));
+
 /// An order in the auction.
 #[derive(Debug)]
 pub struct Order {
     pub uid: Uid,
+    /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
+    /// The address used to place this order.
+    pub owner: eth::Address,
     pub valid_to: util::Timestamp,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
@@ -42,6 +54,24 @@ pub struct Fee {
 impl Order {
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
+    }
+
+    /// Does this order pay to a smart contract?
+    pub async fn pays_to_contract(&self, eth: &Ethereum) -> Result<bool, blockchain::Error> {
+        eth.is_contract(self.receiver()).await
+    }
+
+    /// Does this order buy ETH?
+    pub fn buys_eth(&self) -> bool {
+        self.buy.token == BUY_ETH_ADDRESS
+    }
+
+    /// The address which will receive the output of this order. If a custom
+    /// receiver address was specified by the user explicitly, return that
+    /// address. Otherwise, return the address which was used to place the
+    /// order.
+    pub fn receiver(&self) -> eth::Address {
+        self.receiver.unwrap_or(self.owner)
     }
 }
 

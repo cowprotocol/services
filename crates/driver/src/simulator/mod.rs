@@ -1,21 +1,52 @@
-use crate::logic::{competition, eth};
+use crate::logic::eth;
 
 pub mod ethereum;
 pub mod tenderly;
 
-/// Solution simulator.
+/// Ethereum transaction simulator.
 #[derive(Debug)]
 pub struct Simulator(Inner);
 
 impl Simulator {
-    /// Simulate a solution on the Ethereum network.
-    pub async fn simulate(
+    /// Simulate the access list needed by a transaction. A partial access list
+    /// may already be specified.
+    pub async fn access_list(
         &self,
-        _solution: &competition::Solution,
-    ) -> Result<eth::Simulation, Error> {
-        // TODO Tackle this after Nick's PR, this should do the full two-step
-        // settlement, and the final step should call simulate_fast
-        todo!()
+        tx: &eth::Tx,
+        partial_access_list: eth::AccessList,
+    ) -> Result<eth::AccessList, Error> {
+        Ok(match &self.0 {
+            Inner::Tenderly(tenderly) => {
+                tenderly
+                    .simulate(tx, &partial_access_list, tenderly::GenerateAccessList::Yes)
+                    .await?
+                    .access_list
+            }
+            Inner::Ethereum(ethereum) => {
+                ethereum
+                    .simulate(tx, &partial_access_list)
+                    .await
+                    .access_list
+            }
+        }
+        .merge(partial_access_list))
+    }
+
+    /// Simulate the gas needed by a transaction.
+    pub async fn gas(
+        &self,
+        tx: &eth::Tx,
+        access_list: &eth::AccessList,
+    ) -> Result<eth::Gas, Error> {
+        Ok(match &self.0 {
+            Inner::Tenderly(tenderly) => {
+                tenderly
+                    .simulate(tx, access_list, tenderly::GenerateAccessList::No)
+                    .await?
+                    .gas
+            }
+            Inner::Ethereum(ethereum) => ethereum.simulate(tx, access_list).await.gas,
+        })
     }
 }
 
@@ -23,41 +54,14 @@ impl Simulator {
 enum Inner {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
     Tenderly(tenderly::Tenderly),
-    /// Simulate transactions on an Ethereum node.
+    /// Simulate transactions using the Ethereum RPC API.
     Ethereum(ethereum::Ethereum),
 }
 
-impl Inner {
-    /// Simulate a transaction.
-    async fn simulate(
-        &self,
-        tx: &eth::Tx,
-        access_list: &eth::AccessList,
-    ) -> Result<eth::Simulation, Error> {
-        match self {
-            Self::Tenderly(tenderly) => tenderly
-                .simulate(tx, access_list, tenderly::Speed::Slow)
-                .await
-                .map_err(Into::into),
-            Self::Ethereum(ethereum) => Ok(ethereum.simulate(tx, access_list).await),
-        }
-    }
-
-    /// Simulate a transaction in fast mode, if supported. If fast mode is not
-    /// supported, this method is the same as [`simulate`].
-    async fn simulate_fast(
-        &self,
-        tx: &eth::Tx,
-        access_list: &eth::AccessList,
-    ) -> Result<eth::Simulation, Error> {
-        match self {
-            Self::Tenderly(tenderly) => tenderly
-                .simulate(tx, access_list, tenderly::Speed::Fast)
-                .await
-                .map_err(Into::into),
-            Self::Ethereum(ethereum) => Ok(ethereum.simulate(tx, access_list).await),
-        }
-    }
+#[derive(Debug)]
+struct Simulation {
+    gas: eth::Gas,
+    access_list: eth::AccessList,
 }
 
 #[derive(Debug, thiserror::Error)]
