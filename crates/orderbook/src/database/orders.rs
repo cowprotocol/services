@@ -99,7 +99,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         cancellation_timestamp: None,
         surplus_fee: match order.metadata.class {
             OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                Some(u256_to_big_decimal(&surplus_fee))
+                surplus_fee.as_ref().map(u256_to_big_decimal)
             }
             _ => None,
         },
@@ -107,7 +107,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             OrderClass::Limit(LimitOrderClass {
                 surplus_fee_timestamp,
                 ..
-            }) => Some(surplus_fee_timestamp),
+            }) => surplus_fee_timestamp,
             _ => None,
         },
     };
