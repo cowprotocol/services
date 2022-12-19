@@ -566,8 +566,9 @@ async fn filter_unsupported_tokens(
 }
 
 fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    // Unwrap because solvable orders always have a surplus fee.
     orders.retain(|order| match &order.metadata.class {
-        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
+        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee.unwrap(),
         _ => true,
     });
     orders
@@ -585,7 +586,8 @@ fn filter_mispriced_limit_orders(
             _ => return true,
         };
 
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
+        // Unwrap because solvable orders always have a surplus fee.
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee.unwrap());
         if effective_sell_amount.is_zero() {
             return false;
         }
@@ -1210,7 +1212,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: surplus_fee.into(),
+                    surplus_fee: Some(surplus_fee.into()),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1255,7 +1257,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: surplus_fee.into(),
+                    surplus_fee: Some(surplus_fee.into()),
                     ..Default::default()
                 }),
                 ..Default::default()

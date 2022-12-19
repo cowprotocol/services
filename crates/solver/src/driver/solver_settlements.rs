@@ -132,7 +132,7 @@ mod tests {
     use crate::{settlement::Trade, solver::dummy_arc_solver};
     use chrono::{offset::Utc, DateTime, Duration, Local};
 
-    use model::order::{Order, OrderClass, OrderData, OrderMetadata, OrderUid};
+    use model::order::{LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata, OrderUid};
     use num::BigRational;
 
     use std::ops::Sub;
@@ -221,7 +221,15 @@ mod tests {
 
         let s1 = Settlement::with_default_prices(vec![
             trade(old, 1, OrderClass::Market),
-            trade(recent, 2, OrderClass::Limit(Default::default())),
+            trade(
+                recent,
+                2,
+                OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: Some(Default::default()),
+                    surplus_fee_timestamp: Some(Default::default()),
+                    executed_surplus_fee: None,
+                }),
+            ),
         ]);
         let s2 = Settlement::with_default_prices(vec![
             trade(recent, 3, OrderClass::Market),
@@ -436,7 +444,11 @@ mod tests {
         assert!(!has_user_order(&settlement));
 
         let settlement =
-            Settlement::with_default_prices(vec![order(OrderClass::Limit(Default::default()))]);
+            Settlement::with_default_prices(vec![order(OrderClass::Limit(LimitOrderClass {
+                surplus_fee: Some(Default::default()),
+                surplus_fee_timestamp: Some(Default::default()),
+                executed_surplus_fee: None,
+            }))]);
         assert!(has_user_order(&settlement));
 
         let settlement = Settlement::with_default_prices(vec![order(OrderClass::Liquidity)]);
@@ -453,7 +465,11 @@ mod tests {
 
         let settlement = Settlement::with_default_prices(vec![
             order(OrderClass::Liquidity),
-            order(OrderClass::Limit(Default::default())),
+            order(OrderClass::Limit(LimitOrderClass {
+                surplus_fee: Some(Default::default()),
+                surplus_fee_timestamp: Some(Default::default()),
+                executed_surplus_fee: None,
+            })),
         ]);
         assert!(has_user_order(&settlement));
     }
