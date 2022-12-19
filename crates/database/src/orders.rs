@@ -126,8 +126,8 @@ INSERT INTO interactions (
 )
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (order_uid, index) DO UPDATE
-SET target = $3,
-value = $4, data = $5
+SET target = $3, 
+value = $4, data = $5    
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
@@ -587,10 +587,7 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-/// The ordering by most outdated in combination with updating the timestamp when updating the fee
-/// fails is important. It ensures that we cannot get stuck on orders for which the update process
-/// keeps failing.
-pub fn limit_orders_with_most_outdated_fees(
+pub fn limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
@@ -603,11 +600,9 @@ pub fn limit_orders_with_most_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
-        "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
+        "AND o.surplus_fee_timestamp < $2 ",
         ") AS o ",
-        "WHERE NOT o.invalidated ",
-        "LIMIT 100 ",
+        "WHERE NOT o.invalidated LIMIT 100",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
@@ -641,7 +636,7 @@ pub async fn count_limit_orders_by_owner(
 }
 
 pub struct FeeUpdate {
-    pub surplus_fee: Option<BigDecimal>,
+    pub surplus_fee: BigDecimal,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
 }
@@ -703,7 +698,7 @@ pub async fn count_limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
+        "AND o.surplus_fee_timestamp < $2 ",
         ") AS o ",
         "WHERE NOT o.invalidated",
     );
@@ -1593,7 +1588,7 @@ mod tests {
         .unwrap();
 
         let update = FeeUpdate {
-            surplus_fee: Some(42.into()),
+            surplus_fee: 42.into(),
             surplus_fee_timestamp: DateTime::from_utc(
                 NaiveDateTime::from_timestamp(1234567890, 0),
                 Utc,
@@ -1605,7 +1600,7 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, update.surplus_fee);
+        assert_eq!(order.surplus_fee, Some(update.surplus_fee));
         assert_eq!(
             order.surplus_fee_timestamp,
             Some(update.surplus_fee_timestamp)
@@ -1621,15 +1616,16 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
             &mut db,
             &Order {
-                uid: ByteArray([1; 56]),
+                uid: order_uid,
                 class: OrderClass::Limit,
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
+                surplus_fee_timestamp: Some(Default::default()),
                 ..Default::default()
             },
         )
@@ -1678,39 +1674,11 @@ mod tests {
         )
         .await
         .unwrap();
-        // Limit order that was never estimated.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([5; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: None,
-                surplus_fee_timestamp: None,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Limit order that was recently unsuccessfully estimated.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([6; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: None,
-                surplus_fee_timestamp: Some(timestamp),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
         // Not a limit order.
         insert_order(
             &mut db,
             &Order {
-                uid: ByteArray([7; 56]),
+                uid: ByteArray([5; 56]),
                 valid_to: 3,
                 ..Default::default()
             },
@@ -1718,14 +1686,13 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
 
-        assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].uid.0, [5; 56]);
-        assert_eq!(orders[1].uid.0, [1; 56]);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].uid, order_uid);
     }
 
     #[tokio::test]
