@@ -42,7 +42,7 @@ use shared::{
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
-const ORDERS_ENDPOINT: &str = "/api/v1/orders";
+pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 const QUOTE_ENDPOINT: &str = "/api/v1/quote";
 const TRADES_ENDPOINT: &str = "/api/v1/trades";
 

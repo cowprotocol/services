@@ -1,6 +1,6 @@
 use crate::{
     deploy::Contracts,
-    eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    eth_flow::{ORDERS_ENDPOINT, EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
@@ -144,7 +144,6 @@ async fn refunder_tx(web3: Web3) {
     assert!(tx_hash.is_some());
 }
 
-pub(crate) const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 async fn get_refund_tx_hash_for_order_uid(
     client: &Client,
     ethflow_order: &ExtendedEthFlowOrder,
