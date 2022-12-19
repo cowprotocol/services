@@ -69,6 +69,10 @@ where
         futures::try_join!(self.inner.run_maintenance(), self.cache.update_cache())?;
         Ok(())
     }
+
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
+    }
 }
 
 impl CacheKey<Pool> for H256 {
