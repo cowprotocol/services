@@ -93,7 +93,7 @@ impl LimitOrderQuoter {
                         tracing::debug!(%uid, "limit order has an invalid signature");
                         Metrics::get()
                             .update_result
-                            .with_label_values(&["unpreventable_failure"])
+                            .with_label_values(&["get_quote_unpreventable_failure"])
                             .inc();
                         return None;
                     }
@@ -101,7 +101,7 @@ impl LimitOrderQuoter {
                         tracing::warn!(%uid, ?err, "limit order signature validation error");
                         Metrics::get()
                             .update_result
-                            .with_label_values(&["preventable_failure"])
+                            .with_label_values(&["get_quote_preventable_failure"])
                             .inc();
                         return None;
                     }
@@ -133,7 +133,13 @@ impl LimitOrderQuoter {
             signing_scheme,
         };
         match self.quoter.calculate_quote(parameters).await {
-            Ok(quote) => Some(quote),
+            Ok(quote) => {
+                Metrics::get()
+                    .update_result
+                    .with_label_values(&["get_quote_ok"])
+                    .inc();
+                Some(quote)
+            }
             Err(
                 CalculateQuoteError::Other(err)
                 | CalculateQuoteError::Price(PriceEstimationError::Other(err)),
@@ -141,7 +147,7 @@ impl LimitOrderQuoter {
                 tracing::warn!(%uid, ?err, "limit order quote error");
                 Metrics::get()
                     .update_result
-                    .with_label_values(&["preventable_failure"])
+                    .with_label_values(&["get_quote_preventable_failure"])
                     .inc();
                 None
             }
@@ -149,7 +155,7 @@ impl LimitOrderQuoter {
                 tracing::debug!(%uid, ?err, "limit order unqoutable");
                 Metrics::get()
                     .update_result
-                    .with_label_values(&["unpreventable_failure"])
+                    .with_label_values(&["get_quote_unpreventable_failure"])
                     .inc();
                 None
             }
@@ -172,12 +178,20 @@ impl LimitOrderQuoter {
             },
             None => FeeUpdate::Failure { timestamp },
         };
-        if let Err(err) = self.database.update_limit_order_fees(uid, &update).await {
-            tracing::warn!(%uid, ?err, "limit order fee update db error");
-            Metrics::get()
-                .update_result
-                .with_label_values(&["preventable_failure"])
-                .inc();
+        match self.database.update_limit_order_fees(uid, &update).await {
+            Ok(_) => {
+                Metrics::get()
+                    .update_result
+                    .with_label_values(&["update_fee_ok"])
+                    .inc();
+            }
+            Err(err) => {
+                tracing::warn!(%uid, ?err, "limit order fee update db error");
+                Metrics::get()
+                    .update_result
+                    .with_label_values(&["update_fee_preventable_failure"])
+                    .inc();
+            }
         }
     }
 }
@@ -185,7 +199,7 @@ impl LimitOrderQuoter {
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
-    /// Categorizes order quote update results into success, preventable_failure, unpreventable_failure.
+    /// Categorizes order quote update results.
     #[metric(labels("type"))]
     update_result: prometheus::IntCounterVec,
 }
