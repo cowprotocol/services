@@ -315,8 +315,6 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
-        // Solvable limit orders always have a surplus fee. It would be nice if this was enforced in the API.
-        let surplus_fee = limit.surplus_fee.unwrap();
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -330,7 +328,7 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(surplus_fee)
+                    .checked_add(limit.surplus_fee)
                     .context("sell_amount computation failed")?;
                 (sell_amount_adjusted_for_fees, order.data.buy_amount)
             }
@@ -341,7 +339,7 @@ impl SettlementEncoder {
                 let sell_amount = order
                     .data
                     .sell_amount
-                    .checked_sub(surplus_fee)
+                    .checked_sub(limit.surplus_fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)

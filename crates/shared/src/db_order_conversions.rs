@@ -123,11 +123,16 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            surplus_fee: order
-                .surplus_fee
-                .as_ref()
-                .map(|fee| big_decimal_to_u256(fee).unwrap()),
-            surplus_fee_timestamp: order.surplus_fee_timestamp,
+            surplus_fee: big_decimal_to_u256(
+                order
+                    .surplus_fee
+                    .as_ref()
+                    .expect("limit orders must have surplus fee set"),
+            )
+            .unwrap(),
+            surplus_fee_timestamp: order
+                .surplus_fee_timestamp
+                .expect("limit orders must have surplus fee timestamp set"),
             executed_surplus_fee: order
                 .executed_surplus_fee
                 .as_ref()
