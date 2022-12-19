@@ -16,8 +16,8 @@ use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderClass, OrderCreation, OrderData, OrderKind,
-        SellTokenSource, BUY_ETH_ADDRESS,
+        BuyTokenDestination, LimitOrderClass, Order, OrderClass, OrderCreation, OrderData,
+        OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
     },
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
@@ -406,7 +406,12 @@ impl OrderValidating for OrderValidator {
         let class = if self.liquidity_order_owners.contains(&owner) {
             OrderClass::Liquidity
         } else if self.enable_limit_orders && order.data.fee_amount.is_zero() {
-            OrderClass::Limit(Default::default())
+            // intentionally not Default so that we notice if we change the type
+            OrderClass::Limit(LimitOrderClass {
+                surplus_fee: None,
+                surplus_fee_timestamp: None,
+                executed_surplus_fee: None,
+            })
         } else {
             OrderClass::Market
         };

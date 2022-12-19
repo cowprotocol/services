@@ -385,7 +385,7 @@ impl Driver {
                     let uid = &trade.order.metadata.uid;
                     let reward = rewards.get(uid).copied().unwrap_or(0.);
                     let surplus_fee = match trade.order.metadata.class {
-                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => Some(surplus_fee),
+                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => surplus_fee,
                         _ => None,
                     };
                     // Log in case something goes wrong with storing the rewards in the database.
