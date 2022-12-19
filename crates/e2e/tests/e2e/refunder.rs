@@ -1,6 +1,6 @@
 use crate::{
     deploy::Contracts,
-    eth_flow::{ORDERS_ENDPOINT, EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder, ORDERS_ENDPOINT},
     local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
