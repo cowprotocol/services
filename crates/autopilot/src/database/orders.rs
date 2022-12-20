@@ -43,7 +43,13 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
-    pub async fn limit_orders_with_outdated_fees(&self, age: Duration) -> Result<Vec<Order>> {
+    pub async fn limit_orders_with_outdated_fees(
+        &self,
+        age: Duration,
+        limit: usize,
+    ) -> Result<Vec<Order>> {
+        let limit: i64 = limit.try_into().context("convert limit")?;
+
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["limit_orders_with_outdated_fees"])
@@ -55,6 +61,7 @@ impl Postgres {
             &mut ex,
             timestamp,
             now_in_epoch_seconds().into(),
+            limit,
         )
         .map(|result| match result {
             Ok(order) => full_order_into_model_order(order),

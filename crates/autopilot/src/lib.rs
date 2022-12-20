@@ -545,7 +545,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,
-            loop_delay: args.surplus_fee_update_interval,
             quoter,
             database: db.clone(),
             signature_validator,
@@ -554,7 +553,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .spawn();
         LimitOrderMetrics {
             limit_order_age,
-            loop_delay: Duration::from_secs(5),
             database: db,
         }
         .spawn();

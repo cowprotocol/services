@@ -3,8 +3,7 @@ use crate::database::{
     Postgres,
 };
 use anyhow::Result;
-use chrono::{Duration, Utc};
-use futures::future::join_all;
+use futures::StreamExt;
 use model::{
     order::{Order, OrderKind, OrderUid},
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
@@ -16,15 +15,14 @@ use shared::{
     price_estimation::PriceEstimationError,
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tracing::Instrument as _;
 
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
 /// to the fee returned by the quoting process. If quoting fails, the corresponding
 /// order is skipped.
 pub struct LimitOrderQuoter {
-    pub limit_order_age: Duration,
-    pub loop_delay: std::time::Duration,
+    pub limit_order_age: chrono::Duration,
     pub quoter: Arc<dyn OrderQuoting>,
     pub database: Postgres,
     pub signature_validator: Arc<dyn SignatureValidating>,
@@ -33,40 +31,44 @@ pub struct LimitOrderQuoter {
 
 impl LimitOrderQuoter {
     pub fn spawn(self) {
-        tokio::spawn(async move {
-            loop {
-                if let Err(err) = self.update().await {
-                    tracing::error!(?err, "failed to update limit order surplus");
-                }
-                tokio::time::sleep(self.loop_delay).await;
-            }
-        });
+        tokio::spawn(async move { self.background_task().await });
     }
 
-    async fn update(&self) -> Result<()> {
+    async fn background_task(&self) -> ! {
         loop {
-            let orders = self
-                .database
-                .limit_orders_with_outdated_fees(self.limit_order_age)
-                .await?;
-            if orders.is_empty() {
-                break;
-            }
-            for chunk in orders.chunks(10) {
-                join_all(chunk.iter().map(|order| {
-                    async move {
-                        let quote = self.get_quote(order).await;
-                        self.update_fee(&order.metadata.uid, &quote).await;
-                    }
-                    .instrument(tracing::debug_span!(
-                        "surplus_fee",
-                        order =% order.metadata.uid
-                    ))
-                }))
-                .await;
-            }
+            let sleep = match self.update().await {
+                // Prevent busy looping on the database if there is no work to be done.
+                Ok(true) => Duration::from_secs_f32(10.),
+                Ok(false) => Duration::from_secs_f32(0.),
+                Err(err) => {
+                    tracing::error!(?err, "limit order quoter update error");
+                    Duration::from_secs_f32(1.)
+                }
+            };
+            tokio::time::sleep(sleep).await;
         }
-        Ok(())
+    }
+
+    /// Returns whether it is likely that there is no more work.
+    async fn update(&self) -> Result<bool> {
+        const PARALLELISM: usize = 5;
+        let orders = self
+            .database
+            .limit_orders_with_outdated_fees(self.limit_order_age, PARALLELISM)
+            .await?;
+        futures::stream::iter(&orders)
+            .for_each_concurrent(PARALLELISM, |order| {
+                async move {
+                    let quote = self.get_quote(order).await;
+                    self.update_fee(&order.metadata.uid, &quote).await;
+                }
+                .instrument(tracing::debug_span!(
+                    "surplus_fee",
+                    order =% order.metadata.uid
+                ))
+            })
+            .await;
+        Ok(orders.len() < PARALLELISM)
     }
 
     /// Handles errors internally.
@@ -164,7 +166,7 @@ impl LimitOrderQuoter {
 
     /// Handles errors internally.
     async fn update_fee(&self, uid: &OrderUid, quote: &Option<Quote>) {
-        let timestamp = Utc::now();
+        let timestamp = chrono::Utc::now();
         let update = match quote {
             Some(quote) => FeeUpdate::Success {
                 timestamp,

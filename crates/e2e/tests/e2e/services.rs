@@ -174,7 +174,6 @@ impl OrderbookServices {
         );
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
-            loop_delay: Duration::from_secs(1),
             quoter: Arc::new(FixedFeeQuoter {
                 quoter: quoter.clone(),
                 fee: 1_000.into(),
@@ -344,7 +343,7 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     };
-    match tokio::time::timeout(Duration::from_secs(5), task).await {
+    match tokio::time::timeout(Duration::from_secs(30), task).await {
         Ok(inner) => inner,
         Err(_) => Err(anyhow!("timeout")),
     }
