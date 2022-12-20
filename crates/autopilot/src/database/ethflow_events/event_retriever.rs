@@ -23,9 +23,8 @@ impl EventRetrieving for EthFlowRefundRetriever {
 
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
         let mut events = AllEventsBuilder::new(self.web3.clone(), self.address, None);
-        // Filter out events that don't belong to the ABI of `OnchainOrdersContract`. This is done
-        // because there could be other unrelated events fired by the contract which should be
-        // ignored. Also, it makes the request more efficient, since it needs to return less events.
+        // Filter out events that we don't want to listen for in the contract. `Self` is designed to
+        // only pick up refunding events. Adding a filter also makes the query more efficient.
         events.filter = events.filter.topic0(vec![ORDER_REFUND_TOPIC].into());
         events
     }
