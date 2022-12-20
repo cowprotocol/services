@@ -10,7 +10,7 @@ pub mod limit_orders;
 
 use crate::{
     database::{
-        ethflow_events::event_retriever::EthFlowContract,
+        ethflow_events::event_retriever::EthFlowRefundRetriever,
         onchain_order_events::{
             ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
             event_retriever::CoWSwapOnchainOrdersContract,
@@ -472,7 +472,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             EventUpdater::new_skip_blocks_before(
                 // This cares only about ethflow refund events because all the other ethflow
                 // events are already indexed by the OnchainOrderParser.
-                EthFlowContract::new(web3.clone(), ethflow_contract),
+                EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
                 db.clone(),
                 block_retriever.clone(),
                 start_block,

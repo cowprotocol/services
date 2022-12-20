@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
     database::{
-        ethflow_events::event_retriever::EthFlowContract,
+        ethflow_events::event_retriever::EthFlowRefundRetriever,
         onchain_order_events::{
             ethflow_events::EthFlowOnchainOrderParser,
             event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
@@ -208,7 +208,7 @@ impl OrderbookServices {
         );
         let refund_event_handler: Arc<dyn Maintaining> =
             Arc::new(autopilot::event_updater::EventUpdater::new(
-                EthFlowContract::new(web3.clone(), contracts.ethflow.address()),
+                EthFlowRefundRetriever::new(web3.clone(), contracts.ethflow.address()),
                 autopilot_db.clone(),
                 block_retriever.clone(),
                 None,
