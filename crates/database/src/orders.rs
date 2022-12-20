@@ -126,8 +126,8 @@ INSERT INTO interactions (
 )
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (order_uid, index) DO UPDATE
-SET target = $3, 
-value = $4, data = $5    
+SET target = $3,
+value = $4, data = $5
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
@@ -589,10 +589,14 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-pub fn limit_orders_with_outdated_fees(
+/// The ordering by most outdated in combination with updating the timestamp when updating the fee
+/// fails is important. It ensures that we cannot get stuck on orders for which the update process
+/// keeps failing.
+pub fn limit_orders_with_most_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
+    limit: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         "SELECT * FROM (",
@@ -602,13 +606,16 @@ pub fn limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
+        "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
         ") AS o ",
-        "WHERE NOT o.invalidated LIMIT 100",
+        "WHERE NOT o.invalidated ",
+        "LIMIT $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(limit)
         .fetch(ex)
 }
 
@@ -638,7 +645,7 @@ pub async fn count_limit_orders_by_owner(
 }
 
 pub struct FeeUpdate {
-    pub surplus_fee: BigDecimal,
+    pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
 }
@@ -700,7 +707,7 @@ pub async fn count_limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
         ") AS o ",
         "WHERE NOT o.invalidated",
     );
@@ -1601,7 +1608,7 @@ mod tests {
         .unwrap();
 
         let update = FeeUpdate {
-            surplus_fee: 42.into(),
+            surplus_fee: Some(42.into()),
             surplus_fee_timestamp: DateTime::from_utc(
                 NaiveDateTime::from_timestamp(1234567890, 0),
                 Utc,
@@ -1613,7 +1620,7 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, Some(update.surplus_fee));
+        assert_eq!(order.surplus_fee, update.surplus_fee);
         assert_eq!(
             order.surplus_fee_timestamp,
             Some(update.surplus_fee_timestamp)
@@ -1629,16 +1636,15 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
-        let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
             &mut db,
             &Order {
-                uid: order_uid,
+                uid: ByteArray([1; 56]),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
+                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
                 ..Default::default()
             },
         )
@@ -1687,11 +1693,39 @@ mod tests {
         )
         .await
         .unwrap();
-        // Not a limit order.
+        // Limit order that was never estimated.
         insert_order(
             &mut db,
             &Order {
                 uid: ByteArray([5; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: None,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Limit order that was recently unsuccessfully estimated.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([6; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: Some(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Not a limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([7; 56]),
                 valid_to: 3,
                 ..Default::default()
             },
@@ -1699,13 +1733,14 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
 
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].uid, order_uid);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].uid.0, [5; 56]);
+        assert_eq!(orders[1].uid.0, [1; 56]);
     }
 
     #[tokio::test]
