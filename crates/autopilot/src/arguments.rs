@@ -135,6 +135,10 @@ pub struct Arguments {
     // Enable background quoting for limit orders.
     #[clap(long, env)]
     pub enable_limit_orders: bool,
+
+    /// How many quotes the limit order quoter updates in parallel.
+    #[clap(long, env, default_value = "5")]
+    pub limit_order_quoter_parallelism: usize,
 }
 
 impl std::fmt::Display for Arguments {
@@ -187,6 +191,11 @@ impl std::fmt::Display for Arguments {
             self.limit_order_price_factor
         )?;
         writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
+        writeln!(
+            f,
+            "limit_order_quoter_parallelism: {:?}",
+            self.limit_order_quoter_parallelism
+        )?;
         Ok(())
     }
 }

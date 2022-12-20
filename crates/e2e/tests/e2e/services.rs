@@ -184,6 +184,7 @@ impl OrderbookServices {
             database: autopilot_db.clone(),
             signature_validator: signature_validator.clone(),
             domain_separator: contracts.domain_separator,
+            parallelism: 2,
         }
         .spawn();
         let mut code_fetcher = MockCodeFetching::new();
