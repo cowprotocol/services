@@ -595,7 +595,7 @@ components:
           example: "0x01020304"
         allowances:
           description: |
-            ERC20 approvals that are required for this custom interaction.
+            ERC20 allowances that are required for this custom interaction.
           type: array
           items:
             $ref: "#/components/schemas/Allowance"
