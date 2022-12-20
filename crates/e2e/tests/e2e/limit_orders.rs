@@ -6,8 +6,8 @@ use crate::{
         WethPoolConfig,
     },
     services::{
-        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
-        API_HOST,
+        create_order_converter, create_orderbook_api, wait_for_condition, wait_for_solvable_orders,
+        OrderbookServices, API_HOST,
     },
 };
 use contracts::IUniswapLikeRouter;
@@ -362,13 +362,7 @@ async fn two_limit_orders_test(web3: Web3) {
     tx!(trader_b, token_b.approve(contracts.allowance, to_wei(51)));
 
     // Place Orders
-    let OrderbookServices {
-        maintenance,
-        block_stream,
-        solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, true).await;
+    let services = OrderbookServices::new(&web3, &contracts, true).await;
 
     let http_factory = HttpClientFactory::default();
     let client = http_factory.create();
@@ -454,7 +448,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         liquidity_sources: vec![Box::new(uniswap_liquidity)],
-        base_tokens,
+        base_tokens: services.base_tokens,
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
@@ -470,7 +464,7 @@ async fn two_limit_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
-        block_stream,
+        services.block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
             contract: contracts.gp_settlement.clone(),
@@ -525,12 +519,13 @@ async fn two_limit_orders_test(web3: Web3) {
         .expect("Couldn't fetch TokenA's balance");
     assert_eq!(balance, U256::from(50_175_363_672_226_072_519_u128));
 
-    // Drive orderbook in order to check the removal of settled order_b
-    maintenance.run_maintenance().await.unwrap();
-    solvable_orders_cache.update(0).await.unwrap();
-
-    let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.auction.orders.is_empty());
+    // Check the removal of settled order_b
+    wait_for_condition(Duration::from_secs(10), || async {
+        let auction = create_orderbook_api().get_auction().await.unwrap();
+        auction.auction.orders.is_empty()
+    })
+    .await
+    .unwrap();
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();
