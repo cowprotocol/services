@@ -52,7 +52,7 @@ use solver::{
 };
 use std::{
     collections::HashSet,
-    future::pending,
+    future::{pending, Future},
     num::{NonZeroU64, NonZeroUsize},
     str::FromStr,
     sync::Arc,
@@ -324,29 +324,41 @@ pub async fn setup_naive_solver_uniswapv2_driver(
 
 /// Returns error if communicating with the api fails or if a timeout is reached.
 pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
-    let task = async {
-        loop {
-            let response = client
-                .get(format!("{}/api/v1/auction", API_HOST))
-                .send()
-                .await?;
-            match response.status() {
-                StatusCode::OK => {
-                    let auction: model::auction::AuctionWithId = response.json().await?;
-                    if auction.auction.orders.len() >= minimum {
-                        return Ok(());
-                    }
-                }
-                StatusCode::NOT_FOUND => (),
-                other => anyhow::bail!("unexpected status code {}", other),
+    let condition = || async {
+        let response = client
+            .get(format!("{}/api/v1/auction", API_HOST))
+            .send()
+            .await
+            .unwrap();
+        match response.status() {
+            StatusCode::OK => {
+                let auction: model::auction::AuctionWithId = response.json().await.unwrap();
+                auction.auction.orders.len() >= minimum
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            StatusCode::NOT_FOUND => false,
+            other => panic!("unexpected status code {}", other),
         }
     };
-    match tokio::time::timeout(Duration::from_secs(30), task).await {
-        Ok(inner) => inner,
-        Err(_) => Err(anyhow!("timeout")),
+    wait_for_condition(Duration::from_secs(30), condition).await
+}
+
+/// Repeatedly evaluate condition until it returns true or the timeout is reached. If condition
+/// evaluates to true, Ok(()) is returned. If the timeout is reached Err is returned.
+pub async fn wait_for_condition<Fut>(
+    timeout: Duration,
+    mut condition: impl FnMut() -> Fut,
+) -> Result<()>
+where
+    Fut: Future<Output = bool>,
+{
+    let start = std::time::Instant::now();
+    while !condition().await {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if start.elapsed() > timeout {
+            return Err(anyhow!("timeout"));
+        }
     }
+    Ok(())
 }
 
 /// Same as [`OrderQuoter`], but forces the fee to be exactly the specified amount.
