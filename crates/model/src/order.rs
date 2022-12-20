@@ -486,11 +486,37 @@ pub struct CancellationPayload {
     pub signing_scheme: EcdsaSigningScheme,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
-    pub is_refunded: bool,
+    pub refund_tx_hash: Option<H256>,
+}
+
+// We still want to have the `is_refunded` field in the JSON response to stay backwards compatible.
+// However, `refund_tx_hash` already contains all the information we need so we rather have a
+// custom `Serialize` implementation than redundant fields that could possibly contradict each other.
+impl ::serde::Serialize for EthflowData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Extended {
+            user_valid_to: i64,
+            refund_tx_hash: Option<H256>,
+            is_refunded: bool,
+        }
+
+        let ext = Extended {
+            user_valid_to: self.user_valid_to,
+            refund_tx_hash: self.refund_tx_hash,
+            is_refunded: self.refund_tx_hash.is_some(),
+        };
+
+        ext.serialize(serializer)
+    }
 }
 
 /// An order as provided to the orderbook by the frontend.

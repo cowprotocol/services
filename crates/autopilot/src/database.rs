@@ -1,5 +1,6 @@
 mod auction;
 pub mod auction_transaction;
+pub mod ethflow_events;
 mod events;
 pub mod onchain_order_events;
 pub mod orders;

@@ -115,7 +115,6 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 // unwrap is allowed, as any missing event_index would have been filtered beforehand
                 // by the implementation of the function parse_custom_event_data
                 valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
-                is_refunded: false,
             },
             // The following interaction calls the wrap_all() function on the ethflow contract
             // in order to wrap all existing ether to weth, such that the eth can be used as

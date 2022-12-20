@@ -392,7 +392,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
-    pub ethflow_data: Option<(bool, i64)>,
+    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
@@ -455,7 +455,9 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
     LIMIT 1
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
-(SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
+    left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
+    where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
 "#;
@@ -721,7 +723,9 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
-        ethflow_orders::{insert_or_overwrite_ethflow_order, EthOrderPlacement},
+        ethflow_orders::{
+            insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
+        },
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         onchain_invalidations::insert_onchain_invalidation,
@@ -796,23 +800,33 @@ mod tests {
 
         let order = Order::default();
         let user_valid_to = 4i64;
-        let is_refunded = true;
         insert_or_overwrite_ethflow_order(
             &mut db,
             &EthOrderPlacement {
                 uid: OrderUid::default(),
                 valid_to: user_valid_to,
-                is_refunded,
             },
         )
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
+        insert_refund_tx_hash(
+            &mut db,
+            &Refund {
+                order_uid: order.uid,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(Some((is_refunded, user_valid_to)), order_.ethflow_data);
+        assert_eq!(
+            Some((Some(Default::default()), user_valid_to)),
+            order_.ethflow_data
+        );
     }
 
     #[tokio::test]
@@ -1275,7 +1289,6 @@ mod tests {
         let ethflow_order = EthOrderPlacement {
             uid: order.uid,
             valid_to: 2,
-            is_refunded: false,
         };
         insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
             .await

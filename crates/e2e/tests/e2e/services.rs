@@ -2,9 +2,12 @@ use crate::{deploy::Contracts, onchain_components::uniswap_pair_provider};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
-    database::onchain_order_events::{
-        ethflow_events::EthFlowOnchainOrderParser, event_retriever::CoWSwapOnchainOrdersContract,
-        OnchainOrderParser,
+    database::{
+        ethflow_events::event_retriever::EthFlowRefundRetriever,
+        onchain_order_events::{
+            ethflow_events::EthFlowOnchainOrderParser,
+            event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
+        },
     },
     event_updater::GPv2SettlementContract,
     limit_orders::LimitOrderQuoter,
@@ -24,7 +27,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
     fee_subsidy::Subsidy,
-    maintenance::ServiceMaintenance,
+    maintenance::{Maintaining, ServiceMaintenance},
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoter, OrderQuoting, Quote, QuoteHandler,
         QuoteParameters, QuoteSearchParameters,
@@ -202,6 +205,13 @@ impl OrderbookServices {
             )
             .with_limit_orders(enable_limit_orders),
         );
+        let refund_event_handler: Arc<dyn Maintaining> =
+            Arc::new(autopilot::event_updater::EventUpdater::new(
+                EthFlowRefundRetriever::new(web3.clone(), contracts.ethflow.address()),
+                autopilot_db.clone(),
+                block_retriever.clone(),
+                None,
+            ));
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let chain_id = web3.eth().chain_id().await.unwrap();
         let onchain_order_event_parser = OnchainOrderParser::new(
@@ -219,6 +229,7 @@ impl OrderbookServices {
             block_retriever,
             None,
         ));
+
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),
@@ -229,6 +240,7 @@ impl OrderbookServices {
             Arc::new(autopilot_db.clone()),
             ethflow_event_updater,
             gpv2_event_updater,
+            refund_event_handler,
         ]);
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(
