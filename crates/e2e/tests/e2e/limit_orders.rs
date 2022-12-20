@@ -523,7 +523,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, U256::from(50_175_363_672_226_072_520_u128));
+    assert_eq!(balance, U256::from(50_175_363_672_226_072_519_u128));
 
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
