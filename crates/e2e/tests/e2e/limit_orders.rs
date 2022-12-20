@@ -516,7 +516,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_315_815_u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_315_813_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
