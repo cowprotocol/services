@@ -44,7 +44,7 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
-async fn single_limit_order() {
+async fn local_node_single_limit_order() {
     crate::local_node::test(single_limit_order_test).await;
 }
 
