@@ -44,25 +44,25 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
-async fn single_limit_order() {
+async fn local_node_single_limit_order() {
     crate::local_node::test(single_limit_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn two_limit_orders() {
+async fn local_node_two_limit_orders() {
     crate::local_node::test(two_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn too_many_limit_orders() {
+async fn local_node_too_many_limit_orders() {
     crate::local_node::test(too_many_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn mixed_limit_and_market_orders() {
+async fn local_node_mixed_limit_and_market_orders() {
     crate::local_node::test(mixed_limit_and_market_orders_test).await;
 }
 
@@ -516,14 +516,14 @@ async fn two_limit_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_315_815_u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_315_813_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, U256::from(50_175_363_672_226_072_520_u128));
+    assert_eq!(balance, U256::from(50_175_363_672_226_072_519_u128));
 
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
@@ -769,7 +769,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_315_816_u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_315_814_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
