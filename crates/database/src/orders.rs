@@ -600,7 +600,7 @@ pub fn limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND (o.surplus_fee_timestamp < $2 or o.surplus_fee_timestamp IS NULL)",
         ") AS o ",
         "WHERE NOT o.invalidated LIMIT 100",
     );

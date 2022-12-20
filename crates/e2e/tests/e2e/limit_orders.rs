@@ -50,19 +50,19 @@ async fn local_node_single_limit_order() {
 
 #[tokio::test]
 #[ignore]
-async fn two_limit_orders() {
+async fn local_node_two_limit_orders() {
     crate::local_node::test(two_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn too_many_limit_orders() {
+async fn local_node_too_many_limit_orders() {
     crate::local_node::test(too_many_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn mixed_limit_and_market_orders() {
+async fn local_node_mixed_limit_and_market_orders() {
     crate::local_node::test(mixed_limit_and_market_orders_test).await;
 }
 
