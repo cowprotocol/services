@@ -61,10 +61,10 @@ impl Display for Arguments {
 
 impl Arguments {
     fn apply_weight_constraints(&self, original_weight: f64) -> f64 {
-        original_weight
-            .powf(self.price_priority_exponent)
-            .max(self.price_priority_min_weight)
-            .min(self.price_priority_max_weight)
+        original_weight.powf(self.price_priority_exponent).clamp(
+            self.price_priority_min_weight,
+            self.price_priority_max_weight,
+        )
     }
 }
 
