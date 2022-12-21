@@ -519,6 +519,40 @@ impl ::serde::Serialize for EthflowData {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnchainOrderPlacementError {
+    QuoteNotFound,
+    ValidToTooFarInTheFuture,
+    // If limit orders are created from on-chain events
+    // but limit orders are disabled at the API level, then this
+    // error is returned
+    DisabledOrderClass,
+    // PreValidationErrors are any errors that are found during the
+    // prevalidation of orders in the services. Since this validations
+    // are also done during quoting, any order with a correct quote should
+    // not run into this issue
+    PreValidationError,
+    // InvalidQuote error is return, if the quote and the order did not match
+    // together
+    InvalidQuote,
+    InsufficientFee,
+    // In case order data is invalid - e.g. signature type EIP-712 for
+    // onchain orders - this error is returned
+    InvalidOrderData,
+    Other,
+}
+
+// stores all data related to onchain order palcement
+#[serde_as]
+#[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OnchainOrderData {
+    pub user: H160,
+    pub placement_error: Option<OnchainOrderPlacementError>,
+}
+
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Default, Derivative, Deserialize, Serialize)]
@@ -549,6 +583,8 @@ pub struct OrderMetadata {
     pub full_fee_amount: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain_order_data: Option<OnchainOrderData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,

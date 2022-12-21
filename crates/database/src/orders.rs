@@ -1,4 +1,7 @@
-use crate::{Address, AppId, OrderUid, TransactionHash};
+use crate::{
+    onchain_broadcasted_orders::OnchainOrderPlacementError, Address, AppId, OrderUid,
+    TransactionHash,
+};
 use futures::stream::BoxStream;
 use sqlx::{
     types::{
@@ -394,6 +397,7 @@ pub struct FullOrder {
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
+    pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
@@ -459,6 +463,7 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
+(SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
 "#;
 
@@ -569,6 +574,7 @@ WHERE
         WHEN 'buy' THEN sum_buy < buy_amount
     END AND
     (NOT invalidated) AND
+    (onchain_placement_error IS NULL) AND
     (NOT presignature_pending)
 "#
 );
@@ -769,6 +775,7 @@ mod tests {
             &OnchainOrderPlacement {
                 order_uid: OrderUid::default(),
                 sender,
+                placement_error: None,
             },
         )
         .await
@@ -1286,6 +1293,22 @@ mod tests {
 
         assert!(get_order(&mut db, 3).await.is_none());
         assert!(get_order(&mut db, 2).await.is_some());
+
+        // no longer solvable, if there was also a onchain order
+        // placement error
+        let onchain_order_placement = OnchainOrderPlacement {
+            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
+            ..Default::default()
+        };
+        let event_index = EventIndex {
+            block_number: 0,
+            log_index: 0,
+        };
+        insert_onchain_order(&mut db, &event_index, &onchain_order_placement)
+            .await
+            .unwrap();
+
+        assert!(get_order(&mut db, 2).await.is_none());
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
@@ -1336,6 +1359,7 @@ mod tests {
                     let onchain_order = OnchainOrderPlacement {
                         order_uid: uid,
                         sender: owner,
+                        placement_error: None,
                     };
                     let event_index = EventIndex::default();
                     insert_onchain_order(&mut db, &event_index, &onchain_order)
@@ -1465,6 +1489,7 @@ mod tests {
         let onchain_order = OnchainOrderPlacement {
             order_uid: ByteArray(orders[0].0),
             sender: owners[2],
+            placement_error: None,
         };
         let event_index = EventIndex::default();
         insert_onchain_order(&mut db, &event_index, &onchain_order)

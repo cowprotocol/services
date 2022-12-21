@@ -19,8 +19,8 @@ use model::{
     app_id::AppId,
     auction::AuctionWithId,
     order::{
-        BuyTokenDestination, EthflowData, Order, OrderBuilder, OrderClass, OrderKind, OrderUid,
-        SellTokenSource,
+        BuyTokenDestination, EthflowData, OnchainOrderData, Order, OrderBuilder, OrderClass,
+        OrderKind, OrderUid, SellTokenSource,
     },
     quote::{
         OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
@@ -438,7 +438,13 @@ async fn test_order_parameters(
             refund_tx_hash: None,
         })
     );
-    assert_eq!(response.metadata.onchain_user, Some(*owner));
+    assert_eq!(
+        response.metadata.onchain_order_data,
+        Some(OnchainOrderData {
+            user: *owner,
+            placement_error: None,
+        })
+    );
 
     assert_eq!(response.metadata.class, OrderClass::Market);
 

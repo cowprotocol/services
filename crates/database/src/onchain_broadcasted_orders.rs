@@ -2,16 +2,48 @@ use super::events::EventIndex;
 use crate::{Address, OrderUid, PgTransaction};
 use sqlx::{Executor, PgConnection};
 
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
+pub enum OnchainOrderPlacementError {
+    QuoteNotFound,
+    InvalidQuote,
+    PreValidationError,
+    DisabledOrderClass,
+    ValidToTooFarInFuture,
+    InvalidOrderData,
+    InsufficientFee,
+    Other,
+}
+
+#[cfg(test)]
+impl OnchainOrderPlacementError {
+    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {
+        const ERRORS: [OnchainOrderPlacementError; 8] = [
+            OnchainOrderPlacementError::QuoteNotFound,
+            OnchainOrderPlacementError::InvalidQuote,
+            OnchainOrderPlacementError::PreValidationError,
+            OnchainOrderPlacementError::DisabledOrderClass,
+            OnchainOrderPlacementError::ValidToTooFarInFuture,
+            OnchainOrderPlacementError::InvalidOrderData,
+            OnchainOrderPlacementError::InsufficientFee,
+            OnchainOrderPlacementError::Other,
+        ];
+        ERRORS.into_iter()
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OnchainOrderPlacement {
     pub order_uid: OrderUid,
     pub sender: Address,
+    pub placement_error: Option<OnchainOrderPlacementError>,
 }
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct OnchainOrderPlacementRow {
     pub uid: OrderUid,
     pub sender: Address,
+    pub placement_error: Option<OnchainOrderPlacementError>,
     pub is_reorged: bool,
     pub block_number: i64,
     pub log_index: i64,
@@ -52,14 +84,16 @@ pub async fn insert_onchain_order(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
         INSERT INTO onchain_placed_orders
-            (uid, sender, is_reorged, block_number, log_index)
-        VALUES ($1, $2, false, $3, $4)
+            (uid, sender, is_reorged, placement_error, block_number, log_index)
+        VALUES ($1, $2, false, $3, $4, $5)
         ON CONFLICT (uid) DO UPDATE SET
-            is_reorged = false, sender = $2, block_number = $3, log_index = $4;
+            is_reorged = false, sender = $2, placement_error = $3,
+            block_number = $4, log_index = $5;
     "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(&event.sender)
+        .bind(&event.placement_error)
         .bind(index.block_number)
         .bind(index.log_index)
         .execute(ex)
@@ -88,27 +122,36 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
+        async fn round_trip_for_error(
+            db: &mut PgConnection,
+            placement_error: Option<OnchainOrderPlacementError>,
+        ) {
+            let order = OnchainOrderPlacement {
+                placement_error: placement_error.clone(),
+                ..Default::default()
+            };
+            let event_index = EventIndex::default();
+            insert_onchain_order(db, &event_index, &order)
+                .await
+                .unwrap();
+            let row = read_order(db, &order.order_uid).await.unwrap().unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order.order_uid,
+                sender: order.sender,
+                placement_error,
+                is_reorged: false,
+                block_number: event_index.block_number,
+                log_index: event_index.log_index,
+            };
+            assert_eq!(expected_row, row);
+        }
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = OnchainOrderPlacement::default();
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &order)
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order.order_uid,
-            sender: order.sender,
-            is_reorged: false,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
+        round_trip_for_error(&mut db, None).await;
+        for error in OnchainOrderPlacementError::into_iter() {
+            crate::clear_DANGER_(&mut db).await.unwrap();
+            round_trip_for_error(&mut db, Some(error)).await;
+        }
     }
 
     #[tokio::test]
@@ -147,10 +190,12 @@ mod tests {
         let order_1 = OnchainOrderPlacement {
             order_uid: ByteArray([1; 56]),
             sender: ByteArray([1; 20]),
+            placement_error: None,
         };
         let order_2 = OnchainOrderPlacement {
             order_uid: ByteArray([2; 56]),
             sender: ByteArray([2; 20]),
+            placement_error: None,
         };
         append(
             &mut db,
@@ -169,6 +214,7 @@ mod tests {
         let expected_row = OnchainOrderPlacementRow {
             uid: order_1.order_uid,
             sender: order_1.sender,
+            placement_error: None,
             is_reorged: false,
             block_number: event_index_1.block_number,
             log_index: event_index_1.log_index,
@@ -181,6 +227,7 @@ mod tests {
         let expected_row = OnchainOrderPlacementRow {
             uid: order_2.order_uid,
             sender: order_2.sender,
+            placement_error: None,
             is_reorged: true, // <-- difference is here
             block_number: event_index_2.block_number,
             log_index: event_index_2.log_index,
@@ -206,6 +253,7 @@ mod tests {
         let order_1 = OnchainOrderPlacement {
             order_uid: ByteArray([1; 56]),
             sender: ByteArray([1; 20]),
+            placement_error: None,
         };
         append(&mut db, &[(event_index_1, order_1.clone())])
             .await
@@ -219,6 +267,7 @@ mod tests {
             uid: order_1.order_uid,
             sender: order_1.sender,
             is_reorged: true,
+            placement_error: None,
             block_number: event_index_1.block_number,
             log_index: event_index_1.log_index,
         };
@@ -226,6 +275,7 @@ mod tests {
         let reorged_order = OnchainOrderPlacement {
             order_uid: order_1.order_uid,
             sender: ByteArray([2; 20]),
+            placement_error: None,
         };
         // Now, we insert the order again and then it should no longer be reorged
         append(&mut db, &[(event_index_2, reorged_order.clone())])
@@ -239,6 +289,7 @@ mod tests {
             uid: order_1.order_uid,
             sender: reorged_order.sender,
             is_reorged: false,
+            placement_error: None,
             block_number: event_index_2.block_number,
             log_index: event_index_2.log_index,
         };

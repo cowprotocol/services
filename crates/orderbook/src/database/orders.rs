@@ -11,8 +11,8 @@ use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
     order::{
-        EthflowData, Interactions, LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata,
-        OrderStatus, OrderUid,
+        EthflowData, Interactions, LimitOrderClass, OnchainOrderData, Order, OrderClass, OrderData,
+        OrderMetadata, OrderStatus, OrderUid,
     },
     signature::Signature,
     time::now_in_epoch_seconds,
@@ -23,8 +23,9 @@ use primitive_types::H160;
 use shared::{
     db_order_conversions::{
         buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
-        order_class_from, order_class_into, order_kind_from, order_kind_into,
-        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
+        onchain_order_placement_error_from, order_class_from, order_class_into, order_kind_from,
+        order_kind_into, sell_token_source_from, sell_token_source_into, signing_scheme_from,
+        signing_scheme_into,
     },
     order_quoting::Quote,
     order_validation::LimitOrderCounting,
@@ -348,6 +349,11 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
+    let onchain_placement_error = onchain_order_placement_error_from(&order);
+    let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
+        user: onchain_user,
+        placement_error: onchain_placement_error,
+    });
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -375,6 +381,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
+        onchain_order_data,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -469,6 +476,7 @@ mod tests {
             pre_interactions: Vec::new(),
             ethflow_data: None,
             onchain_user: None,
+            onchain_placement_error: None,
             surplus_fee: Default::default(),
             surplus_fee_timestamp: Default::default(),
             executed_surplus_fee: Default::default(),

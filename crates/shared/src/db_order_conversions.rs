@@ -1,16 +1,20 @@
 use anyhow::{Context, Result};
-use database::orders::{
-    BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
-    OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
-    SigningScheme as DbSigningScheme,
+use database::{
+    onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
+    orders::{
+        BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
+        OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
+        SigningScheme as DbSigningScheme,
+    },
 };
 use ethcontract::{H160, H256};
 use model::{
     app_id::AppId,
     interaction::InteractionData,
     order::{
-        BuyTokenDestination, EthflowData, Interactions, LimitOrderClass, Order, OrderClass,
-        OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid, SellTokenSource,
+        BuyTokenDestination, EthflowData, Interactions, LimitOrderClass, OnchainOrderData,
+        OnchainOrderPlacementError, Order, OrderClass, OrderData, OrderKind, OrderMetadata,
+        OrderStatus, OrderUid, SellTokenSource,
     },
     signature::{Signature, SigningScheme},
 };
@@ -29,6 +33,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
+    let onchain_placement_error = onchain_order_placement_error_from(&order);
+    let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
+        user: onchain_user,
+        placement_error: onchain_placement_error,
+    });
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -56,6 +65,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
+        onchain_order_data,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -115,6 +125,36 @@ pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
         OrderClass::Market => DbOrderClass::Market,
         OrderClass::Liquidity => DbOrderClass::Liquidity,
         OrderClass::Limit(_) => DbOrderClass::Limit,
+    }
+}
+
+pub fn onchain_order_placement_error_from(
+    order: &FullOrderDb,
+) -> Option<OnchainOrderPlacementError> {
+    match order.onchain_placement_error {
+        Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
+            Some(OnchainOrderPlacementError::InvalidOrderData)
+        }
+        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
+            Some(OnchainOrderPlacementError::QuoteNotFound)
+        }
+        Some(DbOnchainOrderPlacementError::PreValidationError) => {
+            Some(OnchainOrderPlacementError::PreValidationError)
+        }
+        Some(DbOnchainOrderPlacementError::DisabledOrderClass) => {
+            Some(OnchainOrderPlacementError::DisabledOrderClass)
+        }
+        Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
+            Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
+        }
+        Some(DbOnchainOrderPlacementError::InvalidQuote) => {
+            Some(OnchainOrderPlacementError::InvalidQuote)
+        }
+        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
+            Some(OnchainOrderPlacementError::InsufficientFee)
+        }
+        Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
+        None => None,
     }
 }
 
