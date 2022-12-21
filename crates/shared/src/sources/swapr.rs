@@ -17,6 +17,20 @@ mod tests {
     use model::TokenPair;
 
     #[tokio::test]
+    async fn test_create2_mainnet() {
+        let (mainnet_pair_provider, _) = get_liquidity_source(&Mock::new(1).web3()).await.unwrap();
+        let mainnet_pair = TokenPair::new(
+            addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
+            addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+        )
+        .unwrap();
+        assert_eq!(
+            mainnet_pair_provider.pair_address(&mainnet_pair),
+            addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13")
+        );
+    }
+
+    #[tokio::test]
     async fn test_create2_xdai() {
         let (xdai_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
         let xdai_pair = TokenPair::new(

@@ -556,13 +556,11 @@ pub fn user_orders<'a>(
         .fetch(ex)
 }
 
-pub fn solvable_orders(
-    ex: &mut PgConnection,
-    min_valid_to: i64,
-    min_surplus_fee_timestamp: DateTime<Utc>,
-) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
-    #[rustfmt::skip]
-    const QUERY: &str = const_format::concatcp!(
+/// The base solvable orders query used in specialized queries. Parametrized by valid_to.
+///
+/// Does not take limit order surplus fee into account.
+#[rustfmt::skip]
+const OPEN_ORDERS: &str = const_format::concatcp!(
 "SELECT * FROM ( ",
     "SELECT ", ORDERS_SELECT,
     " FROM ", ORDERS_FROM,
@@ -577,9 +575,18 @@ WHERE
     END AND
     (NOT invalidated) AND
     (onchain_placement_error IS NULL) AND
-    (NOT presignature_pending) AND
-    (class <> 'limit' OR (surplus_fee IS NOT NULL AND surplus_fee_timestamp > $2));
+    (NOT presignature_pending)
 "#
+);
+
+pub fn solvable_orders(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+    min_surplus_fee_timestamp: DateTime<Utc>,
+) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
+    const QUERY: &str = const_format::concatcp!(
+        OPEN_ORDERS,
+        " AND (class <> 'limit' OR (surplus_fee IS NOT NULL AND surplus_fee_timestamp > $2))"
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
@@ -595,6 +602,8 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
+/// Return valid limit orders with outdated surplus fee.
+///
 /// The ordering by most outdated in combination with updating the timestamp when updating the fee
 /// fails is important. It ensures that we cannot get stuck on orders for which the update process
 /// keeps failing.
@@ -605,18 +614,11 @@ pub fn limit_orders_with_most_outdated_fees(
     limit: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
-        "SELECT * FROM (",
-        "SELECT ",
-        ORDERS_SELECT,
-        " FROM ",
-        ORDERS_FROM,
-        " WHERE o.valid_to >= $1 ",
-        "AND o.class = 'limit' ",
-        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
-        "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
-        ") AS o ",
-        "WHERE NOT o.invalidated ",
-        "LIMIT $3 ",
+        OPEN_ORDERS,
+        " AND class = 'limit'",
+        " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
+        " LIMIT $3"
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
@@ -632,16 +634,11 @@ pub async fn count_limit_orders_by_owner(
     owner: &Address,
 ) -> Result<i64, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT(*) FROM (",
-        "SELECT ",
-        ORDERS_SELECT,
-        " FROM ",
-        ORDERS_FROM,
-        " WHERE o.valid_to >= $1 ",
-        "AND o.class = 'limit' ",
-        "AND o.owner = $2 ",
-        ") AS o ",
-        "WHERE NOT o.invalidated",
+        "SELECT COUNT (*) FROM (",
+        OPEN_ORDERS,
+        " AND class = 'limit'",
+        " AND owner = $2",
+        " ) AS subquery"
     );
     sqlx::query_scalar(QUERY)
         .bind(min_valid_to)
@@ -679,20 +676,16 @@ pub async fn update_limit_order_fees(
     Ok(())
 }
 
+/// Count the number of valid limit orders.
 pub async fn count_limit_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
 ) -> Result<i64, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT(*) FROM (",
-        "SELECT ",
-        ORDERS_SELECT,
-        " FROM ",
-        ORDERS_FROM,
-        " WHERE o.valid_to >= $1 ",
-        "AND o.class = 'limit' ",
-        ") AS o ",
-        "WHERE NOT o.invalidated",
+        "SELECT COUNT (*) FROM (",
+        OPEN_ORDERS,
+        " AND class = 'limit'",
+        ") AS subquery"
     );
     sqlx::query_scalar(QUERY)
         .bind(min_valid_to)
@@ -700,22 +693,19 @@ pub async fn count_limit_orders(
         .await
 }
 
+/// Count the number of valid limit orders with outdated fee as would be returned by
+/// `limit_orders_with_most_outdated_fees`.
 pub async fn count_limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
 ) -> Result<i64, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT(*) FROM (",
-        "SELECT ",
-        ORDERS_SELECT,
-        " FROM ",
-        ORDERS_FROM,
-        " WHERE o.valid_to >= $1 ",
-        "AND o.class = 'limit' ",
-        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
-        ") AS o ",
-        "WHERE NOT o.invalidated",
+        "SELECT COUNT (*) FROM (",
+        OPEN_ORDERS,
+        " AND class = 'limit'",
+        " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        ") AS subquery"
     );
     sqlx::query_scalar(QUERY)
         .bind(min_valid_to)
@@ -1670,6 +1660,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1684,6 +1676,8 @@ mod tests {
                 valid_to: 1,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(Default::default()),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1699,6 +1693,8 @@ mod tests {
                 cancellation_timestamp: Some(Utc::now()),
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(Default::default()),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1713,6 +1709,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(timestamp),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1727,6 +1725,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: None,
                 surplus_fee_timestamp: None,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1741,6 +1741,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: None,
                 surplus_fee_timestamp: Some(timestamp),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1752,6 +1754,8 @@ mod tests {
             &Order {
                 uid: ByteArray([7; 56]),
                 valid_to: 3,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1766,6 +1770,25 @@ mod tests {
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].uid.0, [5; 56]);
         assert_eq!(orders[1].uid.0, [1; 56]);
+
+        // Invalidate one of the orders through a trade.
+        crate::events::insert_trade(
+            &mut db,
+            &EventIndex::default(),
+            &Trade {
+                order_uid: orders[0].uid,
+                sell_amount_including_fee: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(orders.len(), 1);
     }
 
     #[tokio::test]
@@ -1823,6 +1846,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(Default::default()),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1837,6 +1862,8 @@ mod tests {
                 valid_to: 1,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(Default::default()),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1852,6 +1879,8 @@ mod tests {
                 cancellation_timestamp: Some(Utc::now()),
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(Default::default()),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1866,6 +1895,9 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(timestamp),
+                owner: ByteArray([7u8; 20]),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1877,6 +1909,8 @@ mod tests {
             &Order {
                 uid: ByteArray([5; 56]),
                 valid_to: 3,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
         )
@@ -1886,6 +1920,12 @@ mod tests {
         assert_eq!(count_limit_orders(&mut db, 2).await.unwrap(), 2);
         assert_eq!(
             count_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            count_limit_orders_by_owner(&mut db, 2, &ByteArray([7u8; 20]))
                 .await
                 .unwrap(),
             1
