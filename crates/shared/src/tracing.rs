@@ -1,5 +1,5 @@
 use std::{
-    panic::{self, PanicInfo},
+    panic::PanicInfo,
     sync::atomic::{AtomicBool, Ordering},
 };
 use time::macros::format_description;
@@ -11,7 +11,7 @@ use tracing_subscriber::fmt::{time::UtcTime, writer::MakeWriterExt as _};
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
 pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
     set_tracing_subscriber(env_filter, stderr_threshold);
-    set_panic_hook();
+    std::panic::set_hook(Box::new(tracing_panic_hook));
 }
 
 // Like above but meant to be used in tests.
@@ -49,16 +49,13 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
     }
 }
 
-// Wrap the existing panic hook with tracing::error information that is logged before the existing
-// hook is called.
-fn set_panic_hook() {
-    let default_hook = panic::take_hook();
-    let hook = move |info: &PanicInfo| {
-        // It is not possible for our custom hook to print a full backtrace on stable rust. To not
-        // lose this information we call the default panic handler which prints the full backtrace.
-        // The preceding log makes kibana consider this a multi line log message.
-        tracing::error!("thread panic (message after this log):");
-        default_hook(info);
-    };
-    panic::set_hook(Box::new(hook));
+/// Panic hook that prints roughly the same message as the default panic hook but uses
+/// tracing:error instead of stderr.
+///
+/// Useful when we want panic messages to have the proper log format for Kibana.
+fn tracing_panic_hook(panic: &PanicInfo) {
+    let thread = std::thread::current();
+    let name = thread.name().unwrap_or("<unnamed>");
+    let backtrace = std::backtrace::Backtrace::capture();
+    tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
 }
