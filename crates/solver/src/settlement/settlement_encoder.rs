@@ -499,6 +499,12 @@ impl SettlementEncoder {
         self.sort_tokens_and_update_indices();
     }
 
+    pub fn contains_internalized_interactions(&self) -> bool {
+        self.execution_plan
+            .iter()
+            .any(|(_, internalizable)| *internalizable)
+    }
+
     pub fn finish(
         mut self,
         internalization_strategy: InternalizationStrategy,
