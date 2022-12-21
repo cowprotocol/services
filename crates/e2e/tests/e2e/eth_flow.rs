@@ -1,6 +1,6 @@
 use crate::{
     deploy::Contracts,
-    local_node::AccountAssigner,
+    local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
@@ -11,6 +11,7 @@ use crate::{
 };
 use anyhow::bail;
 use autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9};
 use ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256};
 use hex_literal::hex;
@@ -35,12 +36,13 @@ use refunder::{
 };
 use reqwest::Client;
 use shared::{
-    ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining,
+    current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3,
+    http_client::HttpClientFactory, maintenance::Maintaining,
     signature_validator::check_erc1271_result,
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
-const ORDERS_ENDPOINT: &str = "/api/v1/orders";
+pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 const QUOTE_ENDPOINT: &str = "/api/v1/quote";
 const TRADES_ENDPOINT: &str = "/api/v1/trades";
 
@@ -49,10 +51,16 @@ const DAI_PER_ETH: u32 = 1000;
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_flow() {
-    crate::local_node::test(refunder_tx).await;
+    crate::local_node::test(eth_flow_tx).await;
 }
 
-async fn refunder_tx(web3: Web3) {
+#[tokio::test]
+#[ignore]
+async fn local_node_eth_flow_indexing_after_refund() {
+    crate::local_node::test(eth_flow_indexing_after_refund).await;
+}
+
+async fn eth_flow_tx(web3: Web3) {
     shared::tracing::initialize_for_tests(
         "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
     );
@@ -101,7 +109,9 @@ async fn refunder_tx(web3: Web3) {
     )
     .await;
 
-    let valid_to = chrono::offset::Utc::now().timestamp() as u32 + 3600;
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 3600;
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
 
@@ -124,6 +134,110 @@ async fn refunder_tx(web3: Web3) {
     test_order_was_settled(&ethflow_order, &web3).await;
 
     test_trade_availability_in_api(&client, &ethflow_order, &trader.address(), &contracts).await;
+}
+
+async fn eth_flow_indexing_after_refund(web3: Web3) {
+    shared::tracing::initialize_for_tests(
+        "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
+    );
+    shared::exit_process_on_panic::set_panic_hook();
+    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+
+    let mut accounts = AccountAssigner::new(&web3).await;
+    let trader = accounts.assign_free_account();
+    let dummy_trader = accounts.assign_free_account();
+    let refunder = accounts.assign_free_account();
+    let solver = accounts.default_deployer; // is a solver by default
+
+    // Create token with Uniswap pool for price estimation
+    let MintableToken { contract: dai, .. } = deploy_token_with_weth_uniswap_pool(
+        &web3,
+        &contracts,
+        WethPoolConfig {
+            // 1 ETH ≈ 1k DAI
+            token_amount: to_wei(DAI_PER_ETH * 1_000),
+            weth_amount: to_wei(1_000),
+        },
+    )
+    .await;
+
+    let OrderbookServices {
+        maintenance,
+        block_stream,
+        solvable_orders_cache,
+        base_tokens,
+        ..
+    } = OrderbookServices::new(&web3, &contracts, false).await;
+    let http_factory = HttpClientFactory::default();
+    let client = http_factory.create();
+
+    // Create an order that only exists to be refunded, which triggers an event in the eth-flow contract that is not
+    // included in the ABI of `CoWSwapOnchainOrders`.
+    let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
+    let dummy_order = ExtendedEthFlowOrder::from_quote(
+        &submit_quote(
+            &(EthFlowTradeIntent {
+                sell_amount: 42.into(),
+                buy_token: dai.address(),
+                receiver: H160([42; 20]),
+            })
+            .to_quote_request(&contracts.ethflow, &contracts.weth),
+            &client,
+        )
+        .await,
+        valid_to,
+    )
+    .include_slippage_bps(300);
+    sumbit_order(&dummy_order, &dummy_trader, &contracts).await;
+    web3.api::<TestNodeApi<_>>()
+        .set_next_block_timestamp(&DateTime::from_utc(
+            NaiveDateTime::from_timestamp(valid_to as i64 + 1, 0),
+            Utc,
+        ))
+        .await
+        .expect("Must be able to set block timestamp");
+    dummy_order
+        .mine_order_invalidation(&refunder, &contracts.ethflow)
+        .await;
+
+    // Create the actual order that should be picked up by the services and matched.
+    let buy_token = dai.address();
+    let receiver = H160([0x42; 20]);
+    let sell_amount = to_wei(1);
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 60;
+    let ethflow_order = ExtendedEthFlowOrder::from_quote(
+        &submit_quote(
+            &(EthFlowTradeIntent {
+                sell_amount,
+                buy_token,
+                receiver,
+            })
+            .to_quote_request(&contracts.ethflow, &contracts.weth),
+            &client,
+        )
+        .await,
+        valid_to,
+    )
+    .include_slippage_bps(300);
+    sumbit_order(&ethflow_order, &trader, &contracts).await;
+
+    // Automatically pick up onchain order without any API request
+    maintenance.run_maintenance().await.unwrap();
+
+    wait_for_solvable_orders(&client, 1).await.unwrap();
+
+    let mut driver =
+        setup_naive_solver_uniswapv2_driver(&web3, &contracts, base_tokens, block_stream, solver)
+            .await;
+    driver.single_run().await.unwrap();
+
+    // Update orderbook status
+    maintenance.run_maintenance().await.unwrap();
+    solvable_orders_cache.update(0).await.unwrap();
+
+    test_order_was_settled(&ethflow_order, &web3).await;
 }
 
 async fn submit_quote(quote: &OrderQuoteRequest, client: &reqwest::Client) -> OrderQuoteResponse {
@@ -321,7 +435,7 @@ async fn test_order_parameters(
         response.metadata.ethflow_data,
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
-            is_refunded: false
+            refund_tx_hash: None,
         })
     );
     assert_eq!(response.metadata.onchain_user, Some(*owner));
@@ -439,6 +553,14 @@ impl ExtendedEthFlowOrder {
         )
     }
 
+    pub async fn mine_order_invalidation(
+        &self,
+        sender: &Account,
+        ethflow: &CoWSwapEthFlow,
+    ) -> TransactionResult {
+        tx!(sender, ethflow.invalidate_order(self.0.encode()))
+    }
+
     async fn hash(&self, contracts: &Contracts) -> H256 {
         let domain_separator = DomainSeparator(
             contracts
@@ -458,7 +580,7 @@ impl ExtendedEthFlowOrder {
         ))
     }
 
-    async fn uid(&self, contracts: &Contracts) -> OrderUid {
+    pub async fn uid(&self, contracts: &Contracts) -> OrderUid {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement

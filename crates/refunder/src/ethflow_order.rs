@@ -1,4 +1,4 @@
-use database::{ethflow_orders::EthOrderPlacement, orders::Order};
+use database::{ethflow_orders::EthOrderData, orders::Order};
 use ethcontract::{Bytes, H160, U256};
 use number_conversions::big_decimal_to_u256;
 // Data structure reflecting the contract ethflow order
@@ -43,10 +43,7 @@ pub type EncodedEthflowOrder = (
     i64,             // quoteId
 );
 
-pub fn order_to_ethflow_data(
-    order: Order,
-    ethflow_order_placement: EthOrderPlacement,
-) -> EthflowOrder {
+pub fn order_to_ethflow_data(order: Order, ethflow_order_placement: EthOrderData) -> EthflowOrder {
     EthflowOrder {
         buy_token: H160(order.buy_token.0),
         receiver: H160(order.receiver.unwrap().0), // ethflow orders have always a
@@ -87,7 +84,7 @@ mod tests {
             fee_amount: u256_to_big_decimal(&fee_amount),
             ..Default::default()
         };
-        let ethflow_order = EthOrderPlacement {
+        let ethflow_order = EthOrderData {
             valid_to: valid_to.into(),
             ..Default::default()
         };

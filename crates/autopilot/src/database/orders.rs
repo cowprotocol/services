@@ -1,6 +1,6 @@
 use super::Postgres;
-use anyhow::Result;
-use chrono::{Duration, Utc};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Duration, Utc};
 use database::byte_array::ByteArray;
 use ethcontract::U256;
 use futures::{StreamExt, TryStreamExt};
@@ -12,14 +12,22 @@ use number_conversions::u256_to_big_decimal;
 use shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters};
 
 /// New fee data to update a limit order with.
-pub struct FeeUpdate {
-    /// The actual fee amount to charge the order from its surplus.
-    pub surplus_fee: U256,
-
-    /// The full unsubsidized fee amount that settling the order is expected to
-    /// actually cost. This is used for objective value computation so that fee
-    /// subsidies do not change the objective value.
-    pub full_fee_amount: U256,
+///
+/// Both success and failure to calculate the new fee are recorded in the database.
+pub enum FeeUpdate {
+    Success {
+        timestamp: DateTime<Utc>,
+        /// The actual fee amount to charge the order from its surplus.
+        surplus_fee: U256,
+        /// The full unsubsidized fee amount that settling the order is expected to
+        /// actually cost. This is used for objective value computation so that fee
+        /// subsidies do not change the objective value.
+        full_fee_amount: U256,
+        quote: LimitOrderQuote,
+    },
+    Failure {
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// Data required to compute risk adjusted rewards for limit orders.
@@ -35,7 +43,13 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
-    pub async fn limit_orders_with_outdated_fees(&self, age: Duration) -> Result<Vec<Order>> {
+    pub async fn limit_orders_with_outdated_fees(
+        &self,
+        age: Duration,
+        limit: usize,
+    ) -> Result<Vec<Order>> {
+        let limit: i64 = limit.try_into().context("convert limit")?;
+
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["limit_orders_with_outdated_fees"])
@@ -43,10 +57,11 @@ impl Postgres {
 
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        database::orders::limit_orders_with_outdated_fees(
+        database::orders::limit_orders_with_most_outdated_fees(
             &mut ex,
             timestamp,
             now_in_epoch_seconds().into(),
+            limit,
         )
         .map(|result| match result {
             Ok(order) => full_order_into_model_order(order),
@@ -62,38 +77,57 @@ impl Postgres {
         &self,
         order_uid: &OrderUid,
         update: &FeeUpdate,
-        quote: &LimitOrderQuote,
     ) -> Result<()> {
+        let (update, quote) = match update {
+            FeeUpdate::Success {
+                timestamp,
+                surplus_fee,
+                full_fee_amount,
+                quote,
+            } => (
+                database::orders::FeeUpdate {
+                    surplus_fee: Some(u256_to_big_decimal(surplus_fee)),
+                    surplus_fee_timestamp: *timestamp,
+                    full_fee_amount: u256_to_big_decimal(full_fee_amount),
+                },
+                Some(database::orders::Quote {
+                    order_uid: ByteArray(order_uid.0),
+                    gas_amount: quote.fee_parameters.gas_amount,
+                    gas_price: quote.fee_parameters.gas_price,
+                    sell_token_price: quote.fee_parameters.sell_token_price,
+                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                }),
+            ),
+            FeeUpdate::Failure { timestamp } => (
+                // Note that the surplus fee must be removed so that the order does not count as
+                // solvable. In order to be solvable the timestamp must be recent and the fee must
+                // be set. We don't reset the timestamp because it indicates the last update time
+                // (regardless of error or success). This is needed so that we can query the least
+                // recently updated limit orders. See #965 .
+                database::orders::FeeUpdate {
+                    surplus_fee: None,
+                    surplus_fee_timestamp: *timestamp,
+                    full_fee_amount: 0.into(),
+                },
+                None,
+            ),
+        };
+
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["update_limit_order_fees"])
             .start_timer();
-
         let mut ex = self.0.begin().await?;
-        database::orders::update_limit_order_fees(
-            &mut ex,
-            &database::byte_array::ByteArray(order_uid.0),
-            &database::orders::FeeUpdate {
-                surplus_fee: u256_to_big_decimal(&update.surplus_fee),
-                surplus_fee_timestamp: Utc::now(),
-                full_fee_amount: u256_to_big_decimal(&update.full_fee_amount),
-            },
-        )
-        .await?;
-
-        database::orders::insert_quote_and_update_on_conflict(
-            &mut ex,
-            &database::orders::Quote {
-                order_uid: ByteArray(order_uid.0),
-                gas_amount: quote.fee_parameters.gas_amount,
-                gas_price: quote.fee_parameters.gas_price,
-                sell_token_price: quote.fee_parameters.sell_token_price,
-                sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                buy_amount: u256_to_big_decimal(&quote.buy_amount),
-            },
-        )
-        .await?;
-        ex.commit().await?;
+        database::orders::update_limit_order_fees(&mut ex, &ByteArray(order_uid.0), &update)
+            .await
+            .context("update_limit_order_fee")?;
+        if let Some(quote) = quote {
+            database::orders::insert_quote_and_update_on_conflict(&mut ex, &quote)
+                .await
+                .context("insert_quote_and_update_on_conflict")?;
+        }
+        ex.commit().await.context("commit")?;
         Ok(())
     }
 

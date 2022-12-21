@@ -1,9 +1,11 @@
+// TODO Remove dead_code ASAP
+#![allow(dead_code)]
+
 use {
     anyhow::{Context, Result},
     clap::Parser,
     contracts::{IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
     driver::{
-        api::serve_api,
         arguments::Arguments,
         auction_converter::AuctionConverter,
         commit_reveal::CommitRevealSolver,
@@ -72,6 +74,54 @@ use {
     },
     std::{collections::HashMap, sync::Arc, time::Duration},
 };
+
+#[tokio::main]
+async fn main() {
+    let args = driver::arguments::Arguments::parse();
+    shared::tracing::initialize(
+        args.logging.log_filter.as_str(),
+        args.logging.log_stderr_threshold,
+    );
+    shared::exit_process_on_panic::set_panic_hook();
+    tracing::info!("running driver with validated arguments:\n{}", args);
+
+    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let serve = driver::Api {
+        solvers: vec![driver::Solver::new(
+            "http://localhost:1232".parse().unwrap(),
+            "solver".to_owned().into(),
+            driver::logic::eth::NetworkName("testnet".to_owned()),
+            driver::logic::eth::ChainId(0),
+        )],
+        simulator: simulator(),
+        eth: ethereum(),
+        addr: args.bind_address,
+    }
+    .serve(async {
+        let _ = shutdown_receiver.await;
+    });
+
+    futures::pin_mut!(serve);
+    tokio::select! {
+        result = &mut serve => tracing::error!(?result, "API task exited"),
+        _ = shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
+            shutdown_sender.send(()).expect("failed to send shutdown signal");
+            match tokio::time::timeout(Duration::from_secs(10), serve).await {
+                Ok(inner) => inner.expect("API failed during shutdown"),
+                Err(_) => tracing::error!("API shutdown exceeded timeout"),
+            }
+        }
+    };
+}
+
+fn simulator() -> driver::Simulator {
+    todo!()
+}
+
+fn ethereum() -> driver::Ethereum {
+    todo!()
+}
 
 struct CommonComponents {
     http_factory: HttpClientFactory,
@@ -384,7 +434,6 @@ async fn build_auction_converter(
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
             common.web3.clone(),
             balancer_pool_fetcher,
-            base_tokens.clone(),
             common.settlement_contract.clone(),
             contracts.vault,
         )));
@@ -393,7 +442,6 @@ async fn build_auction_converter(
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         common.settlement_contract.clone(),
-        base_tokens.clone(),
         common.web3.clone(),
     )
     .await;
@@ -415,7 +463,6 @@ async fn build_auction_converter(
             common.web3.clone(),
             zeroex_api,
             contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens.clone(),
             common.settlement_contract.clone(),
         )));
     }
@@ -436,7 +483,6 @@ async fn build_auction_converter(
                 liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
                     UniswapV3SwapRouter::deployed(&common.web3).await.unwrap(),
                     common.settlement_contract.clone(),
-                    base_tokens.clone(),
                     common.web3.clone(),
                     uniswap_v3_pool_fetcher,
                 )));
@@ -452,7 +498,10 @@ async fn build_auction_converter(
         maintainer.run_maintenance_on_new_block(common.current_block_stream.clone()),
     );
 
-    let liquidity_collector = Box::new(LiquidityCollector { liquidity_sources });
+    let liquidity_collector = Box::new(LiquidityCollector {
+        liquidity_sources,
+        base_tokens,
+    });
     Ok(Arc::new(AuctionConverter::new(
         common.gas_price_estimator.clone(),
         liquidity_collector,
@@ -463,7 +512,6 @@ async fn build_auction_converter(
 async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
-    base_tokens: Arc<BaseTokens>,
     web3: Web3,
 ) -> Vec<Box<dyn LiquidityCollecting>> {
     let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
@@ -496,7 +544,6 @@ async fn build_amm_artifacts(
         res.push(Box::new(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
             settlement_contract.clone(),
-            base_tokens.clone(),
             web3.clone(),
             pool_cache.clone(),
         )));
@@ -563,45 +610,10 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         .collect()
 }
 
-#[tokio::main]
-async fn main() {
-    let args = driver::arguments::Arguments::parse();
-    shared::tracing::initialize(
-        args.logging.log_filter.as_str(),
-        args.logging.log_stderr_threshold,
-    );
-    shared::exit_process_on_panic::set_panic_hook();
-    tracing::info!("running driver with validated arguments:\n{}", args);
-    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
-    let common = init_common_components(&args).await;
-
-    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = serve_api(
-        args.bind_address,
-        async {
-            let _ = shutdown_receiver.await;
-        },
-        build_drivers(&common, &args).await,
-    );
-
-    futures::pin_mut!(serve_api);
-    tokio::select! {
-        result = &mut serve_api => tracing::error!(?result, "API task exited"),
-        _ = shutdown_signal() => {
-            tracing::info!("Gracefully shutting down API");
-            shutdown_sender.send(()).expect("failed to send shutdown signal");
-            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
-                Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => tracing::error!("API shutdown exceeded timeout"),
-            }
-        }
-    };
-}
-
 #[cfg(unix)]
 async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
+    // Intercept main signals for graceful shutdown.
+    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
     let sigterm = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .unwrap()
@@ -621,6 +633,6 @@ async fn shutdown_signal() {
 
 #[cfg(windows)]
 async fn shutdown_signal() {
-    // We don't support signal handling on windows
+    // We don't support signal handling on Windows.
     std::future::pending().await
 }

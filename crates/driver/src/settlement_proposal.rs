@@ -186,6 +186,7 @@ impl SettlementProposal {
     pub async fn into_settlement(self) -> Result<Settlement> {
         Ok(Settlement {
             encoder: self.into_encoder().await?,
+            ..Default::default()
         })
     }
 

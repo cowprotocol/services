@@ -2,15 +2,16 @@ use super::ethflow_order::order_to_ethflow_data;
 use anyhow::{anyhow, Context, Result};
 use contracts::CoWSwapEthFlow;
 use database::{
-    ethflow_orders::{
-        mark_eth_orders_as_refunded, read_order, refundable_orders, EthOrderPlacement,
-    },
+    ethflow_orders::{read_order, refundable_orders, EthOrderPlacement},
     orders::read_order as read_db_order,
     OrderUid,
 };
 use ethcontract::{Account, H160};
 use futures::{stream, StreamExt};
-use shared::ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE};
+use shared::{
+    current_block::timestamp_of_current_block_in_seconds,
+    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+};
 use sqlx::PgPool;
 
 use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
@@ -29,9 +30,11 @@ pub struct RefundService {
     pub submitter: Submitter,
 }
 
-struct SplittedOrderUids {
-    refunded: Vec<OrderUid>,
-    to_be_refunded: Vec<OrderUid>,
+#[derive(Debug, Eq, PartialEq)]
+enum RefundStatus {
+    Refunded,
+    NotYetRefunded,
+    Invalid,
 }
 
 impl RefundService {
@@ -54,7 +57,7 @@ impl RefundService {
                 ethflow_contract,
                 account,
                 gas_estimator: Box::new(web3),
-                gas_price_of_last_submission: None,
+                gas_parameters_of_last_tx: None,
                 nonce_of_last_submission: None,
             },
         }
@@ -62,40 +65,21 @@ impl RefundService {
     pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
-        let order_uids_per_status = self
-            .identify_already_refunded_order_uids_via_web3_calls(refundable_order_uids)
+        let to_be_refunded_uids = self
+            .identify_uids_refunding_status_via_web3_calls(refundable_order_uids)
             .await?;
 
-        self.update_already_refunded_orders_in_db(order_uids_per_status.refunded)
-            .await?;
-
-        self.send_out_refunding_tx(order_uids_per_status.to_be_refunded)
-            .await?;
+        self.send_out_refunding_tx(to_be_refunded_uids).await?;
         Ok(())
     }
 
-    async fn update_already_refunded_orders_in_db(
-        &self,
-        refunded_uids: Vec<OrderUid>,
-    ) -> Result<()> {
-        let mut transaction = self.db.begin().await?;
-        mark_eth_orders_as_refunded(&mut transaction, refunded_uids.as_slice())
-            .await
-            .map_err(|err| {
-                anyhow!(
-                    "Error while retrieving updating the already refunded orders:{:?}",
-                    err
-                )
-            })?;
-
-        Ok(transaction.commit().await?)
-    }
-
     pub async fn get_refundable_ethflow_orders_from_db(&self) -> Result<Vec<EthOrderPlacement>> {
+        let block_time = timestamp_of_current_block_in_seconds(&self.web3).await? as i64;
+
         let mut ex = self.db.acquire().await?;
         refundable_orders(
             &mut ex,
-            model::time::now_in_epoch_seconds().into(),
+            block_time,
             self.min_validity_duration,
             self.min_slippage,
         )
@@ -108,10 +92,10 @@ impl RefundService {
         })
     }
 
-    async fn identify_already_refunded_order_uids_via_web3_calls(
+    async fn identify_uids_refunding_status_via_web3_calls(
         &self,
         refundable_order_uids: Vec<EthOrderPlacement>,
-    ) -> Result<SplittedOrderUids> {
+    ) -> Result<Vec<OrderUid>> {
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let futures = refundable_order_uids
             .iter()
@@ -136,30 +120,38 @@ impl RefundService {
                             return None;
                         }
                     };
-                    let is_refunded: bool = order_owner == Some(INVALIDATED_OWNER);
-                    Some((eth_order_placement.uid, is_refunded))
+                    let refund_status = match order_owner {
+                        Some(bytes) if bytes == INVALIDATED_OWNER => RefundStatus::Refunded,
+                        Some(bytes) if bytes == NO_OWNER => RefundStatus::Invalid,
+                        // any other owner
+                        _ => RefundStatus::NotYetRefunded,
+                    };
+                    Some((eth_order_placement.uid, refund_status))
                 }
             })
             .collect::<Vec<_>>();
 
         batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
-        type TupleWithRefundStatus = (Vec<(OrderUid, bool)>, Vec<(OrderUid, bool)>);
-        let (refunded_uids, to_be_refunded_uids): TupleWithRefundStatus =
-            uid_with_latest_refundablility
-                .into_iter()
-                .flatten()
-                .partition(|(_, is_refunded)| *is_refunded);
-        let refunded_uids: Vec<OrderUid> = refunded_uids.into_iter().map(|(uid, _)| uid).collect();
-        let to_be_refunded_uids: Vec<OrderUid> = to_be_refunded_uids
-            .into_iter()
-            .map(|(uid, _)| uid)
-            .collect();
-        let result = SplittedOrderUids {
-            refunded: refunded_uids,
-            to_be_refunded: to_be_refunded_uids,
-        };
-        Ok(result)
+        type TupleWithRefundStatus = (Vec<(OrderUid, RefundStatus)>, Vec<(OrderUid, RefundStatus)>);
+        let mut to_be_refunded_uids = Vec::new();
+        let mut invalid_uids = Vec::new();
+        for (uid, refund_status) in uid_with_latest_refundablility.into_iter().flatten() {
+            match refund_status {
+                RefundStatus::Refunded => (),
+                RefundStatus::Invalid => invalid_uids.push(uid),
+                RefundStatus::NotYetRefunded => to_be_refunded_uids.push(uid),
+            }
+        }
+        if !invalid_uids.is_empty() {
+            // In exceptional cases, e.g. if the refunder tries to refund orders from a previous contract,
+            // the order_owners could be zero
+            tracing::warn!(
+                "Trying to invalidate orders that weren't created in the current contract. Uids: {:?}",
+                invalid_uids
+            );
+        }
+        Ok(to_be_refunded_uids)
     }
 
     async fn get_ethflow_data_from_db(&self, uid: &OrderUid) -> Result<EthflowOrder> {

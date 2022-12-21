@@ -3,9 +3,10 @@ use anyhow::{Context as _, Result};
 use bigdecimal::BigDecimal;
 use chrono::Utc;
 use futures::StreamExt;
+use itertools::Itertools;
 use model::{
     auction::Auction,
-    order::{Order, OrderClass},
+    order::{Order, OrderClass, OrderUid},
     signature::Signature,
     time::now_in_epoch_seconds,
 };
@@ -38,12 +39,16 @@ pub struct Metrics {
     /// Auction creations.
     auction_creations: IntCounter,
 
+    /// Auction candidate orders grouped by class.
+    #[metric(labels("class"))]
+    auction_candidate_orders: IntGaugeVec,
+
     /// Auction solvable orders grouped by class.
     #[metric(labels("class"))]
     auction_solvable_orders: IntGaugeVec,
 
     /// Auction filtered orders grouped by class.
-    #[metric(labels("class"))]
+    #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
 
     /// Auction errored price estimates.
@@ -152,11 +157,21 @@ impl SolvableOrdersCache {
                 Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
             )
             .await?;
+
+        let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
+        counter.checkpoint("banned_user", &orders);
+
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        counter.checkpoint("unsupported_token", &orders);
+
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+        counter.checkpoint("invalid_signature", &orders);
+
         let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
+        counter.checkpoint("insufficient_sell", &orders);
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -192,6 +207,7 @@ impl SolvableOrdersCache {
             let query = Query::from_order(order);
             order.metadata.available_balance = new_balances.get(&query).copied();
         }
+        counter.checkpoint("insufficient_balance", &orders);
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -201,29 +217,36 @@ impl SolvableOrdersCache {
             self.metrics,
         )
         .await;
+        counter.checkpoint("missing_price", &orders);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
+        counter.checkpoint("out_of_market", &orders);
 
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
                 .calculate_many(&orders)
                 .await
                 .context("rewards")?;
+
             orders
-            .iter()
-            .zip(rewards)
-            .filter_map(|(order, reward)| match reward {
-                Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
-                Ok(_) => None,
-                Err(err) => {
-                    tracing::warn!(?order.metadata.uid, ?err, "error calculating risk adjusted reward");
-                    None
-                }
-            })
-            .collect()
+                .iter()
+                .zip(rewards)
+                .filter_map(|(order, reward)| match reward {
+                    Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
+                    Ok(_) => None,
+                    Err(err) => {
+                        tracing::warn!(
+                            order =% order.metadata.uid, ?err,
+                            "error calculating risk adjusted reward",
+                        );
+                        None
+                    }
+                })
+                .collect()
         } else {
             Default::default()
         };
+
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -232,6 +255,7 @@ impl SolvableOrdersCache {
             rewards,
         };
         let _id = self.database.replace_current_auction(&auction).await?;
+
         *self.cache.lock().unwrap() = Inner {
             orders: SolvableOrders {
                 orders,
@@ -242,6 +266,7 @@ impl SolvableOrdersCache {
             balances: new_balances,
         };
 
+        counter.record(&auction.orders);
         tracing::debug!(
             "updated auction with {} solvable orders",
             auction.orders.len(),
@@ -295,8 +320,8 @@ async fn filter_invalid_signature_orders(
             if let Signature::Eip1271(_) = &order.signature {
                 if let Err(err) = validations.next().unwrap() {
                     tracing::warn!(
-                        order_uid =% order.metadata.uid, ?err,
-                        "filtered order because of invalid EIP-1271 signature"
+                        order =% order.metadata.uid, ?err,
+                        "invalid EIP-1271 signature"
                     );
                     return false;
                 }
@@ -377,14 +402,10 @@ fn solvable_orders(
                     continue;
                 }
             };
+
             if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
                 remaining_balance = balance;
                 result.push(order);
-            } else {
-                tracing::debug!(
-                    order_uid = ?order.metadata.uid,
-                    "filtered order because of insufficient allowance/balance",
-                );
             }
         }
     }
@@ -445,7 +466,7 @@ async fn update_task(
 }
 
 async fn get_orders_with_native_prices(
-    orders: Vec<Order>,
+    mut orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
     metrics: &Metrics,
@@ -492,7 +513,7 @@ async fn get_orders_with_native_prices(
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
-    let (solvable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+    orders.retain(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -500,30 +521,10 @@ async fn get_orders_with_native_prices(
                 used_prices.insert(*t1, *p1);
                 true
             }
-            _ => {
-                tracing::debug!(
-                    order_uid = ?order.metadata.uid,
-                    "filtered order because of missing native token price",
-                );
-                false
-            }
+            _ => false,
         }
     });
 
-    metrics.auction_creations.inc();
-    OrderClass::VARIANTS.iter().for_each(|class| {
-        let correct_class = |order: &&Order| &order.metadata.class.as_ref() == class;
-        let solvable_grouped_by_class = solvable.iter().filter(correct_class).count();
-        metrics
-            .auction_solvable_orders
-            .with_label_values(&[class])
-            .set(solvable_grouped_by_class as i64);
-        let filtered_grouped_by_class = filtered.iter().filter(correct_class).count();
-        metrics
-            .auction_filtered_orders
-            .with_label_values(&[class])
-            .set(filtered_grouped_by_class as i64);
-    });
     if timeout {
         metrics.auction_price_estimate_timeouts.inc();
     }
@@ -531,7 +532,7 @@ async fn get_orders_with_native_prices(
         .auction_errored_price_estimates
         .inc_by(errored_estimates);
 
-    (solvable, used_prices)
+    (orders, used_prices)
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
@@ -565,8 +566,9 @@ async fn filter_unsupported_tokens(
 }
 
 fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    // Unwrap because solvable orders always have a surplus fee.
     orders.retain(|order| match &order.metadata.class {
-        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee,
+        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee.unwrap(),
         _ => true,
     });
     orders
@@ -584,7 +586,8 @@ fn filter_mispriced_limit_orders(
             _ => return true,
         };
 
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
+        // Unwrap because solvable orders always have a surplus fee.
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee.unwrap());
         if effective_sell_amount.is_zero() {
             return false;
         }
@@ -600,9 +603,9 @@ fn filter_mispriced_limit_orders(
         ) {
             (Some(sell), Some(buy)) => (sell, buy),
             _ => {
-                tracing::debug!(
+                tracing::warn!(
                     order_uid = %order.metadata.uid,
-                    "limit order overflow computing native amounts; skipping",
+                    "limit order overflow computing native amounts",
                 );
                 return false;
             }
@@ -610,17 +613,92 @@ fn filter_mispriced_limit_orders(
 
         let sell_native = u256_to_big_decimal(&sell_native);
         let buy_native = u256_to_big_decimal(&buy_native);
-        if sell_native >= buy_native * price_factor {
-            true
-        } else {
-            tracing::debug!(
-                order_uid = %order.metadata.uid,
-                "limit order is outside market price, skipping",
-            );
-            false
-        }
+
+        sell_native >= buy_native * price_factor
     });
     orders
+}
+
+/// Order filtering state for recording filtered orders over the course of
+/// building an auction.
+struct OrderFilterCounter {
+    metrics: &'static Metrics,
+
+    /// Mapping of remaining order UIDs to their classes.
+    orders: HashMap<OrderUid, OrderClass>,
+    /// Running tally for counts of filtered orders.
+    counts: HashMap<Reason, usize>,
+}
+
+type Reason = &'static str;
+
+impl OrderFilterCounter {
+    fn new(metrics: &'static Metrics, orders: &[Order]) -> Self {
+        // Eagerly store the candidate orders. This ensures that that gauge is
+        // always up to date even if there are errors in the auction building
+        // process.
+        let initial_counts = orders
+            .iter()
+            .counts_by(|order| order.metadata.class.as_ref());
+        for class in OrderClass::VARIANTS {
+            let count = initial_counts.get(class).copied().unwrap_or_default();
+            metrics
+                .auction_candidate_orders
+                .with_label_values(&[class])
+                .set(count as _);
+        }
+
+        Self {
+            metrics,
+            orders: orders
+                .iter()
+                .map(|order| (order.metadata.uid, order.metadata.class.clone()))
+                .collect(),
+            counts: HashMap::new(),
+        }
+    }
+
+    /// Creates a new checkpoint from the current remaining orders.
+    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) {
+        let filtered_orders = orders.iter().fold(
+            self.orders.keys().copied().collect::<HashSet<_>>(),
+            |mut order_uids, order| {
+                order_uids.remove(&order.metadata.uid);
+                order_uids
+            },
+        );
+
+        *self.counts.entry(reason).or_default() += filtered_orders.len();
+        for order in filtered_orders {
+            self.orders.remove(&order).unwrap();
+            tracing::debug!(%order, %reason, "filtered order")
+        }
+    }
+
+    /// Records the filter counter to metrics.
+    fn record(mut self, orders: &[Order]) {
+        if self.orders.len() != orders.len() {
+            self.checkpoint("other", orders);
+        }
+
+        self.metrics.auction_creations.inc();
+
+        let remaining_counts = self.orders.iter().counts_by(|(_, class)| class.as_ref());
+        for class in OrderClass::VARIANTS {
+            let count = remaining_counts.get(class).copied().unwrap_or_default();
+            self.metrics
+                .auction_solvable_orders
+                .with_label_values(&[class])
+                .set(count as _);
+        }
+
+        for (reason, count) in self.counts {
+            self.metrics
+                .auction_filtered_orders
+                .with_label_values(&[reason])
+                .set(count as _);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1134,7 +1212,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: surplus_fee.into(),
+                    surplus_fee: Some(surplus_fee.into()),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1179,7 +1257,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: surplus_fee.into(),
+                    surplus_fee: Some(surplus_fee.into()),
                     ..Default::default()
                 }),
                 ..Default::default()

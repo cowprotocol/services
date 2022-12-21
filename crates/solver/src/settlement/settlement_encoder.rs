@@ -139,7 +139,13 @@ impl SettlementEncoder {
             tokens: self.tokens.clone(),
             clearing_prices: self.clearing_prices.clone(),
             trades: self.trades.clone(),
-            execution_plan: Vec::new(),
+            execution_plan: self
+                .execution_plan
+                .iter()
+                // Instead of simply dropping the executions we mark all the interactions as
+                // internalizable.
+                .map(|(execution, _)| (execution.clone(), true))
+                .collect(),
             pre_interactions: self.pre_interactions.clone(),
             unwraps: self.unwraps.clone(),
         }
@@ -309,6 +315,8 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
+        // Solvable limit orders always have a surplus fee. It would be nice if this was enforced in the API.
+        let surplus_fee = limit.surplus_fee.unwrap();
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -322,7 +330,7 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(limit.surplus_fee)
+                    .checked_add(surplus_fee)
                     .context("sell_amount computation failed")?;
                 (sell_amount_adjusted_for_fees, order.data.buy_amount)
             }
@@ -333,7 +341,7 @@ impl SettlementEncoder {
                 let sell_amount = order
                     .data
                     .sell_amount
-                    .checked_sub(limit.surplus_fee)
+                    .checked_sub(surplus_fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)
@@ -469,8 +477,7 @@ impl SettlementEncoder {
             .iter()
             .flat_map(|trade| {
                 // For user order trades, always keep uniform clearing prices
-                // for all tokens (even if we could technically drop the buy
-                // token for limit orders).
+                // for all tokens (even if we could technically skip limit orders).
                 if trade.data.order.is_user_order() {
                     Either::Left(
                         [
@@ -712,12 +719,15 @@ pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{encoding::EncodedInteraction, settlement::NoopInteraction};
+    use crate::settlement::NoopInteraction;
     use contracts::WETH9;
     use ethcontract::Bytes;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderData};
-    use shared::{dummy_contract, interaction::Interaction};
+    use shared::{
+        dummy_contract,
+        interaction::{EncodedInteraction, Interaction},
+    };
 
     #[test]
     pub fn encode_trades_finds_token_index() {

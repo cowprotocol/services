@@ -1,10 +1,12 @@
 pub mod ethflow_events;
+pub mod event_retriever;
 
 use super::{
     events::{bytes_to_order_uid, meta_to_event_index},
     Metrics, Postgres,
 };
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::{TimeZone, Utc};
 use contracts::cowswap_onchain_orders::{
     event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
     Event as ContractEvent,
@@ -27,10 +29,11 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use shared::{
-    current_block::RangeInclusive,
+    current_block::{timestamp_of_block_in_seconds, RangeInclusive},
     db_order_conversions::{
         buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
     },
+    ethrpc::Web3,
     event_handling::EventStoring,
     order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
     order_validation::{
@@ -43,8 +46,10 @@ use std::{
     sync::Arc,
 };
 
+use web3::types::U64;
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
+    web3: Web3,
     quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
@@ -59,6 +64,7 @@ where
 {
     pub fn new(
         db: Postgres,
+        web3: Web3,
         quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
@@ -67,6 +73,7 @@ where
     ) -> Self {
         OnchainOrderParser {
             db,
+            web3,
             quoter,
             custom_onchain_data_parser,
             domain_separator,
@@ -275,6 +282,8 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
         Vec<Order>,
     )> {
+        let block_number_timestamp_hashmap =
+            get_block_numbers_of_events(&self.web3, &events).await?;
         let custom_event_data = self
             .custom_onchain_data_parser
             .parse_custom_event_data(&events)?;
@@ -292,7 +301,15 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             if let Some(meta) = meta {
                 let event_index = meta_to_event_index(meta);
                 if let Some(quote_id) = quote_id_hashmap.get(&event_index) {
-                    events_and_quotes.push((event.clone(), *quote_id));
+                    events_and_quotes.push((
+                        event.clone(),
+                        // timestamp must be available, as otherwise, the
+                        // function get_block_numbers_of_events would have errored
+                        *block_number_timestamp_hashmap
+                            .get(&(event_index.block_number as u64))
+                            .unwrap() as i64,
+                        *quote_id,
+                    ));
                 }
             }
         }
@@ -322,6 +339,33 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         );
         Ok(multiunzip(data_tuple))
     }
+}
+
+async fn get_block_numbers_of_events(
+    web3: &Web3,
+    events: &[EthContractEvent<ContractEvent>],
+) -> Result<HashMap<u64, u32>> {
+    let mut event_block_numbers: Vec<u64> = events
+        .iter()
+        .map(|EthContractEvent { meta, .. }| {
+            let meta = match meta {
+                Some(meta) => meta,
+                None => return Err(anyhow!("event without metadata")),
+            };
+            Ok(meta.block_number)
+        })
+        .collect::<Result<Vec<u64>>>()?;
+    event_block_numbers.dedup();
+    let futures = event_block_numbers
+        .into_iter()
+        .map(|block_number| async move {
+            let timestamp =
+                timestamp_of_block_in_seconds(web3, U64::from(block_number).into()).await?;
+            Ok((block_number, timestamp))
+        });
+    let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
+        stream::iter(futures).buffer_unordered(10).collect().await;
+    block_number_timestamp_pair.into_iter().collect()
 }
 
 fn get_invalidation_events(
@@ -371,13 +415,13 @@ type GeneralOnchainOrderPlacementData = (
 );
 async fn parse_general_onchain_order_placement_data(
     quoter: &dyn OrderQuoting,
-    contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64)>,
+    contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = contract_events_and_quotes_zipped.into_iter().map(
-        |(EthContractEvent { data, meta }, quote_id)| async move {
+        |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
             let meta = match meta {
                 Some(meta) => meta,
                 None => return Err(anyhow!("event without metadata")),
@@ -396,6 +440,7 @@ async fn parse_general_onchain_order_placement_data(
             let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
             let order_data = convert_onchain_order_placement(
                 &event,
+                event_timestamp,
                 quote.clone(),
                 order_data,
                 signing_scheme,
@@ -466,7 +511,7 @@ async fn get_quote(
     get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
-        Some(*quote_id as i64),
+        Some(*quote_id),
         order_data.fee_amount,
         quote_signing_scheme,
     )
@@ -483,6 +528,7 @@ async fn get_quote(
 #[allow(clippy::too_many_arguments)]
 fn convert_onchain_order_placement(
     order_placement: &ContractOrderPlacement,
+    event_timestamp: i64,
     quote: Quote,
     order_data: OrderData,
     signing_scheme: SigningScheme,
@@ -521,7 +567,7 @@ fn convert_onchain_order_placement(
     let order = database::orders::Order {
         uid: ByteArray(order_uid.0),
         owner: ByteArray(owner.0),
-        creation_timestamp: chrono::offset::Utc::now(),
+        creation_timestamp: Utc.timestamp(event_timestamp, 0),
         sell_token: ByteArray(order_data.sell_token.0),
         buy_token: ByteArray(order_data.buy_token.0),
         receiver: order_data.receiver.map(|h160| ByteArray(h160.0)),
@@ -610,6 +656,7 @@ mod test {
             buy_token_destination_into, order_kind_into, sell_token_source_into,
             signing_scheme_into,
         },
+        ethrpc::create_env_test_transport,
         fee_subsidy::FeeParameters,
         order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
     };
@@ -767,8 +814,10 @@ mod test {
         let quote = Quote::default();
         let order_uid = OrderUid([9u8; 56]);
         let signing_scheme = SigningScheme::Eip1271;
+        let event_timestamp = 234354345;
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
+            event_timestamp,
             quote,
             order_data,
             signing_scheme,
@@ -877,8 +926,10 @@ mod test {
         };
         let order_uid = OrderUid([9u8; 56]);
         let signing_scheme = SigningScheme::Eip1271;
+        let event_timestamp = 234325345;
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
+            event_timestamp,
             quote,
             order_data,
             signing_scheme,
@@ -909,7 +960,7 @@ mod test {
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
             owner: ByteArray(owner.0),
-            creation_timestamp: order.creation_timestamp, // Using the actual result to keep test simple
+            creation_timestamp: Utc.timestamp(event_timestamp, 0),
             sell_token: ByteArray(expected_order_data.sell_token.0),
             buy_token: ByteArray(expected_order_data.buy_token.0),
             receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
@@ -989,6 +1040,7 @@ mod test {
         let signing_scheme = SigningScheme::Eip1271;
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
+            345634,
             quote,
             order_data,
             signing_scheme,
@@ -1115,8 +1167,8 @@ mod test {
         let result_vec = parse_general_onchain_order_placement_data(
             &order_quoter,
             vec![
-                (event_data_1.clone(), quote_id_1),
-                (event_data_2.clone(), quote_id_2),
+                (event_data_1.clone(), 23452345, quote_id_1),
+                (event_data_2.clone(), 234125345, quote_id_2),
             ],
             domain_separator,
             settlement_contract,
@@ -1133,6 +1185,8 @@ mod test {
             }
         );
     }
+
+    #[ignore]
     #[tokio::test]
     async fn extract_custom_and_general_order_data_matches_quotes_with_correct_events() {
         let sell_token = H160::from([1; 20]);
@@ -1233,8 +1287,10 @@ mod test {
         custom_onchain_order_parser
             .expect_customized_event_data_for_event_index()
             .returning(|_, _, _, _| 1u8);
+        let web3 = Web3::new(create_env_test_transport());
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
+            web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,

@@ -14,8 +14,7 @@ use model::TokenPair;
 use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::BaseTokens, ethrpc::Web3, recent_block_cache::Block,
-    sources::uniswap_v3::pool_fetching::PoolFetching,
+    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v3::pool_fetching::PoolFetching,
 };
 use std::{
     collections::HashSet,
@@ -29,7 +28,6 @@ pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
     settlement_allowances: Box<dyn AllowanceManaging>,
-    base_tokens: Arc<BaseTokens>,
 }
 pub struct Inner {
     router: UniswapV3SwapRouter,
@@ -60,7 +58,6 @@ impl UniswapV3Liquidity {
     pub fn new(
         router: UniswapV3SwapRouter,
         gpv2_settlement: GPv2Settlement,
-        base_tokens: Arc<BaseTokens>,
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
@@ -75,7 +72,6 @@ impl UniswapV3Liquidity {
             }),
             pool_fetcher,
             settlement_allowances,
-            base_tokens,
         }
     }
 
@@ -99,9 +95,11 @@ impl UniswapV3Liquidity {
 #[async_trait::async_trait]
 impl LiquidityCollecting for UniswapV3Liquidity {
     /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    async fn get_liquidity(&self, pairs: &[TokenPair], block: Block) -> Result<Vec<Liquidity>> {
-        let pairs = self.base_tokens.relevant_pairs(pairs.iter().cloned());
-
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        block: Block,
+    ) -> Result<Vec<Liquidity>> {
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
         for pool in self.pool_fetcher.fetch(&pairs, block).await? {

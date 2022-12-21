@@ -7,12 +7,15 @@ use crate::{
     encoding::{self, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
 };
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
-use shared::{conversions::U256Ext as _, http_solver::model::InternalizationStrategy};
+use shared::{
+    conversions::U256Ext as _,
+    http_solver::model::{InternalizationStrategy, SubmissionPreference},
+};
 use std::{
     collections::{HashMap, HashSet},
     ops::{Mul, Sub},
@@ -215,6 +218,7 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
+    pub submitter: SubmissionPreference,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -243,6 +247,7 @@ impl Settlement {
     pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
         Self {
             encoder: SettlementEncoder::new(clearing_prices),
+            ..Default::default()
         }
     }
 
@@ -258,13 +263,19 @@ impl Settlement {
 
     pub fn without_onchain_liquidity(&self) -> Self {
         let encoder = self.encoder.without_onchain_liquidity();
-        Self { encoder }
+        Self {
+            encoder,
+            submitter: self.submitter.clone(),
+        }
     }
 
     #[cfg(test)]
     pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
+        Self {
+            encoder,
+            ..Default::default()
+        }
     }
 
     #[cfg(test)]
@@ -275,7 +286,10 @@ impl Settlement {
             .map(|token| (token, U256::from(1_000_000_000_000_000_000_u128)))
             .collect();
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self { encoder }
+        Self {
+            encoder,
+            ..Default::default()
+        }
     }
 
     /// Returns the clearing prices map.
@@ -419,8 +433,12 @@ impl Settlement {
 
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
+        ensure!(self.submitter == other.submitter, "different submitters");
         let merged = self.encoder.merge(other.encoder)?;
-        Ok(Self { encoder: merged })
+        Ok(Self {
+            encoder: merged,
+            submitter: self.submitter,
+        })
     }
 
     // Calculates the risk level for settlement to be reverted
@@ -545,6 +563,7 @@ pub mod tests {
     fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
+            ..Default::default()
         }
     }
 
@@ -1375,7 +1394,7 @@ pub mod tests {
                         },
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee: Some(1_000_u128.into()),
                                 ..Default::default()
                             }),
                             ..Default::default()
@@ -1409,7 +1428,7 @@ pub mod tests {
                         },
                         metadata: OrderMetadata {
                             class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: 1_000_u128.into(),
+                                surplus_fee: Some(1_000_u128.into()),
                                 ..Default::default()
                             }),
                             ..Default::default()
@@ -1450,7 +1469,7 @@ pub mod tests {
                     },
                     metadata: OrderMetadata {
                         class: OrderClass::Limit(LimitOrderClass {
-                            surplus_fee: 1_000_u128.into(),
+                            surplus_fee: Some(1_000_u128.into()),
                             ..Default::default()
                         }),
                         ..Default::default()

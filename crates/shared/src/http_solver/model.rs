@@ -184,6 +184,8 @@ pub struct SettledBatchAuctionModel {
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
+    #[serde(default)]
+    pub submitter: SubmissionPreference,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -269,7 +271,7 @@ pub struct ExecutionPlan {
     pub internal: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize, Hash)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
@@ -305,6 +307,9 @@ pub enum SolverRejectionReason {
     /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
     /// Returns the list of not allowed tokens
     NonBufferableTokensUsed(BTreeSet<H160>),
+
+    /// The solution contains non unique execution plans (duplicated coordinates)
+    InvalidExecutionPlans,
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
@@ -369,6 +374,15 @@ pub enum InternalizationStrategy {
     EncodeAllInteractions,
     #[serde(rename = "Enabled")]
     SkipInternalizableInteraction,
+}
+
+/// Searchers can override submission strategy of the protocol
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum SubmissionPreference {
+    #[default]
+    ProtocolDefault,
+    Flashbots,
+    PublicMempool,
 }
 
 #[cfg(test)]
@@ -777,6 +791,25 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
+    }
+
+    #[test]
+    fn decode_submitter_flashbots() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "metadata": {
+                    "environment": null
+                },
+                "ref_token": null,
+                "prices": {},
+                "uniswaps": {},
+                "submitter": "Flashbots"
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(deserialized.submitter, SubmissionPreference::Flashbots);
     }
 
     #[test]

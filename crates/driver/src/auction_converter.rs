@@ -11,6 +11,7 @@ use {
         solver::Auction,
     },
     std::{
+        collections::HashSet,
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc,
@@ -89,21 +90,21 @@ impl AuctionConverting for AuctionConverter {
             })
             .collect::<Vec<_>>();
         anyhow::ensure!(
-            orders.iter().any(|o| !o.is_liquidity_order),
+            orders.iter().any(|o| !o.is_liquidity_order()),
             "auction contains no user orders"
         );
 
         tracing::info!(?orders, "got {} orders", orders.len());
 
-        let token_pairs: Vec<_> = orders
+        let token_pairs: HashSet<_> = orders
             .iter()
-            .filter(|o| !o.is_liquidity_order)
+            .filter(|o| !o.is_liquidity_order())
             .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
             .collect();
 
         let liquidity = self
             .liquidity_collector
-            .get_liquidity(&token_pairs, Block::Number(block))
+            .get_liquidity(token_pairs, Block::Number(block))
             .await?;
 
         let external_prices =
@@ -200,13 +201,13 @@ mod tests {
             .expect_get_liquidity()
             .times(2)
             .withf(move |pairs, block| {
-                [
+                let expected: HashSet<_> = [
                     TokenPair::new(token(1), token(2)).unwrap(),
                     TokenPair::new(token(2), token(3)).unwrap(),
                 ]
-                .iter()
-                .eq(pairs)
-                    && block == &Block::Number(3)
+                .into_iter()
+                .collect();
+                expected == *pairs && block == &Block::Number(3)
             })
             .returning(move |_, _| {
                 Ok(vec![ConstantProduct(ConstantProductOrder {

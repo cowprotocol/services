@@ -220,7 +220,7 @@ impl OrderBuilder {
 
     pub fn with_surplus_fee(mut self, surplus_fee: U256) -> Self {
         if let OrderClass::Limit(limit) = &mut self.0.metadata.class {
-            limit.surplus_fee = surplus_fee;
+            limit.surplus_fee = Some(surplus_fee);
         } else {
             panic!("not a limit order");
         }
@@ -376,6 +376,7 @@ impl From<Order> for OrderCreation {
 
 /// Cancellation of multiple orders.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderCancellations {
     pub order_uids: Vec<OrderUid>,
 }
@@ -403,6 +404,7 @@ impl OrderCancellations {
 
 /// Signed order cancellations.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignedOrderCancellations {
     #[serde(flatten)]
     pub data: OrderCancellations,
@@ -484,11 +486,37 @@ pub struct CancellationPayload {
     pub signing_scheme: EcdsaSigningScheme,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EthflowData {
     pub user_valid_to: i64,
-    pub is_refunded: bool,
+    pub refund_tx_hash: Option<H256>,
+}
+
+// We still want to have the `is_refunded` field in the JSON response to stay backwards compatible.
+// However, `refund_tx_hash` already contains all the information we need so we rather have a
+// custom `Serialize` implementation than redundant fields that could possibly contradict each other.
+impl ::serde::Serialize for EthflowData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Extended {
+            user_valid_to: i64,
+            refund_tx_hash: Option<H256>,
+            is_refunded: bool,
+        }
+
+        let ext = Extended {
+            user_valid_to: self.user_valid_to,
+            refund_tx_hash: self.refund_tx_hash,
+            is_refunded: self.refund_tx_hash.is_some(),
+        };
+
+        ext.serialize(serializer)
+    }
 }
 
 /// An order as provided to the orderbook by the frontend.
@@ -686,9 +714,9 @@ impl OrderClass {
 #[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
-    #[serde(with = "u256_decimal")]
-    pub surplus_fee: U256,
-    pub surplus_fee_timestamp: DateTime<Utc>,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub surplus_fee: Option<U256>,
+    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     #[serde_as(as = "Option<DecimalU256>")]
     pub executed_surplus_fee: Option<U256>,
 }
@@ -834,8 +862,8 @@ mod tests {
             metadata: OrderMetadata {
                 creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: U256::MAX,
-                    surplus_fee_timestamp: Default::default(),
+                    surplus_fee: Some(U256::MAX),
+                    surplus_fee_timestamp: Some(Default::default()),
                     executed_surplus_fee: Some(1.into()),
                 }),
                 owner: H160::from_low_u64_be(1),

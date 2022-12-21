@@ -26,6 +26,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
 
+    /// Timestamp at which we should start indexing eth-flow contract events.
+    /// If there are already events in the database for a date later than this, then this date is
+    /// ignored and can be omitted.
+    #[clap(long, env)]
+    pub ethflow_indexing_start: Option<u64>,
+
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
@@ -139,7 +145,12 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow contract: {:?}", self.ethflow_contract)?;
+        writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
+        writeln!(
+            f,
+            "ethflow_indexing_start: {:?}",
+            self.ethflow_indexing_start
+        )?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
@@ -163,12 +174,18 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
+        writeln!(f, "max_surplus_fee_age: {:?}", self.max_surplus_fee_age)?;
         display_option(f, "cip_14_beta", &self.cip_14_beta)?;
         display_option(f, "cip_14_alpha1", &self.cip_14_alpha1)?;
         display_option(f, "cip_14_alpha2", &self.cip_14_alpha2)?;
         display_option(f, "cip_14_profit", &self.cip_14_profit)?;
         display_option(f, "cip_14_gas_cap", &self.cip_14_gas_cap)?;
         display_option(f, "cip_14_reward_cap", &self.cip_14_reward_cap)?;
+        writeln!(
+            f,
+            "limit_order_price_factor: {:?}",
+            self.limit_order_price_factor
+        )?;
         writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
         Ok(())
     }

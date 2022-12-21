@@ -62,4 +62,8 @@ impl Maintaining for Aggregate {
 
         Ok(())
     }
+
+    fn name(&self) -> &str {
+        "BalancerPoolFetcher"
+    }
 }

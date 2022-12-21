@@ -100,17 +100,17 @@ pub struct Order {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
-pub async fn insert_pre_interactions(
+pub async fn insert_or_overwrite_pre_interactions(
     ex: &mut PgConnection,
     uid_and_pre_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
     for (index, (order_uid, pre_interaction)) in uid_and_pre_interaction.iter().enumerate() {
-        insert_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
+        insert_or_overwrite_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
     }
     Ok(())
 }
 
-pub async fn insert_pre_interaction(
+pub async fn insert_or_overwrite_pre_interaction(
     ex: &mut PgConnection,
     index: i64,
     pre_interaction: &Interaction,
@@ -125,6 +125,9 @@ INSERT INTO interactions (
     data
 )
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (order_uid, index) DO UPDATE
+SET target = $3,
+value = $4, data = $5
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
@@ -154,17 +157,12 @@ pub async fn insert_orders_and_ignore_conflicts(
     orders: &[Order],
 ) -> Result<(), sqlx::Error> {
     for order in orders {
-        match insert_order(ex, order).await {
-            Ok(_) => (),
-            Err(err) if is_duplicate_record_error(&err) => (),
-            Err(err) => return Err(err),
-        }
+        insert_order_and_ignore_conflicts(ex, order).await?;
     }
     Ok(())
 }
 
-pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
+const INSERT_ORDER_QUERY: &str = r#"
 INSERT INTO orders (
     uid,
     owner,
@@ -192,7 +190,25 @@ INSERT INTO orders (
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     "#;
-    sqlx::query(QUERY)
+
+pub async fn insert_order_and_ignore_conflicts(
+    ex: &mut PgConnection,
+    order: &Order,
+) -> Result<(), sqlx::Error> {
+    // To be used only for the ethflow contract order placement, where reorgs force us to update
+    // orders
+    // Since each order has a unique UID even after a reorg onchain placed orders have the same
+    // data. Hence, we can disregard any conflicts.
+    const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
+    insert_order_execute_sqlx(QUERY, ex, order).await
+}
+
+async fn insert_order_execute_sqlx(
+    query_str: &str,
+    ex: &mut PgConnection,
+    order: &Order,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(query_str)
         .bind(&order.uid)
         .bind(&order.owner)
         .bind(order.creation_timestamp)
@@ -219,6 +235,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
         .execute(ex)
         .await?;
     Ok(())
+}
+
+pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
+    insert_order_execute_sqlx(INSERT_ORDER_QUERY, ex, order).await
 }
 
 pub async fn read_order(
@@ -372,7 +392,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
-    pub ethflow_data: Option<(bool, i64)>,
+    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
@@ -435,7 +455,9 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
     LIMIT 1
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
-(SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
+    left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
+    where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
 "#;
@@ -567,10 +589,14 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-pub fn limit_orders_with_outdated_fees(
+/// The ordering by most outdated in combination with updating the timestamp when updating the fee
+/// fails is important. It ensures that we cannot get stuck on orders for which the update process
+/// keeps failing.
+pub fn limit_orders_with_most_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
+    limit: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         "SELECT * FROM (",
@@ -580,13 +606,16 @@ pub fn limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
+        "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
         ") AS o ",
-        "WHERE NOT o.invalidated LIMIT 100",
+        "WHERE NOT o.invalidated ",
+        "LIMIT $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(limit)
         .fetch(ex)
 }
 
@@ -616,7 +645,7 @@ pub async fn count_limit_orders_by_owner(
 }
 
 pub struct FeeUpdate {
-    pub surplus_fee: BigDecimal,
+    pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
 }
@@ -678,7 +707,7 @@ pub async fn count_limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
         ") AS o ",
         "WHERE NOT o.invalidated",
     );
@@ -694,7 +723,9 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
-        ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
+        ethflow_orders::{
+            insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
+        },
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         onchain_invalidations::insert_onchain_invalidation,
@@ -714,6 +745,21 @@ mod tests {
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_roundtrip_with_function_irgnoring_duplications() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order_and_ignore_conflicts(&mut db, &order)
+            .await
+            .unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
     }
@@ -754,23 +800,33 @@ mod tests {
 
         let order = Order::default();
         let user_valid_to = 4i64;
-        let is_refunded = true;
-        insert_ethflow_order(
+        insert_or_overwrite_ethflow_order(
             &mut db,
             &EthOrderPlacement {
                 uid: OrderUid::default(),
                 valid_to: user_valid_to,
-                is_refunded,
             },
         )
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
+        insert_refund_tx_hash(
+            &mut db,
+            &Refund {
+                order_uid: order.uid,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(Some((is_refunded, user_valid_to)), order_.ethflow_data);
+        assert_eq!(
+            Some((Some(Default::default()), user_valid_to)),
+            order_.ethflow_data
+        );
     }
 
     #[tokio::test]
@@ -788,10 +844,10 @@ mod tests {
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
         };
-        insert_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        insert_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+        insert_or_overwrite_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -829,6 +885,20 @@ mod tests {
             .unwrap();
         assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
+
+        let pre_interaction_overwrite = Interaction {
+            target: ByteArray([2; 20]),
+            value: BigDecimal::new(100.into(), 1),
+            data: vec![0u8, 2u8],
+        };
+        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_overwrite, &order.uid)
+            .await
+            .unwrap();
+        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+            .await
+            .unwrap();
+        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_overwrite);
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
     }
 
     #[tokio::test]
@@ -842,6 +912,22 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let err = insert_order(&mut db, &order).await.unwrap_err();
         assert!(is_duplicate_record_error(&err));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_same_order_twice_results_in_only_one_order() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        insert_order_and_ignore_conflicts(&mut db, &order)
+            .await
+            .unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
     }
 
     #[tokio::test]
@@ -1203,9 +1289,10 @@ mod tests {
         let ethflow_order = EthOrderPlacement {
             uid: order.uid,
             valid_to: 2,
-            is_refunded: false,
         };
-        insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
+        insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
+            .await
+            .unwrap();
 
         assert!(get_order(&mut db, 3).await.is_none());
         assert!(get_order(&mut db, 2).await.is_some());
@@ -1521,7 +1608,7 @@ mod tests {
         .unwrap();
 
         let update = FeeUpdate {
-            surplus_fee: 42.into(),
+            surplus_fee: Some(42.into()),
             surplus_fee_timestamp: DateTime::from_utc(
                 NaiveDateTime::from_timestamp(1234567890, 0),
                 Utc,
@@ -1533,7 +1620,7 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, Some(update.surplus_fee));
+        assert_eq!(order.surplus_fee, update.surplus_fee);
         assert_eq!(
             order.surplus_fee_timestamp,
             Some(update.surplus_fee_timestamp)
@@ -1549,16 +1636,15 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
-        let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
             &mut db,
             &Order {
-                uid: order_uid,
+                uid: ByteArray([1; 56]),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
+                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
                 ..Default::default()
             },
         )
@@ -1607,11 +1693,39 @@ mod tests {
         )
         .await
         .unwrap();
-        // Not a limit order.
+        // Limit order that was never estimated.
         insert_order(
             &mut db,
             &Order {
                 uid: ByteArray([5; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: None,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Limit order that was recently unsuccessfully estimated.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([6; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: Some(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Not a limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([7; 56]),
                 valid_to: 3,
                 ..Default::default()
             },
@@ -1619,13 +1733,14 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
 
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].uid, order_uid);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].uid.0, [5; 56]);
+        assert_eq!(orders[1].uid.0, [1; 56]);
     }
 
     #[tokio::test]

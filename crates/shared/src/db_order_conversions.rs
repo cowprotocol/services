@@ -4,7 +4,7 @@ use database::orders::{
     OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
     SigningScheme as DbSigningScheme,
 };
-use ethcontract::H160;
+use ethcontract::{H160, H256};
 use model::{
     app_id::AppId,
     interaction::InteractionData,
@@ -19,10 +19,10 @@ use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256};
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;
     let pre_interactions = extract_pre_interactions(&order)?;
-    let ethflow_data = if let Some((is_refunded, user_valid_to)) = order.ethflow_data {
+    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            is_refunded,
+            refund_tx_hash: refund_tx.map(|hash| H256::from(hash.0)),
         })
     } else {
         None
@@ -123,16 +123,11 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            surplus_fee: big_decimal_to_u256(
-                order
-                    .surplus_fee
-                    .as_ref()
-                    .expect("limit orders must have surplus fee set"),
-            )
-            .unwrap(),
-            surplus_fee_timestamp: order
-                .surplus_fee_timestamp
-                .expect("limit orders must have surplus fee timestamp set"),
+            surplus_fee: order
+                .surplus_fee
+                .as_ref()
+                .map(|fee| big_decimal_to_u256(fee).unwrap()),
+            surplus_fee_timestamp: order.surplus_fee_timestamp,
             executed_surplus_fee: order
                 .executed_surplus_fee
                 .as_ref()

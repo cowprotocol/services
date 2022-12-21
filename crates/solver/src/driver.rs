@@ -39,6 +39,7 @@ use shared::{
     tenderly_api::TenderlyApi,
 };
 use std::{
+    collections::HashSet,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -283,14 +284,14 @@ impl Driver {
             .bump(MAX_BASE_GAS_FEE_INCREASE);
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
-        let pairs: Vec<_> = orders
+        let pairs: HashSet<_> = orders
             .iter()
-            .filter(|o| !o.is_liquidity_order)
+            .filter(|o| !o.is_liquidity_order())
             .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
             .collect();
         let liquidity = self
             .liquidity_collector
-            .get_liquidity(&pairs, Block::Number(current_block_during_liquidity_fetch))
+            .get_liquidity(pairs, Block::Number(current_block_during_liquidity_fetch))
             .await?;
         self.metrics.liquidity_fetched(&liquidity);
 
@@ -384,7 +385,7 @@ impl Driver {
                     let uid = &trade.order.metadata.uid;
                     let reward = rewards.get(uid).copied().unwrap_or(0.);
                     let surplus_fee = match trade.order.metadata.class {
-                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => Some(surplus_fee),
+                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => surplus_fee,
                         _ => None,
                     };
                     // Log in case something goes wrong with storing the rewards in the database.

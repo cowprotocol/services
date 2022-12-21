@@ -39,5 +39,8 @@ mockall::mock! {
     #[async_trait::async_trait]
     impl Maintaining for InternalPoolFetcher {
         async fn run_maintenance(&self) -> Result<()>;
+        fn name(&self) -> &str {
+            "BalancerPoolFetcher"
+        }
     }
 }

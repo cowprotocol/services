@@ -1,4 +1,4 @@
-use super::{Exchange, LimitOrder, SettlementHandling};
+use super::{Exchange, LimitOrder, LimitOrderId, LiquidityOrderId, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::{Context, Result};
 use contracts::WETH9;
@@ -43,7 +43,6 @@ impl OrderConverter {
                 .to_f64_lossy()
                 * self.fee_objective_scaling_factor,
         );
-        let is_liquidity_order = order.metadata.class == OrderClass::Liquidity;
         let is_mature = order.metadata.creation_date
             + chrono::Duration::from_std(self.min_order_age).unwrap()
             <= chrono::offset::Utc::now();
@@ -55,8 +54,15 @@ impl OrderConverter {
             _ => (order.data.sell_amount, order.data.fee_amount),
         };
 
+        let id = match order.metadata.class {
+            OrderClass::Market => LimitOrderId::Market(order.metadata.uid),
+            OrderClass::Liquidity => {
+                LimitOrderId::Liquidity(LiquidityOrderId::Protocol(order.metadata.uid))
+            }
+            OrderClass::Limit(_) => LimitOrderId::Limit(order.metadata.uid),
+        };
         Ok(LimitOrder {
-            id: order.metadata.uid.into(),
+            id,
             sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.remaining(sell_amount)?,
@@ -65,7 +71,6 @@ impl OrderConverter {
             partially_fillable: order.data.partially_fillable,
             unscaled_subsidized_fee: remaining.remaining(fee_amount)?,
             scaled_unsubsidized_fee: scaled_fee_amount,
-            is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token,
@@ -95,14 +100,18 @@ fn compute_synthetic_order_amounts_for_limit_order(
         order.metadata.class.is_limit(),
         "this function should only be called for limit orders"
     );
+    // Solvable limit orders always have a surplus fee. It would be nice if this was enforced in the API.
+    let surplus_fee = limit
+        .surplus_fee
+        .context("solvable order without surplus fee")?;
     let sell_amount = order
         .data
         .sell_amount
         .checked_add(order.data.fee_amount)
         .context("surplus_fee adjustment would overflow sell_amount")?
-        .checked_sub(limit.surplus_fee)
+        .checked_sub(surplus_fee)
         .context("surplus_fee adjustment would underflow sell_amount")?;
-    Ok((sell_amount, limit.surplus_fee))
+    Ok((sell_amount, surplus_fee))
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -273,7 +282,11 @@ pub mod tests {
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
         for class in [
             OrderClass::Market,
-            OrderClass::Limit(Default::default()),
+            OrderClass::Limit(LimitOrderClass {
+                surplus_fee: Some(Default::default()),
+                surplus_fee_timestamp: Some(Default::default()),
+                executed_surplus_fee: None,
+            }),
             OrderClass::Liquidity,
         ] {
             let native_token_address = H160([0x42; 20]);

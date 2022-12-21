@@ -2,14 +2,18 @@ use crate::{deploy::Contracts, onchain_components::uniswap_pair_provider};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use autopilot::{
-    database::onchain_order_events::{
-        ethflow_events::EthFlowOnchainOrderParser, OnchainOrderParser,
+    database::{
+        ethflow_events::event_retriever::EthFlowRefundRetriever,
+        onchain_order_events::{
+            ethflow_events::EthFlowOnchainOrderParser,
+            event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
+        },
     },
-    event_updater::{CoWSwapOnchainOrdersContract, GPv2SettlementContract},
+    event_updater::GPv2SettlementContract,
     limit_orders::LimitOrderQuoter,
     solvable_orders::SolvableOrdersCache,
 };
-use contracts::{CoWSwapOnchainOrders, IUniswapLikeRouter, WETH9};
+use contracts::{IUniswapLikeRouter, WETH9};
 use database::quotes::QuoteId;
 use ethcontract::{Account, H160, U256};
 use model::{quote::QuoteSigningScheme, DomainSeparator};
@@ -23,7 +27,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
     fee_subsidy::Subsidy,
-    maintenance::ServiceMaintenance,
+    maintenance::{Maintaining, ServiceMaintenance},
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoter, OrderQuoting, Quote, QuoteHandler,
         QuoteParameters, QuoteSearchParameters,
@@ -51,7 +55,7 @@ use solver::{
 };
 use std::{
     collections::HashSet,
-    future::pending,
+    future::{pending, Future},
     num::{NonZeroU64, NonZeroUsize},
     str::FromStr,
     sync::Arc,
@@ -173,7 +177,6 @@ impl OrderbookServices {
         );
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
-            loop_delay: Duration::from_secs(1),
             quoter: Arc::new(FixedFeeQuoter {
                 quoter: quoter.clone(),
                 fee: 1_000.into(),
@@ -202,24 +205,31 @@ impl OrderbookServices {
             )
             .with_limit_orders(enable_limit_orders),
         );
+        let refund_event_handler: Arc<dyn Maintaining> =
+            Arc::new(autopilot::event_updater::EventUpdater::new(
+                EthFlowRefundRetriever::new(web3.clone(), contracts.ethflow.address()),
+                autopilot_db.clone(),
+                block_retriever.clone(),
+                None,
+            ));
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let chain_id = web3.eth().chain_id().await.unwrap();
         let onchain_order_event_parser = OnchainOrderParser::new(
             autopilot_db.clone(),
+            web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id.as_u64(), contracts.gp_settlement.address()),
             contracts.gp_settlement.address(),
             HashSet::new(),
         );
-        let cow_onchain_order_contract =
-            CoWSwapOnchainOrders::at(web3, contracts.ethflow.address());
         let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(cow_onchain_order_contract),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), contracts.ethflow.address()),
             onchain_order_event_parser,
             block_retriever,
             None,
         ));
+
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),
@@ -230,6 +240,7 @@ impl OrderbookServices {
             Arc::new(autopilot_db.clone()),
             ethflow_event_updater,
             gpv2_event_updater,
+            refund_event_handler,
         ]);
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
         orderbook::serve_api(
@@ -264,13 +275,13 @@ pub async fn setup_naive_solver_uniswapv2_driver(
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(web3, contracts.uniswap_router.address()),
         contracts.gp_settlement.clone(),
-        base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         liquidity_sources: vec![Box::new(uniswap_liquidity)],
+        base_tokens,
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();
@@ -325,29 +336,41 @@ pub async fn setup_naive_solver_uniswapv2_driver(
 
 /// Returns error if communicating with the api fails or if a timeout is reached.
 pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
-    let task = async {
-        loop {
-            let response = client
-                .get(format!("{}/api/v1/auction", API_HOST))
-                .send()
-                .await?;
-            match response.status() {
-                StatusCode::OK => {
-                    let auction: model::auction::AuctionWithId = response.json().await?;
-                    if auction.auction.orders.len() >= minimum {
-                        return Ok(());
-                    }
-                }
-                StatusCode::NOT_FOUND => (),
-                other => anyhow::bail!("unexpected status code {}", other),
+    let condition = || async {
+        let response = client
+            .get(format!("{}/api/v1/auction", API_HOST))
+            .send()
+            .await
+            .unwrap();
+        match response.status() {
+            StatusCode::OK => {
+                let auction: model::auction::AuctionWithId = response.json().await.unwrap();
+                auction.auction.orders.len() >= minimum
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            StatusCode::NOT_FOUND => false,
+            other => panic!("unexpected status code {}", other),
         }
     };
-    match tokio::time::timeout(Duration::from_secs(5), task).await {
-        Ok(inner) => inner,
-        Err(_) => Err(anyhow!("timeout")),
+    wait_for_condition(Duration::from_secs(30), condition).await
+}
+
+/// Repeatedly evaluate condition until it returns true or the timeout is reached. If condition
+/// evaluates to true, Ok(()) is returned. If the timeout is reached Err is returned.
+pub async fn wait_for_condition<Fut>(
+    timeout: Duration,
+    mut condition: impl FnMut() -> Fut,
+) -> Result<()>
+where
+    Fut: Future<Output = bool>,
+{
+    let start = std::time::Instant::now();
+    while !condition().await {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if start.elapsed() > timeout {
+            return Err(anyhow!("timeout"));
+        }
     }
+    Ok(())
 }
 
 /// Same as [`OrderQuoter`], but forces the fee to be exactly the specified amount.

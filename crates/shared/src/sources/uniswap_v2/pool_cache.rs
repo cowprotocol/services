@@ -55,4 +55,8 @@ impl Maintaining for PoolCache {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.update_cache().await
     }
+
+    fn name(&self) -> &str {
+        "UniswapV2PoolFetcher"
+    }
 }
