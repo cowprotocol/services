@@ -10,6 +10,7 @@ pub mod limit_orders;
 
 use crate::{
     database::{
+        ethflow_events::event_retriever::EthFlowRefundRetriever,
         onchain_order_events::{
             ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
             event_retriever::CoWSwapOnchainOrdersContract,
@@ -459,6 +460,28 @@ pub async fn main(args: arguments::Arguments) -> ! {
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
+        let start_block = determine_ethflow_indexing_start(
+            &skip_event_sync_start,
+            args.ethflow_indexing_start,
+            &web3,
+            chain_id,
+        )
+        .await;
+
+        let refund_event_handler = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // This cares only about ethflow refund events because all the other ethflow
+                // events are already indexed by the OnchainOrderParser.
+                EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
+                db.clone(),
+                block_retriever.clone(),
+                start_block,
+            )
+            .await
+            .unwrap(),
+        );
+        maintainers.push(refund_event_handler);
+
         let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
         let onchain_order_event_parser = OnchainOrderParser::new(
             db.clone(),
@@ -476,13 +499,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
                 CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
                 onchain_order_event_parser,
                 block_retriever,
-                determine_ethflow_indexing_start(
-                    &skip_event_sync_start,
-                    args.ethflow_indexing_start,
-                    &web3,
-                    chain_id,
-                )
-                .await,
+                start_block,
             )
             .await
             .expect("Should be able to initialize event updater. Database read issues?"),
@@ -545,7 +562,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,
-            loop_delay: args.surplus_fee_update_interval,
             quoter,
             database: db.clone(),
             signature_validator,
@@ -554,7 +570,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .spawn();
         LimitOrderMetrics {
             limit_order_age,
-            loop_delay: Duration::from_secs(5),
             database: db,
         }
         .spawn();

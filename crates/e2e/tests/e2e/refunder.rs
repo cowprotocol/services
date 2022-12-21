@@ -1,17 +1,21 @@
 use crate::{
-    eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    deploy::Contracts,
+    eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder, ORDERS_ENDPOINT},
     local_node::{AccountAssigner, TestNodeApi},
     onchain_components::{
         deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
     },
     services::{OrderbookServices, API_HOST},
 };
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use ethcontract::{H160, U256};
-use model::quote::{
-    OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity,
+use ethcontract::{H160, H256, U256};
+use model::{
+    order::Order,
+    quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, Validity},
 };
 use refunder::refund_service::RefundService;
+use reqwest::Client;
 use shared::{
     current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3,
     http_client::HttpClientFactory, maintenance::Maintaining,
@@ -130,4 +134,31 @@ async fn refunder_tx(web3: Web3) {
         ethflow_order.status(&contracts).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
+
+    // Run autopilot to index refund tx
+    services.maintenance.run_maintenance().await.unwrap();
+
+    let tx_hash = get_refund_tx_hash_for_order_uid(&client, &ethflow_order, &contracts)
+        .await
+        .unwrap();
+    assert!(tx_hash.is_some());
+}
+
+async fn get_refund_tx_hash_for_order_uid(
+    client: &Client,
+    ethflow_order: &ExtendedEthFlowOrder,
+    contracts: &Contracts,
+) -> Result<Option<H256>> {
+    let query = client
+        .get(&format!(
+            r#"{API_HOST}{ORDERS_ENDPOINT}/{}"#,
+            ethflow_order.uid(contracts).await,
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(query.status(), 200);
+    let response = query.json::<Order>().await.unwrap();
+
+    Ok(response.metadata.ethflow_data.unwrap().refund_tx_hash)
 }

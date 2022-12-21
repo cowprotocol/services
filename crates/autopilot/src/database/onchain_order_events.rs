@@ -511,7 +511,7 @@ async fn get_quote(
     get_quote_and_check_fee(
         quoter,
         &parameters.clone(),
-        Some(*quote_id as i64),
+        Some(*quote_id),
         order_data.fee_amount,
         quote_signing_scheme,
     )
@@ -963,7 +963,7 @@ mod test {
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
             owner: ByteArray(owner.0),
-            creation_timestamp: Utc.timestamp(event_timestamp as i64, 0),
+            creation_timestamp: Utc.timestamp(event_timestamp, 0),
             sell_token: ByteArray(expected_order_data.sell_token.0),
             buy_token: ByteArray(expected_order_data.buy_token.0),
             receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),

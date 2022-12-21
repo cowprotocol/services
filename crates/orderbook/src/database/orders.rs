@@ -339,10 +339,10 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let status = calculate_status(&order);
     let pre_interactions = extract_pre_interactions(&order)?;
-    let ethflow_data = if let Some((is_refunded, user_valid_to)) = order.ethflow_data {
+    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
-            is_refunded,
+            refund_tx_hash: refund_tx.map(|hash| H256(hash.0)),
         })
     } else {
         None
@@ -649,7 +649,7 @@ mod tests {
         assert_eq!(
             calculate_status(&FullOrder {
                 invalidated: false,
-                ethflow_data: Some((false, valid_to_yesterday.timestamp())),
+                ethflow_data: Some((None, valid_to_yesterday.timestamp())),
                 ..order_row()
             }),
             OrderStatus::Expired

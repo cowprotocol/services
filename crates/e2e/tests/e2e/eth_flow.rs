@@ -42,7 +42,7 @@ use shared::{
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
-const ORDERS_ENDPOINT: &str = "/api/v1/orders";
+pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 const QUOTE_ENDPOINT: &str = "/api/v1/quote";
 const TRADES_ENDPOINT: &str = "/api/v1/trades";
 
@@ -435,7 +435,7 @@ async fn test_order_parameters(
         response.metadata.ethflow_data,
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
-            is_refunded: false
+            refund_tx_hash: None,
         })
     );
     assert_eq!(
@@ -586,7 +586,7 @@ impl ExtendedEthFlowOrder {
         ))
     }
 
-    async fn uid(&self, contracts: &Contracts) -> OrderUid {
+    pub async fn uid(&self, contracts: &Contracts) -> OrderUid {
         let domain_separator = DomainSeparator(
             contracts
                 .gp_settlement

@@ -129,8 +129,8 @@ INSERT INTO interactions (
 )
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (order_uid, index) DO UPDATE
-SET target = $3, 
-value = $4, data = $5    
+SET target = $3,
+value = $4, data = $5
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
@@ -395,7 +395,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
-    pub ethflow_data: Option<(bool, i64)>,
+    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub surplus_fee: Option<BigDecimal>,
@@ -459,7 +459,9 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
     LIMIT 1
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
-(SELECT (eth_o.is_refunded, eth_o.valid_to)  from ethflow_orders eth_o where eth_o.uid = o.uid limit 1) as ethflow_data,
+(SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
+    left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
+    where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
@@ -593,10 +595,14 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-pub fn limit_orders_with_outdated_fees(
+/// The ordering by most outdated in combination with updating the timestamp when updating the fee
+/// fails is important. It ensures that we cannot get stuck on orders for which the update process
+/// keeps failing.
+pub fn limit_orders_with_most_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
+    limit: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         "SELECT * FROM (",
@@ -606,13 +612,16 @@ pub fn limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
+        "ORDER BY o.surplus_fee_timestamp ASC NULLS FIRST",
         ") AS o ",
-        "WHERE NOT o.invalidated LIMIT 100",
+        "WHERE NOT o.invalidated ",
+        "LIMIT $3 ",
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(limit)
         .fetch(ex)
 }
 
@@ -642,7 +651,7 @@ pub async fn count_limit_orders_by_owner(
 }
 
 pub struct FeeUpdate {
-    pub surplus_fee: BigDecimal,
+    pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
 }
@@ -704,7 +713,7 @@ pub async fn count_limit_orders_with_outdated_fees(
         ORDERS_FROM,
         " WHERE o.valid_to >= $1 ",
         "AND o.class = 'limit' ",
-        "AND o.surplus_fee_timestamp < $2 ",
+        "AND COALESCE(o.surplus_fee_timestamp, 'epoch') < $2 ",
         ") AS o ",
         "WHERE NOT o.invalidated",
     );
@@ -720,7 +729,9 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
-        ethflow_orders::{insert_or_overwrite_ethflow_order, EthOrderPlacement},
+        ethflow_orders::{
+            insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
+        },
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         onchain_invalidations::insert_onchain_invalidation,
@@ -796,23 +807,33 @@ mod tests {
 
         let order = Order::default();
         let user_valid_to = 4i64;
-        let is_refunded = true;
         insert_or_overwrite_ethflow_order(
             &mut db,
             &EthOrderPlacement {
                 uid: OrderUid::default(),
                 valid_to: user_valid_to,
-                is_refunded,
             },
         )
         .await
         .unwrap();
         insert_order(&mut db, &order).await.unwrap();
+        insert_refund_tx_hash(
+            &mut db,
+            &Refund {
+                order_uid: order.uid,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(Some((is_refunded, user_valid_to)), order_.ethflow_data);
+        assert_eq!(
+            Some((Some(Default::default()), user_valid_to)),
+            order_.ethflow_data
+        );
     }
 
     #[tokio::test]
@@ -1275,7 +1296,6 @@ mod tests {
         let ethflow_order = EthOrderPlacement {
             uid: order.uid,
             valid_to: 2,
-            is_refunded: false,
         };
         insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
             .await
@@ -1613,7 +1633,7 @@ mod tests {
         .unwrap();
 
         let update = FeeUpdate {
-            surplus_fee: 42.into(),
+            surplus_fee: Some(42.into()),
             surplus_fee_timestamp: DateTime::from_utc(
                 NaiveDateTime::from_timestamp(1234567890, 0),
                 Utc,
@@ -1625,7 +1645,7 @@ mod tests {
             .unwrap();
 
         let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, Some(update.surplus_fee));
+        assert_eq!(order.surplus_fee, update.surplus_fee);
         assert_eq!(
             order.surplus_fee_timestamp,
             Some(update.surplus_fee_timestamp)
@@ -1641,16 +1661,15 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
-        let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
             &mut db,
             &Order {
-                uid: order_uid,
+                uid: ByteArray([1; 56]),
                 class: OrderClass::Limit,
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
+                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
                 ..Default::default()
             },
         )
@@ -1699,11 +1718,39 @@ mod tests {
         )
         .await
         .unwrap();
-        // Not a limit order.
+        // Limit order that was never estimated.
         insert_order(
             &mut db,
             &Order {
                 uid: ByteArray([5; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: None,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Limit order that was recently unsuccessfully estimated.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([6; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: None,
+                surplus_fee_timestamp: Some(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Not a limit order.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([7; 56]),
                 valid_to: 3,
                 ..Default::default()
             },
@@ -1711,13 +1758,14 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
 
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].uid, order_uid);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].uid.0, [5; 56]);
+        assert_eq!(orders[1].uid.0, [1; 56]);
     }
 
     #[tokio::test]
