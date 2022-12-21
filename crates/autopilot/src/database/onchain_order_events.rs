@@ -451,23 +451,16 @@ async fn parse_general_onchain_order_placement_data(
 
             let quote_result =
                 get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
-            let mut placement_error = None;
-            let mut quote = None;
-            match quote_result.clone() {
-                Ok(found_quote) => quote = Some(found_quote),
-                Err(err) => placement_error = Some(err),
-            }
             let order_data = convert_onchain_order_placement(
                 &event,
                 event_timestamp,
-                quote,
+                quote_result.clone(),
                 order_data,
                 signing_scheme,
                 order_uid,
                 owner,
                 settlement_contract,
                 liquidity_order_owners,
-                placement_error,
             )?;
             let quote = if let Ok(quote) = quote_result {
                 Some(database::orders::Quote {
@@ -547,24 +540,23 @@ async fn get_quote(
 fn convert_onchain_order_placement(
     order_placement: &ContractOrderPlacement,
     event_timestamp: i64,
-    quote: Option<Quote>,
+    quote: Result<Quote, OnchainOrderPlacementError>,
     order_data: OrderData,
     signing_scheme: SigningScheme,
     order_uid: OrderUid,
     owner: H160,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
-    placement_error: Option<OnchainOrderPlacementError>,
 ) -> Result<(OnchainOrderPlacement, Order)> {
-    let full_fee_amount = if let Some(ref quote) = quote {
+    let full_fee_amount = if let Ok(ref quote) = quote {
         quote.data.fee_parameters.unsubsidized()
     } else {
         // Since the order will anways have an order_placement_error,
         // we can set an "arbitrary amount"
         order_data.fee_amount
     };
-    let is_outside_market_price = if let Some(quote) = quote {
-        if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, &quote) {
+    let is_outside_market_price = if let Ok(ref quote) = quote {
+        if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             true
         } else {
@@ -619,7 +611,7 @@ fn convert_onchain_order_placement(
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
         sender: ByteArray(order_placement.sender.0),
-        placement_error,
+        placement_error: quote.err(),
     };
     Ok((onchain_order_placement_event, order))
 }
@@ -846,14 +838,13 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             event_timestamp,
-            Some(quote),
+            Ok(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &Default::default(),
-            None,
         )
         .unwrap();
         let expected_order_data = OrderData {
@@ -960,14 +951,13 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             event_timestamp,
-            Some(quote),
+            Ok(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &hashset! {owner},
-            None,
         )
         .unwrap();
         let expected_order_data = OrderData {
@@ -1073,14 +1063,13 @@ mod test {
         let (onchain_order_placement, order) = convert_onchain_order_placement(
             &order_placement,
             345634,
-            Some(quote),
+            Ok(quote),
             order_data,
             signing_scheme,
             order_uid,
             owner,
             settlement_contract,
             &Default::default(),
-            None,
         )
         .unwrap();
         let expected_order_data = OrderData {

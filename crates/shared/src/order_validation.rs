@@ -119,15 +119,6 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
     }
 }
 
-impl ValidationError {
-    pub fn from(error: OnchainOrderPlacementError) -> Self {
-        match error {
-            OnchainOrderPlacementError::QuoteNotFound => ValidationError::QuoteNotFound,
-            _ => ValidationError::Other(anyhow!("non classified onchain placement error")),
-        }
-    }
-}
-
 impl From<VerificationError> for ValidationError {
     fn from(err: VerificationError) -> Self {
         match err {
