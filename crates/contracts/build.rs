@@ -230,10 +230,14 @@ fn main() {
             .add_network_str(GNOSIS, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
     });
     generate_contract_with_config("SwaprFactory", |builder| {
-        builder.add_network_str(GNOSIS, "0x5D48C95AdfFD4B40c1AAADc4e08fc44117E02179")
+        builder
+            .add_network_str(MAINNET, "0xd34971BaB6E5E356fd250715F5dE0492BB070452")
+            .add_network_str(GNOSIS, "0x5D48C95AdfFD4B40c1AAADc4e08fc44117E02179")
     });
     generate_contract_with_config("SwaprRouter", |builder| {
-        builder.add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
+        builder
+            .add_network_str(MAINNET, "0xb9960d9bca016e9748be75dd52f02188b9d0829f")
+            .add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
     });
     generate_contract("ISwaprPair");
     generate_contract_with_config("UniswapV2Factory", |builder| {
