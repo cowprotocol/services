@@ -453,6 +453,17 @@ impl Settlement {
     pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
         self.encoder.finish(internalization_strategy)
     }
+
+    pub fn encode_uninternalized_if_different(self) -> Option<EncodedSettlement> {
+        if self.encoder.contains_internalized_interactions() {
+            Some(
+                self.encoder
+                    .finish(InternalizationStrategy::EncodeAllInteractions),
+            )
+        } else {
+            None
+        }
+    }
 }
 
 // The difference between what you were willing to sell (executed_amount * limit_price)
