@@ -39,6 +39,7 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
         1 => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
+            BaselineSource::Swapr,
             BaselineSource::BalancerV2,
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
