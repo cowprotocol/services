@@ -75,23 +75,37 @@ components:
       type: string
       example: "1234567890"
 
+    DateTime:
+      description:
+        An ISO-8601 formatted date-time.
+      type: string
+      example: "1970-01-01T00:00:00.000Z"
+
     TokenInfo:
       description: |
         Information about a token relavant to the auction.
       type: object
       required:
         - trusted
+        - availableBalance
       properties:
         decimals:
+          description: |
+            The ERC20.decimals value for this token. This may be missing for
+            ERC20 tokens that don't implement the optional metadata extension.
           type: integer
-          description: |
-            The ERC20.decimals value for this token.
         symbol:
-          type: string
           description: |
-            The ERC20.symbol value for this token.
+            The ERC20.symbol value for this token. This may be missing for ERC20
+            tokens that don't implement the optional metadata extension.
+          type: string
         referencePrice:
-          $ref: "#/components/schemas/NativePrice"
+          description: |
+            The reference price of this token for the auction used for scoring.
+            This price is only included for tokens for which there are CoW
+            Protocol orders.
+          allOf:
+            - $ref: "#/components/schemas/NativePrice"
         availableBalance:
           description: |
             The balance held by the Settlement contract that is available
@@ -99,11 +113,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         trusted:
-          type: boolean
           description: |
             A flag which indicates that solvers are allowed to perform gas cost
             optimizations for this token by not routing the trades via an AMM,
             and instead use its available balances, as specified by CIP-2.
+          type: boolean
 
     Asset:
       description: |
@@ -209,10 +223,10 @@ components:
         class:
           $ref: "#/components/schemas/OrderClass"
         reward:
-          type: number
           description: |
             The rewards, in COW base units, that would be given by the protocol
             for settling this order.
+          type: number
 
     TokenReserve:
       description: |
@@ -287,6 +301,8 @@ components:
           type: string
           enum: [stable]
         tokens:
+          description: |
+            A mapping of token address to token balance and scaling rate.
           type: object
           additionalProperties:
             allOf:
@@ -297,8 +313,6 @@ components:
                 properties:
                   scalingFactor:
                     $ref: "#/components/schemas/BigInt"
-          description: |
-            A mapping of token address to token balance and scaling rate.
         amplificationParameter:
           $ref: "#/components/schemas/Decimal"
         fee:
@@ -403,10 +417,10 @@ components:
               allOf:
                 - $ref: "#/components/schemas/Address"
             gasEstimate:
-              type: integer
               description: |
                 A rough approximation of gas units required to use this
                 liquidity on-chain.
+              type: integer
 
     Auction:
       description: |
@@ -419,29 +433,29 @@ components:
         - effectiveGasPrice
       properties:
         id:
-          type: string
           description: |
             An opaque identifier for the auction. Will be set to `null` for
             requests that are not part of an auction (when quoting token prices
             for example).
+          type: string
         tokens:
+          description: |
+            A map of token addresses to token information.
           type: object
           additionalProperties:
             $ref: "#/components/schemas/TokenInfo"
-          description: |
-            A map of token addresses to token information.
         orders:
+          description: |
+            The solvable orders included in the auction.
           type: array
           items:
             $ref: "#/components/schemas/Order"
-          description: |
-            The solvable orders included in the auction.
         liquidity:
+          description: |
+            On-chain liquidity that can be used by the solution.
           type: array
           items:
             $ref: "#/components/schemas/Liquidity"
-          description: |
-            On-chain liquidity that can be used by the solution.
         effectiveGasPrice:
           description: |
             The current estimated gas price that will be paid when executing a
@@ -449,6 +463,13 @@ components:
             with a settlement's gas estimate for solution scoring.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        deadline:
+          description: |
+            The deadline by which a solution to the auction is required.
+            Requests that go beyond this deadline are expected to be cancelled
+            by the caller.
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
 
     JitOrder:
       description: |
