@@ -1,5 +1,6 @@
 use crate::{
     auction::AuctionId,
+    bytes_hex::BytesHex,
     order::OrderUid,
     u256_decimal::{self, DecimalU256},
 };
@@ -78,6 +79,9 @@ pub struct SolverSettlement {
     pub orders: Vec<Order>,
     #[serde(with = "crate::bytes_hex")]
     pub call_data: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<BytesHex>")]
+    pub uninternalized_call_data: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -152,6 +156,7 @@ mod tests {
                         }
                     ],
                     "callData": "0x13",
+                    "uninternalizedCallData": "0x1314",
                 },
             ],
         });
@@ -193,6 +198,7 @@ mod tests {
                         executed_amount: 12.into(),
                     }],
                     call_data: vec![0x13],
+                    uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
             },
         };
