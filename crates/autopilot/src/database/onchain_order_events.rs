@@ -197,9 +197,9 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .await
         .context("append_onchain_orders failed")?;
 
-        // It's okay to not store quotes for orders is with placement_errors as
-        // only orders that will be used in auctions need a quote stored
-        // to calcualte the rewards.
+        // We only need to insert quotes for orders that will be included in an
+        // auction (they are needed to compute solver rewards). If placement
+        // failed, then the quote is not needed.
         insert_quotes(
             &mut transaction,
             quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
@@ -252,9 +252,9 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("append_custom_onchain_orders failed")?;
 
-        // It's okay to not store quotes for orders is with placement_errors as
-        // only orders that will be used in auctions need a quote stored
-        // to calcualte the rewards.
+        // We only need to insert quotes for orders that will be included in an
+        // auction (they are needed to compute solver rewards). If placement
+        // failed, then the quote is not needed.
         insert_quotes(
             &mut transaction,
             quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
@@ -1121,7 +1121,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn parse_general_onchain_order_placement_data_filters_out_errored_quotes() {
+    async fn parse_general_onchain_order_placement_data_creates_placement_error_from_errored_quotes(
+    ) {
         let sell_token = H160::from([1; 20]);
         let buy_token = H160::from([2; 20]);
         let receiver = H160::from([3; 20]);
