@@ -120,6 +120,7 @@ mod tests {
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![Default::default()],
                     call_data: vec![1, 2],
+                    uninternalized_call_data: Some(vec![1, 2, 3, 4]),
                 }],
             },
             executions: Default::default(),
