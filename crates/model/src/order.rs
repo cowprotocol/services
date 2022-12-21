@@ -524,10 +524,21 @@ impl ::serde::Serialize for EthflowData {
 pub enum OnchainOrderPlacementError {
     QuoteNotFound,
     ValidToTooFarInTheFuture,
-    OrderClassNotAccepted,
+    // If limit orders are created from on-chain events 
+    // but limit orders are disabled at the API level, then this
+    // error is returned
+    DisabledOrderClass,
+    // PreValidationErrors are any errors that are found during the
+    // prevalidation of orders in the services. Since this validations
+    // are also done during quoting, any order with a correct quote should
+    // not run into this issue
     PreValidationError,
+    // InvalidQuote error is return, if the quote and the order did not match
+    // together
     InvalidQuote,
     InsufficientFee,
+    // In case order data is invalid - e.g. signature type EIP-712 for
+    // onchain orders - this error is returned
     InvalidOrderData,
     Other,
 }

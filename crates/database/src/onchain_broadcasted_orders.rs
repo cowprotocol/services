@@ -8,11 +8,28 @@ pub enum OnchainOrderPlacementError {
     QuoteNotFound,
     InvalidQuote,
     PreValidationError,
-    InvalidOrderClass,
+    DisabledOrderClass,
     ValidToTooFarInFuture,
     InvalidOrderData,
     InsufficientFee,
     Other,
+}
+
+#[cfg(test)]
+impl OnchainOrderPlacementError {
+    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {
+        const ERRORS: [OnchainOrderPlacementError; 8] = [
+            OnchainOrderPlacementError::QuoteNotFound,
+            OnchainOrderPlacementError::InvalidQuote,
+            OnchainOrderPlacementError::PreValidationError,
+            OnchainOrderPlacementError::DisabledOrderClass,
+            OnchainOrderPlacementError::ValidToTooFarInFuture,
+            OnchainOrderPlacementError::InvalidOrderData,
+            OnchainOrderPlacementError::InsufficientFee,
+            OnchainOrderPlacementError::Other,
+        ];
+        ERRORS.into_iter()
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -105,104 +122,36 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
+        async fn round_trip_for_error(
+            db: &mut PgConnection,
+            placement_error: Option<OnchainOrderPlacementError>,
+        ) {
+            let order = OnchainOrderPlacement {
+                placement_error: placement_error.clone(),
+                ..Default::default()
+            };
+            let event_index = EventIndex::default();
+            insert_onchain_order(db, &event_index, &order)
+                .await
+                .unwrap();
+            let row = read_order(db, &order.order_uid).await.unwrap().unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order.order_uid,
+                sender: order.sender,
+                placement_error,
+                is_reorged: false,
+                block_number: event_index.block_number,
+                log_index: event_index.log_index,
+            };
+            assert_eq!(expected_row, row);
+        }
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
-        // round trip with quote id not found error
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
-            ..Default::default()
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &order)
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order.order_uid,
-            sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
-            is_reorged: false,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
-        // round trip with not allowed buy token error
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::PreValidationError),
-            ..Default::default()
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &order)
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order.order_uid,
-            sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::PreValidationError),
-            is_reorged: false,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
-        // round trip with err valid_to too far in future
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::ValidToTooFarInFuture),
-            ..Default::default()
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &order)
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order.order_uid,
-            sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::ValidToTooFarInFuture),
-            is_reorged: false,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
-        // round trip with not accepted order class error
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::InvalidOrderClass),
-            ..Default::default()
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &order)
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order.order_uid,
-            sender: order.sender,
-            placement_error: Some(OnchainOrderPlacementError::InvalidOrderClass),
-            is_reorged: false,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
+        round_trip_for_error(&mut db, None).await;
+        for error in OnchainOrderPlacementError::into_iter() {
+            crate::clear_DANGER_(&mut db).await.unwrap();
+            round_trip_for_error(&mut db, Some(error)).await;
+        }
     }
 
     #[tokio::test]

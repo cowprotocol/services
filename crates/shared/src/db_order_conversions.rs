@@ -141,8 +141,8 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::PreValidationError) => {
             Some(OnchainOrderPlacementError::PreValidationError)
         }
-        Some(DbOnchainOrderPlacementError::InvalidOrderClass) => {
-            Some(OnchainOrderPlacementError::OrderClassNotAccepted)
+        Some(DbOnchainOrderPlacementError::DisabledOrderClass) => {
+            Some(OnchainOrderPlacementError::DisabledOrderClass)
         }
         Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
             Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
