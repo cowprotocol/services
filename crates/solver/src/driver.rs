@@ -365,6 +365,11 @@ impl Driver {
                             .clone()
                             .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
                     ),
+                    uninternalized_call_data: rated_settlement
+                        .settlement
+                        .clone()
+                        .encode_uninternalized_if_different()
+                        .map(settlement_simulation::call_data),
                 })
                 .collect(),
         };
