@@ -12,7 +12,6 @@ pub mod contracts;
 pub struct Ethereum {
     web3: Web3<DynTransport>,
     chain_id: eth::ChainId,
-    network: eth::Network,
 }
 
 impl Ethereum {
@@ -20,10 +19,6 @@ impl Ethereum {
     /// URL.
     pub fn eth_rpc(_url: Url) -> Self {
         todo!()
-    }
-
-    pub fn network(&self) -> &eth::Network {
-        &self.network
     }
 
     pub fn chain_id(&self) -> eth::ChainId {
@@ -65,7 +60,7 @@ impl Contracts<'_> {
     pub fn settlement(&self) -> contracts::GPv2Settlement {
         let address = contracts::GPv2Settlement::raw_contract()
             .networks
-            .get(&self.0.network.0)
+            .get(self.0.chain_id().network_id())
             .unwrap()
             .address;
         contracts::GPv2Settlement::at(&self.0.web3, address)
@@ -75,7 +70,7 @@ impl Contracts<'_> {
     pub fn weth(&self) -> contracts::WETH9 {
         let address = contracts::WETH9::raw_contract()
             .networks
-            .get(&self.0.network.0)
+            .get(self.0.chain_id().network_id())
             .unwrap()
             .address;
         contracts::WETH9::at(&self.0.web3, address)

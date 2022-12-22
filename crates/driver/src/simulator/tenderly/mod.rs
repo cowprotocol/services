@@ -12,7 +12,7 @@ pub(super) struct Tenderly {
 pub struct Config {
     /// The URL of the Tenderly API.
     pub url: reqwest::Url,
-    pub network: eth::Network,
+    pub chain_id: eth::ChainId,
     /// Save the transaction on Tenderly for later inspection, e.g. via the
     /// dashboard.
     pub save: bool,
@@ -47,7 +47,7 @@ impl Tenderly {
             .client
             .post(url)
             .json(&dto::Request {
-                network_id: self.config.network.to_string(),
+                network_id: self.config.chain_id.network_id(),
                 from: match tx.from {
                     eth::Account::Address(address) => address.into(),
                     eth::Account::PrivateKey(_) => panic!("expected an address, got a private key"),

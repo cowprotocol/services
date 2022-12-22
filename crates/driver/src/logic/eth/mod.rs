@@ -18,23 +18,17 @@ pub use {
 // TODO It might make sense to re-export H160 and U256 from here and not
 // reference primitive_types directly anywhere, it's probably the best idea
 
-// TODO Constructing this type should probably do some validation, or maybe this
-// should be an enum with a Display implementation
-/// Name of an Ethereum network, e.g. mainnet or testnet.
-#[derive(Debug, Clone)]
-pub struct Network(pub String);
-
-impl std::fmt::Display for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Debug, Clone, Copy)]
 pub struct ChainId(pub u64);
+
+impl ChainId {
+    pub fn network_id(&self) -> &'static str {
+        todo!()
+    }
+}
 
 /// Gas amount.
 #[derive(Debug, Default, Clone, Copy)]
