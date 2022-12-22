@@ -5,6 +5,9 @@ mod eip712;
 
 pub use {allowance::Allowance, eip712::DomainSeparator};
 
+// TODO This module is getting a little hectic with all kinds of different
+// types, I wonder if there could be meaningful submodules?
+
 // TODO It might make sense to re-export H160 and U256 from here and not
 // reference primitive_types directly anywhere, it's probably the best idea
 
@@ -24,15 +27,28 @@ pub struct ChainId(pub u64);
 #[derive(Debug, Clone, Copy)]
 pub struct Gas(pub U256);
 
-/// Gas price.
-/// TODO This will probably need to be different, autopilot uses GasPrice1559
+impl From<Gas> for U256 {
+    fn from(gas: Gas) -> Self {
+        gas.0
+    }
+}
+
+/// `effective_gas_price` as defined by EIP-1559.
+///
+/// https://eips.ethereum.org/EIPS/eip-1559#specification
 #[derive(Debug, Clone, Copy)]
-pub struct GasPrice(pub U256);
+pub struct EffectiveGasPrice(pub Ether);
+
+impl From<EffectiveGasPrice> for U256 {
+    fn from(price: EffectiveGasPrice) -> Self {
+        price.0 .0
+    }
+}
 
 /// An EIP-2930 access list.
 ///
 /// https://eips.ethereum.org/EIPS/eip-2930
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AccessList(pub web3::types::AccessList);
 
 impl AccessList {
@@ -41,11 +57,16 @@ impl AccessList {
     }
 }
 
+impl From<AccessList> for web3::types::AccessList {
+    fn from(list: AccessList) -> Self {
+        list.0
+    }
+}
+
 /// The results of an Ethereum transaction simulation.
 #[derive(Debug)]
 pub struct Simulation {
     pub gas: Gas,
-    pub access_list: AccessList,
 }
 
 /// An address. Can be an EOA or a smart contract address.
@@ -111,6 +132,12 @@ pub struct Asset {
 #[derive(Debug, Clone, Copy)]
 pub struct Ether(pub U256);
 
+impl From<U256> for Ether {
+    fn from(inner: U256) -> Self {
+        Self(inner)
+    }
+}
+
 impl From<Ether> for num::BigInt {
     fn from(ether: Ether) -> Self {
         let mut bytes = [0; 32];
@@ -129,10 +156,36 @@ impl From<Ether> for U256 {
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
 
+// TODO This type should ensure that the private key is valid during
+// construction, use the secp256k1 lib for this
+#[derive(Debug, Clone, Copy)]
+pub struct PrivateKey([u8; 32]);
+
+impl From<PrivateKey> for [u8; 32] {
+    fn from(pk: PrivateKey) -> Self {
+        pk.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Account {
+    PrivateKey(PrivateKey),
+    Address(Address),
+}
+
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug)]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
     pub call_data: Vec<u8>,
+}
+
+/// An onchain transaction.
+#[derive(Debug)]
+pub struct Tx {
+    pub from: Address,
+    pub to: Address,
+    pub value: Ether,
+    pub input: Vec<u8>,
 }

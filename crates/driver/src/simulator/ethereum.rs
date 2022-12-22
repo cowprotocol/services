@@ -1,18 +1,10 @@
-use crate::logic::{competition::solution, eth};
+use crate::logic::eth;
 
 #[derive(Debug)]
-pub struct Ethereum;
+pub(super) struct Ethereum;
 
 impl Ethereum {
-    pub async fn access_list(&self, _settlement: &solution::Settlement) -> eth::AccessList {
-        todo!()
-    }
-
-    pub async fn gas(
-        &self,
-        _settlement: &solution::Settlement,
-        _access_list: &eth::AccessList,
-    ) -> eth::Gas {
+    pub async fn simulate(&self, _tx: &eth::Tx, _access_list: &eth::AccessList) -> eth::Simulation {
         todo!()
     }
 }

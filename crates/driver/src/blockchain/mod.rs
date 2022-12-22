@@ -7,21 +7,12 @@ use {
 
 pub mod contracts;
 
-const MAX_BATCH_SIZE: usize = 100;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("method error: {0:?}")]
-    Method(#[from] ethcontract::errors::MethodError),
-    #[error("deploy error: {0:?}")]
-    Deploy(#[from] ethcontract::errors::DeployError),
-}
-
 /// The Ethereum blockchain.
 #[derive(Debug)]
 pub struct Ethereum {
     web3: Web3<DynTransport>,
     chain_id: eth::ChainId,
+    network: eth::NetworkName,
 }
 
 impl Ethereum {
@@ -55,25 +46,32 @@ impl Ethereum {
     }
 }
 
-// TODO This could probably do some caching, I might want to open an issue for
-// this?
 pub struct Contracts<'a>(&'a Ethereum);
 
 impl Contracts<'_> {
     /// The settlement contract.
-    pub async fn settlement(&self) -> Result<eth::Contract, Error> {
-        Ok(contracts::GPv2Settlement::deployed(&self.0.web3)
-            .await?
-            .address()
-            .into())
+    pub fn settlement(&self) -> contracts::GPv2Settlement {
+        let address = contracts::GPv2Settlement::raw_contract()
+            .networks
+            .get(&self.0.network.0)
+            .unwrap()
+            .address;
+        contracts::GPv2Settlement::at(&self.0.web3, address)
     }
 
-    /// The WETH contract. This should return [`eth::Contract`] in the future.
-    /// For now, due to boundary integration reasons, it returns the actual
-    /// WETH9 contract.
-    pub async fn weth(&self) -> Result<contracts::WETH9, Error> {
-        contracts::WETH9::deployed(&self.0.web3)
-            .await
-            .map_err(Into::into)
+    /// The WETH contract.
+    pub fn weth(&self) -> contracts::WETH9 {
+        let address = contracts::WETH9::raw_contract()
+            .networks
+            .get(&self.0.network.0)
+            .unwrap()
+            .address;
+        contracts::WETH9::at(&self.0.web3, address)
     }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("method error: {0:?}")]
+    Method(#[from] ethcontract::errors::MethodError),
 }

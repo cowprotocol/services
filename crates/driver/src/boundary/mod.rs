@@ -24,4 +24,4 @@
 
 pub mod settlement;
 
-pub use {contracts, settlement::Settlement};
+pub use {anyhow::Error, contracts, settlement::Settlement};
