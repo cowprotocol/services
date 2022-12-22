@@ -1,5 +1,5 @@
 use {
-    crate::{logic, util::serialize},
+    crate::{logic::competition, util::serialize},
     ethereum_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
@@ -10,7 +10,10 @@ use {
 // line, this is probably not good enough. But that will be implemented when the
 // `logic::liquidity` module is added.
 impl Auction {
-    pub fn new(_auction: &logic::competition::Auction) -> Self {
+    pub fn new(
+        _auction: &competition::Auction,
+        _deadline: &competition::auction::SolverDeadline,
+    ) -> Self {
         todo!()
     }
 }

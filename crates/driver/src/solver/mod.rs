@@ -14,7 +14,6 @@ use {
 
 mod dto;
 
-const MAX_NR_EXEC_ORDERS: &str = "100";
 const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 
 /// The solver name. The user can configure this to be anything that they like.
@@ -88,21 +87,16 @@ impl Solver {
     }
 
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        let mut url = self.config.url.join("solve").unwrap();
-        let time_limit = auction.deadline.solver_time_limit()?;
-        if let Some(id) = auction.id {
-            url.query_pairs_mut()
-                .append_pair("auction_id", &id.0.to_string())
-                .append_pair("instance_name", &self.instance_name(id));
-        }
-        url.query_pairs_mut()
-            .append_pair("time_limit", &time_limit.as_secs().to_string())
-            .append_pair("max_nr_exec_orders", MAX_NR_EXEC_ORDERS);
-        let body = serde_json::to_string(&dto::Auction::new(auction)).unwrap();
-        tracing::trace!(%url, %body, "sending request to solver");
-        let req = self.client.post(url.clone()).body(body).timeout(time_limit);
+        let solver_deadline = auction.deadline.for_solver()?;
+        let body = serde_json::to_string(&dto::Auction::new(auction, &solver_deadline)).unwrap();
+        tracing::trace!(%self.config.url, %body, "sending request to solver");
+        let req = self
+            .client
+            .post(self.config.url.clone())
+            .body(body)
+            .timeout(solver_deadline.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        tracing::trace!(%url, ?res, "got response from solver");
+        tracing::trace!(%self.config.url, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
         Ok(res.into())
     }

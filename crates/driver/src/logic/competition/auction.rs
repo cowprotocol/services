@@ -42,25 +42,41 @@ impl From<chrono::DateTime<chrono::Utc>> for Deadline {
     }
 }
 
+/// The time limit passed to the solver. The solvers are given a time limit
+/// that's slightly less than the actual auction [`Deadline`]. The reason for
+/// this is to allow the solver to use the full deadline to search for the
+/// most optimal solution, but still ensure there is time left for the
+/// driver to forward the results back to the protocol or do some other
+/// necessary work.
+///
+/// This type contains a [`std::time::Duration`] rather than
+/// [`chrono::Duration`] because [`std::time::Duration`] is guaranteed
+/// to be nonnegative, while [`chrono::Duration`] can be negative as well.
+#[derive(Debug, Clone)]
+pub struct SolverDeadline(std::time::Duration);
+
+impl From<std::time::Duration> for SolverDeadline {
+    fn from(inner: std::time::Duration) -> Self {
+        Self(inner)
+    }
+}
+
+impl From<SolverDeadline> for std::time::Duration {
+    fn from(deadline: SolverDeadline) -> Self {
+        deadline.0
+    }
+}
+
 impl Deadline {
-    /// The time limit passed to the solver. The solvers is given a time limit
-    /// that's slightly less than the actual deadline. The reason for this
-    /// is to allow the solver to use the full deadline to search for the
-    /// most optimal solution, but still ensure there is time left for the
-    /// driver to forward the results back to the protocol or do some other
-    /// necessary work.
-    ///
-    /// This method returns [`std::time::Duration`] rather than
-    /// [`chrono::Duration`] because [`std::time::Duration`] is guaranteed
-    /// to be nonnegative, while [`chrono::Duration`] can be negative as well.
-    pub fn solver_time_limit(&self) -> Result<std::time::Duration, DeadlineExceeded> {
+    pub fn for_solver(&self) -> Result<SolverDeadline, DeadlineExceeded> {
         let timeout = self.0 - chrono::Utc::now() - Self::time_buffer();
         if timeout <= chrono::Duration::zero() {
             Err(DeadlineExceeded)
         } else {
             Ok(timeout
                 .to_std()
-                .expect("already checked that the duration is positive"))
+                .expect("already checked that the duration is positive")
+                .into())
         }
     }
 
