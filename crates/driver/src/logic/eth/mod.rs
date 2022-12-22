@@ -166,6 +166,12 @@ impl From<ContractAddress> for Address {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAddress(pub H160);
 
+impl From<H160> for TokenAddress {
+    fn from(inner: H160) -> Self {
+        Self(inner)
+    }
+}
+
 impl From<TokenAddress> for H160 {
     fn from(token: TokenAddress) -> Self {
         token.0
@@ -238,7 +244,7 @@ impl From<H160> for Account {
 }
 
 /// An onchain transaction which interacts with a smart contract.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,

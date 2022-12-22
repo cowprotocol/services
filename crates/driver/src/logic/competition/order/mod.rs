@@ -1,6 +1,6 @@
 use {
     crate::{logic::eth, util},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
 };
 
 pub mod signature;
@@ -14,7 +14,7 @@ use crate::{blockchain, Ethereum};
 const BUY_ETH_ADDRESS: eth::TokenAddress = eth::TokenAddress(H160([0xee; 20]));
 
 /// An order in the auction.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Order {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
@@ -35,20 +35,76 @@ pub struct Order {
     /// The onchain calls necessary to fulfill this order. These are set by the
     /// user and included in the settlement transaction.
     pub interactions: Vec<eth::Interaction>,
-    pub sell_source: SellSource,
-    pub buy_destination: BuyDestination,
+    pub sell_token_balance: SellTokenBalance,
+    pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+    /// The reward that will be received by the solver denominated in CoW
+    /// tokens.
+    pub reward: f64,
+}
+
+/// An amount denominated in the sell token of an [`Order`].
+#[derive(Debug, Clone, Copy)]
+pub struct SellAmount(U256);
+
+impl From<U256> for SellAmount {
+    fn from(inner: U256) -> Self {
+        Self(inner)
+    }
+}
+
+impl From<SellAmount> for U256 {
+    fn from(sell_amount: SellAmount) -> Self {
+        sell_amount.0
+    }
+}
+
+impl SellAmount {
+    pub fn to_asset(self, order: &Order) -> eth::Asset {
+        eth::Asset {
+            amount: self.0,
+            token: order.sell.token,
+        }
+    }
+}
+
+/// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
+/// the buy token for [`Side::Buy`] [`Order`]s.
+#[derive(Debug, Clone, Copy)]
+pub struct TargetAmount(U256);
+
+impl From<U256> for TargetAmount {
+    fn from(inner: U256) -> Self {
+        Self(inner)
+    }
+}
+
+impl From<TargetAmount> for U256 {
+    fn from(target_amount: TargetAmount) -> Self {
+        target_amount.0
+    }
+}
+
+impl TargetAmount {
+    pub fn to_asset(self, order: &Order) -> eth::Asset {
+        eth::Asset {
+            amount: self.0,
+            token: match order.side {
+                Side::Buy => order.buy.token,
+                Side::Sell => order.sell.token,
+            },
+        }
+    }
 }
 
 /// Order fee denominated in the sell token.
-// TODO The token should be validated, probably use newtypes, e.g. UserFee and SolverFee
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fee {
     /// The order fee that is actually paid by the user.
-    pub user: eth::Asset,
+    pub user: SellAmount,
     /// The fee used for scoring. This is a scaled version of the user fee to
     /// incentivize solvers to solve orders in batches.
-    pub solver: eth::Asset,
+    pub solver: SellAmount,
 }
 
 impl Order {
@@ -75,16 +131,14 @@ impl Order {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Partial {
     /// A partially order doesn't require the full amount to be traded.
     /// E.g. only 10% of the requested amount may be traded, if this leads
     /// to the most optimal solution.
     Yes {
-        /// The already-executed amount for the partial order. For sell
-        /// orders this will be denominated in the sell token, for buy
-        /// orders in the buy token.
-        executed: eth::Asset,
+        /// The already-executed amount for the partial order.
+        executed: TargetAmount,
     },
     No,
 }
@@ -98,6 +152,12 @@ impl Order {
 /// UID of an order.
 #[derive(Debug, Clone, Copy)]
 pub struct Uid(pub [u8; 56]);
+
+impl PartialEq<[u8; 56]> for Uid {
+    fn eq(&self, other: &[u8; 56]) -> bool {
+        self.0 == *other
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
@@ -135,7 +195,7 @@ impl From<AppData> for [u8; 32] {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Kind {
     /// Order intended to be immediately executed. This is the "regular" type of
     /// order.
@@ -143,27 +203,25 @@ pub enum Kind {
     /// Order intended to be executed possibly far into the future, when the
     /// price is such that the order can be executed.
     Limit {
-        /// The fee to be taken from the order surplus. This is denominated in
-        /// the sell token of the order.
-        // TODO The token should be validated, possibly with a newtype
-        surplus_fee: eth::Asset,
+        /// The fee to be taken from the order surplus.
+        surplus_fee: SellAmount,
     },
     /// An order submitted by a privileged user, which provides liquidity for
     /// our settlement contract.
     Liquidity,
 }
 
-// TODO Ask about this
-#[derive(Debug)]
-pub enum SellSource {
+/// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
+#[derive(Debug, Clone, Copy)]
+pub enum SellTokenBalance {
     Erc20,
     Internal,
     External,
 }
 
-// TODO Ask about this
-#[derive(Debug)]
-pub enum BuyDestination {
+/// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
+#[derive(Debug, Clone, Copy)]
+pub enum BuyTokenBalance {
     Erc20,
     Internal,
 }
@@ -173,18 +231,15 @@ pub enum BuyDestination {
 /// [`Order`].
 #[derive(Debug)]
 pub struct Jit {
-    pub from: eth::Address,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    ///  Fee denominated in the sell token.
-    // TODO The fee token should be validated, possibly with a newtype
-    pub fee: eth::Asset,
-    pub receiver: Option<eth::Address>,
+    pub fee: SellAmount,
+    pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
     pub app_data: AppData,
     pub side: Side,
     pub partially_fillable: bool,
-    pub sell_source: SellSource,
-    pub buy_destination: BuyDestination,
+    pub sell_token_balance: SellTokenBalance,
+    pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
 }

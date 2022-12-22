@@ -49,6 +49,8 @@ pub struct Config {
     pub slippage: Slippage,
     /// The account of this solver.
     pub account: eth::Account,
+    /// The address of this solver.
+    pub address: eth::Address,
 }
 
 impl Solver {
@@ -81,9 +83,13 @@ impl Solver {
         self.config.account
     }
 
+    pub fn address(&self) -> eth::Address {
+        self.config.address
+    }
+
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
         let solver_deadline = auction.deadline.for_solver()?;
-        let body = serde_json::to_string(&dto::Auction::new(auction, &solver_deadline)).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(auction, solver_deadline)).unwrap();
         tracing::trace!(%self.config.url, %body, "sending request to solver");
         let req = self
             .client
@@ -93,7 +99,7 @@ impl Solver {
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.url, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
-        Ok(res.into())
+        res.into(auction, self.clone()).map_err(Into::into)
     }
 }
 
@@ -107,4 +113,6 @@ pub enum Error {
     DeadlineExceeded(#[from] auction::DeadlineExceeded),
     #[error("settlement encoding error: {0:?}")]
     SettlementEncoding(#[from] anyhow::Error),
+    #[error("solver dto error: {0}")]
+    Dto(#[from] dto::Error),
 }

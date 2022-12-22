@@ -95,6 +95,7 @@ async fn run() {
             url: "http://localhost:1232".parse().unwrap(),
             name: "solver".to_owned().into(),
             account: solver_account(),
+            address: solver_address(),
             slippage: driver::solver::Slippage {
                 // TODO These should be fetched from the configuration
                 relative: Default::default(),
@@ -132,6 +133,10 @@ fn ethereum() -> driver::Ethereum {
 }
 
 fn solver_account() -> driver::logic::eth::Account {
+    todo!()
+}
+
+fn solver_address() -> driver::logic::eth::Address {
     todo!()
 }
 

@@ -14,3 +14,21 @@ pub struct Liquidity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub usize);
+
+impl From<usize> for Id {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Id> for usize {
+    fn from(value: Id) -> Self {
+        value.0
+    }
+}
+
+impl PartialEq<usize> for Id {
+    fn eq(&self, other: &usize) -> bool {
+        self.0 == *other
+    }
+}

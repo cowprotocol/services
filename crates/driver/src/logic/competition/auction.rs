@@ -21,10 +21,10 @@ pub struct Auction {
 
 #[derive(Debug)]
 pub struct Token {
-    pub decimals: u32,
-    pub symbol: String,
+    pub decimals: Option<u8>,
+    pub symbol: Option<String>,
     pub address: eth::TokenAddress,
-    pub price: competition::Price,
+    pub price: Option<competition::Price>,
     /// The balance of this token available in our settlement contract.
     pub available_balance: U256,
     /// Is this token well-known and trusted by the protocol?
@@ -52,14 +52,8 @@ impl From<chrono::DateTime<chrono::Utc>> for Deadline {
 /// This type contains a [`std::time::Duration`] rather than
 /// [`chrono::Duration`] because [`std::time::Duration`] is guaranteed
 /// to be nonnegative, while [`chrono::Duration`] can be negative as well.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SolverDeadline(std::time::Duration);
-
-impl From<std::time::Duration> for SolverDeadline {
-    fn from(inner: std::time::Duration) -> Self {
-        Self(inner)
-    }
-}
 
 impl From<SolverDeadline> for std::time::Duration {
     fn from(deadline: SolverDeadline) -> Self {
@@ -67,17 +61,21 @@ impl From<SolverDeadline> for std::time::Duration {
     }
 }
 
+impl From<SolverDeadline> for chrono::DateTime<chrono::Utc> {
+    fn from(deadline: SolverDeadline) -> Self {
+        chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::from_std(deadline.0).unwrap())
+            .unwrap()
+    }
+}
+
 impl Deadline {
     pub fn for_solver(&self) -> Result<SolverDeadline, DeadlineExceeded> {
         let timeout = self.0 - chrono::Utc::now() - Self::time_buffer();
-        if timeout <= chrono::Duration::zero() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(timeout
-                .to_std()
-                .expect("already checked that the duration is positive")
-                .into())
-        }
+        timeout
+            .to_std()
+            .map(SolverDeadline)
+            .map_err(|_| DeadlineExceeded)
     }
 
     fn time_buffer() -> chrono::Duration {

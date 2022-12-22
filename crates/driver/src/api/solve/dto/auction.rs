@@ -1,6 +1,6 @@
 use {
     crate::{logic, util::serialize},
-    ethereum_types::{H160, U256},
+    primitive_types::{H160, U256},
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
