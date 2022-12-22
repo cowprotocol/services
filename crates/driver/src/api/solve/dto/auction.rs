@@ -24,7 +24,10 @@ pub struct Auction {
     prices: HashMap<H160, U256>,
 }
 
-// TODO Should we rename kind to side and class to kind in this interface?
+// TODO Check one more time if these interfaces and the solver interfaces match
+// the domain objects
+// TODO Should we rename kind to side and class to kind in
+// this interface?
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct Order {
@@ -42,17 +45,20 @@ struct Order {
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; 32],
-    #[serde_as(as = "serialize::U256")]
-    fee_amount: U256,
     kind: OrderKind,
     partially_fillable: bool,
+
+    #[serde_as(as = "serialize::U256")]
+    fee_amount: U256,
+    #[serde_as(as = "serialize::U256")]
+    #[serde(default)]
+    full_fee_amount: U256,
+
     #[serde(default)]
     sell_token_balance: SellTokenBalance,
     #[serde(default)]
     buy_token_balance: BuyTokenBalance,
-    #[serde_as(as = "serialize::U256")]
-    #[serde(default)]
-    full_fee_amount: U256,
+
     is_mature: bool,
     #[serde(flatten)]
     class: OrderClass,

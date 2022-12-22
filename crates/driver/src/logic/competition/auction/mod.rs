@@ -1,13 +1,18 @@
-use thiserror::Error;
+pub use order::Order;
+use {crate::logic::eth, std::collections::HashMap, thiserror::Error};
+
+pub mod order;
 
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
 /// solving them.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Auction {
     pub id: Id,
+    pub block: eth::BlockNo,
+    pub orders: Vec<Order>,
     pub deadline: Deadline,
-    // TODO Other fields
+    pub prices: HashMap<eth::Token, eth::Ether>,
 }
 
 /// Each auction has a deadline, limiting the maximum time that each solver may

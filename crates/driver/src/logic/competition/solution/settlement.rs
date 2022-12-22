@@ -1,52 +1,32 @@
-use {
-    super::Allowances,
-    crate::{
-        blockchain,
-        boundary,
-        logic::{competition, eth},
-        Ethereum,
-        Simulator,
-    },
-    futures::future::try_join_all,
-    num::{BigRational, ToPrimitive},
-};
+use crate::{boundary, logic::competition, Ethereum, Simulator, Solver};
 
+/// A transaction calling into our settlement contract on the blockchain.
+///
+/// Currently, this represents a wrapper around the [`boundary::Settlement`]
+/// concept from the shared part of the codebase. This isn't a well-defined
+/// enough, it's an intermediate state between a solution and an onchain
+/// settlement. The intention with this type is to represent the settlement
+/// transaction itself, not an intermediate state.
 #[derive(Debug)]
 pub struct Settlement(boundary::Settlement);
 
-/// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Score(BigRational);
-
-impl From<Score> for f64 {
-    fn from(score: Score) -> Self {
-        score.0.to_f64().expect("value can be represented as f64")
-    }
-}
-
 impl Settlement {
-    /// Encode a solution into an onchain settlement.
+    /// Encode a solution into an onchain settlement transaction.
     pub async fn encode(
+        solver: &Solver,
         eth: &Ethereum,
-        _auction: &competition::Auction,
+        auction: &competition::Auction,
         solution: competition::Solution,
-    ) -> Self {
-        let mut settlement = boundary::Settlement::new(solution.prices);
-        // TODO No unwrap
-        let approvals = Self::approvals(eth, solution.allowances).await.unwrap();
-        for approval in approvals {
-            settlement
-                .encoder
-                .append_to_execution_plan(boundary::Approval::from(approval));
-        }
-        // TODO Encode the remaining executions, I believe the auction is needed for
-        // this
-        Self(settlement)
+    ) -> anyhow::Result<Self> {
+        boundary::settlement::encode(eth, solver, solution, auction)
+            .await
+            .map(Self)
     }
 
-    /// Calculate the score for this settlement. This is the score of the
-    /// solution that was encoded in this settlement.
-    pub fn score(&self, _simulator: &Simulator) -> Score {
+    /// Calculate the score for this settlement. This method is here only
+    /// temporarily, in the future the entire scoring formula should operate on
+    /// a [`super::Solution`].
+    pub(super) fn score(&self, _simulator: &Simulator) -> super::Score {
         // TODO This will also call into the boundary because the objective value
         // calculation is tricky and difficult to get right. This is a short-term
         // solution, I'd like to revisit that logic because it seems a bit convoluted
@@ -56,24 +36,5 @@ impl Settlement {
         // TODO I intend to do the access list generation and gas estimation in driver
         // though, that will not be part of the boundary
         todo!()
-    }
-
-    /// Generate the ERC-20 approvals needed by this settlement.
-    async fn approvals(
-        eth: &Ethereum,
-        allowances: Allowances,
-    ) -> Result<Vec<eth::allowance::Approval>, blockchain::Error> {
-        let settlement_contract = eth.settlement_contract().await?;
-        let allowances = try_join_all(allowances.into_iter().map(|required| async move {
-            eth.allowance(settlement_contract, required.0.spender)
-                .await
-                .map(|existing| (required, existing))
-        }))
-        .await?;
-        let approvals = allowances
-            .into_iter()
-            .filter_map(|(required, existing)| required.approval(&existing))
-            .collect();
-        Ok(approvals)
     }
 }

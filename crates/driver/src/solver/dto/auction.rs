@@ -3,22 +3,22 @@ use {
     ethereum_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::BTreeMap,
+    std::collections::{BTreeMap, HashMap},
 };
 
 // TODO Since building the auction will also require liquidity later down the
 // line, this is probably not good enough. But that will be implemented when the
 // `logic::liquidity` module is added.
-impl From<logic::competition::Auction> for Auction {
-    fn from(_auction: logic::competition::Auction) -> Self {
+impl Auction {
+    pub fn new(_auction: &logic::competition::Auction) -> Self {
         todo!()
     }
 }
 
 #[derive(Debug, Serialize)]
 pub struct Auction {
-    tokens: BTreeMap<H160, Token>,
-    orders: BTreeMap<usize, Order>,
+    tokens: HashMap<H160, Token>,
+    orders: HashMap<usize, Order>,
     amms: BTreeMap<H160, Amm>,
     metadata: Option<Metadata>,
 }

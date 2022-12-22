@@ -13,7 +13,7 @@ mod blockchain;
 pub mod boundary;
 pub mod logic;
 mod simulator;
-mod solver;
+pub mod solver;
 mod util;
 
 pub use {crate::solver::Solver, api::Api, blockchain::Ethereum, simulator::Simulator};

@@ -22,7 +22,6 @@
 //! By Eric Evans, Domain-Driven Design: Tackling Complexity in the Heart of
 //! Software (2014)
 
-pub use {
-    contracts,
-    solver::{interactions::allowances::Approval, settlement::Settlement},
-};
+pub mod settlement;
+
+pub use {contracts, settlement::Settlement};

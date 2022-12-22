@@ -87,12 +87,17 @@ async fn main() {
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve = driver::Api {
-        solvers: vec![driver::Solver::new(
-            "http://localhost:1232".parse().unwrap(),
-            "solver".to_owned().into(),
-            driver::logic::eth::NetworkName("testnet".to_owned()),
-            driver::logic::eth::ChainId(0),
-        )],
+        solvers: vec![driver::Solver::new(driver::solver::Config {
+            url: "http://localhost:1232".parse().unwrap(),
+            name: "solver".to_owned().into(),
+            network_name: driver::logic::eth::NetworkName("testnet".to_owned()),
+            chain_id: driver::logic::eth::ChainId(0),
+            slippage: driver::solver::Slippage {
+                // TODO These should be fetched from the configuration
+                relative: Default::default(),
+                absolute: Default::default(),
+            },
+        })],
         simulator: simulator(),
         eth: ethereum(),
         addr: args.bind_address,

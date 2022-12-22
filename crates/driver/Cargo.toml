@@ -33,6 +33,7 @@ serde_with = "2.0"
 async-trait = "0.1"
 itertools = "0.10"
 url = "2.3"
+ethabi = "18.0"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.

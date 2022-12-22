@@ -293,9 +293,9 @@ impl Default for SlippageContext<'static> {
 #[derive(Clone, Debug)]
 pub struct SlippageCalculator {
     /// The maximum relative slippage factor.
-    relative: BigRational,
+    pub relative: BigRational,
     /// The maximum absolute slippage in native tokens.
-    absolute: Option<BigInt>,
+    pub absolute: Option<BigInt>,
 }
 
 impl SlippageCalculator {
