@@ -13,7 +13,7 @@ pub struct Order {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: Side,
-    pub fee: eth::Asset,
+    pub fee: Fee,
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
@@ -26,6 +26,17 @@ pub struct Order {
     pub sell_source: SellSource,
     pub buy_destination: BuyDestination,
     pub signature: Signature,
+}
+
+/// Order fee denominated in the sell token.
+// TODO The token should be validated, probably use newtypes, e.g. UserFee and SolverFee
+#[derive(Debug)]
+pub struct Fee {
+    /// The order fee that is actually paid by the user.
+    pub user: eth::Asset,
+    /// The fee used for scoring. This is a scaled version of the user fee to
+    /// incentivize solvers to solve orders in batches.
+    pub solver: eth::Asset,
 }
 
 impl Order {

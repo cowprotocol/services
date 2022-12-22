@@ -177,8 +177,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount,
             buy_amount: order.buy.amount,
-            // TODO Not sure if this was an oversight by Nick or if this needs to change
-            fee_amount: Default::default(),
+            fee_amount: order.fee.user.amount,
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppId(order.app_data.into()),
@@ -198,7 +197,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             },
         },
         metadata: OrderMetadata {
-            full_fee_amount: order.fee.amount,
+            full_fee_amount: order.fee.solver.amount,
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
@@ -257,8 +256,8 @@ async fn to_boundary_solution(
                         exec_buy_amount: fulfillment.order.buy.amount,
                         cost: None,
                         fee: Some(TokenAmount {
-                            amount: fulfillment.order.fee.amount,
-                            token: fulfillment.order.fee.token.into(),
+                            amount: fulfillment.order.fee.solver.amount,
+                            token: fulfillment.order.fee.solver.token.into(),
                         }),
                         exec_plan: Some(ExecutionPlan {
                             coordinates: ExecutionPlanCoordinatesModel {
