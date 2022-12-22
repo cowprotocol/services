@@ -3,7 +3,10 @@ use primitive_types::{H160, U256};
 pub mod allowance;
 mod eip712;
 
-pub use {allowance::Allowance, eip712::DomainSeparator};
+pub use {
+    allowance::Allowance,
+    eip712::{DomainFields, DomainSeparator},
+};
 
 // TODO This module is getting a little hectic with all kinds of different
 // types, I wonder if there could be meaningful submodules?

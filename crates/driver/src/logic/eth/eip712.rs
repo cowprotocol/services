@@ -8,16 +8,23 @@
 #[derive(Debug, Clone, Copy)]
 pub struct DomainSeparator(pub [u8; 32]);
 
+#[derive(Debug)]
+pub struct DomainFields {
+    pub type_hash: &'static [u8],
+    pub name: &'static [u8],
+    pub version: &'static [u8],
+    pub chain_id: super::ChainId,
+    pub verifying_contract: super::ContractAddress,
+}
+
 impl DomainSeparator {
-    pub fn new(chain_id: super::ChainId, verifying_contract: super::ContractAddress) -> Self {
+    pub fn new(fields: &DomainFields) -> Self {
         let abi_string = ethabi::encode(&[
-            ethabi::Token::Uint(web3::signing::keccak256(b"Gnosis Protocol").into()),
-            ethabi::Token::Uint(web3::signing::keccak256(b"v2").into()),
-            ethabi::Token::Uint(web3::signing::keccak256(
-                b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-            ).into()),
-            ethabi::Token::Uint(chain_id.0.into()),
-            ethabi::Token::Address(verifying_contract.into()),
+            ethabi::Token::Uint(web3::signing::keccak256(fields.type_hash).into()),
+            ethabi::Token::Uint(web3::signing::keccak256(fields.name).into()),
+            ethabi::Token::Uint(web3::signing::keccak256(fields.version).into()),
+            ethabi::Token::Uint(fields.chain_id.0.into()),
+            ethabi::Token::Address(fields.verifying_contract.into()),
         ]);
         Self(web3::signing::keccak256(abi_string.as_slice()))
     }

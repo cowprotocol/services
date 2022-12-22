@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, eth},
+        logic::{competition, competition::order, eth},
         Ethereum,
         Solver,
     },
@@ -69,7 +69,10 @@ impl Settlement {
             min_order_age: Default::default(),
         };
         let settlement_contract = eth.contracts().settlement();
-        let domain = eth.domain_separator(settlement_contract.clone().address().into());
+        let domain = order::signature::domain_separator(
+            eth.chain_id(),
+            settlement_contract.clone().address().into(),
+        );
         let limit_orders = auction
             .orders
             .iter()
