@@ -128,7 +128,7 @@ fn into_boundary_order(order: &competition::auction::Order) -> Order {
                 competition::auction::order::Kind::Liquidity => OrderClass::Liquidity,
                 competition::auction::order::Kind::Limit { surplus_fee } => {
                     OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: surplus_fee.into(),
+                        surplus_fee: Some(surplus_fee.into()),
                         ..Default::default()
                     })
                 }
@@ -146,6 +146,7 @@ fn into_boundary_order(order: &competition::auction::Order) -> Order {
             settlement_contract: Default::default(),
             ethflow_data: Default::default(),
             onchain_user: Default::default(),
+            onchain_order_data: Default::default(),
             is_liquidity_order: order.kind.is_liquidity(),
         },
         signature: Default::default(),
@@ -306,7 +307,7 @@ fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctio
                     .collect(),
                 // TODO I have no clue why there's an exec plan here? This is a single interaction,
                 // what sort of ordering is needed? I don't know.
-                exec_plan: None,
+                exec_plan: Default::default(),
                 cost: None,
             })
             .collect(),
