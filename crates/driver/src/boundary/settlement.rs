@@ -204,7 +204,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
                 competition::order::Kind::Limit { surplus_fee } => {
                     OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: Some(surplus_fee.into()),
+                        surplus_fee: Some(surplus_fee.amount),
                         ..Default::default()
                     })
                 }
@@ -287,7 +287,7 @@ async fn to_boundary_solution(
                             buy_amount: jit.order.buy.amount,
                             valid_to: jit.order.valid_to.into(),
                             app_data: AppId(jit.order.app_data.into()),
-                            fee_amount: jit.order.fee.into(),
+                            fee_amount: jit.order.fee.amount,
                             kind: match jit.order.side {
                                 competition::order::Side::Buy => OrderKind::Buy,
                                 competition::order::Side::Sell => OrderKind::Sell,

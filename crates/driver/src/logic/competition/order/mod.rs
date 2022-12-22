@@ -105,7 +105,12 @@ pub enum Kind {
     Market,
     /// Order intended to be executed possibly far into the future, when the
     /// price is such that the order can be executed.
-    Limit { surplus_fee: eth::Ether },
+    Limit {
+        /// The fee to be taken from the order surplus. This is denominated in
+        /// the sell token of the order.
+        // TODO The token should be validated, possibly with a newtype
+        surplus_fee: eth::Asset,
+    },
     /// An order submitted by a privileged user, which provides liquidity for
     /// our settlement contract.
     Liquidity,
@@ -134,7 +139,9 @@ pub struct Jit {
     pub from: eth::Address,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub fee: eth::Ether,
+    ///  Fee denominated in the sell token.
+    // TODO The fee token should be validated, possibly with a newtype
+    pub fee: eth::Asset,
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
     pub app_data: AppData,
