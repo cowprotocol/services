@@ -313,8 +313,14 @@ async fn to_boundary_solution(
                         },
                         signature: Default::default(),
                     },
-                    exec_sell_amount: jit.order.executed_sell_amount,
-                    exec_buy_amount: jit.order.executed_buy_amount,
+                    exec_sell_amount: match jit.order.side {
+                        order::Side::Sell => jit.executed.amount,
+                        order::Side::Buy => Default::default(),
+                    },
+                    exec_buy_amount: match jit.order.side {
+                        order::Side::Buy => jit.executed.amount,
+                        order::Side::Sell => Default::default(),
+                    },
                 }),
                 competition::solution::Trade::Fulfillment(_) => None,
             })

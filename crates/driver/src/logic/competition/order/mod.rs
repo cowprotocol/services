@@ -1,7 +1,4 @@
-use {
-    crate::{logic::eth, util},
-    primitive_types::U256,
-};
+use crate::{logic::eth, util};
 
 pub mod signature;
 
@@ -147,8 +144,6 @@ pub struct Jit {
     pub app_data: AppData,
     pub side: Side,
     pub partially_fillable: bool,
-    pub executed_buy_amount: U256,
-    pub executed_sell_amount: U256,
     pub sell_source: SellSource,
     pub buy_destination: BuyDestination,
     pub signature: Signature,

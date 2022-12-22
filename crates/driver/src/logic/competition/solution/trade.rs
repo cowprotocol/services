@@ -5,6 +5,7 @@ use crate::logic::{
 
 /// A trade which executes an order as part of this solution.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(Jit),
