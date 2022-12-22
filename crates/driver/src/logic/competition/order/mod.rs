@@ -8,7 +8,6 @@ pub use signature::Signature;
 #[derive(Debug)]
 pub struct Order {
     pub uid: Uid,
-    pub from: eth::Address,
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
     pub sell: eth::Asset,

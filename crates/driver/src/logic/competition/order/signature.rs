@@ -3,8 +3,9 @@ use crate::logic::eth;
 /// Signature over the order data.
 #[derive(Debug)]
 pub struct Signature {
-    pub data: Vec<u8>,
     pub scheme: Scheme,
+    pub data: Vec<u8>,
+    pub signer: eth::Address,
 }
 
 /// The scheme used for signing the order. This is used by the solver and

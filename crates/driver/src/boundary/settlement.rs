@@ -210,7 +210,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 }
             },
             creation_date: Default::default(),
-            owner: order.from.into(),
+            owner: order.signature.signer.into(),
             uid: OrderUid(order.uid.into()),
             available_balance: Default::default(),
             executed_buy_amount: Default::default(),
