@@ -17,6 +17,9 @@ pub struct Custom {
     pub allowances: Vec<eth::allowance::Required>,
     pub inputs: Vec<eth::Asset>,
     pub outputs: Vec<eth::Asset>,
+    /// Can the interaction be executed using the liquidity of our settlement
+    /// contract?
+    pub internalize: bool,
 }
 
 /// An interaction with one of the smart contracts for which we index
@@ -26,4 +29,7 @@ pub struct Liquidity {
     pub liquidity: logic::Liquidity,
     pub input: eth::Asset,
     pub output: eth::Asset,
+    /// Can the interaction be executed using the liquidity of our settlement
+    /// contract?
+    pub internalize: bool,
 }

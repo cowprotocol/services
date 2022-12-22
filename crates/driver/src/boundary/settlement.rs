@@ -252,8 +252,14 @@ async fn to_boundary_solution(
                 competition::solution::Trade::Fulfillment(fulfillment) => Some((
                     index,
                     ExecutedOrderModel {
-                        exec_sell_amount: fulfillment.order.sell.amount,
-                        exec_buy_amount: fulfillment.order.buy.amount,
+                        exec_sell_amount: match fulfillment.order.side {
+                            order::Side::Sell => fulfillment.executed.amount,
+                            order::Side::Buy => Default::default(),
+                        },
+                        exec_buy_amount: match fulfillment.order.side {
+                            order::Side::Buy => fulfillment.executed.amount,
+                            order::Side::Sell => Default::default(),
+                        },
                         cost: None,
                         fee: Some(TokenAmount {
                             amount: fulfillment.order.fee.solver.amount,
@@ -342,7 +348,7 @@ async fn to_boundary_solution(
                                     sequence: 0,
                                     position: index.try_into().unwrap(),
                                 },
-                                internal: false,
+                                internal: interaction.internalize,
                             },
                         }],
                         cost: None,
@@ -397,7 +403,7 @@ async fn to_boundary_solution(
                             sequence: 0,
                             position: index.try_into().unwrap(),
                         },
-                        internal: false,
+                        internal: interaction.internalize,
                     },
                     cost: None,
                 }),
