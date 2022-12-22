@@ -127,12 +127,9 @@ impl Solution {
         // This failure happens is because the Ethereum protocol sets a hard gas limit
         // on transferring ETH into a smart contract, which some contracts exceed unless
         // the access list is already specified.
-        //
+
         // The solution is to do access list estimation in two steps: first, simulate
-        // moving 1 wei into every smart contract to get a partial access list,
-        // and then simulate the full access list, passing the partial access
-        // list into the simulation. This way the settlement contract does not
-        // fail, and hence the full access list estimation also does not fail.
+        // moving 1 wei into every smart contract to get a partial access list.
         let partial_access_lists = try_join_all(
             self.user_trades()
                 .map(|trade| async { self.partial_access_list(eth, simulator, trade).await }),
@@ -141,14 +138,20 @@ impl Solution {
         let partial_access_list = partial_access_lists
             .into_iter()
             .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
-        let settlement = Settlement::encode(eth, auction, self).await?.tx();
-        let access_list = simulator
-            .access_list(&settlement, partial_access_list)
-            .await?;
-        simulator
-            .gas(&settlement, &access_list)
-            .await
-            .map_err(Into::into)
+
+        // Encode the settlement with the partial access list.
+        let settlement = Settlement::encode(eth, auction, self)
+            .await?
+            .tx()
+            .merge_access_list(partial_access_list);
+
+        // Second, simulate the full access list, passing the partial access
+        // list into the simulation. This way the settlement contract does not
+        // fail, and hence the full access list estimation also does not fail.
+        let settlement = simulator.access_list(settlement).await?;
+
+        // Finally, get the gas for the settlement with the full access list.
+        simulator.gas(&settlement).await.map_err(Into::into)
     }
 
     async fn partial_access_list(
@@ -165,11 +168,9 @@ impl Solution {
             to: trade.order.receiver(),
             value: 1.into(),
             input: Vec::new(),
+            access_list: Default::default(),
         };
-        simulator
-            .access_list(&tx, eth::AccessList::default())
-            .await
-            .map_err(Into::into)
+        Ok(simulator.access_list(tx).await?.access_list)
     }
 }
 

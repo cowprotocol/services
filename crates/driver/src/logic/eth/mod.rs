@@ -258,4 +258,14 @@ pub struct Tx {
     pub to: Address,
     pub value: Ether,
     pub input: Vec<u8>,
+    pub access_list: AccessList,
+}
+
+impl Tx {
+    pub fn merge_access_list(self, access_list: AccessList) -> Self {
+        Self {
+            access_list: self.access_list.merge(access_list),
+            ..self
+        }
+    }
 }

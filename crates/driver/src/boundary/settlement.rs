@@ -135,6 +135,7 @@ impl Settlement {
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap().into(),
             input: tx.data.unwrap().0,
+            access_list: Default::default(),
         }
     }
 

@@ -40,7 +40,6 @@ impl Tenderly {
     pub async fn simulate(
         &self,
         tx: &eth::Tx,
-        access_list: &eth::AccessList,
         generate_access_list: GenerateAccessList,
     ) -> Result<super::Simulation, Error> {
         let url = self.config.url.join("simulate").unwrap();
@@ -59,10 +58,10 @@ impl Tenderly {
                 save: self.config.save,
                 save_if_fails: self.config.save_if_fails,
                 generate_access_list: generate_access_list == GenerateAccessList::Yes,
-                access_list: if access_list.is_empty() {
+                access_list: if tx.access_list.is_empty() {
                     None
                 } else {
-                    Some(access_list.clone().into())
+                    Some(tx.access_list.clone().into())
                 },
             })
             .send()
