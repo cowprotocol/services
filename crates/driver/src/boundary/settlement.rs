@@ -29,6 +29,8 @@ use {
         ExecutedAmmModel,
         ExecutedLiquidityOrderModel,
         ExecutedOrderModel,
+        ExecutionPlan,
+        ExecutionPlanCoordinatesModel,
         InteractionData,
         InternalizationStrategy,
         NativeLiquidityOrder,
@@ -258,7 +260,13 @@ async fn to_boundary_solution(
                             amount: fulfillment.order.fee.amount,
                             token: fulfillment.order.fee.token.into(),
                         }),
-                        exec_plan: None,
+                        exec_plan: Some(ExecutionPlan {
+                            coordinates: ExecutionPlanCoordinatesModel {
+                                sequence: 0,
+                                position: index.try_into().unwrap(),
+                            },
+                            internal: false,
+                        }),
                     },
                 )),
                 competition::solution::Trade::Jit(_) => None,
@@ -314,7 +322,8 @@ async fn to_boundary_solution(
         amms: solution
             .interactions
             .iter()
-            .filter_map(|interaction| match interaction {
+            .enumerate()
+            .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Liquidity(interaction) => Some((
                     interaction.liquidity.address.into(),
                     UpdatedAmmModel {
@@ -323,8 +332,13 @@ async fn to_boundary_solution(
                             buy_token: interaction.input.token.into(),
                             exec_sell_amount: interaction.output.amount,
                             exec_buy_amount: interaction.input.amount,
-                            // TODO I don't know what I should do here
-                            exec_plan: Default::default(),
+                            exec_plan: ExecutionPlan {
+                                coordinates: ExecutionPlanCoordinatesModel {
+                                    sequence: 0,
+                                    position: index.try_into().unwrap(),
+                                },
+                                internal: false,
+                            },
                         }],
                         cost: None,
                     },
@@ -351,7 +365,8 @@ async fn to_boundary_solution(
         interaction_data: solution
             .interactions
             .iter()
-            .filter_map(|interaction| match interaction {
+            .enumerate()
+            .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Custom(interaction) => Some(InteractionData {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
@@ -372,10 +387,13 @@ async fn to_boundary_solution(
                             token: output.token.into(),
                         })
                         .collect(),
-                    // TODO I have no clue why there's an exec plan here? This is a single
-                    // interaction, what sort of ordering is needed? I don't
-                    // know.
-                    exec_plan: Default::default(),
+                    exec_plan: ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: index.try_into().unwrap(),
+                        },
+                        internal: false,
+                    },
                     cost: None,
                 }),
                 competition::solution::Interaction::Liquidity(_) => None,
