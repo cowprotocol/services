@@ -59,7 +59,7 @@ impl Execution {
     fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
             Execution::Amm(executed_amm) => Some(&executed_amm.exec_plan),
-            Execution::CustomInteraction(interaction) => Some(&interaction.exec_plan),
+            Execution::CustomInteraction(interaction) => interaction.exec_plan.as_ref(),
             Execution::LimitOrder(order) => order.exec_plan.as_ref(),
         }
     }
@@ -146,7 +146,7 @@ impl From<ConversionError> for anyhow::Error {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Default))]
+#[cfg_attr(test, derive(PartialEq))]
 struct ExecutedLimitOrder {
     order: LimitOrder,
     executed_buy_amount: U256,
@@ -1056,13 +1056,13 @@ mod tests {
             call_data: Vec::new(),
             inputs: vec![],
             outputs: vec![],
-            exec_plan: ExecutionPlan {
+            exec_plan: Some(ExecutionPlan {
                 coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 1u32,
                     position: 1u32,
                 },
                 internal: false,
-            },
+            }),
             cost: None,
         }];
         let orders = vec![ExecutedLimitOrder {
@@ -1170,20 +1170,10 @@ mod tests {
         .is_err());
     }
 
-    fn interaction_with_coordinate(coordinates: ExecutionPlanCoordinatesModel) -> Execution {
-        Execution::CustomInteraction(Box::new(InteractionData {
-            exec_plan: ExecutionPlan {
-                coordinates,
-                ..Default::default()
-            },
-            ..Default::default()
-        }))
-    }
-
-    fn limit_order_with_coordinate(
+    fn interaction_with_coordinate(
         coordinates: Option<ExecutionPlanCoordinatesModel>,
     ) -> Execution {
-        Execution::LimitOrder(Box::new(ExecutedLimitOrder {
+        Execution::CustomInteraction(Box::new(InteractionData {
             exec_plan: coordinates.map(|coordinates| ExecutionPlan {
                 coordinates,
                 ..Default::default()
@@ -1195,20 +1185,15 @@ mod tests {
     #[test]
     pub fn duplicate_coordinates_false() {
         let executions = vec![
-            limit_order_with_coordinate(None),
-            interaction_with_coordinate(ExecutionPlanCoordinatesModel {
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
-            }),
-            limit_order_with_coordinate(None),
-            limit_order_with_coordinate(Some(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 2,
             })),
-            interaction_with_coordinate(ExecutionPlanCoordinatesModel {
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 1,
-            }),
+            })),
         ];
         assert!(!duplicate_coordinates(&executions));
     }
@@ -1216,20 +1201,15 @@ mod tests {
     #[test]
     pub fn duplicate_coordinates_true() {
         let executions = vec![
-            limit_order_with_coordinate(None),
-            interaction_with_coordinate(ExecutionPlanCoordinatesModel {
+            interaction_with_coordinate(None),
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
-            }),
-            limit_order_with_coordinate(None),
-            limit_order_with_coordinate(Some(ExecutionPlanCoordinatesModel {
-                sequence: 0,
-                position: 1,
             })),
-            interaction_with_coordinate(ExecutionPlanCoordinatesModel {
+            interaction_with_coordinate(Some(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
-            }),
+            })),
         ];
         assert!(duplicate_coordinates(&executions));
     }
