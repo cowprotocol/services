@@ -1,0 +1,702 @@
+openapi: 3.0.3
+info:
+  title: Solver Engine API
+  description: |
+    The API implemented by solver engines interacting with the reference driver
+    implementation.
+  version: 0.0.1
+
+paths:
+  /:
+    post:
+      description: |
+        Solve the passed in auction instance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Auction"
+      responses:
+        200:
+          description: Auction successfully solved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solution"
+        400:
+          description: There is something wrong with the request.
+        500:
+          description: Something went wrong when handling the request.
+
+components:
+  schemas:
+
+    Address:
+      description: |
+        An Ethereum public address.
+      type: string
+      example: "0x0000000000000000000000000000000000000000"
+
+    Token:
+      description: |
+        An ERC20 token address.
+      type: string
+      example: "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"
+
+    TokenAmount:
+      description: |
+        Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
+      type: string
+      example: "1234567890"
+
+    BigInt:
+      description: |
+        An arbitrary-precision integer value.
+      type: string
+      example: "1234567890"
+
+    Decimal:
+      description: |
+        An arbitrary-precision decimal value.
+      type: string
+      example: "13.37"
+
+    Digest:
+      description: |
+        A hex-encoded 32 byte digest.
+      type: string
+      example: "0x1e66721bb1bd77d2641c77ea1d61e8abb92bf69c64fcc90c2c6ad518d1b50db1"
+
+    NativePrice:
+      description: |
+        The price in wei of the native token (Ether on Mainnet for example) to
+        buy 10**18 of a token.
+      type: string
+      example: "1234567890"
+
+    DateTime:
+      description:
+        An ISO-8601 formatted date-time.
+      type: string
+      example: "1970-01-01T00:00:00.000Z"
+
+    TokenInfo:
+      description: |
+        Information about a token relavant to the auction.
+      type: object
+      required:
+        - trusted
+        - availableBalance
+      properties:
+        decimals:
+          description: |
+            The ERC20.decimals value for this token. This may be missing for
+            ERC20 tokens that don't implement the optional metadata extension.
+          type: integer
+        symbol:
+          description: |
+            The ERC20.symbol value for this token. This may be missing for ERC20
+            tokens that don't implement the optional metadata extension.
+          type: string
+        referencePrice:
+          description: |
+            The reference price of this token for the auction used for scoring.
+            This price is only included for tokens for which there are CoW
+            Protocol orders.
+          allOf:
+            - $ref: "#/components/schemas/NativePrice"
+        availableBalance:
+          description: |
+            The balance held by the Settlement contract that is available
+            during a settlement.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        trusted:
+          description: |
+            A flag which indicates that solvers are allowed to perform gas cost
+            optimizations for this token by not routing the trades via an AMM,
+            and instead use its available balances, as specified by CIP-2.
+          type: boolean
+
+    Asset:
+      description: |
+        A token address with an amount.
+      type: object
+      required:
+        - token
+        - amount
+      properties:
+        token:
+          $ref: "#/components/schemas/Token"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
+
+    OrderUid:
+      description: |
+        Unique identifier for the order. Order UIDs are 56 bytes long, where
+        bytes [0, 32) represent the order digest used for signing, bytes
+        [32, 52) represent the owner address and bytes [52, 56) represent the
+        order's `validTo` field.
+      type: string
+      example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
+
+    OrderKind:
+      description: |
+        The trading side of the order.
+      type: string
+      enum: [sell, buy]
+
+    OrderClass:
+      description: |
+        How the CoW Protocol order was classified.
+      type: string
+      enum: [market, limit, liquidity]
+
+    AppData:
+      description: |
+        32 bytes of arbitrary application specific data that can be added to an
+        order. This can also be used to ensure uniqueness between two orders
+        with otherwise the exact same parameters.
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+    SellTokenBalance:
+      description: |
+        Where should the sell token be drawn from?
+      type: string
+      enum: [erc20, internal, external]
+
+    BuyTokenBalance:
+      description: |
+        Where should the buy token be transfered to?
+      type: string
+      enum: [erc20, internal]
+
+    SigningScheme:
+      description: |
+        How was the order signed?
+      type: string
+      enum: [eip712, ethsign, presign, eip1271]
+
+    Signature:
+      description: |
+        Signature bytes.
+      type: string
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+
+    Order:
+      description: |
+        CoW Protocol order information relevant to execution.
+      type: object
+      required:
+        - uid
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - feeAmount
+        - kind
+        - partiallyFillable
+        - class
+        - reward
+      properties:
+        uid:
+          $ref: "#/components/schemas/OrderUid"
+        sellToken:
+          $ref: "#/components/schemas/Token"
+        buyToken:
+          $ref: "#/components/schemas/Token"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        feeAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          description: |
+            Whether or not this order can be partially filled. If this is false,
+            then the order is a "fill-or-kill" order, meaning it needs to be
+            completely filled or not at all.
+          type: boolean
+        class:
+          $ref: "#/components/schemas/OrderClass"
+        reward:
+          description: |
+            The rewards, in COW base units, that would be given by the protocol
+            for settling this order.
+          type: number
+
+    TokenReserve:
+      description: |
+        A reserve of tokens in an on-chain liquidity pool.
+      type: object
+      required:
+        - balance
+      properties:
+        balance:
+          $ref: "#/components/schemas/TokenAmount"
+
+    ConstantProductPool:
+      description: |
+        A UniswapV2-like constant product liquidity pool for a token pair.
+      type: object
+      required:
+        - kind
+        - tokens
+        - fee
+      properties:
+        kind:
+          type: string
+          enum: [constantproduct]
+        tokens:
+          description: |
+            A mapping of token address to its reserve amounts.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenReserve"
+        fee:
+          $ref: "#/components/schemas/Decimal"
+
+    WeightedProductPool:
+      description: |
+        A Balancer-like weighted product liquidity pool of N tokens.
+      type: object
+      required:
+        - kind
+        - tokens
+        - fee
+      properties:
+        kind:
+          type: string
+          enum: [weightedproduct]
+        tokens:
+          description: |
+            A mapping of token address to its reserve amounts with weights.
+          type: object
+          additionalProperties:
+            allOf:
+              - $ref: "#/components/schemas/TokenReserve"
+              - type: object
+                required:
+                  - weight
+                properties:
+                  weight:
+                    $ref: "#/components/schemas/Decimal"
+        fee:
+          $ref: "#/components/schemas/Decimal"
+
+    StablePool:
+      description: |
+        A Curve-like stable pool of N tokens.
+      type: object
+      required:
+        - kind
+        - tokens
+        - amplificationParameter
+        - fee
+      properties:
+        kind:
+          type: string
+          enum: [stable]
+        tokens:
+          description: |
+            A mapping of token address to token balance and scaling rate.
+          type: object
+          additionalProperties:
+            allOf:
+              - $ref: "#/components/schemas/TokenReserve"
+              - type: object
+                required:
+                  - scalingFactor
+                properties:
+                  scalingFactor:
+                    $ref: "#/components/schemas/BigInt"
+        amplificationParameter:
+          $ref: "#/components/schemas/Decimal"
+        fee:
+          $ref: "#/components/schemas/Decimal"
+
+    ConcentratedLiquidityPool:
+      description: |
+        A UniswapV3-like concentrated liquidity pool of 2 tokens.
+      type: object
+      required:
+        - kind
+        - tokens
+        - sqrtPrice
+        - liquidity
+        - tick
+        - liquidityNet
+        - fee
+      properties:
+        kind:
+          type: string
+          enum: [concentratedliquidity]
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Token"
+        sqrtPrice:
+          $ref: "#/components/schemas/BigInt"
+        liquidity:
+          $ref: "#/components/schemas/TokenAmount"
+        tick:
+          $ref: "#/components/schemas/BigInt"
+        liquidityNet:
+          description: |
+            A map of tick indices to their liquidity values.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+        fee:
+          $ref: "#/components/schemas/Decimal"
+
+    ForeignLimitOrder:
+      description: |
+        A 0x-like limit order external to CoW Protocol.
+      type: object
+      required:
+        - kind
+        - hash
+        - makerToken
+        - takerToken
+        - makerAmount
+        - takerAmount
+        - takerTokenFeeAmount
+      properties:
+        kind:
+          type: string
+          enum: [limitorder]
+        hash:
+          $ref: "#/components/schemas/Digest"
+        makerToken:
+          $ref: "#/components/schemas/Token"
+        takerToken:
+          $ref: "#/components/schemas/Token"
+        makerAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        takerAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        takerTokenFeeAmount:
+          $ref: "#/components/schemas/TokenAmount"
+
+    LiquidityParameters:
+      oneOf:
+        - $ref: "#/components/schemas/ConstantProductPool"
+        - $ref: "#/components/schemas/WeightedProductPool"
+        - $ref: "#/components/schemas/StablePool"
+        - $ref: "#/components/schemas/ConcentratedLiquidityPool"
+        - $ref: "#/components/schemas/ForeignLimitOrder"
+
+    Liquidity:
+      description: |
+        On-chain liquidity that can be used in a solution. This liquidity is
+        provided to facilitate onboarding new solvers. Additional liquidity that
+        is not included in this set may still be used in solutions.
+      allOf:
+        - $ref: "#/components/schemas/LiquidityParameters"
+        - type: object
+          required:
+            - id
+            - address
+            - gasEstimate
+          properties:
+            id:
+              description: |
+                An opaque ID used for uniquely identifying the liquidity within
+                a single auction (note that they are **not** guaranteed to be
+                unique across auctions). This ID is used in the solution for
+                matching interactions with the executed liquidity.
+              type: string
+            address:
+              description: |
+                The Ethereum public address of the liquidity. The actual address
+                that is specified is dependent on the kind of liquidity.
+              allOf:
+                - $ref: "#/components/schemas/Address"
+            gasEstimate:
+              description: |
+                A rough approximation of gas units required to use this
+                liquidity on-chain.
+              type: integer
+
+    Auction:
+      description: |
+        The abstract auction to be solved by the searcher.
+      type: object
+      required:
+        - tokens
+        - orders
+        - liquidity
+        - effectiveGasPrice
+        - deadline
+      properties:
+        id:
+          description: |
+            An opaque identifier for the auction. Will be set to `null` for
+            requests that are not part of an auction (when quoting token prices
+            for example).
+          type: string
+        tokens:
+          description: |
+            A map of token addresses to token information.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenInfo"
+        orders:
+          description: |
+            The solvable orders included in the auction.
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        liquidity:
+          description: |
+            On-chain liquidity that can be used by the solution.
+          type: array
+          items:
+            $ref: "#/components/schemas/Liquidity"
+        effectiveGasPrice:
+          description: |
+            The current estimated gas price that will be paid when executing a
+            settlement. Additionally, this is the gas price that is multiplied
+            with a settlement's gas estimate for solution scoring.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        deadline:
+          description: |
+            The deadline by which a solution to the auction is required.
+            Requests that go beyond this deadline are expected to be cancelled
+            by the caller.
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+
+    JitOrder:
+      description: |
+        A just-in-time liquidity order included in a settlement.
+      type: object
+      required:
+        - sellToken
+        - buyToken
+        - receiver
+        - sellAmount
+        - buyAmount
+        - validTo
+        - appData
+        - feeAmount
+        - kind
+        - partiallyFillable
+        - sellTokenBalance
+        - buyTokenBalance
+        - signingScheme
+        - signature
+      properties:
+        sellToken:
+          $ref: "#/components/schemas/Token"
+        buyToken:
+          $ref: "#/components/schemas/Token"
+        receiver:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          type: integer
+        appData:
+          $ref: "#/components/schemas/AppData"
+        feeAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          type: boolean
+        sellTokenBalance:
+          $ref: "#/components/schemas/SellTokenBalance"
+        buyTokenBalance:
+          $ref: "#/components/schemas/BuyTokenBalance"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
+        signature:
+          $ref: "#/components/schemas/Signature"
+
+    Fulfillment:
+      description: |
+        A trade which fulfills an order from the auction.
+      type: object
+      required:
+        - kind
+        - order
+      properties:
+        kind:
+          type: string
+          enum: [fulfillment]
+        order:
+          description: |
+            A reference by UID of the order to execute in a solution. The order
+            must be included in the auction input.
+          allOf:
+            - $ref: "#/components/schemas/OrderUid"
+
+    JitTrade:
+      description: |
+        A trade with a JIT order.
+      required:
+        - kind
+        - order
+      properties:
+        kind:
+          type: string
+          enum: [jit]
+        order:
+          description: |
+            The just-in-time liquidity order to execute in a solution.
+          allOf:
+            - $ref: "#/components/schemas/JitOrder"
+
+    Trade:
+      description: |
+        A trade for a CoW Protocol order included in a solution.
+      allOf:
+        - oneOf:
+            - $ref: "#/components/schemas/Fulfillment"
+            - $ref: "#/components/schemas/JitTrade"
+        - type: object
+          properties:
+            executedAmount:
+              description: |
+                The amount of the order that was executed. This is denoted in
+                "sellToken" for sell orders, and "buyToken" for buy orders.
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
+
+    LiquidityInteraction:
+      description: |
+        Interaction representing the execution of liquidity that was passed in
+        with the auction.
+      type: object
+      required:
+        - kind
+        - id
+        - inputToken
+        - outputToken
+        - inputAmount
+        - outputAmount
+      properties:
+        kind:
+          type: string
+          enum: [liquidity]
+        id:
+          description: |
+            The ID of executed liquidity provided in the auction input.
+          type: number
+        inputToken:
+          $ref: "#/components/schemas/Token"
+        outputToken:
+          $ref: "#/components/schemas/Token"
+        inputAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        outputAmount:
+          $ref: "#/components/schemas/TokenAmount"
+
+    Allowance:
+      description: |
+        An ERC20 allowance from the settlement contract to some spender that is
+        required for a custom interaction.
+      type: object
+      required:
+        - token
+        - spender
+        - minAmount
+      properties:
+        token:
+          $ref: "#/components/schemas/Token"
+        spender:
+          $ref: "#/components/schemas/Address"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
+
+    CustomInteraction:
+      description: |
+        A searcher-specified custom interaction to be included in the final
+        settlement.
+      type: object
+      required:
+        - kind
+        - target
+        - value
+        - callData
+        - inputs
+        - outputs
+      properties:
+        kind:
+          type: string
+          enum: [custom]
+        target:
+          $ref: "#/components/schemas/Address"
+        value:
+          $ref: "#/components/schemas/TokenAmount"
+        callData:
+          description: |
+            The EVM calldata bytes.
+          type: string
+          example: "0x01020304"
+        allowances:
+          description: |
+            ERC20 allowances that are required for this custom interaction.
+          type: array
+          items:
+            $ref: "#/components/schemas/Allowance"
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Asset"
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Asset"
+
+    Interaction:
+      description: |
+        An interaction to execute as part of a settlement.
+      allOf:
+        - type: object
+          properties:
+            internalize:
+              description: |
+                A flag indicating that the interaction should be "internalized",
+                as specified by CIP-2.
+              type: boolean
+        - oneOf:
+            - $ref: "#/components/schemas/LiquidityInteraction"
+            - $ref: "#/components/schemas/CustomInteraction"
+
+    Solution:
+      description: |
+        The computed solution for a given auction.
+      type: object
+      required:
+        - prices
+        - trades
+        - interactions
+      properties:
+        prices:
+          description: |
+            A clearing price map of token address to price. The price can have
+            arbitrary denomination.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigInt"
+        trades:
+          description: |
+            CoW Protocol order trades included in the solution.
+          type: array
+          items:
+            $ref: "#/components/schemas/Trade"
+        interactions:
+          description: |
+            Interactions to encode within a settlement.
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
