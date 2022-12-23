@@ -431,6 +431,7 @@ components:
         - orders
         - liquidity
         - effectiveGasPrice
+        - deadline
       properties:
         id:
           description: |
@@ -605,14 +606,10 @@ components:
         required for a custom interaction.
       type: object
       required:
-        - kind
         - token
         - spender
         - minAmount
       properties:
-        kind:
-          type: string
-          enum: [approval]
         token:
           $ref: "#/components/schemas/Token"
         spender:
