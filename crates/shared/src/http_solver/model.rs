@@ -159,7 +159,8 @@ pub struct InteractionData {
     ///
     /// `AMM -> GPv2Settlement`
     pub outputs: Vec<TokenAmount>,
-    pub exec_plan: ExecutionPlan,
+    // TODO remove Option once all external solvers conform to sending exec plans instead of null.
+    pub exec_plan: Option<ExecutionPlan>,
     pub cost: Option<TokenAmount>,
 }
 
@@ -187,6 +188,26 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub submitter: SubmissionPreference,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
+}
+
+impl SettledBatchAuctionModel {
+    // TODO remove this function once all solvers conform to sending the
+    // execution plan for their custom interactions!
+    pub fn add_missing_execution_plans(&mut self) {
+        for (index, interaction) in self.interaction_data.iter_mut().enumerate() {
+            if interaction.exec_plan.is_none() {
+                // if no exec plan is provided, convert to the default exec plan by setting the
+                // position coordinate to the position of the exec plan in the interactions vector
+                interaction.exec_plan = Some(ExecutionPlan {
+                    coordinates: ExecutionPlanCoordinatesModel {
+                        sequence: u32::MAX,
+                        position: index as u32,
+                    },
+                    internal: false,
+                })
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -891,13 +912,13 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: ExecutionPlan {
+                exec_plan: Some(ExecutionPlan {
                     coordinates: ExecutionPlanCoordinatesModel {
                         sequence: 0,
                         position: 0,
                     },
                     internal: true,
-                },
+                }),
                 cost: Some(TokenAmount {
                     amount: 1.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
