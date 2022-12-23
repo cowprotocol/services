@@ -441,7 +441,7 @@ async fn test_order_parameters(
     assert_eq!(
         response.metadata.onchain_order_data,
         Some(OnchainOrderData {
-            user: *owner,
+            sender: *owner,
             placement_error: None,
         })
     );

@@ -641,7 +641,6 @@ components:
           type: integer
       required:
         - refundTxHash
-        - isRefunded
         - userValidTo
     FeeInformation:
       description: |
