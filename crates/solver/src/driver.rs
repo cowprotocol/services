@@ -262,7 +262,8 @@ impl Driver {
                 }
             })
             .collect::<Vec<_>>();
-        tracing::info!(?orders, "got {} orders", orders.len());
+
+        tracing::info!(count =% orders.len(), ?orders, "got orders");
         self.metrics.orders_fetched(&orders);
 
         let external_prices =
