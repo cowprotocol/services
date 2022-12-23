@@ -549,7 +549,7 @@ pub enum OnchainOrderPlacementError {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OnchainOrderData {
-    pub user: H160,
+    pub sender: H160,
     pub placement_error: Option<OnchainOrderPlacementError>,
 }
 
