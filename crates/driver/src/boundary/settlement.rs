@@ -332,7 +332,7 @@ async fn to_boundary_solution(
             .collect(),
         amms: solution
             .interactions
-            .iter()
+            .all()
             .enumerate()
             .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Liquidity(interaction) => Some((
@@ -375,7 +375,7 @@ async fn to_boundary_solution(
             .collect(),
         interaction_data: solution
             .interactions
-            .iter()
+            .all()
             .enumerate()
             .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Custom(interaction) => Some(InteractionData {
