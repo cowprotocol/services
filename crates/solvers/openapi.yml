@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Searcher API
+  title: Solver Engine API
   description: |
-    The API implemented by searchers interacting with the reference driver
+    The API implemented by solver engines interacting with the reference driver
     implementation.
   version: 0.0.1
 
@@ -141,7 +141,7 @@ components:
       type: string
       example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
 
-    OrderSide:
+    OrderKind:
       description: |
         The trading side of the order.
       type: string
@@ -195,9 +195,9 @@ components:
         - sellAmount
         - buyAmount
         - feeAmount
-        - side
-        - partiallyFillable
         - kind
+        - partiallyFillable
+        - class
         - reward
       properties:
         uid:
@@ -212,8 +212,8 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         feeAmount:
           $ref: "#/components/schemas/TokenAmount"
-        side:
-          $ref: "#/components/schemas/OrderSide"
+        kind:
+          $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           description: |
             Whether or not this order can be partially filled. If this is false,
@@ -508,7 +508,7 @@ components:
         feeAmount:
           $ref: "#/components/schemas/TokenAmount"
         kind:
-          $ref: "#/components/schemas/OrderSide"
+          $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           type: boolean
         sellTokenBalance:
@@ -520,24 +520,55 @@ components:
         signature:
           $ref: "#/components/schemas/Signature"
 
+    Fulfillment:
+      description: |
+        A trade which fulfills an order from the auction.
+      type: object
+      required:
+        - kind
+        - order
+      properties:
+        kind:
+          type: string
+          enum: [fulfillment]
+        order:
+          description: |
+            A reference by UID of the order to execute in a solution. The order
+            must be included in the auction input.
+          allOf:
+            - $ref: "#/components/schemas/OrderUid"
+
+    JitTrade:
+      description: |
+        A trade with a JIT order.
+      required:
+        - kind
+        - order
+      properties:
+        kind:
+          type: string
+          enum: [jit]
+        order:
+          description: |
+            The just-in-time liquidity order to execute in a solution.
+          allOf:
+            - $ref: "#/components/schemas/JitOrder"
+
     Trade:
       description: |
         A trade for a CoW Protocol order included in a solution.
-      type: object
-      properties:
-        order:
-          description: |
-            The order to execute in a solution. Can either be a reference by UID
-            to an order included in the auction, or a JIT liquidity order.
-          oneOf:
-            - $ref: "#/components/schemas/OrderUid"
-            - $ref: "#/components/schemas/JitOrder"
-        executedAmount:
-          description: |
-            The amount of the order that was executed. This is denoted in
-            "sellToken" for sell orders, and "buyToken" for buy orders.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
+      allOf:
+        - oneOf:
+            - $ref: "#/components/schemas/Fulfillment"
+            - $ref: "#/components/schemas/JitTrade"
+        - type: object
+          properties:
+            executedAmount:
+              description: |
+                The amount of the order that was executed. This is denoted in
+                "sellToken" for sell orders, and "buyToken" for buy orders.
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
 
     LiquidityInteraction:
       description: |
