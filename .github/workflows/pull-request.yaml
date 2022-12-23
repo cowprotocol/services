@@ -111,7 +111,7 @@ jobs:
       - run: npm install @apidevtools/swagger-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
-      - run: node_modules/.bin/swagger-cli validate crates/searchers/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
   coverage:
     timeout-minutes: 60
     runs-on: ubuntu-latest
