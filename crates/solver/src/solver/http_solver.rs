@@ -454,13 +454,7 @@ fn non_bufferable_tokens_used(
 ) -> BTreeSet<H160> {
     interactions
         .iter()
-        .filter(|interaction| {
-            interaction
-                .exec_plan
-                .as_ref()
-                .map(|plan| plan.internal)
-                .unwrap_or_default()
-        })
+        .filter(|interaction| interaction.exec_plan.internal)
         .flat_map(|interaction| &interaction.inputs)
         .filter(|input| !market_makable_token_list.contains(&input.token))
         .map(|input| input.token)
@@ -519,8 +513,7 @@ impl Solver for HttpSolver {
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
-        let mut settled = self.solver.solve(&model, timeout).await?;
-        settled.add_missing_execution_plans();
+        let settled = self.solver.solve(&model, timeout).await?;
 
         tracing::debug!(
             "Solution received from http solver {} (json):\n{:}",
@@ -993,10 +986,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan {
+            exec_plan: ExecutionPlan {
                 internal: true,
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         }];
 
@@ -1019,10 +1012,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan {
+            exec_plan: ExecutionPlan {
                 internal: true,
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         }];
 
@@ -1045,10 +1038,10 @@ mod tests {
 
         let interactions = vec![InteractionData {
             inputs: vec![token_amount],
-            exec_plan: Some(ExecutionPlan {
+            exec_plan: ExecutionPlan {
                 internal: false,
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         }];
 
