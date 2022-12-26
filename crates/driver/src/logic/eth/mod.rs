@@ -22,11 +22,35 @@ pub use {
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Debug, Clone, Copy)]
-pub struct ChainId(pub u64);
+pub struct ChainId(pub U256);
 
-impl ChainId {
-    pub fn network_id(&self) -> &'static str {
-        todo!()
+impl From<U256> for ChainId {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
+/// Chain ID as defined by EIP-155.
+///
+/// https://eips.ethereum.org/EIPS/eip-155
+#[derive(Debug, Clone)]
+pub struct NetworkId(pub String);
+
+impl NetworkId {
+    pub fn to_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for NetworkId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for NetworkId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

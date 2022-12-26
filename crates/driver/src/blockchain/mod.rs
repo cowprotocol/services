@@ -1,28 +1,38 @@
-use {
-    crate::logic::eth,
-    ethcontract::{transport::DynTransport, Web3},
-    thiserror::Error,
-    url::Url,
-};
+use {crate::logic::eth, thiserror::Error, web3::Web3};
 
 pub mod contracts;
 
 /// The Ethereum blockchain.
 #[derive(Debug)]
 pub struct Ethereum {
-    web3: Web3<DynTransport>,
+    web3: Web3<web3::transports::Http>,
     chain_id: eth::ChainId,
+    network_id: eth::NetworkId,
 }
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
-    pub fn eth_rpc(_url: Url) -> Self {
-        todo!()
+    pub async fn eth_rpc(url: &str) -> Result<Self, web3::Error> {
+        // TODO Enable batching, reuse ethrpc? Put it in the boundary module?
+        // I feel like what we have in shared::ethrpc could be simplified if we use
+        // web3::transports::batch or something, but I haven't looked deep into it
+        let web3 = Web3::new(web3::transports::Http::new(url)?);
+        let chain_id = web3.eth().chain_id().await?.into();
+        let network_id = web3.net().version().await?.into();
+        Ok(Self {
+            web3,
+            chain_id,
+            network_id,
+        })
     }
 
     pub fn chain_id(&self) -> eth::ChainId {
         self.chain_id
+    }
+
+    pub fn network_id(&self) -> &eth::NetworkId {
+        &self.network_id
     }
 
     /// Onchain smart contract bindings.
@@ -60,7 +70,7 @@ impl Contracts<'_> {
     pub fn settlement(&self) -> contracts::GPv2Settlement {
         let address = contracts::GPv2Settlement::raw_contract()
             .networks
-            .get(self.0.chain_id().network_id())
+            .get(self.0.network_id().to_str())
             .unwrap()
             .address;
         contracts::GPv2Settlement::at(&self.0.web3, address)
@@ -70,7 +80,7 @@ impl Contracts<'_> {
     pub fn weth(&self) -> contracts::WETH9 {
         let address = contracts::WETH9::raw_contract()
             .networks
-            .get(self.0.chain_id().network_id())
+            .get(self.0.network_id().to_str())
             .unwrap()
             .address;
         contracts::WETH9::at(&self.0.web3, address)

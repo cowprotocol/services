@@ -10,7 +10,7 @@ use {
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct Request {
-    pub network_id: &'static str,
+    pub network_id: String,
     pub from: H160,
     pub to: H160,
     #[serde_as(as = "serialize::Hex")]

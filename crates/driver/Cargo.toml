@@ -36,6 +36,7 @@ url = "2.3"
 ethabi = "18.0"
 bigdecimal = "0.3"
 rand = "0.8"
+web3 = "0.18"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
@@ -55,7 +56,6 @@ shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
-web3 = { workspace = true }
 
 [dev-dependencies]
 maplit = { workspace = true }
