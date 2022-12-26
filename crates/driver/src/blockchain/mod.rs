@@ -1,9 +1,9 @@
-use {crate::logic::eth, thiserror::Error, web3::Web3};
+use {crate::logic::eth, thiserror::Error, url::Url, web3::Web3};
 
 pub mod contracts;
 
 /// The Ethereum blockchain.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Ethereum {
     web3: Web3<web3::transports::Http>,
     chain_id: eth::ChainId,
@@ -13,11 +13,12 @@ pub struct Ethereum {
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
-    pub async fn eth_rpc(url: &str) -> Result<Self, web3::Error> {
+    pub async fn ethrpc(url: &Url) -> Result<Self, web3::Error> {
         // TODO Enable batching, reuse ethrpc? Put it in the boundary module?
         // I feel like what we have in shared::ethrpc could be simplified if we use
-        // web3::transports::batch or something, but I haven't looked deep into it
-        let web3 = Web3::new(web3::transports::Http::new(url)?);
+        // web3::transports::batch or something, but I haven't looked deep into it, just
+        // a gut feeling.
+        let web3 = Web3::new(web3::transports::Http::new(url.as_str())?);
         let chain_id = web3.eth().chain_id().await?.into();
         let network_id = web3.net().version().await?.into();
         Ok(Self {
@@ -70,7 +71,7 @@ impl Contracts<'_> {
     pub fn settlement(&self) -> contracts::GPv2Settlement {
         let address = contracts::GPv2Settlement::raw_contract()
             .networks
-            .get(self.0.network_id().to_str())
+            .get(self.0.network_id().as_str())
             .unwrap()
             .address;
         contracts::GPv2Settlement::at(&self.0.web3, address)
@@ -80,7 +81,7 @@ impl Contracts<'_> {
     pub fn weth(&self) -> contracts::WETH9 {
         let address = contracts::WETH9::raw_contract()
             .networks
-            .get(self.0.network_id().to_str())
+            .get(self.0.network_id().as_str())
             .unwrap()
             .address;
         contracts::WETH9::at(&self.0.web3, address)

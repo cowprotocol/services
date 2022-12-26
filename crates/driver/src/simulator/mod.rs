@@ -8,6 +8,16 @@ pub mod tenderly;
 pub struct Simulator(Inner);
 
 impl Simulator {
+    /// Simulate transactions on [Tenderly](https://tenderly.co/).
+    pub fn tenderly(config: tenderly::Config) -> Self {
+        Self(Inner::Tenderly(tenderly::Tenderly::new(config)))
+    }
+
+    /// Simulate transactions using the Ethereum RPC API.
+    pub fn ethereum(eth: crate::Ethereum) -> Self {
+        Self(Inner::Ethereum(ethereum::Ethereum::new(eth)))
+    }
+
     /// Simulate the access list needed by a transaction. Return a new
     /// transaction with an updated access list.
     pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::Tx, Error> {
@@ -38,9 +48,7 @@ impl Simulator {
 
 #[derive(Debug)]
 enum Inner {
-    /// Simulate transactions on [Tenderly](https://tenderly.co/).
     Tenderly(tenderly::Tenderly),
-    /// Simulate transactions using the Ethereum RPC API.
     Ethereum(ethereum::Ethereum),
 }
 

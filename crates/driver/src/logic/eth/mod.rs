@@ -37,7 +37,7 @@ impl From<U256> for ChainId {
 pub struct NetworkId(pub String);
 
 impl NetworkId {
-    pub fn to_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }

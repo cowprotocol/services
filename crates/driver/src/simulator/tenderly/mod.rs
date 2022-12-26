@@ -2,8 +2,11 @@ use {crate::logic::eth, thiserror::Error};
 
 mod dto;
 
+const DEFAULT_URL: &str = "https://api.tenderly.co/api";
+
 #[derive(Debug)]
 pub(super) struct Tenderly {
+    endpoint: reqwest::Url,
     client: reqwest::Client,
     config: Config,
 }
@@ -11,7 +14,13 @@ pub(super) struct Tenderly {
 #[derive(Debug)]
 pub struct Config {
     /// The URL of the Tenderly API.
-    pub url: reqwest::Url,
+    pub url: Option<reqwest::Url>,
+    /// The Tenderly API key.
+    pub api_key: String,
+    /// The user associated with the API key.
+    pub user: String,
+    /// The project to use.
+    pub project: String,
     pub network_id: eth::NetworkId,
     /// Save the transaction on Tenderly for later inspection, e.g. via the
     /// dashboard.
@@ -21,14 +30,28 @@ pub struct Config {
 }
 
 impl Tenderly {
-    pub fn new(config: Config) -> Self {
+    pub(super) fn new(config: Config) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
         );
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
+        let mut api_key = reqwest::header::HeaderValue::from_str(&config.api_key).unwrap();
+        api_key.set_sensitive(true);
+        headers.insert("x-access-key", api_key);
         Self {
+            endpoint: reqwest::Url::parse(&format!(
+                "{}/v1/account/{}/project/{}/",
+                config
+                    .url
+                    .as_ref()
+                    .map(|url| url.to_string())
+                    .unwrap_or_else(|| DEFAULT_URL.to_owned()),
+                config.user,
+                config.project
+            ))
+            .unwrap(),
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()
@@ -37,12 +60,12 @@ impl Tenderly {
         }
     }
 
-    pub async fn simulate(
+    pub(super) async fn simulate(
         &self,
         tx: &eth::Tx,
         generate_access_list: GenerateAccessList,
     ) -> Result<super::Simulation, Error> {
-        let url = self.config.url.join("simulate").unwrap();
+        let url = self.endpoint.join("simulate").unwrap();
         let res: dto::Response = self
             .client
             .post(url)
@@ -74,7 +97,7 @@ impl Tenderly {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum GenerateAccessList {
+pub(super) enum GenerateAccessList {
     Yes,
     No,
 }
