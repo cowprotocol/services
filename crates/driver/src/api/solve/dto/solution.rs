@@ -1,9 +1,17 @@
-use {crate::logic, serde::Serialize, serde_with::serde_as};
+use {
+    crate::{
+        logic::competition::{self, solution},
+        util::serialize,
+    },
+    serde::Serialize,
+    serde_with::serde_as,
+};
 
-impl From<logic::competition::Score> for Solution {
-    fn from(score: logic::competition::Score) -> Self {
+impl Solution {
+    fn new(id: solution::Id, score: competition::Score) -> Self {
         Self {
-            objective: score.into(),
+            id: id.to_bytes(),
+            score: score.into(),
         }
     }
 }
@@ -11,5 +19,7 @@ impl From<logic::competition::Score> for Solution {
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct Solution {
-    objective: f64,
+    #[serde_as(as = "serialize::Hex")]
+    id: [u8; 4],
+    score: f64,
 }
