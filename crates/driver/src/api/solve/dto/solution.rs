@@ -8,7 +8,7 @@ use {
 };
 
 impl Solution {
-    fn new(id: solution::Id, score: competition::Score) -> Self {
+    pub fn new(id: solution::Id, score: competition::Score) -> Self {
         Self {
             id: id.to_bytes(),
             score: score.into(),

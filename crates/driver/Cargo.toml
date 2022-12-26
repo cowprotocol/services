@@ -55,6 +55,7 @@ solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
+rand.workspace = true
 
 [dev-dependencies]
 maplit = { workspace = true }

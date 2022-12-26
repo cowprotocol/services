@@ -15,6 +15,7 @@ use {
     itertools::Itertools,
     num::ToPrimitive,
     primitive_types::U256,
+    rand::Rng,
     std::collections::HashMap,
 };
 
@@ -206,13 +207,17 @@ pub async fn solve(
         .map_err(Into::into)
 }
 
-// TODO This is ready
+// TODO This is ready for documenting
 /// A unique solution ID. TODO Once this is finally decided, document what this
 /// ID is used for.
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub u32);
 
 impl Id {
+    pub fn random() -> Self {
+        Self(rand::thread_rng().gen())
+    }
+
     pub fn to_bytes(self) -> [u8; 4] {
         self.0.to_be_bytes()
     }

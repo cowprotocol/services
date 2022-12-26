@@ -5,19 +5,21 @@ use {
     },
     itertools::Itertools,
     primitive_types::{H160, U256},
-    serde::Serialize,
+    serde::Deserialize,
     serde_with::serde_as,
     std::{collections::HashMap, str::FromStr},
 };
 
-impl Auction {
-    fn from(auction: Auction) -> Result<competition::Auction, Error> {
+impl TryInto<competition::Auction> for Auction {
+    type Error = Error;
+
+    fn try_into(self) -> Result<competition::Auction, Self::Error> {
         Ok(competition::Auction {
-            id: match auction.id {
+            id: match self.id {
                 Some(id) => Some(FromStr::from_str(&id).map_err(|_| Error::InvalidAuctionId)?),
                 None => None,
             },
-            tokens: auction
+            tokens: self
                 .tokens
                 .into_iter()
                 .map(|(address, token)| competition::auction::Token {
@@ -29,7 +31,7 @@ impl Auction {
                     trusted: token.trusted,
                 })
                 .collect(),
-            orders: auction
+            orders: self
                 .orders
                 .into_iter()
                 .map(|order| {
@@ -119,8 +121,8 @@ impl Auction {
                 .try_collect()?,
             // TODO #899
             liquidity: Default::default(),
-            gas_price: auction.effective_gas_price.into(),
-            deadline: auction.deadline.into(),
+            gas_price: self.effective_gas_price.into(),
+            deadline: self.deadline.into(),
         })
     }
 }
@@ -141,7 +143,7 @@ pub enum Error {
 // It needs the buy and sell token balances
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     id: Option<String>,
@@ -154,7 +156,7 @@ pub struct Auction {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
@@ -175,7 +177,7 @@ struct Order {
     owner: H160,
     partially_fillable: bool,
     // TODO Always zero if the order is not partially fillable, is that OK?
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "serialize::U256")]
     executed: U256,
     interactions: Vec<Interaction>,
     sell_token_balance: SellTokenBalance,
@@ -191,7 +193,7 @@ struct Order {
     signature: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Kind {
     Sell,
@@ -199,7 +201,7 @@ enum Kind {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: H160,
@@ -209,7 +211,7 @@ struct Interaction {
     call_data: Vec<u8>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum SellTokenBalance {
     #[default]
@@ -218,7 +220,7 @@ enum SellTokenBalance {
     External,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum BuyTokenBalance {
     #[default]
@@ -226,7 +228,7 @@ enum BuyTokenBalance {
     Internal,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum SigningScheme {
     Eip712,
@@ -235,7 +237,7 @@ enum SigningScheme {
     Eip1271,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Class {
     Market,
@@ -244,7 +246,7 @@ enum Class {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Token {
     decimals: Option<u8>,
@@ -256,7 +258,7 @@ struct Token {
     trusted: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Liquidity {
     ConstantProduct(ConstantProductPool),
@@ -267,7 +269,7 @@ enum Liquidity {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConstantProductPool {
     id: String,
@@ -279,14 +281,14 @@ struct ConstantProductPool {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 struct ConstantProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WeightedProductPool {
     id: String,
@@ -298,7 +300,7 @@ struct WeightedProductPool {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
@@ -306,7 +308,7 @@ struct WeightedProductReserve {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StablePool {
     id: String,
@@ -319,7 +321,7 @@ struct StablePool {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StableReserve {
     #[serde_as(as = "serialize::U256")]
@@ -329,7 +331,7 @@ struct StableReserve {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConcentratedLiquidityPool {
     id: String,
@@ -349,7 +351,7 @@ struct ConcentratedLiquidityPool {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ForeignLimitOrder {
     id: String,

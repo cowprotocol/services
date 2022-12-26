@@ -1,4 +1,4 @@
-use crate::logic;
+use crate::logic::competition::{self, solution};
 
 mod dto;
 
@@ -10,9 +10,9 @@ async fn solve(
     state: axum::extract::State<super::State>,
     auction: axum::extract::Json<dto::Auction>,
 ) -> axum::response::Json<dto::Solution> {
-    let auction = auction.0.into();
     // TODO Report errors instead of unwrapping
-    let score = logic::competition::solve(
+    let auction = auction.0.try_into().unwrap();
+    let score = competition::solve(
         state.solver(),
         state.ethereum(),
         state.simulator(),
@@ -20,5 +20,5 @@ async fn solve(
     )
     .await
     .unwrap();
-    axum::response::Json(score.into())
+    axum::response::Json(dto::Solution::new(solution::Id::random(), score))
 }

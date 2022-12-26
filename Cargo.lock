@@ -924,6 +924,7 @@ dependencies = [
  "num",
  "number-conversions",
  "primitive-types 0.10.1",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",
