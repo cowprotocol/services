@@ -19,8 +19,6 @@ pub struct Order {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
-    /// The address used to place this order.
-    pub owner: eth::Address,
     pub valid_to: util::Timestamp,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
@@ -29,9 +27,6 @@ pub struct Order {
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
-    /// The autopilot marks orders as mature after a certain time period. The
-    /// solvers can use heuristics on this field to optimize solution sizes.
-    pub mature: bool,
     /// The onchain calls necessary to fulfill this order. These are set by the
     /// user and included in the settlement transaction.
     pub interactions: Vec<eth::Interaction>,
@@ -127,7 +122,7 @@ impl Order {
     /// address. Otherwise, return the address which was used to place the
     /// order.
     pub fn receiver(&self) -> eth::Address {
-        self.receiver.unwrap_or(self.owner)
+        self.receiver.unwrap_or(self.signature.signer)
     }
 }
 

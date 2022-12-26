@@ -12,7 +12,7 @@ impl Auction {
         deadline: competition::auction::SolverDeadline,
     ) -> Self {
         Self {
-            id: auction.id.map(|id| id.0.to_string()),
+            id: auction.id.as_ref().map(ToString::to_string),
             tokens: auction
                 .tokens
                 .iter()
@@ -52,7 +52,7 @@ impl Auction {
                     reward: order.reward,
                 })
                 .collect(),
-            // TODO Implement this when you do liquidity
+            // TODO 899: Implement this when you do liquidity
             liquidity: vec![],
             effective_gas_price: auction.gas_price.into(),
             deadline: deadline.into(),
@@ -91,6 +91,8 @@ struct Order {
     partially_fillable: bool,
     class: Class,
     reward: f64,
+    // TODO Was the intention to have the driver verify signatures, and the solvers blindly trust
+    // the orders and the driver auth? Or did we just forget to add the signature here?
 }
 
 #[derive(Debug, Serialize)]

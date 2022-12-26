@@ -2,11 +2,10 @@ pub mod auction;
 pub mod order;
 pub mod solution;
 
+use {crate::logic::eth, primitive_types::U256};
 pub use {
-    crate::logic::eth,
     auction::Auction,
     order::Order,
-    primitive_types::U256,
     solution::{solve, Score, Solution},
 };
 
