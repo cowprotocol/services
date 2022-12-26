@@ -52,7 +52,7 @@ impl Auction {
                     reward: order.reward,
                 })
                 .collect(),
-            // TODO 899: Implement this when you do liquidity
+            // TODO #899: Implement this when you do liquidity
             liquidity: vec![],
             effective_gas_price: auction.gas_price.into(),
             deadline: deadline.into(),

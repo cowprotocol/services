@@ -135,13 +135,6 @@ pub enum Error {
     MissingSurplusFee,
 }
 
-// TODO In addition to what is already in the solver DTO, the order needs a
-// mature field (??? not sure about that - maturity is relevant to solvers and
-// it somehow ended up not being in the solver DTO)
-// It needs the interactions array for the users
-// It needs the executed amount for partial orders
-// It needs the buy and sell token balances
-
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

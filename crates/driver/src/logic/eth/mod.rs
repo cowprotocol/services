@@ -60,7 +60,7 @@ impl From<U256> for EffectiveGasPrice {
 
 impl From<EffectiveGasPrice> for U256 {
     fn from(value: EffectiveGasPrice) -> Self {
-        value.0 .0
+        value.0.into()
     }
 }
 

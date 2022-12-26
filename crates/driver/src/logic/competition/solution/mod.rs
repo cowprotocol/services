@@ -207,9 +207,9 @@ pub async fn solve(
         .map_err(Into::into)
 }
 
-// TODO This is ready for documenting
-/// A unique solution ID. TODO Once this is finally decided, document what this
-/// ID is used for.
+/// A unique solution ID. This ID is encoded as part of the calldata of the
+/// settlement transaction, and it's used by the protocol to match onchain
+/// transactions to corresponding solutions.
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub u32);
 
