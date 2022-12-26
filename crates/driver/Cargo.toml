@@ -1,18 +1,9 @@
 [package]
 name = "driver"
 version = "0.1.0"
-authors = ["Cow Protocol Developers <dev@cow.fi>"]
+authors = ["Cow Protocol Developers <dev@cow.fi>", "niksa.sporin@gmail.com"]
 edition = "2021"
 license = "GPL-3.0-or-later"
-
-[lib]
-name = "driver"
-path = "src/lib.rs"
-doctest = false
-
-[[bin]]
-name = "driver"
-path = "src/main.rs"
 
 [dependencies]
 axum = "0.6"

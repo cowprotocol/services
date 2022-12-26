@@ -1,10 +1,21 @@
 // TODO Remove dead_code ASAP
 #![allow(dead_code)]
+#![forbid(unsafe_code)]
 
+mod api;
+mod blockchain;
+pub mod boundary;
+pub mod cli;
+pub mod logic;
+pub mod simulator;
+pub mod solver;
+mod util;
+
+pub use {crate::solver::Solver, blockchain::Ethereum, simulator::Simulator};
 use {
+    api::Api,
     clap::Parser,
-    // TODO Rename args module to cli and don't import it, write cli::Args? I kind of like that.
-    driver::{args::Args, simulator, Ethereum, Simulator},
+    logic::eth,
     std::time::Duration,
     tracing::level_filters::LevelFilter,
 };
@@ -17,20 +28,20 @@ async fn main() {
 }
 
 async fn run() {
-    let args = Args::parse();
+    let args = cli::Args::parse();
     shared::tracing::initialize("debug", LevelFilter::ERROR);
     shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with validated arguments:\n{}", args);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
-    let serve = driver::Api {
-        solvers: vec![driver::Solver::new(driver::solver::Config {
+    let serve = Api {
+        solvers: vec![Solver::new(solver::Config {
             url: "http://localhost:1232".parse().unwrap(),
             name: "solver".to_owned().into(),
             account: solver_account(),
             address: solver_address(),
-            slippage: driver::solver::Slippage {
+            slippage: solver::Slippage {
                 // TODO These should be fetched from the configuration
                 relative: Default::default(),
                 absolute: Default::default(),
@@ -58,7 +69,7 @@ async fn run() {
     };
 }
 
-fn simulator(args: &Args, eth: &Ethereum) -> Simulator {
+fn simulator(args: &cli::Args, eth: &Ethereum) -> Simulator {
     if args.tenderly.is_specified() {
         Simulator::tenderly(simulator::tenderly::Config {
             url: args
@@ -79,7 +90,7 @@ fn simulator(args: &Args, eth: &Ethereum) -> Simulator {
     }
 }
 
-async fn ethereum(args: &Args) -> Ethereum {
+async fn ethereum(args: &cli::Args) -> Ethereum {
     Ethereum::ethrpc(&args.ethrpc)
         .await
         .expect("initialize ethereum RPC API")
@@ -88,18 +99,18 @@ async fn ethereum(args: &Args) -> Ethereum {
 // TODO For solvers, I feel like we should have a YAML or JSON file and only
 // specify a path to it, otherwise we get into nightmare land. Opinions?
 
-fn solver_account() -> driver::logic::eth::Account {
+fn solver_account() -> eth::Account {
     todo!()
 }
 
-fn solver_address() -> driver::logic::eth::Address {
+fn solver_address() -> eth::Address {
     todo!()
 }
 
 #[cfg(unix)]
 async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown.
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
+    // Intercept signals for graceful shutdown. Kubernetes sends sigterm, Ctrl-C
+    // sends sigint (ctrl-c).
     let sigterm = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .unwrap()
@@ -119,6 +130,6 @@ async fn shutdown_signal() {
 
 #[cfg(windows)]
 async fn shutdown_signal() {
-    // We don't support signal handling on Windows.
+    // No support for signal handling on Windows.
     std::future::pending().await
 }
