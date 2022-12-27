@@ -67,8 +67,8 @@ impl Tenderly {
         {
             false
         } else if self.tenderly_api_key.is_some()
-            && self.tenderly_user.is_none()
-            && self.tenderly_project.is_none()
+            && self.tenderly_user.is_some()
+            && self.tenderly_project.is_some()
         {
             true
         } else {
