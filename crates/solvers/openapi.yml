@@ -343,7 +343,7 @@ components:
         liquidity:
           $ref: "#/components/schemas/TokenAmount"
         tick:
-          $ref: "#/components/schemas/BigInt"
+          type: number
         liquidityNet:
           description: |
             A map of tick indices to their liquidity values.
