@@ -4,11 +4,11 @@
 
 mod api;
 mod blockchain;
-pub mod boundary;
-pub mod cli;
-pub mod logic;
-pub mod simulator;
-pub mod solver;
+mod boundary;
+mod cli;
+mod logic;
+mod simulator;
+mod solver;
 mod util;
 
 pub use {crate::solver::Solver, blockchain::Ethereum, simulator::Simulator};
