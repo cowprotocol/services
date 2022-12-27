@@ -1,7 +1,4 @@
-use {
-    crate::{domain::eth, util},
-    primitive_types::{H160, U256},
-};
+use crate::{domain::eth, util};
 
 pub mod signature;
 
@@ -11,7 +8,7 @@ use crate::infra::{blockchain, Ethereum};
 
 /// Address used in place of an actual buy token address in an order which buys
 /// ETH.
-const BUY_ETH_ADDRESS: eth::TokenAddress = eth::TokenAddress(H160([0xee; 20]));
+const BUY_ETH_ADDRESS: eth::TokenAddress = eth::TokenAddress(eth::H160([0xee; 20]));
 
 /// An order in the auction.
 #[derive(Debug, Clone)]
@@ -40,15 +37,15 @@ pub struct Order {
 
 /// An amount denominated in the sell token of an [`Order`].
 #[derive(Debug, Clone, Copy)]
-pub struct SellAmount(U256);
+pub struct SellAmount(eth::U256);
 
-impl From<U256> for SellAmount {
-    fn from(inner: U256) -> Self {
-        Self(inner)
+impl From<eth::U256> for SellAmount {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
     }
 }
 
-impl From<SellAmount> for U256 {
+impl From<SellAmount> for eth::U256 {
     fn from(sell_amount: SellAmount) -> Self {
         sell_amount.0
     }
@@ -66,17 +63,17 @@ impl SellAmount {
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
 #[derive(Debug, Clone, Copy)]
-pub struct TargetAmount(U256);
+pub struct TargetAmount(eth::U256);
 
-impl From<U256> for TargetAmount {
-    fn from(inner: U256) -> Self {
-        Self(inner)
+impl From<eth::U256> for TargetAmount {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
     }
 }
 
-impl From<TargetAmount> for U256 {
-    fn from(target_amount: TargetAmount) -> Self {
-        target_amount.0
+impl From<TargetAmount> for eth::U256 {
+    fn from(value: TargetAmount) -> Self {
+        value.0
     }
 }
 

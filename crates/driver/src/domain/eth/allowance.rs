@@ -1,7 +1,4 @@
-use {
-    super::{Address, TokenAddress},
-    primitive_types::U256,
-};
+use super::{Address, TokenAddress};
 
 /// An ERC20 allowance.
 ///
@@ -9,7 +6,7 @@ use {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Allowance {
     pub spender: Spender,
-    pub amount: U256,
+    pub amount: super::U256,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

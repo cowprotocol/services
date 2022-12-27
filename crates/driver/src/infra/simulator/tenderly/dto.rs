@@ -1,8 +1,7 @@
 //! Data transfer objects for interacting with the Tenderly API.
 
 use {
-    crate::util::serialize,
-    primitive_types::{H160, U256},
+    crate::{domain::eth, util::serialize},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -11,11 +10,11 @@ use {
 #[derive(Debug, Serialize)]
 pub struct Request {
     pub network_id: String,
-    pub from: H160,
-    pub to: H160,
+    pub from: eth::H160,
+    pub to: eth::H160,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
-    pub value: U256,
+    pub value: eth::U256,
     pub save: bool,
     pub save_if_fails: bool,
     pub generate_access_list: bool,

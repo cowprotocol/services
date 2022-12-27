@@ -1,6 +1,5 @@
 use {
     crate::domain::{competition, eth, liquidity},
-    primitive_types::U256,
     std::{num::ParseIntError, str::FromStr},
     thiserror::Error,
 };
@@ -27,7 +26,7 @@ pub struct Token {
     pub address: eth::TokenAddress,
     pub price: Option<competition::Price>,
     /// The balance of this token available in our settlement contract.
-    pub available_balance: U256,
+    pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
     pub trusted: bool,
 }

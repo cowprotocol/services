@@ -1,6 +1,5 @@
 use {
     itertools::Itertools,
-    primitive_types::{H160, H256, U256},
     std::collections::{HashMap, HashSet},
 };
 
@@ -10,13 +9,11 @@ mod eip712;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
+    primitive_types::{H160, H256, U256},
 };
 
 // TODO This module is getting a little hectic with all kinds of different
 // types, I wonder if there could be meaningful submodules?
-
-// TODO It might make sense to re-export H160 and U256 from here and not
-// reference primitive_types directly anywhere, it's probably the best idea
 
 /// Chain ID as defined by EIP-155.
 ///

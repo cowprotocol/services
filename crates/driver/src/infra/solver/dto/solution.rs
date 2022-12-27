@@ -5,7 +5,6 @@ use {
         Solver,
     },
     itertools::Itertools,
-    primitive_types::{H160, U256},
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
@@ -184,7 +183,7 @@ impl Solution {
 #[derive(Debug, Deserialize)]
 pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
-    prices: HashMap<H160, U256>,
+    prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
 }
@@ -203,7 +202,7 @@ struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
     order: [u8; 56],
     #[serde_as(as = "serialize::U256")]
-    executed_amount: U256,
+    executed_amount: eth::U256,
 }
 
 #[serde_as]
@@ -211,24 +210,24 @@ struct Fulfillment {
 struct JitTrade {
     order: JitOrder,
     #[serde_as(as = "serialize::U256")]
-    executed_amount: U256,
+    executed_amount: eth::U256,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct JitOrder {
-    sell_token: H160,
-    buy_token: H160,
-    receiver: H160,
+    sell_token: eth::H160,
+    buy_token: eth::H160,
+    receiver: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    sell_amount: U256,
+    sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    buy_amount: U256,
+    buy_amount: eth::U256,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; 32],
     #[serde_as(as = "serialize::U256")]
-    fee_amount: U256,
+    fee_amount: eth::U256,
     kind: Kind,
     partially_fillable: bool,
     sell_token_balance: SellTokenBalance,
@@ -258,12 +257,12 @@ enum Interaction {
 struct LiquidityInteraction {
     internalize: bool,
     id: usize,
-    input_token: H160,
-    output_token: H160,
+    input_token: eth::H160,
+    output_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    input_amount: U256,
+    input_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    output_amount: U256,
+    output_amount: eth::U256,
 }
 
 #[serde_as]
@@ -271,9 +270,9 @@ struct LiquidityInteraction {
 #[serde(rename_all = "camelCase")]
 struct CustomInteraction {
     internalize: bool,
-    target: H160,
+    target: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    value: U256,
+    value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
     allowances: Vec<Allowance>,
@@ -284,18 +283,18 @@ struct CustomInteraction {
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct Asset {
-    token: H160,
+    token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    amount: U256,
+    amount: eth::U256,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
 struct Allowance {
-    token: H160,
-    spender: H160,
+    token: eth::H160,
+    spender: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    amount: U256,
+    amount: eth::U256,
 }
 
 #[derive(Debug, Default, Deserialize)]

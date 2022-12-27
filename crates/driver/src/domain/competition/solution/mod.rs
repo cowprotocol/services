@@ -14,7 +14,6 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::ToPrimitive,
-    primitive_types::U256,
     rand::Rng,
     std::collections::HashMap,
 };
@@ -104,7 +103,7 @@ impl Solution {
         for allowance in allowances {
             let amount = normalized
                 .entry(allowance.0.spender)
-                .or_insert(U256::zero());
+                .or_insert(eth::U256::zero());
             *amount = amount.saturating_add(allowance.0.amount);
         }
         normalized

@@ -4,7 +4,6 @@ use {
         util::serialize,
     },
     itertools::Itertools,
-    primitive_types::{H160, U256},
     serde::Deserialize,
     serde_with::serde_as,
     std::{collections::HashMap, str::FromStr},
@@ -138,10 +137,10 @@ pub enum Error {
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     id: Option<String>,
-    tokens: HashMap<H160, Token>,
+    tokens: HashMap<eth::H160, Token>,
     orders: Vec<Order>,
     #[serde_as(as = "serialize::U256")]
-    effective_gas_price: U256,
+    effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
@@ -151,30 +150,30 @@ pub struct Auction {
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; 56],
-    sell_token: H160,
-    buy_token: H160,
+    sell_token: eth::H160,
+    buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    sell_amount: U256,
+    sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    buy_amount: U256,
+    buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    solver_fee: U256,
+    solver_fee: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    user_fee: U256,
+    user_fee: eth::U256,
     valid_to: u32,
     kind: Kind,
-    receiver: Option<H160>,
-    owner: H160,
+    receiver: Option<eth::H160>,
+    owner: eth::H160,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
     #[serde_as(as = "serialize::U256")]
-    executed: U256,
+    executed: eth::U256,
     interactions: Vec<Interaction>,
     sell_token_balance: SellTokenBalance,
     buy_token_balance: BuyTokenBalance,
     class: Class,
     #[serde_as(as = "Option<serialize::U256>")]
-    surplus_fee: Option<U256>,
+    surplus_fee: Option<eth::U256>,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; 32],
     reward: f64,
@@ -194,9 +193,9 @@ enum Kind {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
-    target: H160,
+    target: eth::H160,
     #[serde_as(as = "serialize::U256")]
-    value: U256,
+    value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
 }
@@ -242,8 +241,8 @@ struct Token {
     decimals: Option<u8>,
     symbol: Option<String>,
     #[serde_as(as = "Option<serialize::U256>")]
-    reference_price: Option<U256>,
+    reference_price: Option<eth::U256>,
     #[serde_as(as = "serialize::U256")]
-    available_balance: U256,
+    available_balance: eth::U256,
     trusted: bool,
 }
