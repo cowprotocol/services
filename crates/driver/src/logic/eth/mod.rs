@@ -1,4 +1,8 @@
-use primitive_types::{H160, U256};
+use {
+    itertools::Itertools,
+    primitive_types::{H160, H256, U256},
+    std::collections::{HashMap, HashSet},
+};
 
 pub mod allowance;
 mod eip712;
@@ -14,21 +18,27 @@ pub use {
 // TODO It might make sense to re-export H160 and U256 from here and not
 // reference primitive_types directly anywhere, it's probably the best idea
 
-// TODO Constructing this type should probably do some validation, or maybe this
-// should be an enum with a Display implementation
-/// Name of an Ethereum network, e.g. mainnet or testnet.
-#[derive(Debug)]
-pub struct NetworkName(pub String);
-
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Debug, Clone, Copy)]
 pub struct ChainId(pub u64);
 
+impl ChainId {
+    pub fn network_id(&self) -> &'static str {
+        todo!()
+    }
+}
+
 /// Gas amount.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Gas(pub U256);
+
+impl From<u64> for Gas {
+    fn from(inner: u64) -> Self {
+        Self(inner.into())
+    }
+}
 
 impl From<Gas> for U256 {
     fn from(gas: Gas) -> Self {
@@ -48,28 +58,67 @@ impl From<EffectiveGasPrice> for U256 {
     }
 }
 
-/// An EIP-2930 access list.
+/// An EIP-2930 access list. This type ensures that the addresses and storage
+/// keys are not repeated, and that the ordering is deterministic.
 ///
 /// https://eips.ethereum.org/EIPS/eip-2930
-#[derive(Debug, Clone)]
-pub struct AccessList(pub web3::types::AccessList);
+#[derive(Debug, Clone, Default)]
+pub struct AccessList(HashMap<Address, HashSet<StorageKey>>);
 
 impl AccessList {
-    pub fn merge(_other: Self) -> Self {
-        todo!()
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct StorageKey(pub H256);
+
+impl From<H256> for StorageKey {
+    fn from(inner: H256) -> Self {
+        Self(inner)
+    }
+}
+
+impl AccessList {
+    /// Merge two access lists together.
+    pub fn merge(mut self, other: Self) -> Self {
+        for (address, storage_keys) in other.0.into_iter() {
+            self.0.entry(address).or_default().extend(storage_keys);
+        }
+        self
+    }
+}
+
+impl From<web3::types::AccessList> for AccessList {
+    fn from(list: web3::types::AccessList) -> Self {
+        Self(
+            list.into_iter()
+                .map(|item| {
+                    (
+                        item.address.into(),
+                        item.storage_keys
+                            .into_iter()
+                            .map(|key| key.into())
+                            .collect(),
+                    )
+                })
+                .collect(),
+        )
     }
 }
 
 impl From<AccessList> for web3::types::AccessList {
     fn from(list: AccessList) -> Self {
         list.0
+            .into_iter()
+            .sorted_by_key(|&(address, _)| address)
+            .map(|(address, storage_keys)| web3::types::AccessListItem {
+                address: address.into(),
+                storage_keys: storage_keys.into_iter().sorted().map(|key| key.0).collect(),
+            })
+            .collect()
     }
-}
-
-/// The results of an Ethereum transaction simulation.
-#[derive(Debug)]
-pub struct Simulation {
-    pub gas: Gas,
 }
 
 /// An address. Can be an EOA or a smart contract address.
@@ -155,6 +204,12 @@ impl From<Ether> for U256 {
     }
 }
 
+impl From<i32> for Ether {
+    fn from(value: i32) -> Self {
+        Self(value.into())
+    }
+}
+
 /// Block number.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
@@ -176,6 +231,12 @@ pub enum Account {
     Address(Address),
 }
 
+impl From<H160> for Account {
+    fn from(address: H160) -> Self {
+        Self::Address(address.into())
+    }
+}
+
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug)]
 pub struct Interaction {
@@ -187,8 +248,18 @@ pub struct Interaction {
 /// An onchain transaction.
 #[derive(Debug)]
 pub struct Tx {
-    pub from: Address,
+    pub from: Account,
     pub to: Address,
     pub value: Ether,
     pub input: Vec<u8>,
+    pub access_list: AccessList,
+}
+
+impl Tx {
+    pub fn merge_access_list(self, access_list: AccessList) -> Self {
+        Self {
+            access_list: self.access_list.merge(access_list),
+            ..self
+        }
+    }
 }

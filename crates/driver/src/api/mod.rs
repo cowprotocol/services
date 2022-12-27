@@ -42,7 +42,7 @@ impl Api {
             let router = solve::route(router);
             let router = info::route(router);
             let router = router.with_state(State {
-                solver: Arc::new(solver),
+                solver,
                 shared: Arc::clone(&shared),
             });
             app = app.nest(&name.0, router);
@@ -58,13 +58,13 @@ impl Api {
 
 #[derive(Debug, Clone)]
 struct State {
-    solver: Arc<Solver>,
+    solver: Solver,
     shared: Arc<SharedState>,
 }
 
 impl State {
-    fn solver(&self) -> &Solver {
-        &self.solver
+    fn solver(&self) -> Solver {
+        self.solver.clone()
     }
 
     fn simulator(&self) -> &Simulator {

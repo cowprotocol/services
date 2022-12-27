@@ -2,7 +2,6 @@ use {
     crate::{
         logic::{competition, competition::order, eth},
         Ethereum,
-        Solver,
     },
     anyhow::Result,
     async_trait::async_trait,
@@ -59,8 +58,8 @@ pub struct Settlement {
 impl Settlement {
     pub async fn encode(
         eth: &Ethereum,
-        solver: &Solver,
         solution: &competition::Solution,
+        // TODO I think it's possible to remove this parameter, do this in a follow-up
         auction: &competition::Auction,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();
@@ -93,8 +92,8 @@ impl Settlement {
             Arc::new(AllowanceManager),
             Arc::new(order_converter),
             SlippageCalculator {
-                relative: solver.slippage().relative.clone(),
-                absolute: solver.slippage().absolute.map(Into::into),
+                relative: solution.solver.slippage().relative.clone(),
+                absolute: solution.solver.slippage().absolute.map(Into::into),
             }
             .context(&ExternalPrices::try_from_auction_prices(
                 native_token.address(),
@@ -110,11 +109,11 @@ impl Settlement {
         Ok(Self {
             settlement,
             contract: settlement_contract,
-            solver_account: solver.account(),
+            solver_account: solution.solver.account(),
         })
     }
 
-    pub async fn tx(self) -> eth::Tx {
+    pub fn tx(self) -> eth::Tx {
         let encoded_settlement = self
             .settlement
             .encode(InternalizationStrategy::SkipInternalizableInteraction);
@@ -136,6 +135,7 @@ impl Settlement {
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap().into(),
             input: tx.data.unwrap().0,
+            access_list: Default::default(),
         }
     }
 

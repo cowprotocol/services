@@ -38,6 +38,8 @@ pub struct Solution {
     /// Token prices for this solution.
     pub prices: HashMap<eth::TokenAddress, competition::Price>,
     pub interactions: Interactions,
+    /// The solver which generated this solution.
+    pub solver: Solver,
 }
 
 impl Solution {
@@ -66,7 +68,7 @@ impl Solution {
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end-users.
-    pub fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
+    fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
             Trade::Fulfillment(fulfillment) => match fulfillment.order.kind {
                 order::Kind::Market | order::Kind::Limit { .. } => Some(fulfillment),
@@ -109,6 +111,67 @@ impl Solution {
             .map(|(spender, amount)| eth::Allowance { spender, amount }.into())
             .sorted()
     }
+
+    /// Simulate this solution on the blockchain.
+    async fn simulate(
+        &self,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        // TODO Remove the auction parameter in a follow-up
+        auction: &competition::Auction,
+    ) -> Result<eth::Gas, Error> {
+        // Our settlement contract will fail if the receiver is a smart contract.
+        // Because of this, if the receiver is a smart contract and we try to
+        // estimate the access list, the access list estimation will also fail.
+        //
+        // This failure happens is because the Ethereum protocol sets a hard gas limit
+        // on transferring ETH into a smart contract, which some contracts exceed unless
+        // the access list is already specified.
+
+        // The solution is to do access list estimation in two steps: first, simulate
+        // moving 1 wei into every smart contract to get a partial access list.
+        let partial_access_lists = try_join_all(
+            self.user_trades()
+                .map(|trade| async { self.partial_access_list(eth, simulator, trade).await }),
+        )
+        .await?;
+        let partial_access_list = partial_access_lists
+            .into_iter()
+            .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
+
+        // Encode the settlement with the partial access list.
+        let settlement = Settlement::encode(eth, auction, self)
+            .await?
+            .tx()
+            .merge_access_list(partial_access_list);
+
+        // Second, simulate the full access list, passing the partial access
+        // list into the simulation. This way the settlement contract does not
+        // fail, and hence the full access list estimation also does not fail.
+        let settlement = simulator.access_list(settlement).await?;
+
+        // Finally, get the gas for the settlement with the full access list.
+        simulator.gas(&settlement).await.map_err(Into::into)
+    }
+
+    async fn partial_access_list(
+        &self,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        trade: &trade::Fulfillment,
+    ) -> Result<eth::AccessList, Error> {
+        if !trade.order.buys_eth() || !trade.order.pays_to_contract(eth).await? {
+            return Ok(Default::default());
+        }
+        let tx = eth::Tx {
+            from: self.solver.account(),
+            to: trade.order.receiver(),
+            value: 1.into(),
+            input: Vec::new(),
+            access_list: Default::default(),
+        };
+        Ok(simulator.access_list(tx).await?.access_list)
+    }
 }
 
 /// The solution score. This is often referred to as the "objective value".
@@ -129,16 +192,16 @@ impl From<num::BigRational> for Score {
 
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
-    solver: &Solver,
+    solver: Solver,
     eth: &Ethereum,
     simulator: &Simulator,
     auction: &competition::Auction,
 ) -> Result<Score, Error> {
     let solution = solver.solve(auction).await?;
-    let simulation = simulator.simulate(&solution).await?;
-    let settlement = Settlement::encode(solver, eth, auction, &solution).await?;
+    let gas = solution.simulate(eth, simulator, auction).await?;
+    let settlement = Settlement::encode(eth, auction, &solution).await?;
     settlement
-        .score(eth, auction, simulation.gas)
+        .score(eth, auction, gas)
         .await
         .map_err(Into::into)
 }
@@ -154,6 +217,8 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("simulation error: {0:?}")]
     Simulation(#[from] simulator::Error),
+    #[error("blockchain error: {0:?}")]
+    Blockchain(#[from] blockchain::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
 }

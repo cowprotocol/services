@@ -20,7 +20,7 @@ const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Slippage {
     pub relative: num::BigRational,
     pub absolute: Option<eth::Ether>,
@@ -35,21 +35,16 @@ impl From<String> for Name {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub url: reqwest::Url,
     pub name: Name,
-    // TODO After #831 these might not be necessary? Is that correct?
-    /// Used for building the instance name to send to the solver.
-    pub network_name: eth::NetworkName,
-    /// Used for building the instance name to send to the solver.
-    pub chain_id: eth::ChainId,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
     /// The account of this solver.
@@ -99,15 +94,6 @@ impl Solver {
         tracing::trace!(%self.config.url, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
         Ok(res.into())
-    }
-
-    fn instance_name(&self, auction_id: auction::Id) -> String {
-        let now = chrono::Utc::now();
-        format!(
-            "{now}_{}_{}_{}",
-            self.config.network_name.0, self.config.chain_id.0, auction_id.0
-        )
-        .replace([' ', '/'], "_")
     }
 }
 
