@@ -398,13 +398,13 @@ async fn to_boundary_solution(
                             token: output.token.into(),
                         })
                         .collect(),
-                    exec_plan: ExecutionPlan {
+                    exec_plan: Some(ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
                             position: index.try_into().unwrap(),
                         },
                         internal: interaction.internalize,
-                    },
+                    }),
                     cost: None,
                 }),
                 competition::solution::Interaction::Liquidity(_) => None,
