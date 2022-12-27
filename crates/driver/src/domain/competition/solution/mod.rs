@@ -198,6 +198,9 @@ pub async fn solve(
     auction: &competition::Auction,
 ) -> Result<Score, Error> {
     let solution = solver.solve(auction).await?;
+    // TODO Keep in mind that the driver needs to make sure that the solution
+    // doesn't fail simulation. Currently this is the case, but this needs to stay
+    // the same as this code changes.
     let gas = solution.simulate(eth, simulator, auction).await?;
     let settlement = Settlement::encode(eth, auction, &solution).await?;
     settlement

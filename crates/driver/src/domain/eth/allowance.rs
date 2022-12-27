@@ -60,7 +60,7 @@ impl Approval {
     /// [`U256::max_value`].
     pub fn max(self) -> Self {
         Self(Allowance {
-            amount: U256::max_value(),
+            amount: super::U256::max_value(),
             ..self.0
         })
     }
