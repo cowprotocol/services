@@ -39,7 +39,6 @@ async fn run() {
         solvers: vec![Solver::new(solver::Config {
             url: "http://localhost:1232".parse().unwrap(),
             name: "solver".to_owned().into(),
-            account: solver_account(),
             address: solver_address(),
             slippage: solver::Slippage {
                 // TODO These should be fetched from the configuration
@@ -81,9 +80,8 @@ fn simulator(args: &cli::Args, eth: &Ethereum) -> Simulator {
             user: args.tenderly.tenderly_user.clone().unwrap(),
             project: args.tenderly.tenderly_project.clone().unwrap(),
             network_id: eth.network_id().to_owned(),
-            // TODO These should also be CLI args
-            save: true,
-            save_if_fails: true,
+            save: args.tenderly.tenderly_save,
+            save_if_fails: args.tenderly.tenderly_save_if_fails,
         })
     } else {
         Simulator::ethereum(eth.to_owned())
@@ -99,10 +97,6 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
 // TODO For solvers, I feel like we should have a YAML or JSON file and only
 // specify a path to it, otherwise we get into nightmare land. Opinions?
 
-fn solver_account() -> eth::Account {
-    todo!()
-}
-
 fn solver_address() -> eth::Address {
     todo!()
 }
@@ -110,7 +104,7 @@ fn solver_address() -> eth::Address {
 #[cfg(unix)]
 async fn shutdown_signal() {
     // Intercept signals for graceful shutdown. Kubernetes sends sigterm, Ctrl-C
-    // sends sigint (ctrl-c).
+    // sends sigint.
     let sigterm = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .unwrap()

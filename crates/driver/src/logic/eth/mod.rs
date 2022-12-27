@@ -58,15 +58,21 @@ impl std::fmt::Display for NetworkId {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Gas(pub U256);
 
+impl From<U256> for Gas {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
 impl From<u64> for Gas {
-    fn from(inner: u64) -> Self {
-        Self(inner.into())
+    fn from(value: u64) -> Self {
+        Self(value.into())
     }
 }
 
 impl From<Gas> for U256 {
-    fn from(gas: Gas) -> Self {
-        gas.0
+    fn from(value: Gas) -> Self {
+        value.0
     }
 }
 
@@ -250,29 +256,6 @@ impl From<i32> for Ether {
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
 
-// TODO This type should ensure that the private key is valid during
-// construction, use the secp256k1 lib for this
-#[derive(Debug, Clone, Copy)]
-pub struct PrivateKey([u8; 32]);
-
-impl From<PrivateKey> for [u8; 32] {
-    fn from(pk: PrivateKey) -> Self {
-        pk.0
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Account {
-    PrivateKey(PrivateKey),
-    Address(Address),
-}
-
-impl From<H160> for Account {
-    fn from(address: H160) -> Self {
-        Self::Address(address.into())
-    }
-}
-
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug, Clone)]
 pub struct Interaction {
@@ -282,9 +265,9 @@ pub struct Interaction {
 }
 
 /// An onchain transaction.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tx {
-    pub from: Account,
+    pub from: Address,
     pub to: Address,
     pub value: Ether,
     pub input: Vec<u8>,

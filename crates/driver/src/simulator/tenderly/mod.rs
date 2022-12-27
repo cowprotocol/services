@@ -42,7 +42,7 @@ impl Tenderly {
         headers.insert("x-access-key", api_key);
         Self {
             endpoint: reqwest::Url::parse(&format!(
-                "{}/v1/account/{}/project/{}/",
+                "{}/v1/account/{}/project/{}/simulate",
                 config
                     .url
                     .as_ref()
@@ -62,21 +62,17 @@ impl Tenderly {
 
     pub(super) async fn simulate(
         &self,
-        tx: &eth::Tx,
+        tx: eth::Tx,
         generate_access_list: GenerateAccessList,
-    ) -> Result<super::Simulation, Error> {
-        let url = self.endpoint.join("simulate").unwrap();
+    ) -> Result<Simulation, Error> {
         let res: dto::Response = self
             .client
-            .post(url)
+            .post(self.endpoint.clone())
             .json(&dto::Request {
                 network_id: self.config.network_id.to_string(),
-                from: match tx.from {
-                    eth::Account::Address(address) => address.into(),
-                    eth::Account::PrivateKey(_) => panic!("expected an address, got a private key"),
-                },
+                from: tx.from.into(),
                 to: tx.to.into(),
-                input: tx.input.clone(),
+                input: tx.input,
                 value: tx.value.into(),
                 save: self.config.save,
                 save_if_fails: self.config.save_if_fails,
@@ -84,7 +80,7 @@ impl Tenderly {
                 access_list: if tx.access_list.is_empty() {
                     None
                 } else {
-                    Some(tx.access_list.clone().into())
+                    Some(tx.access_list.into())
                 },
             })
             .send()
@@ -94,6 +90,12 @@ impl Tenderly {
             .await?;
         Ok(res.into())
     }
+}
+
+#[derive(Debug)]
+pub struct Simulation {
+    pub gas: eth::Gas,
+    pub access_list: eth::AccessList,
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -47,8 +47,6 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
-    /// The account of this solver.
-    pub account: eth::Account,
     /// The address of this solver.
     pub address: eth::Address,
 }
@@ -77,10 +75,6 @@ impl Solver {
 
     pub fn slippage(&self) -> &Slippage {
         &self.config.slippage
-    }
-
-    pub fn account(&self) -> eth::Account {
-        self.config.account
     }
 
     pub fn address(&self) -> eth::Address {
