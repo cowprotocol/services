@@ -16,8 +16,7 @@ impl Api {
         // Add middleware.
         let app = axum::Router::new()
             .layer(
-                tower::ServiceBuilder::new()
-                    .layer(tower_http::trace::TraceLayer::new_for_http()),
+                tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
             .route("/", axum::routing::post(solve));
 
@@ -29,8 +28,6 @@ impl Api {
     }
 }
 
-async fn solve(
-    _auction: axum::extract::Json<dto::Auction>,
-) -> axum::response::Json<dto::Solution> {
+async fn solve(_auction: axum::extract::Json<dto::Auction>) -> axum::response::Json<dto::Solution> {
     axum::response::Json(dto::Solution::trivial())
 }
