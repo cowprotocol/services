@@ -5,9 +5,11 @@ pub struct Args {
     /// The address to bind the driver to.
     #[clap(long, env)]
     pub bind_addr: SocketAddr,
+
     /// The node RPC API endpoint.
     #[clap(long, env)]
     pub ethrpc: Url,
+
     #[clap(flatten)]
     pub tenderly: Tenderly,
 }
@@ -28,19 +30,24 @@ pub struct Tenderly {
     /// The Tenderly API URL.
     #[clap(long, env)]
     pub tenderly_url: Option<Url>,
+
     /// Authentication key for the Tenderly API.
     #[clap(long, env)]
     pub tenderly_api_key: Option<String>,
+
     /// The Tenderly user associated with the API key.
     #[clap(long, env)]
     pub tenderly_user: Option<String>,
+
     /// The Tenderly project associated with the API key.
     #[clap(long, env)]
     pub tenderly_project: Option<String>,
+
     /// Save the transaction on Tenderly for later inspection, e.g. via the
     /// dashboard.
     #[clap(long, env)]
     pub tenderly_save: bool,
+
     /// Save the transaction as above, even in the case of failure.
     #[clap(long, env)]
     pub tenderly_save_if_fails: bool,
