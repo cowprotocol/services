@@ -9,10 +9,10 @@ mod util;
 
 use {
     clap::Parser,
-    domain::eth,
+    config::cli,
     infra::{
         blockchain::Ethereum,
-        cli,
+        config,
         simulator::{self, Simulator},
         solver::{self, Solver},
         Api,
@@ -37,16 +37,7 @@ async fn run() {
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
     let serve = Api {
-        solvers: vec![Solver::new(solver::Config {
-            url: "http://localhost:1232".parse().unwrap(),
-            name: "solver".to_owned().into(),
-            address: solver_address(),
-            slippage: solver::Slippage {
-                // TODO These should be fetched from the configuration
-                relative: Default::default(),
-                absolute: Default::default(),
-            },
-        })],
+        solvers: solvers(&args),
         simulator: simulator(&args, &eth),
         eth,
         addr: args.bind_addr,
@@ -72,11 +63,7 @@ async fn run() {
 fn simulator(args: &cli::Args, eth: &Ethereum) -> Simulator {
     if args.tenderly.is_specified() {
         Simulator::tenderly(simulator::tenderly::Config {
-            url: args
-                .tenderly
-                .tenderly_url
-                .as_ref()
-                .map(|url| url.to_string().parse().unwrap()),
+            url: args.tenderly.tenderly_url.clone(),
             api_key: args.tenderly.tenderly_api_key.clone().unwrap(),
             user: args.tenderly.tenderly_user.clone().unwrap(),
             project: args.tenderly.tenderly_project.clone().unwrap(),
@@ -95,11 +82,11 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
         .expect("initialize ethereum RPC API")
 }
 
-// TODO For solvers, I feel like we should have a YAML or JSON file and only
-// specify a path to it, otherwise we get into nightmare land. Opinions?
-
-fn solver_address() -> eth::Address {
-    todo!()
+fn solvers(args: &cli::Args) -> Vec<Solver> {
+    config::solvers::load(&args.solvers_config)
+        .into_iter()
+        .map(Solver::new)
+        .collect()
 }
 
 #[cfg(unix)]

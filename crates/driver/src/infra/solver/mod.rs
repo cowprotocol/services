@@ -43,7 +43,8 @@ pub struct Solver {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub url: reqwest::Url,
+    /// The endpoint of the solver, including the path (commonly "/solve").
+    pub endpoint: url::Url,
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
@@ -85,14 +86,14 @@ impl Solver {
         let solver_deadline = auction.deadline.for_solver()?;
         let body =
             serde_json::to_string(&dto::Auction::from_domain(auction, solver_deadline)).unwrap();
-        tracing::trace!(%self.config.url, %body, "sending request to solver");
+        tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
         let req = self
             .client
-            .post(self.config.url.clone())
+            .post(self.config.endpoint.clone())
             .body(body)
             .timeout(solver_deadline.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        tracing::trace!(%self.config.url, ?res, "got response from solver");
+        tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
         res.into_domain(auction, self.clone()).map_err(Into::into)
     }
