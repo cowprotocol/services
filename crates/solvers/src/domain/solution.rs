@@ -1,0 +1,3 @@
+pub struct Solution {
+    // TODO: stuff goes here...
+}

@@ -5,6 +5,10 @@ use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 
+impl Auction {
+
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
