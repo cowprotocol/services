@@ -4,9 +4,9 @@ use {
     std::{net::SocketAddr, sync::Arc},
 };
 
-pub mod execute;
-pub mod info;
-pub mod solve;
+mod execute;
+mod info;
+mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 

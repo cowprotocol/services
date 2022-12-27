@@ -7,7 +7,7 @@ pub mod signature;
 
 pub use signature::Signature;
 
-use crate::{blockchain, Ethereum};
+use crate::infra::{blockchain, Ethereum};
 
 /// Address used in place of an actual buy token address in an order which buys
 /// ETH.
