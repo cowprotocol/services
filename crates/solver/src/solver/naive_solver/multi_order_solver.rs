@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result;
 use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
 use model::{
-    order::{OrderData, OrderKind},
+    order::{OrderClass, OrderData, OrderKind},
     TokenPair,
 };
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv};
@@ -306,6 +306,11 @@ fn is_valid_solution(solution: &Settlement, pair: TokenPair) -> bool {
     };
 
     for order in solution.traded_orders() {
+        let surplus_fee = match &order.metadata.class {
+            OrderClass::Limit(order) => order.surplus_fee.unwrap_or_default(),
+            _ => U256::zero(),
+        };
+
         let order = &order.data;
         let buy_token_price = solution
             .clearing_price(mapped_buy_token(order))
@@ -315,7 +320,7 @@ fn is_valid_solution(solution: &Settlement, pair: TokenPair) -> bool {
             .expect("Solution should contain clearing price for sell token");
 
         match (
-            order.sell_amount.checked_mul(sell_token_price),
+            (order.sell_amount - surplus_fee).checked_mul(sell_token_price),
             order.buy_amount.checked_mul(buy_token_price),
         ) {
             (Some(sell_volume), Some(buy_volume)) if sell_volume >= buy_volume => (),
