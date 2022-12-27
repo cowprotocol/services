@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::competition::{self, solution},
+        domain::competition::{self, solution},
         util::serialize,
     },
     serde::Serialize,

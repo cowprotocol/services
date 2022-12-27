@@ -1,6 +1,6 @@
 use crate::{
     boundary,
-    logic::{competition, eth},
+    domain::{competition, eth},
     Ethereum,
 };
 

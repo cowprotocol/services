@@ -6,7 +6,7 @@ mod api;
 mod blockchain;
 mod boundary;
 mod cli;
-mod logic;
+mod domain;
 mod simulator;
 mod solver;
 mod util;
@@ -15,7 +15,7 @@ pub use {crate::solver::Solver, blockchain::Ethereum, simulator::Simulator};
 use {
     api::Api,
     clap::Parser,
-    logic::eth,
+    domain::eth,
     std::time::Duration,
     tracing::level_filters::LevelFilter,
 };

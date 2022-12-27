@@ -1,4 +1,4 @@
-use {crate::logic::eth, thiserror::Error};
+use {crate::domain::eth, thiserror::Error};
 
 mod dto;
 

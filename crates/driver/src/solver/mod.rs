@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{
+        domain::{
             competition::{
                 auction::{self, Auction},
                 solution::Solution,

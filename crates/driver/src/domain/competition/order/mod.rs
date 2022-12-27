@@ -1,5 +1,5 @@
 use {
-    crate::{logic::eth, util},
+    crate::{domain::eth, util},
     primitive_types::{H160, U256},
 };
 

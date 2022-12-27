@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, eth},
+        domain::{competition, eth},
         util::serialize,
     },
     itertools::Itertools,

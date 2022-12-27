@@ -1,4 +1,4 @@
-use crate::logic::competition::{self, order};
+use crate::domain::competition::{self, order};
 
 /// A trade which executes an order as part of this solution.
 #[derive(Debug)]

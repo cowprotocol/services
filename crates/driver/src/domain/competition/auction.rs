@@ -1,5 +1,5 @@
 use {
-    crate::logic::{competition, eth, liquidity},
+    crate::domain::{competition, eth, liquidity},
     primitive_types::U256,
     std::{num::ParseIntError, str::FromStr},
     thiserror::Error,

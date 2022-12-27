@@ -1,4 +1,4 @@
-use crate::logic::eth;
+use crate::domain::eth;
 
 /// A source of liquidity which can be used by the solver.
 #[derive(Debug, Clone, Copy)]

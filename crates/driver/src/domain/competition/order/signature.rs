@@ -1,4 +1,4 @@
-use crate::logic::eth;
+use crate::domain::eth;
 
 /// Signature over the order data.
 #[derive(Debug, Clone)]

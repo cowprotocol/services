@@ -2,7 +2,7 @@ pub mod auction;
 pub mod order;
 pub mod solution;
 
-use {crate::logic::eth, primitive_types::U256};
+use {crate::domain::eth, primitive_types::U256};
 pub use {
     auction::Auction,
     order::Order,

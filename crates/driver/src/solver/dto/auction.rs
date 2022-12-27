@@ -1,5 +1,5 @@
 use {
-    crate::{logic::competition, util::serialize},
+    crate::{domain::competition, util::serialize},
     primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,

@@ -1,4 +1,4 @@
-use crate::{blockchain, logic::eth, Ethereum};
+use crate::{blockchain, domain::eth, Ethereum};
 
 pub mod tenderly;
 

@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, competition::order, eth},
+        domain::{competition, competition::order, eth},
         Ethereum,
     },
     anyhow::Result,

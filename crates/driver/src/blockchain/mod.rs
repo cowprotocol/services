@@ -1,5 +1,5 @@
 use {
-    crate::logic::eth,
+    crate::domain::eth,
     thiserror::Error,
     url::Url,
     web3::{Transport, Web3},

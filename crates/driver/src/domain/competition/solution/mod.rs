@@ -2,7 +2,7 @@ use {
     crate::{
         blockchain,
         boundary,
-        logic::{
+        domain::{
             competition::{self, order},
             eth,
         },

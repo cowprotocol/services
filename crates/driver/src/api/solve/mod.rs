@@ -1,4 +1,4 @@
-use crate::logic::competition::{self, solution};
+use crate::domain::competition::{self, solution};
 
 mod dto;
 

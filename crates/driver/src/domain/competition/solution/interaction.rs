@@ -1,4 +1,4 @@
-use crate::logic::{self, eth};
+use crate::domain::{self, eth};
 
 /// The interactions with smart contracts needed to execute the
 /// [`super::Solution`] on the blockchain. The three fields correspond
@@ -55,7 +55,7 @@ pub struct Custom {
 /// liquidity.
 #[derive(Debug)]
 pub struct Liquidity {
-    pub liquidity: logic::Liquidity,
+    pub liquidity: domain::Liquidity,
     pub input: eth::Asset,
     pub output: eth::Asset,
     /// Can the interaction be executed using the liquidity of our settlement
