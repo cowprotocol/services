@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, eth},
+        logic::{competition, competition::order, eth},
         Ethereum,
         Solver,
     },
@@ -60,7 +60,7 @@ impl Settlement {
     pub async fn encode(
         eth: &Ethereum,
         solver: &Solver,
-        solution: competition::Solution,
+        solution: &competition::Solution,
         auction: &competition::Auction,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();
@@ -71,17 +71,20 @@ impl Settlement {
             min_order_age: Default::default(),
         };
         let settlement_contract = eth.contracts().settlement();
-        let domain = eth.domain_separator(settlement_contract.clone().address().into());
+        let domain = order::signature::domain_separator(
+            eth.chain_id(),
+            settlement_contract.clone().address().into(),
+        );
         let limit_orders = auction
             .orders
             .iter()
             .filter_map(|order| {
-                let boundary_order = into_boundary_order(order);
+                let boundary_order = to_boundary_order(order);
                 order_converter.normalize_limit_order(boundary_order).ok()
             })
             .collect();
         let settlement = convert_settlement(
-            into_boundary_solution(solution),
+            to_boundary_solution(solution, eth).await?,
             SettlementContext {
                 orders: limit_orders,
                 // TODO: #899
@@ -96,9 +99,9 @@ impl Settlement {
             .context(&ExternalPrices::try_from_auction_prices(
                 native_token.address(),
                 auction
-                    .prices
+                    .tokens
                     .iter()
-                    .map(|(&token, &amount)| (token.into(), amount.into()))
+                    .map(|token| (token.address.into(), token.price.into()))
                     .collect(),
             )?),
             &DomainSeparator(domain.0),
@@ -145,9 +148,9 @@ impl Settlement {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
-                .prices
+                .tokens
                 .iter()
-                .map(|(&token, &amount)| (token.into(), amount.into()))
+                .map(|token| (token.address.into(), token.price.into()))
                 .collect(),
         )?;
         let surplus = self.settlement.total_surplus(&prices);
@@ -167,49 +170,46 @@ impl Settlement {
     }
 }
 
-fn into_boundary_order(order: &competition::auction::Order) -> Order {
+fn to_boundary_order(order: &competition::Order) -> Order {
     Order {
         data: OrderData {
             sell_token: order.sell.token.into(),
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount,
             buy_amount: order.buy.amount,
-            fee_amount: order.fee.user.into(),
+            fee_amount: order.fee.user.amount,
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppId(order.app_data.into()),
             kind: match order.side {
-                competition::Side::Buy => OrderKind::Buy,
-                competition::Side::Sell => OrderKind::Sell,
+                competition::order::Side::Buy => OrderKind::Buy,
+                competition::order::Side::Sell => OrderKind::Sell,
             },
-            partially_fillable: order.partial,
-
+            partially_fillable: order.is_partial(),
             sell_token_balance: match order.sell_source {
-                competition::auction::order::SellSource::Erc20 => SellTokenSource::Erc20,
-                competition::auction::order::SellSource::Internal => SellTokenSource::Internal,
-                competition::auction::order::SellSource::External => SellTokenSource::External,
+                competition::order::SellSource::Erc20 => SellTokenSource::Erc20,
+                competition::order::SellSource::Internal => SellTokenSource::Internal,
+                competition::order::SellSource::External => SellTokenSource::External,
             },
             buy_token_balance: match order.buy_destination {
-                competition::auction::order::BuyDestination::Erc20 => BuyTokenDestination::Erc20,
-                competition::auction::order::BuyDestination::Internal => {
-                    BuyTokenDestination::Internal
-                }
+                competition::order::BuyDestination::Erc20 => BuyTokenDestination::Erc20,
+                competition::order::BuyDestination::Internal => BuyTokenDestination::Internal,
             },
         },
         metadata: OrderMetadata {
-            full_fee_amount: order.fee.solver.into(),
+            full_fee_amount: order.fee.solver.amount,
             class: match order.kind {
-                competition::auction::order::Kind::Market => OrderClass::Market,
-                competition::auction::order::Kind::Liquidity => OrderClass::Liquidity,
-                competition::auction::order::Kind::Limit { surplus_fee } => {
+                competition::order::Kind::Market => OrderClass::Market,
+                competition::order::Kind::Liquidity => OrderClass::Liquidity,
+                competition::order::Kind::Limit { surplus_fee } => {
                     OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: Some(surplus_fee.into()),
+                        surplus_fee: Some(surplus_fee.amount),
                         ..Default::default()
                     })
                 }
             },
             creation_date: Default::default(),
-            owner: order.from.into(),
+            owner: order.signature.signer.into(),
             uid: OrderUid(order.uid.into()),
             available_balance: Default::default(),
             executed_buy_amount: Default::default(),
@@ -222,7 +222,7 @@ fn into_boundary_order(order: &competition::auction::Order) -> Order {
             ethflow_data: Default::default(),
             onchain_user: Default::default(),
             onchain_order_data: Default::default(),
-            is_liquidity_order: order.kind.is_liquidity(),
+            is_liquidity_order: order.is_liquidity(),
         },
         signature: Default::default(),
         interactions: Interactions {
@@ -239,117 +239,133 @@ fn into_boundary_order(order: &competition::auction::Order) -> Order {
     }
 }
 
-fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctionModel {
-    SettledBatchAuctionModel {
+async fn to_boundary_solution(
+    solution: &competition::Solution,
+    eth: &Ethereum,
+) -> Result<SettledBatchAuctionModel> {
+    Ok(SettledBatchAuctionModel {
         orders: solution
-            .orders
-            .into_iter()
-            .map(|(index, order)| {
-                (
+            .trades
+            .iter()
+            .enumerate()
+            .filter_map(|(index, trade)| match trade {
+                competition::solution::Trade::Fulfillment(fulfillment) => Some((
                     index,
                     ExecutedOrderModel {
-                        exec_sell_amount: order.sell,
-                        exec_buy_amount: order.buy,
+                        exec_sell_amount: match fulfillment.order.side {
+                            order::Side::Sell => fulfillment.executed.amount,
+                            order::Side::Buy => Default::default(),
+                        },
+                        exec_buy_amount: match fulfillment.order.side {
+                            order::Side::Buy => fulfillment.executed.amount,
+                            order::Side::Sell => Default::default(),
+                        },
                         cost: None,
-                        fee: order.fee.map(|fee| TokenAmount {
-                            amount: fee.amount,
-                            token: fee.token.into(),
+                        fee: Some(TokenAmount {
+                            amount: fulfillment.order.fee.solver.amount,
+                            token: fulfillment.order.fee.solver.token.into(),
                         }),
-                        exec_plan: order.plan.map(|plan| ExecutionPlan {
+                        exec_plan: Some(ExecutionPlan {
                             coordinates: ExecutionPlanCoordinatesModel {
-                                sequence: plan.sequence,
-                                position: plan.position,
+                                sequence: 0,
+                                position: index.try_into().unwrap(),
                             },
-                            internal: plan.internal,
+                            internal: false,
                         }),
                     },
-                )
+                )),
+                competition::solution::Trade::Jit(_) => None,
             })
             .collect(),
         foreign_liquidity_orders: solution
-            .jit_orders
-            .into_iter()
-            .map(|jit| ExecutedLiquidityOrderModel {
-                order: NativeLiquidityOrder {
-                    from: jit.from.into(),
-                    data: OrderData {
-                        sell_token: jit.sell.token.into(),
-                        buy_token: jit.buy.token.into(),
-                        receiver: jit.receiver.map(Into::into),
-                        sell_amount: jit.sell.amount,
-                        buy_amount: jit.buy.amount,
-                        valid_to: jit.valid_to.into(),
-                        app_data: AppId(jit.app_data.into()),
-                        fee_amount: jit.fee.into(),
-                        kind: match jit.side {
-                            competition::Side::Buy => OrderKind::Buy,
-                            competition::Side::Sell => OrderKind::Sell,
+            .trades
+            .iter()
+            .filter_map(|trade| match trade {
+                competition::solution::Trade::Jit(jit) => Some(ExecutedLiquidityOrderModel {
+                    order: NativeLiquidityOrder {
+                        from: jit.order.from.into(),
+                        data: OrderData {
+                            sell_token: jit.order.sell.token.into(),
+                            buy_token: jit.order.buy.token.into(),
+                            receiver: jit.order.receiver.map(Into::into),
+                            sell_amount: jit.order.sell.amount,
+                            buy_amount: jit.order.buy.amount,
+                            valid_to: jit.order.valid_to.into(),
+                            app_data: AppId(jit.order.app_data.into()),
+                            fee_amount: jit.order.fee.amount,
+                            kind: match jit.order.side {
+                                competition::order::Side::Buy => OrderKind::Buy,
+                                competition::order::Side::Sell => OrderKind::Sell,
+                            },
+                            partially_fillable: jit.order.partially_fillable,
+                            sell_token_balance: match jit.order.sell_source {
+                                competition::order::SellSource::Erc20 => SellTokenSource::Erc20,
+                                competition::order::SellSource::Internal => {
+                                    SellTokenSource::Internal
+                                }
+                                competition::order::SellSource::External => {
+                                    SellTokenSource::External
+                                }
+                            },
+                            buy_token_balance: match jit.order.buy_destination {
+                                competition::order::BuyDestination::Erc20 => {
+                                    BuyTokenDestination::Erc20
+                                }
+                                competition::order::BuyDestination::Internal => {
+                                    BuyTokenDestination::Internal
+                                }
+                            },
                         },
-                        partially_fillable: jit.partially_fillable,
-                        sell_token_balance: match jit.sell_source {
-                            competition::solution::SellSource::Erc20 => SellTokenSource::Erc20,
-                            competition::solution::SellSource::Internal => {
-                                SellTokenSource::Internal
-                            }
-                            competition::solution::SellSource::External => {
-                                SellTokenSource::External
-                            }
-                        },
-                        buy_token_balance: match jit.buy_destination {
-                            competition::solution::BuyDestination::Erc20 => {
-                                BuyTokenDestination::Erc20
-                            }
-                            competition::solution::BuyDestination::Internal => {
-                                BuyTokenDestination::Internal
-                            }
-                        },
+                        signature: Default::default(),
                     },
-                    signature: Default::default(),
-                },
-                exec_sell_amount: jit.executed_sell_amount,
-                exec_buy_amount: jit.executed_buy_amount,
+                    exec_sell_amount: match jit.order.side {
+                        order::Side::Sell => jit.executed.amount,
+                        order::Side::Buy => Default::default(),
+                    },
+                    exec_buy_amount: match jit.order.side {
+                        order::Side::Buy => jit.executed.amount,
+                        order::Side::Sell => Default::default(),
+                    },
+                }),
+                competition::solution::Trade::Fulfillment(_) => None,
             })
             .collect(),
         amms: solution
-            .amms
-            .into_iter()
-            .map(|(address, amms)| {
-                (
-                    address.into(),
+            .interactions
+            .all()
+            .enumerate()
+            .filter_map(|(index, interaction)| match interaction {
+                competition::solution::Interaction::Liquidity(interaction) => Some((
+                    interaction.liquidity.address.into(),
                     UpdatedAmmModel {
-                        execution: amms
-                            .into_iter()
-                            .map(|amm| ExecutedAmmModel {
-                                sell_token: amm.sell.token.into(),
-                                buy_token: amm.buy.token.into(),
-                                exec_sell_amount: amm.sell.amount,
-                                exec_buy_amount: amm.buy.amount,
-                                exec_plan: ExecutionPlan {
-                                    coordinates: ExecutionPlanCoordinatesModel {
-                                        sequence: amm.sequence,
-                                        position: amm.position,
-                                    },
-                                    internal: amm.internal,
+                        execution: vec![ExecutedAmmModel {
+                            sell_token: interaction.output.token.into(),
+                            buy_token: interaction.input.token.into(),
+                            exec_sell_amount: interaction.output.amount,
+                            exec_buy_amount: interaction.input.amount,
+                            exec_plan: ExecutionPlan {
+                                coordinates: ExecutionPlanCoordinatesModel {
+                                    sequence: 0,
+                                    position: index.try_into().unwrap(),
                                 },
-                            })
-                            .collect(),
-                        // TODO @nlordell is this right...?
-                        // We're getting rid of this and it's only needed for price estimation, so
-                        // shouldn't be used here?
+                                internal: interaction.internalize,
+                            },
+                        }],
                         cost: None,
                     },
-                )
+                )),
+                competition::solution::Interaction::Custom(_) => None,
             })
             .collect(),
-        // TODO I believe we're getting rid of this as well
         ref_token: None,
         prices: solution
             .prices
-            .into_iter()
-            .map(|(token, amount)| (token.into(), amount.into()))
+            .iter()
+            .map(|(&token, &amount)| (token.into(), amount.into()))
             .collect(),
         approvals: solution
-            .approvals
+            .approvals(eth)
+            .await?
             .into_iter()
             .map(|approval| ApprovalModel {
                 token: approval.0.spender.token.into(),
@@ -359,37 +375,44 @@ fn into_boundary_solution(solution: competition::Solution) -> SettledBatchAuctio
             .collect(),
         interaction_data: solution
             .interactions
-            .into_iter()
-            .map(|interaction| InteractionData {
-                target: interaction.inner.target.into(),
-                value: interaction.inner.value.into(),
-                call_data: interaction.inner.call_data,
-                inputs: interaction
-                    .inputs
-                    .into_iter()
-                    .map(|input| TokenAmount {
-                        amount: input.amount,
-                        token: input.token.into(),
-                    })
-                    .collect(),
-                outputs: interaction
-                    .outputs
-                    .into_iter()
-                    .map(|output| TokenAmount {
-                        amount: output.amount,
-                        token: output.token.into(),
-                    })
-                    .collect(),
-                // TODO I have no clue why there's an exec plan here? This is a single interaction,
-                // what sort of ordering is needed? I don't know.
-                exec_plan: Default::default(),
-                cost: None,
+            .all()
+            .enumerate()
+            .filter_map(|(index, interaction)| match interaction {
+                competition::solution::Interaction::Custom(interaction) => Some(InteractionData {
+                    target: interaction.target.into(),
+                    value: interaction.value.into(),
+                    call_data: interaction.call_data.clone(),
+                    inputs: interaction
+                        .inputs
+                        .iter()
+                        .map(|input| TokenAmount {
+                            amount: input.amount,
+                            token: input.token.into(),
+                        })
+                        .collect(),
+                    outputs: interaction
+                        .outputs
+                        .iter()
+                        .map(|output| TokenAmount {
+                            amount: output.amount,
+                            token: output.token.into(),
+                        })
+                        .collect(),
+                    exec_plan: Some(ExecutionPlan {
+                        coordinates: ExecutionPlanCoordinatesModel {
+                            sequence: 0,
+                            position: index.try_into().unwrap(),
+                        },
+                        internal: interaction.internalize,
+                    }),
+                    cost: None,
+                }),
+                competition::solution::Interaction::Liquidity(_) => None,
             })
             .collect(),
-        // TODO I think this is also not needed, but please somebody double-check this
         metadata: None,
         submitter: Default::default(),
-    }
+    })
 }
 
 struct AllowanceManager;

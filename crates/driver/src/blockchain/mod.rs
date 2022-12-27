@@ -21,12 +21,12 @@ impl Ethereum {
         todo!()
     }
 
-    pub fn domain_separator(&self, verifying_contract: eth::Contract) -> eth::DomainSeparator {
-        eth::DomainSeparator::new(self.chain_id, verifying_contract)
-    }
-
     pub fn contracts(&self) -> Contracts<'_> {
         Contracts(self)
+    }
+
+    pub fn chain_id(&self) -> eth::ChainId {
+        self.chain_id
     }
 
     /// Fetch the ERC20 allowance for the spender. See the allowance method in
