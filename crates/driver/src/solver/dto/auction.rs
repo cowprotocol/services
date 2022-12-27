@@ -7,7 +7,7 @@ use {
 };
 
 impl Auction {
-    pub fn new(
+    pub fn from_domain(
         auction: &competition::Auction,
         deadline: competition::auction::SolverDeadline,
     ) -> Self {

@@ -11,7 +11,7 @@ async fn solve(
     auction: axum::extract::Json<dto::Auction>,
 ) -> axum::response::Json<dto::Solution> {
     // TODO Report errors instead of unwrapping
-    let auction = auction.0.try_into().unwrap();
+    let auction = auction.0.into_domain().unwrap();
     let score = competition::solve(
         state.solver(),
         state.ethereum(),
@@ -20,5 +20,5 @@ async fn solve(
     )
     .await
     .unwrap();
-    axum::response::Json(dto::Solution::new(solution::Id::random(), score))
+    axum::response::Json(dto::Solution::from_domain(solution::Id::random(), score))
 }

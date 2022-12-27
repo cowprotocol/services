@@ -12,7 +12,7 @@ use {
 };
 
 impl Solution {
-    pub fn into(
+    pub fn into_domain(
         self,
         auction: &competition::Auction,
         solver: Solver,

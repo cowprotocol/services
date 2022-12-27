@@ -10,10 +10,8 @@ use {
     std::{collections::HashMap, str::FromStr},
 };
 
-impl TryInto<competition::Auction> for Auction {
-    type Error = Error;
-
-    fn try_into(self) -> Result<competition::Auction, Self::Error> {
+impl Auction {
+    pub fn into_domain(self) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
             id: match self.id {
                 Some(id) => Some(FromStr::from_str(&id).map_err(|_| Error::InvalidAuctionId)?),
