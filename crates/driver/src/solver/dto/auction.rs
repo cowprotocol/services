@@ -140,7 +140,8 @@ struct ConstantProductPool {
     #[serde_as(as = "serialize::U256")]
     gas_estimate: U256,
     tokens: HashMap<H160, ConstantProductReserve>,
-    fee: f64,
+    #[serde_as(as = "serialize::String")]
+    fee: num::BigRational,
 }
 
 #[serde_as]
@@ -206,8 +207,7 @@ struct ConcentratedLiquidityPool {
     sqrt_price: U256,
     #[serde_as(as = "serialize::U256")]
     liquidity: U256,
-    #[serde_as(as = "serialize::U256")]
-    tick: U256,
+    tick: i32,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     liquidity_net: HashMap<usize, U256>,
     fee: f64,
