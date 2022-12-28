@@ -140,8 +140,8 @@ struct ConstantProductPool {
     #[serde_as(as = "serialize::U256")]
     gas_estimate: U256,
     tokens: HashMap<H160, ConstantProductReserve>,
-    #[serde_as(as = "serialize::String")]
-    fee: num::BigRational,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
@@ -160,7 +160,8 @@ struct WeightedProductPool {
     #[serde_as(as = "serialize::U256")]
     gas_estimate: U256,
     tokens: HashMap<H160, WeightedProductReserve>,
-    fee: f64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
@@ -168,7 +169,8 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
-    weight: f64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    weight: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
@@ -181,7 +183,8 @@ struct StablePool {
     gas_estimate: U256,
     tokens: HashMap<H160, StableReserve>,
     amplification_parameter: f64,
-    fee: f64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
@@ -210,7 +213,8 @@ struct ConcentratedLiquidityPool {
     tick: i32,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     liquidity_net: HashMap<usize, U256>,
-    fee: f64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]

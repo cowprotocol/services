@@ -905,6 +905,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "bigdecimal",
  "chrono",
  "clap 4.0.8",
  "contracts",
