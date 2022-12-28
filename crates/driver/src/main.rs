@@ -95,8 +95,6 @@ async fn run() {
             url: "http://localhost:1232".parse().unwrap(),
             name: "solver".to_owned().into(),
             account: solver_account(),
-            network_name: driver::logic::eth::NetworkName("testnet".to_owned()),
-            chain_id: driver::logic::eth::ChainId(0),
             slippage: driver::solver::Slippage {
                 // TODO These should be fetched from the configuration
                 relative: Default::default(),

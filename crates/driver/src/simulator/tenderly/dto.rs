@@ -1,42 +1,41 @@
+//! Data transfer objects for interacting with the Tenderly API.
+
 use {
-    crate::util::serialize,
-    primitive_types::{H160, H256, U256},
+    crate::{simulator, util::serialize},
+    primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
 
-// TODO Mapping into eth::Simulation
-// TODO Mapping from eth::Tx
-
 #[serde_as]
 #[derive(Debug, Serialize)]
-struct Request {
-    network_id: String,
-    from: H160,
-    to: H160,
+pub struct Request {
+    pub network_id: &'static str,
+    pub from: H160,
+    pub to: H160,
     #[serde_as(as = "serialize::Hex")]
-    input: Vec<u8>,
+    pub input: Vec<u8>,
+    pub value: U256,
+    pub save: bool,
+    pub save_if_fails: bool,
+    pub generate_access_list: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    gas: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    value: Option<U256>,
-    save: bool,
-    save_if_fails: bool,
-    generate_access_list: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    access_list: Option<Vec<AccessListItem>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AccessListItem {
-    address: H160,
-    storage_keys: Vec<H256>,
+    pub access_list: Option<web3::types::AccessList>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Response {
+pub struct Response {
     transaction: Transaction,
-    generated_access_list: Option<Vec<AccessListItem>>,
+    generated_access_list: Option<web3::types::AccessList>,
+}
+
+impl From<Response> for simulator::Simulation {
+    fn from(res: Response) -> Self {
+        Self {
+            gas: res.transaction.gas_used.into(),
+            access_list: res.generated_access_list.unwrap_or_default().into(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

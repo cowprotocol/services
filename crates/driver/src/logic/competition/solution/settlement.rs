@@ -2,7 +2,6 @@ use crate::{
     boundary,
     logic::{competition, eth},
     Ethereum,
-    Solver,
 };
 
 /// A transaction calling into our settlement contract on the blockchain.
@@ -18,12 +17,11 @@ pub struct Settlement(boundary::Settlement);
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
     pub async fn encode(
-        solver: &Solver,
         eth: &Ethereum,
         auction: &competition::Auction,
-        solution: competition::Solution,
+        solution: &competition::Solution,
     ) -> anyhow::Result<Self> {
-        boundary::Settlement::encode(eth, solver, solution, auction)
+        boundary::Settlement::encode(eth, solution, auction)
             .await
             .map(Self)
     }
@@ -38,5 +36,10 @@ impl Settlement {
         gas: eth::Gas,
     ) -> Result<super::Score, boundary::Error> {
         self.0.score(eth, auction, gas).await
+    }
+
+    /// The onchain transaction representing this settlement.
+    pub fn tx(self) -> eth::Tx {
+        self.0.tx()
     }
 }
