@@ -20,3 +20,9 @@ impl From<Price> for U256 {
         price.0.into()
     }
 }
+
+impl From<U256> for Price {
+    fn from(value: U256) -> Self {
+        Self(value.into())
+    }
+}

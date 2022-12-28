@@ -37,7 +37,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     /// Token prices for this solution.
     pub prices: HashMap<eth::TokenAddress, competition::Price>,
-    pub interactions: Interactions,
+    pub interactions: Vec<Interaction>,
     /// The solver which generated this solution.
     pub solver: Solver,
 }
@@ -85,7 +85,7 @@ impl Solution {
         let mut normalized = HashMap::new();
         let allowances = self
             .interactions
-            .all()
+            .iter()
             .flat_map(|interaction| match interaction {
                 Interaction::Custom(interaction) => interaction.allowances.clone().into_iter(),
                 Interaction::Liquidity(interaction) => vec![eth::Allowance {
