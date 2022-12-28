@@ -211,8 +211,8 @@ struct ConcentratedLiquidityPool {
     #[serde_as(as = "serialize::U256")]
     liquidity: U256,
     tick: i32,
-    #[serde_as(as = "HashMap<_, serialize::U256>")]
-    liquidity_net: HashMap<usize, U256>,
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serialize::U256>")]
+    liquidity_net: HashMap<i32, U256>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }
