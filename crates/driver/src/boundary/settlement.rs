@@ -91,7 +91,7 @@ impl Settlement {
             Arc::new(AllowanceManager),
             Arc::new(order_converter),
             SlippageCalculator {
-                relative: solution.solver.slippage().relative.clone(),
+                relative: to_big_decimal(solution.solver.slippage().relative.clone()),
                 absolute: solution.solver.slippage().absolute.map(Into::into),
             }
             .context(&ExternalPrices::try_from_auction_prices(
@@ -407,6 +407,15 @@ fn to_token_amount(asset: &eth::Asset) -> TokenAmount {
         amount: asset.amount,
         token: asset.token.into(),
     }
+}
+
+fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
+    let (x, exp) = value.into_bigint_and_exponent();
+    let numerator_bytes = x.to_bytes_le();
+    let base = num::bigint::BigInt::from_bytes_le(numerator_bytes.0, &numerator_bytes.1);
+    let ten = num::BigRational::new(10.into(), 1.into());
+    let numerator = num::BigRational::new(base, 1.into());
+    numerator / ten.pow(exp.try_into().expect("should not overflow"))
 }
 
 struct AllowanceManager;

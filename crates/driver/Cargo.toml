@@ -28,7 +28,7 @@ ethabi = "18.0"
 bigdecimal = "0.3"
 rand = "0.8"
 web3 = "0.18"
-serde_yaml = "0.9"
+toml = "0.5"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.

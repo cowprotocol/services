@@ -9,7 +9,7 @@ use {
 /// operation, this is done at startup, so it doesn't need to be async.
 pub fn load(path: &Path) -> Vec<solver::Config> {
     let data = fs::read(path).unwrap_or_else(|_| panic!("I/O error while reading {path:?}"));
-    let config: Config = serde_yaml::from_slice(&data)
+    let config: Config = toml::de::from_slice(&data)
         .unwrap_or_else(|_| panic!("YAML syntax error while reading {path:?}"));
     config
         .solvers
@@ -35,12 +35,12 @@ struct Config {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 struct SolverConfig {
     endpoint: url::Url,
     name: String,
-    #[serde_as(as = "serialize::String")]
-    relative_slippage: num::BigRational,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    relative_slippage: bigdecimal::BigDecimal,
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
     address: eth::H160,

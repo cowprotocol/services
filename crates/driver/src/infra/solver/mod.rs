@@ -22,7 +22,7 @@ pub struct Name(pub String);
 
 #[derive(Debug, Clone)]
 pub struct Slippage {
-    pub relative: num::BigRational,
+    pub relative: bigdecimal::BigDecimal,
     pub absolute: Option<eth::Ether>,
 }
 
