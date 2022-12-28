@@ -40,7 +40,15 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
         // Turn the streams from all inner price estimators into a single stream.
         let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
-            |(i, (_, estimator))| estimator.estimates(queries).map(move |result| (i, result)),
+            |(i, (name, estimator))| {
+                queries.iter().for_each(|query| {
+                    metrics()
+                        .queries
+                        .with_label_values(&[name, query.kind.label()])
+                        .inc()
+                });
+                estimator.estimates(queries).map(move |result| (i, result))
+            },
         ));
         // Stores the estimates for each query and estimator. When we have collected enough results
         // to produce a result of our own the corresponding element is set to None.
@@ -172,12 +180,16 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "competition_price_estimator")]
 struct Metrics {
-    /// Number of wins for a particular price estimator and order kind.
+    /// Number of queries for a particular price estimator and order kind.
     ///
     /// Note that the order kind is included in the metric. This is because some
     /// estimators only support sell orders (e.g. 1Inch) which would skew the
     /// total metrics. Additionally, this allows us to see how different
     /// estimators behave for buy vs sell orders.
+    #[metric(labels("estimator_type", "order_kind"))]
+    queries: prometheus::IntCounterVec,
+
+    /// Number of wins for a particular price estimator and order kind.
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
 }
