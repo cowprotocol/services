@@ -1,6 +1,7 @@
 use {
     crate::logic::{competition, eth, liquidity},
     primitive_types::U256,
+    std::{num::ParseIntError, str::FromStr},
     thiserror::Error,
 };
 
@@ -92,6 +93,20 @@ impl From<u64> for Id {
     }
 }
 
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for Id {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        FromStr::from_str(s).map(Self)
+    }
+}
+
 #[derive(Debug, Error)]
-#[error("the deadline has been exceeded")]
+#[error("the solution deadline has been exceeded")]
 pub struct DeadlineExceeded;

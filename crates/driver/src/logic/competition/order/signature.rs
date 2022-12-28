@@ -5,6 +5,7 @@ use crate::logic::eth;
 pub struct Signature {
     pub scheme: Scheme,
     pub data: Vec<u8>,
+    /// The address used to sign and place this order.
     pub signer: eth::Address,
 }
 

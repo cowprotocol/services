@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, competition::eth},
+        logic::{competition, eth},
         util::serialize,
         Solver,
     },

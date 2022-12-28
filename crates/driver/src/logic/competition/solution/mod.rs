@@ -15,6 +15,7 @@ use {
     itertools::Itertools,
     num::ToPrimitive,
     primitive_types::U256,
+    rand::Rng,
     std::collections::HashMap,
 };
 
@@ -206,10 +207,21 @@ pub async fn solve(
         .map_err(Into::into)
 }
 
-/// A unique solution ID. TODO Once this is finally decided, document what this
-/// ID is used for.
+/// A unique solution ID. This ID is encoded as part of the calldata of the
+/// settlement transaction, and it's used by the protocol to match onchain
+/// transactions to corresponding solutions.
 #[derive(Debug, Clone, Copy)]
-pub struct Id(pub u64);
+pub struct Id(pub u32);
+
+impl Id {
+    pub fn random() -> Self {
+        Self(rand::thread_rng().gen())
+    }
+
+    pub fn to_bytes(self) -> [u8; 4] {
+        self.0.to_be_bytes()
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

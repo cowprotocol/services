@@ -52,9 +52,15 @@ impl From<Gas> for U256 {
 #[derive(Debug, Clone, Copy)]
 pub struct EffectiveGasPrice(pub Ether);
 
+impl From<U256> for EffectiveGasPrice {
+    fn from(value: U256) -> Self {
+        Self(value.into())
+    }
+}
+
 impl From<EffectiveGasPrice> for U256 {
-    fn from(price: EffectiveGasPrice) -> Self {
-        price.0 .0
+    fn from(value: EffectiveGasPrice) -> Self {
+        value.0.into()
     }
 }
 
