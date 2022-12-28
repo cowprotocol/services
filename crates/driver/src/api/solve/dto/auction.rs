@@ -169,7 +169,7 @@ struct Order {
     receiver: Option<H160>,
     owner: H160,
     partially_fillable: bool,
-    // TODO Always zero if the order is not partially fillable, is that OK?
+    /// Always zero if the order is not partially fillable.
     #[serde_as(as = "serialize::U256")]
     executed: U256,
     interactions: Vec<Interaction>,
