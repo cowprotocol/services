@@ -2,13 +2,16 @@ use {
     crate::{domain::eth, infra::solver, util::serialize},
     serde::Deserialize,
     serde_with::serde_as,
-    std::{fs, path::Path},
+    std::path::Path,
+    tokio::fs,
 };
 
-/// Load the solver configuration from a YAML file. Despite being an I/O
-/// operation, this is done at startup, so it doesn't need to be async.
-pub fn load(path: &Path) -> Vec<solver::Config> {
-    let data = fs::read(path).unwrap_or_else(|_| panic!("I/O error while reading {path:?}"));
+/// Load the solver configuration from a YAML file. Panics if the config is
+/// invalid or on I/O errors.
+pub async fn load(path: &Path) -> Vec<solver::Config> {
+    let data = fs::read(path)
+        .await
+        .unwrap_or_else(|_| panic!("I/O error while reading {path:?}"));
     let config: Config = toml::de::from_slice(&data)
         .unwrap_or_else(|_| panic!("YAML syntax error while reading {path:?}"));
     config

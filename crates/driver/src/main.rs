@@ -37,7 +37,7 @@ async fn run() {
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
     let serve = Api {
-        solvers: solvers(&args),
+        solvers: solvers(&args).await,
         simulator: simulator(&args, &eth),
         eth,
         addr: args.bind_addr,
@@ -82,8 +82,9 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
         .expect("initialize ethereum RPC API")
 }
 
-fn solvers(args: &cli::Args) -> Vec<Solver> {
+async fn solvers(args: &cli::Args) -> Vec<Solver> {
     config::solvers::load(&args.solvers_config)
+        .await
         .into_iter()
         .map(Solver::new)
         .collect()
