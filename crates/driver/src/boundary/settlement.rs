@@ -52,7 +52,7 @@ use {
 pub struct Settlement {
     settlement: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
-    solver_account: eth::Account,
+    solver: eth::Address,
 }
 
 impl Settlement {
@@ -113,7 +113,7 @@ impl Settlement {
         Ok(Self {
             settlement,
             contract: settlement_contract,
-            solver_account: solution.solver.account(),
+            solver: solution.solver.address(),
         })
     }
 
@@ -124,18 +124,11 @@ impl Settlement {
         let builder = settle_method_builder(
             &self.contract,
             encoded_settlement,
-            match self.solver_account {
-                eth::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_raw(private_key.into())
-                        .expect("private key was already validated"),
-                    None,
-                ),
-                eth::Account::Address(address) => ethcontract::Account::Local(address.into(), None),
-            },
+            ethcontract::Account::Local(self.solver.into(), None),
         );
         let tx = builder.into_inner();
         eth::Tx {
-            from: tx.from.unwrap().address().into(),
+            from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap().into(),
             input: tx.data.unwrap().0,

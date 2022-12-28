@@ -1,28 +1,41 @@
 use {
     crate::logic::eth,
-    ethcontract::{transport::DynTransport, Web3},
     thiserror::Error,
     url::Url,
+    web3::{Transport, Web3},
 };
 
 pub mod contracts;
 
 /// The Ethereum blockchain.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Ethereum {
-    web3: Web3<DynTransport>,
+    web3: Web3<web3::transports::Http>,
     chain_id: eth::ChainId,
+    network_id: eth::NetworkId,
 }
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
-    pub fn eth_rpc(_url: Url) -> Self {
-        todo!()
+    pub async fn ethrpc(url: &Url) -> Result<Self, web3::Error> {
+        // TODO Probably move shared::ethrpc into its own crate and reuse it here
+        let web3 = Web3::new(web3::transports::Http::new(url.as_str())?);
+        let chain_id = web3.eth().chain_id().await?.into();
+        let network_id = web3.net().version().await?.into();
+        Ok(Self {
+            web3,
+            chain_id,
+            network_id,
+        })
     }
 
     pub fn chain_id(&self) -> eth::ChainId {
         self.chain_id
+    }
+
+    pub fn network_id(&self) -> &eth::NetworkId {
+        &self.network_id
     }
 
     /// Onchain smart contract bindings.
@@ -51,6 +64,52 @@ impl Ethereum {
         let code = self.web3.eth().code(address.into(), None).await?;
         Ok(!code.0.is_empty())
     }
+
+    pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
+        // Seems like the web3 library still doesn't have a convenience method for this,
+        // so the call request has to be built manually.
+        let tx = web3::types::TransactionRequest {
+            from: tx.from.into(),
+            to: Some(tx.to.into()),
+            value: Some(tx.value.into()),
+            data: Some(tx.input.into()),
+            access_list: Some(tx.access_list.into()),
+            ..Default::default()
+        };
+        let json = self
+            .web3
+            .transport()
+            .execute(
+                "eth_createAccessList",
+                vec![serde_json::to_value(&tx).unwrap()],
+            )
+            .await?;
+        if let Some(err) = json.get("error").unwrap().as_str() {
+            return Err(Error::Response(err.to_owned()));
+        }
+        let access_list: web3::types::AccessList =
+            serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
+        Ok(access_list.into())
+    }
+
+    pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+        self.web3
+            .eth()
+            .estimate_gas(
+                web3::types::CallRequest {
+                    from: Some(tx.from.into()),
+                    to: Some(tx.to.into()),
+                    value: Some(tx.value.into()),
+                    data: Some(tx.input.into()),
+                    access_list: Some(tx.access_list.into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
+    }
 }
 
 pub struct Contracts<'a>(&'a Ethereum);
@@ -60,7 +119,7 @@ impl Contracts<'_> {
     pub fn settlement(&self) -> contracts::GPv2Settlement {
         let address = contracts::GPv2Settlement::raw_contract()
             .networks
-            .get(self.0.chain_id().network_id())
+            .get(self.0.network_id().as_str())
             .unwrap()
             .address;
         contracts::GPv2Settlement::at(&self.0.web3, address)
@@ -70,7 +129,7 @@ impl Contracts<'_> {
     pub fn weth(&self) -> contracts::WETH9 {
         let address = contracts::WETH9::raw_contract()
             .networks
-            .get(self.0.chain_id().network_id())
+            .get(self.0.network_id().as_str())
             .unwrap()
             .address;
         contracts::WETH9::at(&self.0.web3, address)
@@ -83,4 +142,6 @@ pub enum Error {
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("web3 error returned in response: {0:?}")]
+    Response(String),
 }

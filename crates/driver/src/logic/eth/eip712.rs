@@ -23,7 +23,7 @@ impl DomainSeparator {
             ethabi::Token::Uint(web3::signing::keccak256(fields.type_hash).into()),
             ethabi::Token::Uint(web3::signing::keccak256(fields.name).into()),
             ethabi::Token::Uint(web3::signing::keccak256(fields.version).into()),
-            ethabi::Token::Uint(fields.chain_id.0.into()),
+            ethabi::Token::Uint(ethereum_types::U256(fields.chain_id.0 .0)),
             ethabi::Token::Address(fields.verifying_contract.into()),
         ]);
         Self(web3::signing::keccak256(abi_string.as_slice()))

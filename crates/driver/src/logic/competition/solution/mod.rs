@@ -152,7 +152,7 @@ impl Solution {
         let settlement = simulator.access_list(settlement).await?;
 
         // Finally, get the gas for the settlement with the full access list.
-        simulator.gas(&settlement).await.map_err(Into::into)
+        simulator.gas(settlement).await.map_err(Into::into)
     }
 
     async fn partial_access_list(
@@ -165,7 +165,7 @@ impl Solution {
             return Ok(Default::default());
         }
         let tx = eth::Tx {
-            from: self.solver.account(),
+            from: self.solver.address(),
             to: trade.order.receiver(),
             value: 1.into(),
             input: Vec::new(),

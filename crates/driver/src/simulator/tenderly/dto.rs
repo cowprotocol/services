@@ -1,7 +1,7 @@
 //! Data transfer objects for interacting with the Tenderly API.
 
 use {
-    crate::{simulator, util::serialize},
+    crate::util::serialize,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -10,7 +10,7 @@ use {
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct Request {
-    pub network_id: &'static str,
+    pub network_id: String,
     pub from: H160,
     pub to: H160,
     #[serde_as(as = "serialize::Hex")]
@@ -29,7 +29,7 @@ pub struct Response {
     generated_access_list: Option<web3::types::AccessList>,
 }
 
-impl From<Response> for simulator::Simulation {
+impl From<Response> for super::Simulation {
     fn from(res: Response) -> Self {
         Self {
             gas: res.transaction.gas_used.into(),
