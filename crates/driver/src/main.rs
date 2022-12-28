@@ -2,20 +2,21 @@
 #![allow(dead_code)]
 #![forbid(unsafe_code)]
 
-mod api;
-mod blockchain;
-pub mod boundary;
-pub mod cli;
-pub mod logic;
-pub mod simulator;
-pub mod solver;
+mod boundary;
+mod domain;
+mod infra;
 mod util;
 
-pub use {crate::solver::Solver, blockchain::Ethereum, simulator::Simulator};
 use {
-    api::Api,
     clap::Parser,
-    logic::eth,
+    domain::eth,
+    infra::{
+        blockchain::Ethereum,
+        cli,
+        simulator::{self, Simulator},
+        solver::{self, Solver},
+        Api,
+    },
     std::time::Duration,
     tracing::level_filters::LevelFilter,
 };

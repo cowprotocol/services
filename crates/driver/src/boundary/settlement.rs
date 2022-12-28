@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, competition::order, eth},
+        domain::{competition, competition::order, eth},
         Ethereum,
     },
     anyhow::Result,
@@ -22,7 +22,6 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    primitive_types::H160,
     shared::http_solver::model::{
         ApprovalModel,
         ExecutedAmmModel,
@@ -414,7 +413,11 @@ struct AllowanceManager;
 
 #[async_trait]
 impl AllowanceManaging for AllowanceManager {
-    async fn get_allowances(&self, _tokens: HashSet<H160>, _spender: H160) -> Result<Allowances> {
+    async fn get_allowances(
+        &self,
+        _tokens: HashSet<eth::H160>,
+        _spender: eth::H160,
+    ) -> Result<Allowances> {
         unimplemented!("this is not supposed to be called")
     }
 
