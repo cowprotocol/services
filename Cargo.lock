@@ -278,6 +278,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -3242,6 +3243,19 @@ dependencies = [
 [[package]]
 name = "solvers"
 version = "0.1.0"
+dependencies = [
+ "axum",
+ "bigdecimal",
+ "chrono",
+ "ethereum-types 0.14.1",
+ "hex",
+ "hyper",
+ "serde",
+ "serde_with 2.0.1",
+ "tokio",
+ "tower",
+ "tower-http",
+]
 
 [[package]]
 name = "sqlformat"

@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+axum = "0.6"
+bigdecimal = { version = "0.3", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+ethereum-types = "0.14"
+hex = "0.4"
+hyper = "0.14"
+serde = "1"
+serde_with = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower = "0.4"
+tower-http = { version = "0.3", features = ["trace"] }
