@@ -325,14 +325,20 @@ impl Interaction for SwapResponse {
 #[mockall::automock]
 pub trait ZeroExApi: Send + Sync {
     /// Retrieve a swap for the specified parameters from the 0x API.
+    /// Returns Ok(None) if no swap is available for the given query
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
+    async fn get_swap(&self, query: SwapQuery)
+        -> Result<Option<SwapResponse>, ZeroExResponseError>;
 
     /// Pricing for RFQT liquidity.
+    /// Returns Ok(None) if no price is available for the given query
     /// - https://0x.org/docs/guides/rfqt-in-the-0x-api
     /// - https://0x.org/docs/api#get-swapv1price
-    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError>;
+    async fn get_price(
+        &self,
+        query: SwapQuery,
+    ) -> Result<Option<PriceResponse>, ZeroExResponseError>;
 
     /// Retrieves all current limit orders.
     async fn get_orders(
@@ -406,7 +412,12 @@ impl DefaultZeroExApi {
         url.query_pairs_mut()
             .append_pair("page", &page.to_string())
             .append_pair("perPage", &results_per_page.to_string());
-        self.request(url).await
+        match self.request::<OrdersResponse>(url).await? {
+            Some(response) => Ok(response),
+            None => Err(ZeroExResponseError::UnknownZeroExError(
+                "Empty order page".into(),
+            )),
+        }
     }
 }
 
@@ -420,7 +431,7 @@ impl Default for DefaultZeroExApi {
 #[serde(untagged)]
 enum RawResponse<Ok> {
     ResponseOk(Ok),
-    ResponseErr { reason: String },
+    ResponseErr { reason: String, code: u32 },
 }
 
 #[derive(Error, Debug)]
@@ -445,12 +456,18 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+    ) -> Result<Option<SwapResponse>, ZeroExResponseError> {
         self.request(query.format_url(&self.base_url, "quote"))
             .await
     }
 
-    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
+    async fn get_price(
+        &self,
+        query: SwapQuery,
+    ) -> Result<Option<PriceResponse>, ZeroExResponseError> {
         self.request(query.format_url(&self.base_url, "price"))
             .await
     }
@@ -502,7 +519,7 @@ impl DefaultZeroExApi {
     async fn request<T: for<'a> serde::Deserialize<'a>>(
         &self,
         url: Url,
-    ) -> Result<T, ZeroExResponseError> {
+    ) -> Result<Option<T>, ZeroExResponseError> {
         tracing::debug!("Querying 0x API: {}", url);
 
         let request = self.client.get(url.clone());
@@ -516,10 +533,12 @@ impl DefaultZeroExApi {
         tracing::debug!("Response from 0x API: {}", response_text);
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
-            Ok(RawResponse::ResponseOk(response)) => Ok(response),
-            Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
-                "Server Error" => Err(ZeroExResponseError::ServerError(format!("{:?}", url))),
-                _ => Err(ZeroExResponseError::UnknownZeroExError(message)),
+            Ok(RawResponse::ResponseOk(response)) => Ok(Some(response)),
+            Ok(RawResponse::ResponseErr { reason, code }) => match code {
+                // Validation Error
+                100 => Ok(None),
+                500..=599 => Err(ZeroExResponseError::ServerError(format!("{:?}", url))),
+                _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
             },
             Err(err) => Err(ZeroExResponseError::DeserializeError(
                 err,
