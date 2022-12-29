@@ -128,7 +128,8 @@ mod tests {
     use ethcontract::H160;
     use maplit::hashmap;
     use model::order::{
-        Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid, BUY_ETH_ADDRESS,
+        LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
+        BUY_ETH_ADDRESS,
     };
     use num::rational::Ratio;
     use shared::addr;
@@ -338,5 +339,45 @@ mod tests {
             settle(SlippageContext::default(), orders, liquidity).len(),
             1
         );
+    }
+
+    #[test]
+    fn respects_limit_order_price_for_limit_orders_after_surplus_fee() {
+        // This order can be settled before but not after surplus fees
+        let orders = vec![LimitOrder::from(Order {
+            data: OrderData {
+                sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                buy_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                sell_amount: (22397494).into(),
+                buy_amount: 18477932550000000u128.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                class: OrderClass::Limit(LimitOrderClass {
+                    surplus_fee: Some(1675785.into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        })];
+
+        let tokens = TokenPair::new(
+            addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+        )
+        .unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                address: H160::from_low_u64_be(1),
+                tokens,
+                reserves: (36338096110368, 30072348537379906026018),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+        };
+
+        assert!(settle(SlippageContext::default(), orders, liquidity).is_empty());
     }
 }

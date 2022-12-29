@@ -1,13 +1,10 @@
 use crate::{
     liquidity::{self, slippage::SlippageContext},
-    settlement::Settlement,
+    settlement::{PricedTrade, Settlement},
 };
 use anyhow::Result;
 use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
-use model::{
-    order::{OrderData, OrderKind},
-    TokenPair,
-};
+use model::order::OrderKind;
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv};
 use number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int};
 use primitive_types::U256;
@@ -49,8 +46,8 @@ pub fn solve(
     let mut orders: Vec<LimitOrder> = orders.into_iter().collect();
     while !orders.is_empty() {
         let (context_a, context_b) = split_into_contexts(&orders, pool);
-        if let Some(valid_solution) = solve_orders(slippage, &orders, pool, &context_a, &context_b)
-            .filter(|settlement| is_valid_solution(settlement, pool.tokens))
+        if let Some(valid_solution) =
+            solve_orders(slippage, &orders, pool, &context_a, &context_b).filter(is_valid_solution)
         {
             return Some(valid_solution);
         } else {
@@ -289,31 +286,14 @@ fn compute_uniswap_in(
 /// Returns true if for each trade the executed price is not smaller than the limit price
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
-fn is_valid_solution(solution: &Settlement, pair: TokenPair) -> bool {
-    // We can't rely on the buy token having a price for liquidity orders that
-    // buy Eth. This is because no "token equivalency" clearing price gets added
-    // for these orders, and their clearing buy price only gets added at when
-    // actually building the settlement calldata. Instead, we use the token pair
-    // to find and return the address of the token that is not the order's sell
-    // token.
-    let mapped_buy_token = |order: &OrderData| {
-        let (token0, token1) = pair.get();
-        if order.sell_token == token0 {
-            token1
-        } else {
-            token0
-        }
-    };
-
-    for order in solution.traded_orders() {
-        let order = &order.data;
-        let buy_token_price = solution
-            .clearing_price(mapped_buy_token(order))
-            .expect("Solution should contain clearing price for mapped buy token");
-        let sell_token_price = solution
-            .clearing_price(order.sell_token)
-            .expect("Solution should contain clearing price for sell token");
-
+fn is_valid_solution(solution: &Settlement) -> bool {
+    for PricedTrade {
+        data,
+        sell_token_price,
+        buy_token_price,
+    } in solution.encoder.user_trades()
+    {
+        let order = &data.order.data;
         match (
             order.sell_amount.checked_mul(sell_token_price),
             order.buy_amount.checked_mul(buy_token_price),
@@ -700,7 +680,7 @@ mod tests {
         let result = solve(&SlippageContext::default(), orders, &pool).unwrap();
 
         assert_eq!(result.traded_orders().count(), 2);
-        assert!(is_valid_solution(&result, pool.tokens));
+        assert!(is_valid_solution(&result));
     }
 
     #[test]
@@ -751,7 +731,6 @@ mod tests {
     fn test_is_valid_solution() {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
-        let tokens = TokenPair::new(token_a, token_b).unwrap();
         let orders = vec![
             Order {
                 data: OrderData {
@@ -791,49 +770,44 @@ mod tests {
         };
 
         // Price in the middle is ok
-        assert!(is_valid_solution(
-            &settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(1),
                 token_b => to_wei(1)
-            }),
-            tokens
-        ));
+            }
+        ),));
 
         // Price at the limit of first order is ok
-        assert!(is_valid_solution(
-            &settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(8),
                 token_b => to_wei(10)
-            }),
-            tokens
-        ));
+            }
+        ),));
 
         // Price at the limit of second order is ok
-        assert!(is_valid_solution(
-            &settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(10),
                 token_b => to_wei(9)
-            }),
-            tokens
-        ));
+            }
+        ),));
 
         // Price violating first order is not ok
-        assert!(!is_valid_solution(
-            &settlement_with_prices(maplit::hashmap! {
+        assert!(!is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(7),
                 token_b => to_wei(10)
-            }),
-            tokens
-        ));
+            }
+        ),));
 
         // Price violating second order is not ok
-        assert!(!is_valid_solution(
-            &settlement_with_prices(maplit::hashmap! {
+        assert!(!is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(10),
                 token_b => to_wei(8)
-            }),
-            tokens
-        ));
+            }
+        ),));
     }
 
     #[test]
