@@ -83,7 +83,7 @@ components:
 
     TokenInfo:
       description: |
-        Information about a token relavant to the auction.
+        Information about a token relevant to the auction.
       type: object
       required:
         - trusted
@@ -168,7 +168,7 @@ components:
 
     BuyTokenBalance:
       description: |
-        Where should the buy token be transfered to?
+        Where should the buy token be transferred to?
       type: string
       enum: [erc20, internal]
 
@@ -343,7 +343,7 @@ components:
         liquidity:
           $ref: "#/components/schemas/TokenAmount"
         tick:
-          $ref: "#/components/schemas/BigInt"
+          type: integer
         liquidityNet:
           description: |
             A map of tick indices to their liquidity values.

@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, competition::order, eth},
+        domain::{competition, competition::order, eth},
         Ethereum,
     },
     anyhow::Result,
@@ -22,7 +22,6 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    primitive_types::H160,
     shared::http_solver::model::{
         ApprovalModel,
         ExecutedAmmModel,
@@ -52,7 +51,7 @@ use {
 pub struct Settlement {
     settlement: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
-    solver_account: eth::Account,
+    solver: eth::Address,
 }
 
 impl Settlement {
@@ -100,7 +99,11 @@ impl Settlement {
                 auction
                     .tokens
                     .iter()
-                    .map(|token| (token.address.into(), token.price.into()))
+                    .filter_map(|token| {
+                        token
+                            .price
+                            .map(|price| (token.address.into(), price.into()))
+                    })
                     .collect(),
             )?),
             &DomainSeparator(domain.0),
@@ -109,7 +112,7 @@ impl Settlement {
         Ok(Self {
             settlement,
             contract: settlement_contract,
-            solver_account: solution.solver.account(),
+            solver: solution.solver.address(),
         })
     }
 
@@ -120,18 +123,11 @@ impl Settlement {
         let builder = settle_method_builder(
             &self.contract,
             encoded_settlement,
-            match self.solver_account {
-                eth::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_raw(private_key.into())
-                        .expect("private key was already validated"),
-                    None,
-                ),
-                eth::Account::Address(address) => ethcontract::Account::Local(address.into(), None),
-            },
+            ethcontract::Account::Local(self.solver.into(), None),
         );
         let tx = builder.into_inner();
         eth::Tx {
-            from: tx.from.unwrap().address().into(),
+            from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap().into(),
             input: tx.data.unwrap().0,
@@ -150,7 +146,11 @@ impl Settlement {
             auction
                 .tokens
                 .iter()
-                .map(|token| (token.address.into(), token.price.into()))
+                .filter_map(|token| {
+                    token
+                        .price
+                        .map(|price| (token.address.into(), price.into()))
+                })
                 .collect(),
         )?;
         let surplus = self.settlement.total_surplus(&prices);
@@ -177,7 +177,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount,
             buy_amount: order.buy.amount,
-            fee_amount: order.fee.user.amount,
+            fee_amount: order.fee.user.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppId(order.app_data.into()),
@@ -186,24 +186,24 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 competition::order::Side::Sell => OrderKind::Sell,
             },
             partially_fillable: order.is_partial(),
-            sell_token_balance: match order.sell_source {
-                competition::order::SellSource::Erc20 => SellTokenSource::Erc20,
-                competition::order::SellSource::Internal => SellTokenSource::Internal,
-                competition::order::SellSource::External => SellTokenSource::External,
+            sell_token_balance: match order.sell_token_balance {
+                competition::order::SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                competition::order::SellTokenBalance::Internal => SellTokenSource::Internal,
+                competition::order::SellTokenBalance::External => SellTokenSource::External,
             },
-            buy_token_balance: match order.buy_destination {
-                competition::order::BuyDestination::Erc20 => BuyTokenDestination::Erc20,
-                competition::order::BuyDestination::Internal => BuyTokenDestination::Internal,
+            buy_token_balance: match order.buy_token_balance {
+                competition::order::BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+                competition::order::BuyTokenBalance::Internal => BuyTokenDestination::Internal,
             },
         },
         metadata: OrderMetadata {
-            full_fee_amount: order.fee.solver.amount,
+            full_fee_amount: order.fee.solver.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
                 competition::order::Kind::Limit { surplus_fee } => {
                     OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: Some(surplus_fee.amount),
+                        surplus_fee: Some(surplus_fee.into()),
                         ..Default::default()
                     })
                 }
@@ -253,18 +253,17 @@ async fn to_boundary_solution(
                     index,
                     ExecutedOrderModel {
                         exec_sell_amount: match fulfillment.order.side {
-                            order::Side::Sell => fulfillment.executed.amount,
+                            order::Side::Sell => fulfillment.executed.into(),
                             order::Side::Buy => Default::default(),
                         },
                         exec_buy_amount: match fulfillment.order.side {
-                            order::Side::Buy => fulfillment.executed.amount,
+                            order::Side::Buy => fulfillment.executed.into(),
                             order::Side::Sell => Default::default(),
                         },
                         cost: None,
-                        fee: Some(TokenAmount {
-                            amount: fulfillment.order.fee.solver.amount,
-                            token: fulfillment.order.fee.solver.token.into(),
-                        }),
+                        fee: Some(to_token_amount(
+                            &fulfillment.order.fee.solver.to_asset(&fulfillment.order),
+                        )),
                         exec_plan: Some(ExecutionPlan {
                             coordinates: ExecutionPlanCoordinatesModel {
                                 sequence: 0,
@@ -283,35 +282,37 @@ async fn to_boundary_solution(
             .filter_map(|trade| match trade {
                 competition::solution::Trade::Jit(jit) => Some(ExecutedLiquidityOrderModel {
                     order: NativeLiquidityOrder {
-                        from: jit.order.from.into(),
+                        from: jit.order.signature.signer.into(),
                         data: OrderData {
                             sell_token: jit.order.sell.token.into(),
                             buy_token: jit.order.buy.token.into(),
-                            receiver: jit.order.receiver.map(Into::into),
+                            receiver: Some(jit.order.receiver.into()),
                             sell_amount: jit.order.sell.amount,
                             buy_amount: jit.order.buy.amount,
                             valid_to: jit.order.valid_to.into(),
                             app_data: AppId(jit.order.app_data.into()),
-                            fee_amount: jit.order.fee.amount,
+                            fee_amount: jit.order.fee.into(),
                             kind: match jit.order.side {
                                 competition::order::Side::Buy => OrderKind::Buy,
                                 competition::order::Side::Sell => OrderKind::Sell,
                             },
                             partially_fillable: jit.order.partially_fillable,
-                            sell_token_balance: match jit.order.sell_source {
-                                competition::order::SellSource::Erc20 => SellTokenSource::Erc20,
-                                competition::order::SellSource::Internal => {
+                            sell_token_balance: match jit.order.sell_token_balance {
+                                competition::order::SellTokenBalance::Erc20 => {
+                                    SellTokenSource::Erc20
+                                }
+                                competition::order::SellTokenBalance::Internal => {
                                     SellTokenSource::Internal
                                 }
-                                competition::order::SellSource::External => {
+                                competition::order::SellTokenBalance::External => {
                                     SellTokenSource::External
                                 }
                             },
-                            buy_token_balance: match jit.order.buy_destination {
-                                competition::order::BuyDestination::Erc20 => {
+                            buy_token_balance: match jit.order.buy_token_balance {
+                                competition::order::BuyTokenBalance::Erc20 => {
                                     BuyTokenDestination::Erc20
                                 }
-                                competition::order::BuyDestination::Internal => {
+                                competition::order::BuyTokenBalance::Internal => {
                                     BuyTokenDestination::Internal
                                 }
                             },
@@ -319,11 +320,11 @@ async fn to_boundary_solution(
                         signature: Default::default(),
                     },
                     exec_sell_amount: match jit.order.side {
-                        order::Side::Sell => jit.executed.amount,
+                        order::Side::Sell => jit.executed.into(),
                         order::Side::Buy => Default::default(),
                     },
                     exec_buy_amount: match jit.order.side {
-                        order::Side::Buy => jit.executed.amount,
+                        order::Side::Buy => jit.executed.into(),
                         order::Side::Sell => Default::default(),
                     },
                 }),
@@ -332,7 +333,7 @@ async fn to_boundary_solution(
             .collect(),
         amms: solution
             .interactions
-            .all()
+            .iter()
             .enumerate()
             .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Liquidity(interaction) => Some((
@@ -375,29 +376,15 @@ async fn to_boundary_solution(
             .collect(),
         interaction_data: solution
             .interactions
-            .all()
+            .iter()
             .enumerate()
             .filter_map(|(index, interaction)| match interaction {
                 competition::solution::Interaction::Custom(interaction) => Some(InteractionData {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
                     call_data: interaction.call_data.clone(),
-                    inputs: interaction
-                        .inputs
-                        .iter()
-                        .map(|input| TokenAmount {
-                            amount: input.amount,
-                            token: input.token.into(),
-                        })
-                        .collect(),
-                    outputs: interaction
-                        .outputs
-                        .iter()
-                        .map(|output| TokenAmount {
-                            amount: output.amount,
-                            token: output.token.into(),
-                        })
-                        .collect(),
+                    inputs: interaction.inputs.iter().map(to_token_amount).collect(),
+                    outputs: interaction.outputs.iter().map(to_token_amount).collect(),
                     exec_plan: Some(ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
@@ -415,11 +402,22 @@ async fn to_boundary_solution(
     })
 }
 
+fn to_token_amount(asset: &eth::Asset) -> TokenAmount {
+    TokenAmount {
+        amount: asset.amount,
+        token: asset.token.into(),
+    }
+}
+
 struct AllowanceManager;
 
 #[async_trait]
 impl AllowanceManaging for AllowanceManager {
-    async fn get_allowances(&self, _tokens: HashSet<H160>, _spender: H160) -> Result<Allowances> {
+    async fn get_allowances(
+        &self,
+        _tokens: HashSet<eth::H160>,
+        _spender: eth::H160,
+    ) -> Result<Allowances> {
         unimplemented!("this is not supposed to be called")
     }
 
