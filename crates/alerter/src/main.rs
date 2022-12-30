@@ -31,12 +31,15 @@ struct Order {
     status: OrderStatus,
     creation_date: DateTime<Utc>,
     partially_fillable: bool,
-    is_liquidity_order: bool,
     #[serde(flatten)]
     class: OrderClass,
 }
 
 impl Order {
+    fn is_liquidity_order(&self) -> bool {
+        matches!(self.class, OrderClass::Liquidity)
+    }
+
     fn effective_sell_amount(&self) -> Option<U256> {
         let amount = match &self.class {
             OrderClass::Limit(limit) => {
@@ -48,7 +51,7 @@ impl Order {
                     .overflowing_sub(limit.surplus_fee?)
                     .0
             }
-            _ => self.sell_amount,
+            OrderClass::Market | OrderClass::Liquidity => self.sell_amount,
         };
 
         Some(amount)
@@ -220,7 +223,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
+            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self
                     .open_orders
