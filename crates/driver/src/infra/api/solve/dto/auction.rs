@@ -1,6 +1,7 @@
 use {
     crate::{
         domain::{competition, eth},
+        infra,
         util::serialize,
     },
     itertools::Itertools,
@@ -10,7 +11,7 @@ use {
 };
 
 impl Auction {
-    pub fn into_domain(self) -> Result<competition::Auction, Error> {
+    pub fn into_domain(self, now: infra::time::Now) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
             id: match self.id {
                 Some(id) => Some(FromStr::from_str(&id).map_err(|_| Error::InvalidAuctionId)?),
@@ -119,7 +120,8 @@ impl Auction {
             // TODO #899
             liquidity: Default::default(),
             gas_price: self.effective_gas_price.into(),
-            deadline: self.deadline.into(),
+            deadline: competition::auction::Deadline::new(self.deadline, now)
+                .map_err(|competition::auction::DeadlineExceeded| Error::DeadlineExceeded)?,
         })
     }
 }
@@ -130,12 +132,16 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
+    #[error("received an auction with an exceeded deadline")]
+    DeadlineExceeded,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
+    // TODO This should not be optional. Also, this seems to indicate that there should be two
+    // different auction types, or maybe set the ID to Default::default() for quoting?
     id: Option<String>,
     tokens: HashMap<eth::H160, Token>,
     orders: Vec<Order>,
@@ -169,7 +175,9 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     executed: eth::U256,
     interactions: Vec<Interaction>,
+    #[serde(default)]
     sell_token_balance: SellTokenBalance,
+    #[serde(default)]
     buy_token_balance: BuyTokenBalance,
     class: Class,
     #[serde_as(as = "Option<serialize::U256>")]

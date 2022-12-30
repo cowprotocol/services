@@ -5,6 +5,7 @@ use {
     },
     anyhow::Result,
     async_trait::async_trait,
+    itertools::Itertools,
     model::{
         app_id::AppId,
         order::{
@@ -19,6 +20,7 @@ use {
             OrderUid,
             SellTokenSource,
         },
+        signature::EcdsaSignature,
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
@@ -80,7 +82,7 @@ impl Settlement {
                 let boundary_order = to_boundary_order(order);
                 order_converter.normalize_limit_order(boundary_order).ok()
             })
-            .collect();
+            .collect_vec();
         let settlement = convert_settlement(
             to_boundary_solution(solution, eth).await?,
             &SettlementContext {
@@ -111,7 +113,7 @@ impl Settlement {
         .await?;
         Ok(Self {
             settlement,
-            contract: settlement_contract,
+            contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
         })
     }
@@ -129,7 +131,7 @@ impl Settlement {
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),
-            value: tx.value.unwrap().into(),
+            value: tx.value.unwrap_or_default().into(),
             input: tx.data.unwrap().0,
             access_list: Default::default(),
         }
@@ -224,7 +226,21 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             onchain_order_data: Default::default(),
             is_liquidity_order: order.is_liquidity(),
         },
-        signature: Default::default(),
+        // TODO Different signing schemes imply different sizes of signature data, which indicates
+        // that I'm missing an invariant in my types and I need to fix that
+        // PreSign, for example, carries no data. Everything should be reflected in the types!
+        signature: match order.signature.scheme {
+            order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
+                EcdsaSignature::from_bytes(&to_array(&order.signature.data)),
+            ),
+            order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
+                EcdsaSignature::from_bytes(&to_array(&order.signature.data)),
+            ),
+            order::signature::Scheme::Eip1271 => {
+                model::signature::Signature::Eip1271(order.signature.data.clone())
+            }
+            order::signature::Scheme::PreSign => model::signature::Signature::PreSign,
+        },
         interactions: Interactions {
             pre: order
                 .interactions
@@ -264,13 +280,7 @@ async fn to_boundary_solution(
                         fee: Some(to_token_amount(
                             &fulfillment.order.fee.solver.to_asset(&fulfillment.order),
                         )),
-                        exec_plan: Some(ExecutionPlan {
-                            coordinates: ExecutionPlanCoordinatesModel {
-                                sequence: 0,
-                                position: index.try_into().unwrap(),
-                            },
-                            internal: false,
-                        }),
+                        exec_plan: None,
                     },
                 )),
                 competition::solution::Trade::Jit(_) => None,
@@ -439,4 +449,10 @@ impl AllowanceManaging for AllowanceManager {
             })
             .collect())
     }
+}
+
+fn to_array<const N: usize>(data: &[u8]) -> [u8; N] {
+    let mut result = [0; N];
+    result.copy_from_slice(data);
+    result
 }
