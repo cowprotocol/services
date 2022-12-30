@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use model::{
-    order::{OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     u256_decimal,
 };
 use primitive_types::{H160, U256};
@@ -25,11 +25,37 @@ struct Order {
     sell_token: H160,
     #[serde(with = "u256_decimal")]
     sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    fee_amount: U256,
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
     partially_fillable: bool,
-    is_liquidity_order: bool,
+    #[serde(flatten)]
+    class: OrderClass,
+}
+
+impl Order {
+    fn is_liquidity_order(&self) -> bool {
+        matches!(self.class, OrderClass::Liquidity)
+    }
+
+    fn effective_sell_amount(&self) -> Option<U256> {
+        let amount = match &self.class {
+            OrderClass::Limit(limit) => {
+                // Use wrapping arithmetic. The orderbook should guarantee that
+                // the effective sell amount fits in a `U256`.
+                self.sell_amount
+                    .overflowing_add(self.fee_amount)
+                    .0
+                    .overflowing_sub(limit.surplus_fee?)
+                    .0
+            }
+            OrderClass::Market | OrderClass::Liquidity => self.sell_amount,
+        };
+
+        Some(amount)
+    }
 }
 
 struct OrderBookApi {
@@ -101,10 +127,15 @@ impl ZeroExApi {
 
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
         let mut url = self.base.join("swap/v1/price").unwrap();
+
+        let effective_sell_amount = order
+            .effective_sell_amount()
+            .context("surplus fee not computed")?;
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
-            OrderKind::Sell => ("sellAmount", order.sell_amount),
+            OrderKind::Sell => ("sellAmount", effective_sell_amount),
         };
+
         let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
             .append_pair("sellToken", &format!("{:#x}", order.sell_token))
@@ -131,7 +162,13 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
+        let can_settle = response.sell_amount <= effective_sell_amount
+            && response.buy_amount >= order.buy_amount;
+        if can_settle {
+            tracing::debug!(%order.uid, "marking order as settleable");
+        }
+
+        Ok(can_settle)
     }
 }
 
@@ -186,7 +223,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
+            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self
                     .open_orders
@@ -196,10 +233,16 @@ impl Alerter {
                 (order, existing_time)
             })
             .collect::<Vec<_>>();
+
         tracing::debug!("found {} open orders", orders.len());
+
         std::mem::swap(&mut self.open_orders, &mut orders);
         // Keep only orders that were open last update and are not open this update.
-        orders.retain(|order| !self.open_orders.contains(order));
+        orders.retain(|(order, _)| {
+            self.open_orders
+                .iter()
+                .all(|(open_order, _)| open_order.uid != order.uid)
+        });
         for closed_order in orders {
             let order = self.orderbook_api.order(&closed_order.0.uid).await?;
             if order.status == OrderStatus::Fulfilled {
@@ -217,7 +260,9 @@ impl Alerter {
 
     fn alert(&self, order: &Order) {
         tracing::error!(
-            "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to 0x.",
+            "No orders have been settled in the last {} seconds \
+             even though order {} is solvable and has a price that \
+             allows it to be settled according to 0x.",
             self.config.time_without_trade.as_secs(),
             order.uid,
         );
@@ -273,6 +318,15 @@ impl Alerter {
 
 #[derive(Debug, Parser)]
 struct Arguments {
+    /// Alerter update interval.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    update_interval: Duration,
+
     /// Minimum time without a trade before alerting.
     #[clap(
         long,
@@ -351,6 +405,6 @@ async fn main() {
                 tracing::error!(?err, "alerter update error");
             }
         }
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(args.update_interval).await;
     }
 }
