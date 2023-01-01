@@ -102,11 +102,14 @@ impl SingleOrderSolving for ZeroExSolver {
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
         };
-        let swap = match self.api.get_swap(query).await? {
-            Some(swap) => swap,
-            None => {
-                tracing::debug!("Couldn't get a quote");
+        let swap = match self.api.get_swap(query).await {
+            Ok(swap) => swap,
+            Err(ZeroExResponseError::InsufficientLiquidity) => {
+                tracing::debug!("Couldn't get a quote due to insufficient liquidity");
                 return Ok(None);
+            }
+            Err(err) => {
+                return Err(err.into());
             }
         };
 
@@ -273,7 +276,7 @@ mod tests {
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: U256::from_dec_str("100").unwrap(),
                         buy_amount: U256::from_dec_str("91").unwrap(),
@@ -284,7 +287,7 @@ mod tests {
                     to: shared::addr!("0000000000000000000000000000000000000000"),
                     data: hex::decode("00").unwrap(),
                     value: U256::from_dec_str("0").unwrap(),
-                }))
+                })
             }
             .boxed()
         });
@@ -406,7 +409,7 @@ mod tests {
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: U256::from_dec_str("100").unwrap(),
                         buy_amount: U256::from_dec_str("91").unwrap(),
@@ -417,7 +420,7 @@ mod tests {
                     to: shared::addr!("0000000000000000000000000000000000000000"),
                     data: hex::decode("").unwrap(),
                     value: U256::from_dec_str("0").unwrap(),
-                }))
+                })
             }
             .boxed()
         });

@@ -74,7 +74,7 @@ mod tests {
         //     sellAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: 100000000000000000u64.into(),
                         buy_amount: 1110165823572443613u64.into(),
@@ -83,7 +83,7 @@ mod tests {
                         estimated_gas: 111000,
                     },
                     ..Default::default()
-                }))
+                })
             }
             .boxed()
         });
@@ -123,7 +123,7 @@ mod tests {
         //     buyAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: 8986186353137488u64.into(),
                         buy_amount: 100000000000000000u64.into(),
@@ -132,7 +132,7 @@ mod tests {
                         estimated_gas: 111000,
                     },
                     ..Default::default()
-                }))
+                })
             }
             .boxed()
         });

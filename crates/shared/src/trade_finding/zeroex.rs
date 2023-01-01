@@ -4,7 +4,7 @@ use super::{Interaction, Quote, Trade, TradeError, TradeFinding};
 use crate::{
     price_estimation::{gas, Query},
     request_sharing::{BoxRequestSharing, BoxShared},
-    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
+    zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
 };
 use futures::FutureExt as _;
 use model::order::OrderKind;
@@ -48,7 +48,7 @@ impl Inner {
             OrderKind::Sell => (Some(query.in_amount), None),
         };
 
-        let swap: SwapResponse = match self
+        let swap = self
             .api
             .get_swap(SwapQuery {
                 sell_token: query.sell_token,
@@ -59,11 +59,7 @@ impl Inner {
                 excluded_sources: self.excluded_sources.clone(),
                 enable_slippage_protection: false,
             })
-            .await?
-        {
-            Some(swap) => swap,
-            None => return Err(TradeError::NoLiquidity),
-        };
+            .await?;
 
         Ok(Trade {
             out_amount: match query.kind {
@@ -98,7 +94,14 @@ impl TradeFinding for ZeroExTradeFinder {
 
 impl From<ZeroExResponseError> for TradeError {
     fn from(err: ZeroExResponseError) -> Self {
-        TradeError::Other(err.into())
+        match err {
+            ZeroExResponseError::ServerError(_) => TradeError::Other(err.into()),
+            ZeroExResponseError::UnknownZeroExError(_) => TradeError::Other(err.into()),
+            ZeroExResponseError::InsufficientLiquidity => TradeError::NoLiquidity,
+            ZeroExResponseError::DeserializeError(_, _) => TradeError::Other(err.into()),
+            ZeroExResponseError::TextFetch(_) => TradeError::Other(err.into()),
+            ZeroExResponseError::Send(_) => TradeError::Other(err.into()),
+        }
     }
 }
 
@@ -126,7 +129,7 @@ mod tests {
         //     sellAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: 100000000000000000u64.into(),
                         buy_amount: 1110165823572443613u64.into(),
@@ -137,7 +140,7 @@ mod tests {
                     to: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     value: 42.into(),
                     data: vec![1, 2, 3, 4],
-                }))
+                })
             }
             .boxed()
         });
@@ -187,7 +190,7 @@ mod tests {
         //     buyAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {
-                Ok(Some(SwapResponse {
+                Ok(SwapResponse {
                     price: PriceResponse {
                         sell_amount: 8986186353137488u64.into(),
                         buy_amount: 100000000000000000u64.into(),
@@ -197,7 +200,7 @@ mod tests {
                     },
                     data: vec![5, 6, 7, 8],
                     ..Default::default()
-                }))
+                })
             }
             .boxed()
         });
@@ -229,7 +232,7 @@ mod tests {
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {
                 tokio::time::sleep(Duration::from_millis(1)).await;
-                Ok(Some(Default::default()))
+                Ok(Default::default())
             }
             .boxed()
         });
