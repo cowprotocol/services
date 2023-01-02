@@ -420,7 +420,7 @@ impl Default for DefaultZeroExApi {
 #[serde(untagged)]
 enum RawResponse<Ok> {
     ResponseOk(Ok),
-    ResponseErr { reason: String },
+    ResponseErr { reason: String, code: u32 },
 }
 
 #[derive(Error, Debug)]
@@ -430,6 +430,9 @@ pub enum ZeroExResponseError {
 
     #[error("uncatalogued error message: {0}")]
     UnknownZeroExError(String),
+
+    #[error("insufficient liquidity")]
+    InsufficientLiquidity,
 
     #[error("Error({0}) for response {1}")]
     DeserializeError(serde_json::Error, String),
@@ -517,9 +520,11 @@ impl DefaultZeroExApi {
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),
-            Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
-                "Server Error" => Err(ZeroExResponseError::ServerError(format!("{:?}", url))),
-                _ => Err(ZeroExResponseError::UnknownZeroExError(message)),
+            Ok(RawResponse::ResponseErr { reason, code }) => match code {
+                // Validation Error
+                100 => Err(ZeroExResponseError::InsufficientLiquidity),
+                500..=599 => Err(ZeroExResponseError::ServerError(format!("{:?}", url))),
+                _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
             },
             Err(err) => Err(ZeroExResponseError::DeserializeError(
                 err,

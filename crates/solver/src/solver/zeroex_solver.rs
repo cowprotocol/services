@@ -102,7 +102,16 @@ impl SingleOrderSolving for ZeroExSolver {
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
         };
-        let swap = self.api.get_swap(query).await?;
+        let swap = match self.api.get_swap(query).await {
+            Ok(swap) => swap,
+            Err(ZeroExResponseError::InsufficientLiquidity) => {
+                tracing::debug!("Couldn't get a quote due to insufficient liquidity");
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err.into());
+            }
+        };
 
         if !execution_respects_order(&order, swap.price.sell_amount, swap.price.buy_amount) {
             tracing::debug!("execution does not respect order");
