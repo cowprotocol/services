@@ -110,6 +110,29 @@ impl CachingNativePriceEstimator {
         ));
         Self(inner)
     }
+
+    /// Returns cached prices immediately and spawns a background task that fetches the missing
+    /// prices.
+    pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
+        let (cached_prices, missing_indices) = self.0.get_cached_prices(tokens);
+        let result = cached_prices
+            .iter()
+            .map(|(index, price)| (tokens[*index], *price))
+            .collect();
+
+        if !missing_indices.is_empty() {
+            // Fetch missing prices in background task.
+            let missing_tokens: Vec<_> =
+                missing_indices.iter().map(|index| tokens[*index]).collect();
+            let inner = self.0.clone();
+            tokio::spawn(async move {
+                let stream = inner.estimate_prices_and_update_cache(&missing_tokens);
+                let _ = stream.map(Ok).forward(futures::sink::drain()).await;
+            });
+        }
+
+        result
+    }
 }
 
 #[async_trait::async_trait]
