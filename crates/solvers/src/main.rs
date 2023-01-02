@@ -1,6 +1,7 @@
 // TODO remove this once the crate stabilizes a bit.
 #![allow(dead_code)]
 
+#[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
 
 mod api;
