@@ -40,5 +40,17 @@ services:
     ports:
       - 8545:8545
 
+  geth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.geth
+    restart: on-failure
+    command: geth --dev --http --http.addr 0.0.0.0 --http.api web3,eth,net --datadir /datadir
+    volumes:
+      - geth:/datadir
+    ports:
+      - 8546:8545
+
 volumes:
   postgres:
+  geth:

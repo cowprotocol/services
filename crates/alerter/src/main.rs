@@ -6,13 +6,16 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use model::{
-    order::{OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     u256_decimal,
 };
 use primitive_types::{H160, U256};
 use prometheus::IntGauge;
 use reqwest::Client;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use url::Url;
 
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
@@ -25,11 +28,37 @@ struct Order {
     sell_token: H160,
     #[serde(with = "u256_decimal")]
     sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    fee_amount: U256,
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
     partially_fillable: bool,
-    is_liquidity_order: bool,
+    #[serde(flatten)]
+    class: OrderClass,
+}
+
+impl Order {
+    fn is_liquidity_order(&self) -> bool {
+        matches!(self.class, OrderClass::Liquidity)
+    }
+
+    fn effective_sell_amount(&self) -> Option<U256> {
+        let amount = match &self.class {
+            OrderClass::Limit(limit) => {
+                // Use wrapping arithmetic. The orderbook should guarantee that
+                // the effective sell amount fits in a `U256`.
+                self.sell_amount
+                    .overflowing_add(self.fee_amount)
+                    .0
+                    .overflowing_sub(limit.surplus_fee?)
+                    .0
+            }
+            OrderClass::Market | OrderClass::Liquidity => self.sell_amount,
+        };
+
+        Some(amount)
+    }
 }
 
 struct OrderBookApi {
@@ -101,10 +130,15 @@ impl ZeroExApi {
 
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
         let mut url = self.base.join("swap/v1/price").unwrap();
+
+        let effective_sell_amount = order
+            .effective_sell_amount()
+            .context("surplus fee not computed")?;
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
-            OrderKind::Sell => ("sellAmount", order.sell_amount),
+            OrderKind::Sell => ("sellAmount", effective_sell_amount),
         };
+
         let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
             .append_pair("sellToken", &format!("{:#x}", order.sell_token))
@@ -131,7 +165,13 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
+        let can_settle = response.sell_amount <= effective_sell_amount
+            && response.buy_amount >= order.buy_amount;
+        if can_settle {
+            tracing::debug!(%order.uid, "marking order as settleable");
+        }
+
+        Ok(can_settle)
     }
 }
 
@@ -142,7 +182,7 @@ struct Alerter {
     last_observed_trade: Instant,
     last_alert: Option<Instant>,
     // order and for how long it has been matchable
-    open_orders: Vec<(Order, Option<Instant>)>,
+    open_orders: HashMap<OrderUid, (Order, Option<Instant>)>,
     // Expose a prometheus metric so that we can use our Grafana alert infrastructure.
     //
     // Set to 0 or 1 depending on whether our alert condition is satisfied which is that there
@@ -174,7 +214,7 @@ impl Alerter {
             config,
             last_observed_trade: Instant::now(),
             last_alert: None,
-            open_orders: Vec::new(),
+            open_orders: HashMap::new(),
             no_trades_but_matchable_order,
         }
     }
@@ -186,22 +226,21 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
+            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
             .map(|order| {
-                let existing_time = self
-                    .open_orders
-                    .iter()
-                    .find(|(order_, _)| order_.uid == order.uid)
-                    .and_then(|o| o.1);
-                (order, existing_time)
+                let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
+                (order.uid, (order, existing_time))
             })
-            .collect::<Vec<_>>();
+            .collect::<HashMap<_, _>>();
+
         tracing::debug!("found {} open orders", orders.len());
+
         std::mem::swap(&mut self.open_orders, &mut orders);
         // Keep only orders that were open last update and are not open this update.
-        orders.retain(|order| !self.open_orders.contains(order));
-        for closed_order in orders {
-            let order = self.orderbook_api.order(&closed_order.0.uid).await?;
+        orders.retain(|order_uid, _| !self.open_orders.contains_key(order_uid));
+        for closed_order in orders.keys() {
+            tracing::debug!(order =% closed_order, "found closed order");
+            let order = self.orderbook_api.order(closed_order).await?;
             if order.status == OrderStatus::Fulfilled {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
@@ -213,14 +252,6 @@ impl Alerter {
         }
         tracing::debug!("found no fulfilled orders");
         Ok(())
-    }
-
-    fn alert(&self, order: &Order) {
-        tracing::error!(
-            "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to 0x.",
-            self.config.time_without_trade.as_secs(),
-            order.uid,
-        );
     }
 
     pub async fn update(&mut self) -> Result<()> {
@@ -236,20 +267,21 @@ impl Alerter {
             // In this case we would alert immediately even though it could be the case that the
             // order wasn't matchable and just now became matchable again. We would wrongly assume
             // it has been matchable since t0 but we did not check this between now and then.
-            for (_, instant) in self.open_orders.iter_mut() {
+            for (_, instant) in self.open_orders.values_mut() {
                 *instant = None;
             }
             return Ok(());
         }
-        for i in 0..self.open_orders.len() {
+
+        for (order, last_solvable) in self.open_orders.values_mut() {
             let can_be_settled = self
                 .zeroex_api
-                .can_be_settled(&self.open_orders[i].0)
+                .can_be_settled(order)
                 .await
                 .context("can_be_settled")?;
             let now = Instant::now();
             if can_be_settled {
-                let solvable_since = *self.open_orders[i].1.get_or_insert(now);
+                let solvable_since = *last_solvable.get_or_insert(now);
                 if now.duration_since(solvable_since) > self.config.min_order_solvable_time {
                     let should_alert = match self.last_alert {
                         None => true,
@@ -257,22 +289,44 @@ impl Alerter {
                     };
                     if should_alert {
                         self.last_alert = Some(now);
-                        self.alert(&self.open_orders[i].0);
+                        self.config.alert(order);
                     }
                     self.no_trades_but_matchable_order.set(1);
                 }
                 return Ok(());
             } else {
-                self.open_orders[i].1 = None;
+                *last_solvable = None;
             }
         }
+
         self.no_trades_but_matchable_order.set(0);
         Ok(())
     }
 }
 
+impl AlertConfig {
+    fn alert(&self, order: &Order) {
+        tracing::error!(
+            "No orders have been settled in the last {} seconds \
+             even though order {} is solvable and has a price that \
+             allows it to be settled according to 0x.",
+            self.time_without_trade.as_secs(),
+            order.uid,
+        );
+    }
+}
+
 #[derive(Debug, Parser)]
 struct Arguments {
+    /// Alerter update interval.
+    #[clap(
+        long,
+        env,
+        default_value = "30",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    update_interval: Duration,
+
     /// Minimum time without a trade before alerting.
     #[clap(
         long,
@@ -351,6 +405,6 @@ async fn main() {
                 tracing::error!(?err, "alerter update error");
             }
         }
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        tokio::time::sleep(args.update_interval).await;
     }
 }
