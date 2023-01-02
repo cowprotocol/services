@@ -239,6 +239,7 @@ impl Alerter {
         // Keep only orders that were open last update and are not open this update.
         orders.retain(|order_uid, _| !self.open_orders.contains_key(order_uid));
         for closed_order in orders.keys() {
+            tracing::debug!(order =% closed_order, "found closed order");
             let order = self.orderbook_api.order(closed_order).await?;
             if order.status == OrderStatus::Fulfilled {
                 tracing::debug!(
