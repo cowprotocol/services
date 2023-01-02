@@ -164,10 +164,32 @@ impl SettlementRanker {
             );
         }
 
-        let (mut rated_settlements, errors) = self
+        let (rated_settlements, errors) = self
             .settlement_rater
             .rate_settlements(solver_settlements, external_prices, gas_price)
             .await?;
+
+        // Discard solutions with negative obj value
+        let mut rated_settlements = rated_settlements
+            .into_iter()
+            .filter(|(solver, rated_settlement, _)| {
+                // TODO for now, apply only for 0x solver
+                if solver.name() != "0x" {
+                    return true;
+                }
+
+                let objective_value = rated_settlement.objective_value();
+                let objective_value_positive = objective_value.ge(&Ratio::from_integer(0.into()));
+                if !objective_value_positive {
+                    tracing::debug!("Solution rejected for negative objective value. Solver={}, objective value={}", solver.name(), objective_value);
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::NegativeObjectiveValue),
+                    );
+                }
+                objective_value_positive
+            })
+            .collect::<Vec<_>>();
 
         // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
         // preference to any specific solver when there is an objective value tie.

@@ -332,6 +332,9 @@ pub enum SolverRejectionReason {
     /// The solution contains non unique execution plans (duplicated coordinates)
     InvalidExecutionPlans,
 
+    /// Solution has negative objective value
+    NegativeObjectiveValue,
+
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
 }
