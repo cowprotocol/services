@@ -566,6 +566,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             database: db.clone(),
             signature_validator,
             domain_separator,
+            parallelism: args.limit_order_quoter_parallelism,
         }
         .spawn();
         LimitOrderMetrics {

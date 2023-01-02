@@ -27,6 +27,7 @@ pub struct LimitOrderQuoter {
     pub database: Postgres,
     pub signature_validator: Arc<dyn SignatureValidating>,
     pub domain_separator: DomainSeparator,
+    pub parallelism: usize,
 }
 
 impl LimitOrderQuoter {
@@ -45,19 +46,19 @@ impl LimitOrderQuoter {
                     Duration::from_secs_f32(1.)
                 }
             };
+            tracing::trace!(?sleep, "sleeping");
             tokio::time::sleep(sleep).await;
         }
     }
 
     /// Returns whether it is likely that there is no more work.
     async fn update(&self) -> Result<bool> {
-        const PARALLELISM: usize = 5;
         let orders = self
             .database
-            .limit_orders_with_outdated_fees(self.limit_order_age, PARALLELISM)
+            .limit_orders_with_outdated_fees(self.limit_order_age, self.parallelism)
             .await?;
         futures::stream::iter(&orders)
-            .for_each_concurrent(PARALLELISM, |order| {
+            .for_each_concurrent(self.parallelism, |order| {
                 async move {
                     let quote = self.get_quote(order).await;
                     self.update_fee(&order.metadata.uid, &quote).await;
@@ -68,7 +69,7 @@ impl LimitOrderQuoter {
                 ))
             })
             .await;
-        Ok(orders.len() < PARALLELISM)
+        Ok(orders.len() < self.parallelism)
     }
 
     /// Handles errors internally.
