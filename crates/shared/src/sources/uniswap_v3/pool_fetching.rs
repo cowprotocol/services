@@ -452,7 +452,7 @@ impl Maintaining for UniswapV3PoolFetcher {
             self.checkpoint.update_missing_pools()
         );
         result1?;
-        // since failure in updating the missing pools is not critical for UniswapV3PoolFetcher maintenance 
+        // since failure in updating the missing pools is not critical for UniswapV3PoolFetcher maintenance
         // and future liquidity fetch calls, then there is no need to return error
         if let Err(err) = result2 {
             tracing::warn!(
