@@ -1,6 +1,6 @@
 use {
     crate::{
-        logic::{competition, competition::order, eth},
+        domain::{competition, competition::order, eth},
         Ethereum,
     },
     anyhow::Result,
@@ -22,7 +22,6 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    primitive_types::H160,
     shared::http_solver::model::{
         ApprovalModel,
         ExecutedAmmModel,
@@ -52,7 +51,7 @@ use {
 pub struct Settlement {
     settlement: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
-    solver_account: eth::Account,
+    solver: eth::Address,
 }
 
 impl Settlement {
@@ -113,7 +112,7 @@ impl Settlement {
         Ok(Self {
             settlement,
             contract: settlement_contract,
-            solver_account: solution.solver.account(),
+            solver: solution.solver.address(),
         })
     }
 
@@ -124,18 +123,11 @@ impl Settlement {
         let builder = settle_method_builder(
             &self.contract,
             encoded_settlement,
-            match self.solver_account {
-                eth::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
-                    ethcontract::PrivateKey::from_raw(private_key.into())
-                        .expect("private key was already validated"),
-                    None,
-                ),
-                eth::Account::Address(address) => ethcontract::Account::Local(address.into(), None),
-            },
+            ethcontract::Account::Local(self.solver.into(), None),
         );
         let tx = builder.into_inner();
         eth::Tx {
-            from: tx.from.unwrap().address().into(),
+            from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap().into(),
             input: tx.data.unwrap().0,
@@ -421,7 +413,11 @@ struct AllowanceManager;
 
 #[async_trait]
 impl AllowanceManaging for AllowanceManager {
-    async fn get_allowances(&self, _tokens: HashSet<H160>, _spender: H160) -> Result<Allowances> {
+    async fn get_allowances(
+        &self,
+        _tokens: HashSet<eth::H160>,
+        _spender: eth::H160,
+    ) -> Result<Allowances> {
         unimplemented!("this is not supposed to be called")
     }
 

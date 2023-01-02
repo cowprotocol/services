@@ -94,7 +94,14 @@ impl TradeFinding for ZeroExTradeFinder {
 
 impl From<ZeroExResponseError> for TradeError {
     fn from(err: ZeroExResponseError) -> Self {
-        TradeError::Other(err.into())
+        match err {
+            ZeroExResponseError::InsufficientLiquidity => TradeError::NoLiquidity,
+            ZeroExResponseError::ServerError(_)
+            | ZeroExResponseError::UnknownZeroExError(_)
+            | ZeroExResponseError::DeserializeError(_, _)
+            | ZeroExResponseError::TextFetch(_)
+            | ZeroExResponseError::Send(_) => TradeError::Other(err.into()),
+        }
     }
 }
 
