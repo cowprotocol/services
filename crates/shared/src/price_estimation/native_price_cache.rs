@@ -41,11 +41,8 @@ impl Inner {
             Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.requested_at = now;
-                if now.saturating_duration_since(entry.updated_at) < *max_age {
-                    Some(entry.price)
-                } else {
-                    None
-                }
+                let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
+                is_recent.then_some(entry.price)
             }
             Entry::Vacant(entry) => {
                 // Create an outdated cache entry so the background task keeping the cache warm
