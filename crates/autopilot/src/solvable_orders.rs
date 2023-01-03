@@ -199,7 +199,7 @@ impl SolvableOrdersCache {
 
         // create auction
         let (orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &self.native_price_estimator).await;
+            get_orders_with_native_prices(orders.clone(), &self.native_price_estimator);
         counter.checkpoint("missing_price", &orders);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
@@ -448,7 +448,7 @@ async fn update_task(
     }
 }
 
-async fn get_orders_with_native_prices(
+fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
@@ -788,7 +788,6 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_prices()
-            .times(1)
             .withf(move |tokens| *tokens == [token1])
             .returning(|_| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
         native_price_estimator
@@ -821,7 +820,7 @@ mod tests {
         // We'll have no native prices in this call. But this call will spawn a background task
         // fetching native prices so we'll have them in the next call.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -830,7 +829,7 @@ mod tests {
 
         // Now we have all the native prices we want.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
