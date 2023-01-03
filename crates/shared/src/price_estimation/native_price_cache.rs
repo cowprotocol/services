@@ -4,7 +4,7 @@ use itertools::{Either, Itertools};
 use primitive_types::H160;
 use prometheus::IntCounterVec;
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     sync::{Arc, Mutex, MutexGuard, Weak},
     time::{Duration, Instant},
 };
@@ -30,18 +30,34 @@ struct Inner {
 
 impl Inner {
     // Returns a single cached price and updates its `requested_at` field.
+    // If there is no entry for the token yet an outdated cache entry gets created.
     fn get_cached_price(
         token: &H160,
         now: Instant,
         cache: &mut MutexGuard<HashMap<H160, CachedPrice>>,
         max_age: &Duration,
     ) -> Option<f64> {
-        match cache.get_mut(token) {
-            Some(entry) if now.saturating_duration_since(entry.updated_at) < *max_age => {
+        match cache.entry(*token) {
+            Entry::Occupied(mut entry) => {
+                let entry = entry.get_mut();
                 entry.requested_at = now;
-                Some(entry.price)
+                if now.saturating_duration_since(entry.updated_at) < *max_age {
+                    Some(entry.price)
+                } else {
+                    None
+                }
             }
-            _ => None,
+            Entry::Vacant(entry) => {
+                // Create an outdated cache entry so the background task keeping the cache warm
+                // will fetch the price during the next maintenance cycle.
+                let outdated_timestamp = now - *max_age;
+                entry.insert(CachedPrice {
+                    price: 0.,
+                    updated_at: outdated_timestamp,
+                    requested_at: now,
+                });
+                None
+            }
         }
     }
 
@@ -155,27 +171,14 @@ impl CachingNativePriceEstimator {
         }
     }
 
-    /// Returns cached prices immediately and spawns a background task that fetches the missing
-    /// prices.
+    /// Only returns prices that are currently cached. Missing prices will get prioritized to get
+    /// fetched during the next cycles of the maintenance background task.
     pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
-        let (cached_prices, missing_indices) = self.inner.get_cached_prices(tokens, &self.max_age);
+        let (cached_prices, _) = self.inner.get_cached_prices(tokens, &self.max_age);
         let result = cached_prices
             .iter()
             .map(|(index, price)| (tokens[*index], *price))
             .collect();
-
-        if !missing_indices.is_empty() {
-            // Estimate and cache missing prices in background task.
-            let missing_tokens: Vec<_> =
-                missing_indices.iter().map(|index| tokens[*index]).collect();
-            let inner = self.inner.clone();
-            let max_age = self.max_age;
-            tokio::spawn(async move {
-                let mut stream = inner.estimate_prices_and_update_cache(&missing_tokens, max_age);
-                while stream.next().await.is_some() {}
-            });
-        }
-
         result
     }
 }
