@@ -1,11 +1,11 @@
 use crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating};
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use itertools::{Either, Itertools};
 use primitive_types::H160;
 use prometheus::IntCounterVec;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, MutexGuard, Weak},
     time::{Duration, Instant},
 };
 
@@ -31,32 +31,23 @@ struct Inner {
 }
 
 impl Inner {
-    /// Callers should ensure tokens is not empty to prevent unnecessary call to inner price estimator.
-    fn estimate_prices_and_update_cache<'a>(
-        &'a self,
-        tokens: &'a [H160],
-    ) -> impl Stream<Item = (usize, NativePriceEstimateResult)> + 'a {
-        debug_assert!(!tokens.is_empty());
-        self.estimator
-            .estimate_native_prices(tokens)
-            .inspect(|(i, result)| {
-                if let Ok(price) = result {
-                    let token = &tokens[*i];
-                    let now = Instant::now();
-                    let mut cache = self.cache.lock().unwrap();
-                    let mut entry = cache.entry(*token).or_insert_with(|| CachedPrice {
-                        price: *price,
-                        updated_at: now,
-                        requested_at: now,
-                    });
-                    entry.updated_at = now;
-                    entry.requested_at = now;
-                    entry.price = *price;
-                }
-            })
+    // Returns a single cached price and updates its `requested_at` field.
+    fn get_cached_price(
+        token: &H160,
+        now: Instant,
+        cache: &mut MutexGuard<HashMap<H160, CachedPrice>>,
+        max_age: &Duration,
+    ) -> Option<f64> {
+        match cache.get_mut(token) {
+            Some(entry) if now.saturating_duration_since(entry.updated_at) < *max_age => {
+                entry.requested_at = now;
+                Some(entry.price)
+            }
+            _ => None,
+        }
     }
 
-    /// Returns cached results and uncached indexes.
+    /// Returns cached prices and uncached indices.
     fn get_cached_prices(&self, tokens: &[H160]) -> (Vec<(usize, f64)>, Vec<usize>) {
         if tokens.is_empty() {
             return Default::default();
@@ -64,16 +55,61 @@ impl Inner {
 
         let now = Instant::now();
         let mut cache = self.cache.lock().unwrap();
-        tokens
-            .iter()
-            .enumerate()
-            .partition_map(|(i, token)| match cache.get_mut(token) {
-                Some(entry) if now.saturating_duration_since(entry.updated_at) < self.max_age => {
-                    entry.requested_at = now;
-                    Either::Left((i, entry.price))
-                }
+        tokens.iter().enumerate().partition_map(|(i, token)| {
+            match Self::get_cached_price(token, now, &mut cache, &self.max_age) {
+                Some(price) => Either::Left((i, price)),
                 _ => Either::Right(i),
+            }
+        })
+    }
+
+    /// Checks cache for the given tokens one by one. If the price is already cached it gets
+    /// returned. If it's not in the cache a new price estimation request gets issued.
+    /// We check the cache before each request because they can take a long time and some other
+    /// task might have some requested price in the meantime.
+    fn estimate_prices_and_update_cache<'a>(
+        &'a self,
+        tokens: &'a [H160],
+    ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
+        futures::stream::iter(tokens)
+            .enumerate()
+            .then(move |(index, token)| async move {
+                {
+                    // check if price is cached by now
+                    let now = Instant::now();
+                    let mut cache = self.cache.lock().unwrap();
+                    if let Some(price) =
+                        Self::get_cached_price(token, now, &mut cache, &self.max_age)
+                    {
+                        return (index, Ok(price));
+                    }
+                }
+
+                // fetch single price estimate
+                let (_, result) = self
+                    .estimator
+                    .estimate_native_prices(&[*token])
+                    .next()
+                    .await
+                    .expect("stream yields exactly 1 item");
+
+                // update price in cache
+                if let Ok(price) = result {
+                    let now = Instant::now();
+                    let mut cache = self.cache.lock().unwrap();
+                    cache.insert(
+                        *token,
+                        CachedPrice {
+                            price,
+                            updated_at: now,
+                            requested_at: now,
+                        },
+                    );
+                };
+
+                (index, result)
             })
+            .boxed()
     }
 }
 
@@ -121,13 +157,13 @@ impl CachingNativePriceEstimator {
             .collect();
 
         if !missing_indices.is_empty() {
-            // Fetch missing prices in background task.
+            // Estimate and cache missing prices in background task.
             let missing_tokens: Vec<_> =
                 missing_indices.iter().map(|index| tokens[*index]).collect();
             let inner = self.0.clone();
             tokio::spawn(async move {
-                let stream = inner.estimate_prices_and_update_cache(&missing_tokens);
-                let _ = stream.map(Ok).forward(futures::sink::drain()).await;
+                let mut stream = inner.estimate_prices_and_update_cache(&missing_tokens);
+                while stream.next().await.is_some() {}
             });
         }
 
@@ -365,18 +401,18 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         inner
             .expect_estimate_native_prices()
-            .times(1)
+            .times(10)
             .returning(move |tokens| {
-                assert_eq!(tokens.len(), 10);
-                futures::stream::iter(std::iter::repeat(Ok(1.0)).enumerate().take(10)).boxed()
+                assert_eq!(tokens.len(), 1);
+                futures::stream::iter(std::iter::once(Ok(1.0)).enumerate()).boxed()
             });
         // background task updates all outdated prices
         inner
             .expect_estimate_native_prices()
-            .times(1)
+            .times(10)
             .returning(move |tokens| {
-                assert_eq!(tokens.len(), 10);
-                futures::stream::iter(std::iter::repeat(Ok(2.0)).enumerate().take(10)).boxed()
+                assert_eq!(tokens.len(), 1);
+                futures::stream::iter(std::iter::once(Ok(2.0)).enumerate()).boxed()
             });
 
         let estimator = CachingNativePriceEstimator::new(
