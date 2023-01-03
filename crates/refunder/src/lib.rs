@@ -42,9 +42,7 @@ pub async fn main(args: arguments::Arguments) {
         match refunder.try_to_refund_all_eligble_orders().await {
             Ok(_) => {
                 track_refunding_loop_result("success");
-                *liveness.last_successful_loop.write().expect(
-                    "Lock is only written to at this point and the program should just crash on a panic",
-                ) = Instant::now()
+                *liveness.last_successful_loop.write().unwrap() = Instant::now()
             }
             Err(err) => {
                 track_refunding_loop_result("error");
@@ -62,14 +60,8 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        self.last_successful_loop
-            .read()
-            .ok()
-            .map(|last_successful_loop| {
-                Instant::now().duration_since(*last_successful_loop)
-                    < DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY
-            })
-            .unwrap_or(false)
+        Instant::now().duration_since(*self.last_successful_loop.read().unwrap())
+            < DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY
     }
 }
 
