@@ -44,9 +44,6 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
-
-    /// Auction errored price estimates.
-    auction_errored_price_estimates: IntCounter,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
