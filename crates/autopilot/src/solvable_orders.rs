@@ -817,8 +817,8 @@ mod tests {
             None,
         );
 
-        // We'll have no native prices in this call. But this call will spawn a background task
-        // fetching native prices so we'll have them in the next call.
+        // We'll have no native prices in this call. But this call will cause a background task
+        // to fetch the missing prices so we'll have them in the next call.
         let (filtered_orders, prices) =
             get_orders_with_native_prices(orders.clone(), &native_price_estimator);
         assert!(filtered_orders.is_empty());
