@@ -20,7 +20,7 @@ use shared::{
     signature_validator::{SignatureCheck, SignatureValidating},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator,
     sync::{Arc, Mutex, Weak},
     time::Duration,
@@ -452,12 +452,10 @@ fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
-    // Collect traded tokens while giving market orders a higher priority.
-    itertools::partition(&mut orders, |o| o.metadata.class == OrderClass::Market);
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .collect::<BTreeSet<_>>()
+        .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
 
