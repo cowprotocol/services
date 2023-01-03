@@ -656,7 +656,7 @@ impl OrderFilterCounter {
 mod tests {
     use super::*;
     use chrono::{DateTime, NaiveDateTime, Utc};
-    use futures::FutureExt;
+    use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
     use model::order::{
@@ -665,7 +665,7 @@ mod tests {
     use primitive_types::H160;
     use shared::{
         bad_token::list_based::ListBasedDetector,
-        signature_validator::{MockSignatureValidating, SignatureValidationError},
+        signature_validator::{MockSignatureValidating, SignatureValidationError}, price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
     };
 
     #[tokio::test]
@@ -751,6 +751,107 @@ mod tests {
         let max_price = uint_max / 1e18;
         assert!(to_normalized_price(max_price).is_none());
         assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
+    }
+
+    #[tokio::test]
+    async fn filters_tokens_without_native_prices() {
+        let token1 = H160([1; 20]);
+        let token2 = H160([2; 20]);
+        let token3 = H160([3; 20]);
+        let token4 = H160([4; 20]);
+
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token2)
+                .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token2)
+                .with_buy_token(token4)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+        ];
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf(move |tokens| {
+                *tokens == [token1]
+            })
+            .returning(|_| {
+                futures::stream::iter([(0, Ok(2.))].into_iter()).boxed()
+            });
+        native_price_estimator.expect_estimate_native_prices()
+            .withf(move |tokens| {
+                *tokens == [token2]
+            })
+            .returning(|_| {
+                futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter()).boxed()
+            });
+        native_price_estimator.expect_estimate_native_prices()
+            .withf(move |tokens| {
+                *tokens == [token3]
+            })
+            .returning(|_| {
+                futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed()
+            });
+        native_price_estimator.expect_estimate_native_prices()
+            .withf(move |tokens| {
+                *tokens == [token4]
+            })
+            .returning(|_| {
+                futures::stream::iter([(0, Ok(0.))].into_iter()).boxed()
+            });
+
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Box::new(native_price_estimator),
+            Duration::from_secs(10),
+            Duration::MAX,
+            None,
+            None
+        );
+
+        // We'll have no native prices in this call. But this call will spawns a background task
+        // fetching native prices so we'll have them in the next call.
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+        ).await;
+        assert!(filtered_orders.is_empty());
+        assert!(prices.is_empty());
+
+        // Wait for native prices to get fetched.
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Now we have all the native prices we want.
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+        ).await;
+
+        assert_eq!(filtered_orders, [orders[2].clone()]);
+        assert_eq!(
+            prices,
+            btreemap! {
+                token1 => U256::from(2_000_000_000_000_000_000_u128),
+                token3 => U256::from(250_000_000_000_000_000_u128),
+            }
+        );
     }
 
     #[test]
