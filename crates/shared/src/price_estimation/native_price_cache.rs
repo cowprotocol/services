@@ -84,7 +84,7 @@ impl Inner {
     /// Checks cache for the given tokens one by one. If the price is already cached it gets
     /// returned. If it's not in the cache a new price estimation request gets issued.
     /// We check the cache before each request because they can take a long time and some other
-    /// task might have some requested price in the meantime.
+    /// task might have fetched some requested price in the meantime.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
         tokens: &'a [H160],
