@@ -13,8 +13,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-const SLEEP_TIME_BETWEEN_LOOPS: u64 = 1;
-const SECONDS_FROM_LAST_LOOP_BEFORE_UNHEALTHY: u64 = 4 * SLEEP_TIME_BETWEEN_LOOPS;
+const SLEEP_TIME_BETWEEN_LOOPS: Duration = Duration::from_secs(30);
+const SECONDS_FROM_LAST_LOOP_BEFORE_UNHEALTHY: Duration = Duration::from_secs(120);
 
 pub async fn main(args: arguments::Arguments) {
     let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
@@ -51,7 +51,7 @@ pub async fn main(args: arguments::Arguments) {
                 tracing::warn!("Error while refunding ethflow orders: {:?}", err)
             }
         }
-        tokio::time::sleep(Duration::from_secs(SLEEP_TIME_BETWEEN_LOOPS)).await;
+        tokio::time::sleep(SLEEP_TIME_BETWEEN_LOOPS).await;
     }
 }
 
@@ -66,9 +66,7 @@ impl LivenessChecking for Liveness {
             .read()
             .ok()
             .map(|last_successful_loop| {
-                Instant::now()
-                    .duration_since(*last_successful_loop)
-                    .as_secs()
+                Instant::now().duration_since(*last_successful_loop)
                     < SECONDS_FROM_LAST_LOOP_BEFORE_UNHEALTHY
             })
             .unwrap_or(false)
