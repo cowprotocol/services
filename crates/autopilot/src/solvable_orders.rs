@@ -788,10 +788,12 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_prices()
+            .times(1)
             .withf(move |tokens| *tokens == [token1])
             .returning(|_| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
         native_price_estimator
             .expect_estimate_native_prices()
+            .times(1)
             .withf(move |tokens| *tokens == [token2])
             .returning(|_| {
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter())
@@ -799,10 +801,12 @@ mod tests {
             });
         native_price_estimator
             .expect_estimate_native_prices()
+            .times(1)
             .withf(move |tokens| *tokens == [token3])
             .returning(|_| futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed());
         native_price_estimator
             .expect_estimate_native_prices()
+            .times(1)
             .withf(move |tokens| *tokens == [token4])
             .returning(|_| futures::stream::iter([(0, Ok(0.))].into_iter()).boxed());
 
