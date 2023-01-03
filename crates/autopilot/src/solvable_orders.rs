@@ -665,7 +665,8 @@ mod tests {
     use primitive_types::H160;
     use shared::{
         bad_token::list_based::ListBasedDetector,
-        signature_validator::{MockSignatureValidating, SignatureValidationError}, price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+        price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+        signature_validator::{MockSignatureValidating, SignatureValidationError},
     };
 
     #[tokio::test]
@@ -790,48 +791,36 @@ mod tests {
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
             .expect_estimate_native_prices()
-            .withf(move |tokens| {
-                *tokens == [token1]
-            })
+            .withf(move |tokens| *tokens == [token1])
+            .returning(|_| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf(move |tokens| *tokens == [token2])
             .returning(|_| {
-                futures::stream::iter([(0, Ok(2.))].into_iter()).boxed()
+                futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter())
+                    .boxed()
             });
-        native_price_estimator.expect_estimate_native_prices()
-            .withf(move |tokens| {
-                *tokens == [token2]
-            })
-            .returning(|_| {
-                futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter()).boxed()
-            });
-        native_price_estimator.expect_estimate_native_prices()
-            .withf(move |tokens| {
-                *tokens == [token3]
-            })
-            .returning(|_| {
-                futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed()
-            });
-        native_price_estimator.expect_estimate_native_prices()
-            .withf(move |tokens| {
-                *tokens == [token4]
-            })
-            .returning(|_| {
-                futures::stream::iter([(0, Ok(0.))].into_iter()).boxed()
-            });
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf(move |tokens| *tokens == [token3])
+            .returning(|_| futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf(move |tokens| *tokens == [token4])
+            .returning(|_| futures::stream::iter([(0, Ok(0.))].into_iter()).boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
             Duration::from_secs(10),
             Duration::MAX,
             None,
-            None
+            None,
         );
 
         // We'll have no native prices in this call. But this call will spawns a background task
         // fetching native prices so we'll have them in the next call.
-        let (filtered_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
-            &native_price_estimator,
-        ).await;
+        let (filtered_orders, prices) =
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -839,10 +828,8 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
-            &native_price_estimator,
-        ).await;
+        let (filtered_orders, prices) =
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(

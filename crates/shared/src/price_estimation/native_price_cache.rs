@@ -46,7 +46,11 @@ impl Inner {
     }
 
     /// Returns cached prices and uncached indices.
-    fn get_cached_prices(&self, tokens: &[H160], max_age: &Duration) -> (Vec<(usize, f64)>, Vec<usize>) {
+    fn get_cached_prices(
+        &self,
+        tokens: &[H160],
+        max_age: &Duration,
+    ) -> (Vec<(usize, f64)>, Vec<usize>) {
         if tokens.is_empty() {
             return Default::default();
         }
@@ -77,9 +81,7 @@ impl Inner {
                     // check if price is cached by now
                     let now = Instant::now();
                     let mut cache = self.cache.lock().unwrap();
-                    if let Some(price) =
-                        Self::get_cached_price(token, now, &mut cache, &max_age)
-                    {
+                    if let Some(price) = Self::get_cached_price(token, now, &mut cache, &max_age) {
                         return (index, Ok(price));
                     }
                 }
@@ -115,7 +117,7 @@ impl Inner {
 /// Wrapper around `Box<dyn PriceEstimating>` which caches successful price estimates for some time
 /// and supports updating the cache in the background.
 /// The size of the underlying cache is unbounded.
-pub struct CachingNativePriceEstimator{
+pub struct CachingNativePriceEstimator {
     inner: Arc<Inner>,
     max_age: Duration,
     metrics: &'static Metrics,
@@ -146,7 +148,11 @@ impl CachingNativePriceEstimator {
             max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
         ));
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
-        Self{ inner, max_age, metrics }
+        Self {
+            inner,
+            max_age,
+            metrics,
+        }
     }
 
     /// Returns cached prices immediately and spawns a background task that fetches the missing
@@ -181,7 +187,8 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         tokens: &'a [H160],
     ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
         let stream = async_stream::stream!({
-            let (cached_prices, missing_indices) = self.inner.get_cached_prices(tokens, &self.max_age);
+            let (cached_prices, missing_indices) =
+                self.inner.get_cached_prices(tokens, &self.max_age);
             self.metrics
                 .native_price_cache
                 .with_label_values(&["misses"])
@@ -199,7 +206,9 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 return;
             }
             let missing_tokens: Vec<H160> = missing_indices.iter().map(|i| tokens[*i]).collect();
-            let mut stream = self.inner.estimate_prices_and_update_cache(&missing_tokens, self.max_age);
+            let mut stream = self
+                .inner
+                .estimate_prices_and_update_cache(&missing_tokens, self.max_age);
             while let Some((i, result)) = stream.next().await {
                 yield (missing_indices[i], result);
             }
@@ -225,10 +234,7 @@ async fn update_recently_used_outdated_prices(
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_, cached)| {
-                now.saturating_duration_since(cached.updated_at)
-                    > max_age
-            })
+            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
             .map(|(token, cached)| (*token, cached.requested_at))
             .collect();
         outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
