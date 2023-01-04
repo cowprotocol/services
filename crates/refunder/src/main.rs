@@ -9,5 +9,6 @@ async fn main() {
     );
     shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running refunder with validated arguments:\n{}", args);
+    global_metrics::setup_metrics_registry(Some("refunder".into()), None);
     refunder::main(args).await;
 }

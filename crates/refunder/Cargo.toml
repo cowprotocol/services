@@ -7,21 +7,24 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts  = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
-gas-estimation = { workspace = true }
 futures = {workspace = true}
-number-conversions = { path = "../number-conversions" }
+gas-estimation = { workspace = true }
+global-metrics = { path = "../global-metrics" }
 lazy_static = { workspace = true }
 model = { path = "../model" }
+number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 shared = { path = "../shared" }
+sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
-sqlx = { workspace = true }

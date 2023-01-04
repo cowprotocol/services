@@ -49,6 +49,10 @@ pub struct Arguments {
 
     #[clap(long, env, hide_env_values = true)]
     pub refunder_pk: String,
+
+    /// The port at which we serve our metrics
+    #[clap(long, env, default_value = "9590")]
+    pub metrics_port: u16,
 }
 
 impl std::fmt::Display for Arguments {
@@ -61,6 +65,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
         writeln!(f, "refunder_pk: SECRET")?;
+        writeln!(f, "metrics_port: {}", self.metrics_port)?;
         Ok(())
     }
 }

@@ -2745,6 +2745,7 @@ name = "refunder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "clap 4.0.8",
  "contracts",
@@ -2752,11 +2753,13 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
+ "global-metrics",
  "lazy_static",
  "model",
  "number-conversions",
  "primitive-types 0.10.1",
  "prometheus",
+ "prometheus-metric-storage",
  "shared",
  "sqlx",
  "tokio",
