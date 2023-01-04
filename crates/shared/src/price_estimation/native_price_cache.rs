@@ -30,12 +30,12 @@ struct Inner {
 
 impl Inner {
     // Returns a single cached price and updates its `requested_at` field.
-    // If there is no entry for the token yet an outdated cache entry gets created.
     fn get_cached_price(
         token: &H160,
         now: Instant,
         cache: &mut MutexGuard<HashMap<H160, CachedPrice>>,
         max_age: &Duration,
+        create_missing_entry: bool,
     ) -> Option<f64> {
         match cache.entry(*token) {
             Entry::Occupied(mut entry) => {
@@ -45,14 +45,18 @@ impl Inner {
                 is_recent.then_some(entry.price)
             }
             Entry::Vacant(entry) => {
-                // Create an outdated cache entry so the background task keeping the cache warm
-                // will fetch the price during the next maintenance cycle.
-                let outdated_timestamp = now - *max_age;
-                entry.insert(CachedPrice {
-                    price: 0.,
-                    updated_at: outdated_timestamp,
-                    requested_at: now,
-                });
+                if create_missing_entry {
+                    // Create an outdated cache entry so the background task keeping the cache warm
+                    // will fetch the price during the next maintenance cycle.
+                    // This should happen only for prices missing while building the auction.
+                    // Otherwise malicious actors could easily cause the cache size to blow up.
+                    let outdated_timestamp = now - *max_age;
+                    entry.insert(CachedPrice {
+                        price: 0.,
+                        updated_at: outdated_timestamp,
+                        requested_at: now,
+                    });
+                }
                 None
             }
         }
@@ -63,6 +67,7 @@ impl Inner {
         &self,
         tokens: &[H160],
         max_age: &Duration,
+        create_missing_entry: bool,
     ) -> (Vec<(usize, f64)>, Vec<usize>) {
         if tokens.is_empty() {
             return Default::default();
@@ -71,7 +76,7 @@ impl Inner {
         let now = Instant::now();
         let mut cache = self.cache.lock().unwrap();
         tokens.iter().enumerate().partition_map(|(i, token)| {
-            match Self::get_cached_price(token, now, &mut cache, max_age) {
+            match Self::get_cached_price(token, now, &mut cache, max_age, create_missing_entry) {
                 Some(price) => Either::Left((i, price)),
                 _ => Either::Right(i),
             }
@@ -94,7 +99,8 @@ impl Inner {
                     // check if price is cached by now
                     let now = Instant::now();
                     let mut cache = self.cache.lock().unwrap();
-                    if let Some(price) = Self::get_cached_price(token, now, &mut cache, &max_age) {
+                    let price = Self::get_cached_price(token, now, &mut cache, &max_age, false);
+                    if let Some(price) = price {
                         return (index, Ok(price));
                     }
                 }
@@ -171,7 +177,7 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get prioritized to get
     /// fetched during the next cycles of the maintenance background task.
     pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
-        let (cached_prices, _) = self.inner.get_cached_prices(tokens, &self.max_age);
+        let (cached_prices, _) = self.inner.get_cached_prices(tokens, &self.max_age, true);
         let result = cached_prices
             .iter()
             .map(|(index, price)| (tokens[*index], *price))
@@ -188,7 +194,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
         let stream = async_stream::stream!({
             let (cached_prices, missing_indices) =
-                self.inner.get_cached_prices(tokens, &self.max_age);
+                self.inner.get_cached_prices(tokens, &self.max_age, false);
             self.metrics
                 .native_price_cache
                 .with_label_values(&["misses"])
