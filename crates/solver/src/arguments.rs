@@ -1,5 +1,6 @@
 use crate::{
     liquidity::slippage,
+    s3_instance_upload_arguments::S3UploadArguments,
     settlement_access_list::AccessListEstimatorType,
     solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
 };
@@ -300,25 +301,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub solution_comparison_decimal_cutoff: u16,
 
-    /// The s3_instance_upload_* arguments configure how quasimodo instances should be uploaded to
-    /// AWS S3. They must either all be set or all not set. If they are set then every instance sent to
-    /// Quasimodo as part of auction solving is also uploaded to S3.
-    #[clap(long, env)]
-    pub s3_instance_upload_region: Option<String>,
-
-    #[clap(long, env)]
-    pub s3_instance_upload_bucket: Option<String>,
-
-    /// Prepended to the auction id to form the final instance filename on S3. Something like
-    /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a folder.
-    #[clap(long, env)]
-    pub s3_instance_upload_filename_prefix: Option<String>,
-
-    #[clap(long, env)]
-    pub s3_instance_upload_access_key_id: Option<String>,
-
-    #[clap(long, env)]
-    pub s3_instance_upload_secret_access_key: Option<String>,
+    #[clap(flatten)]
+    pub s3_upload: S3UploadArguments,
 }
 
 impl std::fmt::Display for Arguments {
@@ -432,31 +416,6 @@ impl std::fmt::Display for Arguments {
             f,
             "token_list_restriction_for_price_checks: {:?}",
             self.token_list_restriction_for_price_checks
-        )?;
-        display_option(
-            f,
-            "s3_instance_upload_region",
-            &self.s3_instance_upload_region,
-        )?;
-        display_option(
-            f,
-            "s3_instance_upload_bucket",
-            &self.s3_instance_upload_bucket,
-        )?;
-        display_option(
-            f,
-            "s3_instance_upload_filename_prefix",
-            &self.s3_instance_upload_filename_prefix,
-        )?;
-        display_option(
-            f,
-            "s3_instance_upload_access_key_id",
-            &self.s3_instance_upload_access_key_id,
-        )?;
-        display_secret_option(
-            f,
-            "s3_instance_upload_secret_access_key",
-            &self.s3_instance_upload_secret_access_key,
         )?;
         Ok(())
     }

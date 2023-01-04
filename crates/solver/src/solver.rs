@@ -283,7 +283,7 @@ pub fn create(
     order_prioritization_config: &single_order_solver::Arguments,
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
-    mut instance_uploader_config_for_quasimodo: Option<S3InstanceUploader>,
+    mut s3_instance_uploader_for_quasimodo: Option<S3InstanceUploader>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -401,7 +401,7 @@ pub fn create(
                     },
                     true,
                     slippage_calculator,
-                    instance_uploader_config_for_quasimodo.take(),
+                    s3_instance_uploader_for_quasimodo.take(),
                 )),
                 SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(

@@ -238,35 +238,11 @@ async fn main() -> ! {
 
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
 
-    let s3_config = {
-        let s3_args = &[
-            &args.s3_instance_upload_region,
-            &args.s3_instance_upload_bucket,
-            &args.s3_instance_upload_filename_prefix,
-            &args.s3_instance_upload_access_key_id,
-            &args.s3_instance_upload_secret_access_key,
-        ];
-        let any_some = s3_args.iter().any(|arg| arg.is_some());
-        let any_none = s3_args.iter().any(|arg| arg.is_none());
-        if any_none && any_some {
-            panic!("Either set all s3_instance_upload args or none.");
-        }
-        if any_some {
-            tracing::debug!("quasimodo s3 instance uploading is enabled");
-            Some(S3InstanceUploader::new(
-                solver::s3_instance_upload::Config {
-                    region: args.s3_instance_upload_region.unwrap(),
-                    bucket: args.s3_instance_upload_bucket.unwrap(),
-                    access_key_id: args.s3_instance_upload_access_key_id.unwrap(),
-                    secret_access_key: args.s3_instance_upload_secret_access_key.unwrap(),
-                    filename_prefix: args.s3_instance_upload_filename_prefix.unwrap(),
-                },
-            ))
-        } else {
-            tracing::debug!("quasimodo s3 instance uploading is disabled");
-            None
-        }
-    };
+    let s3_instance_uploader = args
+        .s3_upload
+        .into_config()
+        .unwrap()
+        .map(S3InstanceUploader::new);
 
     let solver = solver::solver::create(
         web3.clone(),
@@ -302,7 +278,7 @@ async fn main() -> ! {
         &args.order_prioritization,
         post_processing_pipeline,
         &domain,
-        s3_config,
+        s3_instance_uploader,
     )
     .expect("failure creating solvers");
 
