@@ -88,8 +88,9 @@ impl HttpSolver {
         slippage_calculator: SlippageCalculator,
         market_makable_token_list: AutoUpdatingTokenList,
         domain: DomainSeparator,
-        instance_uploader: Option<Arc<S3InstanceUploader>>,
+        instance_uploader: Option<S3InstanceUploader>,
     ) -> Self {
+        let instance_uploader = instance_uploader.map(Arc::new);
         Self {
             solver,
             account,

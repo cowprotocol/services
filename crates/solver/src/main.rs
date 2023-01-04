@@ -34,6 +34,7 @@ use solver::{
     liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     metrics::Metrics,
     orderbook::OrderBookApi,
+    s3_instance_upload::S3InstanceUploader,
     settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         gelato::GelatoSubmitter,
@@ -252,13 +253,15 @@ async fn main() -> ! {
         }
         if any_some {
             tracing::debug!("quasimodo s3 instance uploading is enabled");
-            Some(solver::s3_instance_upload::Config {
-                region: args.s3_instance_upload_region.unwrap(),
-                bucket: args.s3_instance_upload_bucket.unwrap(),
-                access_key_id: args.s3_instance_upload_access_key_id.unwrap(),
-                secret_access_key: args.s3_instance_upload_secret_access_key.unwrap(),
-                filename_prefix: args.s3_instance_upload_filename_prefix.unwrap(),
-            })
+            Some(S3InstanceUploader::new(
+                solver::s3_instance_upload::Config {
+                    region: args.s3_instance_upload_region.unwrap(),
+                    bucket: args.s3_instance_upload_bucket.unwrap(),
+                    access_key_id: args.s3_instance_upload_access_key_id.unwrap(),
+                    secret_access_key: args.s3_instance_upload_secret_access_key.unwrap(),
+                    filename_prefix: args.s3_instance_upload_filename_prefix.unwrap(),
+                },
+            ))
         } else {
             tracing::debug!("quasimodo s3 instance uploading is disabled");
             None

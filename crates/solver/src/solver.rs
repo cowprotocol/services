@@ -16,6 +16,7 @@ use crate::{
         LimitOrder, Liquidity,
     },
     metrics::SolverMetrics,
+    s3_instance_upload::S3InstanceUploader,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessing,
     solver::balancer_sor_solver::BalancerSorSolver,
@@ -282,7 +283,7 @@ pub fn create(
     order_prioritization_config: &single_order_solver::Arguments,
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
-    mut instance_uploader_config_for_quasimodo: Option<crate::s3_instance_upload::Config>,
+    mut instance_uploader_config_for_quasimodo: Option<S3InstanceUploader>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -307,44 +308,41 @@ pub fn create(
     let http_instance_with_all_orders = http_solver::InstanceCache::default();
 
     // Helper function to create http solver instances.
-    let create_http_solver =
-        |account: Account,
-         url: Url,
-         name: String,
-         config: SolverConfig,
-         filter_non_fee_connected_orders: bool,
-         slippage_calculator: SlippageCalculator,
-         instance_uploader_config: Option<crate::s3_instance_upload::Config>|
-         -> HttpSolver {
-            HttpSolver::new(
-                DefaultHttpSolverApi {
-                    name,
-                    network_name: network_id.clone(),
-                    chain_id,
-                    base: url,
-                    client: http_factory.create(),
-                    config,
-                },
-                account,
-                native_token,
-                token_info_fetcher.clone(),
-                buffer_retriever.clone(),
-                allowance_mananger.clone(),
-                order_converter.clone(),
-                if filter_non_fee_connected_orders {
-                    http_instance_with_filtered_orders.clone()
-                } else {
-                    http_instance_with_all_orders.clone()
-                },
-                filter_non_fee_connected_orders,
-                slippage_calculator,
-                market_makable_token_list.clone(),
-                *domain,
-                instance_uploader_config
-                    .map(crate::s3_instance_upload::S3InstanceUploader::new)
-                    .map(Arc::new),
-            )
-        };
+    let create_http_solver = |account: Account,
+                              url: Url,
+                              name: String,
+                              config: SolverConfig,
+                              filter_non_fee_connected_orders: bool,
+                              slippage_calculator: SlippageCalculator,
+                              instance_uploader_config: Option<S3InstanceUploader>|
+     -> HttpSolver {
+        HttpSolver::new(
+            DefaultHttpSolverApi {
+                name,
+                network_name: network_id.clone(),
+                chain_id,
+                base: url,
+                client: http_factory.create(),
+                config,
+            },
+            account,
+            native_token,
+            token_info_fetcher.clone(),
+            buffer_retriever.clone(),
+            allowance_mananger.clone(),
+            order_converter.clone(),
+            if filter_non_fee_connected_orders {
+                http_instance_with_filtered_orders.clone()
+            } else {
+                http_instance_with_all_orders.clone()
+            },
+            filter_non_fee_connected_orders,
+            slippage_calculator,
+            market_makable_token_list.clone(),
+            *domain,
+            instance_uploader_config,
+        )
+    };
 
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
