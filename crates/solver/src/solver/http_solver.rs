@@ -220,6 +220,27 @@ impl HttpSolver {
             },
         ))
     }
+
+    // Happens in a task to not delay solving.
+    fn upload_instance_in_background(&self, id: AuctionId, model: &BatchAuctionModel) {
+        if let Some(uploader) = &self.instance_uploader {
+            let model = model.clone();
+            let uploader = uploader.clone();
+            let task = async move {
+                let auction = match serde_json::to_vec(&model) {
+                    Ok(auction) => auction,
+                    Err(err) => {
+                        tracing::error!(?err, "encode auction for instance upload");
+                        return;
+                    }
+                };
+                if let Err(err) = uploader.upload_instance(id, auction).await {
+                    tracing::error!(?err, "error uploading instance");
+                }
+            };
+            tokio::task::spawn(task);
+        }
+    }
 }
 
 fn map_tokens_for_solver(
@@ -521,24 +542,7 @@ impl Solver for HttpSolver {
             }
         };
 
-        // Upload the instance if configured. Happens in a task to not delay solving.
-        if let Some(uploader) = &self.instance_uploader {
-            let model = model.clone();
-            let uploader = uploader.clone();
-            let task = async move {
-                let auction = match serde_json::to_vec(&model) {
-                    Ok(auction) => auction,
-                    Err(err) => {
-                        tracing::error!(?err, "encode auction for instance upload");
-                        return;
-                    }
-                };
-                if let Err(err) = uploader.upload_instance(id, auction).await {
-                    tracing::error!(?err, "error uploading instance");
-                }
-            };
-            tokio::task::spawn(task);
-        }
+        self.upload_instance_in_background(id, &model);
 
         let timeout = deadline
             .checked_duration_since(Instant::now())
