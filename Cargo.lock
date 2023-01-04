@@ -1981,6 +1981,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "impl-num-traits"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38b6057d6b519ad53dd59ec6e1054ace520a61afdcff53f1199420f3078b5466"
+dependencies = [
+ "integer-sqrt",
+ "num-traits",
+ "uint",
+]
+
+[[package]]
 name = "impl-rlp"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2036,6 +2047,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "integer-sqrt"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "276ec31bcb4a9ee45f58bec6f9ec700ae4cf4f4f8f2fa7e06cb406bd5ffdd770"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -2793,6 +2813,7 @@ checksum = "05e4722c697a58a99d5d06a08c30821d7c082a4632198de1eaa5a6c22ef42373"
 dependencies = [
  "fixed-hash 0.7.0",
  "impl-codec 0.5.1",
+ "impl-num-traits",
  "impl-rlp",
  "impl-serde 0.3.2",
  "uint",
@@ -3564,11 +3585,14 @@ dependencies = [
  "axum",
  "bigdecimal",
  "chrono",
- "ethereum-types 0.14.1",
+ "ethereum-types 0.12.1",
  "hex",
  "hyper",
+ "model",
+ "num",
  "serde",
  "serde_with 2.0.1",
+ "shared",
  "tokio",
  "tower",
  "tower-http",
