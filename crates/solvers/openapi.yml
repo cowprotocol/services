@@ -282,6 +282,8 @@ components:
                 required:
                   - weight
                 properties:
+                  scalingFactor:
+                    $ref: "#/components/schemas/BigInt"
                   weight:
                     $ref: "#/components/schemas/Decimal"
         fee:

@@ -1,6 +1,7 @@
 use crate::domain::liquidity;
 use ethereum_types::H160;
 use model::TokenPair;
+
 pub use shared::sources::uniswap_v2::pool_fetching::Pool;
 
 /// Converts a domain pool into a [`shared`] Uniswap V2 pool.

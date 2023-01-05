@@ -27,7 +27,7 @@ pub enum Side {
 
 /// The order classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Class {
+pub enum Class {
     Market,
     Limit,
     Liquidity,
@@ -39,6 +39,7 @@ pub struct UserOrder(Order);
 impl UserOrder {
     /// Wraps an order as a user order, returns `Err` with the original order if
     /// it is not a user order.
+    #[allow(clippy::result_large_err)]
     pub fn new(order: Order) -> Result<Self, Order> {
         match order.class {
             Class::Market | Class::Limit => Ok(Self(order)),

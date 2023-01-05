@@ -1,5 +1,6 @@
 //! Modelling on-chain liquidity.
 
+pub mod balancer;
 pub mod concentrated;
 pub mod constantproduct;
 pub mod limitorder;

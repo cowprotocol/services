@@ -5,9 +5,7 @@ use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 
-impl Auction {
-
-}
+impl Auction {}
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -114,6 +112,8 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
+    #[serde_as(as = "serialize::U256")]
+    scaling_factor: U256,
     weight: BigDecimal,
 }
 
