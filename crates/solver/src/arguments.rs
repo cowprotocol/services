@@ -417,6 +417,7 @@ impl std::fmt::Display for Arguments {
             "token_list_restriction_for_price_checks: {:?}",
             self.token_list_restriction_for_price_checks
         )?;
+        writeln!(f, "{}", self.s3_upload)?;
         Ok(())
     }
 }
