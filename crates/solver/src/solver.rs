@@ -16,6 +16,7 @@ use crate::{
         LimitOrder, Liquidity,
     },
     metrics::SolverMetrics,
+    s3_instance_upload::S3InstanceUploader,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessing,
     solver::balancer_sor_solver::BalancerSorSolver,
@@ -282,6 +283,7 @@ pub fn create(
     order_prioritization_config: &single_order_solver::Arguments,
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
+    mut s3_instance_uploader_for_quasimodo: Option<S3InstanceUploader>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -311,7 +313,8 @@ pub fn create(
                               name: String,
                               config: SolverConfig,
                               filter_non_fee_connected_orders: bool,
-                              slippage_calculator: SlippageCalculator|
+                              slippage_calculator: SlippageCalculator,
+                              instance_uploader_config: Option<S3InstanceUploader>|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -337,6 +340,7 @@ pub fn create(
             slippage_calculator,
             market_makable_token_list.clone(),
             *domain,
+            instance_uploader_config,
         )
     };
 
@@ -376,6 +380,7 @@ pub fn create(
                     },
                     true,
                     slippage_calculator,
+                    None,
                 )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
@@ -384,6 +389,7 @@ pub fn create(
                     SolverConfig::default(),
                     false,
                     slippage_calculator,
+                    None,
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,
@@ -395,6 +401,7 @@ pub fn create(
                     },
                     true,
                     slippage_calculator,
+                    s3_instance_uploader_for_quasimodo.take(),
                 )),
                 SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -470,6 +477,7 @@ pub fn create(
             },
             false,
             slippage_configuration.get_global_calculator(),
+            None,
         ))
     });
     solvers.extend(external_solvers);
