@@ -34,6 +34,7 @@ use solver::{
     liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     metrics::Metrics,
     orderbook::OrderBookApi,
+    s3_instance_upload::S3InstanceUploader,
     settlement_post_processing::PostProcessingPipeline,
     settlement_submission::{
         gelato::GelatoSubmitter,
@@ -236,6 +237,13 @@ async fn main() -> ! {
     ));
 
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
+
+    let s3_instance_uploader = args
+        .s3_upload
+        .into_config()
+        .unwrap()
+        .map(S3InstanceUploader::new);
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -270,6 +278,7 @@ async fn main() -> ! {
         &args.order_prioritization,
         post_processing_pipeline,
         &domain,
+        s3_instance_uploader,
     )
     .expect("failure creating solvers");
 
