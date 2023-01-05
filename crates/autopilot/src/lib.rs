@@ -62,9 +62,9 @@ use shared::{
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tracing::Instrument;
 
-/// To no never get to the state where a limit order can not be considered usable because the
+/// To never get to the state where a limit order can not be considered usable because the
 /// `surplus_fee` is too old the `surplus_fee` is valid for longer than its update interval.
-/// This factor controls how much longer its considered valid.
+/// This factor controls how much longer it's considered valid.
 /// If the `surplus_fee` gets updated every 5 minutes and the factor is 2 we consider limit orders
 /// valid where the `surplus_fee` was computed up to 10 minutes ago.
 const SURPLUS_FEE_EXPIRATION_FACTOR: u8 = 2;
