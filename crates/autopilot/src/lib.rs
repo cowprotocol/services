@@ -62,6 +62,13 @@ use shared::{
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tracing::Instrument;
 
+/// To no never get to the state where a limit order can not be considered usable because the
+/// `surplus_fee` is too old the `surplus_fee` is valid for longer than its update interval.
+/// This factor controls how much longer its considered valid.
+/// If the `surplus_fee` gets updated every 5 minutes and the factor is 2 we consider limit orders
+/// valid where the `surplus_fee` was computed up to 10 minutes ago.
+const SURPLUS_FEE_EXPIRATION_FACTOR: u32 = 2;
+
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     max_auction_age: Duration,
@@ -531,7 +538,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         Duration::from_secs(2),
         risk_adjusted_rewards,
         args.ethflow_contract,
-        args.max_surplus_fee_age * 2,
+        args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR,
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -570,7 +577,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         }
         .spawn();
         LimitOrderMetrics {
-            limit_order_age,
+            limit_order_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR as i32,
             database: db,
         }
         .spawn();
