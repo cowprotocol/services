@@ -636,7 +636,6 @@ pub fn order_parameters_with_most_outdated_fees(
         " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " LIMIT $3"
     );
-    dbg!(QUERY);
 
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
