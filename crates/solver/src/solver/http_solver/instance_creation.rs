@@ -25,6 +25,17 @@ use std::{
     sync::Arc,
 };
 
+pub struct Instances {
+    pub plain: Instance,
+    pub filtered: Instance,
+}
+
+#[derive(Clone)]
+pub struct Instance {
+    pub model: BatchAuctionModel,
+    pub context: SettlementContext,
+}
+
 pub struct InstanceCreator {
     pub native_token: H160,
     pub token_info_fetcher: Arc<dyn TokenInfoFetching>,
@@ -35,7 +46,7 @@ pub struct InstanceCreator {
 
 impl InstanceCreator {
     #[allow(clippy::too_many_arguments)]
-    pub async fn prepare_model(
+    pub async fn prepare_instances(
         &self,
         auction_id: AuctionId,
         run_id: u64,
@@ -43,8 +54,7 @@ impl InstanceCreator {
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         external_prices: &ExternalPrices,
-        filter_non_fee_connected_orders: bool,
-    ) -> (BatchAuctionModel, SettlementContext) {
+    ) -> Instances {
         // The HTTP solver interface expects liquidity limit orders (like 0x
         // limit orders) to be added to the `orders` models and NOT the
         // `liquidity` models. Split the two here to avoid indexing errors
@@ -101,23 +111,19 @@ impl InstanceCreator {
         // slow down the solver and the solver can estimate them on its own.
         let price_estimates = external_prices.into_http_solver_prices();
 
-        let fee_connected_tokens = if filter_non_fee_connected_orders {
-            // For the optimization HTTP solver to run correctly we need to be
-            // sure that there are no isolated islands of tokens without
-            // connection between them. Ideally, this filtering **should not be
-            // needed** and done in the optimization solvers themselves, since
-            // it is logic specific to those solvers.
-            compute_fee_connected_tokens(&amms, self.native_token)
-        } else {
-            // For external solvers assume all tokens are connected to the fee
-            // token as they may use additional internal liquidity that we don't
-            // know about.
-            tokens.iter().copied().collect()
-        };
         let gas_model = GasModel {
             native_token: self.native_token,
             gas_price,
         };
+
+        // Some solvers require that there are no isolated islands of orders whose tokens are
+        // unconnected to the native token.
+        let fee_connected_tokens: HashSet<H160> =
+            compute_fee_connected_tokens(&amms, self.native_token);
+        let filtered_order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
+
+        let tokens: HashSet<H160> = tokens.into_iter().collect();
+        let order_models = order_models(&orders, &tokens, &gas_model);
 
         let token_models = token_models(
             &token_infos,
@@ -126,8 +132,9 @@ impl InstanceCreator {
             &gas_model,
             &market_makable_token_list,
         );
-        let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
+
         let amm_models = amm_models(&amms, &gas_model);
+
         let model = BatchAuctionModel {
             tokens: token_models,
             orders: order_models,
@@ -140,13 +147,25 @@ impl InstanceCreator {
                 native_token: Some(self.native_token),
             }),
         };
-        (
-            model,
-            SettlementContext {
-                orders,
-                liquidity: amms,
+
+        let mut filtered_model = model.clone();
+        filtered_model.orders = filtered_order_models;
+
+        let context = SettlementContext {
+            orders,
+            liquidity: amms,
+        };
+
+        Instances {
+            plain: Instance {
+                model,
+                context: context.clone(),
             },
-        )
+            filtered: Instance {
+                model: filtered_model,
+                context,
+            },
+        }
     }
 }
 
@@ -399,8 +418,8 @@ mod tests {
     use model::TokenPair;
     use shared::token_info::MockTokenInfoFetching;
 
-    #[test]
-    fn remove_orders_without_native_connection_() {
+    #[tokio::test]
+    async fn remove_orders_without_native_connection_() {
         let limit_handling = CapturingSettlementHandler::arc();
         let amm_handling = CapturingSettlementHandler::arc();
 
@@ -411,11 +430,6 @@ mod tests {
             H160::from_low_u64_be(3),
             H160::from_low_u64_be(4),
         ];
-
-        let gas_model = GasModel {
-            gas_price: 1e9,
-            native_token,
-        };
 
         let amms = [(native_token, tokens[0]), (tokens[0], tokens[1])]
             .iter()
@@ -450,14 +464,35 @@ mod tests {
         })
         .collect::<Vec<_>>();
 
-        let fee_connected_tokens = compute_fee_connected_tokens(&amms, native_token);
-        assert_eq!(
-            fee_connected_tokens,
-            hashset![native_token, tokens[0], tokens[1]],
-        );
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos.expect_get_token_infos().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| (*token, TokenInfo::default()))
+                .collect()
+        });
 
-        let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
-        assert_eq!(order_models.len(), 6);
+        let mut buffer_retriever = MockBufferRetrieving::new();
+        buffer_retriever.expect_get_buffers().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| (*token, Ok(U256::zero())))
+                .collect()
+        });
+
+        let solver = InstanceCreator {
+            native_token: H160::zero(),
+            token_info_fetcher: Arc::new(token_infos),
+            buffer_retriever: Arc::new(buffer_retriever),
+            market_makable_token_list: Default::default(),
+            environment_metadata: Default::default(),
+        };
+
+        let instances = solver
+            .prepare_instances(0, 0, orders, amms, 0., &Default::default())
+            .await;
+        assert_eq!(instances.filtered.model.orders.len(), 6);
+        assert_eq!(instances.plain.model.orders.len(), 8);
     }
 
     #[tokio::test]
@@ -489,8 +524,8 @@ mod tests {
             environment_metadata: Default::default(),
         };
 
-        let (model, context) = solver
-            .prepare_model(
+        let instances = solver
+            .prepare_instances(
                 42,
                 1337,
                 vec![
@@ -538,9 +573,9 @@ mod tests {
                     address(3) => BigRational::new(3.into(), 3.into()),
                     address(4) => BigRational::new(4.into(), 4.into()),
                 },
-                false,
             )
             .await;
+        let Instance { model, context } = instances.plain;
 
         assert_btreemap_size(&model.orders, 3);
         assert_eq!(model.amms.len(), 2);

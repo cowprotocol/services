@@ -5,17 +5,14 @@ pub mod settlement;
 
 use self::{
     instance_cache::{InstanceType, SharedInstanceCreator},
-    settlement::SettlementContext,
+    instance_creation::Instance,
+    settlement::{ConversionError, SettlementContext},
 };
-use super::AuctionResult;
+use super::{Auction, AuctionResult, Solver};
 use crate::{
     interactions::allowances::AllowanceManaging,
     liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
     settlement::Settlement,
-    solver::{
-        http_solver::{instance_cache::Instance, settlement::ConversionError},
-        Auction, Solver,
-    },
 };
 use anyhow::{Context, Result};
 use ethcontract::Account;

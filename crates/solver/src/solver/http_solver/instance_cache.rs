@@ -1,4 +1,4 @@
-use super::{instance_creation::InstanceCreator, settlement::SettlementContext};
+use super::instance_creation::{Instance, InstanceCreator, Instances};
 use crate::{s3_instance_upload::S3InstanceUploader, solver::Auction};
 use model::auction::AuctionId;
 use shared::http_solver::model::BatchAuctionModel;
@@ -26,17 +26,6 @@ pub enum InstanceType {
     Filtered,
 }
 
-struct Instances {
-    plain: Instance,
-    filtered: Instance,
-}
-
-#[derive(Clone)]
-pub struct Instance {
-    pub model: BatchAuctionModel,
-    pub context: SettlementContext,
-}
-
 impl SharedInstanceCreator {
     pub fn new(creator: InstanceCreator, uploader: Option<Arc<S3InstanceUploader>>) -> Self {
         Self {
@@ -53,11 +42,22 @@ impl SharedInstanceCreator {
         let cache: &Cache = match guard.as_ref() {
             Some(cache) if cache.run == auction.run => cache,
             _ => {
-                let id = auction.id;
-                let run = auction.run;
-                let instances = self.create_instances(auction).await;
-                self.upload_instance_in_background(id, &instances.plain.model);
-                *guard = Some(Cache { run, instances });
+                let instances = self
+                    .creator
+                    .prepare_instances(
+                        auction.id,
+                        auction.run,
+                        auction.orders.clone(),
+                        auction.liquidity.clone(),
+                        auction.gas_price,
+                        &auction.external_prices,
+                    )
+                    .await;
+                self.upload_instance_in_background(auction.id, &instances.plain.model);
+                *guard = Some(Cache {
+                    run: auction.run,
+                    instances,
+                });
                 // Unwrap because we just assigned Some.
                 guard.as_ref().unwrap()
             }
@@ -93,33 +93,6 @@ impl Cache {
             InstanceType::Plain => self.instances.plain.clone(),
             InstanceType::Filtered => self.instances.filtered.clone(),
         }
-    }
-}
-
-impl SharedInstanceCreator {
-    async fn create_instances(&self, auction: Auction) -> Instances {
-        let prepare_model = |filter: bool| {
-            let auction = &auction;
-            async move {
-                let (model, context) = self
-                    .creator
-                    .prepare_model(
-                        auction.id,
-                        auction.run,
-                        auction.orders.clone(),
-                        auction.liquidity.clone(),
-                        auction.gas_price,
-                        &auction.external_prices,
-                        filter,
-                    )
-                    .await;
-                Instance { model, context }
-            }
-        };
-        // TODO; change prepare_model to do both in one future
-        let (plain, filtered) =
-            futures::future::join(prepare_model(false), prepare_model(true)).await;
-        Instances { plain, filtered }
     }
 }
 
