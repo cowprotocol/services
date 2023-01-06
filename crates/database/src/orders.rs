@@ -8,7 +8,7 @@ use sqlx::{
         chrono::{DateTime, Utc},
         BigDecimal,
     },
-    PgConnection,
+    FromRow, PgConnection,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
@@ -651,29 +651,45 @@ pub struct FeeUpdate {
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
 }
 
+/// Updates the `surplus_fee` of multiple orders and returns their `uid`s.
 pub async fn update_limit_order_fees(
     ex: &mut PgConnection,
-    order_uid: &OrderUid,
     update: &FeeUpdate,
-) -> Result<(), sqlx::Error> {
+) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = "
         UPDATE orders
         SET
             surplus_fee = $1,
             surplus_fee_timestamp = $2,
             full_fee_amount = $3
-        WHERE uid = $4
+        WHERE
+            sell_token = $4
+            AND buy_token = $5
+            AND sell_amount = $6
+        RETURNING
+            uid
     ";
-    sqlx::query(QUERY)
+    // TODO there has to be a way to make this nicer
+    #[derive(FromRow)]
+    struct OrderUidRow {
+        uid: OrderUid,
+    }
+    let rows: Vec<OrderUidRow> = sqlx::query_as(QUERY)
         .bind(&update.surplus_fee)
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
-        .bind(order_uid)
-        .execute(ex)
+        .bind(&update.sell_token)
+        .bind(&update.buy_token)
+        .bind(&update.sell_amount)
+        .fetch_all(ex)
         .await?;
-    Ok(())
+    let uids = rows.into_iter().map(|row| row.uid).collect();
+    Ok(uids)
 }
 
 /// Count the number of valid limit orders.
@@ -1606,21 +1622,28 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_update_limit_order_fees() {
+    async fn postgres_update_multiple_identical_limit_orders() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order_uid = ByteArray([1; 56]);
-        insert_order(
-            &mut db,
-            &Order {
-                uid: order_uid,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        let order = Order {
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1_000.into(),
+            ..Default::default()
+        };
+        for id in 1..3 {
+            insert_order(
+                &mut db,
+                &Order {
+                    uid: ByteArray([id; 56]),
+                    ..order.clone()
+                },
+            )
+            .await
+            .unwrap();
+        }
 
         let update = FeeUpdate {
             surplus_fee: Some(42.into()),
@@ -1629,18 +1652,22 @@ mod tests {
                 Utc,
             ),
             full_fee_amount: 1337.into(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1_000.into(),
         };
-        update_limit_order_fees(&mut db, &order_uid, &update)
-            .await
-            .unwrap();
+        let updated_uids = update_limit_order_fees(&mut db, &update).await.unwrap();
+        assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
 
-        let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, update.surplus_fee);
-        assert_eq!(
-            order.surplus_fee_timestamp,
-            Some(update.surplus_fee_timestamp)
-        );
-        assert_eq!(order.full_fee_amount, update.full_fee_amount);
+        for id in 1..3 {
+            let order = read_order(&mut db, &ByteArray([id; 56])).await.unwrap().unwrap();
+            assert_eq!(order.surplus_fee, update.surplus_fee);
+            assert_eq!(
+                order.surplus_fee_timestamp,
+                Some(update.surplus_fee_timestamp)
+            );
+            assert_eq!(order.full_fee_amount, update.full_fee_amount);
+        }
     }
 
     #[tokio::test]

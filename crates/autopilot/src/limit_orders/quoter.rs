@@ -1,11 +1,11 @@
 use crate::database::{
-    orders::{FeeUpdate, LimitOrderQuote},
+    orders::{FeeUpdate, LimitOrderQuote, SurplusFeeQuoteParameters},
     Postgres,
 };
 use anyhow::Result;
 use futures::StreamExt;
 use model::{
-    order::{Order, OrderKind, OrderUid},
+    order::{Order, OrderKind},
     quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature},
     DomainSeparator,
@@ -60,8 +60,13 @@ impl LimitOrderQuoter {
         futures::stream::iter(&orders)
             .for_each_concurrent(self.parallelism, |order| {
                 async move {
+                    let parameters = SurplusFeeQuoteParameters {
+                        sell_token: order.data.sell_token,
+                        buy_token: order.data.buy_token,
+                        sell_amount: order.data.sell_amount,
+                    };
                     let quote = self.get_quote(order).await;
-                    self.update_fee(&order.metadata.uid, &quote).await;
+                    self.update_fee(&parameters, &quote).await;
                 }
                 .instrument(tracing::debug_span!(
                     "surplus_fee",
@@ -166,7 +171,7 @@ impl LimitOrderQuoter {
     }
 
     /// Handles errors internally.
-    async fn update_fee(&self, uid: &OrderUid, quote: &Option<Quote>) {
+    async fn update_fee(&self, parameters: &SurplusFeeQuoteParameters, quote: &Option<Quote>) {
         let timestamp = chrono::Utc::now();
         let update = match quote {
             Some(quote) => FeeUpdate::Success {
@@ -181,7 +186,11 @@ impl LimitOrderQuoter {
             },
             None => FeeUpdate::Failure { timestamp },
         };
-        match self.database.update_limit_order_fees(uid, &update).await {
+        match self
+            .database
+            .update_limit_order_fees(parameters, &update)
+            .await
+        {
             Ok(_) => {
                 Metrics::get()
                     .update_result
@@ -189,7 +198,7 @@ impl LimitOrderQuoter {
                     .inc();
             }
             Err(err) => {
-                tracing::warn!(%uid, ?err, "limit order fee update db error");
+                tracing::warn!(?parameters, ?err, "limit order fee update db error");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["update_fee_preventable_failure"])

@@ -1,13 +1,10 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use database::byte_array::ByteArray;
-use ethcontract::U256;
+use database::{byte_array::ByteArray, orders::Quote};
+use ethcontract::{H160, U256};
 use futures::{StreamExt, TryStreamExt};
-use model::{
-    order::{Order, OrderUid},
-    time::now_in_epoch_seconds,
-};
+use model::{order::Order, time::now_in_epoch_seconds};
 use number_conversions::u256_to_big_decimal;
 use shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters};
 
@@ -28,6 +25,13 @@ pub enum FeeUpdate {
     Failure {
         timestamp: DateTime<Utc>,
     },
+}
+
+#[derive(Debug)]
+pub struct SurplusFeeQuoteParameters {
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
 }
 
 /// Data required to compute risk adjusted rewards for limit orders.
@@ -71,11 +75,11 @@ impl Postgres {
         .await
     }
 
-    /// Updates the `surplus_fee` of a limit order together with the quote used to compute that
-    /// fee.
+    /// Updates the `surplus_fee` of all limit orders matching the [`SurplusFeeQuoteParameters`]
+    /// together with the quote used to compute that fee.
     pub async fn update_limit_order_fees(
         &self,
-        order_uid: &OrderUid,
+        parameters: &SurplusFeeQuoteParameters,
         update: &FeeUpdate,
     ) -> Result<()> {
         let (update, quote) = match update {
@@ -89,9 +93,13 @@ impl Postgres {
                     surplus_fee: Some(u256_to_big_decimal(surplus_fee)),
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: u256_to_big_decimal(full_fee_amount),
+                    sell_token: ByteArray(parameters.sell_token.0),
+                    buy_token: ByteArray(parameters.buy_token.0),
+                    sell_amount: u256_to_big_decimal(&parameters.sell_amount),
                 },
                 Some(database::orders::Quote {
-                    order_uid: ByteArray(order_uid.0),
+                    // for every order we update we copy this struct and set the order_uid later
+                    order_uid: Default::default(),
                     gas_amount: quote.fee_parameters.gas_amount,
                     gas_price: quote.fee_parameters.gas_price,
                     sell_token_price: quote.fee_parameters.sell_token_price,
@@ -105,10 +113,18 @@ impl Postgres {
                 // be set. We don't reset the timestamp because it indicates the last update time
                 // (regardless of error or success). This is needed so that we can query the least
                 // recently updated limit orders. See #965 .
+                //
+                // Note that we'll do a bulk update of orders so technically it's possible that an
+                // error during the price estimation invalidates a multiple orders. But errors are
+                // very rare and it's not very common to have identical orders anyway so we don't
+                // have to protect against bulk invalidations.
                 database::orders::FeeUpdate {
                     surplus_fee: None,
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: 0.into(),
+                    sell_token: ByteArray(parameters.sell_token.0),
+                    buy_token: ByteArray(parameters.buy_token.0),
+                    sell_amount: u256_to_big_decimal(&parameters.sell_amount),
                 },
                 None,
             ),
@@ -119,13 +135,19 @@ impl Postgres {
             .with_label_values(&["update_limit_order_fees"])
             .start_timer();
         let mut ex = self.0.begin().await?;
-        database::orders::update_limit_order_fees(&mut ex, &ByteArray(order_uid.0), &update)
+        let updated_order_uids = database::orders::update_limit_order_fees(&mut ex, &update)
             .await
             .context("update_limit_order_fee")?;
         if let Some(quote) = quote {
-            database::orders::insert_quote_and_update_on_conflict(&mut ex, &quote)
-                .await
-                .context("insert_quote_and_update_on_conflict")?;
+            for order_uid in updated_order_uids {
+                let quote = Quote {
+                    order_uid,
+                    ..quote.clone()
+                };
+                database::orders::insert_quote_and_update_on_conflict(&mut ex, &quote)
+                    .await
+                    .context("insert_quote_and_update_on_conflict")?;
+            }
         }
         ex.commit().await.context("commit")?;
         Ok(())
