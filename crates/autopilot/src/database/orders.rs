@@ -66,7 +66,7 @@ impl Postgres {
     }
 
     /// Updates the `surplus_fee` of all limit orders matching the [`SurplusFeeQuoteParameters`]
-    /// together with the quote used to compute that fee.
+    /// and stores a quote for each one.
     pub async fn update_limit_order_fees(
         &self,
         parameters: &SurplusFeeQuoteParameters,
