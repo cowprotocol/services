@@ -3,6 +3,7 @@ use ethereum_types::U256;
 use std::collections::BTreeMap;
 
 /// The state of a Balancer-like weighted product pool.
+#[derive(Clone, Debug)]
 pub struct Pool {
     pub reserves: Reserves,
     pub fee: eth::Rational,
@@ -24,6 +25,7 @@ impl Pool {
 type ReserveEntry = (U256, eth::Rational, liquidity::balancer::ScalingFactor);
 
 /// A reprensentation of BalancerV2-like weighted pool reserves.
+#[derive(Clone, Debug)]
 pub struct Reserves(BTreeMap<eth::TokenAddress, ReserveEntry>);
 
 impl Reserves {

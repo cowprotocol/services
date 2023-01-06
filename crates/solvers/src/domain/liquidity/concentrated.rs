@@ -3,6 +3,7 @@ use ethereum_types::U256;
 use std::collections::BTreeMap;
 
 /// State for a UniswapV3-like concentrated liquidity pool.
+#[derive(Clone, Debug)]
 pub struct Pool {
     pub tokens: TokenPair,
     pub sqrt_price: U256,
@@ -13,4 +14,5 @@ pub struct Pool {
 }
 
 /// An ordered token pair.
+#[derive(Clone, Copy, Debug)]
 pub struct TokenPair([eth::TokenAddress; 2]);

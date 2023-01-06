@@ -8,7 +8,7 @@ use shared::sources::balancer_v2::{
 pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
 
 /// Converts a domain pool into a [`shared`] Uniswap V2 pool.
-pub fn to_boundry_pool(address: H160, state: &liquidity::weighted::Pool) -> Pool {
+pub fn to_boundary_pool(address: H160, state: &liquidity::weighted::Pool) -> Pool {
     // TODO: this is only used for encoding and not for solving, so it OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is

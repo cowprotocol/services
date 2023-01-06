@@ -1,9 +1,13 @@
 //! "Baseline" solver implementation.
 
-use crate::domain::{eth, liquidity, order};
+use crate::{
+    boundary,
+    domain::{eth, liquidity, order},
+};
 use std::{collections::HashSet, num::NonZeroUsize};
 
 pub struct Baseline {
+    pub weth: eth::WethAddress,
     /// Set of base-tokens for which to always consider when path-finding. This
     /// allows paths of the kind `TOKEN1 -> WETH -> TOKEN2` to be considered
     /// even if there are no orders trading these tokens.
@@ -20,7 +24,12 @@ impl Baseline {
     /// Finds the optimal trading route for the specified order and liquidity.
     ///
     /// Returns `None` if no trading route can be found.
-    pub fn route(_order: &order::UserOrder, _liquidity: &[liquidity::Liquidity]) -> Option<Route> {
-        None
+    pub fn route(
+        &self,
+        _order: &order::UserOrder,
+        liquidity: &[liquidity::Liquidity],
+    ) -> Option<Route> {
+        let _solver = boundary::baseline::Solver::new(&self.weth, &self.base_tokens, liquidity);
+        todo!()
     }
 }

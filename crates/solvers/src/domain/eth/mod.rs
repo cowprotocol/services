@@ -7,6 +7,10 @@ use std::ops::Deref;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAddress(pub H160);
 
+/// The WETH token (or equivalent) for the EVM compatible network.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WethAddress(pub H160);
+
 impl Deref for TokenAddress {
     type Target = H160;
 
