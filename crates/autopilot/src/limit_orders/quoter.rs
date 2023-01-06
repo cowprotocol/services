@@ -80,8 +80,8 @@ impl LimitOrderQuoter {
                     value: big_decimal_to_u256(&parameters.sell_amount).unwrap(),
                 },
             },
-            // The remaining parameters are only relevant for subsidy computation which doesn't
-            // matter for the `surplus_fee` computation.
+            // The remaining parameters are only relevant for subsidy computation which is
+            // irrelevant for the `surplus_fee`.
             ..Default::default()
         };
         match self.quoter.calculate_quote(quote_parameters).await {
