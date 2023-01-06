@@ -75,8 +75,6 @@ impl LimitOrderQuoter {
         let quote_parameters = QuoteParameters {
             sell_token: H160(parameters.sell_token.0),
             buy_token: H160(parameters.buy_token.0),
-            // We prefer to use `sell` here because this allows us to use more price estimators but
-            // ultimately the only important thing is that the amounts are correct.
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
                     value: big_decimal_to_u256(&parameters.sell_amount).unwrap(),
