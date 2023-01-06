@@ -609,7 +609,10 @@ pub struct SurplusFeeQuoteParameters {
     pub sell_amount: BigDecimal,
 }
 
-/// Return valid limit orders with outdated surplus fee.
+/// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
+/// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
+/// identical orders in bulk so in order to not do unnecessary price estimation requests during
+/// `surplus_fee` computations we only do it once per group.
 ///
 /// The ordering by most outdated in combination with updating the timestamp when updating the fee
 /// fails is important. It ensures that we cannot get stuck on orders for which the update process
