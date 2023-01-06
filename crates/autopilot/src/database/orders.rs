@@ -1,12 +1,12 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use database::{byte_array::ByteArray, orders::Quote};
-use ethcontract::{H160, U256};
+use database::orders::{Quote, SurplusFeeQuoteParameters};
+use ethcontract::U256;
 use futures::{StreamExt, TryStreamExt};
-use model::{order::Order, time::now_in_epoch_seconds};
+use model::time::now_in_epoch_seconds;
 use number_conversions::u256_to_big_decimal;
-use shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters};
+use shared::fee_subsidy::FeeParameters;
 
 /// New fee data to update a limit order with.
 ///
@@ -27,13 +27,6 @@ pub enum FeeUpdate {
     },
 }
 
-#[derive(Debug)]
-pub struct SurplusFeeQuoteParameters {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub sell_amount: U256,
-}
-
 /// Data required to compute risk adjusted rewards for limit orders.
 pub struct LimitOrderQuote {
     /// Everything required to compute the fee amount in sell token
@@ -47,11 +40,11 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
-    pub async fn limit_orders_with_outdated_fees(
+    pub async fn order_parameters_with_outdated_fees(
         &self,
         age: Duration,
         limit: usize,
-    ) -> Result<Vec<Order>> {
+    ) -> Result<Vec<SurplusFeeQuoteParameters>> {
         let limit: i64 = limit.try_into().context("convert limit")?;
 
         let _timer = super::Metrics::get()
@@ -61,14 +54,14 @@ impl Postgres {
 
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        database::orders::limit_orders_with_most_outdated_fees(
+        database::orders::order_parameters_with_most_outdated_fees(
             &mut ex,
             timestamp,
             now_in_epoch_seconds().into(),
             limit,
         )
         .map(|result| match result {
-            Ok(order) => full_order_into_model_order(order),
+            Ok(order) => Ok(order),
             Err(err) => Err(anyhow::Error::from(err)),
         })
         .try_collect()
@@ -93,9 +86,9 @@ impl Postgres {
                     surplus_fee: Some(u256_to_big_decimal(surplus_fee)),
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: u256_to_big_decimal(full_fee_amount),
-                    sell_token: ByteArray(parameters.sell_token.0),
-                    buy_token: ByteArray(parameters.buy_token.0),
-                    sell_amount: u256_to_big_decimal(&parameters.sell_amount),
+                    sell_token: parameters.sell_token,
+                    buy_token: parameters.buy_token,
+                    sell_amount: parameters.sell_amount.clone(),
                 },
                 Some(database::orders::Quote {
                     // for every order we update we copy this struct and set the order_uid later
@@ -122,9 +115,9 @@ impl Postgres {
                     surplus_fee: None,
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: 0.into(),
-                    sell_token: ByteArray(parameters.sell_token.0),
-                    buy_token: ByteArray(parameters.buy_token.0),
-                    sell_amount: u256_to_big_decimal(&parameters.sell_amount),
+                    sell_token: parameters.sell_token,
+                    buy_token: parameters.buy_token,
+                    sell_amount: parameters.sell_amount.clone(),
                 },
                 None,
             ),
