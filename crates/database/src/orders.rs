@@ -694,7 +694,6 @@ pub async fn update_limit_order_fees(
         RETURNING
             uid
     ";
-    // TODO there has to be a way to make this nicer
     #[derive(FromRow)]
     struct OrderUidRow {
         uid: OrderUid,
