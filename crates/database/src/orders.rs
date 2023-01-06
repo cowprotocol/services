@@ -1644,18 +1644,15 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order = Order {
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 1_000.into(),
-            ..Default::default()
-        };
         for id in 1..3 {
             insert_order(
                 &mut db,
                 &Order {
                     uid: ByteArray([id; 56]),
-                    ..order.clone()
+                    sell_token: ByteArray([1; 20]),
+                    buy_token: ByteArray([2; 20]),
+                    sell_amount: 1_000.into(),
+                    ..Default::default()
                 },
             )
             .await
@@ -1677,7 +1674,10 @@ mod tests {
         assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
 
         for id in 1..3 {
-            let order = read_order(&mut db, &ByteArray([id; 56])).await.unwrap().unwrap();
+            let order = read_order(&mut db, &ByteArray([id; 56]))
+                .await
+                .unwrap()
+                .unwrap();
             assert_eq!(order.surplus_fee, update.surplus_fee);
             assert_eq!(
                 order.surplus_fee_timestamp,
@@ -1814,21 +1814,26 @@ mod tests {
             .try_collect()
             .await
             .unwrap();
-        dbg!(&orders);
 
         assert_eq!(orders.len(), 2);
         // order with uid 5 (higher priority because it was never estimated)
-        assert_eq!(orders[0], SurplusFeeQuoteParameters{
-            sell_token: ByteArray([3; 20]),
-            buy_token: ByteArray([4; 20]),
-            sell_amount: 1.into(),
-        });
+        assert_eq!(
+            orders[0],
+            SurplusFeeQuoteParameters {
+                sell_token: ByteArray([3; 20]),
+                buy_token: ByteArray([4; 20]),
+                sell_amount: 1.into(),
+            }
+        );
         // order with uid 1
-        assert_eq!(orders[1], SurplusFeeQuoteParameters{
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 1.into(),
-        });
+        assert_eq!(
+            orders[1],
+            SurplusFeeQuoteParameters {
+                sell_token: ByteArray([1; 20]),
+                buy_token: ByteArray([2; 20]),
+                sell_amount: 1.into(),
+            }
+        );
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(

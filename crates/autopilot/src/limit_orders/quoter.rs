@@ -64,10 +64,7 @@ impl LimitOrderQuoter {
                     let quote = self.get_quote(parameters).await;
                     self.update_fee(parameters, &quote).await;
                 }
-                .instrument(tracing::debug_span!(
-                    "surplus_fee",
-                    ?parameters
-                ))
+                .instrument(tracing::debug_span!("surplus_fee", ?parameters))
             })
             .await;
         Ok(parameters.len() < self.parallelism)
@@ -81,7 +78,9 @@ impl LimitOrderQuoter {
             // We prefer to use `sell` here because this allows us to use more price estimators but
             // ultimately the only important thing is that the amounts are correct.
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: big_decimal_to_u256(&parameters.sell_amount).unwrap() }
+                sell_amount: SellAmount::AfterFee {
+                    value: big_decimal_to_u256(&parameters.sell_amount).unwrap(),
+                },
             },
             // The remaining parameters are only relevant for subsidy computation which doesn't
             // matter for the `surplus_fee` computation.

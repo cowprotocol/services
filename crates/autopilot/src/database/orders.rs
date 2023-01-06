@@ -60,10 +60,7 @@ impl Postgres {
             now_in_epoch_seconds().into(),
             limit,
         )
-        .map(|result| match result {
-            Ok(order) => Ok(order),
-            Err(err) => Err(anyhow::Error::from(err)),
-        })
+        .map(|result| result.map_err(anyhow::Error::from))
         .try_collect()
         .await
     }
