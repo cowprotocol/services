@@ -1,5 +1,6 @@
 use crate::{
     liquidity::slippage,
+    s3_instance_upload_arguments::S3UploadArguments,
     settlement_access_list::AccessListEstimatorType,
     solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
 };
@@ -299,6 +300,9 @@ pub struct Arguments {
     /// value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
     pub solution_comparison_decimal_cutoff: u16,
+
+    #[clap(flatten)]
+    pub s3_upload: S3UploadArguments,
 }
 
 impl std::fmt::Display for Arguments {
@@ -413,6 +417,7 @@ impl std::fmt::Display for Arguments {
             "token_list_restriction_for_price_checks: {:?}",
             self.token_list_restriction_for_price_checks
         )?;
+        writeln!(f, "{}", self.s3_upload)?;
         Ok(())
     }
 }

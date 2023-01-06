@@ -8,6 +8,7 @@ use crate::{
         order_converter::OrderConverter, slippage::SlippageCalculator, Exchange, LimitOrder,
         Liquidity,
     },
+    s3_instance_upload::S3InstanceUploader,
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{http_solver::settlement::ConversionError, Auction, Solver},
 };
@@ -69,6 +70,7 @@ pub struct HttpSolver {
     slippage_calculator: SlippageCalculator,
     market_makable_token_list: AutoUpdatingTokenList,
     domain: DomainSeparator,
+    instance_uploader: Option<Arc<S3InstanceUploader>>,
 }
 
 impl HttpSolver {
@@ -86,7 +88,9 @@ impl HttpSolver {
         slippage_calculator: SlippageCalculator,
         market_makable_token_list: AutoUpdatingTokenList,
         domain: DomainSeparator,
+        instance_uploader: Option<S3InstanceUploader>,
     ) -> Self {
+        let instance_uploader = instance_uploader.map(Arc::new);
         Self {
             solver,
             account,
@@ -100,6 +104,7 @@ impl HttpSolver {
             slippage_calculator,
             market_makable_token_list,
             domain,
+            instance_uploader,
         }
     }
 
@@ -214,6 +219,27 @@ impl HttpSolver {
                 liquidity: amms,
             },
         ))
+    }
+
+    // Happens in a task to not delay solving.
+    fn upload_instance_in_background(&self, id: AuctionId, model: &BatchAuctionModel) {
+        if let Some(uploader) = &self.instance_uploader {
+            let model = model.clone();
+            let uploader = uploader.clone();
+            let task = async move {
+                let auction = match serde_json::to_vec(&model) {
+                    Ok(auction) => auction,
+                    Err(err) => {
+                        tracing::error!(?err, "encode auction for instance upload");
+                        return;
+                    }
+                };
+                if let Err(err) = uploader.upload_instance(id, auction).await {
+                    tracing::error!(?err, "error uploading instance");
+                }
+            };
+            tokio::task::spawn(task);
+        }
     }
 }
 
@@ -516,6 +542,8 @@ impl Solver for HttpSolver {
             }
         };
 
+        self.upload_instance_in_background(id, &model);
+
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
@@ -670,6 +698,7 @@ mod tests {
             SlippageCalculator::default(),
             Default::default(),
             Default::default(),
+            None,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
@@ -901,6 +930,7 @@ mod tests {
             SlippageCalculator::default(),
             Default::default(),
             Default::default(),
+            None,
         );
 
         let (model, context) = solver

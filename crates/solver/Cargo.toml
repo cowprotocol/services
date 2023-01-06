@@ -17,6 +17,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+aws-sdk-s3 = { version = "0.22", default-features = false, features = ["native-tls", "rt-tokio"] }
+aws-types = { version = "0.52", features = ["hardcoded-credentials"] }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }

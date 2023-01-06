@@ -165,7 +165,9 @@ impl Driver {
                     match tokio::time::timeout_at(auction.deadline.into(), solver.solve(auction))
                         .await
                     {
-                        Ok(inner) => inner.map_err(Into::into),
+                        Ok(inner) => {
+                            inner.map_err(|err| SolverRunError::Solving(format!("{:?}", err)))
+                        }
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
                 let response = match &result {
