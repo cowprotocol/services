@@ -1,66 +1,49 @@
 pub mod buffers;
+pub mod instance_cache;
+pub mod instance_creation;
 pub mod settlement;
 
-use self::settlement::SettlementContext;
+use self::{
+    instance_cache::{InstanceType, SharedInstanceCreator},
+    settlement::SettlementContext,
+};
+use super::AuctionResult;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{
-        order_converter::OrderConverter, slippage::SlippageCalculator, Exchange, LimitOrder,
-        Liquidity,
+    liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
+    settlement::Settlement,
+    solver::{
+        http_solver::{instance_cache::Instance, settlement::ConversionError},
+        Auction, Solver,
     },
-    s3_instance_upload::S3InstanceUploader,
-    settlement::{external_prices::ExternalPrices, Settlement},
-    solver::{http_solver::settlement::ConversionError, Auction, Solver},
 };
 use anyhow::{Context, Result};
-use buffers::{BufferRetrievalError, BufferRetrieving};
-use ethcontract::{errors::ExecutionError, Account, U256};
-use futures::{join, lock::Mutex};
-use itertools::{Either, Itertools as _};
-use maplit::{btreemap, hashset};
-use model::{auction::AuctionId, order::OrderKind, DomainSeparator};
-use num::{BigInt, BigRational};
+use ethcontract::Account;
+use model::{auction::AuctionId, DomainSeparator};
 use primitive_types::H160;
 use shared::{
-    http_solver::{gas_model::GasModel, model::*, DefaultHttpSolverApi, HttpSolverApi},
-    measure_time,
-    sources::balancer_v2::pools::common::compute_scaling_rate,
-    token_info::{TokenInfo, TokenInfoFetching},
+    http_solver::{
+        model::{InteractionData, SettledBatchAuctionModel, SolverRejectionReason},
+        DefaultHttpSolverApi, HttpSolverApi,
+    },
     token_list::AutoUpdatingTokenList,
 };
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    iter::FromIterator as _,
+    collections::{BTreeSet, HashSet},
     sync::Arc,
     time::Instant,
 };
-
-use super::AuctionResult;
-
-// TODO: special rounding for the prices we get from the solver?
-
-/// Data shared between multiple instances of the http solver for the same driver run.
-pub struct InstanceData {
-    run_id: u64,
-    model: BatchAuctionModel,
-    context: SettlementContext,
-}
-
-/// We keep a cache of per solve instance data because it is the same for all http solver
-/// invocations. Without the cache we would duplicate most of the requests to the node.
-pub type InstanceCache = Arc<Mutex<Option<InstanceData>>>;
 
 pub struct HttpSolver {
     solver: DefaultHttpSolverApi,
     account: Account,
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
-    instance_cache: InstanceCache,
-    filter_non_fee_connected_orders: bool,
+    instance_type: InstanceType,
     slippage_calculator: SlippageCalculator,
     market_makable_token_list: AutoUpdatingTokenList,
     domain: DomainSeparator,
-    instance_uploader: Option<Arc<S3InstanceUploader>>,
+    instance_cache: Arc<SharedInstanceCreator>,
 }
 
 impl HttpSolver {
@@ -70,28 +53,22 @@ impl HttpSolver {
         account: Account,
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
-        instance_cache: InstanceCache,
-        filter_non_fee_connected_orders: bool,
+        instance_type: InstanceType,
         slippage_calculator: SlippageCalculator,
         market_makable_token_list: AutoUpdatingTokenList,
         domain: DomainSeparator,
-        instance_uploader: Option<S3InstanceUploader>,
+        instance_cache: Arc<SharedInstanceCreator>,
     ) -> Self {
-        let instance_uploader = instance_uploader.map(Arc::new);
         Self {
             solver,
             account,
             allowance_manager,
             order_converter,
-            instance_cache,
-            filter_non_fee_connected_orders,
+            instance_type,
             slippage_calculator,
             market_makable_token_list,
             domain,
-            instance_uploader,
-        }
-    }
-
+            instance_cache,
         }
     }
 }
@@ -117,68 +94,16 @@ fn non_bufferable_tokens_used(
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(
-        &self,
-        Auction {
-            id,
-            run,
-            orders,
-            liquidity,
-            gas_price,
-            deadline,
-            external_prices,
-            ..
-        }: Auction,
-    ) -> Result<Vec<Settlement>> {
-        if orders.is_empty() {
+    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
+        if auction.orders.is_empty() {
             return Ok(Vec::new());
         };
 
-        let (model, context) = {
-            let mut guard = self.instance_cache.lock().await;
-            match guard.as_mut() {
-                Some(data) if data.run_id == run => (data.model.clone(), data.context.clone()),
-                _ => {
-                    let (model, context) = self
-                        .prepare_model(
-                            id,
-                            run,
-                            orders,
-                            liquidity,
-                            gas_price,
-                            external_prices.clone(),
-                        )
-                        .await?;
-                    // This can be a large log message so we don't want to log it by default.
-                    tracing::trace!(
-                        "Problem sent to http solvers (json):\n{}",
-                        serde_json::to_string_pretty(&model).unwrap()
-                    );
-                    *guard = Some(InstanceData {
-                        run_id: run,
-                        model: model.clone(),
-                        context: context.clone(),
-                    });
-                    (model, context)
-                }
-            }
-        };
+        let id = auction.id;
+        let external_prices = auction.external_prices.clone();
 
-        self.upload_instance_in_background(id, &model);
+        let (settled, context) = self.solve_(auction).await?;
 
-        let timeout = deadline
-            .checked_duration_since(Instant::now())
-            .context("no time left to send request")?;
-        let mut settled = self.solver.solve(&model, timeout).await?;
-        settled.add_missing_execution_plans();
-
-        tracing::debug!(
-            "Solution received from http solver {} (json):\n{:}",
-            self.solver.name,
-            serde_json::to_string_pretty(&settled).unwrap()
-        );
-
-        // verify solution is not empty
         if settled.orders.is_empty() {
             return Ok(vec![]);
         }
@@ -244,22 +169,55 @@ impl Solver for HttpSolver {
     }
 }
 
+impl HttpSolver {
+    async fn solve_(
+        &self,
+        auction: Auction,
+    ) -> Result<(SettledBatchAuctionModel, SettlementContext)> {
+        let deadline = auction.deadline;
+        let Instance { model, context } = self
+            .instance_cache
+            .get_instance(auction, self.instance_type)
+            .await;
+
+        let timeout = deadline
+            .checked_duration_since(Instant::now())
+            .context("no time left to send request")?;
+        let mut settled = self.solver.solve(&model, timeout).await?;
+        settled.add_missing_execution_plans();
+
+        tracing::debug!(
+            "Solution received from http solver {} (json):\n{:}",
+            self.solver.name,
+            serde_json::to_string_pretty(&settled).unwrap()
+        );
+
+        Ok((settled, context))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         interactions::allowances::MockAllowanceManaging,
-        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
-        settlement::external_prices::externalprices,
-        solver::http_solver::buffers::MockBufferRetrieving,
+        liquidity::{
+            tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder, Liquidity,
+        },
+        solver::http_solver::{buffers::MockBufferRetrieving, instance_creation::InstanceCreator},
     };
     use ::model::TokenPair;
     use ethcontract::Address;
     use maplit::hashmap;
+    use model::order::OrderKind;
     use num::rational::Ratio;
+    use primitive_types::U256;
     use reqwest::Client;
     use shared::{
-        http_solver::SolverConfig,
+        http_solver::{
+            model::{ExecutionPlan, TokenAmount},
+            SolverConfig,
+        },
         token_info::{MockTokenInfoFetching, TokenInfo},
     };
     use std::{sync::Arc, time::Duration};
@@ -310,17 +268,22 @@ mod tests {
                 config: SolverConfig::default(),
             },
             Account::Local(Address::default(), None),
-            H160::zero(),
-            Arc::new(mock_token_info_fetcher),
-            Arc::new(mock_buffer_retriever),
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
-            Default::default(),
-            true,
+            InstanceType::Filtered,
             SlippageCalculator::default(),
             Default::default(),
             Default::default(),
-            None,
+            Arc::new(SharedInstanceCreator::new(
+                InstanceCreator {
+                    native_token: H160::zero(),
+                    token_info_fetcher: Arc::new(mock_token_info_fetcher),
+                    buffer_retriever: Arc::new(mock_buffer_retriever),
+                    market_makable_token_list: Default::default(),
+                    environment_metadata: Default::default(),
+                },
+                None,
+            )),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
@@ -339,13 +302,16 @@ mod tests {
             fee: Ratio::new(0, 1),
             settlement_handling: CapturingSettlementHandler::arc(),
         })];
-        let (model, _context) = solver
-            .prepare_model(0, 1, limit_orders, liquidity, gas_price, Default::default())
-            .await
-            .unwrap();
-        let settled = solver
-            .solver
-            .solve(&model, Duration::from_secs(1000))
+        let (settled, _context) = solver
+            .solve_(Auction {
+                id: 0,
+                run: 1,
+                orders: limit_orders,
+                liquidity,
+                gas_price,
+                deadline: Instant::now() + Duration::from_secs(100),
+                ..Default::default()
+            })
             .await
             .unwrap();
         dbg!(&settled);

@@ -87,11 +87,11 @@ impl ExternalPrices {
     /// Specifically the HTTP solver expects prices to be in `f64` and there not
     /// to be an entry for `BUY_ETH_ADDRESS` since orders are already normalized
     /// to use the native wrapped token.
-    pub fn into_http_solver_prices(self) -> HashMap<H160, f64> {
+    pub fn into_http_solver_prices(&self) -> HashMap<H160, f64> {
         let mut prices = self
             .0
-            .into_iter()
-            .filter_map(|(token, price)| Some((token, price.to_f64()?)))
+            .iter()
+            .filter_map(|(token, price)| Some((*token, price.to_f64()?)))
             .collect::<HashMap<H160, f64>>();
         prices.remove(&BUY_ETH_ADDRESS);
         prices
