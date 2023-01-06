@@ -624,10 +624,11 @@ pub fn order_parameters_with_most_outdated_fees(
         " WITH outdated_groups as (",
         "   SELECT sell_token, buy_token, sell_amount,",
         "          NULLIF(MIN(COALESCE(surplus_fee_timestamp, '-infinity'::timestamp)), '-infinity'::timestamp) as surplus_fee_timestamp",
-        "   FROM",
+        "   FROM (",
         OPEN_ORDERS,
-        "     AND class = 'limit'",
-        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "       AND class = 'limit'",
+        "       AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "   ) as subquery",
         "   GROUP BY sell_token, buy_token, sell_amount",
         " )",
         " SELECT sell_token, buy_token, sell_amount",
@@ -635,6 +636,7 @@ pub fn order_parameters_with_most_outdated_fees(
         " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " LIMIT $3"
     );
+    dbg!(QUERY);
 
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
