@@ -694,11 +694,7 @@ pub async fn update_limit_order_fees(
         RETURNING
             uid
     ";
-    #[derive(FromRow)]
-    struct OrderUidRow {
-        uid: OrderUid,
-    }
-    let rows: Vec<OrderUidRow> = sqlx::query_as(QUERY)
+    sqlx::query_scalar(QUERY)
         .bind(&update.surplus_fee)
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
@@ -706,9 +702,7 @@ pub async fn update_limit_order_fees(
         .bind(&update.buy_token)
         .bind(&update.sell_amount)
         .fetch_all(ex)
-        .await?;
-    let uids = rows.into_iter().map(|row| row.uid).collect();
-    Ok(uids)
+        .await
 }
 
 /// Count the number of valid limit orders.
