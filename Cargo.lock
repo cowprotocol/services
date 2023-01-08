@@ -3588,6 +3588,7 @@ dependencies = [
  "ethereum-types 0.12.1",
  "hex",
  "hyper",
+ "itertools",
  "model",
  "num",
  "serde",

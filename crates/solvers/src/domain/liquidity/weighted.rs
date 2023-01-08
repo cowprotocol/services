@@ -1,5 +1,6 @@
 use crate::domain::{eth, liquidity};
 use ethereum_types::U256;
+use itertools::Itertools as _;
 use std::collections::BTreeMap;
 
 /// The state of a Balancer-like weighted product pool.
@@ -10,6 +11,15 @@ pub struct Pool {
 }
 
 impl Pool {
+    /// Returns an iterator over the tokens pairs handled by this pool.
+    pub fn token_pairs(&self) -> impl Iterator<Item = eth::TokenPair> + '_ {
+        self.reserves
+            .0
+            .keys()
+            .tuple_combinations()
+            .map(|(a, b)| eth::TokenPair::new(*a, *b).expect("a != b"))
+    }
+
     /// Retrieves a reserve by token.
     pub fn reserve(&self, token: eth::TokenAddress) -> Option<Reserve> {
         let (amount, weight, scale) = self.reserves.0.get(&token).copied()?;

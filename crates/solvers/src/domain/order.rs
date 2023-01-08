@@ -46,4 +46,9 @@ impl UserOrder {
             Class::Liquidity => Err(order),
         }
     }
+
+    /// Returns a reference to the underlying CoW Protocol order.
+    pub fn get(&self) -> &Order {
+        &self.0
+    }
 }

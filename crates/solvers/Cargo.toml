@@ -10,6 +10,7 @@ chrono = { version = "0.4", features = ["serde"] }
 ethereum-types = { version = "0.12", features = ["num-traits"] }
 hex = "0.4"
 hyper = "0.14"
+itertools = "0.10"
 num = "0.4"
 serde = "1"
 serde_with = "2"

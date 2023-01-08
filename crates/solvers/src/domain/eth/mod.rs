@@ -1,21 +1,34 @@
 use ethereum_types::{H160, U256};
-use std::ops::Deref;
+use std::cmp::Ordering;
 
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenAddress(pub H160);
 
 /// The WETH token (or equivalent) for the EVM compatible network.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WethAddress(pub H160);
 
-impl Deref for TokenAddress {
-    type Target = H160;
+/// An ordered token pair.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TokenPair(TokenAddress, TokenAddress);
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl TokenPair {
+    /// Returns a token pair for the given tokens, or `None` if `a` and `b` are
+    /// equal.
+    pub fn new(a: TokenAddress, b: TokenAddress) -> Option<Self> {
+        match a.cmp(&b) {
+            Ordering::Less => Some(Self(a, b)),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(Self(b, a)),
+        }
+    }
+
+    /// Returns the wrapped token pair as a tuple.
+    pub fn get(&self) -> (TokenAddress, TokenAddress) {
+        (self.0, self.1)
     }
 }
 
