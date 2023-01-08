@@ -1,7 +1,7 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use database::orders::{Quote, SurplusFeeQuoteParameters};
+use database::orders::{OrderFeeSpecifier, Quote};
 use ethcontract::U256;
 use futures::{StreamExt, TryStreamExt};
 use model::time::now_in_epoch_seconds;
@@ -40,11 +40,11 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
-    pub async fn order_parameters_with_outdated_fees(
+    pub async fn order_specs_with_outdated_fees(
         &self,
         age: Duration,
         limit: usize,
-    ) -> Result<Vec<SurplusFeeQuoteParameters>> {
+    ) -> Result<Vec<OrderFeeSpecifier>> {
         let limit: i64 = limit.try_into().context("convert limit")?;
 
         let _timer = super::Metrics::get()
@@ -65,11 +65,11 @@ impl Postgres {
         .await
     }
 
-    /// Updates the `surplus_fee` of all limit orders matching the [`SurplusFeeQuoteParameters`]
+    /// Updates the `surplus_fee` of all limit orders matching the [`OrderFeeSpecifier`]
     /// and stores a quote for each one.
     pub async fn update_limit_order_fees(
         &self,
-        parameters: &SurplusFeeQuoteParameters,
+        order_spec: &OrderFeeSpecifier,
         update: &FeeUpdate,
     ) -> Result<()> {
         let (update, quote) = match update {
@@ -83,9 +83,6 @@ impl Postgres {
                     surplus_fee: Some(u256_to_big_decimal(surplus_fee)),
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: u256_to_big_decimal(full_fee_amount),
-                    sell_token: parameters.sell_token,
-                    buy_token: parameters.buy_token,
-                    sell_amount: parameters.sell_amount.clone(),
                 },
                 Some(database::orders::Quote {
                     // for every order we update we copy this struct and set the order_uid later
@@ -112,9 +109,6 @@ impl Postgres {
                     surplus_fee: None,
                     surplus_fee_timestamp: *timestamp,
                     full_fee_amount: 0.into(),
-                    sell_token: parameters.sell_token,
-                    buy_token: parameters.buy_token,
-                    sell_amount: parameters.sell_amount.clone(),
                 },
                 None,
             ),
@@ -125,9 +119,10 @@ impl Postgres {
             .with_label_values(&["update_limit_order_fees"])
             .start_timer();
         let mut ex = self.0.begin().await?;
-        let updated_order_uids = database::orders::update_limit_order_fees(&mut ex, &update)
-            .await
-            .context("update_limit_order_fee")?;
+        let updated_order_uids =
+            database::orders::update_limit_order_fees(&mut ex, order_spec, &update)
+                .await
+                .context("update_limit_order_fee")?;
         if let Some(quote) = quote {
             for order_uid in updated_order_uids {
                 let quote = Quote {

@@ -602,13 +602,6 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-#[derive(Debug, FromRow, PartialEq, Eq)]
-pub struct SurplusFeeQuoteParameters {
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount: BigDecimal,
-}
-
 /// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
 /// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
 /// identical orders in bulk so in order to not do unnecessary price estimation requests during
@@ -622,7 +615,7 @@ pub fn order_parameters_with_most_outdated_fees(
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
     limit: i64,
-) -> BoxStream<'_, Result<SurplusFeeQuoteParameters, sqlx::Error>> {
+) -> BoxStream<'_, Result<OrderFeeSpecifier, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         " WITH outdated_groups as (",
         "   SELECT sell_token, buy_token, sell_amount,",
@@ -667,18 +660,24 @@ pub async fn count_limit_orders_by_owner(
         .await
 }
 
-pub struct FeeUpdate {
-    pub surplus_fee: Option<BigDecimal>,
-    pub surplus_fee_timestamp: DateTime<Utc>,
-    pub full_fee_amount: BigDecimal,
+/// These parameters have to match in an order for a [`FeeUpdate`] update to apply to it.
+#[derive(Debug, FromRow, PartialEq, Eq)]
+pub struct OrderFeeSpecifier {
     pub sell_token: Address,
     pub buy_token: Address,
     pub sell_amount: BigDecimal,
 }
 
+pub struct FeeUpdate {
+    pub surplus_fee: Option<BigDecimal>,
+    pub surplus_fee_timestamp: DateTime<Utc>,
+    pub full_fee_amount: BigDecimal,
+}
+
 /// Updates the `surplus_fee` of multiple orders and returns their `uid`s.
 pub async fn update_limit_order_fees(
     ex: &mut PgConnection,
+    order_spec: &OrderFeeSpecifier,
     update: &FeeUpdate,
 ) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = "
@@ -698,9 +697,9 @@ pub async fn update_limit_order_fees(
         .bind(&update.surplus_fee)
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
-        .bind(&update.sell_token)
-        .bind(&update.buy_token)
-        .bind(&update.sell_amount)
+        .bind(&order_spec.sell_token)
+        .bind(&order_spec.buy_token)
+        .bind(&order_spec.sell_amount)
         .fetch_all(ex)
         .await
 }
@@ -1655,6 +1654,11 @@ mod tests {
             .unwrap();
         }
 
+        let order_spec = OrderFeeSpecifier {
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1_000.into(),
+        };
         let update = FeeUpdate {
             surplus_fee: Some(42.into()),
             surplus_fee_timestamp: DateTime::from_utc(
@@ -1662,11 +1666,10 @@ mod tests {
                 Utc,
             ),
             full_fee_amount: 1337.into(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 1_000.into(),
         };
-        let updated_uids = update_limit_order_fees(&mut db, &update).await.unwrap();
+        let updated_uids = update_limit_order_fees(&mut db, &order_spec, &update)
+            .await
+            .unwrap();
         assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
 
         for id in 1..3 {
@@ -1815,7 +1818,7 @@ mod tests {
         // order with uid 5 (higher priority because it was never estimated)
         assert_eq!(
             orders[0],
-            SurplusFeeQuoteParameters {
+            OrderFeeSpecifier {
                 sell_token: ByteArray([3; 20]),
                 buy_token: ByteArray([4; 20]),
                 sell_amount: 1.into(),
@@ -1824,7 +1827,7 @@ mod tests {
         // order with uid 1
         assert_eq!(
             orders[1],
-            SurplusFeeQuoteParameters {
+            OrderFeeSpecifier {
                 sell_token: ByteArray([1; 20]),
                 buy_token: ByteArray([2; 20]),
                 sell_amount: 1.into(),

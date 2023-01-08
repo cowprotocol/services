@@ -3,7 +3,7 @@ use crate::database::{
     Postgres,
 };
 use anyhow::Result;
-use database::orders::SurplusFeeQuoteParameters;
+use database::orders::OrderFeeSpecifier;
 use ethcontract::H160;
 use futures::StreamExt;
 use model::{
@@ -54,37 +54,37 @@ impl LimitOrderQuoter {
 
     /// Returns whether it is likely that there is no more work.
     async fn update(&self) -> Result<bool> {
-        let parameters = self
+        let order_specs = self
             .database
-            .order_parameters_with_outdated_fees(self.limit_order_age, self.parallelism)
+            .order_specs_with_outdated_fees(self.limit_order_age, self.parallelism)
             .await?;
-        futures::stream::iter(&parameters)
-            .for_each_concurrent(self.parallelism, |parameters| {
+        futures::stream::iter(&order_specs)
+            .for_each_concurrent(self.parallelism, |order_spec| {
                 async move {
-                    let quote = self.get_quote(parameters).await;
-                    self.update_fee(parameters, &quote).await;
+                    let quote = self.get_quote(order_spec).await;
+                    self.update_fee(order_spec, &quote).await;
                 }
-                .instrument(tracing::debug_span!("surplus_fee", ?parameters))
+                .instrument(tracing::debug_span!("surplus_fee", ?order_spec))
             })
             .await;
-        Ok(parameters.len() < self.parallelism)
+        Ok(order_specs.len() < self.parallelism)
     }
 
     /// Handles errors internally.
-    async fn get_quote(&self, parameters: &SurplusFeeQuoteParameters) -> Option<Quote> {
-        let quote_parameters = QuoteParameters {
-            sell_token: H160(parameters.sell_token.0),
-            buy_token: H160(parameters.buy_token.0),
+    async fn get_quote(&self, order_spec: &OrderFeeSpecifier) -> Option<Quote> {
+        let parameters = QuoteParameters {
+            sell_token: H160(order_spec.sell_token.0),
+            buy_token: H160(order_spec.buy_token.0),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee {
-                    value: big_decimal_to_u256(&parameters.sell_amount).unwrap(),
+                    value: big_decimal_to_u256(&order_spec.sell_amount).unwrap(),
                 },
             },
             // The remaining parameters are only relevant for subsidy computation which is
             // irrelevant for the `surplus_fee`.
             ..Default::default()
         };
-        match self.quoter.calculate_quote(quote_parameters).await {
+        match self.quoter.calculate_quote(parameters).await {
             Ok(quote) => {
                 Metrics::get()
                     .update_result
@@ -96,7 +96,7 @@ impl LimitOrderQuoter {
                 CalculateQuoteError::Other(err)
                 | CalculateQuoteError::Price(PriceEstimationError::Other(err)),
             ) => {
-                tracing::warn!(?parameters, ?err, "limit order quote error");
+                tracing::warn!(?order_spec, ?err, "limit order quote error");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["get_quote_preventable_failure"])
@@ -104,7 +104,7 @@ impl LimitOrderQuoter {
                 None
             }
             Err(err) => {
-                tracing::debug!(?parameters, ?err, "limit order unqoutable");
+                tracing::debug!(?order_spec, ?err, "limit order unqoutable");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["get_quote_unpreventable_failure"])
@@ -115,7 +115,7 @@ impl LimitOrderQuoter {
     }
 
     /// Handles errors internally.
-    async fn update_fee(&self, parameters: &SurplusFeeQuoteParameters, quote: &Option<Quote>) {
+    async fn update_fee(&self, order_spec: &OrderFeeSpecifier, quote: &Option<Quote>) {
         let timestamp = chrono::Utc::now();
         let update = match quote {
             Some(quote) => FeeUpdate::Success {
@@ -132,7 +132,7 @@ impl LimitOrderQuoter {
         };
         match self
             .database
-            .update_limit_order_fees(parameters, &update)
+            .update_limit_order_fees(order_spec, &update)
             .await
         {
             Ok(_) => {
@@ -142,7 +142,7 @@ impl LimitOrderQuoter {
                     .inc();
             }
             Err(err) => {
-                tracing::warn!(?parameters, ?err, "limit order fee update db error");
+                tracing::warn!(?order_spec, ?err, "limit order fee update db error");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["update_fee_preventable_failure"])
