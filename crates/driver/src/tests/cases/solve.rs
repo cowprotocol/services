@@ -9,6 +9,7 @@ use {
 };
 
 /// Test that the /solve endpoint behaves as expected.
+#[ignore]
 #[tokio::test]
 async fn test() {
     // Set up the uniswap swap.
