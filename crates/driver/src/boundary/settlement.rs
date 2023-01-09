@@ -83,7 +83,7 @@ impl Settlement {
             .collect();
         let settlement = convert_settlement(
             to_boundary_solution(solution, eth).await?,
-            SettlementContext {
+            &SettlementContext {
                 orders: limit_orders,
                 // TODO: #899
                 liquidity: Default::default(),

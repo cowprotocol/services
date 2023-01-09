@@ -682,7 +682,7 @@ mod tests {
 
         let settlements = convert_settlement(
             parsed_response.unwrap(),
-            settlement_context,
+            &settlement_context,
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             SlippageContext::default(),

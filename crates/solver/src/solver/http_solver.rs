@@ -4,8 +4,8 @@ pub mod instance_creation;
 pub mod settlement;
 
 use self::{
-    instance_cache::SharedInstanceCreator,
-    settlement::{ConversionError, SettlementContext},
+    instance_cache::SharedInstanceCreator, instance_creation::Instances,
+    settlement::ConversionError,
 };
 use super::{Auction, AuctionResult, Solver};
 use crate::{
@@ -105,7 +105,7 @@ impl Solver for HttpSolver {
         let id = auction.id;
         let external_prices = auction.external_prices.clone();
 
-        let (settled, context) = self.solve_(auction).await?;
+        let (settled, instances) = self.solve_(auction).await?;
 
         if settled.orders.is_empty() {
             return Ok(vec![]);
@@ -134,7 +134,7 @@ impl Solver for HttpSolver {
         let slippage = self.slippage_calculator.context(&external_prices);
         match settlement::convert_settlement(
             settled.clone(),
-            context,
+            &instances.context,
             self.allowance_manager.clone(),
             self.order_converter.clone(),
             slippage,
@@ -173,10 +173,7 @@ impl Solver for HttpSolver {
 }
 
 impl HttpSolver {
-    async fn solve_(
-        &self,
-        auction: Auction,
-    ) -> Result<(SettledBatchAuctionModel, SettlementContext)> {
+    async fn solve_(&self, auction: Auction) -> Result<(SettledBatchAuctionModel, Arc<Instances>)> {
         let deadline = auction.deadline;
         let instances = self.instance_cache.get_instances(auction).await;
         let model = match self.instance_type {
@@ -196,7 +193,7 @@ impl HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
-        Ok((settled, instances.context.clone()))
+        Ok((settled, instances))
     }
 }
 
