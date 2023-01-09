@@ -1,4 +1,4 @@
-//! Serialization utilities for use with `serde_as` macros.
+//! Serialization utilities for use with [`serde_with::serde_as`] macros.
 
 mod hex;
 mod u256;

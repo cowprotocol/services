@@ -1,4 +1,7 @@
-use {std::net::SocketAddr, url::Url};
+use {
+    std::{net::SocketAddr, path::PathBuf},
+    url::Url,
+};
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
@@ -9,6 +12,11 @@ pub struct Args {
     /// The node RPC API endpoint.
     #[clap(long, env)]
     pub ethrpc: Url,
+
+    /// Path to the solvers configuration file. This file should be in YAML
+    /// format. For an example see TODO insert github link here.
+    #[clap(long, env)]
+    pub solvers_config: PathBuf,
 
     #[clap(flatten)]
     pub tenderly: Tenderly,

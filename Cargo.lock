@@ -1200,6 +1200,7 @@ dependencies = [
  "solver",
  "thiserror",
  "tokio",
+ "toml",
  "tower",
  "tower-http",
  "tracing",
@@ -4186,6 +4187,7 @@ dependencies = [
  "form_urlencoded",
  "idna 0.3.0",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]

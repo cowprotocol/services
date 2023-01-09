@@ -23,11 +23,12 @@ hyper = "0.14"
 serde_with = "2.0"
 async-trait = "0.1"
 itertools = "0.10"
-url = "2.3"
+url = { version = "2.3", features = ["serde"] }
 ethabi = "18.0"
 bigdecimal = "0.3"
 rand = "0.8"
 web3 = "0.18"
+toml = "0.5"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
