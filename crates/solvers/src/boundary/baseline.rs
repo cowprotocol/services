@@ -29,14 +29,14 @@ impl<'a> Solver<'a> {
             amms: to_boundary_amms(liquidity),
             liquidity: liquidity
                 .iter()
-                .map(|liquidity| (liquidity.id, liquidity))
+                .map(|liquidity| (liquidity.id.clone(), liquidity))
                 .collect(),
         }
     }
 
     pub fn route(
         &self,
-        order: &order::UserOrder,
+        order: order::UserOrder,
         max_hops: NonZeroUsize,
     ) -> Option<baseline::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
@@ -121,7 +121,7 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                         pool,
                     );
                     amms.entry(boundary_pool.tokens).or_default().push(Amm {
-                        id: liquidity.id,
+                        id: liquidity.id.clone(),
                         token_pair: boundary_pool.tokens,
                         pool: Pool::ConstantProduct(boundary_pool),
                     });
@@ -132,7 +132,7 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                     for pair in pool.token_pairs() {
                         let token_pair = to_boundary_token_pair(&pair);
                         amms.entry(token_pair).or_default().push(Amm {
-                            id: liquidity.id,
+                            id: liquidity.id.clone(),
                             token_pair,
                             pool: Pool::Weighted(boundary_pool.clone()),
                         });

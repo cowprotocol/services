@@ -6,16 +6,12 @@ pub use shared::sources::uniswap_v2::pool_fetching::Pool;
 
 /// Converts a domain pool into a [`shared`] Uniswap V2 pool.
 pub fn to_boundary_pool(address: H160, state: &liquidity::constantproduct::Pool) -> Pool {
-    use liquidity::constantproduct::TokenIndex::*;
-
-    let tokens = TokenPair::new(state.reserves[Zero].token.0, state.reserves[One].token.0)
+    let reserves = state.reserves.get();
+    let tokens = TokenPair::new(reserves.0.token.0, reserves.1.token.0)
         .expect("tokens are distinct by construction");
 
     // reserves are ordered by construction.
-    let reserves = (
-        state.reserves[Zero].amount.as_u128(),
-        state.reserves[One].amount.as_u128(),
-    );
+    let reserves = (reserves.0.amount.as_u128(), reserves.1.amount.as_u128());
 
     Pool {
         address,

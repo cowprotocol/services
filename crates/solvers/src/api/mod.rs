@@ -1,6 +1,7 @@
 //! Serve a solver engine API.
 
-use std::{future::Future, net::SocketAddr};
+use crate::domain::{baseline, eth};
+use std::{future::Future, net::SocketAddr, num::NonZeroUsize};
 
 pub mod dto;
 
@@ -28,6 +29,39 @@ impl Api {
     }
 }
 
-async fn solve(_auction: axum::extract::Json<dto::Auction>) -> axum::response::Json<dto::Solution> {
-    axum::response::Json(dto::Solution::trivial())
+async fn solve(
+    auction: axum::extract::Json<dto::Auction>,
+) -> (
+    axum::http::StatusCode,
+    axum::response::Json<dto::Response<dto::Solution>>,
+) {
+    let auction = match auction.to_domain() {
+        Ok(value) => value,
+        Err(err) => {
+            return (
+                axum::http::StatusCode::OK,
+                axum::response::Json(dto::Response::Err(err)),
+            )
+        }
+    };
+    let solver = baseline::Baseline {
+        weth: eth::WethAddress(
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                .parse()
+                .unwrap(),
+        ),
+        base_tokens: Default::default(),
+        max_hops: NonZeroUsize::new(2).unwrap(),
+    };
+    let solution = solver
+        .solve(&auction)
+        .into_iter()
+        .next()
+        .map(|solution| dto::Solution::from_domain(&solution))
+        .unwrap_or_else(dto::Solution::trivial);
+
+    (
+        axum::http::StatusCode::OK,
+        axum::response::Json(dto::Response::Ok(solution)),
+    )
 }

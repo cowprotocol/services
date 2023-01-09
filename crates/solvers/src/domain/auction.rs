@@ -1,5 +1,8 @@
 //! The domain object representing an auction.
 
+use crate::domain::{liquidity, order};
+
 pub struct Auction {
-    // TODO: Stuff goes here...
+    pub orders: Vec<order::Order>,
+    pub liquidity: Vec<liquidity::Liquidity>,
 }

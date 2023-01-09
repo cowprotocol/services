@@ -1,7 +1,7 @@
 //! Constant product pool.
 
 use crate::domain::eth;
-use std::ops::Index;
+use std::cmp::Ordering;
 
 /// Uniswap-v2 like pool state.
 #[derive(Clone, Debug)]
@@ -12,18 +12,18 @@ pub struct Pool {
 
 /// Constant product reserves.
 #[derive(Clone, Debug)]
-pub struct Reserves([eth::Asset; 2]);
+pub struct Reserves(eth::Asset, eth::Asset);
 
-/// A token index for pool reserves.
-pub enum TokenIndex {
-    Zero = 0,
-    One = 1,
-}
+impl Reserves {
+    pub fn new(a: eth::Asset, b: eth::Asset) -> Option<Self> {
+        match a.token.cmp(&b.token) {
+            Ordering::Less => Some(Self(a, b)),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(Self(b, a)),
+        }
+    }
 
-impl Index<TokenIndex> for Reserves {
-    type Output = eth::Asset;
-
-    fn index(&self, index: TokenIndex) -> &Self::Output {
-        &self.0[index as usize]
+    pub fn get(&self) -> (eth::Asset, eth::Asset) {
+        (self.0, self.1)
     }
 }

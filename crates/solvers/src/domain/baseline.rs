@@ -2,9 +2,11 @@
 
 use crate::{
     boundary,
-    domain::{eth, liquidity, order},
+    domain::{auction, eth, liquidity, order, solution},
 };
 use std::{collections::HashSet, num::NonZeroUsize};
+
+use super::solution::Interaction;
 
 pub struct Baseline {
     pub weth: eth::WethAddress,
@@ -21,13 +23,34 @@ impl Baseline {
     /// Finds the optimal trading route for the specified order and liquidity.
     ///
     /// Returns `None` if no trading route can be found.
-    fn route<'a>(
-        &self,
-        order: &order::UserOrder,
-        liquidity: &'a [liquidity::Liquidity],
-    ) -> Option<Route<'a>> {
-        let solver = boundary::baseline::Solver::new(&self.weth, &self.base_tokens, liquidity);
-        solver.route(order, self.max_hops)
+    pub fn solve(&self, auction: &auction::Auction) -> Vec<solution::Solution> {
+        let boundary_solver =
+            boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
+
+        auction
+            .orders
+            .iter()
+            .filter_map(|order| {
+                let route = boundary_solver.route(order::UserOrder::new(order)?, self.max_hops)?;
+
+                Some(solution::Solution {
+                    prices: solution::clearingprices! {
+                        order.sell.token => route.output().amount,
+                        order.buy.token => route.input().amount,
+                    },
+                    trades: vec![solution::Trade::fill(order.clone())],
+                    interactions: route
+                        .segments
+                        .iter()
+                        .map(|segment| Interaction {
+                            liquidity: segment.liquidity.clone(),
+                            input: segment.input,
+                            output: segment.output,
+                        })
+                        .collect(),
+                })
+            })
+            .collect()
     }
 }
 
@@ -55,5 +78,16 @@ impl<'a> Route<'a> {
             return None;
         }
         Some(Self { segments })
+    }
+
+    fn input(&self) -> eth::Asset {
+        self.segments[0].input
+    }
+
+    fn output(&self) -> eth::Asset {
+        self.segments
+            .last()
+            .expect("route has at least one segment by construction")
+            .output
     }
 }

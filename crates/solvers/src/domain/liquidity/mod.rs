@@ -20,8 +20,8 @@ pub struct Liquidity {
     pub state: State,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Id(pub usize);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Id(pub String);
 
 /// The liquidity state, specific to the type of liquidity.
 #[derive(Clone, Debug)]

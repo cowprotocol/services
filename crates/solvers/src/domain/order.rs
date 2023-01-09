@@ -34,21 +34,20 @@ pub enum Class {
 }
 
 /// A user order marker type.
-pub struct UserOrder(Order);
+pub struct UserOrder<'a>(&'a Order);
 
-impl UserOrder {
+impl<'a> UserOrder<'a> {
     /// Wraps an order as a user order, returns `Err` with the original order if
     /// it is not a user order.
-    #[allow(clippy::result_large_err)]
-    pub fn new(order: Order) -> Result<Self, Order> {
+    pub fn new(order: &'a Order) -> Option<Self> {
         match order.class {
-            Class::Market | Class::Limit => Ok(Self(order)),
-            Class::Liquidity => Err(order),
+            Class::Market | Class::Limit => Some(Self(order)),
+            Class::Liquidity => None,
         }
     }
 
     /// Returns a reference to the underlying CoW Protocol order.
-    pub fn get(&self) -> &Order {
-        &self.0
+    pub fn get(&self) -> &'a Order {
+        self.0
     }
 }
