@@ -242,7 +242,8 @@ async fn main() -> ! {
         .s3_upload
         .into_config()
         .unwrap()
-        .map(S3InstanceUploader::new);
+        .map(S3InstanceUploader::new)
+        .map(Arc::new);
 
     let solver = solver::solver::create(
         web3.clone(),

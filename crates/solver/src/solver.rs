@@ -1,6 +1,6 @@
 use self::{
     baseline_solver::BaselineSolver,
-    http_solver::{buffers::BufferRetriever, HttpSolver},
+    http_solver::HttpSolver,
     naive_solver::NaiveSolver,
     oneinch_solver::OneInchSolver,
     optimizing_solver::OptimizingSolver,
@@ -19,7 +19,14 @@ use crate::{
     s3_instance_upload::S3InstanceUploader,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessing,
-    solver::balancer_sor_solver::BalancerSorSolver,
+    solver::{
+        balancer_sor_solver::BalancerSorSolver,
+        http_solver::{
+            buffers::BufferRetriever,
+            instance_cache::{InstanceType, SharedInstanceCreator},
+            instance_creation::InstanceCreator,
+        },
+    },
 };
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
@@ -283,7 +290,7 @@ pub fn create(
     order_prioritization_config: &single_order_solver::Arguments,
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
-    mut s3_instance_uploader_for_quasimodo: Option<S3InstanceUploader>,
+    s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -295,26 +302,29 @@ pub fn create(
         web3.clone(),
         settlement_contract.address(),
     ));
-    let allowance_mananger = Arc::new(AllowanceManager::new(
+    let allowance_manager = Arc::new(AllowanceManager::new(
         web3.clone(),
         settlement_contract.address(),
     ));
-
-    // We use two separate solver caches: one for our internal optimization
-    // solvers (which **does** filter out orders with non-fee-connected-tokens),
-    // and one for external solvers (which **does not** filter out orders with
-    // non-fee-connected-tokens)
-    let http_instance_with_filtered_orders = http_solver::InstanceCache::default();
-    let http_instance_with_all_orders = http_solver::InstanceCache::default();
+    let instance_creator = InstanceCreator {
+        native_token,
+        token_info_fetcher: token_info_fetcher.clone(),
+        buffer_retriever,
+        market_makable_token_list: market_makable_token_list.clone(),
+        environment_metadata: network_id.clone(),
+    };
+    let shared_instance_creator = Arc::new(SharedInstanceCreator::new(
+        instance_creator,
+        s3_instance_uploader,
+    ));
 
     // Helper function to create http solver instances.
     let create_http_solver = |account: Account,
                               url: Url,
                               name: String,
                               config: SolverConfig,
-                              filter_non_fee_connected_orders: bool,
-                              slippage_calculator: SlippageCalculator,
-                              instance_uploader_config: Option<S3InstanceUploader>|
+                              instance_type: InstanceType,
+                              slippage_calculator: SlippageCalculator|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -326,21 +336,13 @@ pub fn create(
                 config,
             },
             account,
-            native_token,
-            token_info_fetcher.clone(),
-            buffer_retriever.clone(),
-            allowance_mananger.clone(),
+            allowance_manager.clone(),
             order_converter.clone(),
-            if filter_non_fee_connected_orders {
-                http_instance_with_filtered_orders.clone()
-            } else {
-                http_instance_with_all_orders.clone()
-            },
-            filter_non_fee_connected_orders,
+            instance_type,
             slippage_calculator,
             market_makable_token_list.clone(),
             *domain,
-            instance_uploader_config,
+            shared_instance_creator.clone(),
         )
     };
 
@@ -378,18 +380,16 @@ pub fn create(
                         use_internal_buffers: Some(mip_uses_internal_buffers),
                         ..Default::default()
                     },
-                    true,
+                    InstanceType::Filtered,
                     slippage_calculator,
-                    None,
                 )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
                     "CowDexAg".to_string(),
                     SolverConfig::default(),
-                    false,
+                    InstanceType::Plain,
                     slippage_calculator,
-                    None,
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,
@@ -399,9 +399,8 @@ pub fn create(
                         use_internal_buffers: Some(quasimodo_uses_internal_buffers),
                         ..Default::default()
                     },
-                    true,
+                    InstanceType::Filtered,
                     slippage_calculator,
-                    s3_instance_uploader_for_quasimodo.take(),
                 )),
                 SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -455,7 +454,7 @@ pub fn create(
                         )
                         .unwrap(),
                     ),
-                    allowance_mananger.clone(),
+                    allowance_manager.clone(),
                     slippage_calculator,
                 )))),
             };
@@ -475,9 +474,8 @@ pub fn create(
                 use_internal_buffers: Some(mip_uses_internal_buffers),
                 ..Default::default()
             },
-            false,
+            InstanceType::Plain,
             slippage_configuration.get_global_calculator(),
-            None,
         ))
     });
     solvers.extend(external_solvers);
