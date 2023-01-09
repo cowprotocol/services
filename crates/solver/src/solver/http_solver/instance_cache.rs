@@ -1,7 +1,6 @@
-use super::instance_creation::{Instance, InstanceCreator, Instances};
+use super::instance_creation::{InstanceCreator, Instances};
 use crate::{s3_instance_upload::S3InstanceUploader, solver::Auction};
 use model::auction::AuctionId;
-use shared::http_solver::model::BatchAuctionModel;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -16,14 +15,8 @@ pub struct SharedInstanceCreator {
 
 struct Cache {
     run: u64,
-    instances: Instances,
-}
-
-#[derive(Copy, Clone)]
-pub enum InstanceType {
-    Plain,
-    /// without orders that are not connected to the fee token
-    Filtered,
+    // Arc because the instance data is big and only needs to be read.
+    instances: Arc<Instances>,
 }
 
 impl SharedInstanceCreator {
@@ -37,23 +30,24 @@ impl SharedInstanceCreator {
 
     /// The first call for a new run id creates the instance and stores it in a cache. Subsequent
     /// calls copy the instance from the cache (and block until the first call completes).
-    pub async fn get_instance(&self, auction: Auction, instance: InstanceType) -> Instance {
+    pub async fn get_instances(&self, auction: Auction) -> Arc<Instances> {
         let mut guard = self.last.lock().await;
         let cache: &Cache = match guard.as_ref() {
             Some(cache) if cache.run == auction.run => cache,
             _ => {
-                let instances = self
-                    .creator
-                    .prepare_instances(
-                        auction.id,
-                        auction.run,
-                        auction.orders.clone(),
-                        auction.liquidity.clone(),
-                        auction.gas_price,
-                        &auction.external_prices,
-                    )
-                    .await;
-                self.upload_instance_in_background(auction.id, &instances.plain.model);
+                let instances = Arc::new(
+                    self.creator
+                        .prepare_instances(
+                            auction.id,
+                            auction.run,
+                            auction.orders.clone(),
+                            auction.liquidity.clone(),
+                            auction.gas_price,
+                            &auction.external_prices,
+                        )
+                        .await,
+                );
+                self.upload_instance_in_background(auction.id, instances.clone());
                 *guard = Some(Cache {
                     run: auction.run,
                     instances,
@@ -62,36 +56,27 @@ impl SharedInstanceCreator {
                 guard.as_ref().unwrap()
             }
         };
-        cache.get_instance(instance)
+        cache.instances.clone()
     }
 
     // Happens in a task to not delay solving.
-    fn upload_instance_in_background(&self, id: AuctionId, model: &BatchAuctionModel) {
+    fn upload_instance_in_background(&self, id: AuctionId, instances: Arc<Instances>) {
         if let Some(uploader) = &self.uploader {
-            let model = model.clone();
             let uploader = uploader.clone();
             let task = async move {
-                let auction = match serde_json::to_vec(&model) {
+                let auction = match serde_json::to_vec(&instances.plain) {
                     Ok(auction) => auction,
                     Err(err) => {
                         tracing::error!(?err, "encode auction for instance upload");
                         return;
                     }
                 };
+                std::mem::drop(instances);
                 if let Err(err) = uploader.upload_instance(id, auction).await {
                     tracing::error!(%id, ?err, "error uploading instance");
                 }
             };
             tokio::task::spawn(task);
-        }
-    }
-}
-
-impl Cache {
-    fn get_instance(&self, instance: InstanceType) -> Instance {
-        match instance {
-            InstanceType::Plain => self.instances.plain.clone(),
-            InstanceType::Filtered => self.instances.filtered.clone(),
         }
     }
 }
@@ -138,23 +123,19 @@ mod tests {
             orders: vec![],
             ..Default::default()
         };
-        let instance = shared
-            .get_instance(auction.clone(), InstanceType::Plain)
-            .await;
-        assert_eq!(instance.model.orders.len(), 0);
+        let instance = shared.get_instances(auction.clone()).await;
+        assert_eq!(instance.plain.orders.len(), 0);
 
         // Size stays the same even though auction has one more order because cached result is used
         // because id in cache.
         auction.orders.push(Default::default());
-        let instance = shared
-            .get_instance(auction.clone(), InstanceType::Plain)
-            .await;
-        assert_eq!(instance.model.orders.len(), 0);
+        let instance = shared.get_instances(auction.clone()).await;
+        assert_eq!(instance.plain.orders.len(), 0);
 
         // Size changes because id changes.
         auction.id = 1;
         auction.run = 1;
-        let instance = shared.get_instance(auction, InstanceType::Plain).await;
-        assert_eq!(instance.model.orders.len(), 1);
+        let instance = shared.get_instances(auction).await;
+        assert_eq!(instance.plain.orders.len(), 1);
     }
 }

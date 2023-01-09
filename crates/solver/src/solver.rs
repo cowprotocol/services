@@ -22,9 +22,8 @@ use crate::{
     solver::{
         balancer_sor_solver::BalancerSorSolver,
         http_solver::{
-            buffers::BufferRetriever,
-            instance_cache::{InstanceType, SharedInstanceCreator},
-            instance_creation::InstanceCreator,
+            buffers::BufferRetriever, instance_cache::SharedInstanceCreator,
+            instance_creation::InstanceCreator, InstanceType,
         },
     },
 };
