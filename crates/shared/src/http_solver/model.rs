@@ -343,12 +343,6 @@ pub enum SolverRunError {
     Solving(String),
 }
 
-impl From<anyhow::Error> for SolverRunError {
-    fn from(err: anyhow::Error) -> Self {
-        Self::Solving(err.to_string())
-    }
-}
-
 /// Contains all information about a failing settlement simulation
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
