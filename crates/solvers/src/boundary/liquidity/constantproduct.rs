@@ -18,6 +18,6 @@ pub fn to_boundary_pool(address: H160, state: &liquidity::constantproduct::Pool)
         tokens,
         reserves,
         // TODO: potentially handle overflows...
-        fee: num::rational::Ratio::new(state.fee.numer().as_u32(), state.fee.numer().as_u32()),
+        fee: num::rational::Ratio::new(state.fee.numer().as_u32(), state.fee.denom().as_u32()),
     }
 }

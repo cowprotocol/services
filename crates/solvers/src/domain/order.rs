@@ -34,6 +34,7 @@ pub enum Class {
 }
 
 /// A user order marker type.
+#[derive(Debug)]
 pub struct UserOrder<'a>(&'a Order);
 
 impl<'a> UserOrder<'a> {
