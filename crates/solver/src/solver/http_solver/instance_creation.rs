@@ -26,13 +26,8 @@ use std::{
 };
 
 pub struct Instances {
-    pub plain: Instance,
-    pub filtered: Instance,
-}
-
-#[derive(Clone)]
-pub struct Instance {
-    pub model: BatchAuctionModel,
+    pub plain: BatchAuctionModel,
+    pub filtered: BatchAuctionModel,
     pub context: SettlementContext,
 }
 
@@ -157,14 +152,9 @@ impl InstanceCreator {
         };
 
         Instances {
-            plain: Instance {
-                model,
-                context: context.clone(),
-            },
-            filtered: Instance {
-                model: filtered_model,
-                context,
-            },
+            plain: model,
+            filtered: filtered_model,
+            context,
         }
     }
 }
@@ -491,8 +481,8 @@ mod tests {
         let instances = solver
             .prepare_instances(0, 0, orders, amms, 0., &Default::default())
             .await;
-        assert_eq!(instances.filtered.model.orders.len(), 6);
-        assert_eq!(instances.plain.model.orders.len(), 8);
+        assert_eq!(instances.filtered.orders.len(), 6);
+        assert_eq!(instances.plain.orders.len(), 8);
     }
 
     #[tokio::test]
@@ -575,13 +565,12 @@ mod tests {
                 },
             )
             .await;
-        let Instance { model, context } = instances.plain;
 
-        assert_btreemap_size(&model.orders, 3);
-        assert_eq!(model.amms.len(), 2);
+        assert_btreemap_size(&instances.plain.orders, 3);
+        assert_eq!(instances.plain.amms.len(), 2);
 
-        assert_eq!(context.orders.len(), 3);
-        assert_eq!(context.liquidity.len(), 2);
+        assert_eq!(instances.context.orders.len(), 3);
+        assert_eq!(instances.context.liquidity.len(), 2);
     }
 
     fn assert_btreemap_size<V>(map: &BTreeMap<usize, V>, len: usize) {

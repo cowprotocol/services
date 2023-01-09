@@ -4,8 +4,7 @@ pub mod instance_creation;
 pub mod settlement;
 
 use self::{
-    instance_cache::{InstanceType, SharedInstanceCreator},
-    instance_creation::Instance,
+    instance_cache::SharedInstanceCreator,
     settlement::{ConversionError, SettlementContext},
 };
 use super::{Auction, AuctionResult, Solver};
@@ -30,6 +29,13 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+
+#[derive(Copy, Clone)]
+pub enum InstanceType {
+    Plain,
+    /// without orders that are not connected to the fee token
+    Filtered,
+}
 
 pub struct HttpSolver {
     solver: DefaultHttpSolverApi,
@@ -172,15 +178,16 @@ impl HttpSolver {
         auction: Auction,
     ) -> Result<(SettledBatchAuctionModel, SettlementContext)> {
         let deadline = auction.deadline;
-        let Instance { model, context } = self
-            .instance_cache
-            .get_instance(auction, self.instance_type)
-            .await;
+        let instances = self.instance_cache.get_instances(auction).await;
+        let model = match self.instance_type {
+            InstanceType::Plain => &instances.plain,
+            InstanceType::Filtered => &instances.filtered,
+        };
 
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
-        let mut settled = self.solver.solve(&model, timeout).await?;
+        let mut settled = self.solver.solve(model, timeout).await?;
         settled.add_missing_execution_plans();
 
         tracing::debug!(
@@ -189,7 +196,7 @@ impl HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
-        Ok((settled, context))
+        Ok((settled, instances.context.clone()))
     }
 }
 
