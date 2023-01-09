@@ -1,5 +1,4 @@
-use crate::domain::solution;
-use crate::util::serialize;
+use crate::{domain::solution, util::serialize};
 use ethereum_types::{H160, U256};
 use serde::Serialize;
 use serde_with::serde_as;
