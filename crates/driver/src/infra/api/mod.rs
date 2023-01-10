@@ -56,7 +56,7 @@ impl Api {
                 solver,
                 shared: Arc::clone(&shared),
             });
-            app = app.nest(&format!("/{}", name.0), router);
+            app = app.nest(&format!("/{}", name), router);
         }
 
         // Start the server.
