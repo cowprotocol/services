@@ -7,6 +7,7 @@ use {
 
 mod execute;
 mod info;
+mod quote;
 mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;

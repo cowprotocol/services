@@ -94,8 +94,9 @@ impl Solver {
         self.config.address
     }
 
+    // TODO Probably take solver_deadline as a parameter
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        let solver_deadline = auction.deadline.for_solver(self.config.now)?;
+        let solver_deadline = auction.deadline.for_solving(self.config.now)?;
         let body =
             serde_json::to_string(&dto::Auction::from_domain(auction, solver_deadline)).unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");

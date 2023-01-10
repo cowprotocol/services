@@ -51,7 +51,15 @@ impl Deadline {
         }
     }
 
-    pub fn for_solver(&self, now: time::Now) -> Result<SolverDeadline, DeadlineExceeded> {
+    // TODO for_solving, solver_time_buffer, and SolverDeadline should all be
+    // defined on the solution?
+    /// The time limit passed to the solver when solving an auction. The solvers
+    /// are given a time limit that's slightly less than the actual auction
+    /// [`Deadline`]. The reason for this is to allow the solver sufficient time
+    /// to search for the most optimal solution, but still ensure there is
+    /// time left for the driver to forward the results back to the protocol
+    /// or do some other necessary work.
+    pub fn for_solving(&self, now: time::Now) -> Result<SolverDeadline, DeadlineExceeded> {
         let deadline = self.0 - Self::solver_time_buffer();
         if deadline <= now.now() {
             Err(DeadlineExceeded)
@@ -65,12 +73,6 @@ impl Deadline {
     }
 }
 
-/// The time limit passed to the solver. The solvers are given a time limit
-/// that's slightly less than the actual auction [`Deadline`]. The reason for
-/// this is to allow the solver to use the full deadline to search for the
-/// most optimal solution, but still ensure there is time left for the
-/// driver to forward the results back to the protocol or do some other
-/// necessary work.
 #[derive(Debug, Clone, Copy)]
 pub struct SolverDeadline(chrono::DateTime<chrono::Utc>);
 
