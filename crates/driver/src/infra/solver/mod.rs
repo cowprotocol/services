@@ -1,10 +1,7 @@
 use {
     crate::{
         domain::{
-            competition::{
-                auction::{self, Auction},
-                solution::Solution,
-            },
+            competition::{auction::Auction, solution::Solution, SolverTimeout},
             eth,
         },
         infra,
@@ -95,16 +92,23 @@ impl Solver {
     }
 
     // TODO Probably take solver_deadline as a parameter
-    pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        let solver_deadline = auction.deadline.for_solving(self.config.now)?;
-        let body =
-            serde_json::to_string(&dto::Auction::from_domain(auction, solver_deadline)).unwrap();
+    pub async fn solve(
+        &self,
+        auction: &Auction,
+        timeout: SolverTimeout,
+    ) -> Result<Solution, Error> {
+        let body = serde_json::to_string(&dto::Auction::from_domain(
+            auction,
+            timeout,
+            self.config.now,
+        ))
+        .unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
         let req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
-            .timeout(solver_deadline.timeout(self.config.now)?);
+            .timeout(timeout.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
@@ -118,8 +122,6 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("the auction deadline was exceeded")]
-    DeadlineExceeded(#[from] auction::DeadlineExceeded),
     #[error("settlement encoding error: {0:?}")]
     SettlementEncoding(#[from] anyhow::Error),
     #[error("solver dto error: {0}")]

@@ -96,6 +96,10 @@ impl State {
     fn ethereum(&self) -> &Ethereum {
         &self.shared.eth
     }
+
+    fn now(&self) -> infra::time::Now {
+        self.shared.now
+    }
 }
 
 /// State which is shared among all multiplexed solvers.

@@ -118,19 +118,11 @@ impl Order {
             }],
             liquidity: Default::default(),
             gas_price: self.gas_price,
-            // TODO Deadline wasn't designed correctly
-            deadline: match self.quality {
-                Quality::Fast => todo!(),
-                Quality::Optimal => todo!(),
-            },
+            deadline: Default::default(),
         };
-        // TODO So immediately this is problematic because it forces the solver to
-        // return a SINGLE fulfillment, and no trades, seems like this isn't
-        // very good
-        let solution = solver.solve(&auction).await?;
-        // TODO Check returned trades, error otherwise, don't panic anywhere
-        // TODO Possibly just filter out the fulfillments and expect there to be exactly
-        // one, i.e. ignore the JIT trades
+        let solution = solver.solve(&auction, self.deadline(config)).await?;
+        // TODO Filter out JIT trades, and if there are no fulfillments, it means that
+        // quoting failed
         let trade = solution.trades.get(0).unwrap();
         Ok(Quote {
             sell: match trade {
@@ -141,5 +133,12 @@ impl Order {
             },
             buy: todo!(),
         })
+    }
+
+    fn deadline(&self, config: &Config) -> competition::SolverTimeout {
+        match self.quality {
+            Quality::Fast => config.fast_timeout.into(),
+            Quality::Optimal => config.optimal_timeout.into(),
+        }
     }
 }
