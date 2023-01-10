@@ -1,7 +1,10 @@
-use crate::{
-    domain::{competition, eth},
-    infra::solver::{self, Solver},
-    util,
+use {
+    crate::{
+        domain::{competition, eth},
+        infra::solver::{self, Solver},
+        util,
+    },
+    itertools::Itertools,
 };
 
 #[derive(Debug)]
@@ -37,8 +40,8 @@ pub enum Amount {
 }
 
 impl Order {
-    /// Turn the amount into a buy asset. Return zero if this is a sell.
-    pub fn buy_asset(&self) -> eth::Asset {
+    /// The asset being bought. Zero if this is a sell.
+    pub fn buy(&self) -> eth::Asset {
         match self.amount {
             Amount::Sell(..) => eth::Asset {
                 amount: Default::default(),
@@ -51,8 +54,8 @@ impl Order {
         }
     }
 
-    /// Turn the amount into a sell asset. Return zero if this is a buy.
-    pub fn sell_asset(&self) -> eth::Asset {
+    /// The asset being sold. Zero if this is a buy.
+    pub fn sell(&self) -> eth::Asset {
         match self.amount {
             Amount::Sell(amount) => eth::Asset {
                 amount,
@@ -82,19 +85,36 @@ pub enum Quality {
 }
 
 impl Order {
-    /// Generate a quote for this order. TODO Write a description of how the
-    /// quoting process works.
-    pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, solver::Error> {
-        // TODO Move this into a fake_auction method
-        let auction = competition::Auction {
+    /// Generate a quote for this order. This calls `/solve` on the solver with
+    /// a "fake" auction which contains a single order, and then determines
+    /// the quote for the order based on the solution that the solver
+    /// returns.
+    pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, Error> {
+        let solution = solver
+            .solve(&self.fake_auction(), self.deadline(config))
+            .await?;
+        let fulfillment = solution
+            .trades
+            .into_iter()
+            .filter_map(|trade| match trade {
+                competition::solution::Trade::Fulfillment(fulfillment) => Some(fulfillment),
+                competition::solution::Trade::Jit(..) => None,
+            })
+            .exactly_one()
+            .map_err(|_| Error::QuotingFailed)?;
+        Ok(fulfillment.into())
+    }
+
+    fn fake_auction(&self) -> competition::Auction {
+        competition::Auction {
             id: None,
             tokens: Default::default(),
             orders: vec![competition::Order {
                 uid: Default::default(),
                 receiver: None,
                 valid_to: util::Timestamp::MAX,
-                sell: self.sell_asset(),
-                buy: self.buy_asset(),
+                sell: self.sell(),
+                buy: self.buy(),
                 side: self.side(),
                 fee: Default::default(),
                 kind: competition::order::Kind::Market,
@@ -119,20 +139,7 @@ impl Order {
             liquidity: Default::default(),
             gas_price: self.gas_price,
             deadline: Default::default(),
-        };
-        let solution = solver.solve(&auction, self.deadline(config)).await?;
-        // TODO Filter out JIT trades, and if there are no fulfillments, it means that
-        // quoting failed
-        let trade = solution.trades.get(0).unwrap();
-        Ok(Quote {
-            sell: match trade {
-                competition::solution::Trade::Fulfillment(fulfillment) => {
-                    fulfillment.executed.to_asset(&fulfillment.order)
-                }
-                competition::solution::Trade::Jit(..) => panic!("should error instead"),
-            },
-            buy: todo!(),
-        })
+        }
     }
 
     fn deadline(&self, config: &Config) -> competition::SolverTimeout {
@@ -141,4 +148,29 @@ impl Order {
             Quality::Optimal => config.optimal_timeout.into(),
         }
     }
+}
+
+impl From<competition::solution::trade::Fulfillment> for Quote {
+    fn from(value: competition::solution::trade::Fulfillment) -> Self {
+        match value.order.side {
+            competition::order::Side::Buy => Self {
+                sell: value.order.sell,
+                buy: value.executed.to_asset(&value.order),
+            },
+            competition::order::Side::Sell => Self {
+                sell: value.executed.to_asset(&value.order),
+                buy: value.order.buy,
+            },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// This can happen e.g. if there's no available liquidity for the tokens
+    /// which the user is trying to trade.
+    #[error("solver was unable to generate a quote for this order")]
+    QuotingFailed,
+    #[error("solver error: {0:?}")]
+    Solver(#[from] solver::Error),
 }

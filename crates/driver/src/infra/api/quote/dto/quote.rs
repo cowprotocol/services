@@ -15,6 +15,9 @@ impl Quote {
     }
 }
 
+// TODO I think this might be a mistake. How about this just returns a single
+// amount field which is a U256? That should be enough, right? It would also
+// simplify some of the other code which is nice.
 #[derive(Debug, Serialize)]
 #[serde_as]
 #[serde(rename_all = "camelCase")]
