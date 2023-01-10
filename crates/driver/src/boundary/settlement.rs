@@ -231,10 +231,10 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         // PreSign, for example, carries no data. Everything should be reflected in the types!
         signature: match order.signature.scheme {
             order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
-                EcdsaSignature::from_bytes(&to_array(&order.signature.data)),
+                EcdsaSignature::from_bytes(order.signature.data.as_slice().try_into().unwrap()),
             ),
             order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
-                EcdsaSignature::from_bytes(&to_array(&order.signature.data)),
+                EcdsaSignature::from_bytes(order.signature.data.as_slice().try_into().unwrap()),
             ),
             order::signature::Scheme::Eip1271 => {
                 model::signature::Signature::Eip1271(order.signature.data.clone())
@@ -449,10 +449,4 @@ impl AllowanceManaging for AllowanceManager {
             })
             .collect())
     }
-}
-
-fn to_array<const N: usize>(data: &[u8]) -> [u8; N] {
-    let mut result = [0; N];
-    result.copy_from_slice(data);
-    result
 }
