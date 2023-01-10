@@ -83,11 +83,7 @@ impl From<SolverDeadline> for chrono::DateTime<chrono::Utc> {
 impl SolverDeadline {
     pub fn timeout(&self, now: time::Now) -> Result<std::time::Duration, DeadlineExceeded> {
         let timeout = self.0 - now.now();
-        if timeout <= chrono::Duration::zero() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(timeout.to_std().expect("already checked non-negative"))
-        }
+        timeout.to_std().map_err(|_| DeadlineExceeded)
     }
 }
 
