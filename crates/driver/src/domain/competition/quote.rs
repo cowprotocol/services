@@ -13,11 +13,32 @@ pub struct Config {
     pub fast_timeout: std::time::Duration,
 }
 
-/// A quot describing the expected price of an order.
+/// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
+    pub interactions: Vec<competition::solution::Interaction>,
+}
+
+impl Quote {
+    fn new(
+        fulfillment: competition::solution::trade::Fulfillment,
+        interactions: Vec<competition::solution::Interaction>,
+    ) -> Self {
+        match fulfillment.order.side {
+            competition::order::Side::Buy => Self {
+                sell: fulfillment.order.sell,
+                buy: fulfillment.executed.to_asset(&fulfillment.order),
+                interactions,
+            },
+            competition::order::Side::Sell => Self {
+                sell: fulfillment.executed.to_asset(&fulfillment.order),
+                buy: fulfillment.order.buy,
+                interactions,
+            },
+        }
+    }
 }
 
 /// An order which needs to be quoted.
@@ -102,7 +123,7 @@ impl Order {
             })
             .exactly_one()
             .map_err(|_| Error::QuotingFailed)?;
-        Ok(fulfillment.into())
+        Ok(Quote::new(fulfillment, solution.interactions))
     }
 
     fn fake_auction(&self) -> competition::Auction {
@@ -146,21 +167,6 @@ impl Order {
         match self.quality {
             Quality::Fast => config.fast_timeout.into(),
             Quality::Optimal => config.optimal_timeout.into(),
-        }
-    }
-}
-
-impl From<competition::solution::trade::Fulfillment> for Quote {
-    fn from(value: competition::solution::trade::Fulfillment) -> Self {
-        match value.order.side {
-            competition::order::Side::Buy => Self {
-                sell: value.order.sell,
-                buy: value.executed.to_asset(&value.order),
-            },
-            competition::order::Side::Sell => Self {
-                sell: value.executed.to_asset(&value.order),
-                buy: value.order.buy,
-            },
         }
     }
 }

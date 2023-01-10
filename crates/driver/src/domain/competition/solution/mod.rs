@@ -23,11 +23,7 @@ pub mod interaction;
 mod settlement;
 pub mod trade;
 
-pub use {
-    interaction::{Interaction, Interactions},
-    settlement::Settlement,
-    trade::Trade,
-};
+pub use {interaction::Interaction, settlement::Settlement, trade::Trade};
 
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
