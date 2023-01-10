@@ -6,6 +6,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
+    quote::Quote,
     solution::{solve, Score, Solution, SolverTimeout},
 };
 
