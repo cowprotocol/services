@@ -42,7 +42,16 @@ impl Quote {
                                 .collect(),
                         })
                     }
-                    competition::solution::Interaction::Liquidity(_) => todo!(),
+                    competition::solution::Interaction::Liquidity(interaction) => {
+                        Interaction::Liquidity(LiquidityInteraction {
+                            internalize: interaction.internalize,
+                            id: interaction.liquidity.id.into(),
+                            input_token: interaction.input.token.into(),
+                            output_token: interaction.output.token.into(),
+                            input_amount: interaction.input.amount,
+                            output_amount: interaction.output.amount,
+                        })
+                    }
                 })
                 .collect(),
         }
