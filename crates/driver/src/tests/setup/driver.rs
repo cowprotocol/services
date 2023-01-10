@@ -10,6 +10,9 @@ use {
 
 const SOLVERS_CONFIG_FILE: &str = "testing.solvers.toml";
 
+pub const FAST_QUOTE_MS: u64 = 1;
+pub const OPTIMAL_QUOTE_MS: u64 = 2;
+
 /// HTTP client for talking to the driver API.
 pub struct Client {
     addr: SocketAddr,
@@ -74,6 +77,10 @@ pub async fn setup(config: Config) -> Client {
         config_file.to_str().unwrap().to_owned(),
         "--ethrpc".to_owned(),
         super::blockchain::WEB3_URL.to_owned(),
+        "--fast-quote-ms".to_owned(),
+        FAST_QUOTE_MS.to_string(),
+        "--optimal-quote-ms".to_owned(),
+        OPTIMAL_QUOTE_MS.to_string(),
     ];
     if let Some(settlement) = config.contracts.gp_v2_settlement {
         args.push("--gp-v2-settlement".to_owned());

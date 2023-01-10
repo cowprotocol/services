@@ -67,10 +67,9 @@ pub async fn run(
             addr => api::Addr::Bind(addr.parse().expect("a valid address and port")),
         },
         now,
-        // TODO Load this from CLI options
         quote_config: competition::quote::Config {
-            optimal_timeout: Default::default(),
-            fast_timeout: Default::default(),
+            optimal_timeout: std::time::Duration::from_millis(args.optimal_quote_ms),
+            fast_timeout: std::time::Duration::from_millis(args.fast_quote_ms),
         },
     }
     .serve(async {
