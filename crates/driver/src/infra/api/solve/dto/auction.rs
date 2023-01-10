@@ -13,10 +13,7 @@ use {
 impl Auction {
     pub fn into_domain(self, now: infra::time::Now) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
-            id: match self.id {
-                Some(id) => Some(FromStr::from_str(&id).map_err(|_| Error::InvalidAuctionId)?),
-                None => None,
-            },
+            id: Some(FromStr::from_str(&self.id).map_err(|_| Error::InvalidAuctionId)?),
             tokens: self
                 .tokens
                 .into_iter()
@@ -140,9 +137,7 @@ pub enum Error {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    // TODO This should not be optional. Also, this seems to indicate that there should be two
-    // different auction types, or maybe set the ID to Default::default() for quoting?
-    id: Option<String>,
+    id: String,
     tokens: HashMap<eth::H160, Token>,
     orders: Vec<Order>,
     #[serde_as(as = "serialize::U256")]
