@@ -8,7 +8,7 @@ use sqlx::{
         chrono::{DateTime, Utc},
         BigDecimal,
     },
-    PgConnection,
+    FromRow, PgConnection,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
@@ -602,24 +602,37 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-/// Return valid limit orders with outdated surplus fee.
+/// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
+/// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
+/// identical orders in bulk so in order to not do unnecessary price estimation requests during
+/// `surplus_fee` computations we only do it once per group.
 ///
 /// The ordering by most outdated in combination with updating the timestamp when updating the fee
 /// fails is important. It ensures that we cannot get stuck on orders for which the update process
 /// keeps failing.
-pub fn limit_orders_with_most_outdated_fees(
+pub fn order_parameters_with_most_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
     limit: i64,
-) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
+) -> BoxStream<'_, Result<OrderFeeSpecifier, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
+        " WITH outdated_groups as (",
+        "   SELECT sell_token, buy_token, sell_amount,",
+        "          NULLIF(MIN(COALESCE(surplus_fee_timestamp, '-infinity'::timestamp)), '-infinity'::timestamp) as surplus_fee_timestamp",
+        "   FROM (",
         OPEN_ORDERS,
-        " AND class = 'limit'",
-        " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "       AND class = 'limit'",
+        "       AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "   ) as subquery",
+        "   GROUP BY sell_token, buy_token, sell_amount",
+        " )",
+        " SELECT sell_token, buy_token, sell_amount",
+        " FROM outdated_groups",
         " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " LIMIT $3"
     );
+
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
@@ -647,33 +660,48 @@ pub async fn count_limit_orders_by_owner(
         .await
 }
 
+/// These parameters have to match in an order for a [`FeeUpdate`] update to apply to it.
+#[derive(Debug, FromRow, PartialEq, Eq)]
+pub struct OrderFeeSpecifier {
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+}
+
 pub struct FeeUpdate {
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: DateTime<Utc>,
     pub full_fee_amount: BigDecimal,
 }
 
+/// Updates the `surplus_fee` of multiple orders and returns their `uid`s.
 pub async fn update_limit_order_fees(
     ex: &mut PgConnection,
-    order_uid: &OrderUid,
+    order_spec: &OrderFeeSpecifier,
     update: &FeeUpdate,
-) -> Result<(), sqlx::Error> {
+) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = "
         UPDATE orders
         SET
             surplus_fee = $1,
             surplus_fee_timestamp = $2,
             full_fee_amount = $3
-        WHERE uid = $4
+        WHERE
+            sell_token = $4
+            AND buy_token = $5
+            AND sell_amount = $6
+        RETURNING
+            uid
     ";
-    sqlx::query(QUERY)
+    sqlx::query_scalar(QUERY)
         .bind(&update.surplus_fee)
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
-        .bind(order_uid)
-        .execute(ex)
-        .await?;
-    Ok(())
+        .bind(&order_spec.sell_token)
+        .bind(&order_spec.buy_token)
+        .bind(&order_spec.sell_amount)
+        .fetch_all(ex)
+        .await
 }
 
 /// Count the number of valid limit orders.
@@ -1606,22 +1634,31 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_update_limit_order_fees() {
+    async fn postgres_update_multiple_identical_limit_orders() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order_uid = ByteArray([1; 56]);
-        insert_order(
-            &mut db,
-            &Order {
-                uid: order_uid,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        for id in 1..3 {
+            insert_order(
+                &mut db,
+                &Order {
+                    uid: ByteArray([id; 56]),
+                    sell_token: ByteArray([1; 20]),
+                    buy_token: ByteArray([2; 20]),
+                    sell_amount: 1_000.into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
 
+        let order_spec = OrderFeeSpecifier {
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1_000.into(),
+        };
         let update = FeeUpdate {
             surplus_fee: Some(42.into()),
             surplus_fee_timestamp: DateTime::from_utc(
@@ -1630,17 +1667,23 @@ mod tests {
             ),
             full_fee_amount: 1337.into(),
         };
-        update_limit_order_fees(&mut db, &order_uid, &update)
+        let updated_uids = update_limit_order_fees(&mut db, &order_spec, &update)
             .await
             .unwrap();
+        assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
 
-        let order = read_order(&mut db, &order_uid).await.unwrap().unwrap();
-        assert_eq!(order.surplus_fee, update.surplus_fee);
-        assert_eq!(
-            order.surplus_fee_timestamp,
-            Some(update.surplus_fee_timestamp)
-        );
-        assert_eq!(order.full_fee_amount, update.full_fee_amount);
+        for id in 1..3 {
+            let order = read_order(&mut db, &ByteArray([id; 56]))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(order.surplus_fee, update.surplus_fee);
+            assert_eq!(
+                order.surplus_fee_timestamp,
+                Some(update.surplus_fee_timestamp)
+            );
+            assert_eq!(order.full_fee_amount, update.full_fee_amount);
+        }
     }
 
     #[tokio::test]
@@ -1660,6 +1703,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: Some(0.into()),
                 surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
+                sell_token: ByteArray([1; 20]),
+                buy_token: ByteArray([2; 20]),
                 sell_amount: 1.into(),
                 buy_amount: 1.into(),
                 ..Default::default()
@@ -1725,6 +1770,8 @@ mod tests {
                 valid_to: 3,
                 surplus_fee: None,
                 surplus_fee_timestamp: None,
+                sell_token: ByteArray([3; 20]),
+                buy_token: ByteArray([4; 20]),
                 sell_amount: 1.into(),
                 buy_amount: 1.into(),
                 ..Default::default()
@@ -1762,21 +1809,37 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
 
         assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].uid.0, [5; 56]);
-        assert_eq!(orders[1].uid.0, [1; 56]);
+        // order with uid 5 (higher priority because it was never estimated)
+        assert_eq!(
+            orders[0],
+            OrderFeeSpecifier {
+                sell_token: ByteArray([3; 20]),
+                buy_token: ByteArray([4; 20]),
+                sell_amount: 1.into(),
+            }
+        );
+        // order with uid 1
+        assert_eq!(
+            orders[1],
+            OrderFeeSpecifier {
+                sell_token: ByteArray([1; 20]),
+                buy_token: ByteArray([2; 20]),
+                sell_amount: 1.into(),
+            }
+        );
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
             &mut db,
             &EventIndex::default(),
             &Trade {
-                order_uid: orders[0].uid,
+                order_uid: ByteArray([1; 56]),
                 sell_amount_including_fee: 1.into(),
                 buy_amount: 1.into(),
                 ..Default::default()
@@ -1784,7 +1847,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders: Vec<_> = limit_orders_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
             .try_collect()
             .await
             .unwrap();
