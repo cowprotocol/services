@@ -106,11 +106,16 @@ async fn create_solvers_config_file(solvers: &[setup::Solver]) {
                     },
                 addr,
             } = solver;
-            format!(
-                "[[solvers]]\nname = \"{name}\"\nendpoint = \"http://{addr}\"\nabsolute-slippage \
-                 = \"{absolute_slippage}\"\nrelative-slippage = \"{relative_slippage}\"\naddress \
-                 = \"{address}\"\n"
-            )
+            #[rustfmt::skip]
+            let config = format!(
+                "[[solvers]]\n\
+                name = \"{name}\"\n\
+                endpoint = \"http://{addr}\"\n\
+                absolute-slippage = \"{absolute_slippage}\"\n\
+                relative-slippage = \"{relative_slippage}\"\n\
+                address = \"{address}\"\n"
+            );
+            config
         })
         .join("\n");
     fs::write(SOLVERS_CONFIG_FILE, configs).await.unwrap();
