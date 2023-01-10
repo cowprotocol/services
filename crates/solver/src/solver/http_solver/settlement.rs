@@ -28,7 +28,7 @@ pub struct SettlementContext {
 
 pub async fn convert_settlement(
     settled: SettledBatchAuctionModel,
-    context: SettlementContext,
+    context: &SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
@@ -175,14 +175,14 @@ struct ExecutedAmm {
 impl<'a> IntermediateSettlement<'a> {
     async fn new(
         settled: SettledBatchAuctionModel,
-        context: SettlementContext,
+        context: &SettlementContext,
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
         domain: &DomainSeparator,
     ) -> Result<IntermediateSettlement<'a>, ConversionError> {
         let executed_limit_orders =
-            match_prepared_and_settled_orders(context.orders, settled.orders)?;
+            match_prepared_and_settled_orders(&context.orders, settled.orders)?;
         let foreign_liquidity_orders = convert_foreign_liquidity_orders(
             order_converter,
             settled.foreign_liquidity_orders,
@@ -190,7 +190,7 @@ impl<'a> IntermediateSettlement<'a> {
         )?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
-        let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
+        let executions_amm = match_prepared_and_settled_amms(&context.liquidity, settled.amms)?;
 
         let executions = merge_and_order_executions(
             executions_amm,
@@ -238,7 +238,7 @@ impl<'a> IntermediateSettlement<'a> {
 }
 
 fn match_prepared_and_settled_orders(
-    prepared_orders: Vec<LimitOrder>,
+    prepared_orders: &[LimitOrder],
     settled_orders: HashMap<usize, ExecutedOrderModel>,
 ) -> Result<Vec<ExecutedLimitOrder>> {
     settled_orders
@@ -306,11 +306,11 @@ fn convert_foreign_liquidity_orders(
 }
 
 fn match_prepared_and_settled_amms(
-    prepared_amms: Vec<Liquidity>,
+    prepared_amms: &[Liquidity],
     settled_amms: HashMap<H160, UpdatedAmmModel>,
 ) -> Result<Vec<ExecutedAmm>> {
-    let prepared_amms: HashMap<H160, Liquidity> = prepared_amms
-        .into_iter()
+    let prepared_amms: HashMap<H160, &Liquidity> = prepared_amms
+        .iter()
         .filter_map(|amm| amm.address().map(|address| (address, amm)))
         .collect();
     settled_amms
@@ -326,6 +326,7 @@ fn match_prepared_and_settled_amms(
             Ok(ExecutedAmm {
                 order: prepared_amms
                     .get(&address)
+                    .copied()
                     .ok_or_else(|| anyhow!("Invalid AMM {}", address))?
                     .clone(),
                 input: (settled.buy_token, settled.exec_buy_amount),
@@ -638,7 +639,7 @@ mod tests {
 
         let settlement = convert_settlement(
             settled,
-            prepared,
+            &prepared,
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(weth)),
             SlippageContext::default(),
@@ -969,7 +970,7 @@ mod tests {
         )
         .unwrap();
 
-        let amms = match_prepared_and_settled_amms(liquidity, solution_response.amms).unwrap();
+        let amms = match_prepared_and_settled_amms(&liquidity, solution_response.amms).unwrap();
         let executions = merge_and_order_executions(amms, vec![], vec![]);
         assert_eq!(
             executions,

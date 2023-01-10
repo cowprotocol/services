@@ -1,7 +1,6 @@
 use {
     crate::domain::eth,
     thiserror::Error,
-    url::Url,
     web3::{Transport, Web3},
 };
 
@@ -18,8 +17,11 @@ pub struct Ethereum {
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
-    pub async fn ethrpc(url: &Url) -> Result<Self, web3::Error> {
-        // TODO Probably move shared::ethrpc into its own crate and reuse it here
+    pub async fn ethrpc(url: &url::Url) -> Result<Self, web3::Error> {
+        // TODO Enable batching, reuse ethrpc? Put it in the boundary module?
+        // I feel like what we have in shared::ethrpc could be simplified if we use
+        // web3::transports::batch or something, but I haven't looked deep into it, just
+        // a gut feeling.
         let web3 = Web3::new(web3::transports::Http::new(url.as_str())?);
         let chain_id = web3.eth().chain_id().await?.into();
         let network_id = web3.net().version().await?.into();
