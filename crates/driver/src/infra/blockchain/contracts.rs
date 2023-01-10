@@ -4,8 +4,8 @@ pub use crate::boundary::contracts::{GPv2Settlement, ERC20, WETH9};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
-    pub(super) settlement: contracts::GPv2Settlement,
-    pub(super) weth: contracts::WETH9,
+    settlement: contracts::GPv2Settlement,
+    weth: contracts::WETH9,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
