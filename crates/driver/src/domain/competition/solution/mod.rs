@@ -33,9 +33,9 @@ pub async fn solve(
     now: time::Now,
     auction: &competition::Auction,
 ) -> Result<Score, Error> {
-    let deadline = competition::SolverTimeout::for_solving(auction.deadline, now)?;
-    let solution = solver.solve(auction, deadline).await?;
-    // TODO Keep in mind that the driver needs to make sure that the solution
+    let timeout = competition::SolverTimeout::for_solving(auction.deadline, now)?;
+    let solution = solver.solve(auction, timeout).await?;
+    // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
     // doesn't fail simulation. Currently this is the case, but this needs to stay
     // the same as this code changes.
     let gas = solution.simulate(eth, simulator, auction).await?;

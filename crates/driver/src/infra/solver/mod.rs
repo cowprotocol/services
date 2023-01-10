@@ -83,15 +83,18 @@ impl Solver {
         &self.config.name
     }
 
+    /// The slippage configuration of this solver.
     pub fn slippage(&self) -> &Slippage {
         &self.config.slippage
     }
 
+    /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
         self.config.address
     }
 
-    // TODO Probably take solver_deadline as a parameter
+    /// Make a POST request instructing the solver to solve an auction.
+    /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
         &self,
         auction: &Auction,

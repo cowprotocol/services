@@ -112,7 +112,7 @@ impl Order {
     /// returns.
     pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, Error> {
         let solution = solver
-            .solve(&self.fake_auction(), self.deadline(config))
+            .solve(&self.fake_auction(), self.timeout(config))
             .await?;
         let fulfillment = solution
             .trades
@@ -163,7 +163,7 @@ impl Order {
         }
     }
 
-    fn deadline(&self, config: &Config) -> competition::SolverTimeout {
+    fn timeout(&self, config: &Config) -> competition::SolverTimeout {
         match self.quality {
             Quality::Fast => config.fast_timeout.into(),
             Quality::Optimal => config.optimal_timeout.into(),

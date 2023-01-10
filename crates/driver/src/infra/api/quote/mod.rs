@@ -1,7 +1,7 @@
 mod dto;
 
 pub(super) fn route(router: axum::Router<super::State>) -> axum::Router<super::State> {
-    router.route("/solve", axum::routing::post(quote))
+    router.route("/quote", axum::routing::post(quote))
 }
 
 async fn quote(
