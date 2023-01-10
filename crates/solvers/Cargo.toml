@@ -17,3 +17,8 @@ serde_with = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tower = "0.4"
 tower-http = { version = "0.3", features = ["trace"] }
+
+# TODO Once solvers are ported and E2E tests set up, slowly migrate code and
+# remove/re-evaluate these dependencies.
+model = { path = "../model" }
+shared = { path = "../shared" }
