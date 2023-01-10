@@ -8,7 +8,7 @@ pub const WEB3_URL: &str = "http://localhost:8546";
 
 pub fn web3() -> Web3<DynTransport> {
     Web3::new(DynTransport::new(
-        web3::transports::Http::new(WEB3_URL).expect("node should be up, run docker-compose up -d"),
+        web3::transports::Http::new(WEB3_URL).expect("valid URL"),
     ))
 }
 
