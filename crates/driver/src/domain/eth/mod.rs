@@ -96,7 +96,7 @@ impl From<EffectiveGasPrice> for U256 {
 ///
 /// https://eips.ethereum.org/EIPS/eip-2930
 #[derive(Debug, Clone, Default)]
-pub struct AccessList(HashMap<ContractAddress, HashSet<StorageKey>>);
+pub struct AccessList(HashMap<Address, HashSet<StorageKey>>);
 
 impl AccessList {
     pub fn is_empty(&self) -> bool {
