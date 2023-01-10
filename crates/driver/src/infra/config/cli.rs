@@ -8,7 +8,7 @@ use {
 pub struct Args {
     /// The address to bind the driver to. "auto" to bind to 0.0.0.0 and any
     /// free port.
-    #[clap(long, env)]
+    #[clap(long, env, default_value = "0.0.0.0:11088")]
     pub bind_addr: String,
 
     /// The node RPC API endpoint.
