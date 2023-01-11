@@ -12,6 +12,7 @@ use {
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
+    // TODO Make this non-optional and simplify things
     /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
     /// used for competition.
     pub id: Option<Id>,

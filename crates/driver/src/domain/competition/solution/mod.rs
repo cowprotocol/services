@@ -184,6 +184,7 @@ impl Solution {
     }
 }
 
+/// The time allocated for the solver to solve an auction.
 #[derive(Debug, Clone, Copy)]
 pub struct SolverTimeout(std::time::Duration);
 
