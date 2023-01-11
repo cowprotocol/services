@@ -56,6 +56,11 @@ pub struct Solution {
     /// Token prices for this solution, expressed using an arbitrary reference
     /// unit chosen by the solver. These values are only meaningful in relation
     /// to each others.
+    ///
+    /// The rule which relates two prices for tokens X and Y is:
+    /// ```
+    /// amount_x * price_x = amount_y * price_y
+    /// ```
     pub prices: HashMap<eth::TokenAddress, eth::U256>,
     pub interactions: Vec<Interaction>,
     /// The solver which generated this solution.

@@ -35,12 +35,14 @@ impl Quote {
             .to_owned();
         let amount = match order.side {
             order::Side::Sell => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(buy_price) / conv::u256::to_big_rational(sell_price)
-                    * conv::u256::to_big_rational(order.amount.into())),
+                &(conv::u256::to_big_rational(order.amount.into())
+                    * conv::u256::to_big_rational(sell_price)
+                    / conv::u256::to_big_rational(buy_price)),
             ),
             order::Side::Buy => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(sell_price) / conv::u256::to_big_rational(buy_price)
-                    * conv::u256::to_big_rational(order.amount.into())),
+                &(conv::u256::to_big_rational(order.amount.into())
+                    * conv::u256::to_big_rational(buy_price)
+                    / conv::u256::to_big_rational(sell_price)),
             ),
         };
         Ok(Self {
