@@ -1,12 +1,12 @@
 [[solvers]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
-url = "http://localhost:1234/solve" # Endpoint of the solver
-absolute-slippage = 12 # Denominated in wei, optional
-relative-slippage = 0.1 # Percentage in the [0, 1] range
+endpoint = "http://0.0.0.0:33219/solve"
+absolute-slippage = "12" # Denominated in wei, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
 address = "0xE33bff104C4E1140A3f86f855AD5bDAb8Dc6CA8C" # The ETH address of this solver
 
 [[solvers]] # And so on, specify as many solvers as needed
 name = "othersolver"
-url = "http://localhost:1235/solve"
-relative-slippage = 0.1
+endpoint = "http://localhost:1235"
+relative-slippage = "0.1"
 address = "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"

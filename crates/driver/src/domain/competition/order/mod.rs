@@ -8,7 +8,8 @@ use crate::infra::{blockchain, Ethereum};
 
 /// Address used in place of an actual buy token address in an order which buys
 /// ETH.
-const BUY_ETH_ADDRESS: eth::TokenAddress = eth::TokenAddress(eth::H160([0xee; 20]));
+const BUY_ETH_ADDRESS: eth::TokenAddress =
+    eth::TokenAddress(eth::ContractAddress(eth::H160([0xee; 20])));
 
 /// An order in the auction.
 #[derive(Debug, Clone)]

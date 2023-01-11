@@ -24,4 +24,10 @@
 
 pub mod settlement;
 
-pub use {anyhow::Error, contracts, settlement::Settlement};
+pub use {
+    anyhow::Error,
+    contracts,
+    model::order::OrderData,
+    settlement::Settlement,
+    shared::{exit_process_on_panic, tracing::initialize as initialize_tracing},
+};

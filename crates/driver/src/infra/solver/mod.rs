@@ -7,16 +7,21 @@ use {
             },
             eth,
         },
+        infra,
         util,
     },
     thiserror::Error,
 };
 
-mod dto;
+pub mod dto;
 
 const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 
+// TODO At some point I should be checking that the names are unique, I don't
+// think I'm doing that.
 /// The solver name. The user can configure this to be anything that they like.
+/// The name uniquely identifies each solver in case there's more than one of
+/// them.
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
 
@@ -29,6 +34,12 @@ pub struct Slippage {
 impl From<String> for Name {
     fn from(inner: String) -> Self {
         Self(inner)
+    }
+}
+
+impl std::fmt::Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -50,6 +61,7 @@ pub struct Config {
     pub slippage: Slippage,
     /// The address of this solver.
     pub address: eth::Address,
+    pub now: infra::time::Now,
 }
 
 impl Solver {
@@ -83,7 +95,7 @@ impl Solver {
     }
 
     pub async fn solve(&self, auction: &Auction) -> Result<Solution, Error> {
-        let solver_deadline = auction.deadline.for_solver()?;
+        let solver_deadline = auction.deadline.for_solver(self.config.now)?;
         let body =
             serde_json::to_string(&dto::Auction::from_domain(auction, solver_deadline)).unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
@@ -91,7 +103,7 @@ impl Solver {
             .client
             .post(self.config.endpoint.clone())
             .body(body)
-            .timeout(solver_deadline.into());
+            .timeout(solver_deadline.timeout(self.config.now)?);
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
