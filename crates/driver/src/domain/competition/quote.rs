@@ -1,6 +1,6 @@
 use crate::{
     domain::{
-        competition::{self, solution},
+        competition::{self, order, solution},
         eth,
     },
     infra::solver::{self, Solver},
@@ -33,14 +33,14 @@ impl Quote {
             .get(&order.buy_token)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
-        let amount = match order.amount {
-            Amount::Sell(amount) => conv::u256::from_big_rational(
+        let amount = match order.side {
+            order::Side::Sell => conv::u256::from_big_rational(
                 &(conv::u256::to_big_rational(buy_price) / conv::u256::to_big_rational(sell_price)
-                    * conv::u256::to_big_rational(amount)),
+                    * conv::u256::to_big_rational(order.amount.into())),
             ),
-            Amount::Buy(amount) => conv::u256::from_big_rational(
+            order::Side::Buy => conv::u256::from_big_rational(
                 &(conv::u256::to_big_rational(sell_price) / conv::u256::to_big_rational(buy_price)
-                    * conv::u256::to_big_rational(amount)),
+                    * conv::u256::to_big_rational(order.amount.into())),
             ),
         };
         Ok(Self {
@@ -55,22 +55,9 @@ impl Quote {
 pub struct Order {
     pub sell_token: eth::TokenAddress,
     pub buy_token: eth::TokenAddress,
-    pub amount: Amount,
+    pub amount: order::TargetAmount,
+    pub side: order::Side,
     pub gas_price: eth::EffectiveGasPrice,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Amount {
-    Sell(eth::U256),
-    Buy(eth::U256),
-}
-
-/// Quality of the quote to be generated. This value determines the time
-/// allocated for the solver to generate the solution.
-#[derive(Debug, Clone, Copy)]
-pub enum Quality {
-    Fast,
-    Optimal,
 }
 
 impl Order {
@@ -93,7 +80,7 @@ impl Order {
                 valid_to: util::Timestamp::MAX,
                 sell: self.sell(),
                 buy: self.buy(),
-                side: self.side(),
+                side: self.side,
                 fee: Default::default(),
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
@@ -116,13 +103,13 @@ impl Order {
 
     /// The asset being bought, or [`eth::U256::max_value`] if this is a sell.
     fn buy(&self) -> eth::Asset {
-        match self.amount {
-            Amount::Sell(..) => eth::Asset {
+        match self.side {
+            order::Side::Sell => eth::Asset {
                 amount: eth::U256::max_value(),
                 token: self.buy_token,
             },
-            Amount::Buy(amount) => eth::Asset {
-                amount,
+            order::Side::Buy => eth::Asset {
+                amount: self.amount.into(),
                 token: self.buy_token,
             },
         }
@@ -130,22 +117,15 @@ impl Order {
 
     /// The asset being sold, or [`eth::U256::one`] if this is a buy.
     fn sell(&self) -> eth::Asset {
-        match self.amount {
-            Amount::Sell(amount) => eth::Asset {
-                amount,
+        match self.side {
+            order::Side::Sell => eth::Asset {
+                amount: self.amount.into(),
                 token: self.sell_token,
             },
-            Amount::Buy(..) => eth::Asset {
+            order::Side::Buy => eth::Asset {
                 amount: eth::U256::one(),
                 token: self.sell_token,
             },
-        }
-    }
-
-    pub fn side(&self) -> competition::order::Side {
-        match self.amount {
-            Amount::Sell(..) => competition::order::Side::Sell,
-            Amount::Buy(..) => competition::order::Side::Buy,
         }
     }
 }

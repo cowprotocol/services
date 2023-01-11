@@ -9,9 +9,10 @@ impl Order {
         competition::quote::Order {
             sell_token: self.sell_token.into(),
             buy_token: self.buy_token.into(),
-            amount: match self.amount {
-                Amount::Sell { sell_amount } => competition::quote::Amount::Sell(sell_amount),
-                Amount::Buy { buy_amount } => competition::quote::Amount::Buy(buy_amount),
+            amount: self.amount.into(),
+            side: match self.side {
+                Side::Sell => competition::order::Side::Sell,
+                Side::Buy => competition::order::Side::Buy,
             },
             gas_price: self.effective_gas_price.into(),
         }
@@ -24,27 +25,15 @@ impl Order {
 pub struct Order {
     sell_token: eth::H160,
     buy_token: eth::H160,
-    amount: Amount,
-    valid_to: u32,
-    #[serde(default)]
-    partially_fillable: bool,
-    #[serde(default)]
-    price_quality: PriceQuality,
+    amount: eth::U256,
+    side: Side,
     #[serde_as(as = "serialize::U256")]
     effective_gas_price: eth::U256,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", untagged)]
-enum Amount {
-    Sell { sell_amount: eth::U256 },
-    Buy { buy_amount: eth::U256 },
-}
-
-#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum PriceQuality {
-    #[default]
-    Optimal,
-    Fast,
+enum Side {
+    Sell,
+    Buy,
 }
