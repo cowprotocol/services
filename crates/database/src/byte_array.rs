@@ -1,3 +1,4 @@
+use std::fmt::{self, Formatter, Debug};
 use sqlx::{
     encode::IsNull,
     error::BoxDynError,
@@ -6,8 +7,14 @@ use sqlx::{
 };
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
+
+impl<const N: usize> Debug for ByteArray<N> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
 
 impl<const N: usize> Default for ByteArray<N> {
     fn default() -> Self {
