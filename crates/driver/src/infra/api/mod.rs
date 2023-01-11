@@ -87,8 +87,8 @@ struct State {
 }
 
 impl State {
-    fn solver(&self) -> Solver {
-        self.solver.clone()
+    fn solver(&self) -> &Solver {
+        &self.solver
     }
 
     fn simulator(&self) -> &Simulator {

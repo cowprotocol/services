@@ -12,7 +12,7 @@ async fn solve(
 ) -> axum::response::Json<dto::Solution> {
     // TODO Report errors instead of unwrapping
     let auction = auction.0.into_domain(state.now()).unwrap();
-    let score = competition::solve(
+    let (_, score) = competition::solve(
         state.solver(),
         state.ethereum(),
         state.simulator(),

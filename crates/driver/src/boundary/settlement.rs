@@ -48,7 +48,7 @@ use {
     std::{collections::HashSet, sync::Arc},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settlement {
     settlement: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
@@ -60,6 +60,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         // TODO I think it's possible to remove this parameter, do this in a follow-up
+        // TODO Can I get rid of this and still have the tests pass? If so, go ahead and do it.
         auction: &competition::Auction,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();

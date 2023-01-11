@@ -25,25 +25,24 @@ pub mod trade;
 
 pub use {interaction::Interaction, settlement::Settlement, trade::Trade};
 
+// TODO Consider moving this to super
 /// Solve an auction and return the [`Score`] of the solution.
 pub async fn solve(
-    solver: Solver,
+    solver: &Solver,
     eth: &Ethereum,
     simulator: &Simulator,
     now: time::Now,
     auction: &competition::Auction,
-) -> Result<Score, Error> {
-    let timeout = competition::SolverTimeout::for_solving(auction.deadline, now)?;
+) -> Result<(Solution, Score), Error> {
+    let timeout = SolverTimeout::for_solving(auction.deadline, now)?;
     let solution = solver.solve(auction, timeout).await?;
     // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
     // doesn't fail simulation. Currently this is the case, but this needs to stay
     // the same as this code changes.
     let gas = solution.simulate(eth, simulator, auction).await?;
     let settlement = Settlement::encode(eth, auction, &solution).await?;
-    settlement
-        .score(eth, auction, gas)
-        .await
-        .map_err(Into::into)
+    let score = settlement.score(eth, auction, gas).await?;
+    Ok((solution, score))
 }
 
 /// A solution represents a set of orders which the solver has found an optimal
@@ -251,7 +250,7 @@ impl From<num::BigRational> for Score {
 /// A unique solution ID. This ID is encoded as part of the calldata of the
 /// settlement transaction, and it's used by the protocol to match onchain
 /// transactions to corresponding solutions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Id(pub u32);
 
 impl Id {

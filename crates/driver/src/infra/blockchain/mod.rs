@@ -77,14 +77,7 @@ impl Ethereum {
 
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
-        let tx = web3::types::TransactionRequest {
-            from: tx.from.into(),
-            to: Some(tx.to.into()),
-            value: Some(tx.value.into()),
-            data: Some(tx.input.into()),
-            access_list: Some(tx.access_list.into()),
-            ..Default::default()
-        };
+        let tx = Self::into_request(tx);
         let json = self
             .web3
             .transport()
@@ -119,6 +112,24 @@ impl Ethereum {
             .await
             .map(Into::into)
             .map_err(Into::into)
+    }
+
+    /// Broadcast a transaction.
+    pub async fn send_transaction(&self, tx: eth::Tx) -> Result<(), Error> {
+        let tx = Self::into_request(tx);
+        self.web3.eth().send_transaction(tx).await?;
+        Ok(())
+    }
+
+    fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {
+        web3::types::TransactionRequest {
+            from: tx.from.into(),
+            to: Some(tx.to.into()),
+            value: Some(tx.value.into()),
+            data: Some(tx.input.into()),
+            access_list: Some(tx.access_list.into()),
+            ..Default::default()
+        }
     }
 }
 

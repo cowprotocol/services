@@ -11,7 +11,7 @@ use crate::{
 /// enough, it's an intermediate state between a solution and an onchain
 /// settlement. The intention with this type is to represent the settlement
 /// transaction itself, not an intermediate state.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settlement(boundary::Settlement);
 
 impl Settlement {
@@ -38,6 +38,8 @@ impl Settlement {
         self.0.score(eth, auction, gas).await
     }
 
+    // TODO Instead of tx, have a `From` impl, since this should really be a newtype
+    // for eth::Tx
     /// The onchain transaction representing this settlement.
     pub fn tx(self) -> eth::Tx {
         self.0.tx()
