@@ -35,7 +35,7 @@ use shared::{
     order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
     price_estimation::{
         baseline::BaselinePriceEstimator, native::NativePriceEstimator,
-        native_price_cache::CachingNativePriceEstimator, sanitized::SanitizedPriceEstimator,
+        sanitized::SanitizedPriceEstimator,
     },
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
@@ -136,17 +136,10 @@ impl OrderbookServices {
             contracts.weth.address(),
             bad_token_detector.clone(),
         ));
-        let native_price_estimator = Box::new(NativePriceEstimator::new(
+        let native_price_estimator = Arc::new(NativePriceEstimator::new(
             price_estimator.clone(),
             contracts.weth.address(),
             1_000_000_000_000_000_000_u128.into(),
-        ));
-        let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
-            native_price_estimator,
-            Duration::from_secs(10),
-            Duration::from_secs(10),
-            None,
-            None,
         ));
         let quoter = Arc::new(OrderQuoter::new(
             price_estimator.clone(),

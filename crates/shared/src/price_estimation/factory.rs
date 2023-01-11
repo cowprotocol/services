@@ -4,7 +4,7 @@ use super::{
     competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
     http::HttpPriceEstimator,
     instrumented::InstrumentedPriceEstimator,
-    native::{self, NativePriceEstimator},
+    native::{self, NativePriceEstimating, NativePriceEstimator},
     native_price_cache::CachingNativePriceEstimator,
     oneinch::OneInchPriceEstimator,
     paraswap::ParaswapPriceEstimator,
@@ -321,7 +321,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
-    ) -> Result<Arc<CachingNativePriceEstimator>> {
+    ) -> Result<Arc<dyn NativePriceEstimating>> {
         let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
