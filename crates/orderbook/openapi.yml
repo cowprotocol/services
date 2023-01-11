@@ -265,170 +265,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Auction"
-  /api/v1/fee:
-    get:
-      deprecated: true
-      description: |
-        The fee that is charged for placing an order.
-        The fee is described by a minimum fee - in order to cover the gas costs for onchain settling - and
-        a feeRatio charged to the users for using the service.
-        This is deprecated in favour of '/api/v1/quote'.
-      parameters:
-        - name: sellToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: buyToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: amount
-          in: query
-          schema:
-            $ref: "#/components/schemas/TokenAmount"
-          required: true
-        - name: kind
-          in: query
-          schema:
-            $ref: "#/components/schemas/OrderType"
-          required: true
-      responses:
-        200:
-          description: the fee
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FeeInformation"
-        400:
-          description: Token not supported by the protocol (e.g. token with fee on transfer)
-        404:
-          description: Token non-existent or not connected to native token
-        500:
-          description: Unexpected internal error while processing the request
-  /api/v1/markets/{baseToken}-{quoteToken}/{kind}/{amount}:
-    get:
-      deprecated: true
-      description: |
-        The estimated amount in quote token for either buying or selling `amount` of baseToken.
-        This is deprecated in favour of '/api/v1/quote'
-      parameters:
-        - name: baseToken
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/Address"
-        - name: quoteToken
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/Address"
-        - name: amount
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/TokenAmount"
-        - name: kind
-          in: path
-          required: true
-          schema:
-            $ref: "#/components/schemas/OrderType"
-      responses:
-        200:
-          description: the price denominated in quote token
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AmountEstimate"
-        400:
-          description: Token not supported by the protocol (e.g. token with fee on transfer)
-        404:
-          description: Token non-existent or no valid price found
-        500:
-          description: Unexpected internal error while processing the request
-  /api/v1/feeAndQuote/sell:
-    get:
-      deprecated: true
-      description: |
-        For a total available amount of sell_token returns the fee in the sell token and the
-        resulting buy amount after the fee has been deducted.
-        sellAmountBeforeFee is the total amount that is available for the order. From it the fee
-        is deducted and the buy amount is calculated.
-        This is deprecated in favour of '/api/v1/quote'.
-      parameters:
-        - name: sellToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: buyToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: sellAmountBeforeFee
-          in: query
-          schema:
-            $ref: "#/components/schemas/TokenAmount"
-          required: true
-      responses:
-        200:
-          description: ok
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FeeAndQuoteSellResponse"
-        400:
-          description: Error with the input data.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FeeAndQuoteError"
-        404:
-          description: Token non-existent or not connected to native token
-        500:
-          description: Unexpected internal error while processing the request
-  /api/v1/feeAndQuote/buy:
-    get:
-      deprecated: true
-      description: |
-        For a target buy amount returns the total sell_amount that is needed and how much of it is
-        the fee.
-        This is deprecated in favour of '/api/v1/quote'.
-      parameters:
-        - name: sellToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: buyToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: true
-        - name: buyAmountAfterFee
-          in: query
-          schema:
-            $ref: "#/components/schemas/TokenAmount"
-          required: true
-      responses:
-        200:
-          description: ok
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FeeAndQuoteBuyResponse"
-        400:
-          description: Error with the input data.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FeeAndQuoteError"
-        404:
-          description: Token non-existent or not connected to native token
-        500:
-          description: Unexpected internal error while processing the request
   /api/v1/account/{owner}/orders:
     get:
       summary: Get orders of one user paginated.
@@ -603,14 +439,14 @@ components:
       properties:
         sender:
           description: |
-              If orders are placed as onchain orders, the owner of the order might 
-              be a smart contract, but not the user placing the order. The 
+              If orders are placed as onchain orders, the owner of the order might
+              be a smart contract, but not the user placing the order. The
               actual user will be provided in this field
           $ref: "#/components/schemas/Address"
         placementError:
           description: |
-              Describes the error, if the order placement was not 
-              successful. This could happen, for example, if the 
+              Describes the error, if the order placement was not
+              successful. This could happen, for example, if the
               valid_to is too high, or no valid quote was found or generated
           type: string
           enum:
