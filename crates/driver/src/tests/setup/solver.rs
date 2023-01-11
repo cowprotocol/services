@@ -1,6 +1,6 @@
-use {
-    std::{net::SocketAddr, sync::Arc},
-    tokio::sync::Mutex,
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
 };
 
 /// Configuration for mocking a solver.
@@ -37,7 +37,7 @@ pub async fn setup(config: Config) -> Solver {
             axum::routing::post(
                 |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                    let mut state = state.0.lock().await;
+                    let mut state = state.0.lock().unwrap();
                     assert!(
                         !state.is_empty(),
                         "got another solve request, but didn't expect any more"
