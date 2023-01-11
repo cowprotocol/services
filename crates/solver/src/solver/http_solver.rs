@@ -315,7 +315,6 @@ mod tests {
             })
             .await
             .unwrap();
-        dbg!(&settled);
 
         let exec_order = settled.orders.values().next().unwrap();
         assert_eq!(exec_order.exec_sell_amount.as_u128(), base(2));

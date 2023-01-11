@@ -170,13 +170,21 @@ impl From<Address> for H160 {
     }
 }
 
-/// A contract address.
+// TODO This type should probably use Ethereum::is_contract to verify during
+// construction that it does indeed point to a contract
+/// A smart contract address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContractAddress(pub H160);
 
 impl From<H160> for ContractAddress {
-    fn from(inner: H160) -> Self {
-        Self(inner)
+    fn from(value: H160) -> Self {
+        Self(value)
+    }
+}
+
+impl From<ContractAddress> for H160 {
+    fn from(value: ContractAddress) -> Self {
+        value.0
     }
 }
 
@@ -186,7 +194,6 @@ impl From<ContractAddress> for ethereum_types::H160 {
     }
 }
 
-/// The contract is an address on the blockchain.
 impl From<ContractAddress> for Address {
     fn from(contract: ContractAddress) -> Self {
         contract.0.into()
@@ -197,17 +204,17 @@ impl From<ContractAddress> for Address {
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TokenAddress(pub H160);
+pub struct TokenAddress(pub ContractAddress);
 
 impl From<H160> for TokenAddress {
     fn from(inner: H160) -> Self {
-        Self(inner)
+        Self(inner.into())
     }
 }
 
 impl From<TokenAddress> for H160 {
     fn from(token: TokenAddress) -> Self {
-        token.0
+        token.0.into()
     }
 }
 
@@ -272,6 +279,13 @@ pub struct Tx {
 }
 
 impl Tx {
+    pub fn set_access_list(self, access_list: AccessList) -> Self {
+        Self {
+            access_list,
+            ..self
+        }
+    }
+
     pub fn merge_access_list(self, access_list: AccessList) -> Self {
         Self {
             access_list: self.access_list.merge(access_list),

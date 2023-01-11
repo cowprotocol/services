@@ -40,7 +40,7 @@ pub enum Interaction {
 /// An arbitrary interaction with any smart contract.
 #[derive(Debug)]
 pub struct Custom {
-    pub target: eth::Address,
+    pub target: eth::ContractAddress,
     pub value: eth::Ether,
     pub call_data: Vec<u8>,
     pub allowances: Vec<eth::allowance::Required>,

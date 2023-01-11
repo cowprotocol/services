@@ -4,23 +4,44 @@ pub mod tenderly;
 
 /// Ethereum transaction simulator.
 #[derive(Debug)]
-pub struct Simulator(Inner);
+pub struct Simulator {
+    inner: Inner,
+    disable_access_lists: bool,
+}
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
     pub fn tenderly(config: tenderly::Config) -> Self {
-        Self(Inner::Tenderly(tenderly::Tenderly::new(config)))
+        Self {
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config)),
+            disable_access_lists: false,
+        }
     }
 
     /// Simulate transactions using the Ethereum RPC API.
     pub fn ethereum(eth: Ethereum) -> Self {
-        Self(Inner::Ethereum(eth))
+        Self {
+            inner: Inner::Ethereum(eth),
+            disable_access_lists: false,
+        }
+    }
+
+    /// Disable access list simulation. Some environments, such as less popular
+    /// blockchains, don't support access list simulation.
+    pub fn disable_access_lists(self) -> Self {
+        Self {
+            disable_access_lists: true,
+            ..self
+        }
     }
 
     /// Simulate the access list needed by a transaction. Return a new
     /// transaction with an updated access list.
     pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::Tx, Error> {
-        let access_list = match &self.0 {
+        if self.disable_access_lists {
+            return Ok(tx);
+        }
+        let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx.clone(), tenderly::GenerateAccessList::Yes)
@@ -34,7 +55,7 @@ impl Simulator {
 
     /// Simulate the gas needed by a transaction.
     pub async fn gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
-        Ok(match &self.0 {
+        Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx, tenderly::GenerateAccessList::No)
