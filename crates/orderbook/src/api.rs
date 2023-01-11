@@ -1,9 +1,6 @@
 mod cancel_order;
 mod cancel_orders;
 mod get_auction;
-mod get_fee_and_quote;
-mod get_fee_info;
-mod get_markets;
 mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
@@ -46,10 +43,6 @@ pub fn handle_all_routes(
             post_order::post_order(orderbook.clone()).boxed(),
         ),
         (
-            "v1/fee_info",
-            get_fee_info::get_fee_info(quotes.clone()).boxed(),
-        ),
-        (
             "v1/get_order",
             get_order_by_uid::get_order_by_uid(orderbook.clone()).boxed(),
         ),
@@ -65,18 +58,6 @@ pub fn handle_all_routes(
         (
             "v1/replace_order",
             replace_order::filter(orderbook.clone()).boxed(),
-        ),
-        (
-            "v1/get_amount_estimate",
-            get_markets::get_amount_estimate(quotes.clone()).boxed(),
-        ),
-        (
-            "v1/get_fee_and_quote_sell",
-            get_fee_and_quote::get_fee_and_quote_sell(quotes.clone()).boxed(),
-        ),
-        (
-            "v1/get_fee_and_quote_buy",
-            get_fee_and_quote::get_fee_and_quote_buy(quotes.clone()).boxed(),
         ),
         (
             "v1/get_user_orders",
