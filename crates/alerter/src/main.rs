@@ -189,6 +189,7 @@ struct Alerter {
     // hasn't been a trade for some time and that there is an order that has been matchable for some
     // time.
     no_trades_but_matchable_order: IntGauge,
+    api_get_order_min_interval: Duration,
 }
 
 struct AlertConfig {
@@ -201,7 +202,12 @@ struct AlertConfig {
 }
 
 impl Alerter {
-    pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
+    pub fn new(
+        orderbook_api: OrderBookApi,
+        zeroex_api: ZeroExApi,
+        config: AlertConfig,
+        api_get_order_min_interval: Duration,
+    ) -> Self {
         let registry = global_metrics::get_metrics_registry();
         let no_trades_but_matchable_order =
             IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
@@ -216,6 +222,7 @@ impl Alerter {
             last_alert: None,
             open_orders: HashMap::new(),
             no_trades_but_matchable_order,
+            api_get_order_min_interval,
         }
     }
 
@@ -236,19 +243,30 @@ impl Alerter {
         tracing::debug!("found {} open orders", orders.len());
 
         std::mem::swap(&mut self.open_orders, &mut orders);
+        let mut closed_orders: Vec<Order> = orders.into_values().map(|(order, _)| order).collect();
         // Keep only orders that were open last update and are not open this update.
-        orders.retain(|order_uid, _| !self.open_orders.contains_key(order_uid));
-        for closed_order in orders.keys() {
-            tracing::debug!(order =% closed_order, "found closed order");
-            let order = self.orderbook_api.order(closed_order).await?;
-            if order.status == OrderStatus::Fulfilled {
+        closed_orders.retain(|order| !self.open_orders.contains_key(&order.uid));
+        // We're trying to find an order that has been filled. Try market orders first because they
+        // are more likely to be.
+        closed_orders.sort_unstable_by_key(|order| match order.class {
+            OrderClass::Market => 0u8,
+            OrderClass::Limit(_) => 1,
+            OrderClass::Liquidity => 2,
+        });
+        for order in closed_orders {
+            let uid = &order.uid;
+            tracing::debug!(order =% uid, "found closed order");
+            let start = Instant::now();
+            let api_order = self.orderbook_api.order(uid).await.context("get order")?;
+            if api_order.status == OrderStatus::Fulfilled {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
-                    order.uid
+                    uid
                 );
                 self.last_observed_trade = Instant::now();
                 break;
             }
+            tokio::time::sleep_until((start + self.api_get_order_min_interval).into()).await;
         }
         tracing::debug!("found no fulfilled orders");
         Ok(())
@@ -364,6 +382,10 @@ struct Arguments {
 
     #[clap(long, env, default_value = "9588")]
     metrics_port: u16,
+
+    /// Minimum time between get order requests to the api. Without this the api can rate limit us.
+    #[clap(long, env, default_value = "0.2", value_parser = shared::arguments::duration_from_seconds)]
+    api_get_order_min_interval: Duration,
 }
 
 #[tokio::main]
@@ -390,6 +412,7 @@ async fn main() {
             min_order_solvable_time: args.min_order_age,
             min_alert_interval: args.min_alert_interval,
         },
+        args.api_get_order_min_interval,
     );
 
     let mut errors_in_a_row = 0;
