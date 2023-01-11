@@ -4,14 +4,14 @@ mod dto;
 
 const DEFAULT_URL: &str = "https://api.tenderly.co/api";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct Tenderly {
     endpoint: reqwest::Url,
     client: reqwest::Client,
     config: Config,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The URL of the Tenderly API.
     pub url: Option<reqwest::Url>,

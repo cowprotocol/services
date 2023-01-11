@@ -3,7 +3,10 @@
 #![forbid(unsafe_code)]
 
 use {
-    crate::{domain::competition, infra::api},
+    crate::{
+        domain::competition,
+        infra::{api, Mempool},
+    },
     infra::blockchain,
     std::net::SocketAddr,
     tokio::sync::oneshot,
@@ -61,6 +64,7 @@ pub async fn run(
     let serve = Api {
         solvers: solvers(&args, now).await,
         simulator: simulator(&args, &eth),
+        mempool: Mempool::public(eth.clone()),
         eth,
         addr: match args.bind_addr.as_str() {
             "auto" => api::Addr::Auto(addr_sender),

@@ -3,7 +3,7 @@ use crate::{domain::eth, infra::blockchain, Ethereum};
 pub mod tenderly;
 
 /// Ethereum transaction simulator.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Simulator {
     inner: Inner,
     disable_access_lists: bool,
@@ -67,7 +67,7 @@ impl Simulator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Inner {
     Tenderly(tenderly::Tenderly),
     Ethereum(Ethereum),
