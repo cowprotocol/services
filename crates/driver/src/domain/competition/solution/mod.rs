@@ -53,8 +53,10 @@ pub async fn solve(
 pub struct Solution {
     /// Trades settled by this solution.
     pub trades: Vec<Trade>,
-    /// Token prices for this solution.
-    pub prices: HashMap<eth::TokenAddress, competition::Price>,
+    /// Token prices for this solution, expressed using an arbitrary reference
+    /// unit chosen by the solver. These values are only meaningful in relation
+    /// to each others.
+    pub prices: HashMap<eth::TokenAddress, eth::U256>,
     pub interactions: Vec<Interaction>,
     /// The solver which generated this solution.
     pub solver: Solver,

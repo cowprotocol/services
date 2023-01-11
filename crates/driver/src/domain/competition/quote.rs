@@ -1,43 +1,52 @@
-use {
-    crate::{
-        domain::{competition, eth},
-        infra::solver::{self, Solver},
-        util,
+use crate::{
+    domain::{
+        competition::{self, solution},
+        eth,
     },
-    itertools::Itertools,
+    infra::solver::{self, Solver},
+    util::{self, conv},
 };
 
 #[derive(Debug)]
 pub struct Config {
-    pub optimal_timeout: std::time::Duration,
-    pub fast_timeout: std::time::Duration,
+    pub timeout: solution::SolverTimeout,
 }
 
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
-    pub sell: eth::Asset,
-    pub buy: eth::Asset,
+    /// The amount that can be bought if this was a sell order, or sold if this
+    /// was a buy order.
+    pub amount: eth::U256,
     pub interactions: Vec<competition::solution::Interaction>,
 }
 
 impl Quote {
-    fn new(
-        fulfillment: competition::solution::trade::Fulfillment,
-        interactions: Vec<competition::solution::Interaction>,
-    ) -> Self {
-        match fulfillment.order.side {
-            competition::order::Side::Buy => Self {
-                sell: fulfillment.order.sell,
-                buy: fulfillment.executed.to_asset(&fulfillment.order),
-                interactions,
-            },
-            competition::order::Side::Sell => Self {
-                sell: fulfillment.executed.to_asset(&fulfillment.order),
-                buy: fulfillment.order.buy,
-                interactions,
-            },
-        }
+    fn new(order: &Order, solution: competition::Solution) -> Result<Self, Error> {
+        let sell_price = solution
+            .prices
+            .get(&order.sell_token)
+            .ok_or(Error::QuotingFailed)?
+            .to_owned();
+        let buy_price = solution
+            .prices
+            .get(&order.buy_token)
+            .ok_or(Error::QuotingFailed)?
+            .to_owned();
+        let amount = match order.amount {
+            Amount::Sell(amount) => conv::u256::from_big_rational(
+                &(conv::u256::to_big_rational(buy_price) / conv::u256::to_big_rational(sell_price)
+                    * conv::u256::to_big_rational(amount)),
+            ),
+            Amount::Buy(amount) => conv::u256::from_big_rational(
+                &(conv::u256::to_big_rational(sell_price) / conv::u256::to_big_rational(buy_price)
+                    * conv::u256::to_big_rational(amount)),
+            ),
+        };
+        Ok(Self {
+            amount,
+            interactions: solution.interactions,
+        })
     }
 }
 
@@ -47,10 +56,6 @@ pub struct Order {
     pub sell_token: eth::TokenAddress,
     pub buy_token: eth::TokenAddress,
     pub amount: Amount,
-    pub valid_to: u32,
-    /// See [`crate::domain::competition::order::Partial`].
-    pub partial: bool,
-    pub quality: Quality,
     pub gas_price: eth::EffectiveGasPrice,
 }
 
@@ -58,43 +63,6 @@ pub struct Order {
 pub enum Amount {
     Sell(eth::U256),
     Buy(eth::U256),
-}
-
-impl Order {
-    /// The asset being bought. Zero if this is a sell.
-    pub fn buy(&self) -> eth::Asset {
-        match self.amount {
-            Amount::Sell(..) => eth::Asset {
-                amount: Default::default(),
-                token: self.buy_token,
-            },
-            Amount::Buy(amount) => eth::Asset {
-                amount,
-                token: self.buy_token,
-            },
-        }
-    }
-
-    /// The asset being sold. Zero if this is a buy.
-    pub fn sell(&self) -> eth::Asset {
-        match self.amount {
-            Amount::Sell(amount) => eth::Asset {
-                amount,
-                token: self.sell_token,
-            },
-            Amount::Buy(..) => eth::Asset {
-                amount: Default::default(),
-                token: self.sell_token,
-            },
-        }
-    }
-
-    pub fn side(&self) -> competition::order::Side {
-        match self.amount {
-            Amount::Sell(..) => competition::order::Side::Sell,
-            Amount::Buy(..) => competition::order::Side::Buy,
-        }
-    }
 }
 
 /// Quality of the quote to be generated. This value determines the time
@@ -111,19 +79,8 @@ impl Order {
     /// the quote for the order based on the solution that the solver
     /// returns.
     pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, Error> {
-        let solution = solver
-            .solve(&self.fake_auction(), self.timeout(config))
-            .await?;
-        let fulfillment = solution
-            .trades
-            .into_iter()
-            .filter_map(|trade| match trade {
-                competition::solution::Trade::Fulfillment(fulfillment) => Some(fulfillment),
-                competition::solution::Trade::Jit(..) => None,
-            })
-            .exactly_one()
-            .map_err(|_| Error::QuotingFailed)?;
-        Ok(Quote::new(fulfillment, solution.interactions))
+        let solution = solver.solve(&self.fake_auction(), config.timeout).await?;
+        Quote::new(self, solution)
     }
 
     fn fake_auction(&self) -> competition::Auction {
@@ -140,13 +97,7 @@ impl Order {
                 fee: Default::default(),
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
-                partial: if self.partial {
-                    competition::order::Partial::Yes {
-                        executed: Default::default(),
-                    }
-                } else {
-                    competition::order::Partial::No
-                },
+                partial: competition::order::Partial::No,
                 interactions: Default::default(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,
                 buy_token_balance: competition::order::BuyTokenBalance::Erc20,
@@ -163,10 +114,38 @@ impl Order {
         }
     }
 
-    fn timeout(&self, config: &Config) -> competition::SolverTimeout {
-        match self.quality {
-            Quality::Fast => config.fast_timeout.into(),
-            Quality::Optimal => config.optimal_timeout.into(),
+    /// The asset being bought, or [`eth::U256::max_value`] if this is a sell.
+    fn buy(&self) -> eth::Asset {
+        match self.amount {
+            Amount::Sell(..) => eth::Asset {
+                amount: eth::U256::max_value(),
+                token: self.buy_token,
+            },
+            Amount::Buy(amount) => eth::Asset {
+                amount,
+                token: self.buy_token,
+            },
+        }
+    }
+
+    /// The asset being sold, or [`eth::U256::one`] if this is a buy.
+    fn sell(&self) -> eth::Asset {
+        match self.amount {
+            Amount::Sell(amount) => eth::Asset {
+                amount,
+                token: self.sell_token,
+            },
+            Amount::Buy(..) => eth::Asset {
+                amount: eth::U256::one(),
+                token: self.sell_token,
+            },
+        }
+    }
+
+    pub fn side(&self) -> competition::order::Side {
+        match self.amount {
+            Amount::Sell(..) => competition::order::Side::Sell,
+            Amount::Buy(..) => competition::order::Side::Buy,
         }
     }
 }

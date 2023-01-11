@@ -31,13 +31,9 @@ pub struct Args {
     #[clap(long, env)]
     pub disable_access_list_simulation: bool,
 
-    /// The time to allocate to generating fast quotes, in milliseconds.
-    #[clap(long, env)]
-    pub fast_quote_ms: u64,
-
-    /// The time to allocate to generating optimal quotes, in milliseconds.
-    #[clap(long, env)]
-    pub optimal_quote_ms: u64,
+    /// The time to allocate to generating quotes, in milliseconds.
+    #[clap(long, env, default_value = "5000")]
+    pub quote_timeout_ms: u64,
 }
 
 /// Arg types have custom `Display` impls instead of relying on `Debug` to avoid
@@ -55,8 +51,7 @@ impl std::fmt::Display for Args {
             "disable_access_list_simulation: {}\n",
             self.disable_access_list_simulation
         )?;
-        writeln!(f, "fast_quote_ms: {}\n", self.fast_quote_ms)?;
-        writeln!(f, "optimal_quote_ms: {}\n", self.optimal_quote_ms)
+        writeln!(f, "quote_timeout_ms: {}\n", self.quote_timeout_ms)
     }
 }
 

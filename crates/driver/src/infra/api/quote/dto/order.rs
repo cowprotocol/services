@@ -13,12 +13,6 @@ impl Order {
                 Amount::Sell { sell_amount } => competition::quote::Amount::Sell(sell_amount),
                 Amount::Buy { buy_amount } => competition::quote::Amount::Buy(buy_amount),
             },
-            valid_to: self.valid_to,
-            partial: self.partially_fillable,
-            quality: match self.price_quality {
-                PriceQuality::Optimal => competition::quote::Quality::Optimal,
-                PriceQuality::Fast => competition::quote::Quality::Fast,
-            },
             gas_price: self.effective_gas_price.into(),
         }
     }

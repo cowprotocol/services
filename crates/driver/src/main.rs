@@ -68,8 +68,7 @@ pub async fn run(
         },
         now,
         quote_config: competition::quote::Config {
-            optimal_timeout: std::time::Duration::from_millis(args.optimal_quote_ms),
-            fast_timeout: std::time::Duration::from_millis(args.fast_quote_ms),
+            timeout: std::time::Duration::from_millis(args.quote_timeout_ms).into(),
         },
     }
     .serve(async {
