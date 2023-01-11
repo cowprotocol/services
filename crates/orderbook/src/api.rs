@@ -4,8 +4,6 @@ mod get_auction;
 mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
-mod get_solvable_orders;
-mod get_solvable_orders_v2;
 mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
@@ -48,10 +46,6 @@ pub fn handle_all_routes(
             "v1/get_order",
             get_order_by_uid::get_order_by_uid(orderbook.clone()).boxed(),
         ),
-        (
-            "v1/get_solvable_orders",
-            get_solvable_orders::get_solvable_orders(orderbook.clone()).boxed(),
-        ),
         ("v1/get_trades", get_trades::get_trades(database).boxed()),
         (
             "v1/cancel_order",
@@ -74,10 +68,7 @@ pub fn handle_all_routes(
             get_orders_by_tx::get_orders_by_tx(orderbook.clone()).boxed(),
         ),
         ("v1/post_quote", post_quote::post_quote(quotes).boxed()),
-        (
-            "v1/auction",
-            get_auction::get_auction(orderbook.clone()).boxed(),
-        ),
+        ("v1/auction", get_auction::get_auction(orderbook).boxed()),
         (
             "v1/solver_competition",
             get_solver_competition::get(solver_competition.clone()).boxed(),
@@ -90,10 +81,6 @@ pub fn handle_all_routes(
         (
             "v1/get_native_price",
             get_native_price::get_native_price(native_price_estimator).boxed(),
-        ),
-        (
-            "v2/get_solvable_orders",
-            get_solvable_orders_v2::get_solvable_orders(orderbook).boxed(),
         ),
     ];
 

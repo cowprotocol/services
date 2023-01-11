@@ -33,6 +33,7 @@ toml = "0.5"
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
 primitive-types = { workspace = true }
+secp256k1 = { workspace = true }
 
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
