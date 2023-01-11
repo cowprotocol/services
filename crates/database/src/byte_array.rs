@@ -1,10 +1,10 @@
-use std::fmt::{self, Formatter, Debug};
 use sqlx::{
     encode::IsNull,
     error::BoxDynError,
     postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
     Decode, Encode, Postgres, Type,
 };
+use std::fmt::{self, Debug, Formatter};
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
 #[derive(Clone, Copy)]
