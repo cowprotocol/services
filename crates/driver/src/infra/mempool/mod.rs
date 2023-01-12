@@ -1,6 +1,9 @@
-use crate::{
-    domain::eth,
-    infra::blockchain::{self, Ethereum},
+use {
+    crate::{
+        domain::eth,
+        infra::blockchain::{self, Ethereum},
+    },
+    futures::future::join_all,
 };
 
 /// The mempool to use for publishing onchain transactions. The public mempool
@@ -31,6 +34,24 @@ impl Mempool {
     }
 }
 
+pub async fn send(mempools: &[Mempool], tx: eth::Tx) -> Result<(), Error> {
+    let results = join_all(mempools.iter().map(|mempool| {
+        let tx = tx.clone();
+        async move {
+            let result = mempool.send(tx.clone()).await;
+            if result.is_err() {
+                tracing::warn!(?mempool, ?result, "sending transaction via mempool failed");
+            }
+            result
+        }
+    }))
+    .await;
+    if results.into_iter().all(|r| r.is_err()) {
+        return Err(Error::AllMempoolsFailed);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 enum Inner {
     Flashbots,
@@ -42,4 +63,6 @@ enum Inner {
 pub enum Error {
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+    #[error("all mempools failed to send the transaction")]
+    AllMempoolsFailed,
 }

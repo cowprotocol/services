@@ -63,7 +63,7 @@ impl Api {
                     eth: self.eth.clone(),
                     simulator: self.simulator.clone(),
                     now: self.now,
-                    mempool: self.mempool.clone(),
+                    mempools: vec![self.mempool.clone()],
                     settlements: Default::default(),
                 },
                 quote_config: self.quote_config.clone(),
