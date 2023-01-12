@@ -52,8 +52,10 @@ impl Api {
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();
-            let router = solve::route(router);
             let router = info::route(router);
+            let router = quote::route(router);
+            let router = solve::route(router);
+            let router = execute::route(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
                 competition: domain::Competition {

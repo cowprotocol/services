@@ -233,6 +233,12 @@ impl From<num::BigRational> for Score {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Id(pub u32);
 
+impl From<u32> for Id {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
 impl Id {
     pub fn random() -> Self {
         Self(rand::thread_rng().gen())
