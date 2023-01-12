@@ -7,6 +7,7 @@ edition = "2021"
 axum = "0.6"
 bigdecimal = { version = "0.3", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
 ethereum-types = "0.12"
 hex = "0.4"
 hyper = "0.14"
@@ -22,3 +23,4 @@ tower-http = { version = "0.3", features = ["trace"] }
 # remove/re-evaluate these dependencies.
 model = { path = "../model" }
 shared = { path = "../shared" }
+tracing = { workspace = true }

@@ -3566,6 +3566,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "chrono",
+ "clap 4.0.8",
  "ethereum-types 0.12.1",
  "hex",
  "hyper",
@@ -3578,6 +3579,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
+ "tracing",
 ]
 
 [[package]]
