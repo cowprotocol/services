@@ -2,7 +2,10 @@
 
 use ethcontract::{H160, U256};
 use model::TokenPair;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+};
 
 /// The maximum number of hops to use when trading with AMMs along a path.
 const DEFAULT_MAX_HOPS: usize = 2;
@@ -169,6 +172,17 @@ impl BaseTokens {
     // Can contain token pairs between base tokens or a base token and the sell or buy token.
     pub fn path_candidates(&self, sell_token: H160, buy_token: H160) -> HashSet<PathCandidate> {
         path_candidates(sell_token, buy_token, &self.tokens, DEFAULT_MAX_HOPS)
+    }
+
+    /// Returns possible path candidates with the specified number of maximum
+    /// hops.
+    pub fn path_candidates_with_hops(
+        &self,
+        sell_token: H160,
+        buy_token: H160,
+        max_hops: NonZeroUsize,
+    ) -> HashSet<PathCandidate> {
+        path_candidates(sell_token, buy_token, &self.tokens, max_hops.get())
     }
 }
 
