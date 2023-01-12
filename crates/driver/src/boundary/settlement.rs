@@ -59,8 +59,6 @@ impl Settlement {
     pub async fn encode(
         eth: &Ethereum,
         solution: &competition::Solution,
-        // TODO I think it's possible to remove this parameter, do this in a follow-up
-        // TODO Can I get rid of this and still have the tests pass? If so, go ahead and do it.
         auction: &competition::Auction,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();

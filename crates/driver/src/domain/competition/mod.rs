@@ -44,8 +44,13 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
-        let timeout = SolverTimeout::for_solving(auction.deadline, self.now)?;
-        let solution = self.solver.solve(auction, timeout).await?;
+        let solution = self
+            .solver
+            .solve(
+                auction,
+                SolverTimeout::for_solving(auction.deadline, self.now)?,
+            )
+            .await?;
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
@@ -71,7 +76,7 @@ impl Competition {
             .settlements
             .remove(&solution_id)
             .ok_or(Error::SolutionNotFound)?;
-        // In case of failure, re-insert the settlement.
+        // If sending the transaction fails, re-insert the settlement.
         if let Err(err) = self.mempool.send(settlement.clone().tx()).await {
             self.settlements.insert(solution_id, settlement);
             return Err(err.into());
