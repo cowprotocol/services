@@ -103,11 +103,12 @@ impl Order {
         }
     }
 
-    /// The asset being bought, or [`eth::U256::max_value`] if this is a sell.
+    /// The asset being bought, or [`eth::U256::one`] if this is a sell, to
+    /// facilitate surplus.
     fn buy(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
-                amount: eth::U256::max_value(),
+                amount: eth::U256::one(),
                 token: self.buy_token,
             },
             order::Side::Buy => eth::Asset {
@@ -117,7 +118,8 @@ impl Order {
         }
     }
 
-    /// The asset being sold, or [`eth::U256::one`] if this is a buy.
+    /// The asset being sold, or [`eth::U256::max_value`] if this is a buy, to
+    /// facilitate surplus.
     fn sell(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
@@ -125,7 +127,7 @@ impl Order {
                 token: self.sell_token,
             },
             order::Side::Buy => eth::Asset {
-                amount: eth::U256::one(),
+                amount: eth::U256::max_value(),
                 token: self.sell_token,
             },
         }
