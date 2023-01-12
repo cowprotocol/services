@@ -2,6 +2,7 @@
 
 use crate::domain::baseline;
 use std::{future::Future, net::SocketAddr, sync::Arc};
+use tokio::sync::oneshot;
 
 pub mod dto;
 
@@ -13,9 +14,9 @@ pub struct Api {
 impl Api {
     pub async fn serve(
         self,
+        bind: Option<oneshot::Sender<SocketAddr>>,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
-        // Add middleware.
         let app = axum::Router::new()
             .route("/", axum::routing::post(solve))
             .layer(
@@ -23,11 +24,12 @@ impl Api {
             )
             .with_state(Arc::new(self.solver));
 
-        // Start the server.
-        axum::Server::bind(&self.addr)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(shutdown)
-            .await
+        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        if let Some(bind) = bind {
+            let _ = bind.send(server.local_addr());
+        }
+
+        server.with_graceful_shutdown(shutdown).await
     }
 }
 
