@@ -174,8 +174,9 @@ impl RateLimiter {
     }
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, Default)]
 pub enum RateLimiterError {
+    #[default]
     #[error("rate limited")]
     RateLimited,
 }
