@@ -815,6 +815,7 @@ mod tests {
             Duration::MAX,
             None,
             None,
+            1,
         );
 
         // We'll have no native prices in this call. But this call will cause a background task
