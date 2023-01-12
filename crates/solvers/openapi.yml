@@ -26,6 +26,8 @@ paths:
                 $ref: "#/components/schemas/Solution"
         400:
           description: There is something wrong with the request.
+        429:
+          description: The solver cannot keep up. It is too busy to handle more requests.
         500:
           description: Something went wrong when handling the request.
 
