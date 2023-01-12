@@ -3,9 +3,9 @@ use anyhow::{Context, Result};
 use model::order::OrderUid;
 use primitive_types::H160;
 use serde::Deserialize;
-use shared::api::{convert_json_response, error, ApiReply};
+use shared::api::{error, ApiReply};
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection};
+use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,16 +51,22 @@ pub fn get_trades(
     get_trades_request().and_then(move |request_result| {
         let database = db.clone();
         async move {
-            match request_result {
+            Result::<_, Infallible>::Ok(match request_result {
                 Ok(trade_filter) => {
                     let result = database.trades(&trade_filter).await.context("get_trades");
-                    Result::<_, Infallible>::Ok(convert_json_response(result))
+                    match result {
+                        Ok(reply) => with_status(warp::reply::json(&reply), StatusCode::OK),
+                        Err(err) => {
+                            tracing::error!(?err, "get_trades");
+                            shared::api::internal_error_reply()
+                        }
+                    }
                 }
                 Err(TradeFilterError::InvalidFilter(msg)) => {
                     let err = error("InvalidTradeFilter", msg);
-                    Ok(warp::reply::with_status(err, StatusCode::BAD_REQUEST))
+                    with_status(err, StatusCode::BAD_REQUEST)
                 }
-            }
+            })
         }
     })
 }

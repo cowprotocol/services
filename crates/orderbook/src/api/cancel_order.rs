@@ -51,10 +51,10 @@ impl IntoWarpReply for OrderCancellationError {
                 super::error("OnChainOrder", "On-chain orders must be cancelled on-chain"),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::Other(err) => with_status(
-                super::internal_error(err.context("cancel_order")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+            Self::Other(err) => {
+                tracing::error!(?err, "cancel_order");
+                shared::api::internal_error_reply()
+            }
         }
     }
 }

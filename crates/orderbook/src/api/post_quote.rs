@@ -63,7 +63,10 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
                     StatusCode::BAD_REQUEST,
                 )
             }
-            CalculateQuoteError::Other(err) => err.into_warp_reply(),
+            CalculateQuoteError::Other(err) => {
+                tracing::error!(?err, "CalculateQuoteErrorWrapper");
+                shared::api::internal_error_reply()
+            }
         }
     }
 }

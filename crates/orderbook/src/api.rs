@@ -18,7 +18,7 @@ use crate::{
     solver_competition::SolverCompetitionStoring,
 };
 use shared::{
-    api::{error, finalize_router, internal_error, ApiReply},
+    api::{error, finalize_router, ApiReply},
     order_quoting::QuoteHandler,
     price_estimation::native::NativePriceEstimating,
 };
