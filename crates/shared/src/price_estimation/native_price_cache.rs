@@ -240,7 +240,6 @@ async fn update_recently_used_outdated_prices(
     concurrent_requests: usize,
 ) {
     while let Some(inner) = inner.upgrade() {
-        tracing::error!("run background task");
         let now = Instant::now();
 
         let mut outdated_entries: Vec<_> = inner
