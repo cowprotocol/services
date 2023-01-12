@@ -276,6 +276,7 @@ async fn update_recently_used_outdated_prices(
 mod tests {
     use super::*;
     use crate::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
+    use futures::FutureExt;
     use num::ToPrimitive;
 
     fn token(u: u64) -> H160 {
@@ -462,6 +463,64 @@ mod tests {
 
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
+
+        let results = estimator
+            .estimate_native_prices(&tokens)
+            .collect::<Vec<_>>()
+            .await;
+        for (_, price) in &results {
+            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn maintenance_can_update_concurrently() {
+        const WAIT_TIME_MS: u64 = 100;
+        const BATCH_SIZE: usize = 100;
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_prices()
+            .times(BATCH_SIZE)
+            .returning(move |tokens| {
+                assert_eq!(tokens.len(), 1);
+                futures::stream::iter(std::iter::once(Ok(1.0)).enumerate()).boxed()
+            });
+        // background task updates all outdated prices
+        inner
+            .expect_estimate_native_prices()
+            .times(BATCH_SIZE)
+            .returning(move |tokens| {
+                assert_eq!(tokens.len(), 1);
+                async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(WAIT_TIME_MS)).await;
+                    (0, Ok(2.0))
+                }
+                .into_stream()
+                .boxed()
+            });
+
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Duration::from_millis(50),
+            None,
+            Some(Duration::default()),
+            BATCH_SIZE,
+        );
+
+        let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
+        let results = estimator
+            .estimate_native_prices(&tokens)
+            .collect::<Vec<_>>()
+            .await;
+        for (_, price) in &results {
+            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 1);
+        }
+
+        // wait for maintenance cycle
+        // although we have 100 requests which all take 100ms to complete the maintenance cycle
+        // completes sooner because all requests are handled concurrently.
+        tokio::time::sleep(Duration::from_millis(60 + WAIT_TIME_MS)).await;
 
         let results = estimator
             .estimate_native_prices(&tokens)

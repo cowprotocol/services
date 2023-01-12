@@ -17,7 +17,6 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
 }
 
 #[mockall::automock]
-#[async_trait::async_trait]
 pub trait NativePriceEstimating: Send + Sync {
     /// Like `PriceEstimating::estimates`.
     ///
