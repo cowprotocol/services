@@ -48,10 +48,10 @@ impl std::fmt::Display for Args {
         writeln!(f, "{}", self.tenderly)?;
         writeln!(
             f,
-            "disable_access_list_simulation: {}\n",
+            "disable_access_list_simulation: {}",
             self.disable_access_list_simulation
         )?;
-        writeln!(f, "quote_timeout_ms: {}\n", self.quote_timeout_ms)
+        writeln!(f, "quote_timeout_ms: {}", self.quote_timeout_ms)
     }
 }
 
