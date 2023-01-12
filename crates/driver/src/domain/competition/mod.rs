@@ -1,7 +1,14 @@
 use {
     crate::{
         boundary,
-        infra::{blockchain::Ethereum, mempool, solver::Solver, time, Mempool, Simulator},
+        infra::{
+            blockchain::Ethereum,
+            mempool,
+            solver::{self, Solver},
+            time,
+            Mempool,
+            Simulator,
+        },
     },
     dashmap::DashMap,
     std::sync::Arc,
@@ -16,7 +23,7 @@ pub use {
     auction::Auction,
     order::Order,
     quote::Quote,
-    solution::{solve, Score, Solution, SolverTimeout},
+    solution::{Score, Solution, SolverTimeout},
 };
 
 /// A ongoing competition. There is one competition going on per solver at any
@@ -31,50 +38,41 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempool: Mempool,
-    pub settlements: Settlements,
+    pub settlements: Arc<DashMap<solution::Id, solution::Settlement>>,
 }
-
-// TODO Remove this, it's not worth having a separate abstraction for this.
-#[derive(Debug, Default)]
-pub struct Settlements(Arc<DashMap<solution::Id, solution::Settlement>>);
 
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
-        let (solution, score) =
-            solution::solve(&self.solver, &self.eth, &self.simulator, self.now, auction).await?;
-        let id = solution::Id::random();
+        let timeout = SolverTimeout::for_solving(auction.deadline, self.now)?;
+        let solution = self.solver.solve(auction, timeout).await?;
+        // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
+        // doesn't fail simulation. Currently this is the case, but this needs to stay
+        // the same as this code changes.
+        let gas = solution
+            .simulate(&self.eth, &self.simulator, auction)
+            .await?;
         let settlement = solution::Settlement::encode(&self.eth, auction, &solution).await?;
-        self.settlements.insert(id, settlement);
-        Ok((id, score))
-    }
-
-    /// Execute a solution generated as part of this competition.
-    pub async fn execute(&self, solution_id: solution::Id) -> Result<(), Error> {
-        let settlement = self
-            .settlements
-            .take(solution_id)
-            .ok_or(Error::SolutionNotFound)?;
-        // TODO When this fails, re-insert the settlement
-        self.mempool.send(settlement.tx()).await.map_err(Into::into)
-    }
-}
-
-impl Settlements {
-    fn insert(&self, solution_id: solution::Id, settlement: solution::Settlement) {
-        self.0.insert(solution_id, settlement);
+        let score = settlement.score(&self.eth, auction, gas).await?;
+        let solution_id = solution::Id::random();
+        self.settlements.insert(solution_id, settlement);
         // Remove the settlement after it's expired.
-        let settlements = Arc::clone(&self.0);
+        let settlements = Arc::clone(&self.settlements);
         tokio::spawn(async move {
             tokio::time::sleep(Self::expiration_time()).await;
             settlements.remove(&solution_id);
         });
+        Ok((solution_id, score))
     }
 
-    fn take(&self, solution_id: solution::Id) -> Option<solution::Settlement> {
-        self.0
+    /// Execute a solution generated as part of this competition.
+    pub async fn execute(&self, solution_id: solution::Id) -> Result<(), Error> {
+        let (_, settlement) = self
+            .settlements
             .remove(&solution_id)
-            .map(|(_, settlement)| settlement)
+            .ok_or(Error::SolutionNotFound)?;
+        // TODO When this fails, re-insert the settlement
+        self.mempool.send(settlement.tx()).await.map_err(Into::into)
     }
 
     fn expiration_time() -> std::time::Duration {
@@ -92,4 +90,8 @@ pub enum Error {
     Mempool(#[from] mempool::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+    #[error("{0:?}")]
+    DeadlineExceeded(#[from] auction::DeadlineExceeded),
+    #[error("solver error: {0:?}")]
+    Solver(#[from] solver::Error),
 }

@@ -29,8 +29,8 @@ impl Settlement {
     /// Calculate the score for this settlement. This method is here only
     /// temporarily, in the future the entire scoring formula should operate on
     /// a [`super::Solution`].
-    pub(super) async fn score(
-        self,
+    pub async fn score(
+        &self,
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,

@@ -62,7 +62,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     now: self.now,
                     mempool: self.mempool.clone(),
-                    settlements: competition::Settlements::default(),
+                    settlements: Default::default(),
                 },
                 quote_config: self.quote_config.clone(),
                 now: self.now,
