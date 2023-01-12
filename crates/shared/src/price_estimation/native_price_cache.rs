@@ -91,10 +91,12 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
+        parallelism: usize,
     ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        futures::stream::iter(tokens)
+        let estimates = tokens
+            .iter()
             .enumerate()
-            .then(move |(index, token)| async move {
+            .map(move |(index, token)| async move {
                 {
                     // check if price is cached by now
                     let now = Instant::now();
@@ -128,7 +130,9 @@ impl Inner {
                 };
 
                 (index, result)
-            })
+            });
+        futures::stream::iter(estimates)
+            .buffered(parallelism)
             .boxed()
     }
 }
@@ -155,6 +159,7 @@ impl CachingNativePriceEstimator {
         update_interval: Duration,
         update_size: Option<usize>,
         prefetch_time: Option<Duration>,
+        concurrent_requests: usize,
     ) -> Self {
         let inner = Arc::new(Inner {
             estimator,
@@ -165,6 +170,7 @@ impl CachingNativePriceEstimator {
             update_interval,
             update_size,
             max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
+            concurrent_requests,
         ));
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         Self {
@@ -212,9 +218,9 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 return;
             }
             let missing_tokens: Vec<H160> = missing_indices.iter().map(|i| tokens[*i]).collect();
-            let mut stream = self
-                .inner
-                .estimate_prices_and_update_cache(&missing_tokens, self.max_age);
+            let mut stream =
+                self.inner
+                    .estimate_prices_and_update_cache(&missing_tokens, self.max_age, 1);
             while let Some((i, result)) = stream.next().await {
                 yield (missing_indices[i], result);
             }
@@ -231,8 +237,10 @@ async fn update_recently_used_outdated_prices(
     update_interval: Duration,
     update_size: Option<usize>,
     max_age: Duration,
+    concurrent_requests: usize,
 ) {
     while let Some(inner) = inner.upgrade() {
+        tracing::error!("run background task");
         let now = Instant::now();
 
         let mut outdated_entries: Vec<_> = inner
@@ -252,7 +260,11 @@ async fn update_recently_used_outdated_prices(
             .collect();
 
         if !tokens_to_update.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(&tokens_to_update, max_age);
+            let mut stream = inner.estimate_prices_and_update_cache(
+                &tokens_to_update,
+                max_age,
+                concurrent_requests,
+            );
             while stream.next().await.is_some() {}
         }
 
@@ -288,6 +300,7 @@ mod tests {
             Default::default(),
             None,
             None,
+            1,
         );
 
         for _ in 0..10 {
@@ -317,6 +330,7 @@ mod tests {
             Default::default(),
             None,
             None,
+            1,
         );
 
         for _ in 0..10 {
@@ -376,6 +390,7 @@ mod tests {
             Duration::from_millis(50),
             Some(1),
             Some(Duration::default()),
+            1,
         );
 
         // fill cache with 2 different queries
@@ -433,6 +448,7 @@ mod tests {
             Duration::from_millis(50),
             None,
             Some(Duration::default()),
+            1,
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
