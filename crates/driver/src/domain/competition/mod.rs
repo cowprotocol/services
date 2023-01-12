@@ -71,8 +71,12 @@ impl Competition {
             .settlements
             .remove(&solution_id)
             .ok_or(Error::SolutionNotFound)?;
-        // TODO When this fails, re-insert the settlement
-        self.mempool.send(settlement.tx()).await.map_err(Into::into)
+        // In case of failure, re-insert the settlement.
+        if let Err(err) = self.mempool.send(settlement.clone().tx()).await {
+            self.settlements.insert(solution_id, settlement);
+            return Err(err.into());
+        }
+        Ok(())
     }
 
     fn expiration_time() -> std::time::Duration {

@@ -38,8 +38,6 @@ impl Settlement {
         self.0.score(eth, auction, gas).await
     }
 
-    // TODO Instead of tx, have a `From` impl, since this should really be a newtype
-    // for eth::Tx
     /// The onchain transaction representing this settlement.
     pub fn tx(self) -> eth::Tx {
         self.0.tx()
