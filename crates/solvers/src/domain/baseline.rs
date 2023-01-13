@@ -9,7 +9,7 @@ use crate::{
     boundary,
     domain::{auction, eth, liquidity, order, solution},
 };
-use std::{collections::HashSet, num::NonZeroUsize};
+use std::collections::HashSet;
 
 use super::solution::Interaction;
 
@@ -19,9 +19,14 @@ pub struct Baseline {
     /// path-finding. This allows paths of the kind `TOKEN1 -> WETH -> TOKEN2`
     /// to be considered.
     pub base_tokens: HashSet<eth::TokenAddress>,
-    /// Maximum number of hops that can be considered in a trading path. A value
-    /// of 1 indicates that only a direct trade is allowed.
-    pub max_hops: NonZeroUsize,
+    /// Maximum number of hops that can be considered in a trading path. A hop
+    /// is an intermediary token within a trading path. For example:
+    /// - A value of 0 indicates that only a direct trade is allowed: `A -> B`
+    /// - A value of 1 indicates that a single intermediary token can appear
+    ///   within a trading path: `A -> B -> C`
+    /// - A value of 2 indicates: `A -> B -> C -> D`
+    /// - etc.
+    pub max_hops: usize,
 }
 
 impl Baseline {
@@ -35,7 +40,8 @@ impl Baseline {
             .orders
             .iter()
             .filter_map(|order| {
-                let route = boundary_solver.route(order::UserOrder::new(order)?, self.max_hops)?;
+                let route =
+                    boundary_solver.route(order::NonLiquidity::new(order)?, self.max_hops)?;
 
                 Some(solution::Solution {
                     prices: solution::ClearingPrices::new([
