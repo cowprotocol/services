@@ -5,6 +5,8 @@
 use tokio::signal::unix::{self, SignalKind};
 
 mod api;
+mod boundary;
+mod domain;
 mod util;
 
 #[tokio::main]

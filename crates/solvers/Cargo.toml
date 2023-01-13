@@ -7,11 +7,18 @@ edition = "2021"
 axum = "0.6"
 bigdecimal = { version = "0.3", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-ethereum-types = "0.14"
+ethereum-types = "0.12"
 hex = "0.4"
 hyper = "0.14"
+itertools = "0.10"
+num = "0.4"
 serde = "1"
 serde_with = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tower = "0.4"
 tower-http = { version = "0.3", features = ["trace"] }
+
+# TODO Once solvers are ported and E2E tests set up, slowly migrate code and
+# remove/re-evaluate these dependencies.
+model = { path = "../model" }
+shared = { path = "../shared" }

@@ -1,9 +1,9 @@
 use crate::http_client::response_body_with_size_limit;
 use ::model::auction::AuctionId;
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, Context};
 use reqwest::{
     header::{self, HeaderValue},
-    Client, Url,
+    Client, StatusCode, Url,
 };
 use serde_json::json;
 use std::time::Duration;
@@ -12,6 +12,14 @@ pub mod gas_model;
 pub mod model;
 
 const SOLVER_RESPONSE_SIZE_LIMIT: usize = 10_000_000;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("rate limited")]
+    RateLimited,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 /// Implements an abstract HTTP solver API, can be mocked, instrumented, etc.
 #[mockall::automock]
@@ -22,7 +30,7 @@ pub trait HttpSolverApi: Send + Sync {
         &self,
         model: &model::BatchAuctionModel,
         timeout: Duration,
-    ) -> Result<model::SettledBatchAuctionModel>;
+    ) -> Result<model::SettledBatchAuctionModel, Error>;
 
     /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
     fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult);
@@ -94,7 +102,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         &self,
         model: &model::BatchAuctionModel,
         timeout: Duration,
-    ) -> Result<model::SettledBatchAuctionModel> {
+    ) -> Result<model::SettledBatchAuctionModel, Error> {
         // The timeout we give to the solver is one second less than
         // the deadline to make up for overhead from the network.
         // We use one second because the old MIP solver uses integer timeouts.
@@ -102,7 +110,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
 
-        let mut url = self.base.join("solve")?;
+        let mut url = self.base.join("solve").context("join base")?;
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
@@ -163,14 +171,20 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
         tracing::trace!(body = %text, "response");
         let context = || format!("request query {}, response body {}", query, text);
-        ensure!(
-            status.is_success(),
-            "solver response is not success: status {}, {}",
-            status,
-            context()
-        );
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(Error::RateLimited);
+        }
+        if !status.is_success() {
+            return Err(anyhow!(
+                "solver response is not success: status {}, {}",
+                status,
+                context()
+            )
+            .into());
+        }
         serde_json::from_str(text)
             .with_context(|| format!("failed to decode response json, {}", context()))
+            .map_err(Into::into)
     }
 
     fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult) {

@@ -8,7 +8,7 @@ use crate::{
             StablePoolParameters, TokenAmount, TokenInfoModel, WeightedPoolTokenData,
             WeightedProductPoolParameters,
         },
-        HttpSolverApi,
+        Error as ApiError, HttpSolverApi,
     },
     price_estimation::{
         gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
@@ -190,7 +190,10 @@ impl HttpPriceEstimator {
                 Duration::from_secs(3),
             )
             .await
-            .map_err(PriceEstimationError::Other)
+            .map_err(|err| match err {
+                ApiError::RateLimited => PriceEstimationError::RateLimited(Default::default()),
+                ApiError::Other(err) => PriceEstimationError::Other(err),
+            })
         };
         let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
         let settlement = self
@@ -404,7 +407,7 @@ mod tests {
         },
         token_info::{MockTokenInfoFetching, TokenInfoFetcher},
     };
-    use anyhow::bail;
+    use anyhow::anyhow;
     use clap::ValueEnum;
     use ethcontract::dyns::DynTransport;
     use gas_estimation::GasPrice1559;
@@ -483,7 +486,7 @@ mod tests {
         let native_token = H160::zero();
         let mut api = MockHttpSolverApi::new();
         api.expect_solve()
-            .returning(move |_, _| bail!("solver error"));
+            .returning(move |_, _| Err(ApiError::Other(anyhow!("solver error"))));
 
         let mut token_info_fetching = MockTokenInfoFetching::new();
         token_info_fetching
