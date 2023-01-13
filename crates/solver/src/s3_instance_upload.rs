@@ -1,7 +1,6 @@
 use anyhow::Result;
 use aws_sdk_s3::{types::ByteStream, Client, Credentials, Region};
 use aws_types::credentials::SharedCredentialsProvider;
-use chrono::{DateTime, Utc};
 use model::auction::AuctionId;
 
 #[derive(Default)]
@@ -43,13 +42,12 @@ impl S3InstanceUploader {
     ///
     /// The final filename is the configured prefix followed by `{current_date}/{auction_id}`.
     pub async fn upload_instance(&self, auction: AuctionId, value: Vec<u8>) -> Result<()> {
-        let key = self.filename(chrono::offset::Utc::now(), auction);
+        let key = self.filename(auction);
         self.upload(key, value).await
     }
 
-    fn filename(&self, now: DateTime<Utc>, auction: AuctionId) -> String {
-        let date = now.format("%Y-%m-%d");
-        format!("{}{date}/{auction}.json", self.filename_prefix)
+    fn filename(&self, auction: AuctionId) -> String {
+        format!("{}{auction}.json", self.filename_prefix)
     }
 
     async fn upload(&self, key: String, value: Vec<u8>) -> Result<()> {
@@ -71,8 +69,11 @@ mod tests {
     #[test]
     #[ignore]
     fn print_filename() {
-        let uploader = S3InstanceUploader::new(Default::default());
-        let key = uploader.filename(chrono::offset::Utc::now(), 11);
+        let uploader = S3InstanceUploader::new(Config {
+            filename_prefix: "test/".to_string(),
+            ..Default::default()
+        });
+        let key = uploader.filename(11);
         println!("{key}");
     }
 
