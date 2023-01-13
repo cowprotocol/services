@@ -98,6 +98,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "3")]
     pub native_price_cache_max_update_size: usize,
 
+    /// How many price estimation requests can be executed concurrently in the maintenance task.
+    #[clap(long, env, default_value = "1")]
+    pub native_price_cache_concurrent_requests: usize,
+
     /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
     /// that small pools do not influence the prices. If not set a reasonable default is used based
     /// on network id.
@@ -150,6 +154,11 @@ impl Display for Arguments {
             f,
             "native_price_cache_max_update_size: {}",
             self.native_price_cache_max_update_size
+        )?;
+        writeln!(
+            f,
+            "native_price_cache_concurrent_requests: {}",
+            self.native_price_cache_concurrent_requests
         )?;
         display_option(
             f,

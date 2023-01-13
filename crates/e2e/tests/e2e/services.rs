@@ -147,6 +147,7 @@ impl OrderbookServices {
             Duration::from_secs(10),
             None,
             None,
+            1,
         ));
         let quoter = Arc::new(OrderQuoter::new(
             price_estimator.clone(),

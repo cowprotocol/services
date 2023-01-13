@@ -334,6 +334,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
             None,
+            self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)
     }

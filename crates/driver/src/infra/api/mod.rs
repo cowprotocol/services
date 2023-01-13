@@ -1,7 +1,8 @@
 use {
-    crate::{solver::Solver, Ethereum, Simulator},
+    crate::{infra, solver::Solver, Ethereum, Simulator},
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
+    tokio::sync::oneshot,
 };
 
 mod execute;
@@ -10,16 +11,25 @@ mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
+pub enum Addr {
+    /// Bind to a specific port and address.
+    Bind(SocketAddr),
+    /// Bind to 0.0.0.0 and any free port, then send the bound address down the
+    /// oneshot channel if specified.
+    Auto(Option<oneshot::Sender<SocketAddr>>),
+}
+
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub simulator: Simulator,
     pub eth: Ethereum,
-    pub addr: SocketAddr,
+    pub addr: Addr,
 }
 
 impl Api {
     pub async fn serve(
         self,
+        now: infra::time::Now,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
@@ -35,6 +45,7 @@ impl Api {
         let shared = Arc::new(SharedState {
             simulator: self.simulator,
             eth: self.eth,
+            now,
         });
         for solver in self.solvers {
             let name = solver.name().clone();
@@ -45,14 +56,24 @@ impl Api {
                 solver,
                 shared: Arc::clone(&shared),
             });
-            app = app.nest(&name.0, router);
+            app = app.nest(&format!("/{name}"), router);
         }
 
         // Start the server.
-        axum::Server::bind(&self.addr)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(shutdown)
-            .await
+
+        let server = match self.addr {
+            Addr::Bind(addr) => axum::Server::bind(&addr).serve(app.into_make_service()),
+            Addr::Auto(addr_sender) => {
+                let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap())
+                    .serve(app.into_make_service());
+                if let Some(addr_sender) = addr_sender {
+                    addr_sender.send(server.local_addr()).unwrap();
+                }
+                server
+            }
+        };
+
+        server.with_graceful_shutdown(shutdown).await
     }
 }
 
@@ -81,4 +102,5 @@ impl State {
 struct SharedState {
     simulator: Simulator,
     eth: Ethereum,
+    now: infra::time::Now,
 }

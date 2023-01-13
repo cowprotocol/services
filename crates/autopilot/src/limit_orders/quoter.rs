@@ -3,17 +3,18 @@ use crate::database::{
     Postgres,
 };
 use anyhow::Result;
+use database::orders::OrderFeeSpecifier;
+use ethcontract::H160;
 use futures::StreamExt;
 use model::{
-    order::{Order, OrderKind, OrderUid},
-    quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-    signature::{hashed_eip712_message, Signature},
+    quote::{OrderQuoteSide, SellAmount},
     DomainSeparator,
 };
+use number_conversions::big_decimal_to_u256;
 use shared::{
     order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
     price_estimation::PriceEstimationError,
-    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+    signature_validator::SignatureValidating,
 };
 use std::{sync::Arc, time::Duration};
 use tracing::Instrument as _;
@@ -53,87 +54,35 @@ impl LimitOrderQuoter {
 
     /// Returns whether it is likely that there is no more work.
     async fn update(&self) -> Result<bool> {
-        let orders = self
+        let order_specs = self
             .database
-            .limit_orders_with_outdated_fees(self.limit_order_age, self.parallelism)
+            .order_specs_with_outdated_fees(self.limit_order_age, self.parallelism)
             .await?;
-        futures::stream::iter(&orders)
-            .for_each_concurrent(self.parallelism, |order| {
+        futures::stream::iter(&order_specs)
+            .for_each_concurrent(self.parallelism, |order_spec| {
                 async move {
-                    let quote = self.get_quote(order).await;
-                    self.update_fee(&order.metadata.uid, &quote).await;
+                    let quote = self.get_quote(order_spec).await;
+                    self.update_fee(order_spec, &quote).await;
                 }
-                .instrument(tracing::debug_span!(
-                    "surplus_fee",
-                    order =% order.metadata.uid
-                ))
+                .instrument(tracing::debug_span!("surplus_fee", ?order_spec))
             })
             .await;
-        Ok(orders.len() < self.parallelism)
+        Ok(order_specs.len() < self.parallelism)
     }
 
     /// Handles errors internally.
-    async fn get_quote(&self, order: &Order) -> Option<Quote> {
-        let uid = &order.metadata.uid;
-        let signing_scheme = match &order.signature {
-            Signature::Eip712(_) => QuoteSigningScheme::Eip712,
-            Signature::EthSign(_) => QuoteSigningScheme::EthSign,
-            Signature::Eip1271(signature) => {
-                let additional_gas = match self
-                    .signature_validator
-                    .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: order.metadata.owner,
-                        hash: hashed_eip712_message(
-                            &self.domain_separator,
-                            &order.data.hash_struct(),
-                        ),
-                        signature: signature.to_owned(),
-                    })
-                    .await
-                {
-                    Ok(gas) => gas,
-                    Err(SignatureValidationError::Invalid) => {
-                        tracing::debug!(%uid, "limit order has an invalid signature");
-                        Metrics::get()
-                            .update_result
-                            .with_label_values(&["get_quote_unpreventable_failure"])
-                            .inc();
-                        return None;
-                    }
-                    Err(SignatureValidationError::Other(err)) => {
-                        tracing::warn!(%uid, ?err, "limit order signature validation error");
-                        Metrics::get()
-                            .update_result
-                            .with_label_values(&["get_quote_preventable_failure"])
-                            .inc();
-                        return None;
-                    }
-                };
-                QuoteSigningScheme::Eip1271 {
-                    onchain_order: false,
-                    verification_gas_limit: additional_gas,
-                }
-            }
-            Signature::PreSign => QuoteSigningScheme::PreSign {
-                onchain_order: false,
-            },
-        };
+    async fn get_quote(&self, order_spec: &OrderFeeSpecifier) -> Option<Quote> {
         let parameters = QuoteParameters {
-            sell_token: order.data.sell_token,
-            buy_token: order.data.buy_token,
-            side: match order.data.kind {
-                OrderKind::Buy => OrderQuoteSide::Buy {
-                    buy_amount_after_fee: order.data.buy_amount,
-                },
-                OrderKind::Sell => OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::BeforeFee {
-                        value: order.data.sell_amount + order.data.fee_amount,
-                    },
+            sell_token: H160(order_spec.sell_token.0),
+            buy_token: H160(order_spec.buy_token.0),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: big_decimal_to_u256(&order_spec.sell_amount).unwrap(),
                 },
             },
-            from: order.metadata.owner,
-            app_data: order.data.app_data,
-            signing_scheme,
+            // The remaining parameters are only relevant for subsidy computation which is
+            // irrelevant for the `surplus_fee`.
+            ..Default::default()
         };
         match self.quoter.calculate_quote(parameters).await {
             Ok(quote) => {
@@ -147,7 +96,7 @@ impl LimitOrderQuoter {
                 CalculateQuoteError::Other(err)
                 | CalculateQuoteError::Price(PriceEstimationError::Other(err)),
             ) => {
-                tracing::warn!(%uid, ?err, "limit order quote error");
+                tracing::warn!(?order_spec, ?err, "limit order quote error");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["get_quote_preventable_failure"])
@@ -155,7 +104,7 @@ impl LimitOrderQuoter {
                 None
             }
             Err(err) => {
-                tracing::debug!(%uid, ?err, "limit order unqoutable");
+                tracing::debug!(?order_spec, ?err, "limit order unqoutable");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["get_quote_unpreventable_failure"])
@@ -166,7 +115,7 @@ impl LimitOrderQuoter {
     }
 
     /// Handles errors internally.
-    async fn update_fee(&self, uid: &OrderUid, quote: &Option<Quote>) {
+    async fn update_fee(&self, order_spec: &OrderFeeSpecifier, quote: &Option<Quote>) {
         let timestamp = chrono::Utc::now();
         let update = match quote {
             Some(quote) => FeeUpdate::Success {
@@ -181,7 +130,11 @@ impl LimitOrderQuoter {
             },
             None => FeeUpdate::Failure { timestamp },
         };
-        match self.database.update_limit_order_fees(uid, &update).await {
+        match self
+            .database
+            .update_limit_order_fees(order_spec, &update)
+            .await
+        {
             Ok(_) => {
                 Metrics::get()
                     .update_result
@@ -189,7 +142,7 @@ impl LimitOrderQuoter {
                     .inc();
             }
             Err(err) => {
-                tracing::warn!(%uid, ?err, "limit order fee update db error");
+                tracing::warn!(?order_spec, ?err, "limit order fee update db error");
                 Metrics::get()
                     .update_result
                     .with_label_values(&["update_fee_preventable_failure"])

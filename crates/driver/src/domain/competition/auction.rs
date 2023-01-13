@@ -1,5 +1,8 @@
 use {
-    crate::domain::{competition, eth, liquidity},
+    crate::{
+        domain::{competition, eth, liquidity},
+        infra::time,
+    },
     std::{num::ParseIntError, str::FromStr},
     thiserror::Error,
 };
@@ -31,14 +34,34 @@ pub struct Token {
     pub trusted: bool,
 }
 
-/// Each auction has a deadline, limiting the maximum time that each solver may
-/// allocate to solving the auction.
+/// Each auction has a deadline, limiting the maximum time that can be allocated
+/// to solving the auction.
 #[derive(Debug, Clone)]
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
-impl From<chrono::DateTime<chrono::Utc>> for Deadline {
-    fn from(inner: chrono::DateTime<chrono::Utc>) -> Self {
-        Self(inner)
+impl Deadline {
+    pub fn new(
+        deadline: chrono::DateTime<chrono::Utc>,
+        now: time::Now,
+    ) -> Result<Self, DeadlineExceeded> {
+        if deadline <= now.now() {
+            Err(DeadlineExceeded)
+        } else {
+            Ok(Self(deadline))
+        }
+    }
+
+    pub fn for_solver(&self, now: time::Now) -> Result<SolverDeadline, DeadlineExceeded> {
+        let deadline = self.0 - Self::solver_time_buffer();
+        if deadline <= now.now() {
+            Err(DeadlineExceeded)
+        } else {
+            Ok(SolverDeadline(deadline))
+        }
+    }
+
+    pub fn solver_time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
     }
 }
 
@@ -48,38 +71,19 @@ impl From<chrono::DateTime<chrono::Utc>> for Deadline {
 /// most optimal solution, but still ensure there is time left for the
 /// driver to forward the results back to the protocol or do some other
 /// necessary work.
-///
-/// This type contains a [`std::time::Duration`] rather than
-/// [`chrono::Duration`] because [`std::time::Duration`] is guaranteed
-/// to be nonnegative, while [`chrono::Duration`] can be negative as well.
 #[derive(Debug, Clone, Copy)]
-pub struct SolverDeadline(std::time::Duration);
-
-impl From<SolverDeadline> for std::time::Duration {
-    fn from(deadline: SolverDeadline) -> Self {
-        deadline.0
-    }
-}
+pub struct SolverDeadline(chrono::DateTime<chrono::Utc>);
 
 impl From<SolverDeadline> for chrono::DateTime<chrono::Utc> {
-    fn from(deadline: SolverDeadline) -> Self {
-        chrono::Utc::now()
-            .checked_add_signed(chrono::Duration::from_std(deadline.0).unwrap())
-            .unwrap()
+    fn from(value: SolverDeadline) -> Self {
+        value.0
     }
 }
 
-impl Deadline {
-    pub fn for_solver(&self) -> Result<SolverDeadline, DeadlineExceeded> {
-        let timeout = self.0 - chrono::Utc::now() - Self::time_buffer();
-        timeout
-            .to_std()
-            .map(SolverDeadline)
-            .map_err(|_| DeadlineExceeded)
-    }
-
-    fn time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
+impl SolverDeadline {
+    pub fn timeout(&self, now: time::Now) -> Result<std::time::Duration, DeadlineExceeded> {
+        let timeout = self.0 - now.now();
+        timeout.to_std().map_err(|_| DeadlineExceeded)
     }
 }
 

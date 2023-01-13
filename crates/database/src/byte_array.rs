@@ -4,10 +4,17 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
     Decode, Encode, Postgres, Type,
 };
+use std::fmt::{self, Debug, Formatter};
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
+
+impl<const N: usize> Debug for ByteArray<N> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
 
 impl<const N: usize> Default for ByteArray<N> {
     fn default() -> Self {

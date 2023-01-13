@@ -386,7 +386,9 @@ mod tests {
             exclude_dexs: None,
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
+        let url = price_query.into_url("cowswap");
+        println!("{url}");
+        let price_response: PriceResponse = reqwest::get(url)
             .await
             .expect("price query failed")
             .json()

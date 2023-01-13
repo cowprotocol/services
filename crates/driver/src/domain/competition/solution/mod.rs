@@ -67,7 +67,7 @@ impl Solution {
     }
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
-    /// the orders placed by end-users.
+    /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
             Trade::Fulfillment(fulfillment) => match fulfillment.order.kind {
@@ -130,10 +130,19 @@ impl Solution {
 
         // The solution is to do access list estimation in two steps: first, simulate
         // moving 1 wei into every smart contract to get a partial access list.
-        let partial_access_lists = try_join_all(
-            self.user_trades()
-                .map(|trade| async { self.partial_access_list(eth, simulator, trade).await }),
-        )
+        let partial_access_lists = try_join_all(self.user_trades().map(|trade| async {
+            if !trade.order.buys_eth() || !trade.order.pays_to_contract(eth).await? {
+                return Ok(Default::default());
+            }
+            let tx = eth::Tx {
+                from: self.solver.address(),
+                to: trade.order.receiver(),
+                value: 1.into(),
+                input: Vec::new(),
+                access_list: Default::default(),
+            };
+            Result::<_, Error>::Ok(simulator.access_list(tx).await?.access_list)
+        }))
         .await?;
         let partial_access_list = partial_access_lists
             .into_iter()
@@ -143,34 +152,15 @@ impl Solution {
         let settlement = Settlement::encode(eth, auction, self)
             .await?
             .tx()
-            .merge_access_list(partial_access_list);
+            .set_access_list(partial_access_list);
 
         // Second, simulate the full access list, passing the partial access
         // list into the simulation. This way the settlement contract does not
         // fail, and hence the full access list estimation also does not fail.
         let settlement = simulator.access_list(settlement).await?;
 
-        // Finally, get the gas for the settlement with the full access list.
+        // Finally, get the gas for the settlement using the full access list.
         simulator.gas(settlement).await.map_err(Into::into)
-    }
-
-    async fn partial_access_list(
-        &self,
-        eth: &Ethereum,
-        simulator: &Simulator,
-        trade: &trade::Fulfillment,
-    ) -> Result<eth::AccessList, Error> {
-        if !trade.order.buys_eth() || !trade.order.pays_to_contract(eth).await? {
-            return Ok(Default::default());
-        }
-        let tx = eth::Tx {
-            from: self.solver.address(),
-            to: trade.order.receiver(),
-            value: 1.into(),
-            input: Vec::new(),
-            access_list: Default::default(),
-        };
-        Ok(simulator.access_list(tx).await?.access_list)
     }
 }
 

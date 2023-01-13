@@ -93,8 +93,6 @@ struct Order {
     partially_fillable: bool,
     class: Class,
     reward: f64,
-    // TODO Was the intention to have the driver verify signatures, and the solvers blindly trust
-    // the orders and the driver auth? Or did we just forget to add the signature here?
 }
 
 #[derive(Debug, Serialize)]

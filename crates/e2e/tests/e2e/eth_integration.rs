@@ -12,6 +12,7 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
+use serde_json::json;
 use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
 use web3::signing::SecretKeyRef;
 
@@ -19,7 +20,6 @@ const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
 const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-const FEE_ENDPOINT: &str = "/api/v1/fee/";
 
 #[tokio::test]
 #[ignore]
@@ -75,27 +75,34 @@ async fn eth_integration(web3: Web3) {
     let http_factory = HttpClientFactory::default();
     let client = http_factory.create();
 
-    // Test fee endpoint
+    // Test quote
     let client_ref = &client;
-    let estimate_fee = |sell_token, buy_token| async move {
+    let quote = |sell_token, buy_token| async move {
+        let body = json!({
+                "sellToken": sell_token,
+                "buyToken": buy_token,
+                "from": Address::default(),
+                "kind": "sell",
+                "sellAmountAfterFee": to_wei(42).to_string(),
+        });
         client_ref
-            .get(&format!(
-                "{}{}?sellToken={:?}&buyToken={:?}&amount={}&kind=sell",
-                API_HOST,
-                FEE_ENDPOINT,
-                sell_token,
-                buy_token,
-                to_wei(42)
-            ))
+            .post(&format!("{}{}", API_HOST, "/api/v1/quote",))
+            .json(&body)
             .send()
             .await
             .unwrap()
     };
-    let fee_buy_eth = estimate_fee(token.address(), BUY_ETH_ADDRESS).await;
-    assert_eq!(fee_buy_eth.status(), 200);
+    let response = quote(token.address(), BUY_ETH_ADDRESS).await;
+    if response.status() != 200 {
+        tracing::error!("{}", response.text().await.unwrap());
+        panic!("bad status");
+    }
     // Eth is only supported as the buy token
-    let fee_invalid_token = estimate_fee(BUY_ETH_ADDRESS, token.address()).await;
-    assert_eq!(fee_invalid_token.status(), 400);
+    let response = quote(BUY_ETH_ADDRESS, token.address()).await;
+    if response.status() != 400 {
+        tracing::error!("{}", response.text().await.unwrap());
+        panic!("bad status");
+    }
 
     // Place Orders
     assert_ne!(contracts.weth.address(), BUY_ETH_ADDRESS);
