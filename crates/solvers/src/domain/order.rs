@@ -33,11 +33,11 @@ pub enum Class {
     Liquidity,
 }
 
-/// A user order marker type.
+/// An order that is guaranteed to not be a liquidity order.
 #[derive(Debug)]
-pub struct UserOrder<'a>(&'a Order);
+pub struct NonLiquidityOrder<'a>(&'a Order);
 
-impl<'a> UserOrder<'a> {
+impl<'a> NonLiquidityOrder<'a> {
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {
