@@ -2,14 +2,14 @@ use crate::domain::{eth, liquidity, order};
 use ethereum_types::U256;
 use std::collections::HashMap;
 
-/// A domain model of a solution to an auction.
+/// A solution to an auction.
 pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
 }
 
-/// A set a uniform clearing prices. They are represented as a mapping of token
+/// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 

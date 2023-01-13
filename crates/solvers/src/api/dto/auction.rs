@@ -11,8 +11,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 
 impl Auction {
-    /// Converts an object data transfer object into its domain object
-    /// representation.
+    /// Converts a data transfer object into its domain object representation.
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
             orders: self
