@@ -41,17 +41,18 @@ async fn solve(
     let auction = match auction.to_domain() {
         Ok(value) => value,
         Err(err) => {
+            tracing::warn!(?err, "invalid auction");
             return (
                 axum::http::StatusCode::BAD_REQUEST,
                 axum::response::Json(dto::Response::Err(err)),
-            )
+            );
         }
     };
+
     let solution = state
         .solve(&auction)
-        .into_iter()
-        .next()
-        .map(|solution| dto::Solution::from_domain(&solution))
+        .first()
+        .map(dto::Solution::from_domain)
         .unwrap_or_else(dto::Solution::trivial);
 
     (
