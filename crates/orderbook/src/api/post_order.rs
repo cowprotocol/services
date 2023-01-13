@@ -5,7 +5,7 @@ use model::{
     quote::QuoteId,
 };
 use shared::{
-    api::{error, extract_payload, internal_error, ApiReply, IntoWarpReply},
+    api::{error, extract_payload, ApiReply, IntoWarpReply},
     order_validation::{OrderValidToError, PartialValidationError, ValidationError},
 };
 use std::{convert::Infallible, sync::Arc};
@@ -81,10 +81,10 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 error("UnsupportedToken", format!("Token address {token:?}")),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::Other(err) => with_status(
-                internal_error(err.context("partial_validation")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+            PartialValidationError::Other(err) => {
+                tracing::error!(?err, "PartialValidatonError");
+                shared::api::internal_error_reply()
+            }
         }
     }
 }
@@ -174,10 +174,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("TooManyLimitOrders", "Too many limit orders"),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::Other(err) => with_status(
-                internal_error(err.context("order_validation")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+            ValidationError::Other(err) => {
+                tracing::error!(?err, "ValidationErrorWrapper");
+                shared::api::internal_error_reply()
+            }
         }
     }
 }
@@ -190,10 +190,10 @@ impl IntoWarpReply for AddOrderError {
                 error("DuplicatedOrder", "order already exists"),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::Database(err) => with_status(
-                internal_error(anyhow::Error::new(err).context("create_order")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+            Self::Database(err) => {
+                tracing::error!(?err, "AddOrderError");
+                shared::api::internal_error_reply()
+            }
         }
     }
 }
