@@ -35,9 +35,9 @@ pub enum Class {
 
 /// An order that is guaranteed to not be a liquidity order.
 #[derive(Debug)]
-pub struct NonLiquidityOrder<'a>(&'a Order);
+pub struct NonLiquidity<'a>(&'a Order);
 
-impl<'a> NonLiquidityOrder<'a> {
+impl<'a> NonLiquidity<'a> {
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {
