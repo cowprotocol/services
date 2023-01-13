@@ -3570,7 +3570,6 @@ dependencies = [
  "hex",
  "hyper",
  "itertools",
- "maplit",
  "model",
  "num",
  "serde",

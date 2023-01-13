@@ -32,10 +32,10 @@ impl Baseline {
                 let route = boundary_solver.route(order::UserOrder::new(order)?, self.max_hops)?;
 
                 Some(solution::Solution {
-                    prices: solution::clearingprices! {
-                        order.sell.token => route.output().amount,
-                        order.buy.token => route.input().amount,
-                    },
+                    prices: solution::ClearingPrices::new([
+                        (order.sell.token, route.output().amount),
+                        (order.buy.token, route.input().amount),
+                    ]),
                     trades: vec![solution::Trade::fill(order.clone())],
                     interactions: route
                         .segments

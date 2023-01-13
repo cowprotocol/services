@@ -13,15 +13,12 @@ pub struct Solution {
 /// addresses to price in an arbitrarily denominated price.
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 
-macro_rules! clearingprices {
-    ($($args:tt)*) => {
-        $crate::domain::solution::ClearingPrices(
-            ::maplit::hashmap!($($args)*),
-        )
-    };
+impl ClearingPrices {
+    /// Creates a new set of clearing prices.
+    pub fn new(prices: impl IntoIterator<Item = (eth::TokenAddress, U256)>) -> Self {
+        Self(prices.into_iter().collect())
+    }
 }
-
-pub(crate) use clearingprices;
 
 /// A traded order within a solution.
 pub struct Trade {
