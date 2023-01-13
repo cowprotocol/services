@@ -1,4 +1,9 @@
 //! "Baseline" solver implementation.
+//!
+//! The baseline solver is a simple solver implementation that finds the best
+//! path of at most length `max_hops + 1` over a set of on-chain liquidity. It
+//! **does not** try to split large orders into multiple parts and route them
+//! over separate paths.
 
 use crate::{
     boundary,
@@ -10,8 +15,9 @@ use super::solution::Interaction;
 
 pub struct Baseline {
     pub weth: eth::WethAddress,
-    /// Set of base-tokens for which to always consider when path-finding. This
-    /// allows paths of the kind `TOKEN1 -> WETH -> TOKEN2` to be considered.
+    /// Set of tokens to additionally consider as intermediary hops when
+    /// path-finding. This allows paths of the kind `TOKEN1 -> WETH -> TOKEN2`
+    /// to be considered.
     pub base_tokens: HashSet<eth::TokenAddress>,
     /// Maximum number of hops that can be considered in a trading path. A value
     /// of 1 indicates that only a direct trade is allowed.
