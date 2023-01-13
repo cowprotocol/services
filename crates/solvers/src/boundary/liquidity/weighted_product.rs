@@ -10,7 +10,7 @@ pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
 
 /// Converts a domain pool into a [`shared`] Balancer V2 weighted pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.
-pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted::Pool) -> Option<Pool> {
+pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool) -> Option<Pool> {
     // NOTE: this is only used for encoding and not for solving, so it OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
