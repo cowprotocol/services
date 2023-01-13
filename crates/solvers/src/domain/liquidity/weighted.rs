@@ -110,3 +110,32 @@ impl Default for ScalingFactor {
         Self(U256::one())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scaling_factor_requires_power_of_10() {
+        for result in [
+            ScalingFactor::new(0.into()),
+            ScalingFactor::new(9.into()),
+            ScalingFactor::new(11.into()),
+            ScalingFactor::new(90.into()),
+            ScalingFactor::new(99.into()),
+            ScalingFactor::new(101.into()),
+            ScalingFactor::new(110.into()),
+            ScalingFactor::new(100010000.into()),
+        ] {
+            assert!(result.is_none());
+        }
+    }
+
+    #[test]
+    fn scaling_factor_computes_exponent() {
+        for i in 0..18 {
+            let factor = ScalingFactor::new(U256::from(10).pow(i.into())).unwrap();
+            assert_eq!(factor.exponent(), i);
+        }
+    }
+}
