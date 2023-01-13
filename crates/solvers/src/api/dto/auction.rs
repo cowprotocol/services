@@ -1,9 +1,59 @@
-use crate::util::serialize;
+use crate::{
+    api::dto::Error,
+    domain::{auction, eth, liquidity, order},
+    util::{conv, serialize},
+};
 use bigdecimal::BigDecimal;
 use ethereum_types::{H160, U256};
+use itertools::Itertools as _;
 use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
+
+impl Auction {
+    /// Converts a data transfer object into its domain object representation.
+    pub fn to_domain(&self) -> Result<auction::Auction, Error> {
+        Ok(auction::Auction {
+            orders: self
+                .orders
+                .iter()
+                .map(|order| -> order::Order {
+                    order::Order {
+                        uid: order::Uid(order.uid),
+                        sell: eth::Asset {
+                            token: eth::TokenAddress(order.sell_token),
+                            amount: order.sell_amount,
+                        },
+                        buy: eth::Asset {
+                            token: eth::TokenAddress(order.buy_token),
+                            amount: order.buy_amount,
+                        },
+                        side: match order.kind {
+                            Kind::Buy => order::Side::Buy,
+                            Kind::Sell => order::Side::Sell,
+                        },
+                        class: match order.class {
+                            Class::Market => order::Class::Market,
+                            Class::Limit => order::Class::Limit,
+                            Class::Liquidity => order::Class::Liquidity,
+                        },
+                    }
+                })
+                .collect(),
+            liquidity: self
+                .liquidity
+                .iter()
+                .filter_map(|liquidity| match liquidity {
+                    Liquidity::ConstantProduct(liquidity) => Some(liquidity.to_domain()),
+                    Liquidity::WeightedProduct(liquidity) => Some(liquidity.to_domain()),
+                    Liquidity::Stable(_)
+                    | Liquidity::ConcentratedLiquidity(_)
+                    | Liquidity::LimitOrder(_) => None,
+                })
+                .try_collect()?,
+        })
+    }
+}
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -94,6 +144,34 @@ struct ConstantProductReserve {
     balance: U256,
 }
 
+impl ConstantProductPool {
+    fn to_domain(&self) -> Result<liquidity::Liquidity, Error> {
+        let reserves = {
+            let (a, b) = self
+                .tokens
+                .iter()
+                .map(|(token, reserve)| eth::Asset {
+                    token: eth::TokenAddress(*token),
+                    amount: reserve.balance,
+                })
+                .collect_tuple()
+                .ok_or("invalid number of constant product tokens")?;
+            liquidity::constant_product::Reserves::new(a, b)
+                .ok_or("duplicate constant product token address")?
+        };
+
+        Ok(liquidity::Liquidity {
+            id: liquidity::Id(self.id.clone()),
+            address: self.address,
+            gas: eth::Gas(self.gas_estimate.into()),
+            state: liquidity::State::ConstantProduct(liquidity::constant_product::Pool {
+                reserves,
+                fee: conv::decimal_to_rational(&self.fee).ok_or("invalid constant product fee")?,
+            }),
+        })
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,7 +188,46 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
+    #[serde_as(as = "serialize::U256")]
+    scaling_factor: U256,
     weight: BigDecimal,
+}
+
+impl WeightedProductPool {
+    fn to_domain(&self) -> Result<liquidity::Liquidity, Error> {
+        let reserves = {
+            let entries = self
+                .tokens
+                .iter()
+                .map(|(address, token)| {
+                    Ok(liquidity::weighted_product::Reserve {
+                        asset: eth::Asset {
+                            token: eth::TokenAddress(*address),
+                            amount: token.balance,
+                        },
+                        weight: conv::decimal_to_rational(&token.weight)
+                            .ok_or("invalid token weight")?,
+                        scale: liquidity::weighted_product::ScalingFactor::new(
+                            token.scaling_factor,
+                        )
+                        .ok_or("invalid token scaling factor")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            liquidity::weighted_product::Reserves::new(entries)
+                .ok_or("duplicate weighted token addresss")?
+        };
+
+        Ok(liquidity::Liquidity {
+            id: liquidity::Id(self.id.clone()),
+            address: self.address,
+            gas: eth::Gas(self.gas_estimate.into()),
+            state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
+                reserves,
+                fee: conv::decimal_to_rational(&self.fee).ok_or("invalid constant product fee")?,
+            }),
+        })
+    }
 }
 
 #[serde_as]

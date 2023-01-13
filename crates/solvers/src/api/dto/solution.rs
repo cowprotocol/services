@@ -1,4 +1,4 @@
-use crate::util::serialize;
+use crate::{domain::solution, util::serialize};
 use ethereum_types::{H160, U256};
 use serde::Serialize;
 use serde_with::serde_as;
@@ -11,6 +11,42 @@ impl Solution {
             prices: Default::default(),
             trades: Default::default(),
             interactions: Default::default(),
+        }
+    }
+
+    /// Creates a new solution DTO from its domain object.
+    pub fn from_domain(solution: &solution::Solution) -> Self {
+        Self {
+            prices: solution
+                .prices
+                .0
+                .iter()
+                .map(|(token, price)| (token.0, *price))
+                .collect(),
+            trades: solution
+                .trades
+                .iter()
+                .map(|trade| {
+                    Trade::Fulfillment(Fulfillment {
+                        order: trade.order().uid.0,
+                        executed_amount: trade.executed().amount,
+                    })
+                })
+                .collect(),
+            interactions: solution
+                .interactions
+                .iter()
+                .map(|interaction| {
+                    Interaction::Liquidity(LiquidityInteraction {
+                        internalize: false,
+                        id: interaction.liquidity.id.0.clone(),
+                        input_token: interaction.input.token.0,
+                        output_token: interaction.output.token.0,
+                        input_amount: interaction.input.amount,
+                        output_amount: interaction.output.amount,
+                    })
+                })
+                .collect(),
         }
     }
 }
@@ -92,7 +128,7 @@ enum Interaction {
 #[serde(rename_all = "camelCase")]
 struct LiquidityInteraction {
     internalize: bool,
-    id: usize,
+    id: String,
     input_token: H160,
     output_token: H160,
     #[serde_as(as = "serialize::U256")]
