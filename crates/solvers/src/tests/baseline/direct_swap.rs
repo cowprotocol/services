@@ -3,7 +3,6 @@
 
 use crate::{cli, tests};
 use serde_json::json;
-use std::num::NonZeroUsize;
 
 #[tokio::test]
 async fn test() {
@@ -12,7 +11,7 @@ async fn test() {
             .parse()
             .unwrap(),
         base_tokens: Vec::new(),
-        max_hops: NonZeroUsize::new(1).unwrap(),
+        max_hops: 0,
     }))
     .await;
 
