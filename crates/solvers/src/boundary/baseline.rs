@@ -133,7 +133,7 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                             pool,
                         )
                     {
-                        for pair in pool.token_pairs() {
+                        for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
                             amms.entry(token_pair).or_default().push(Amm {
                                 id: liquidity.id.clone(),
@@ -143,6 +143,8 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                         }
                     }
                 }
+                // The baseline solver does not currently support other AMMs.
+                _ => {}
             };
             amms
         })
