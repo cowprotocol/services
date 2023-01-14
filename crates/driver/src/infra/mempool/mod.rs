@@ -1,6 +1,6 @@
 use {
     crate::{boundary, domain::competition::solution::settlement},
-    futures::future::join_all,
+    futures::{future::select_ok, FutureExt},
 };
 
 pub use crate::boundary::mempool::Config;
@@ -33,7 +33,7 @@ impl Mempool {
 }
 
 pub async fn send(mempools: &[Mempool], settlement: settlement::Simulated) -> Result<(), Error> {
-    let results = join_all(mempools.iter().map(|mempool| {
+    select_ok(mempools.iter().map(|mempool| {
         let settlement = settlement.clone();
         async move {
             let result = mempool.send(settlement).await;
@@ -42,11 +42,10 @@ pub async fn send(mempools: &[Mempool], settlement: settlement::Simulated) -> Re
             }
             result
         }
+        .boxed()
     }))
-    .await;
-    if results.into_iter().all(|r| r.is_err()) {
-        return Err(Error::AllMempoolsFailed);
-    }
+    .await
+    .map_err(|_| Error::AllMempoolsFailed)?;
     Ok(())
 }
 
