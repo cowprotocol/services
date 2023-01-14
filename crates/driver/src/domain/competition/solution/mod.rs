@@ -163,6 +163,7 @@ impl Solution {
         // list into the simulation. This way the settlement contract does not
         // fail, and hence the full access list estimation also does not fail.
         let access_list = simulator.access_list(tx.clone()).await?;
+        let tx = tx.set_access_list(access_list.clone());
 
         // Finally, get the gas for the settlement using the full access list.
         let gas = simulator.gas(tx).await?;

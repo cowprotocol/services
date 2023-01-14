@@ -40,7 +40,7 @@ impl Simulator {
     /// superset of the existing one.
     pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
         if self.disable_access_lists {
-            return Ok(Default::default());
+            return Ok(tx.access_list);
         }
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
