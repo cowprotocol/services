@@ -336,7 +336,7 @@ impl Driver {
                     solver: solver.name().to_string(),
                     objective: Objective {
                         total: rated_settlement
-                            .objective_value()
+                            .objective_value
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),

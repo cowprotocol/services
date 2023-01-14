@@ -39,7 +39,6 @@ use {
         UpdatedAmmModel,
     },
     solver::{
-        driver::solver_settlements::RatedSettlement,
         interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
         liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
         settlement::external_prices::ExternalPrices,
@@ -155,20 +154,14 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let surplus = self.settlement.total_surplus(&prices);
-        let scaled_solver_fees = self.settlement.total_scaled_unsubsidized_fees(&prices);
-        let unscaled_subsidized_fee = self.settlement.total_unscaled_subsidized_fees(&prices);
-        Ok(RatedSettlement {
-            id: 0,
-            settlement: self.settlement,
-            surplus,
-            unscaled_subsidized_fee,
-            scaled_unsubsidized_fee: scaled_solver_fees,
-            gas_estimate: gas.into(),
-            gas_price: u256_to_big_rational(&auction.gas_price.into()),
-        }
-        .objective_value()
-        .into())
+        let gas_price = u256_to_big_rational(&auction.gas_price.into());
+        let inputs = solver::objective_value::Inputs::from_settlement(
+            &self.settlement,
+            &prices,
+            &gas_price,
+            &gas.into(),
+        );
+        Ok(inputs.objective_value().into())
     }
 }
 
