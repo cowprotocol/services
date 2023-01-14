@@ -1,4 +1,4 @@
-use {crate::domain::eth, ethcontract::Web3};
+use {crate::domain::eth, ethcontract::dyns::DynWeb3};
 
 pub use crate::boundary::contracts::{GPv2Settlement, ERC20, WETH9};
 
@@ -15,11 +15,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub(super) fn new(
-        web3: &Web3<web3::transports::Http>,
-        network_id: &eth::NetworkId,
-        addresses: Addresses,
-    ) -> Self {
+    pub(super) fn new(web3: &DynWeb3, network_id: &eth::NetworkId, addresses: Addresses) -> Self {
         let address = addresses.settlement.map(Into::into).unwrap_or_else(|| {
             contracts::GPv2Settlement::raw_contract()
                 .networks

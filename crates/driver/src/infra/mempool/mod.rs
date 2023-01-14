@@ -1,46 +1,44 @@
 use {
-    crate::{
-        domain::eth,
-        infra::blockchain::{self, Ethereum},
-    },
+    crate::{boundary, domain::competition::solution::settlement},
     futures::future::join_all,
 };
 
-/// The mempool to use for publishing onchain transactions. The public mempool
+pub use crate::boundary::mempool::Config;
+
+/// The mempool to use for publishing settlements onchain. The public mempool
 /// of an [`Ethereum`] node can be used, or one of the private mempools offered
 /// by various transaction relay services.
 #[derive(Debug, Clone)]
-pub struct Mempool(Inner);
+pub struct Mempool(boundary::Mempool);
 
 impl Mempool {
     /// The [flashbots] private mempool.
     ///
     /// [flashbots]: https://docs.flashbots.net/flashbots-auction/overview
-    pub fn flashbots() -> Self {
-        Self(Inner::Flashbots)
+    pub fn flashbots(config: Config, url: reqwest::Url) -> Result<Self, Error> {
+        boundary::Mempool::flashbots(config, url)
+            .map(Self)
+            .map_err(Into::into)
     }
 
     /// The public mempool of an [`Ethereum`] node.
-    pub fn public(eth: Ethereum) -> Self {
-        Self(Inner::Public(eth))
+    pub fn public(config: Config) -> Self {
+        Self(boundary::Mempool::public(config))
     }
 
-    /// Send a transaction using the mempool.
-    pub async fn send(&self, tx: eth::Tx) -> Result<(), Error> {
-        match &self.0 {
-            Inner::Flashbots => todo!(),
-            Inner::Public(eth) => eth.send_transaction(tx).await.map_err(Into::into),
-        }
+    /// Send the settlement using this mempool.
+    pub async fn send(&self, settlement: settlement::Simulated) -> Result<(), Error> {
+        self.0.send(settlement).await.map_err(Into::into)
     }
 }
 
-pub async fn send(mempools: &[Mempool], tx: eth::Tx) -> Result<(), Error> {
+pub async fn send(mempools: &[Mempool], settlement: settlement::Simulated) -> Result<(), Error> {
     let results = join_all(mempools.iter().map(|mempool| {
-        let tx = tx.clone();
+        let settlement = settlement.clone();
         async move {
-            let result = mempool.send(tx.clone()).await;
+            let result = mempool.send(settlement).await;
             if result.is_err() {
-                tracing::warn!(?mempool, ?result, "sending transaction via mempool failed");
+                tracing::warn!(?result, "sending transaction via mempool failed");
             }
             result
         }
@@ -52,17 +50,10 @@ pub async fn send(mempools: &[Mempool], tx: eth::Tx) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-enum Inner {
-    Flashbots,
-    Public(Ethereum),
-}
-
 #[derive(Debug, thiserror::Error)]
-#[error("TODO")]
 pub enum Error {
-    #[error("blockchain error: {0:?}")]
-    Blockchain(#[from] blockchain::Error),
+    #[error("boundary error: {0:?}")]
+    Boundary(#[from] boundary::Error),
     #[error("all mempools failed to send the transaction")]
     AllMempoolsFailed,
 }

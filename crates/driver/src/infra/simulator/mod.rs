@@ -37,6 +37,8 @@ impl Simulator {
 
     /// Simulate the access list needed by a transaction. Return a new
     /// transaction with an updated access list.
+    // TODO Not sure if it makes sense for this to return eth::Tx rather than just
+    // eth::AccessList, I think not
     pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::Tx, Error> {
         if self.disable_access_lists {
             return Ok(tx);

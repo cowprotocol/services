@@ -1,4 +1,5 @@
 use {
+    self::solution::settlement,
     crate::{
         boundary,
         infra::{
@@ -38,7 +39,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
-    pub settlements: Arc<DashMap<solution::Id, solution::Settlement>>,
+    pub settlements: Arc<DashMap<solution::Id, settlement::Simulated>>,
 }
 
 impl Competition {
@@ -54,11 +55,10 @@ impl Competition {
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
-        let gas = solution
+        let settlement = solution
             .simulate(&self.eth, &self.simulator, auction)
             .await?;
-        let settlement = solution::Settlement::encode(&self.eth, auction, &solution).await?;
-        let score = settlement.score(&self.eth, auction, gas).await?;
+        let score = settlement.score(&self.eth, auction).await?;
         let solution_id = solution::Id::random();
         self.settlements.insert(solution_id, settlement);
         // Remove the settlement after it's expired.
@@ -70,13 +70,14 @@ impl Competition {
         Ok((solution_id, score))
     }
 
-    /// Execute a solution generated as part of this competition.
+    // TODO Rename this to settle()?
+    /// Execute (settle) a solution generated as part of this competition.
     pub async fn execute(&self, solution_id: solution::Id) -> Result<(), Error> {
         let (_, settlement) = self
             .settlements
             .remove(&solution_id)
             .ok_or(Error::SolutionNotFound)?;
-        mempool::send(&self.mempools, settlement.clone().tx())
+        mempool::send(&self.mempools, settlement)
             .await
             .map_err(Into::into)
     }

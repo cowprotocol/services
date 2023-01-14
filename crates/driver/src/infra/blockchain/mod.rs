@@ -6,12 +6,14 @@ use {
 
 pub mod contracts;
 
+use ethcontract::{dyns::DynWeb3, transport::DynTransport};
+
 pub use self::contracts::Contracts;
 
 /// The Ethereum blockchain.
 #[derive(Debug, Clone)]
 pub struct Ethereum {
-    web3: Web3<web3::transports::Http>,
+    web3: DynWeb3,
     chain_id: eth::ChainId,
     network_id: eth::NetworkId,
     contracts: Contracts,
@@ -28,7 +30,9 @@ impl Ethereum {
         // I feel like what we have in shared::ethrpc could be simplified if we use
         // web3::transports::batch or something, but I haven't looked deep into it, just
         // a gut feeling.
-        let web3 = Web3::new(web3::transports::Http::new(url.as_str())?);
+        let web3 = Web3::new(DynTransport::new(web3::transports::Http::new(
+            url.as_str(),
+        )?));
         let chain_id = web3.eth().chain_id().await?.into();
         let network_id = web3.net().version().await?.into();
         let contracts = Contracts::new(&web3, &network_id, addresses);
@@ -119,6 +123,11 @@ impl Ethereum {
         let tx = Self::into_request(tx);
         self.web3.eth().send_transaction(tx).await?;
         Ok(())
+    }
+
+    /// Necessary for the boundary integration.
+    pub fn web3(&self) -> DynWeb3 {
+        self.web3.clone()
     }
 
     fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {

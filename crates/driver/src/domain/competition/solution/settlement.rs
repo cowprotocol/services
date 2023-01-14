@@ -12,7 +12,7 @@ use crate::{
 /// settlement. The intention with this type is to represent the settlement
 /// transaction itself, not an intermediate state.
 #[derive(Debug, Clone)]
-pub struct Settlement(boundary::Settlement);
+pub(super) struct Settlement(boundary::Settlement);
 
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
@@ -26,20 +26,34 @@ impl Settlement {
             .map(Self)
     }
 
-    /// Calculate the score for this settlement. This method is here only
-    /// temporarily, in the future the entire scoring formula should operate on
-    /// a [`super::Solution`].
+    /// The onchain transaction representing this settlement.
+    pub fn tx(self) -> eth::Tx {
+        self.0.tx()
+    }
+}
+
+/// A settlement which has been simulated on the blockchain.
+#[derive(Debug, Clone)]
+pub struct Simulated {
+    pub(super) inner: Settlement,
+    /// The access list used by the settlement.
+    pub access_list: eth::AccessList,
+    /// The gas used by the settlement.
+    pub gas: eth::Gas,
+}
+
+impl Simulated {
+    /// Calculate the score for this settlement.
     pub async fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
-        gas: eth::Gas,
     ) -> Result<super::Score, boundary::Error> {
-        self.0.score(eth, auction, gas).await
+        self.inner.0.score(eth, auction, self.gas).await
     }
 
-    /// The onchain transaction representing this settlement.
-    pub fn tx(self) -> eth::Tx {
-        self.0.tx()
+    /// Necessary for the boundary integration, to allow executing settlements.
+    pub fn boundary(self) -> boundary::Settlement {
+        self.inner.0
     }
 }

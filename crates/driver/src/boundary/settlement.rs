@@ -50,7 +50,7 @@ use {
 
 #[derive(Debug, Clone)]
 pub struct Settlement {
-    settlement: solver::settlement::Settlement,
+    pub(super) inner: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
     solver: eth::Address,
 }
@@ -110,7 +110,7 @@ impl Settlement {
         )
         .await?;
         Ok(Self {
-            settlement,
+            inner: settlement,
             contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
         })
@@ -118,7 +118,7 @@ impl Settlement {
 
     pub fn tx(self) -> eth::Tx {
         let encoded_settlement = self
-            .settlement
+            .inner
             .encode(InternalizationStrategy::SkipInternalizableInteraction);
         let builder = settle_method_builder(
             &self.contract,
@@ -155,7 +155,7 @@ impl Settlement {
         )?;
         let gas_price = u256_to_big_rational(&auction.gas_price.into());
         let inputs = solver::objective_value::Inputs::from_settlement(
-            &self.settlement,
+            &self.inner,
             &prices,
             &gas_price,
             &gas.into(),

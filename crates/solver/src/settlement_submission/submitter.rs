@@ -248,15 +248,15 @@ impl<'a> Submitter<'a> {
         });
 
         let fallback_result = tokio::select! {
-            method_error = submit_future.fuse() => {
+            method_error = submit_future => {
                 tracing::debug!("stopping submission because simulation failed: {:?}", method_error);
                 Err(method_error)
             },
-            new_nonce = nonce_future.fuse() => {
+            new_nonce = nonce_future => {
                 tracing::debug!("stopping submission because account nonce changed to {}", new_nonce);
                 Ok(None)
             },
-            _ = deadline_future.fuse() => {
+            _ = deadline_future => {
                 tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
 
                 if let Some((_, gas_price)) = transactions.last() {
