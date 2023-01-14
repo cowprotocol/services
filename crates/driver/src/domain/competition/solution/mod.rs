@@ -148,7 +148,7 @@ impl Solution {
                 input: Vec::new(),
                 access_list: Default::default(),
             };
-            Result::<_, Error>::Ok(simulator.access_list(tx).await?.access_list)
+            Result::<_, Error>::Ok(simulator.access_list(tx).await?)
         }))
         .await?;
         let partial_access_list = partial_access_lists
@@ -162,8 +162,7 @@ impl Solution {
         // Second, simulate the full access list, passing the partial access
         // list into the simulation. This way the settlement contract does not
         // fail, and hence the full access list estimation also does not fail.
-        let tx = simulator.access_list(tx).await?;
-        let access_list = tx.access_list.clone();
+        let access_list = simulator.access_list(tx.clone()).await?;
 
         // Finally, get the gas for the settlement using the full access list.
         let gas = simulator.gas(tx).await?;

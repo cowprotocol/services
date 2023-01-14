@@ -35,13 +35,12 @@ impl Simulator {
         }
     }
 
-    /// Simulate the access list needed by a transaction. Return a new
-    /// transaction with an updated access list.
-    // TODO Not sure if it makes sense for this to return eth::Tx rather than just
-    // eth::AccessList, I think not
-    pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::Tx, Error> {
+    /// Simulate the access list needed by a transaction. If the transaction
+    /// already has an access list, the returned access list will be a
+    /// superset of the existing one.
+    pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
         if self.disable_access_lists {
-            return Ok(tx);
+            return Ok(Default::default());
         }
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
@@ -52,7 +51,7 @@ impl Simulator {
             }
             Inner::Ethereum(ethereum) => ethereum.create_access_list(tx.clone()).await?,
         };
-        Ok(tx.merge_access_list(access_list))
+        Ok(tx.access_list.merge(access_list))
     }
 
     /// Simulate the gas needed by a transaction.
