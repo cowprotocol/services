@@ -1,6 +1,7 @@
 use {
     crate::{
         domain::{competition, eth},
+        infra,
         util::serialize,
     },
     serde::Serialize,
@@ -11,7 +12,8 @@ use {
 impl Auction {
     pub fn from_domain(
         auction: &competition::Auction,
-        deadline: competition::auction::SolverDeadline,
+        timeout: competition::SolverTimeout,
+        now: infra::time::Now,
     ) -> Self {
         Self {
             id: auction.id.as_ref().map(ToString::to_string),
@@ -57,7 +59,7 @@ impl Auction {
             // TODO #899: Implement this when you do liquidity
             liquidity: vec![],
             effective_gas_price: auction.gas_price.into(),
-            deadline: deadline.into(),
+            deadline: timeout.deadline(now),
         }
     }
 }

@@ -1,11 +1,13 @@
 pub mod auction;
 pub mod order;
+pub mod quote;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
-    solution::{solve, Score, Solution},
+    quote::Quote,
+    solution::{solve, Score, Solution, SolverTimeout},
 };
 
 use crate::domain::eth;

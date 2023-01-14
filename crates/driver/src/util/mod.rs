@@ -1,3 +1,4 @@
+pub mod conv;
 pub mod http;
 pub mod serialize;
 mod time;

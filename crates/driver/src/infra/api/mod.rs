@@ -1,5 +1,5 @@
 use {
-    crate::{infra, solver::Solver, Ethereum, Simulator},
+    crate::{domain::competition, infra, solver::Solver, Ethereum, Simulator},
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
@@ -7,6 +7,7 @@ use {
 
 mod execute;
 mod info;
+mod quote;
 mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
@@ -23,13 +24,14 @@ pub struct Api {
     pub solvers: Vec<Solver>,
     pub simulator: Simulator,
     pub eth: Ethereum,
+    pub now: infra::time::Now,
+    pub quote_config: competition::quote::Config,
     pub addr: Addr,
 }
 
 impl Api {
     pub async fn serve(
         self,
-        now: infra::time::Now,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
@@ -45,7 +47,8 @@ impl Api {
         let shared = Arc::new(SharedState {
             simulator: self.simulator,
             eth: self.eth,
-            now,
+            now: self.now,
+            quote_config: self.quote_config,
         });
         for solver in self.solvers {
             let name = solver.name().clone();
@@ -95,6 +98,14 @@ impl State {
     fn ethereum(&self) -> &Ethereum {
         &self.shared.eth
     }
+
+    fn now(&self) -> infra::time::Now {
+        self.shared.now
+    }
+
+    fn quote_config(&self) -> &competition::quote::Config {
+        &self.shared.quote_config
+    }
 }
 
 /// State which is shared among all multiplexed solvers.
@@ -103,4 +114,5 @@ struct SharedState {
     simulator: Simulator,
     eth: Ethereum,
     now: infra::time::Now,
+    quote_config: competition::quote::Config,
 }
