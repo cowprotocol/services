@@ -85,7 +85,10 @@ impl LivenessChecking for Liveness {
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn main(args: arguments::Arguments) -> ! {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    tokio::task::spawn(crate::database::database_metrics(db.clone()));
+    tokio::task::spawn(
+        crate::database::database_metrics(db.clone())
+            .instrument(tracing::info_span!("database_metrics")),
+    );
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(

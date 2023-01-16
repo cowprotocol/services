@@ -12,6 +12,7 @@ use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
+use tracing::Instrument;
 
 type Token = H160;
 type Owner = H160;
@@ -74,7 +75,9 @@ impl AutoUpdatingSolverTokenOwnerFinder {
                     tokio::time::sleep(update_interval).await;
                 }
             };
-            tokio::task::spawn(updater);
+            tokio::task::spawn(
+                updater.instrument(tracing::info_span!("AutoUpdatingSolverTokenOwnerFinder")),
+            );
         }
 
         Self { inner }

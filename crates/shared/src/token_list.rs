@@ -8,6 +8,7 @@ use anyhow::Result;
 use ethcontract::H160;
 use reqwest::Client;
 use serde::Deserialize;
+use tracing::Instrument;
 
 #[derive(Clone, Debug, Default)]
 pub struct TokenListConfiguration {
@@ -76,7 +77,7 @@ impl AutoUpdatingTokenList {
                     }
                 }
             };
-            tokio::task::spawn(updater);
+            tokio::task::spawn(updater.instrument(tracing::info_span!("AutoUpdatingTokenList")));
         }
 
         Self { tokens }

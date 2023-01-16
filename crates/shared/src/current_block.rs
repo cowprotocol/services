@@ -8,6 +8,7 @@ use primitive_types::H256;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
+use tracing::Instrument;
 use web3::{
     helpers,
     types::{BlockId, BlockNumber, U64},
@@ -91,7 +92,7 @@ pub async fn current_block_stream(
         }
     };
 
-    tokio::task::spawn(update_future);
+    tokio::task::spawn(update_future.instrument(tracing::info_span!("CurrentBlockStream")));
     Ok(receiver)
 }
 

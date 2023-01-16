@@ -27,6 +27,7 @@ use std::{
 };
 use strum::VariantNames;
 use tokio::time::Instant;
+use tracing::Instrument;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
@@ -124,11 +125,10 @@ impl SolvableOrdersCache {
             surplus_fee_age,
             limit_order_price_factor,
         });
-        tokio::task::spawn(update_task(
-            Arc::downgrade(&self_),
-            update_interval,
-            current_block,
-        ));
+        tokio::task::spawn(
+            update_task(Arc::downgrade(&self_), update_interval, current_block)
+                .instrument(tracing::info_span!("SolvableOrdersCache")),
+        );
         self_
     }
 

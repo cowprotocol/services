@@ -33,7 +33,11 @@ pub struct LimitOrderQuoter {
 
 impl LimitOrderQuoter {
     pub fn spawn(self) {
-        tokio::spawn(async move { self.background_task().await });
+        tokio::spawn(async move {
+            self.background_task()
+                .instrument(tracing::info_span!("LimitOrderQuoter"))
+                .await
+        });
     }
 
     async fn background_task(&self) -> ! {
