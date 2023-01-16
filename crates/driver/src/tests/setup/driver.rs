@@ -29,7 +29,7 @@ impl Client {
         }
     }
 
-    pub async fn solve(&self, req: serde_json::Value, solver: &str) -> serde_json::Value {
+    pub async fn solve(&self, solver: &str, req: serde_json::Value) -> serde_json::Value {
         let res = self
             .client
             .post(format!("http://{}/{solver}/solve", self.addr))
@@ -37,10 +37,23 @@ impl Client {
             .send()
             .await
             .unwrap();
-        dbg!(res.status());
+        let status = res.status();
         let text = res.text().await.unwrap();
-        // TODO This should be a proper log, status and text, see about that
-        dbg!(&text);
+        tracing::debug!(?status, ?text, "got a response from /solve");
+        serde_json::from_str(&text).unwrap()
+    }
+
+    pub async fn quote(&self, solver: &str, req: serde_json::Value) -> serde_json::Value {
+        let res = self
+            .client
+            .post(format!("http://{}/{solver}/quote", self.addr))
+            .json(&req)
+            .send()
+            .await
+            .unwrap();
+        let status = res.status();
+        let text = res.text().await.unwrap();
+        tracing::debug!(?status, ?text, "got a response from /quote");
         serde_json::from_str(&text).unwrap()
     }
 }
