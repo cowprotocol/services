@@ -35,7 +35,7 @@ impl LimitOrderQuoter {
     pub fn spawn(self) {
         tokio::spawn(async move {
             self.background_task()
-                .instrument(tracing::info_span!("LimitOrderQuoter"))
+                .instrument(tracing::info_span!("limit_order_quoter"))
                 .await
         });
     }

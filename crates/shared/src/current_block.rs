@@ -92,7 +92,7 @@ pub async fn current_block_stream(
         }
     };
 
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("CurrentBlockStream")));
+    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
     Ok(receiver)
 }
 

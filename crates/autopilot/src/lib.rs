@@ -564,7 +564,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
     tokio::task::spawn(
         auction_transaction_updater
             .run_forever()
-            .instrument(tracing::info_span!("AuctionTransactionUpdater")),
+            .instrument(tracing::info_span!("auction_transaction_updater")),
     );
 
     if args.enable_limit_orders {

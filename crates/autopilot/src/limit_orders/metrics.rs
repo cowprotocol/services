@@ -54,7 +54,7 @@ impl LimitOrderMetrics {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
-            .instrument(tracing::info_span!("LimitOrderMetrics")),
+            .instrument(tracing::info_span!("limit_order_metrics")),
         );
     }
 }

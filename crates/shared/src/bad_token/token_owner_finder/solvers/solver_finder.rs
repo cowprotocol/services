@@ -76,7 +76,7 @@ impl AutoUpdatingSolverTokenOwnerFinder {
                 }
             };
             tokio::task::spawn(
-                updater.instrument(tracing::info_span!("AutoUpdatingSolverTokenOwnerFinder")),
+                updater.instrument(tracing::info_span!("auto_updating_token_owner_finder")),
             );
         }
 

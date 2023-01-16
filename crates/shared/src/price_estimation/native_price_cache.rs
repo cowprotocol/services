@@ -174,7 +174,7 @@ impl CachingNativePriceEstimator {
                 max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
                 concurrent_requests,
             )
-            .instrument(tracing::info_span!("CachingNativePriceEstimator")),
+            .instrument(tracing::info_span!("caching_native_price_estimator")),
         );
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         Self {

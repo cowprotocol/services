@@ -127,7 +127,7 @@ impl SolvableOrdersCache {
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
-                .instrument(tracing::info_span!("SolvableOrdersCache")),
+                .instrument(tracing::info_span!("solvable_orders_cache")),
         );
         self_
     }

@@ -77,7 +77,7 @@ impl AutoUpdatingTokenList {
                     }
                 }
             };
-            tokio::task::spawn(updater.instrument(tracing::info_span!("AutoUpdatingTokenList")));
+            tokio::task::spawn(updater.instrument(tracing::info_span!("auto_updating_token_list")));
         }
 
         Self { tokens }
