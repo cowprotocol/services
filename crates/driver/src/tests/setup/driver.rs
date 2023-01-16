@@ -12,17 +12,20 @@ const SOLVERS_CONFIG_FILE: &str = "testing.solvers.toml";
 
 pub const QUOTE_TIMEOUT_MS: u64 = 100;
 
-/// HTTP client for talking to the driver API.
+/// HTTP client for talking to the driver API. Dropping the client shuts down
+/// the running driver instance.
 pub struct Client {
     addr: SocketAddr,
     client: reqwest::Client,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 impl Client {
-    fn new(addr: SocketAddr) -> Self {
+    fn new(addr: SocketAddr, handle: tokio::task::JoinHandle<()>) -> Self {
         Self {
             addr,
             client: reqwest::Client::new(),
+            handle,
         }
     }
 
@@ -39,6 +42,12 @@ impl Client {
         // TODO This should be a proper log, status and text, see about that
         dbg!(&text);
         serde_json::from_str(&text).unwrap()
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        self.handle.abort()
     }
 }
 
@@ -89,9 +98,9 @@ pub async fn setup(config: Config) -> Client {
     }
     tests::boundary::initialize_tracing("debug,hyper=warn,driver::infra::solver=trace");
     let run = crate::run(args.into_iter(), config.now, Some(addr_sender));
-    tokio::spawn(run);
+    let handle = tokio::spawn(run);
     let driver_addr = addr_receiver.await.unwrap();
-    Client::new(driver_addr)
+    Client::new(driver_addr, handle)
 }
 
 /// Create the config file for the solvers for the driver use.
