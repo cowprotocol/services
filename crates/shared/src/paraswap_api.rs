@@ -40,7 +40,7 @@ pub struct DefaultParaswapApi {
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.partner);
-        tracing::debug!("Querying Paraswap price API: {}", url);
+        tracing::trace!("Querying Paraswap price API: {}", url);
         let request = self.client.get(url).send();
 
         let response = match &self.rate_limiter {
@@ -49,7 +49,7 @@ impl ParaswapApi for DefaultParaswapApi {
         };
         let status = response.status();
         let text = response.text().await?;
-        tracing::debug!(%status, %text, "Response from Paraswap price API");
+        tracing::trace!(%status, %text, "Response from Paraswap price API");
         parse_paraswap_response_text(&text)
     }
 
@@ -331,7 +331,7 @@ impl TransactionBuilderQueryWithPartner<'_> {
             .expect("unexpectedly invalid URL segment");
         url.query_pairs_mut().append_pair("ignoreChecks", "true");
 
-        tracing::debug!("Paraswap API (transaction) query url: {}", url);
+        tracing::trace!("Paraswap API (transaction) query url: {}", url);
         client.post(url).json(&self)
     }
 }
