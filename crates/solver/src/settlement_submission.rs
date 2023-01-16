@@ -101,6 +101,7 @@ impl SubTxPoolRef {
 
 pub struct SubmissionReceipt {
     pub tx: TransactionReceipt,
+    /// Strategy used for the mined transaction. Needed for metric purposes.
     pub strategy: &'static str,
 }
 
@@ -183,28 +184,27 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return match dry_run::log_settlement(account, &self.contract, settlement).await
-                    {
-                        Ok(tx) => Ok(SubmissionReceipt {
+                    return dry_run::log_settlement(account, &self.contract, settlement)
+                        .await
+                        .map(|tx| SubmissionReceipt {
                             tx,
                             strategy: strategy.label(),
-                        }),
-                        Err(err) => Err(err.into()),
-                    }
+                        })
+                        .map_err(Into::into);
                 }
                 TransactionStrategy::Gelato(gelato) => {
-                    return match tokio::time::timeout(
+                    return tokio::time::timeout(
                         self.max_confirm_time,
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
-                    {
-                        Ok(tx) => tx.map(|tx| SubmissionReceipt {
+                    .map(|tx| {
+                        tx.map(|tx| SubmissionReceipt {
                             tx,
                             strategy: strategy.label(),
-                        }),
-                        Err(_) => Err(SubmissionError::Timeout),
-                    };
+                        })
+                    })
+                    .map_err(|_| SubmissionError::Timeout)?;
                 }
                 _ => {}
             }
@@ -270,9 +270,9 @@ impl SolutionSubmitter {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn settle_with_strategy<'a>(
-        &'a self,
-        strategy: &'a TransactionStrategy,
+    async fn settle_with_strategy(
+        &self,
+        strategy: &TransactionStrategy,
         account: &Account,
         nonce: U256,
         gas_estimate: U256,
