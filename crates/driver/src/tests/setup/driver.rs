@@ -10,6 +10,8 @@ use {
 
 const SOLVERS_CONFIG_FILE: &str = "testing.solvers.toml";
 
+pub const QUOTE_TIMEOUT_MS: u64 = 100;
+
 /// HTTP client for talking to the driver API.
 pub struct Client {
     addr: SocketAddr,
@@ -74,6 +76,8 @@ pub async fn setup(config: Config) -> Client {
         config_file.to_str().unwrap().to_owned(),
         "--ethrpc".to_owned(),
         super::blockchain::WEB3_URL.to_owned(),
+        "--quote-timeout-ms".to_owned(),
+        QUOTE_TIMEOUT_MS.to_string(),
     ];
     if let Some(settlement) = config.contracts.gp_v2_settlement {
         args.push("--gp-v2-settlement".to_owned());

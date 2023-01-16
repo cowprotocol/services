@@ -26,8 +26,14 @@ pub struct Args {
     #[clap(flatten)]
     pub tenderly: Tenderly,
 
+    /// Disable access list simulation, useful for environments that don't
+    /// support this, such as less popular blockchains.
     #[clap(long, env)]
     pub disable_access_list_simulation: bool,
+
+    /// The time to allocate to generating quotes, in milliseconds.
+    #[clap(long, env, default_value = "5000")]
+    pub quote_timeout_ms: u64,
 }
 
 /// Arg types have custom `Display` impls instead of relying on `Debug` to avoid
@@ -42,9 +48,10 @@ impl std::fmt::Display for Args {
         writeln!(f, "{}", self.tenderly)?;
         writeln!(
             f,
-            "disable_access_list_simulation: {}\n",
+            "disable_access_list_simulation: {}",
             self.disable_access_list_simulation
-        )
+        )?;
+        writeln!(f, "quote_timeout_ms: {}", self.quote_timeout_ms)
     }
 }
 
