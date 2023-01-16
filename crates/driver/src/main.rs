@@ -2,7 +2,12 @@
 #![allow(dead_code)]
 #![forbid(unsafe_code)]
 
-use {crate::infra::api, infra::blockchain, std::net::SocketAddr, tokio::sync::oneshot};
+use {
+    crate::{domain::competition, infra::api},
+    infra::blockchain,
+    std::net::SocketAddr,
+    tokio::sync::oneshot,
+};
 
 mod boundary;
 mod domain;
@@ -61,8 +66,12 @@ pub async fn run(
             "auto" => api::Addr::Auto(addr_sender),
             addr => api::Addr::Bind(addr.parse().expect("a valid address and port")),
         },
+        now,
+        quote_config: competition::quote::Config {
+            timeout: std::time::Duration::from_millis(args.quote_timeout_ms).into(),
+        },
     }
-    .serve(now, async {
+    .serve(async {
         let _ = shutdown_receiver.await;
     });
 

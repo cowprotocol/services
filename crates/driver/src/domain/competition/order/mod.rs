@@ -37,7 +37,7 @@ pub struct Order {
 }
 
 /// An amount denominated in the sell token of an [`Order`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct SellAmount(eth::U256);
 
 impl From<eth::U256> for SellAmount {
@@ -63,7 +63,7 @@ impl SellAmount {
 
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct TargetAmount(eth::U256);
 
 impl From<eth::U256> for TargetAmount {
@@ -91,7 +91,7 @@ impl TargetAmount {
 }
 
 /// Order fee denominated in the sell token.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Fee {
     /// The order fee that is actually paid by the user.
     pub user: SellAmount,
@@ -146,6 +146,12 @@ impl Order {
 #[derive(Debug, Clone, Copy)]
 pub struct Uid(pub [u8; 56]);
 
+impl Default for Uid {
+    fn default() -> Self {
+        Self([0; 56])
+    }
+}
+
 impl PartialEq<[u8; 56]> for Uid {
     fn eq(&self, other: &[u8; 56]) -> bool {
         self.0 == *other
@@ -154,7 +160,9 @@ impl PartialEq<[u8; 56]> for Uid {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
+    /// Buy an exact amount.
     Buy,
+    /// Sell an exact amount.
     Sell,
 }
 
@@ -173,7 +181,7 @@ impl From<Uid> for [u8; 56] {
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct AppData(pub [u8; 32]);
 
 impl From<[u8; 32]> for AppData {
