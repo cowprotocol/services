@@ -85,11 +85,11 @@ impl DriverLogger {
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
         self.metrics.transaction_submission(
+            elapsed_time,
             submission
                 .as_ref()
                 .map(|x| x.strategy)
                 .unwrap_or("all_failed"),
-            elapsed_time,
         );
         match submission {
             Ok(receipt) => {
