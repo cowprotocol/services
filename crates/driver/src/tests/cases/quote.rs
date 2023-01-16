@@ -22,7 +22,7 @@ async fn test() {
         token_a_in_amount,
         token_b_out_amount,
         weth,
-        interactions,
+        interactions: uniswap_interactions,
         ..
     } = setup::blockchain::uniswap::setup().await;
 
@@ -35,13 +35,13 @@ async fn test() {
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now()
         + chrono::Duration::milliseconds(setup::driver::QUOTE_TIMEOUT_MS.try_into().unwrap());
-    let interactions = interactions
-        .into_iter()
+    let interactions = uniswap_interactions
+        .iter()
         .map(|(address, interaction)| {
             json!({
                 "kind": "custom",
                 "internalize": false,
-                "target": hex_address(address),
+                "target": hex_address(address.to_owned()),
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
@@ -131,5 +131,18 @@ async fn test() {
         result.get("amount").unwrap(),
         buy_amount.to_string().as_str()
     );
-    // TODO Check the interactions
+
+    let interactions = result.get("interactions").unwrap().as_array().unwrap();
+    assert_eq!(interactions.len(), uniswap_interactions.len());
+    for (interaction, (target, call_data)) in interactions.iter().zip(uniswap_interactions) {
+        assert_eq!(
+            interaction.get("target").unwrap(),
+            hex_address(target).as_str()
+        );
+        assert_eq!(interaction.get("value").unwrap(), "0");
+        assert_eq!(
+            interaction.get("callData").unwrap(),
+            &format!("0x{}", hex::encode(call_data))
+        );
+    }
 }

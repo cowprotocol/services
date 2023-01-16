@@ -6,6 +6,10 @@
 //! restarting the program will wait until geth starts responding to RPC
 //! requests before returning 200 to the caller.
 //!
+//! geth is the only node with dev mode which implements the
+//! `eth_createAccessList` endpoint. When hardhat adds support for
+//! `eth_createAccessList`, this can be removed from our infrastructure.
+//!
 //! [geth]: https://geth.ethereum.org/
 
 use {

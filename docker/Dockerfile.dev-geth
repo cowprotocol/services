@@ -1,4 +1,4 @@
-FROM docker.io/rust:1-slim-bullseye as cargo-build
+FROM docker.io/rust:1-slim-bullseye
 
 # Copy and build code
 WORKDIR /src
@@ -12,9 +12,7 @@ WORKDIR /geth
 RUN curl https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-1.10.26-e5eb32ac.tar.gz -o geth.tar.gz
 RUN tar -xf geth.tar.gz
 
-# Extract binary
-FROM docker.io/debian:bullseye-slim
-COPY --from=cargo-build /src/target/release/dev-geth /usr/local/bin/
-COPY --from=cargo-build /geth/geth-linux-amd64-1.10.26-e5eb32ac/geth /usr/local/bin/
+COPY /src/target/release/dev-geth /usr/local/bin/
+COPY /geth/geth-linux-amd64-1.10.26-e5eb32ac/geth /usr/local/bin/
 
 ENTRYPOINT ["dev-geth"]
