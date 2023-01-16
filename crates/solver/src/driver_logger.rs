@@ -17,7 +17,7 @@ use model::order::{Order, OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::H256;
 use shared::{ethrpc::Web3, tenderly_api::TenderlyApi};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tracing::{Instrument as _, Span};
 use web3::types::AccessList;
 
@@ -76,14 +76,21 @@ impl DriverLogger {
 
     pub async fn log_submission_info(
         &self,
-        submission: &Result<SubmissionReceipt<'_>, SubmissionError>,
+        submission: &Result<SubmissionReceipt, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
         solver_name: &str,
+        elapsed_time: Duration,
     ) {
-        //self.metrics.transaction_submission(duration)
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
+        self.metrics.transaction_submission(
+            submission
+                .as_ref()
+                .map(|x| x.strategy)
+                .unwrap_or("all_failed"),
+            elapsed_time,
+        );
         match submission {
             Ok(receipt) => {
                 tracing::info!(

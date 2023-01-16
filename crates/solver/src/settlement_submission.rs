@@ -99,12 +99,12 @@ impl SubTxPoolRef {
     }
 }
 
-pub struct SubmissionReceipt<'a> {
+pub struct SubmissionReceipt {
     pub tx: TransactionReceipt,
-    pub strategy: &'a TransactionStrategy,
+    pub strategy: &'static str,
 }
 
-impl From<SubmissionReceipt<'_>> for TransactionReceipt {
+impl From<SubmissionReceipt> for TransactionReceipt {
     fn from(value: SubmissionReceipt) -> Self {
         value.tx
     }
@@ -148,6 +148,16 @@ impl TransactionStrategy {
             TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
         }
     }
+
+    pub fn label(&self) -> &'static str {
+        match &self {
+            TransactionStrategy::Eden(_) => "Eden",
+            TransactionStrategy::Flashbots(_) => "Flashbots",
+            TransactionStrategy::PublicMempool(_) => "Mempool",
+            TransactionStrategy::Gelato(_) => "Gelato",
+            TransactionStrategy::DryRun => "DryRun",
+        }
+    }
 }
 
 impl SolutionSubmitter {
@@ -175,24 +185,24 @@ impl SolutionSubmitter {
                 TransactionStrategy::DryRun => {
                     return match dry_run::log_settlement(account, &self.contract, settlement).await
                     {
-                        Ok(tx) => Ok(SubmissionReceipt { tx, strategy }),
+                        Ok(tx) => Ok(SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        }),
                         Err(err) => Err(err.into()),
                     }
                 }
                 TransactionStrategy::Gelato(gelato) => {
-                    // return tokio::time::timeout(
-                    //     self.max_confirm_time,
-                    //     gelato.relay_settlement(account, settlement),
-                    // )
-                    // .await
-                    // .map_err(|_| SubmissionError::Timeout)?;
                     return match tokio::time::timeout(
                         self.max_confirm_time,
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
                     {
-                        Ok(tx) => tx.map(|tx| SubmissionReceipt { tx, strategy }),
+                        Ok(tx) => tx.map(|tx| SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        }),
                         Err(_) => Err(SubmissionError::Timeout),
                     };
                 }
@@ -317,7 +327,10 @@ impl SolutionSubmitter {
                 i = index
             ))
             .await
-            .map(|tx| SubmissionReceipt { tx, strategy })
+            .map(|tx| SubmissionReceipt {
+                tx,
+                strategy: strategy.label(),
+            })
     }
 }
 

@@ -526,9 +526,14 @@ pub async fn submit_settlement(
     let result = solution_submitter
         .settle(settlement.clone(), gas_estimate, account, nonce)
         .await;
-    logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &settlement, settlement_id, solver_name)
+        .log_submission_info(
+            &result,
+            &settlement,
+            settlement_id,
+            solver_name,
+            start.elapsed(),
+        )
         .await;
     result.map(Into::into)
 }

@@ -98,7 +98,7 @@ pub trait SolverMetrics: Send + Sync {
     fn report_order_surplus(&self, surplus_diff: f64);
     fn runloop_completed(&self);
     fn complete_runloop_until_transaction(&self, duration: Duration);
-    fn transaction_submission(&self, duration: Duration);
+    fn transaction_submission(&self, strategy: &str, duration: Duration);
     fn transaction_gas_price(&self, gas_price: U256);
 }
 
@@ -402,7 +402,7 @@ impl SolverMetrics for Metrics {
             .observe(duration.as_secs_f64());
     }
 
-    fn transaction_submission(&self, duration: Duration) {
+    fn transaction_submission(&self, _strategy: &str, duration: Duration) {
         self.transaction_submission.observe(duration.as_secs_f64());
     }
 
@@ -452,7 +452,7 @@ impl SolverMetrics for NoopMetrics {
     fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}
     fn complete_runloop_until_transaction(&self, _: Duration) {}
-    fn transaction_submission(&self, _: Duration) {}
+    fn transaction_submission(&self, _: &str, _: Duration) {}
     fn transaction_gas_price(&self, _: U256) {}
     fn settlement_simulation(&self, _: &str, _: SolverSimulationOutcome) {}
 }
