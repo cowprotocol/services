@@ -99,6 +99,17 @@ impl SubTxPoolRef {
     }
 }
 
+pub struct SubmissionReceipt<'a> {
+    pub tx: TransactionReceipt,
+    pub strategy: &'a TransactionStrategy,
+}
+
+impl From<SubmissionReceipt<'_>> for TransactionReceipt {
+    fn from(value: SubmissionReceipt) -> Self {
+        value.tx
+    }
+}
+
 pub struct SolutionSubmitter {
     pub web3: Web3,
     pub contract: GPv2Settlement,
@@ -151,7 +162,7 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         account: Account,
         nonce: U256,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         // Other transaction strategies than the ones below, depend on an
         // account signing a raw transaction for a nonce, and waiting until that
         // nonce increases to detect that it actually mined. However, the
@@ -162,15 +173,28 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return Ok(dry_run::log_settlement(account, &self.contract, settlement).await?);
+                    return match dry_run::log_settlement(account, &self.contract, settlement).await
+                    {
+                        Ok(tx) => Ok(SubmissionReceipt { tx, strategy }),
+                        Err(err) => Err(err.into()),
+                    }
                 }
                 TransactionStrategy::Gelato(gelato) => {
-                    return tokio::time::timeout(
+                    // return tokio::time::timeout(
+                    //     self.max_confirm_time,
+                    //     gelato.relay_settlement(account, settlement),
+                    // )
+                    // .await
+                    // .map_err(|_| SubmissionError::Timeout)?;
+                    return match tokio::time::timeout(
                         self.max_confirm_time,
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
-                    .map_err(|_| SubmissionError::Timeout)?;
+                    {
+                        Ok(tx) => tx.map(|tx| SubmissionReceipt { tx, strategy }),
+                        Err(_) => Err(SubmissionError::Timeout),
+                    };
                 }
                 _ => {}
             }
@@ -236,16 +260,16 @@ impl SolutionSubmitter {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn settle_with_strategy(
-        &self,
-        strategy: &TransactionStrategy,
+    async fn settle_with_strategy<'a>(
+        &'a self,
+        strategy: &'a TransactionStrategy,
         account: &Account,
         nonce: U256,
         gas_estimate: U256,
         network_id: String,
         settlement: Settlement,
         index: usize,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
                 if !matches!(account, Account::Offline(..)) {
@@ -293,6 +317,7 @@ impl SolutionSubmitter {
                 i = index
             ))
             .await
+            .map(|tx| SubmissionReceipt { tx, strategy })
     }
 }
 

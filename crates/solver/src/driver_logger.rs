@@ -6,7 +6,7 @@ use crate::{
     settlement_simulation::{
         simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
     },
-    settlement_submission::SubmissionError,
+    settlement_submission::{SubmissionError, SubmissionReceipt},
     solver::{Simulation, SimulationWithError, Solver},
 };
 use anyhow::{Context, Result};
@@ -19,7 +19,7 @@ use primitive_types::H256;
 use shared::{ethrpc::Web3, tenderly_api::TenderlyApi};
 use std::sync::Arc;
 use tracing::{Instrument as _, Span};
-use web3::types::{AccessList, TransactionReceipt};
+use web3::types::AccessList;
 
 pub struct DriverLogger {
     pub metrics: Arc<dyn SolverMetrics>,
@@ -76,18 +76,19 @@ impl DriverLogger {
 
     pub async fn log_submission_info(
         &self,
-        submission: &Result<TransactionReceipt, SubmissionError>,
+        submission: &Result<SubmissionReceipt<'_>, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
         solver_name: &str,
     ) {
+        //self.metrics.transaction_submission(duration)
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
         match submission {
             Ok(receipt) => {
                 tracing::info!(
                     settlement_id,
-                    transaction_hash =? receipt.transaction_hash,
+                    transaction_hash =? receipt.tx.transaction_hash,
                     "Successfully submitted settlement",
                 );
                 Self::get_traded_orders(settlement)
@@ -98,12 +99,12 @@ impl DriverLogger {
                     solver_name,
                 );
                 if let Err(err) = self
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
+                    .metric_access_list_gas_saved(receipt.tx.transaction_hash)
                     .await
                 {
                     tracing::debug!(?err, "access list metric not saved");
                 }
-                match receipt.effective_gas_price {
+                match receipt.tx.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
                     }

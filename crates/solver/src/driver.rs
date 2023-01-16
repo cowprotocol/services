@@ -530,5 +530,5 @@ pub async fn submit_settlement(
     logger
         .log_submission_info(&result, &settlement, settlement_id, solver_name)
         .await;
-    result
+    result.map(Into::into)
 }
