@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, competition::auction},
+        domain::competition,
         infra::{self, config::cli},
         tests::{self, hex_address, setup},
     },
@@ -106,7 +106,7 @@ async fn test() {
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline - auction::Deadline::solver_time_buffer(),
+                "deadline": deadline - competition::SolverTimeout::solving_time_buffer(),
             }),
             res: json!({
                 "prices": {

@@ -1,7 +1,6 @@
 use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::{Order, OrderUid};
-use shared::api::IntoWarpReply;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply, Filter, Rejection};
 
@@ -13,7 +12,8 @@ pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> super::ApiRep
     let order = match result {
         Ok(order) => order,
         Err(err) => {
-            return err.into_warp_reply();
+            tracing::error!(?err, "get_order_by_uid_response");
+            return shared::api::internal_error_reply();
         }
     };
     match order {

@@ -102,7 +102,7 @@ impl Solution {
             prices: self
                 .prices
                 .into_iter()
-                .map(|(address, price)| (address.into(), price.into()))
+                .map(|(address, price)| (address.into(), price))
                 .collect(),
             interactions: self
                 .interactions
@@ -183,8 +183,10 @@ impl Solution {
 #[derive(Debug, Deserialize)]
 pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
+    // TODO I also need to use this
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
+    // TODO I need to use this in the quote response
     interactions: Vec<Interaction>,
 }
 

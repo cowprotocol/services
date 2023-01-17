@@ -3,6 +3,7 @@ use crate::{s3_instance_upload::S3InstanceUploader, solver::Auction};
 use model::auction::AuctionId;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{Instrument, Span};
 
 /// To `Driver` every http solver is presented as an individual `Solver` implementor. Internally
 /// http solvers share the same data that is needed to create the instance for the same auction. In
@@ -76,7 +77,7 @@ impl SharedInstanceCreator {
                     tracing::error!(%id, ?err, "error uploading instance");
                 }
             };
-            tokio::task::spawn(task);
+            tokio::task::spawn(task.instrument(Span::current()));
         }
     }
 }

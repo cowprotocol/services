@@ -12,6 +12,7 @@ use {
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
+    // TODO Make this non-optional and simplify things
     /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
     /// used for competition.
     pub id: Option<Id>,
@@ -36,7 +37,7 @@ pub struct Token {
 
 /// Each auction has a deadline, limiting the maximum time that can be allocated
 /// to solving the auction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
@@ -50,40 +51,11 @@ impl Deadline {
             Ok(Self(deadline))
         }
     }
-
-    pub fn for_solver(&self, now: time::Now) -> Result<SolverDeadline, DeadlineExceeded> {
-        let deadline = self.0 - Self::solver_time_buffer();
-        if deadline <= now.now() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(SolverDeadline(deadline))
-        }
-    }
-
-    pub fn solver_time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
-    }
 }
 
-/// The time limit passed to the solver. The solvers are given a time limit
-/// that's slightly less than the actual auction [`Deadline`]. The reason for
-/// this is to allow the solver to use the full deadline to search for the
-/// most optimal solution, but still ensure there is time left for the
-/// driver to forward the results back to the protocol or do some other
-/// necessary work.
-#[derive(Debug, Clone, Copy)]
-pub struct SolverDeadline(chrono::DateTime<chrono::Utc>);
-
-impl From<SolverDeadline> for chrono::DateTime<chrono::Utc> {
-    fn from(value: SolverDeadline) -> Self {
+impl From<Deadline> for chrono::DateTime<chrono::Utc> {
+    fn from(value: Deadline) -> Self {
         value.0
-    }
-}
-
-impl SolverDeadline {
-    pub fn timeout(&self, now: time::Now) -> Result<std::time::Duration, DeadlineExceeded> {
-        let timeout = self.0 - now.now();
-        timeout.to_std().map_err(|_| DeadlineExceeded)
     }
 }
 

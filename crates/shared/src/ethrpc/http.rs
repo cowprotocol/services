@@ -76,13 +76,13 @@ async fn execute_rpc<T: DeserializeOwned>(
         .body(body)
         .send()
         .await
-        .map_err(|err| {
-            tracing::warn!(name = %inner.name, %id, ?err, "failed to send request");
+        .map_err(|err: reqwest::Error| {
+            tracing::warn!(name = %inner.name, %id, %err, "failed to send request");
             Web3Error::Transport(TransportError::Message(err.to_string()))
         })?;
     let status = response.status();
-    let text = response.text().await.map_err(|err| {
-        tracing::warn!(name = %inner.name, %id, ?err, "failed to get response body");
+    let text = response.text().await.map_err(|err: reqwest::Error| {
+        tracing::warn!(name = %inner.name, %id, %err, "failed to get response body");
         Web3Error::Transport(TransportError::Message(err.to_string()))
     })?;
     // Log the raw text before decoding to get more information on responses that aren't valid

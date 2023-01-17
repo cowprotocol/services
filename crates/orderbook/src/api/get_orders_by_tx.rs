@@ -1,9 +1,10 @@
 use crate::orderbook::Orderbook;
 use anyhow::Result;
 use ethcontract::H256;
-use shared::api::{convert_json_response, ApiReply};
+use reqwest::StatusCode;
+use shared::api::ApiReply;
 use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection};
+use warp::{reply::with_status, Filter, Rejection};
 
 pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Rejection> + Clone {
     warp::path!("v1" / "transactions" / H256 / "orders").and(warp::get())
@@ -16,7 +17,13 @@ pub fn get_orders_by_tx(
         let orderbook = orderbook.clone();
         async move {
             let result = orderbook.get_orders_for_tx(&hash).await;
-            Result::<_, Infallible>::Ok(convert_json_response(result))
+            Result::<_, Infallible>::Ok(match result {
+                Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
+                Err(err) => {
+                    tracing::error!(?err, "get_orders_by_tx");
+                    shared::api::internal_error_reply()
+                }
+            })
         }
     })
 }

@@ -1,5 +1,5 @@
 use crate::price_estimation::PriceEstimationError;
-use anyhow::{Error as anyhowError, Result};
+use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     convert::Infallible,
@@ -122,13 +122,11 @@ pub fn rich_error(error_type: &str, description: impl AsRef<str>, data: impl Ser
     })
 }
 
-pub fn internal_error(error: anyhowError) -> Json {
-    tracing::error!(?error, "internal server error");
-    json(&Error {
-        error_type: "InternalServerError",
-        description: "",
-        data: None,
-    })
+pub fn internal_error_reply() -> ApiReply {
+    with_status(
+        error("InternalServerError", ""),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
 }
 
 pub fn convert_json_response<T, E>(result: Result<T, E>) -> WithStatus<Json>
@@ -136,31 +134,14 @@ where
     T: Serialize,
     E: IntoWarpReply + Debug,
 {
-    convert_json_response_with_status(result, StatusCode::OK)
-}
-
-pub fn convert_json_response_with_status<T, E>(
-    result: Result<T, E>,
-    status: StatusCode,
-) -> WithStatus<Json>
-where
-    T: Serialize,
-    E: IntoWarpReply + Debug,
-{
     match result {
-        Ok(response) => with_status(warp::reply::json(&response), status),
+        Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
         Err(err) => err.into_warp_reply(),
     }
 }
 
 pub trait IntoWarpReply {
     fn into_warp_reply(self) -> ApiReply;
-}
-
-impl IntoWarpReply for anyhowError {
-    fn into_warp_reply(self) -> ApiReply {
-        with_status(internal_error(self), StatusCode::INTERNAL_SERVER_ERROR)
-    }
 }
 
 pub async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -> Vec<u8> {
@@ -272,21 +253,15 @@ impl IntoWarpReply for PriceEstimationError {
                 error("ZeroAmount", "Please use non-zero amount field"),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::UnsupportedOrderType => with_status(
-                internal_error(anyhow::anyhow!("UnsupportedOrderType").context("price_estimation")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-            Self::RateLimited(_) => with_status(
-                internal_error(
-                    anyhow::anyhow!("price estimators temporarily inactive")
-                        .context("price_estimation"),
-                ),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-            Self::Other(err) => with_status(
-                internal_error(err.context("price_estimation")),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
+            Self::UnsupportedOrderType => {
+                tracing::error!("PriceEstimaton::UnsupportedOrderType");
+                internal_error_reply()
+            }
+            Self::RateLimited(_) => internal_error_reply(),
+            Self::Other(err) => {
+                tracing::error!(?err, "PriceEstimationError::Other");
+                internal_error_reply()
+            }
         }
     }
 }

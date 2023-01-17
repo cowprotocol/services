@@ -4,7 +4,6 @@
 use crate::solver_competition::SolverCompetitionStoring;
 use model::solver_competition::Request;
 use reqwest::StatusCode;
-use shared::api::convert_json_response_with_status;
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
@@ -34,10 +33,13 @@ pub fn post(
             }
 
             let result = handler.handle_request(request).await;
-            Ok(convert_json_response_with_status(
-                result,
-                StatusCode::CREATED,
-            ))
+            Ok(match result {
+                Ok(()) => with_status(warp::reply::json(&()), StatusCode::CREATED),
+                Err(err) => {
+                    tracing::error!(?err, "post_solver_competition");
+                    shared::api::internal_error_reply()
+                }
+            })
         }
     })
 }

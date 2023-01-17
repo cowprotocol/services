@@ -15,3 +15,7 @@ impl From<Timestamp> for u32 {
         timestamp.0
     }
 }
+
+impl Timestamp {
+    pub const MAX: Self = Self(u32::MAX);
+}

@@ -3,7 +3,6 @@ use anyhow::Result;
 use model::auction::AuctionId;
 use primitive_types::H256;
 use reqwest::StatusCode;
-use shared::api::{convert_json_response, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
@@ -29,18 +28,18 @@ pub fn get(
             let handler = handler.clone();
             async move {
                 let result = handler.load_competition(identifier).await;
-                Result::<_, Infallible>::Ok(convert_json_response(result))
+                Result::<_, Infallible>::Ok(match result {
+                    Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
+                    Err(LoadSolverCompetitionError::NotFound) => {
+                        with_status(super::error("NotFound", ""), StatusCode::NOT_FOUND)
+                    }
+                    Err(LoadSolverCompetitionError::Other(err)) => {
+                        tracing::error!(?err, "load solver competition");
+                        shared::api::internal_error_reply()
+                    }
+                })
             }
         })
-}
-
-impl IntoWarpReply for LoadSolverCompetitionError {
-    fn into_warp_reply(self) -> shared::api::ApiReply {
-        match self {
-            Self::NotFound => with_status(super::error("NotFound", ""), StatusCode::NOT_FOUND),
-            Self::Other(err) => err.into_warp_reply(),
-        }
-    }
 }
 
 #[cfg(test)]

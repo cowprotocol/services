@@ -2,7 +2,7 @@ use crate::orderbook::Orderbook;
 use anyhow::Result;
 use primitive_types::H160;
 use serde::Deserialize;
-use shared::api::{convert_json_response, ApiReply};
+use shared::api::ApiReply;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
@@ -40,7 +40,13 @@ pub fn get_user_orders(
                 ));
             }
             let result = orderbook.get_user_orders(&owner, offset, limit).await;
-            Result::<_, Infallible>::Ok(convert_json_response(result))
+            Result::<_, Infallible>::Ok(match result {
+                Ok(reply) => with_status(warp::reply::json(&reply), StatusCode::OK),
+                Err(err) => {
+                    tracing::error!(?err, "get_user_orders");
+                    shared::api::internal_error_reply()
+                }
+            })
         }
     })
 }
