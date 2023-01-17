@@ -16,7 +16,7 @@ pub fn web3() -> DynWeb3 {
 }
 
 /// Get the first account owned by the web3 node.
-pub async fn primary_account(web3: &DynWeb3) -> ethcontract::H160 {
+pub async fn primary_address(web3: &DynWeb3) -> ethcontract::H160 {
     web3.eth().accounts().await.unwrap()[0]
 }
 

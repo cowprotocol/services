@@ -239,21 +239,23 @@ impl From<num::BigRational> for Score {
 /// settlement transaction, and it's used by the protocol to match onchain
 /// transactions to corresponding solutions.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Id(pub u32);
+pub struct Id(pub u64);
 
-impl From<u32> for Id {
-    fn from(value: u32) -> Self {
+impl From<u64> for Id {
+    fn from(value: u64) -> Self {
         Self(value)
+    }
+}
+
+impl From<Id> for u64 {
+    fn from(value: Id) -> Self {
+        value.0
     }
 }
 
 impl Id {
     pub fn random() -> Self {
         Self(rand::thread_rng().gen())
-    }
-
-    pub fn to_bytes(self) -> [u8; 4] {
-        self.0.to_be_bytes()
     }
 }
 
