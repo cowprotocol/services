@@ -8,7 +8,8 @@ use {
     async_trait::async_trait,
     ethcontract::{transaction::TransactionBuilder, transport::DynTransport},
     gas_estimation::GasPriceEstimating,
-    shared::gas_price_estimation::FakeGasPriceEstimator,
+    itertools::Itertools,
+    shared::http_client::HttpClientFactory,
     solver::{
         settlement_access_list::AccessListEstimating,
         settlement_submission::{
@@ -28,20 +29,41 @@ use {
     web3::types::AccessList,
 };
 
+/// How to calculate the blockchain gas price when publishing a transaction to
+/// the mempool.
+#[derive(Debug, Clone)]
+pub enum GasPriceCalculation {
+    EthGasStation,
+    GasNow,
+    GnosisSafe,
+    Web3,
+    BlockNative { api_key: String },
+    Native,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub additional_tip_percentage_of_max_fee: Option<f64>,
+    pub additional_tip_percentage: f64,
     pub max_additional_tip: Option<f64>,
     pub gas_price_cap: f64,
     pub target_confirm_time: std::time::Duration,
     pub max_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub account: ethcontract::Account,
-    pub high_risk_disabled: bool,
     pub eth: Ethereum,
     pub pool: GlobalTxPool,
+    pub gas_price_calculation: Vec<GasPriceCalculation>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum HighRisk {
+    Enabled,
+    Disabled,
+}
+
+/// The mempool to use for publishing settlements onchain. The public mempool
+/// of an [`Ethereum`] node can be used, or one of the private mempools offered
+/// by various transaction relay services.
 #[derive(Clone)]
 pub struct Mempool {
     config: Config,
@@ -59,29 +81,72 @@ impl std::fmt::Debug for Mempool {
 }
 
 impl Mempool {
-    pub fn public(config: Config) -> Self {
-        Self {
+    /// The public mempool of an [`Ethereum`] node.
+    pub async fn public(config: Config, high_risk: HighRisk) -> Result<Self> {
+        Ok(Self {
             submit_api: Arc::new(PublicMempoolApi::new(
                 vec![config.eth.web3()],
-                config.high_risk_disabled,
+                matches!(high_risk, HighRisk::Disabled),
             )),
             submitted_transactions: config.pool.add_sub_pool(Strategy::PublicMempool),
+            gas_price_estimator: Self::gas_price_estimator(&config).await?,
             config,
-            // TODO Follow-up PR: use shared::gas_price_estimation::create_priority_estimator for
-            // this
-            gas_price_estimator: Arc::new(FakeGasPriceEstimator::new(Default::default())),
-        }
+        })
     }
 
-    pub fn flashbots(config: Config, url: reqwest::Url) -> Result<Self> {
+    /// The [flashbots] private mempool.
+    ///
+    /// [flashbots]: https://docs.flashbots.net/flashbots-auction/overview
+    pub async fn flashbots(config: Config, url: reqwest::Url) -> Result<Self> {
         Ok(Self {
             submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url)?),
             submitted_transactions: config.pool.add_sub_pool(Strategy::Flashbots),
+            gas_price_estimator: Self::gas_price_estimator(&config).await?,
             config,
-            // TODO Follow-up PR: use shared::gas_price_estimation::create_priority_estimator for
-            // this
-            gas_price_estimator: Arc::new(FakeGasPriceEstimator::new(Default::default())),
         })
+    }
+
+    async fn gas_price_estimator(config: &Config) -> Result<Arc<dyn GasPriceEstimating>> {
+        Ok(Arc::new(
+            shared::gas_price_estimation::create_priority_estimator(
+                &HttpClientFactory::new(&shared::http_client::Arguments {
+                    http_timeout: std::time::Duration::from_secs(10),
+                }),
+                &config.eth.web3(),
+                &config
+                    .gas_price_calculation
+                    .iter()
+                    .map(|calculation| match calculation {
+                        GasPriceCalculation::EthGasStation => {
+                            shared::gas_price_estimation::GasEstimatorType::EthGasStation
+                        }
+                        GasPriceCalculation::GasNow => {
+                            shared::gas_price_estimation::GasEstimatorType::GasNow
+                        }
+                        GasPriceCalculation::GnosisSafe => {
+                            shared::gas_price_estimation::GasEstimatorType::GnosisSafe
+                        }
+                        GasPriceCalculation::Web3 => {
+                            shared::gas_price_estimation::GasEstimatorType::Web3
+                        }
+                        GasPriceCalculation::BlockNative { .. } => {
+                            shared::gas_price_estimation::GasEstimatorType::BlockNative
+                        }
+                        GasPriceCalculation::Native => {
+                            shared::gas_price_estimation::GasEstimatorType::Native
+                        }
+                    })
+                    .collect_vec(),
+                config
+                    .gas_price_calculation
+                    .iter()
+                    .find_map(|calculator| match calculator {
+                        GasPriceCalculation::BlockNative { api_key } => Some(api_key.to_owned()),
+                        _ => None,
+                    }),
+            )
+            .await?,
+        ))
     }
 
     pub async fn send(&self, settlement: settlement::Simulated) -> Result<()> {
@@ -93,7 +158,7 @@ impl Mempool {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             gas_price_cap: self.config.gas_price_cap,
-            additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage_of_max_fee,
+            additional_tip_percentage_of_max_fee: Some(self.config.additional_tip_percentage),
             max_additional_tip: self.config.max_additional_tip,
         };
         let estimator = AccessListEstimator(settlement.access_list.clone());
