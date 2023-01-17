@@ -1,7 +1,13 @@
+pub use self::fetcher::Fetcher;
 use crate::domain::eth;
 
+pub mod balancer;
+pub mod fetcher;
+pub mod uniswap;
+pub mod zeroex;
+
 /// A source of liquidity which can be used by the solver.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Liquidity {
     pub id: Id,
     /// Depending on the liquidity provider, this can mean different things.
@@ -9,7 +15,7 @@ pub struct Liquidity {
     pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
-    // TODO There will be plenty more data here in the future.
+    pub data: Data,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,4 +37,18 @@ impl PartialEq<usize> for Id {
     fn eq(&self, other: &usize) -> bool {
         self.0 == *other
     }
+}
+
+/// Data tied to a particular liquidity instance, specific to the type of
+/// liquidity.
+///
+/// This contains relevant data for encoding interactions for the given
+/// liquidity, as well as state required by the solver engine.
+#[derive(Debug, Clone)]
+pub enum Data {
+    UnswapV2(uniswap::v2::Pool),
+    UnswapV3(uniswap::v3::Pool),
+    BalancerV2Stable(balancer::stable::Pool),
+    BalancerV2Weighted(balancer::weighted::Pool),
+    ZeroEx(zeroex::LimitOrder),
 }
