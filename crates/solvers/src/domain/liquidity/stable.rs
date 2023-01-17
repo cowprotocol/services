@@ -1,10 +1,11 @@
 use crate::domain::{eth, liquidity};
 use itertools::Itertools as _;
 
-/// The state of a Balancer-like weighted product pool.
+/// The state of a Curve-like stable pool.
 #[derive(Clone, Debug)]
 pub struct Pool {
     pub reserves: Reserves,
+    pub amplification_parameter: eth::Rational,
     pub fee: eth::Rational,
 }
 
@@ -17,7 +18,7 @@ impl Reserves {
     /// `None` if it encounters duplicate entries for a token.
     pub fn new(mut reserves: Vec<Reserve>) -> Option<Self> {
         // Note that we sort the reserves by their token address. This is
-        // because BalancerV2 weighted pools store their tokens in sorting order
+        // because BalancerV2 stable pools store their tokens in sorting order
         // - meaning that `token0` is the token address with the lowest sort
         // order. This ensures that this iterator returns the token reserves in
         // the correct order.
@@ -39,15 +40,6 @@ impl Reserves {
         self.0.iter().cloned()
     }
 
-    /// Returns the reserve for the specified token.
-    pub fn get(&self, token: eth::TokenAddress) -> Option<Reserve> {
-        let index = self
-            .0
-            .binary_search_by_key(&token, |reserve| reserve.asset.token)
-            .ok()?;
-        Some(self.0[index].clone())
-    }
-
     /// Returns an iterator over the tokens pairs handled by the pool reserves.
     pub fn token_pairs(&self) -> impl Iterator<Item = liquidity::TokenPair> + '_ {
         self.0
@@ -61,6 +53,5 @@ impl Reserves {
 #[derive(Clone, Debug)]
 pub struct Reserve {
     pub asset: eth::Asset,
-    pub weight: eth::Rational,
     pub scale: liquidity::ScalingFactor,
 }
