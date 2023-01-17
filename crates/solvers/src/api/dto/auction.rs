@@ -323,7 +323,7 @@ impl ConcentratedLiquidityPool {
             state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
                 tokens,
                 sqrt_price: liquidity::concentrated::SqrtPrice(self.sqrt_price),
-                liquidity: liquidity::concentrated::LiquidityAmount(self.liquidity),
+                liquidity: liquidity::concentrated::Amount(self.liquidity),
                 tick: liquidity::concentrated::Tick(self.tick),
                 liquidity_net: self
                     .liquidity_net
@@ -331,7 +331,7 @@ impl ConcentratedLiquidityPool {
                     .map(|(tick, liquidity)| {
                         (
                             liquidity::concentrated::Tick(*tick),
-                            liquidity::concentrated::LiquidityAmount(*liquidity),
+                            liquidity::concentrated::Amount(*liquidity),
                         )
                     })
                     .collect(),

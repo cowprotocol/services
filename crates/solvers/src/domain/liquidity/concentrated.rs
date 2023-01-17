@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 pub struct Pool {
     pub tokens: liquidity::TokenPair,
     pub sqrt_price: SqrtPrice,
-    pub liquidity: LiquidityAmount,
+    pub liquidity: Amount,
     pub tick: Tick,
-    pub liquidity_net: BTreeMap<Tick, LiquidityAmount>,
+    pub liquidity_net: BTreeMap<Tick, Amount>,
     pub fee: eth::Rational,
 }
 
@@ -26,8 +26,12 @@ pub struct SqrtPrice(pub U256);
 /// The exact amount in tokens that this liquidity represents is dependant on
 /// the current state of the pool.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LiquidityAmount(pub U256);
+pub struct Amount(pub U256);
 
-/// A liquidity tick.
+/// An index to a tick within a concentrated liquidity pool.
+///
+/// A tick represents a +/- 0.01% partition of the price space where liquidity
+/// positions may exist. For more information, consult the
+/// [Uniswap V3 documentation](https://docs.uniswap.org/concepts/protocol/concentrated-liquidity#ticks).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Tick(pub i32);
