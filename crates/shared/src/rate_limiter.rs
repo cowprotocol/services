@@ -213,7 +213,9 @@ impl RateLimiter {
             }
         } else {
             self.strategy().response_ok(&self.name);
-            tracing::debug!(?self.name, "reset rate limit");
+            if times_rate_limited > 0 {
+                tracing::debug!(?self.name, "reset rate limit");
+            }
         }
 
         Ok(result)
