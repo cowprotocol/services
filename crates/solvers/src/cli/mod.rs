@@ -1,6 +1,6 @@
 //! CLI arguments for the `solvers` binary.
 
-mod baseline;
+pub mod baseline;
 
 use clap::{Args, Parser, Subcommand};
 use std::net::SocketAddr;

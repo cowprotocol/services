@@ -5,12 +5,16 @@ mod api;
 mod boundary;
 mod cli;
 mod domain;
+#[cfg(test)]
+mod tests;
 mod util;
 
 use crate::domain::baseline;
 use clap::Parser;
+use std::net::SocketAddr;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
+use tokio::sync::oneshot;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -22,10 +26,14 @@ async fn main() {
 
     // TODO implement Display for the arguments
     tracing::info!("running solver engine with {cli:#?}");
-    run(cli.arguments, cli.command).await;
+    run(cli.arguments, cli.command, None).await;
 }
 
-async fn run(arguments: cli::Arguments, command: cli::Command) {
+async fn run(
+    arguments: cli::Arguments,
+    command: cli::Command,
+    bind: Option<oneshot::Sender<SocketAddr>>,
+) {
     let cli::Command::Baseline(baseline) = command;
 
     api::Api {
@@ -36,7 +44,7 @@ async fn run(arguments: cli::Arguments, command: cli::Command) {
             max_hops: baseline.max_hops,
         },
     }
-    .serve(shutdown_signal())
+    .serve(bind, shutdown_signal())
     .await
     .unwrap();
 }
