@@ -56,6 +56,7 @@ pub struct Args {
     )]
     pub flashbots_api_urls: Vec<Url>,
 
+    // TODO These two should be specified on a per-solver basis, update this in the config file
     /// The solver address used to sign transactions. Expects a 20-byte hex
     /// encoded string. This can't be specified along with --solver-private-key,
     /// exactly one of them must be specified.
