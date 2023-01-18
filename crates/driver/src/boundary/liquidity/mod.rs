@@ -95,6 +95,7 @@ impl Fetcher {
             })
             .collect();
         let block_number = self.blocks.borrow().number;
+
         let liquidity = self
             .inner
             .get_liquidity(pairs, recent_block_cache::Block::Number(block_number))

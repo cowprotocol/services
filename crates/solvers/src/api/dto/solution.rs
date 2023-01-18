@@ -117,7 +117,7 @@ enum Kind {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
