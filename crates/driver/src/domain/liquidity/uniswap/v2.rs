@@ -1,4 +1,10 @@
-use {crate::domain::eth, std::cmp::Ordering};
+use {
+    crate::{
+        boundary,
+        domain::{eth, liquidity},
+    },
+    std::cmp::Ordering,
+};
 
 /// The famous Uniswap V2 constant product pool, modelled by `x · y = k` [^1].
 ///
@@ -15,6 +21,26 @@ pub struct Pool {
     pub reserves: Reserves,
 }
 
+impl Pool {
+    /// Encodes a pool swap as an interaction. Returns `None` if the swap
+    /// parameters are invalid for the pool, specifically if the input and
+    /// output tokens don't correspond to the pool's token pair.
+    pub fn swap(
+        &self,
+        input: &liquidity::MaxInput,
+        output: &liquidity::ExactOutput,
+        receiver: &eth::Address,
+    ) -> Option<eth::Interaction> {
+        if !self.reserves.has_tokens(&input.0.token, &output.0.token) {
+            return None;
+        }
+
+        Some(boundary::liquidity::uniswap::v2::to_interaction(
+            self, input, output, receiver,
+        ))
+    }
+}
+
 /// A Uniswap V2 pool reserves. These reserves are orders by token address and
 /// are guaranteed to be for distict tokens.
 #[derive(Clone, Copy, Debug)]
@@ -29,5 +55,10 @@ impl Reserves {
             Ordering::Equal => None,
             Ordering::Greater => Some(Self(b, a)),
         }
+    }
+
+    /// Returns `true` if the reserves correspond to the specified tokens.
+    fn has_tokens(&self, a: &eth::TokenAddress, b: &eth::TokenAddress) -> bool {
+        (&self.0.token == a && &self.1.token == b) || (&self.1.token == a && &self.0.token == b)
     }
 }

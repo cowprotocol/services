@@ -28,7 +28,7 @@ use {
     },
 };
 
-mod uniswap;
+pub mod uniswap;
 
 /// The default poll interval for the block stream updating task.
 const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
