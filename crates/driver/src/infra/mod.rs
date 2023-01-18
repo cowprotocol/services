@@ -1,6 +1,7 @@
 pub mod api;
 pub mod blockchain;
 pub mod config;
+pub mod liquidity;
 pub mod mempool;
 pub mod simulator;
 pub mod solver;

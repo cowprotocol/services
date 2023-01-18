@@ -11,9 +11,9 @@ use {
     config::cli,
     futures::future::join_all,
     infra::{
-        blockchain,
-        blockchain::Ethereum,
+        blockchain::{self, Ethereum},
         config,
+        liquidity,
         simulator::{self, Simulator},
         solver::{self, Solver},
         Api,
@@ -56,11 +56,13 @@ pub async fn run(
     boundary::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with arguments:\n{}", args);
 
+    let config = config::file::load(&args.config, now).await;
+
     let tx_pool = mempool::GlobalTxPool::default();
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
-    let config = mempool::Config {
+    let mempool_config = mempool::Config {
         additional_tip_percentage: args.submission.submission_additional_tip_percentage,
         max_additional_tip: None,
         gas_price_cap: args.submission.submission_gas_price_cap,
@@ -85,13 +87,14 @@ pub async fn run(
         eth: eth.clone(),
         pool: tx_pool.clone(),
     };
-    let gas_price_estimator = mempool::gas_price_estimator(&config).await.unwrap();
+    let gas_price_estimator = mempool::gas_price_estimator(&mempool_config).await.unwrap();
     let serve = Api {
-        solvers: solvers(&args, now).await,
+        solvers: solvers(&config),
+        liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&args, &eth),
         mempools: join_all(args.mempools.iter().map(|&mempool| {
             let args = &args;
-            let config = config.clone();
+            let config = mempool_config.clone();
             let gas_price_estimator = gas_price_estimator.clone();
             async move {
                 match mempool {
@@ -194,12 +197,14 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
     .expect("initialize ethereum RPC API")
 }
 
-async fn solvers(args: &cli::Args, now: infra::time::Now) -> Vec<Solver> {
-    config::solvers::load(&args.solvers_config, now)
+fn solvers(config: &config::Config) -> Vec<Solver> {
+    config.solvers.iter().cloned().map(Solver::new).collect()
+}
+
+async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
+    liquidity::Fetcher::new(eth, &config.liquidity)
         .await
-        .into_iter()
-        .map(Solver::new)
-        .collect()
+        .expect("initalize liquidity fetcher")
 }
 
 #[cfg(unix)]

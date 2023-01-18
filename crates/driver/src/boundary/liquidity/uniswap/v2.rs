@@ -2,7 +2,10 @@ use {
     crate::{
         boundary,
         domain::{eth, liquidity},
-        infra::blockchain::{contracts::ContractAt, Ethereum},
+        infra::{
+            self,
+            blockchain::{contracts::ContractAt, Ethereum},
+        },
     },
     anyhow::Result,
     async_trait::async_trait,
@@ -93,7 +96,7 @@ pub fn to_interaction(
 pub async fn collector(
     eth: &Ethereum,
     blocks: &CurrentBlockStream,
-    config: &liquidity::fetcher::config::UniswapV2,
+    config: &infra::liquidity::config::UniswapV2,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     let router = eth.contract_at::<IUniswapLikeRouter>(config.router);
     let settlement = eth.contracts().settlement().clone();
@@ -102,7 +105,7 @@ pub async fn collector(
         let factory = router.factory().call().await?;
         let pair_provider = PairProvider {
             factory,
-            init_code_digest: config.pool_code.0,
+            init_code_digest: config.pool_code.into(),
         };
         let pool_reader = DefaultPoolReader::for_pair_provider(pair_provider, web3.clone());
 
