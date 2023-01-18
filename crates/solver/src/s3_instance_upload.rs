@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use aws_sdk_s3::{types::ByteStream, Client, Credentials, Region};
 use aws_types::credentials::SharedCredentialsProvider;
+use flate2::{bufread::GzEncoder, Compression};
 use model::auction::AuctionId;
+use std::io::Read;
 
 #[derive(Default)]
 pub struct Config {
@@ -40,14 +42,25 @@ impl S3InstanceUploader {
     /// Upload the bytes (expected to represent a json encoded solver instance) to the configured S3
     /// bucket.
     ///
-    /// The final filename is the configured prefix followed by `{current_date}/{auction_id}`.
+    /// The final filename is the configured prefix followed by `{auction_id}.json.gzip`.
     pub async fn upload_instance(&self, auction: AuctionId, value: Vec<u8>) -> Result<()> {
+        let (key, bytes) = self.prepare_instance(auction, &value)?;
+        self.upload(key, bytes).await
+    }
+
+    /// Returns the S3 key and body after gzipping.
+    fn prepare_instance(&self, auction: AuctionId, json: &[u8]) -> Result<(String, Vec<u8>)> {
         let key = self.filename(auction);
-        self.upload(key, value).await
+        // This function isn't async because we already have the body in memory and compressing is
+        // fast.
+        let mut encoder = GzEncoder::new(json, Compression::best());
+        let mut encoded: Vec<u8> = Vec::with_capacity(json.len());
+        encoder.read_to_end(&mut encoded).context("gzip encoding")?;
+        Ok((key, encoded))
     }
 
     fn filename(&self, auction: AuctionId) -> String {
-        format!("{}{auction}.json", self.filename_prefix)
+        format!("{}{auction}.json.gzip", self.filename_prefix)
     }
 
     async fn upload(&self, key: String, value: Vec<u8>) -> Result<()> {

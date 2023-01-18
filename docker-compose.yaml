@@ -42,14 +42,14 @@ services:
 
   # The driver expects to be tested against a geth node in dev mode
   # because it's the only dev environment which supports eth_createAccessList.
-  geth:
+  dev-geth:
     build:
       context: .
-      dockerfile: docker/Dockerfile.geth
+      dockerfile: docker/Dockerfile.dev-geth
     restart: on-failure
-    command: geth --vmodule rpc=5 --dev.period 0 --dev --http --http.addr 0.0.0.0 --http.api web3,eth,net,debug
     ports:
       - 8546:8545
+      - 8547:8547
 
 volumes:
   postgres:
