@@ -1,4 +1,4 @@
-use {crate::domain::eth, ethcontract::Web3};
+use {crate::domain::eth, web3::Web3};
 
 pub use crate::boundary::contracts::{GPv2Settlement, ERC20, WETH9};
 
@@ -46,4 +46,9 @@ impl Contracts {
     pub fn weth(&self) -> &contracts::WETH9 {
         &self.weth
     }
+}
+
+/// A trait for initializing contract instances with dynamic addresses.
+pub trait ContractAt {
+    fn at(web3: &Web3<web3::transports::Http>, address: eth::ContractAddress) -> Self;
 }

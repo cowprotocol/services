@@ -22,6 +22,7 @@
 //! By Eric Evans, Domain-Driven Design: Tackling Complexity in the Heart of
 //! Software (2014)
 
+pub mod liquidity;
 pub mod settlement;
 
 pub use {

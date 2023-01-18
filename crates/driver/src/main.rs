@@ -4,9 +4,19 @@
 
 use {
     crate::{domain::competition, infra::api},
-    infra::blockchain,
-    std::net::SocketAddr,
+    clap::Parser,
+    config::cli,
+    infra::{
+        blockchain,
+        blockchain::Ethereum,
+        config,
+        simulator::{self, Simulator},
+        solver::{self, Solver},
+        Api,
+    },
+    std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
+    tracing::level_filters::LevelFilter,
 };
 
 mod boundary;
@@ -16,20 +26,6 @@ mod util;
 
 #[cfg(test)]
 mod tests;
-
-use {
-    clap::Parser,
-    config::cli,
-    infra::{
-        blockchain::Ethereum,
-        config,
-        simulator::{self, Simulator},
-        solver::{self, Solver},
-        Api,
-    },
-    std::time::Duration,
-    tracing::level_filters::LevelFilter,
-};
 
 #[tokio::main]
 async fn main() {
