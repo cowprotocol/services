@@ -11,8 +11,7 @@ use {
             Simulator,
         },
     },
-    dashmap::DashMap,
-    std::sync::Arc,
+    std::sync::Mutex,
 };
 
 pub mod auction;
@@ -39,7 +38,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
-    pub settlements: Arc<DashMap<solution::Id, settlement::Simulated>>,
+    pub settlement: Mutex<Option<(solution::Id, settlement::Simulated)>>,
 }
 
 impl Competition {
@@ -60,23 +59,24 @@ impl Competition {
             .await?;
         let score = settlement.score(&self.eth, auction).await?;
         let solution_id = solution::Id::random();
-        self.settlements.insert(solution_id, settlement);
-        // Remove the settlement after it's expired.
-        let settlements = Arc::clone(&self.settlements);
-        tokio::spawn(async move {
-            tokio::time::sleep(Self::expiration_time()).await;
-            settlements.remove(&solution_id);
-        });
+        *self.settlement.lock().unwrap() = Some((solution_id, settlement));
         Ok((solution_id, score))
     }
 
     // TODO Rename this to settle()?
     /// Execute (settle) a solution generated as part of this competition.
     pub async fn execute(&self, solution_id: solution::Id) -> Result<(), Error> {
-        let (_, settlement) = self
-            .settlements
-            .remove(&solution_id)
-            .ok_or(Error::SolutionNotFound)?;
+        let settlement = match self.settlement.lock().unwrap().take() {
+            Some((id, settlement)) if id == solution_id => settlement,
+            Some((id, _)) => {
+                tracing::warn!(?id, ?solution_id, "execute with wrong id");
+                return Err(Error::SolutionNotFound);
+            }
+            None => {
+                tracing::warn!(?solution_id, "execute without solve");
+                return Err(Error::SolutionNotFound);
+            }
+        };
         mempool::send(&self.mempools, settlement)
             .await
             .map_err(Into::into)

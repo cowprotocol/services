@@ -64,7 +64,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     now: self.now,
                     mempools: vec![self.mempool.clone()],
-                    settlements: Default::default(),
+                    settlement: Default::default(),
                 },
                 quote_config: self.quote_config.clone(),
                 now: self.now,
