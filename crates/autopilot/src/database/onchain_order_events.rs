@@ -438,65 +438,62 @@ async fn parse_general_onchain_order_placement_data<'a>(
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
-        |(EthContractEvent { data, meta }, event_timestamp, quote_id)| {
-            let metrics_clone = metrics.clone();
-            async move {
-                let meta = match meta {
-                    Some(meta) => meta,
-                    None => {
-                        metrics_clone.inc_onchain_order_errors("no metadata available");
-                        return Err(anyhow!("event without metadata"));
-                    }
-                };
-                let event = match data {
-                    ContractEvent::OrderPlacement(event) => event,
-                    _ => {
-                        unreachable!(
-                            "Should not try to parse orders from events other than OrderPlacement"
-                        )
-                    }
-                };
-                let detailed_order_data =
-                    extract_order_data_from_onchain_order_placement_event(&event, domain_separator);
-                if detailed_order_data.is_err() {
-                    metrics_clone.inc_onchain_order_errors("unable to parse event to order");
+        |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
+            let meta = match meta {
+                Some(meta) => meta,
+                None => {
+                    metrics.inc_onchain_order_errors("no metadata available");
+                    return Err(anyhow!("event without metadata"));
                 }
-                let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
-
-                let quote_result =
-                    get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
-                let order_data = convert_onchain_order_placement(
-                    &event,
-                    event_timestamp,
-                    quote_result.clone(),
-                    order_data,
-                    signing_scheme,
-                    order_uid,
-                    owner,
-                    settlement_contract,
-                    liquidity_order_owners,
-                );
-                let quote = match quote_result {
-                    Ok(quote) => Some(database::orders::Quote {
-                        order_uid: order_data.1.uid,
-                        gas_amount: quote.data.fee_parameters.gas_amount,
-                        gas_price: quote.data.fee_parameters.gas_price,
-                        sell_token_price: quote.data.fee_parameters.sell_token_price,
-                        sell_amount: u256_to_big_decimal(&quote.sell_amount),
-                        buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                    }),
-                    Err(err) => {
-                        metrics_clone.inc_onchain_order_errors(err.to_metrics_label());
-                        None
-                    }
-                };
-                Ok((
-                    meta_to_event_index(&meta),
-                    quote,
-                    order_data.0,
-                    order_data.1,
-                ))
+            };
+            let event = match data {
+                ContractEvent::OrderPlacement(event) => event,
+                _ => {
+                    unreachable!(
+                        "Should not try to parse orders from events other than OrderPlacement"
+                    )
+                }
+            };
+            let detailed_order_data =
+                extract_order_data_from_onchain_order_placement_event(&event, domain_separator);
+            if detailed_order_data.is_err() {
+                metrics.inc_onchain_order_errors("unable to parse event to order");
             }
+            let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
+
+            let quote_result =
+                get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
+            let order_data = convert_onchain_order_placement(
+                &event,
+                event_timestamp,
+                quote_result.clone(),
+                order_data,
+                signing_scheme,
+                order_uid,
+                owner,
+                settlement_contract,
+                liquidity_order_owners,
+            );
+            let quote = match quote_result {
+                Ok(quote) => Some(database::orders::Quote {
+                    order_uid: order_data.1.uid,
+                    gas_amount: quote.data.fee_parameters.gas_amount,
+                    gas_price: quote.data.fee_parameters.gas_price,
+                    sell_token_price: quote.data.fee_parameters.sell_token_price,
+                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                }),
+                Err(err) => {
+                    metrics.inc_onchain_order_errors(err.to_metrics_label());
+                    None
+                }
+            };
+            Ok((
+                meta_to_event_index(&meta),
+                quote,
+                order_data.0,
+                order_data.1,
+            ))
         },
     );
     let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =
