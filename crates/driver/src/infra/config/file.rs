@@ -62,6 +62,7 @@ pub async fn load(path: &Path, now: infra::time::Now) -> config::Config {
 struct Config {
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
+    #[serde(default)]
     liquidity: LiquidityConfig,
 }
 
@@ -78,10 +79,12 @@ struct SolverConfig {
     address: eth::H160,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct LiquidityConfig {
+    #[serde(default)]
     base_tokens: Vec<eth::H160>,
+    #[serde(default)]
     uniswap_v2: Vec<UniswapV2Config>,
 }
 

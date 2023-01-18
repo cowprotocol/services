@@ -72,7 +72,7 @@ pub async fn setup(config: Config) -> Client {
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
         "auto".to_owned(),
-        "--solvers-config".to_owned(),
+        "--config".to_owned(),
         config_file.to_str().unwrap().to_owned(),
         "--ethrpc".to_owned(),
         super::blockchain::WEB3_URL.to_owned(),
@@ -112,12 +112,12 @@ async fn create_solvers_config_file(solvers: &[setup::Solver]) {
             } = solver;
             #[rustfmt::skip]
             let config = format!(
-                "[[solvers]]\n\
-                name = \"{name}\"\n\
-                endpoint = \"http://{addr}\"\n\
-                absolute-slippage = \"{absolute_slippage}\"\n\
-                relative-slippage = \"{relative_slippage}\"\n\
-                address = \"{address}\"\n"
+                "[[solver]]\n\
+                 name = \"{name}\"\n\
+                 endpoint = \"http://{addr}\"\n\
+                 absolute-slippage = \"{absolute_slippage}\"\n\
+                 relative-slippage = \"{relative_slippage}\"\n\
+                 address = \"{address}\"\n"
             );
             config
         })
