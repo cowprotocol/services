@@ -1,4 +1,5 @@
 use {
+    self::contracts::ContractAt,
     crate::domain::eth,
     thiserror::Error,
     web3::{Transport, Web3},
@@ -55,6 +56,11 @@ impl Ethereum {
     /// Onchain smart contract bindings.
     pub fn contracts(&self) -> &Contracts {
         &self.contracts
+    }
+
+    /// Create a contract instance at the specified address.
+    pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
+        T::at(&self.web3, address)
     }
 
     /// Fetch the ERC20 allowance for the spender. See the allowance method in
