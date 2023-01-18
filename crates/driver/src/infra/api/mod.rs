@@ -9,9 +9,9 @@ use {
     tokio::sync::oneshot,
 };
 
-mod execute;
 mod info;
 mod quote;
+mod settle;
 mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
@@ -55,7 +55,7 @@ impl Api {
             let router = info::route(router);
             let router = quote::route(router);
             let router = solve::route(router);
-            let router = execute::route(router);
+            let router = settle::route(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
                 competition: domain::Competition {
