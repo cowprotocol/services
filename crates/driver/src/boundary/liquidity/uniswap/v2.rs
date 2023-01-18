@@ -10,6 +10,7 @@ use {
     shared::{
         current_block::{self, CurrentBlockStream},
         maintenance::Maintaining,
+        price_estimation,
         sources::uniswap_v2::{
             pair_provider::PairProvider,
             pool_cache::PoolCache,
@@ -17,13 +18,46 @@ use {
         },
     },
     solver::{
-        liquidity::uniswap_v2::UniswapLikeLiquidity,
+        liquidity::{uniswap_v2, uniswap_v2::UniswapLikeLiquidity, ConstantProductOrder},
         liquidity_collector::LiquidityCollecting,
     },
     std::{sync, sync::Arc},
     tracing::Instrument,
     web3::Web3,
 };
+
+pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Liquidity {
+    assert!(
+        *pool.fee.numer() == 3 && *pool.fee.denom() == 1000,
+        "uniswap pools have constant fees",
+    );
+
+    let handler = pool
+        .settlement_handling
+        .as_any()
+        .downcast_ref::<uniswap_v2::Inner>()
+        .expect("downcast uniswap settlment handler");
+
+    liquidity::Liquidity {
+        id,
+        address: pool.address.into(),
+        gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
+        data: liquidity::Data::UniswapV2(liquidity::uniswap::v2::Pool {
+            router: handler.router().address().into(),
+            reserves: liquidity::uniswap::v2::Reserves::new(
+                eth::Asset {
+                    token: pool.tokens.get().0.into(),
+                    amount: pool.reserves.0.into(),
+                },
+                eth::Asset {
+                    token: pool.tokens.get().1.into(),
+                    amount: pool.reserves.1.into(),
+                },
+            )
+            .expect("invalid uniswap token pair"),
+        }),
+    }
+}
 
 pub async fn collector(
     eth: &Ethereum,

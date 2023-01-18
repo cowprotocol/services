@@ -80,6 +80,18 @@ pub trait SettlementHandling<L>: Send + Sync
 where
     L: Settleable,
 {
+    /// What is his craziness?!
+    ///
+    /// While developing the `driver`, we want to access information that is
+    /// part of a liquidity's settlement handler. Unfortunately, with how the
+    /// `Liquidity` abstraction is currently setup, this is not really possible.
+    /// This method allows us to downcast `SettlementHandling` trait objects
+    /// into concrete types in order to make the `driver` boundary integration
+    /// work.
+    ///
+    /// This should eventually be purged with fire.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     fn encode(&self, execution: L::Execution, encoder: &mut SettlementEncoder) -> Result<()>;
 }
 
@@ -463,9 +475,13 @@ pub mod tests {
 
     impl<L> SettlementHandling<L> for CapturingSettlementHandler<L>
     where
-        L: Settleable,
+        L: Settleable + 'static,
         L::Execution: Send + Sync,
     {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn encode(&self, execution: L::Execution, _: &mut SettlementEncoder) -> Result<()> {
             self.calls.lock().unwrap().push(execution);
             Ok(())

@@ -1,18 +1,26 @@
 use {
     crate::{
         boundary,
-        domain::{competition::auction, eth, liquidity},
+        domain::{
+            competition::{auction, order},
+            eth,
+            liquidity,
+        },
         infra::blockchain::Ethereum,
     },
     anyhow::Result,
     futures::future,
     itertools::Itertools,
+    model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
         current_block::{self, BlockRetrieverStrategy, CurrentBlockStream},
-        recent_block_cache::CacheConfig,
+        recent_block_cache::{self, CacheConfig},
     },
-    solver::liquidity_collector::LiquidityCollector,
+    solver::{
+        liquidity::Liquidity,
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+    },
     std::{
         num::{NonZeroU64, NonZeroUsize},
         sync::Arc,
@@ -80,8 +88,38 @@ impl Fetcher {
     }
 
     /// Fetches liquidity for the specified auction.
-    pub async fn fetch(&self, _auction: &auction::Auction) -> Result<Vec<liquidity::Liquidity>> {
-        todo!()
+    pub async fn fetch(&self, auction: &auction::Auction) -> Result<Vec<liquidity::Liquidity>> {
+        let pairs = auction
+            .orders
+            .iter()
+            .filter_map(|order| match order.kind {
+                order::Kind::Market | order::Kind::Limit { .. } => {
+                    TokenPair::new(order.sell.token.into(), order.buy.token.into())
+                }
+                order::Kind::Liquidity => None,
+            })
+            .collect();
+        let block_number = self.blocks.borrow().number;
+        let liquidity = self
+            .inner
+            .get_liquidity(pairs, recent_block_cache::Block::Number(block_number))
+            .await?;
+
+        let liquidity = liquidity
+            .into_iter()
+            .enumerate()
+            .map(|(index, liquidity)| {
+                let id = liquidity::Id(index);
+                match liquidity {
+                    Liquidity::ConstantProduct(pool) => uniswap::v2::to_domain(id, pool),
+                    Liquidity::BalancerWeighted(_) => unreachable!(),
+                    Liquidity::BalancerStable(_) => unreachable!(),
+                    Liquidity::LimitOrder(_) => unreachable!(),
+                    Liquidity::Concentrated(_) => unreachable!(),
+                }
+            })
+            .collect();
+        Ok(liquidity)
     }
 }
 

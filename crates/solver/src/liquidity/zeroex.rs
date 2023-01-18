@@ -182,6 +182,10 @@ struct OrderSettlementHandler {
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         if executed_amount > u128::MAX.into() {
             anyhow::bail!("0x only supports executed amounts of size u128");
