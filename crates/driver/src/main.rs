@@ -99,34 +99,6 @@ pub async fn run(
                     },
                     eth: eth.clone(),
                     pool: tx_pool.clone(),
-                    gas_price_calculation: args
-                        .submission
-                        .submission_gas_price_calculation
-                        .iter()
-                        .map(|calculation| match calculation {
-                            cli::GasPriceCalculation::EthGasStation => {
-                                mempool::GasPriceCalculation::EthGasStation
-                            }
-                            cli::GasPriceCalculation::GasNow => {
-                                mempool::GasPriceCalculation::GasNow
-                            }
-                            cli::GasPriceCalculation::GnosisSafe => {
-                                mempool::GasPriceCalculation::GnosisSafe
-                            }
-                            cli::GasPriceCalculation::Web3 => mempool::GasPriceCalculation::Web3,
-                            cli::GasPriceCalculation::BlockNative => {
-                                mempool::GasPriceCalculation::BlockNative {
-                                    api_key: args.blocknative_api_key.clone().expect(
-                                        "BlockNative price calculation requires \
-                                         --blocknative-api-key",
-                                    ),
-                                }
-                            }
-                            cli::GasPriceCalculation::Native => {
-                                mempool::GasPriceCalculation::Native
-                            }
-                        })
-                        .collect(),
                 };
                 match mempool {
                     cli::Mempool::Public => vec![Mempool::public(

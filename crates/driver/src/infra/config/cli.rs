@@ -67,11 +67,6 @@ pub struct Args {
     /// of them must be specified.
     #[clap(long, env)]
     pub solver_private_key: Option<String>,
-
-    /// BlockNative API key. This is required for BlockNative gas price
-    /// calculation.
-    #[clap(long, env)]
-    pub blocknative_api_key: Option<String>,
 }
 
 /// Arg types have custom `Display` impls instead of relying on `Debug` to avoid
@@ -184,22 +179,6 @@ impl std::fmt::Display for ContractAddresses {
 /// Parameters related to settlement submission.
 #[derive(Debug, clap::Parser)]
 pub struct Submission {
-    /// How to calculate gas prices. Multiple approaches are used in sequence if
-    /// the previous one fails.
-    /// eth-gas-station: supports mainnet.
-    /// gas-now: supports mainnet.
-    /// gnosis-safe: supports mainnet and goerli.
-    /// web3: supports every network.
-    /// native: supports every network.
-    #[clap(
-        long,
-        env,
-        default_value = "web3",
-        value_enum,
-        use_value_delimiter = true
-    )]
-    pub submission_gas_price_calculation: Vec<GasPriceCalculation>,
-
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation. Expects a floating point
     /// value between 0 and 1.
@@ -244,14 +223,4 @@ pub struct Submission {
 pub enum Mempool {
     Public,
     Flashbots,
-}
-
-#[derive(Debug, Copy, Clone, clap::ValueEnum)]
-pub enum GasPriceCalculation {
-    EthGasStation,
-    GasNow,
-    GnosisSafe,
-    Web3,
-    BlockNative,
-    Native,
 }

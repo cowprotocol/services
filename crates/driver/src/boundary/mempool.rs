@@ -8,7 +8,6 @@ use {
     async_trait::async_trait,
     ethcontract::{transaction::TransactionBuilder, transport::DynTransport},
     gas_estimation::GasPriceEstimating,
-    itertools::Itertools,
     shared::http_client::HttpClientFactory,
     solver::{
         settlement_access_list::AccessListEstimating,
@@ -29,18 +28,6 @@ use {
     web3::types::AccessList,
 };
 
-/// How to calculate the blockchain gas price when publishing a transaction to
-/// the mempool.
-#[derive(Debug, Clone)]
-pub enum GasPriceCalculation {
-    EthGasStation,
-    GasNow,
-    GnosisSafe,
-    Web3,
-    BlockNative { api_key: String },
-    Native,
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub additional_tip_percentage: f64,
@@ -52,7 +39,6 @@ pub struct Config {
     pub account: ethcontract::Account,
     pub eth: Ethereum,
     pub pool: GlobalTxPool,
-    pub gas_price_calculation: Vec<GasPriceCalculation>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -113,37 +99,8 @@ impl Mempool {
                     http_timeout: std::time::Duration::from_secs(10),
                 }),
                 &config.eth.web3(),
-                &config
-                    .gas_price_calculation
-                    .iter()
-                    .map(|calculation| match calculation {
-                        GasPriceCalculation::EthGasStation => {
-                            shared::gas_price_estimation::GasEstimatorType::EthGasStation
-                        }
-                        GasPriceCalculation::GasNow => {
-                            shared::gas_price_estimation::GasEstimatorType::GasNow
-                        }
-                        GasPriceCalculation::GnosisSafe => {
-                            shared::gas_price_estimation::GasEstimatorType::GnosisSafe
-                        }
-                        GasPriceCalculation::Web3 => {
-                            shared::gas_price_estimation::GasEstimatorType::Web3
-                        }
-                        GasPriceCalculation::BlockNative { .. } => {
-                            shared::gas_price_estimation::GasEstimatorType::BlockNative
-                        }
-                        GasPriceCalculation::Native => {
-                            shared::gas_price_estimation::GasEstimatorType::Native
-                        }
-                    })
-                    .collect_vec(),
-                config
-                    .gas_price_calculation
-                    .iter()
-                    .find_map(|calculator| match calculator {
-                        GasPriceCalculation::BlockNative { api_key } => Some(api_key.to_owned()),
-                        _ => None,
-                    }),
+                &[shared::gas_price_estimation::GasEstimatorType::Native],
+                None,
             )
             .await?,
         ))

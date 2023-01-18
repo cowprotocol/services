@@ -3,7 +3,7 @@ use {
     futures::{future::select_ok, FutureExt},
 };
 
-pub use crate::boundary::mempool::{Config, GasPriceCalculation, GlobalTxPool, HighRisk, Mempool};
+pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Mempool};
 
 pub async fn send(mempools: &[Mempool], settlement: settlement::Simulated) -> Result<(), Error> {
     select_ok(mempools.iter().map(|mempool| {
