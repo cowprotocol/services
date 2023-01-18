@@ -1,1 +1,1 @@
-pub(super) mod v2;
+pub mod v2;

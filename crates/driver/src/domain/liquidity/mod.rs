@@ -40,6 +40,14 @@ impl PartialEq<usize> for Id {
     }
 }
 
+/// A limit input amount.
+#[derive(Clone, Copy, Debug)]
+pub struct MaxInput(pub eth::Asset);
+
+/// An exact output amount.
+#[derive(Clone, Copy, Debug)]
+pub struct ExactOutput(pub eth::Asset);
+
 /// Data tied to a particular liquidity instance, specific to the kind of
 /// liquidity.
 ///
