@@ -32,6 +32,7 @@ use self::gelato::GelatoSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
+#[derive(Debug)]
 pub struct SubTxPool {
     pub strategy: Strategy,
     // Key (Address, U256) represents pair (sender, nonce)
@@ -39,7 +40,7 @@ pub struct SubTxPool {
 }
 type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct GlobalTxPool {
     pub pools: TxPool,
 }
@@ -309,9 +310,17 @@ pub enum SubmissionError {
     Canceled(TransactionHash),
     /// The submission is disabled
     Disabled(DisabledReason),
-    /// An error occured.
+    /// An error occurred.
     Other(anyhow::Error),
 }
+
+impl std::fmt::Display for SubmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for SubmissionError {}
 
 impl SubmissionError {
     /// Returns the outcome for use with metrics.

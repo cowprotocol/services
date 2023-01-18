@@ -28,11 +28,28 @@ pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
     pub address: eth::TokenAddress,
-    pub price: Option<competition::Price>,
+    pub price: Option<Price>,
     /// The balance of this token available in our settlement contract.
     pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
     pub trusted: bool,
+}
+
+/// The price of a token in wei. This represents how much wei is needed to buy
+/// 10**18 of another token.
+#[derive(Debug, Clone, Copy)]
+pub struct Price(pub eth::Ether);
+
+impl From<Price> for eth::U256 {
+    fn from(value: Price) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<eth::U256> for Price {
+    fn from(value: eth::U256) -> Self {
+        Self(value.into())
+    }
 }
 
 /// Each auction has a deadline, limiting the maximum time that can be allocated

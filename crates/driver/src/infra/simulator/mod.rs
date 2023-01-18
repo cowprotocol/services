@@ -3,7 +3,7 @@ use crate::{domain::eth, infra::blockchain, Ethereum};
 pub mod tenderly;
 
 /// Ethereum transaction simulator.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Simulator {
     inner: Inner,
     disable_access_lists: bool,
@@ -35,11 +35,12 @@ impl Simulator {
         }
     }
 
-    /// Simulate the access list needed by a transaction. Return a new
-    /// transaction with an updated access list.
-    pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::Tx, Error> {
+    /// Simulate the access list needed by a transaction. If the transaction
+    /// already has an access list, the returned access list will be a
+    /// superset of the existing one.
+    pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
         if self.disable_access_lists {
-            return Ok(tx);
+            return Ok(tx.access_list);
         }
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
@@ -50,7 +51,7 @@ impl Simulator {
             }
             Inner::Ethereum(ethereum) => ethereum.create_access_list(tx.clone()).await?,
         };
-        Ok(tx.merge_access_list(access_list))
+        Ok(tx.access_list.merge(access_list))
     }
 
     /// Simulate the gas needed by a transaction.
@@ -67,7 +68,7 @@ impl Simulator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Inner {
     Tenderly(tenderly::Tenderly),
     Ethereum(Ethereum),

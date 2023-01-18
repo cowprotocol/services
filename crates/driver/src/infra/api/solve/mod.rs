@@ -1,5 +1,3 @@
-use crate::domain::competition::{self, solution};
-
 mod dto;
 
 pub(super) fn route(router: axum::Router<super::State>) -> axum::Router<super::State> {
@@ -12,14 +10,7 @@ async fn solve(
 ) -> axum::response::Json<dto::Solution> {
     // TODO Report errors instead of unwrapping
     let auction = auction.0.into_domain(state.now()).unwrap();
-    let score = competition::solve(
-        state.solver(),
-        state.ethereum(),
-        state.simulator(),
-        state.now(),
-        &auction,
-    )
-    .await
-    .unwrap();
-    axum::response::Json(dto::Solution::from_domain(solution::Id::random(), score))
+    let competition = state.competition();
+    let (solution_id, score) = competition.solve(&auction).await.unwrap();
+    axum::response::Json(dto::Solution::from_domain(solution_id, score))
 }

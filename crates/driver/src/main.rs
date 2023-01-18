@@ -3,7 +3,10 @@
 #![forbid(unsafe_code)]
 
 use {
-    crate::{domain::competition, infra::api},
+    crate::{
+        domain::competition,
+        infra::{api, mempool, Mempool},
+    },
     infra::blockchain,
     std::net::SocketAddr,
     tokio::sync::oneshot,
@@ -61,6 +64,19 @@ pub async fn run(
     let serve = Api {
         solvers: solvers(&args, now).await,
         simulator: simulator(&args, &eth),
+        // TODO Load these from CLI in the follow up PR
+        mempool: Mempool::public(mempool::Config {
+            additional_tip_percentage_of_max_fee: Default::default(),
+            max_additional_tip: Default::default(),
+            gas_price_cap: Default::default(),
+            target_confirm_time: Default::default(),
+            max_confirm_time: Default::default(),
+            retry_interval: Default::default(),
+            account: ethcontract::Account::Local(Default::default(), None),
+            high_risk_disabled: Default::default(),
+            eth: eth.clone(),
+            pool: Default::default(),
+        }),
         eth,
         addr: match args.bind_addr.as_str() {
             "auto" => api::Addr::Auto(addr_sender),

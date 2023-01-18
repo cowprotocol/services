@@ -285,11 +285,4 @@ impl Tx {
             ..self
         }
     }
-
-    pub fn merge_access_list(self, access_list: AccessList) -> Self {
-        Self {
-            access_list: self.access_list.merge(access_list),
-            ..self
-        }
-    }
 }

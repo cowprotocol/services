@@ -7,7 +7,7 @@ use crate::{
     util::{self, conv},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub timeout: solution::SolverTimeout,
 }

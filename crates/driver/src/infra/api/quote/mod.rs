@@ -11,7 +11,7 @@ async fn quote(
     // TODO Report errors instead of unwrapping
     let order = order.0.into_domain();
     let quote = order
-        .quote(&state.solver(), state.quote_config())
+        .quote(state.solver(), state.quote_config())
         .await
         .unwrap();
     axum::response::Json(dto::Quote::from_domain(&quote))
