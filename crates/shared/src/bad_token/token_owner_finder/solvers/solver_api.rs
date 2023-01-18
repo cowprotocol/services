@@ -16,7 +16,7 @@ pub struct SolverConfiguration {
 impl SolverConfiguration {
     /// Return type is `Token, Option<Owner>` because there are
     /// entries containing `Null` instead of owner address.
-    async fn query(&self) -> Result<HashMap<Token, Option<Owner>>> {
+    async fn query(&self) -> Result<HashMap<Token, Option<Vec<Owner>>>> {
         let response = self
             .client
             .get(self.url.clone())
@@ -34,7 +34,7 @@ impl TokenOwnerSolverApi for SolverConfiguration {
         self.query().await.map(|token_owner_pairs| {
             token_owner_pairs
                 .into_iter()
-                .filter_map(|(token, owner)| owner.map(|owner| (token, vec![owner])))
+                .filter_map(|(token, owners)| owners.map(|owners| (token, owners)))
                 .collect()
         })
     }
