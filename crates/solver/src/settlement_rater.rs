@@ -186,18 +186,24 @@ impl SettlementRating for SettlementRater {
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
-        let rate_settlement = |id, settlement: Settlement, gas_estimate| {
-            let surplus = settlement.total_surplus(prices);
-            let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
+        let rate_settlement = |id, settlement: Settlement, gas_estimate: U256| {
             let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
+            let inputs = crate::objective_value::Inputs::from_settlement(
+                &settlement,
+                prices,
+                &gas_price,
+                &gas_estimate,
+            );
+            let objective_value = inputs.objective_value();
             RatedSettlement {
                 id,
                 settlement,
-                surplus,
+                surplus: inputs.surplus_given,
                 unscaled_subsidized_fee,
-                scaled_unsubsidized_fee: scaled_solver_fees,
+                scaled_unsubsidized_fee: inputs.fees_taken,
                 gas_estimate,
                 gas_price: gas_price.clone(),
+                objective_value,
             }
         };
 
