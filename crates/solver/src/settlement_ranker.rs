@@ -205,12 +205,12 @@ impl SettlementRanker {
 fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
     let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
     let rounded_lhs = lhs
-        .objective_value()
+        .objective_value
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();
     let rounded_rhs = rhs
-        .objective_value()
+        .objective_value
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();
@@ -220,21 +220,13 @@ fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethcontract::U256;
-    use num::Zero;
-
     use crate::driver::solver_settlements::RatedSettlement;
 
     impl RatedSettlement {
         fn with_objective(objective_value: f64) -> Self {
             Self {
-                id: 42,
-                settlement: Default::default(),
-                surplus: BigRational::from_float(objective_value).unwrap(),
-                unscaled_subsidized_fee: Zero::zero(),
-                scaled_unsubsidized_fee: Zero::zero(),
-                gas_estimate: U256::zero(),
-                gas_price: Zero::zero(),
+                objective_value: BigRational::from_f64(objective_value).unwrap(),
+                ..Default::default()
             }
         }
     }
