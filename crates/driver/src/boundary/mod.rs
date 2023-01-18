@@ -22,8 +22,6 @@
 //! By Eric Evans, Domain-Driven Design: Tackling Complexity in the Heart of
 //! Software (2014)
 
-use crate::infra::blockchain::Ethereum;
-
 pub mod liquidity;
 pub mod settlement;
 
@@ -34,6 +32,8 @@ pub use {
     settlement::Settlement,
     shared::{ethrpc::Web3, exit_process_on_panic, tracing::initialize as initialize_tracing},
 };
+
+use crate::infra::blockchain::Ethereum;
 
 /// Returns a Web3 instance with a trait object transport needed by various
 /// boundary components.
