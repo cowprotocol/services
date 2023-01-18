@@ -1,13 +1,18 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth},
+        domain::{
+            competition::{self, order},
+            eth,
+            liquidity,
+        },
+        infra::blockchain,
         Ethereum,
     },
-    anyhow::Result,
-    async_trait::async_trait,
-    itertools::Itertools,
+    anyhow::{Context, Result},
+    ethcontract::dyns::DynWeb3,
     model::{
         app_id::AppId,
+        interaction::InteractionData,
         order::{
             BuyTokenDestination,
             Interactions,
@@ -24,28 +29,17 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    shared::http_solver::model::{
-        ApprovalModel,
-        ExecutedAmmModel,
-        ExecutedLiquidityOrderModel,
-        ExecutedOrderModel,
-        ExecutionPlan,
-        ExecutionPlanCoordinatesModel,
-        InteractionData,
-        InternalizationStrategy,
-        NativeLiquidityOrder,
-        SettledBatchAuctionModel,
-        TokenAmount,
-        UpdatedAmmModel,
-    },
+    shared::http_solver::model::InternalizationStrategy,
     solver::{
-        interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
-        liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
+        interactions::Erc20ApproveInteraction,
+        liquidity::{
+            order_converter::OrderConverter,
+            slippage::{SlippageCalculator, SlippageContext},
+            AmmOrderExecution,
+        },
         settlement::external_prices::ExternalPrices,
         settlement_simulation::settle_method_builder,
-        solver::http_solver::settlement::{convert_settlement, SettlementContext},
     },
-    std::{collections::HashSet, sync::Arc},
 };
 
 #[derive(Debug, Clone)]
@@ -68,47 +62,84 @@ impl Settlement {
             fee_objective_scaling_factor: 1.,
             min_order_age: Default::default(),
         };
+
         let settlement_contract = eth.contracts().settlement();
         let domain = order::signature::domain_separator(
             eth.chain_id(),
             settlement_contract.clone().address().into(),
         );
-        let limit_orders = auction
-            .orders
+
+        let clearing_prices = solution
+            .prices
             .iter()
-            .filter_map(|order| {
-                let boundary_order = to_boundary_order(order);
-                order_converter.normalize_limit_order(boundary_order).ok()
-            })
-            .collect_vec();
-        let settlement = convert_settlement(
-            to_boundary_solution(solution, eth).await?,
-            &SettlementContext {
-                orders: limit_orders,
-                // TODO: #899
-                liquidity: Default::default(),
-            },
-            Arc::new(AllowanceManager),
-            Arc::new(order_converter),
-            SlippageCalculator {
-                relative: to_big_decimal(solution.solver.slippage().relative.clone()),
-                absolute: solution.solver.slippage().absolute.map(Into::into),
-            }
-            .context(&ExternalPrices::try_from_auction_prices(
-                native_token.address(),
-                auction
-                    .tokens
-                    .iter()
-                    .filter_map(|token| {
-                        token
-                            .price
-                            .map(|price| (token.address.into(), price.into()))
-                    })
-                    .collect(),
-            )?),
-            &DomainSeparator(domain.0),
-        )
-        .await?;
+            .map(|(&token, &amount)| (token.into(), amount))
+            .collect();
+        let mut settlement = solver::settlement::Settlement::new(clearing_prices);
+
+        for trade in &solution.trades {
+            let (boundary_order, executed_amount) = match trade {
+                competition::solution::Trade::Fulfillment(trade) => {
+                    // TODO: The `http_solver` module filters out orders with 0
+                    // executed amounts which seems weird to me... why is a
+                    // solver specifying trades with 0 executed amounts?
+                    anyhow::ensure!(
+                        !eth::U256::from(trade.executed).is_zero(),
+                        "unexpected empty execution",
+                    );
+
+                    (to_boundary_order(&trade.order), trade.executed.into())
+                }
+                competition::solution::Trade::Jit(trade) => (
+                    to_boundary_jit_order(&DomainSeparator(domain.0), &trade.order),
+                    trade.executed.into(),
+                ),
+            };
+
+            let boundary_limit_order = order_converter.normalize_limit_order(boundary_order)?;
+            settlement.with_liquidity(&boundary_limit_order, executed_amount)?;
+        }
+
+        let approvals = solution.approvals(eth).await?;
+        for approval in approvals {
+            settlement
+                .encoder
+                .append_to_execution_plan(Erc20ApproveInteraction {
+                    token: eth.contract_at::<contracts::ERC20>(approval.0.spender.token.into()),
+                    spender: approval.0.spender.address.into(),
+                    amount: approval.0.amount,
+                });
+        }
+
+        let slippage_calculator = SlippageCalculator {
+            relative: to_big_decimal(solution.solver.slippage().relative.clone()),
+            absolute: solution.solver.slippage().absolute.map(Into::into),
+        };
+        let external_prices = ExternalPrices::try_from_auction_prices(
+            native_token.address(),
+            auction
+                .tokens
+                .iter()
+                .filter_map(|token| {
+                    token
+                        .price
+                        .map(|price| (token.address.into(), price.into()))
+                })
+                .collect(),
+        )?;
+        let slippage_context = slippage_calculator.context(&external_prices);
+
+        for interaction in &solution.interactions {
+            let boundary_interaction = to_boundary_interaction(
+                &slippage_context,
+                settlement_contract.address().into(),
+                interaction,
+            )?;
+            settlement.encoder.append_to_execution_plan_internalizable(
+                boundary_interaction,
+                interaction.internalize(),
+            );
+        }
+
         Ok(Self {
             inner: settlement,
             contract: settlement_contract.to_owned(),
@@ -221,18 +252,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         // TODO Different signing schemes imply different sizes of signature data, which indicates
         // that I'm missing an invariant in my types and I need to fix that
         // PreSign, for example, carries no data. Everything should be reflected in the types!
-        signature: match order.signature.scheme {
-            order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
-                EcdsaSignature::from_bytes(order.signature.data.as_slice().try_into().unwrap()),
-            ),
-            order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
-                EcdsaSignature::from_bytes(order.signature.data.as_slice().try_into().unwrap()),
-            ),
-            order::signature::Scheme::Eip1271 => {
-                model::signature::Signature::Eip1271(order.signature.data.clone())
-            }
-            order::signature::Scheme::PreSign => model::signature::Signature::PreSign,
-        },
+        signature: to_boundary_signature(&order.signature),
         interactions: Interactions {
             pre: order
                 .interactions
@@ -247,167 +267,119 @@ fn to_boundary_order(order: &competition::Order) -> Order {
     }
 }
 
-async fn to_boundary_solution(
-    solution: &competition::Solution,
-    eth: &Ethereum,
-) -> Result<SettledBatchAuctionModel> {
-    Ok(SettledBatchAuctionModel {
-        orders: solution
-            .trades
-            .iter()
-            .enumerate()
-            .filter_map(|(index, trade)| match trade {
-                competition::solution::Trade::Fulfillment(fulfillment) => Some((
-                    index,
-                    ExecutedOrderModel {
-                        exec_sell_amount: match fulfillment.order.side {
-                            order::Side::Sell => fulfillment.executed.into(),
-                            order::Side::Buy => Default::default(),
-                        },
-                        exec_buy_amount: match fulfillment.order.side {
-                            order::Side::Buy => fulfillment.executed.into(),
-                            order::Side::Sell => Default::default(),
-                        },
-                        cost: None,
-                        fee: Some(to_token_amount(
-                            &fulfillment.order.fee.solver.to_asset(&fulfillment.order),
-                        )),
-                        exec_plan: None,
-                    },
-                )),
-                competition::solution::Trade::Jit(_) => None,
-            })
-            .collect(),
-        foreign_liquidity_orders: solution
-            .trades
-            .iter()
-            .filter_map(|trade| match trade {
-                competition::solution::Trade::Jit(jit) => Some(ExecutedLiquidityOrderModel {
-                    order: NativeLiquidityOrder {
-                        from: jit.order.signature.signer.into(),
-                        data: OrderData {
-                            sell_token: jit.order.sell.token.into(),
-                            buy_token: jit.order.buy.token.into(),
-                            receiver: Some(jit.order.receiver.into()),
-                            sell_amount: jit.order.sell.amount,
-                            buy_amount: jit.order.buy.amount,
-                            valid_to: jit.order.valid_to.into(),
-                            app_data: AppId(jit.order.app_data.into()),
-                            fee_amount: jit.order.fee.into(),
-                            kind: match jit.order.side {
-                                competition::order::Side::Buy => OrderKind::Buy,
-                                competition::order::Side::Sell => OrderKind::Sell,
-                            },
-                            partially_fillable: jit.order.partially_fillable,
-                            sell_token_balance: match jit.order.sell_token_balance {
-                                competition::order::SellTokenBalance::Erc20 => {
-                                    SellTokenSource::Erc20
-                                }
-                                competition::order::SellTokenBalance::Internal => {
-                                    SellTokenSource::Internal
-                                }
-                                competition::order::SellTokenBalance::External => {
-                                    SellTokenSource::External
-                                }
-                            },
-                            buy_token_balance: match jit.order.buy_token_balance {
-                                competition::order::BuyTokenBalance::Erc20 => {
-                                    BuyTokenDestination::Erc20
-                                }
-                                competition::order::BuyTokenBalance::Internal => {
-                                    BuyTokenDestination::Internal
-                                }
-                            },
-                        },
-                        signature: Default::default(),
-                    },
-                    exec_sell_amount: match jit.order.side {
-                        order::Side::Sell => jit.executed.into(),
-                        order::Side::Buy => Default::default(),
-                    },
-                    exec_buy_amount: match jit.order.side {
-                        order::Side::Buy => jit.executed.into(),
-                        order::Side::Sell => Default::default(),
-                    },
-                }),
-                competition::solution::Trade::Fulfillment(_) => None,
-            })
-            .collect(),
-        amms: solution
-            .interactions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, interaction)| match interaction {
-                competition::solution::Interaction::Liquidity(interaction) => Some((
-                    interaction.liquidity.address.into(),
-                    UpdatedAmmModel {
-                        execution: vec![ExecutedAmmModel {
-                            sell_token: interaction.output.token.into(),
-                            buy_token: interaction.input.token.into(),
-                            exec_sell_amount: interaction.output.amount,
-                            exec_buy_amount: interaction.input.amount,
-                            exec_plan: ExecutionPlan {
-                                coordinates: ExecutionPlanCoordinatesModel {
-                                    sequence: 0,
-                                    position: index.try_into().unwrap(),
-                                },
-                                internal: interaction.internalize,
-                            },
-                        }],
-                        cost: None,
-                    },
-                )),
-                competition::solution::Interaction::Custom(_) => None,
-            })
-            .collect(),
-        ref_token: None,
-        prices: solution
-            .prices
-            .iter()
-            .map(|(&token, &amount)| (token.into(), amount))
-            .collect(),
-        approvals: solution
-            .approvals(eth)
-            .await?
-            .into_iter()
-            .map(|approval| ApprovalModel {
-                token: approval.0.spender.token.into(),
-                spender: approval.0.spender.address.into(),
-                amount: approval.0.amount,
-            })
-            .collect(),
-        interaction_data: solution
-            .interactions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, interaction)| match interaction {
-                competition::solution::Interaction::Custom(interaction) => Some(InteractionData {
-                    target: interaction.target.into(),
-                    value: interaction.value.into(),
-                    call_data: interaction.call_data.clone(),
-                    inputs: interaction.inputs.iter().map(to_token_amount).collect(),
-                    outputs: interaction.outputs.iter().map(to_token_amount).collect(),
-                    exec_plan: Some(ExecutionPlan {
-                        coordinates: ExecutionPlanCoordinatesModel {
-                            sequence: 0,
-                            position: index.try_into().unwrap(),
-                        },
-                        internal: interaction.internalize,
-                    }),
-                    cost: None,
-                }),
-                competition::solution::Interaction::Liquidity(_) => None,
-            })
-            .collect(),
-        metadata: None,
-        submitter: Default::default(),
-    })
+fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order {
+    let data = OrderData {
+        sell_token: order.sell.token.into(),
+        buy_token: order.buy.token.into(),
+        receiver: Some(order.receiver.into()),
+        sell_amount: order.sell.amount,
+        buy_amount: order.buy.amount,
+        valid_to: order.valid_to.into(),
+        app_data: AppId(order.app_data.into()),
+        fee_amount: order.fee.into(),
+        kind: match order.side {
+            competition::order::Side::Buy => OrderKind::Buy,
+            competition::order::Side::Sell => OrderKind::Sell,
+        },
+        partially_fillable: order.partially_fillable,
+        sell_token_balance: match order.sell_token_balance {
+            competition::order::SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+            competition::order::SellTokenBalance::Internal => SellTokenSource::Internal,
+            competition::order::SellTokenBalance::External => SellTokenSource::External,
+        },
+        buy_token_balance: match order.buy_token_balance {
+            competition::order::BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+            competition::order::BuyTokenBalance::Internal => BuyTokenDestination::Internal,
+        },
+    };
+    let metadata = OrderMetadata {
+        owner: order.signature.signer.into(),
+        full_fee_amount: order.fee.into(),
+        // All foreign orders **MUST** be liquidity, this is
+        // important so they cannot be used to affect the objective.
+        class: OrderClass::Liquidity,
+        // Not needed for encoding but nice to have for logs and competition info.
+        uid: data.uid(domain, &order.signature.signer.into()),
+        // These fields do not seem to be used at all for order
+        // encoding, so we just use the default values.
+        settlement_contract: Default::default(),
+        // For other metdata fields, the default value is correct.
+        ..Default::default()
+    };
+    let signature = to_boundary_signature(&order.signature);
+
+    Order {
+        data,
+        metadata,
+        signature,
+        interactions: Interactions::default(),
+    }
 }
 
-fn to_token_amount(asset: &eth::Asset) -> TokenAmount {
-    TokenAmount {
-        amount: asset.amount,
-        token: asset.token.into(),
+fn to_boundary_signature(signature: &order::Signature) -> model::signature::Signature {
+    // TODO Different signing schemes imply different sizes of signature data, which
+    // indicates that I'm missing an invariant in my types and I need to fix
+    // that PreSign, for example, carries no data. Everything should be
+    // reflected in the types!
+    match signature.scheme {
+        order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
+            EcdsaSignature::from_bytes(signature.data.as_slice().try_into().unwrap()),
+        ),
+        order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
+            EcdsaSignature::from_bytes(signature.data.as_slice().try_into().unwrap()),
+        ),
+        order::signature::Scheme::Eip1271 => {
+            model::signature::Signature::Eip1271(signature.data.clone())
+        }
+        order::signature::Scheme::PreSign => model::signature::Signature::PreSign,
+    }
+}
+
+fn to_boundary_interaction(
+    slippage_context: &SlippageContext,
+    settlement_contract: eth::ContractAddress,
+    interaction: &competition::solution::Interaction,
+) -> Result<InteractionData> {
+    match interaction {
+        competition::solution::Interaction::Custom(custom) => Ok(InteractionData {
+            target: custom.target.into(),
+            value: custom.value.into(),
+            call_data: custom.call_data.clone(),
+        }),
+        competition::solution::Interaction::Liquidity(liquidity) => {
+            let boundary_execution =
+                slippage_context.apply_to_amm_execution(AmmOrderExecution {
+                    input_max: (liquidity.input.token.into(), liquidity.input.amount),
+                    output: (liquidity.output.token.into(), liquidity.output.amount),
+                    internalizable: interaction.internalize(),
+                })?;
+
+            let input = liquidity::MaxInput(eth::Asset {
+                token: boundary_execution.input_max.0.into(),
+                amount: boundary_execution.input_max.1,
+            });
+            let output = liquidity::ExactOutput(eth::Asset {
+                token: boundary_execution.output.0.into(),
+                amount: boundary_execution.output.1,
+            });
+
+            let interaction = match &liquidity.liquidity.kind {
+                liquidity::Kind::UniswapV2(pool) => pool
+                    .swap(&input, &output, &settlement_contract.into())
+                    .context("invalid uniswap V2 execution")?,
+                liquidity::Kind::UniswapV3(_) => todo!(),
+                liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                liquidity::Kind::BalancerV2Weighted(_) => todo!(),
+                liquidity::Kind::Swapr(_) => todo!(),
+                liquidity::Kind::ZeroEx(_) => todo!(),
+            };
+
+            Ok(InteractionData {
+                target: interaction.target.into(),
+                value: interaction.value.into(),
+                call_data: interaction.call_data,
+            })
+        }
     }
 }
 
@@ -420,25 +392,8 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
 }
 
-struct AllowanceManager;
-
-#[async_trait]
-impl AllowanceManaging for AllowanceManager {
-    async fn get_allowances(
-        &self,
-        _tokens: HashSet<eth::H160>,
-        _spender: eth::H160,
-    ) -> Result<Allowances> {
-        unimplemented!("this is not supposed to be called")
-    }
-
-    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
-        Ok(requests
-            .iter()
-            .map(|request| Approval {
-                token: request.token,
-                spender: request.spender,
-            })
-            .collect())
+impl blockchain::contracts::ContractAt for contracts::ERC20 {
+    fn at(web3: &DynWeb3, address: eth::ContractAddress) -> Self {
+        contracts::ERC20::at(web3, address.into())
     }
 }

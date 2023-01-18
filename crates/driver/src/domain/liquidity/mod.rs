@@ -19,6 +19,21 @@ pub struct Liquidity {
     pub kind: Kind,
 }
 
+impl Liquidity {
+    /// Returns the spender for an ERC20 allowance that is required for using
+    /// the liquidity.
+    pub fn spender(&self) -> eth::Address {
+        match &self.kind {
+            Kind::UniswapV2(pool) => pool.router.into(),
+            Kind::UniswapV3(_) => todo!(),
+            Kind::BalancerV2Stable(_) => todo!(),
+            Kind::BalancerV2Weighted(_) => todo!(),
+            Kind::Swapr(_) => todo!(),
+            Kind::ZeroEx(_) => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub usize);
 

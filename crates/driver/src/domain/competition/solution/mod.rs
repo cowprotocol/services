@@ -88,6 +88,9 @@ impl Solution {
     /// deterministically.
     fn allowances(&self) -> impl Iterator<Item = eth::allowance::Required> {
         let mut normalized = HashMap::new();
+        // TODO: we need to carry the "internalize" flag with the allowances,
+        // since we don't want to include approvals for interactions that are
+        // meant to be internalized anyway.
         let allowances = self
             .interactions
             .iter()
@@ -95,9 +98,7 @@ impl Solution {
                 Interaction::Custom(interaction) => interaction.allowances.clone().into_iter(),
                 Interaction::Liquidity(interaction) => vec![eth::Allowance {
                     spender: eth::allowance::Spender {
-                        // TODO This is a mistake, right? I think this should be the settlement
-                        // contract address?
-                        address: interaction.liquidity.address,
+                        address: interaction.liquidity.spender(),
                         token: interaction.output.token,
                     },
                     amount: interaction.output.amount,
