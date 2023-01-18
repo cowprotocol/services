@@ -7,9 +7,9 @@ use {
     clap::Parser,
     config::cli,
     infra::{
-        blockchain,
-        blockchain::Ethereum,
+        blockchain::{self, Ethereum},
         config,
+        liquidity,
         simulator::{self, Simulator},
         solver::{self, Solver},
         Api,
@@ -52,10 +52,13 @@ pub async fn run(
     boundary::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with arguments:\n{}", args);
 
+    let config = config::file::load(&args.config, now).await;
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
     let serve = Api {
-        solvers: solvers(&args, now).await,
+        solvers: solvers(&config),
+        liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&args, &eth),
         eth,
         addr: match args.bind_addr.as_str() {
@@ -126,12 +129,14 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
     .expect("initialize ethereum RPC API")
 }
 
-async fn solvers(args: &cli::Args, now: infra::time::Now) -> Vec<Solver> {
-    config::solvers::load(&args.solvers_config, now)
+fn solvers(config: &config::Config) -> Vec<Solver> {
+    config.solvers.iter().cloned().map(Solver::new).collect()
+}
+
+async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
+    liquidity::Fetcher::new(eth, &config.liquidity)
         .await
-        .into_iter()
-        .map(Solver::new)
-        .collect()
+        .expect("initalize liquidity fetcher")
 }
 
 #[cfg(unix)]

@@ -1,5 +1,5 @@
 use {
-    crate::{domain::competition, infra, solver::Solver, Ethereum, Simulator},
+    crate::{domain::competition, infra, liquidity, solver::Solver, Ethereum, Simulator},
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
@@ -22,6 +22,7 @@ pub enum Addr {
 
 pub struct Api {
     pub solvers: Vec<Solver>,
+    pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub now: infra::time::Now,
@@ -45,6 +46,7 @@ impl Api {
 
         // Multiplex each solver as part of the API.
         let shared = Arc::new(SharedState {
+            liquidity: self.liquidity,
             simulator: self.simulator,
             eth: self.eth,
             now: self.now,
@@ -91,6 +93,10 @@ impl State {
         self.solver.clone()
     }
 
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.shared.liquidity
+    }
+
     fn simulator(&self) -> &Simulator {
         &self.shared.simulator
     }
@@ -111,6 +117,7 @@ impl State {
 /// State which is shared among all multiplexed solvers.
 #[derive(Debug)]
 struct SharedState {
+    liquidity: liquidity::Fetcher,
     simulator: Simulator,
     eth: Ethereum,
     now: infra::time::Now,

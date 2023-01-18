@@ -1,8 +1,6 @@
-pub use self::fetcher::Fetcher;
 use crate::domain::eth;
 
 pub mod balancer;
-pub mod fetcher;
 pub mod swapr;
 pub mod uniswap;
 pub mod zeroex;

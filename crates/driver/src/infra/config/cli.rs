@@ -15,10 +15,10 @@ pub struct Args {
     #[clap(long, env)]
     pub ethrpc: Url,
 
-    /// Path to the solvers configuration file. This file should be in YAML
+    /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see TODO insert github link here.
     #[clap(long, env)]
-    pub solvers_config: PathBuf,
+    pub config: PathBuf,
 
     #[clap(flatten)]
     pub contract_addresses: ContractAddresses,
@@ -42,8 +42,7 @@ impl std::fmt::Display for Args {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "bind_addr: {}", self.bind_addr)?;
         writeln!(f, "ethrpc: SECRET")?;
-        writeln!(f, "solvers_config: {:?}", self.solvers_config)?;
-        writeln!(f, "solvers_config: {:?}", self.solvers_config)?;
+        writeln!(f, "config: {}", self.config.display())?;
         writeln!(f, "{}", self.contract_addresses)?;
         writeln!(f, "{}", self.tenderly)?;
         writeln!(

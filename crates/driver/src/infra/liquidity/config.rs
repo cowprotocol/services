@@ -18,5 +18,5 @@ pub struct UniswapV2 {
     pub router: eth::ContractAddress,
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
-    pub pool_code: eth::H256,
+    pub pool_code: eth::CodeDigest,
 }

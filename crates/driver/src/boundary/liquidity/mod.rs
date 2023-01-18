@@ -1,12 +1,8 @@
 use {
     crate::{
         boundary,
-        domain::{
-            competition::{auction, order},
-            eth,
-            liquidity,
-        },
-        infra::blockchain::Ethereum,
+        domain::{competition::order, eth, liquidity},
+        infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
     futures::future,
@@ -51,7 +47,7 @@ pub struct Fetcher {
 
 impl Fetcher {
     /// Creates a new fether for the specified configuration.
-    pub async fn new(eth: &Ethereum, config: &liquidity::fetcher::Config) -> Result<Self> {
+    pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
             block_stream_retriever_strategy: BlockRetrieverStrategy::EthCall,
@@ -88,9 +84,8 @@ impl Fetcher {
     }
 
     /// Fetches liquidity for the specified auction.
-    pub async fn fetch(&self, auction: &auction::Auction) -> Result<Vec<liquidity::Liquidity>> {
-        let pairs = auction
-            .orders
+    pub async fn fetch(&self, orders: &[order::Order]) -> Result<Vec<liquidity::Liquidity>> {
+        let pairs = orders
             .iter()
             .filter_map(|order| match order.kind {
                 order::Kind::Market | order::Kind::Limit { .. } => {
