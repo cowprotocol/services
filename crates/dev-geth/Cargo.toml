@@ -1,0 +1,9 @@
+[package]
+name = "dev-geth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.24", features = ["full"] }
+axum = "0.6"
+web3 = "0.18"

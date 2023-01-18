@@ -7,6 +7,8 @@ use crate::{
     util::{self, conv},
 };
 
+pub const FAKE_AUCTION_REWARD: f64 = 35.;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub timeout: solution::SolverTimeout,
@@ -95,7 +97,7 @@ impl Order {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                reward: Default::default(),
+                reward: FAKE_AUCTION_REWARD,
             }],
             liquidity: Default::default(),
             gas_price: self.gas_price,

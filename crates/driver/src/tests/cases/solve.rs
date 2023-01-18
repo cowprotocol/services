@@ -140,6 +140,7 @@ async fn test() {
     // Call /solve.
     let result = client
         .solve(
+            "test1",
             json!({
                 "id": "1",
                 "tokens": {
@@ -179,7 +180,6 @@ async fn test() {
                 "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
-            "test1",
         )
         .await;
 

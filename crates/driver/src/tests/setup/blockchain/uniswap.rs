@@ -28,6 +28,8 @@ pub struct Uniswap {
 ///   |                                              v
 /// [USDT]<---(Uniswap Pair 1000 A / 600.000 B)--->[WETH]
 pub async fn setup() -> Uniswap {
+    super::reset().await;
+
     let web3 = super::web3();
 
     // Move ETH into the admin account.
