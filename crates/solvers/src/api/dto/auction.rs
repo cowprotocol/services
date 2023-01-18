@@ -59,7 +59,7 @@ impl Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    id: Option<i64>,
+    id: Option<String>,
     tokens: HashMap<H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,
@@ -132,7 +132,8 @@ enum Liquidity {
 struct ConstantProductPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, ConstantProductReserve>,
     fee: BigDecimal,
 }
@@ -163,7 +164,7 @@ impl ConstantProductPool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::ConstantProduct(liquidity::constant_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&self.fee).ok_or("invalid constant product fee")?,
@@ -178,7 +179,8 @@ impl ConstantProductPool {
 struct WeightedProductPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, WeightedProductReserve>,
     fee: BigDecimal,
 }
@@ -219,7 +221,7 @@ impl WeightedProductPool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&self.fee).ok_or("invalid weighted product fee")?,
@@ -234,7 +236,8 @@ impl WeightedProductPool {
 struct StablePool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, StableReserve>,
     amplification_parameter: BigDecimal,
     fee: BigDecimal,
@@ -273,7 +276,7 @@ impl StablePool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::Stable(liquidity::stable::Pool {
                 reserves,
                 amplification_parameter: conv::decimal_to_rational(&self.amplification_parameter)
@@ -290,7 +293,8 @@ impl StablePool {
 struct ConcentratedLiquidityPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: Vec<H160>,
     #[serde_as(as = "serialize::U256")]
     sqrt_price: U256,
@@ -319,7 +323,7 @@ impl ConcentratedLiquidityPool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
                 tokens,
                 sqrt_price: liquidity::concentrated::SqrtPrice(self.sqrt_price),
@@ -348,7 +352,8 @@ impl ConcentratedLiquidityPool {
 struct ForeignLimitOrder {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
     hash: [u8; 32],
     maker_token: H160,
@@ -366,7 +371,7 @@ impl ForeignLimitOrder {
         liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::LimitOrder(liquidity::limit_order::LimitOrder {
                 maker: eth::Asset {
                     token: eth::TokenAddress(self.maker_token),
