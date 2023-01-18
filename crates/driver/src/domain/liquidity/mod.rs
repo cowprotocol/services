@@ -19,6 +19,21 @@ pub struct Liquidity {
     pub data: Data,
 }
 
+impl Liquidity {
+    /// Returns the spender for an ERC20 allowance that is required for using
+    /// the liquidity.
+    pub fn spender(&self) -> eth::Address {
+        match &self.data {
+            Data::UniswapV2(pool) => pool.router.into(),
+            Data::UniswapV3(_) => todo!(),
+            Data::BalancerV2Stable(_) => todo!(),
+            Data::BalancerV2Weighted(_) => todo!(),
+            Data::Swapr(_) => todo!(),
+            Data::ZeroEx(_) => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub usize);
 

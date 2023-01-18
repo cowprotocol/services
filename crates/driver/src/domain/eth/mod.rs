@@ -218,6 +218,12 @@ impl From<TokenAddress> for H160 {
     }
 }
 
+impl From<TokenAddress> for ContractAddress {
+    fn from(token: TokenAddress) -> Self {
+        token.0
+    }
+}
+
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy)]
