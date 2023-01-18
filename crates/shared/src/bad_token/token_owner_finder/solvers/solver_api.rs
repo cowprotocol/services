@@ -1,5 +1,5 @@
 use super::TokenOwnerSolverApi;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ethcontract::H160;
 use reqwest::{Client, Url};
 use std::collections::HashMap;
@@ -17,13 +17,14 @@ impl SolverConfiguration {
     /// Return type is `Token, Option<Owner>` because there are
     /// entries containing `Null` instead of owner address.
     async fn query(&self) -> Result<HashMap<Token, Option<Owner>>> {
-        Ok(self
+        let response = self
             .client
             .get(self.url.clone())
             .send()
             .await?
-            .json()
-            .await?)
+            .text()
+            .await?;
+        serde_json::from_str(&response).context(format!("bad query response: {:?}", response))
     }
 }
 
