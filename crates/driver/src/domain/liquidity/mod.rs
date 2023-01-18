@@ -4,6 +4,7 @@ use crate::domain::eth;
 pub mod balancer;
 pub mod fetcher;
 pub mod uniswap;
+pub mod swapr;
 pub mod zeroex;
 
 /// A source of liquidity which can be used by the solver.
@@ -50,5 +51,6 @@ pub enum Data {
     UnswapV3(uniswap::v3::Pool),
     BalancerV2Stable(balancer::stable::Pool),
     BalancerV2Weighted(balancer::weighted::Pool),
+    Swapr(swapr::Pool),
     ZeroEx(zeroex::LimitOrder),
 }
