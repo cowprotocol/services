@@ -48,9 +48,9 @@ use {
     std::{collections::HashSet, sync::Arc},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Settlement {
-    settlement: solver::settlement::Settlement,
+    pub(super) inner: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
     solver: eth::Address,
 }
@@ -59,7 +59,6 @@ impl Settlement {
     pub async fn encode(
         eth: &Ethereum,
         solution: &competition::Solution,
-        // TODO I think it's possible to remove this parameter, do this in a follow-up
         auction: &competition::Auction,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();
@@ -111,7 +110,7 @@ impl Settlement {
         )
         .await?;
         Ok(Self {
-            settlement,
+            inner: settlement,
             contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
         })
@@ -119,7 +118,7 @@ impl Settlement {
 
     pub fn tx(self) -> eth::Tx {
         let encoded_settlement = self
-            .settlement
+            .inner
             .encode(InternalizationStrategy::SkipInternalizableInteraction);
         let builder = settle_method_builder(
             &self.contract,
@@ -137,7 +136,7 @@ impl Settlement {
     }
 
     pub async fn score(
-        self,
+        &self,
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
@@ -156,7 +155,7 @@ impl Settlement {
         )?;
         let gas_price = u256_to_big_rational(&auction.gas_price.into());
         let inputs = solver::objective_value::Inputs::from_settlement(
-            &self.settlement,
+            &self.inner,
             &prices,
             &gas_price,
             &gas.into(),

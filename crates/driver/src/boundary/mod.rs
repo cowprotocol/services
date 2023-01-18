@@ -22,11 +22,13 @@
 //! By Eric Evans, Domain-Driven Design: Tackling Complexity in the Heart of
 //! Software (2014)
 
+pub mod mempool;
 pub mod settlement;
 
 pub use {
-    anyhow::Error,
+    anyhow::{Error, Result},
     contracts,
+    mempool::Mempool,
     model::order::OrderData,
     settlement::Settlement,
     shared::{exit_process_on_panic, tracing::initialize as initialize_tracing},
