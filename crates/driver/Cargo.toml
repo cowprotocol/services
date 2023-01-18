@@ -29,7 +29,6 @@ bigdecimal = "0.3"
 rand = "0.8"
 web3 = "0.18"
 toml = "0.5"
-dashmap = "5.4.0"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
