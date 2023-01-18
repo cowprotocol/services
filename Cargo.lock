@@ -3566,18 +3566,22 @@ dependencies = [
  "axum",
  "bigdecimal",
  "chrono",
+ "clap 4.0.8",
  "ethereum-types 0.12.1",
  "hex",
  "hyper",
  "itertools",
  "model",
  "num",
+ "reqwest",
  "serde",
+ "serde_json",
  "serde_with 2.0.1",
  "shared",
  "tokio",
  "tower",
  "tower-http",
+ "tracing",
 ]
 
 [[package]]

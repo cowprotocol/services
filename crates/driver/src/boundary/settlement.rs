@@ -365,7 +365,7 @@ async fn to_boundary_solution(
         prices: solution
             .prices
             .iter()
-            .map(|(&token, &amount)| (token.into(), amount.into()))
+            .map(|(&token, &amount)| (token.into(), amount))
             .collect(),
         approvals: solution
             .approvals(eth)

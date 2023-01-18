@@ -7,6 +7,7 @@ use reqwest::{
 };
 use serde_json::json;
 use std::time::Duration;
+use tracing::Instrument;
 
 pub mod gas_model;
 pub mod model;
@@ -216,7 +217,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
             let _result = request.json(&json!(result)).send().await;
         };
-        tokio::task::spawn(future);
+        tokio::task::spawn(future.instrument(tracing::Span::current()));
     }
 }
 

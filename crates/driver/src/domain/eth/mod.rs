@@ -155,7 +155,7 @@ impl From<AccessList> for web3::types::AccessList {
 }
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(pub H160);
 
 impl From<H160> for Address {

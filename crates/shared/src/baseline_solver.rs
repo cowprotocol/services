@@ -168,7 +168,18 @@ impl BaseTokens {
     // and a maximum number of intermediate steps.
     // Can contain token pairs between base tokens or a base token and the sell or buy token.
     pub fn path_candidates(&self, sell_token: H160, buy_token: H160) -> HashSet<PathCandidate> {
-        path_candidates(sell_token, buy_token, &self.tokens, DEFAULT_MAX_HOPS)
+        self.path_candidates_with_hops(sell_token, buy_token, DEFAULT_MAX_HOPS)
+    }
+
+    /// Returns possible path candidates with the specified number of maximum
+    /// hops.
+    pub fn path_candidates_with_hops(
+        &self,
+        sell_token: H160,
+        buy_token: H160,
+        max_hops: usize,
+    ) -> HashSet<PathCandidate> {
+        path_candidates(sell_token, buy_token, &self.tokens, max_hops)
     }
 }
 
