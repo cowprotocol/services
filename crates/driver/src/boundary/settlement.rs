@@ -257,9 +257,6 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             onchain_order_data: Default::default(),
             is_liquidity_order: order.is_liquidity(),
         },
-        // TODO Different signing schemes imply different sizes of signature data, which indicates
-        // that I'm missing an invariant in my types and I need to fix that
-        // PreSign, for example, carries no data. Everything should be reflected in the types!
         signature: to_boundary_signature(&order.signature),
         interactions: Interactions {
             pre: order
