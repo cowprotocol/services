@@ -118,13 +118,6 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Broadcast a transaction.
-    pub async fn send_transaction(&self, tx: eth::Tx) -> Result<(), Error> {
-        let tx = Self::into_request(tx);
-        self.web3.eth().send_transaction(tx).await?;
-        Ok(())
-    }
-
     /// Necessary for the boundary integration.
     pub fn web3(&self) -> DynWeb3 {
         self.web3.clone()
