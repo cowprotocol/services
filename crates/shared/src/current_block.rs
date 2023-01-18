@@ -1,7 +1,7 @@
 mod arguments;
 mod eth_call;
 
-pub use self::arguments::Arguments;
+pub use self::arguments::{Arguments, BlockRetrieverStrategy};
 use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
