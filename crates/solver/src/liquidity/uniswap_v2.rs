@@ -137,9 +137,17 @@ impl Inner {
             },
         )
     }
+
+    pub fn router(&self) -> &IUniswapLikeRouter {
+        &self.router
+    }
 }
 
 impl SettlementHandling<ConstantProductOrder> for Inner {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     // Creates the required interaction to convert the given input into output. Assumes slippage is
     // already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {

@@ -11,9 +11,6 @@ pub mod zeroex;
 #[derive(Debug, Clone)]
 pub struct Liquidity {
     pub id: Id,
-    /// Depending on the liquidity provider, this can mean different things.
-    /// Usually it's the address of the liquidity pool.
-    pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
     pub kind: Kind,
@@ -47,8 +44,8 @@ impl PartialEq<usize> for Id {
 /// liquidity, as well as state required by the solver engine.
 #[derive(Debug, Clone)]
 pub enum Kind {
-    UnswapV2(uniswap::v2::Pool),
-    UnswapV3(uniswap::v3::Pool),
+    UniswapV2(uniswap::v2::Pool),
+    UniswapV3(uniswap::v3::Pool),
     BalancerV2Stable(balancer::stable::Pool),
     BalancerV2Weighted(balancer::weighted::Pool),
     Swapr(swapr::Pool),
