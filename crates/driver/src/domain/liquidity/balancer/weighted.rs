@@ -1,6 +1,6 @@
 /// Liquidity data tied to a Balancer V2 pool based on "Weighted Math" [^1].
 ///
-/// Balancer V2 supports two kind pools that fall in this category:
+/// Balancer V2 supports two kinds of pools that fall in this category:
 /// - Weighted Pools [^2]
 /// - Liquidity Bootstrapping Pools [^3]
 ///

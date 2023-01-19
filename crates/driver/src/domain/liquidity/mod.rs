@@ -16,7 +16,7 @@ pub struct Liquidity {
     pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
-    pub data: Data,
+    pub kind: Kind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,13 +40,13 @@ impl PartialEq<usize> for Id {
     }
 }
 
-/// Data tied to a particular liquidity instance, specific to the type of
+/// Data tied to a particular liquidity instance, specific to the kind of
 /// liquidity.
 ///
 /// This contains relevant data for encoding interactions for the given
 /// liquidity, as well as state required by the solver engine.
 #[derive(Debug, Clone)]
-pub enum Data {
+pub enum Kind {
     UnswapV2(uniswap::v2::Pool),
     UnswapV3(uniswap::v3::Pool),
     BalancerV2Stable(balancer::stable::Pool),
