@@ -1,19 +1,24 @@
-FROM docker.io/rust:1-slim-bullseye
+FROM docker.io/rust:1-slim-bullseye as cargo-build
+
+RUN apt-get update &&\
+    apt-get install -y curl git libssl-dev pkg-config tar
 
 # Copy and build code
 WORKDIR /src
-RUN apt-get update && apt-get install -y git libssl-dev pkg-config curl tar tini
 COPY . .
-WORKDIR /src/crates/dev-geth
-RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build -p dev-geth --release
 
-# Install geth via curl
-WORKDIR /geth
-RUN curl https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-1.10.26-e5eb32ac.tar.gz -o geth.tar.gz
-RUN tar -xf geth.tar.gz
+# Download and extract Geth
+WORKDIR /opt/geth
+RUN curl https://gethstore.blob.core.windows.net/builds/geth-linux-$(dpkg --print-architecture)-1.10.26-e5eb32ac.tar.gz -o geth.tar.gz
+RUN tar --strip-components=1 -xf geth.tar.gz
 
-RUN cp /src/target/release/dev-geth /usr/local/bin/
-RUN cp /geth/geth-linux-amd64-1.10.26-e5eb32ac/geth /usr/local/bin/
+FROM docker.io/debian:bullseye-slim
+
+RUN apt-get update &&\
+    apt-get install -y ca-certificates tini
+COPY --from=cargo-build /src/target/release/dev-geth /usr/local/bin/dev-geth
+COPY --from=cargo-build /opt/geth/geth /usr/local/bin/geth
 
 ENTRYPOINT ["tini", "--"]
 CMD ["dev-geth"]
