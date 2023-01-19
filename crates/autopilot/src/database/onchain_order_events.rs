@@ -484,7 +484,13 @@ async fn parse_general_onchain_order_placement_data<'a>(
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
                 }),
                 Err(err) => {
-                    metrics.inc_onchain_order_errors(err.to_metrics_label());
+                    let err_label = err.to_metrics_label();
+                    tracing::debug!(
+                        "Could not retrieve a quote for order {:?}: {}",
+                        order_data.1.uid,
+                        err_label
+                    );
+                    metrics.inc_onchain_order_errors(err_label);
                     None
                 }
             };
