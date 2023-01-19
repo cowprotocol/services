@@ -538,7 +538,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         current_block_stream.clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        Duration::from_secs(2),
+        args.auction_update_interval,
         risk_adjusted_rewards,
         args.ethflow_contract,
         args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),

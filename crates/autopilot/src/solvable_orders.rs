@@ -422,7 +422,7 @@ async fn update_task(
         //   gets cancelled off chain
         // - the event updater takes some time to run and if we go first we would not update the
         //   orders with the most recent events.
-        tokio::time::sleep(update_interval).await;
+        let start = Instant::now();
         let cache = match cache.upgrade() {
             Some(self_) => self_,
             None => {
@@ -431,7 +431,6 @@ async fn update_task(
             }
         };
         let block = current_block.borrow().number;
-        let start = Instant::now();
         match cache.update(block).await {
             Ok(()) => tracing::debug!(
                 %block,
@@ -445,6 +444,7 @@ async fn update_task(
                 start.elapsed().as_secs_f32()
             ),
         }
+        tokio::time::sleep_until(start + update_interval).await;
     }
 }
 
