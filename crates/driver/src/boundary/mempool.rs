@@ -1,4 +1,3 @@
-pub use solver::settlement_submission::GlobalTxPool;
 use {
     crate::{
         boundary::Result,
@@ -7,7 +6,6 @@ use {
     },
     async_trait::async_trait,
     ethcontract::{transaction::TransactionBuilder, transport::DynTransport},
-    gas_estimation::GasPriceEstimating,
     shared::http_client::HttpClientFactory,
     solver::{
         settlement_access_list::AccessListEstimating,
@@ -27,6 +25,7 @@ use {
     std::{fmt::Debug, sync::Arc},
     web3::types::AccessList,
 };
+pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::GlobalTxPool};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -68,14 +67,18 @@ impl std::fmt::Debug for Mempool {
 
 impl Mempool {
     /// The public mempool of an [`Ethereum`] node.
-    pub async fn public(config: Config, high_risk: HighRisk) -> Result<Self> {
+    pub async fn public(
+        config: Config,
+        high_risk: HighRisk,
+        gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Self> {
         Ok(Self {
             submit_api: Arc::new(PublicMempoolApi::new(
                 vec![config.eth.web3()],
                 matches!(high_risk, HighRisk::Disabled),
             )),
             submitted_transactions: config.pool.add_sub_pool(Strategy::PublicMempool),
-            gas_price_estimator: Self::gas_price_estimator(&config).await?,
+            gas_price_estimator,
             config,
         })
     }
@@ -83,27 +86,17 @@ impl Mempool {
     /// The [flashbots] private mempool.
     ///
     /// [flashbots]: https://docs.flashbots.net/flashbots-auction/overview
-    pub async fn flashbots(config: Config, url: reqwest::Url) -> Result<Self> {
+    pub async fn flashbots(
+        config: Config,
+        url: reqwest::Url,
+        gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Self> {
         Ok(Self {
             submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url)?),
             submitted_transactions: config.pool.add_sub_pool(Strategy::Flashbots),
-            gas_price_estimator: Self::gas_price_estimator(&config).await?,
+            gas_price_estimator,
             config,
         })
-    }
-
-    async fn gas_price_estimator(config: &Config) -> Result<Arc<dyn GasPriceEstimating>> {
-        Ok(Arc::new(
-            shared::gas_price_estimation::create_priority_estimator(
-                &HttpClientFactory::new(&shared::http_client::Arguments {
-                    http_timeout: std::time::Duration::from_secs(10),
-                }),
-                &config.eth.web3(),
-                &[shared::gas_price_estimation::GasEstimatorType::Native],
-                None,
-            )
-            .await?,
-        ))
     }
 
     pub async fn send(&self, settlement: settlement::Simulated) -> Result<()> {
@@ -145,6 +138,20 @@ impl Mempool {
             .await?;
         Ok(())
     }
+}
+
+pub async fn gas_price_estimator(config: &Config) -> Result<Arc<dyn GasPriceEstimating>> {
+    Ok(Arc::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            &HttpClientFactory::new(&shared::http_client::Arguments {
+                http_timeout: std::time::Duration::from_secs(10),
+            }),
+            &config.eth.web3(),
+            &[shared::gas_price_estimation::GasEstimatorType::Native],
+            None,
+        )
+        .await?,
+    ))
 }
 
 struct AccessListEstimator(eth::AccessList);

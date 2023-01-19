@@ -64,42 +64,40 @@ pub async fn run(
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
+    let config = mempool::Config {
+        additional_tip_percentage: args.submission.submission_additional_tip_percentage,
+        max_additional_tip: None,
+        gas_price_cap: args.submission.submission_gas_price_cap,
+        target_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_target_confirm_time_secs,
+        ),
+        max_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_max_confirm_time_secs,
+        ),
+        retry_interval: std::time::Duration::from_secs(
+            args.submission.submission_retry_interval_secs,
+        ),
+        account: match (args.solver_address, args.solver_private_key.clone()) {
+            (Some(address), None) => ethcontract::Account::Local(address, None),
+            (None, Some(private_key)) => ethcontract::Account::Offline(
+                ethcontract::PrivateKey::from_hex_str(private_key)
+                    .expect("a valid private key in --solver-private-key"),
+                None,
+            ),
+            _ => panic!("exactly one of --solver-address, --solver-private-key must be specified",),
+        },
+        eth: eth.clone(),
+        pool: tx_pool.clone(),
+    };
+    let gas_price_estimator = mempool::gas_price_estimator(&config).await.unwrap();
     let serve = Api {
         solvers: solvers(&args, now).await,
         simulator: simulator(&args, &eth),
         mempools: join_all(args.mempools.iter().map(|&mempool| {
-            let tx_pool = &tx_pool;
             let args = &args;
-            let eth = &eth;
+            let config = config.clone();
+            let gas_price_estimator = gas_price_estimator.clone();
             async move {
-                let config = mempool::Config {
-                    additional_tip_percentage: args.submission.submission_additional_tip_percentage,
-                    max_additional_tip: None,
-                    gas_price_cap: args.submission.submission_gas_price_cap,
-                    target_confirm_time: std::time::Duration::from_secs(
-                        args.submission.submission_target_confirm_time_secs,
-                    ),
-                    max_confirm_time: std::time::Duration::from_secs(
-                        args.submission.submission_max_confirm_time_secs,
-                    ),
-                    retry_interval: std::time::Duration::from_secs(
-                        args.submission.submission_retry_interval_secs,
-                    ),
-                    account: match (args.solver_address, args.solver_private_key.clone()) {
-                        (Some(address), None) => ethcontract::Account::Local(address, None),
-                        (None, Some(private_key)) => ethcontract::Account::Offline(
-                            ethcontract::PrivateKey::from_hex_str(private_key)
-                                .expect("a valid private key in --solver-private-key"),
-                            None,
-                        ),
-                        _ => panic!(
-                            "exactly one of --solver-address, --solver-private-key must be \
-                             specified",
-                        ),
-                    },
-                    eth: eth.clone(),
-                    pool: tx_pool.clone(),
-                };
                 match mempool {
                     cli::Mempool::Public => vec![Mempool::public(
                         config,
@@ -111,6 +109,7 @@ pub async fn run(
                         } else {
                             mempool::HighRisk::Enabled
                         },
+                        gas_price_estimator,
                     )
                     .await
                     .unwrap()],
@@ -124,6 +123,7 @@ pub async fn run(
                                     ..config.clone()
                                 },
                                 url.to_owned(),
+                                gas_price_estimator.clone(),
                             )
                             .await
                             .unwrap()
