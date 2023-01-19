@@ -45,9 +45,9 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
 
     liquidity::Liquidity {
         id,
-        address: pool.address.into(),
         gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
         kind: liquidity::Kind::UniswapV2(liquidity::uniswap::v2::Pool {
+            address: pool.address.into(),
             router: handler.router().address().into(),
             reserves: liquidity::uniswap::v2::Reserves::new(
                 eth::Asset {
