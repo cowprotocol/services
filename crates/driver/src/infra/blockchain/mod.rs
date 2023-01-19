@@ -60,7 +60,7 @@ impl Ethereum {
 
     /// Create a contract instance at the specified address.
     pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
-        T::at(&self.web3, address)
+        T::at(self, address)
     }
 
     /// Fetch the ERC20 allowance for the spender. See the allowance method in

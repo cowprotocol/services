@@ -2,15 +2,11 @@ use {
     crate::{
         boundary,
         domain::{eth, liquidity},
-        infra::{
-            self,
-            blockchain::{contracts::ContractAt, Ethereum},
-        },
+        infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethcontract::dyns::DynWeb3,
     futures::StreamExt,
     shared::{
         current_block::{self, CurrentBlockStream},
@@ -134,12 +130,6 @@ pub async fn collector(
         Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))
-}
-
-impl ContractAt for IUniswapLikeRouter {
-    fn at(web3: &DynWeb3, address: eth::ContractAddress) -> Self {
-        Self::at(web3, address.0)
-    }
 }
 
 async fn cache_update(blocks: CurrentBlockStream, pool_cache: sync::Weak<PoolCache>) {

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, liquidity},
         infra,
         util::serialize,
     },
@@ -56,8 +56,37 @@ impl Auction {
                     reward: order.reward,
                 })
                 .collect(),
-            // TODO #899: Implement this when you do liquidity
-            liquidity: vec![],
+            liquidity: auction
+                .liquidity
+                .iter()
+                .map(|liquidity| match &liquidity.kind {
+                    liquidity::Kind::UniswapV2(pool) => {
+                        Liquidity::ConstantProduct(ConstantProductPool {
+                            id: liquidity.id.into(),
+                            address: pool.address.into(),
+                            gas_estimate: liquidity.gas.into(),
+                            tokens: pool
+                                .reserves
+                                .iter()
+                                .map(|asset| {
+                                    (
+                                        asset.token.into(),
+                                        ConstantProductReserve {
+                                            balance: asset.amount,
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            fee: bigdecimal::BigDecimal::new(3.into(), 3),
+                        })
+                    }
+                    liquidity::Kind::UniswapV3(_) => todo!(),
+                    liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                    liquidity::Kind::BalancerV2Weighted(_) => todo!(),
+                    liquidity::Kind::Swapr(_) => todo!(),
+                    liquidity::Kind::ZeroEx(_) => todo!(),
+                })
+                .collect(),
             effective_gas_price: auction.gas_price.into(),
             deadline: timeout.deadline(now),
         }
@@ -139,7 +168,8 @@ enum Liquidity {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConstantProductPool {
-    id: String,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: usize,
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
@@ -159,7 +189,8 @@ struct ConstantProductReserve {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WeightedProductPool {
-    id: String,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: usize,
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
@@ -181,7 +212,8 @@ struct WeightedProductReserve {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StablePool {
-    id: String,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: usize,
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
@@ -205,7 +237,8 @@ struct StableReserve {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConcentratedLiquidityPool {
-    id: String,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: usize,
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
@@ -225,7 +258,8 @@ struct ConcentratedLiquidityPool {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ForeignLimitOrder {
-    id: String,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    id: usize,
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,

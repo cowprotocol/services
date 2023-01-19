@@ -424,7 +424,8 @@ components:
               description: |
                 A rough approximation of gas units required to use this
                 liquidity on-chain.
-              type: integer
+              allOf:
+                - $ref: "#/components/schemas/BigInt"
 
     Auction:
       description: |

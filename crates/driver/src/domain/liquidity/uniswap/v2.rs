@@ -62,4 +62,18 @@ impl Reserves {
     fn has_tokens(&self, a: &eth::TokenAddress, b: &eth::TokenAddress) -> bool {
         (&self.0.token == a && &self.1.token == b) || (&self.1.token == a && &self.0.token == b)
     }
+
+    /// Returns an iterator over the reserve assets.
+    pub fn iter(&self) -> impl Iterator<Item = eth::Asset> {
+        self.into_iter()
+    }
+}
+
+impl IntoIterator for Reserves {
+    type IntoIter = <[eth::Asset; 2] as IntoIterator>::IntoIter;
+    type Item = eth::Asset;
+
+    fn into_iter(self) -> Self::IntoIter {
+        [self.0, self.1].into_iter()
+    }
 }
