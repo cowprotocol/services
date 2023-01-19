@@ -17,6 +17,7 @@ use {
 /// [^1]: <https://uniswap.org/whitepaper.pdf>
 #[derive(Clone, Debug)]
 pub struct Pool {
+    pub address: eth::Address,
     pub router: eth::ContractAddress,
     pub reserves: Reserves,
 }

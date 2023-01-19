@@ -5,6 +5,7 @@ use {
         domain::{
             competition::{self, order},
             eth,
+            liquidity,
         },
         infra::{self, blockchain, time},
         simulator,
@@ -95,16 +96,25 @@ impl Solution {
             .interactions
             .iter()
             .flat_map(|interaction| match interaction {
-                Interaction::Custom(interaction) => interaction.allowances.clone().into_iter(),
-                Interaction::Liquidity(interaction) => vec![eth::Allowance {
-                    spender: eth::allowance::Spender {
-                        address: interaction.liquidity.spender(),
-                        token: interaction.output.token,
-                    },
-                    amount: interaction.output.amount,
+                Interaction::Custom(interaction) => interaction.allowances.clone(),
+                Interaction::Liquidity(interaction) => {
+                    let address = match &interaction.liquidity.kind {
+                        liquidity::Kind::UniswapV2(pool) => pool.router.into(),
+                        liquidity::Kind::UniswapV3(_) => todo!(),
+                        liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                        liquidity::Kind::BalancerV2Weighted(_) => todo!(),
+                        liquidity::Kind::Swapr(_) => todo!(),
+                        liquidity::Kind::ZeroEx(_) => todo!(),
+                    };
+                    vec![eth::Allowance {
+                        spender: eth::allowance::Spender {
+                            address,
+                            token: interaction.output.token,
+                        },
+                        amount: interaction.output.amount,
+                    }
+                    .into()]
                 }
-                .into()]
-                .into_iter(),
             });
         for allowance in allowances {
             let amount = normalized

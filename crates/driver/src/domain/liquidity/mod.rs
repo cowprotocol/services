@@ -11,27 +11,9 @@ pub mod zeroex;
 #[derive(Debug, Clone)]
 pub struct Liquidity {
     pub id: Id,
-    /// Depending on the liquidity provider, this can mean different things.
-    /// Usually it's the address of the liquidity pool.
-    pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
     pub kind: Kind,
-}
-
-impl Liquidity {
-    /// Returns the spender for an ERC20 allowance that is required for using
-    /// the liquidity.
-    pub fn spender(&self) -> eth::Address {
-        match &self.kind {
-            Kind::UniswapV2(pool) => pool.router.into(),
-            Kind::UniswapV3(_) => todo!(),
-            Kind::BalancerV2Stable(_) => todo!(),
-            Kind::BalancerV2Weighted(_) => todo!(),
-            Kind::Swapr(_) => todo!(),
-            Kind::ZeroEx(_) => todo!(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
