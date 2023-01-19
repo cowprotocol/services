@@ -4,13 +4,22 @@ use {
         tests::{self, hex_address, setup},
     },
     itertools::Itertools,
+    rand::Rng,
     std::{net::SocketAddr, path::PathBuf},
     tokio::{fs, sync::oneshot},
 };
 
-const CONFIG_FILE: &str = "testing.toml";
-
 pub const QUOTE_TIMEOUT_MS: u64 = 100;
+
+#[derive(Debug)]
+struct ConfigPath(String);
+
+impl ConfigPath {
+    fn random() -> Self {
+        let x: u32 = rand::thread_rng().gen();
+        Self(format!("testing.{x}.toml"))
+    }
+}
 
 /// HTTP client for talking to the driver API. Dropping the client shuts down
 /// the running driver instance.
@@ -18,14 +27,21 @@ pub struct Client {
     addr: SocketAddr,
     client: reqwest::Client,
     handle: tokio::task::JoinHandle<()>,
+    /// Delete this config file when the client is dropped.
+    delete_config_file: Option<ConfigPath>,
 }
 
 impl Client {
-    fn new(addr: SocketAddr, handle: tokio::task::JoinHandle<()>) -> Self {
+    fn new(
+        addr: SocketAddr,
+        handle: tokio::task::JoinHandle<()>,
+        delete_config_file: Option<ConfigPath>,
+    ) -> Self {
         Self {
             addr,
             client: reqwest::Client::new(),
             handle,
+            delete_config_file,
         }
     }
 
@@ -78,12 +94,16 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        self.handle.abort()
+        self.handle.abort();
+        if let Some(config_file) = self.delete_config_file.as_ref() {
+            std::fs::remove_file(&config_file.0).unwrap();
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct Config {
+pub struct Config<'a> {
+    pub geth: &'a setup::blockchain::Geth,
     pub now: infra::time::Now,
     pub contracts: cli::ContractAddresses,
     pub file: ConfigFile,
@@ -99,24 +119,26 @@ pub enum ConfigFile {
 }
 
 /// Set up the driver.
-pub async fn setup(config: Config) -> Client {
+pub async fn setup(config: Config<'_>) -> Client {
     let (addr_sender, addr_receiver) = oneshot::channel();
-    let config_file = match config.file {
-        ConfigFile::Create(config) => {
-            create_config_file(&config).await;
-            CONFIG_FILE.into()
+    let config_file = match &config.file {
+        ConfigFile::Create(solvers) => {
+            let path = ConfigPath::random();
+            create_config_file(&path, solvers).await;
+            path
         }
-        ConfigFile::Load(path) => path,
+        ConfigFile::Load(path) => ConfigPath(path.to_str().unwrap().to_owned()),
     };
-    let solver_address = setup::blockchain::primary_address(&setup::blockchain::web3()).await;
+    let web3 = setup::blockchain::web3(&config.geth.url());
+    let solver_address = setup::blockchain::primary_address(&web3).await;
     let mut args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
         "auto".to_owned(),
         "--config".to_owned(),
-        config_file.to_str().unwrap().to_owned(),
+        config_file.0.clone(),
         "--ethrpc".to_owned(),
-        super::blockchain::WEB3_URL.to_owned(),
+        config.geth.url(),
         "--quote-timeout-ms".to_owned(),
         QUOTE_TIMEOUT_MS.to_string(),
         "--solver-address".to_owned(),
@@ -132,15 +154,22 @@ pub async fn setup(config: Config) -> Client {
         args.push("--weth".to_owned());
         args.push(hex_address(weth));
     }
-    tests::boundary::initialize_tracing("debug,hyper=warn,driver::infra::solver=trace");
+    tests::boundary::initialize_tracing("error,web3=warn,hyper=warn,driver::infra::solver=error");
     let run = crate::run(args.into_iter(), config.now, Some(addr_sender));
     let handle = tokio::spawn(run);
     let driver_addr = addr_receiver.await.unwrap();
-    Client::new(driver_addr, handle)
+    Client::new(
+        driver_addr,
+        handle,
+        match config.file {
+            ConfigFile::Create(_) => Some(config_file),
+            ConfigFile::Load(_) => None,
+        },
+    )
 }
 
-/// Create the config file for the solvers for the driver use.
-async fn create_config_file(solvers: &[setup::Solver]) {
+/// Create the config file for the driver to use.
+async fn create_config_file(path: &ConfigPath, solvers: &[setup::Solver]) {
     let configs = solvers
         .iter()
         .map(|solver| {
@@ -167,5 +196,5 @@ async fn create_config_file(solvers: &[setup::Solver]) {
             config
         })
         .join("\n");
-    fs::write(CONFIG_FILE, configs).await.unwrap();
+    fs::write(&path.0, configs).await.unwrap();
 }

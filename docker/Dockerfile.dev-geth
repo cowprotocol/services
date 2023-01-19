@@ -19,6 +19,7 @@ RUN apt-get update &&\
     apt-get install -y ca-certificates tini
 COPY --from=cargo-build /src/target/release/dev-geth /usr/local/bin/dev-geth
 COPY --from=cargo-build /opt/geth/geth /usr/local/bin/geth
+COPY --from=cargo-build /src/docker/base-datadir /base-datadir
 
 ENTRYPOINT ["tini", "--"]
 CMD ["dev-geth"]

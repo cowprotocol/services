@@ -3,6 +3,7 @@ use num::BigRational;
 use number_conversions::u256_to_big_rational;
 use primitive_types::U256;
 
+#[derive(Debug)]
 pub struct Inputs {
     pub surplus_given: BigRational,
     pub fees_taken: BigRational,

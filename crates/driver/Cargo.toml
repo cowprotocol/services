@@ -51,6 +51,7 @@ tracing = { workspace = true }
 warp = { workspace = true }
 
 [dev-dependencies]
+ureq = "2.6"
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

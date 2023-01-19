@@ -28,6 +28,7 @@ async fn test() {
         admin_secret_key,
         interactions,
         solver_address,
+        geth,
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -136,6 +137,7 @@ async fn test() {
             weth: Some(weth.address()),
         },
         file: setup::driver::ConfigFile::Create(vec![solver]),
+        geth: &geth,
     })
     .await;
 
@@ -190,5 +192,6 @@ async fn test() {
     assert_eq!(result.as_object().unwrap().len(), 2);
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
-    assert_eq!(result.get("score").unwrap(), -79336169261766.0);
+    // TODO This needs to be updated due to the solution ID
+    assert_eq!(result.get("score").unwrap(), -94756205354950.0);
 }
