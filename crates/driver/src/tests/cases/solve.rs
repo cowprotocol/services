@@ -130,8 +130,8 @@ async fn test() {
     let client = setup::driver::setup(setup::driver::Config {
         now,
         contracts: cli::ContractAddresses {
-            gp_v2_settlement: Some(hex_address(settlement.address())),
-            weth: Some(hex_address(weth.address())),
+            gp_v2_settlement: Some(settlement.address()),
+            weth: Some(weth.address()),
         },
         solvers: setup::driver::SolversConfig::CreateConfigFile(vec![solver]),
     })

@@ -1,7 +1,7 @@
 use {
     crate::{
         infra::{self, config::cli},
-        tests::{self, setup},
+        tests::{self, hex_address, setup},
     },
     itertools::Itertools,
     std::{net::SocketAddr, path::PathBuf},
@@ -90,6 +90,7 @@ pub async fn setup(config: Config) -> Client {
         }
         SolversConfig::LoadConfigFile(path) => path,
     };
+    let solver_address = setup::blockchain::primary_account(&setup::blockchain::web3()).await;
     let mut args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
@@ -100,14 +101,16 @@ pub async fn setup(config: Config) -> Client {
         super::blockchain::WEB3_URL.to_owned(),
         "--quote-timeout-ms".to_owned(),
         QUOTE_TIMEOUT_MS.to_string(),
+        "--solver-address".to_owned(),
+        hex_address(solver_address),
     ];
     if let Some(settlement) = config.contracts.gp_v2_settlement {
         args.push("--gp-v2-settlement".to_owned());
-        args.push(settlement);
+        args.push(hex_address(settlement));
     }
     if let Some(weth) = config.contracts.weth {
         args.push("--weth".to_owned());
-        args.push(weth);
+        args.push(hex_address(weth));
     }
     tests::boundary::initialize_tracing("debug,hyper=warn,driver::infra::solver=trace");
     let run = crate::run(args.into_iter(), config.now, Some(addr_sender));

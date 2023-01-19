@@ -9,7 +9,7 @@ pub const WEB3_URL: &str = "http://localhost:8546";
 /// environment. See the `dev-geth` crate.
 const DEV_GETH_URL: &str = "http://localhost:8547";
 
-pub fn web3() -> Web3<DynTransport> {
+pub fn web3() -> DynWeb3 {
     Web3::new(DynTransport::new(
         web3::transports::Http::new(WEB3_URL).expect("valid URL"),
     ))

@@ -7,6 +7,7 @@ use {
         domain::competition,
         infra::{api, mempool, Mempool},
     },
+    futures::future::join_all,
     infra::blockchain,
     std::net::SocketAddr,
     tokio::sync::oneshot,
@@ -59,24 +60,83 @@ pub async fn run(
     boundary::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with arguments:\n{}", args);
 
+    let tx_pool = mempool::GlobalTxPool::default();
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
+    let config = mempool::Config {
+        additional_tip_percentage: args.submission.submission_additional_tip_percentage,
+        max_additional_tip: None,
+        gas_price_cap: args.submission.submission_gas_price_cap,
+        target_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_target_confirm_time_secs,
+        ),
+        max_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_max_confirm_time_secs,
+        ),
+        retry_interval: std::time::Duration::from_secs(
+            args.submission.submission_retry_interval_secs,
+        ),
+        account: match (args.solver_address, args.solver_private_key.clone()) {
+            (Some(address), None) => ethcontract::Account::Local(address, None),
+            (None, Some(private_key)) => ethcontract::Account::Offline(
+                ethcontract::PrivateKey::from_hex_str(private_key)
+                    .expect("a valid private key in --solver-private-key"),
+                None,
+            ),
+            _ => panic!("exactly one of --solver-address, --solver-private-key must be specified",),
+        },
+        eth: eth.clone(),
+        pool: tx_pool.clone(),
+    };
+    let gas_price_estimator = mempool::gas_price_estimator(&config).await.unwrap();
     let serve = Api {
         solvers: solvers(&args, now).await,
         simulator: simulator(&args, &eth),
-        // TODO Load these from CLI in the follow up PR
-        mempool: Mempool::public(mempool::Config {
-            additional_tip_percentage_of_max_fee: Default::default(),
-            max_additional_tip: Default::default(),
-            gas_price_cap: Default::default(),
-            target_confirm_time: Default::default(),
-            max_confirm_time: Default::default(),
-            retry_interval: Default::default(),
-            account: ethcontract::Account::Local(Default::default(), None),
-            high_risk_disabled: Default::default(),
-            eth: eth.clone(),
-            pool: Default::default(),
-        }),
+        mempools: join_all(args.mempools.iter().map(|&mempool| {
+            let args = &args;
+            let config = config.clone();
+            let gas_price_estimator = gas_price_estimator.clone();
+            async move {
+                match mempool {
+                    cli::Mempool::Public => vec![Mempool::public(
+                        config,
+                        if args
+                            .submission
+                            .submission_disable_high_risk_public_mempool_transactions
+                        {
+                            mempool::HighRisk::Disabled
+                        } else {
+                            mempool::HighRisk::Enabled
+                        },
+                        gas_price_estimator,
+                    )
+                    .await
+                    .unwrap()],
+                    cli::Mempool::Flashbots => {
+                        join_all(args.flashbots_api_urls.iter().map(|url| async {
+                            Mempool::flashbots(
+                                mempool::Config {
+                                    max_additional_tip: Some(
+                                        args.submission.submission_max_additional_flashbots_tip,
+                                    ),
+                                    ..config.clone()
+                                },
+                                url.to_owned(),
+                                gas_price_estimator.clone(),
+                            )
+                            .await
+                            .unwrap()
+                        }))
+                        .await
+                    }
+                }
+            }
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect(),
         eth,
         addr: match args.bind_addr.as_str() {
             "auto" => api::Addr::Auto(addr_sender),
@@ -130,16 +190,8 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
     Ethereum::ethrpc(
         &args.ethrpc,
         blockchain::contracts::Addresses {
-            settlement: args
-                .contract_addresses
-                .gp_v2_settlement
-                .as_ref()
-                .map(|a| cli::hex_address(a).into()),
-            weth: args
-                .contract_addresses
-                .weth
-                .as_ref()
-                .map(|a| cli::hex_address(a).into()),
+            settlement: args.contract_addresses.gp_v2_settlement.map(Into::into),
+            weth: args.contract_addresses.weth.map(Into::into),
         },
     )
     .await
