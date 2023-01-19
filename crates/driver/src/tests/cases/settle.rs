@@ -135,7 +135,7 @@ async fn test() {
             gp_v2_settlement: Some(settlement.address()),
             weth: Some(weth.address()),
         },
-        solvers: setup::driver::SolversConfig::CreateConfigFile(vec![solver]),
+        file: setup::driver::ConfigFile::Create(vec![solver]),
     })
     .await;
 

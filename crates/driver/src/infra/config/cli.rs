@@ -15,7 +15,7 @@ pub struct Args {
 
     /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see
-    /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.solvers.toml.
+    /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
     #[clap(long, env)]
     pub config: PathBuf,
 
