@@ -208,9 +208,8 @@ pub struct Submission {
     #[clap(long, env)]
     pub submission_disable_high_risk_public_mempool_transactions: bool,
 
-    /// The maximum time to spend trying to settle a transaction
-    /// through the Ethereum network before going back to solving. Specified in
-    /// seconds.
+    /// The maximum time to spend trying to settle a transaction through the
+    /// Ethereum network before giving up. Specified in seconds.
     #[clap(long, env, default_value = "120")]
     pub submission_max_confirm_time_secs: u64,
 
