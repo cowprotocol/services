@@ -7,6 +7,7 @@ use {
     },
     itertools::Itertools,
     serde_json::json,
+    web3::types::TransactionId,
 };
 
 /// Test that the /settle endpoint behaves as expected.
@@ -191,6 +192,7 @@ async fn test() {
         .transaction_count(solver_address, None)
         .await
         .unwrap();
+    let block_number = web3.eth().block_number().await.unwrap();
     let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
@@ -212,4 +214,16 @@ async fn test() {
     // The balance of the trader changes according to the swap.
     assert_eq!(new_token_a, old_token_a - token_a_in_amount - user_fee);
     assert_eq!(new_token_b, old_token_b + token_b_out_amount);
+
+    // Check that the solution ID is included in the settlement.
+    let tx = web3
+        .eth()
+        .transaction(TransactionId::Block((block_number + 1).into(), 0.into()))
+        .await
+        .unwrap()
+        .unwrap();
+    let input = tx.input.0;
+    let len = input.len();
+    let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
+    assert_eq!(tx_solution_id.to_string(), solution_id);
 }

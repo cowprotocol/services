@@ -266,6 +266,7 @@ impl SolutionSubmitter {
             deadline: Some(Instant::now() + self.max_confirm_time),
             retry_interval: self.retry_interval,
             network_id,
+            additional_call_data: Default::default(),
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
