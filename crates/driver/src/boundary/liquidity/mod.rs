@@ -50,7 +50,7 @@ pub struct Fetcher {
 }
 
 impl Fetcher {
-    /// Creates a new fether for the specified configuration.
+    /// Creates a new fetcher for the specified configuration.
     pub async fn new(eth: &Ethereum, config: &liquidity::fetcher::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,

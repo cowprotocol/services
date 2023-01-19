@@ -41,8 +41,8 @@ impl Pool {
     }
 }
 
-/// A Uniswap V2 pool reserves. These reserves are orders by token address and
-/// are guaranteed to be for distict tokens.
+/// The reserves of a Uniswap V2 pool. These reserves are ordered by token
+/// address and are guaranteed to be for distinct tokens.
 #[derive(Clone, Copy, Debug)]
 pub struct Reserves(eth::Asset, eth::Asset);
 

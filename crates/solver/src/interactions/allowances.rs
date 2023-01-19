@@ -234,26 +234,6 @@ fn is_batch_error(err: &ExecutionError) -> bool {
     }
 }
 
-/// An allowance manager that always reports no allowances.
-pub struct NoAllowanceManaging;
-
-#[async_trait::async_trait]
-impl AllowanceManaging for NoAllowanceManaging {
-    async fn get_allowances(&self, _: HashSet<H160>, spender: H160) -> Result<Allowances> {
-        Ok(Allowances::empty(spender))
-    }
-
-    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
-        Ok(requests
-            .iter()
-            .map(|request| Approval {
-                spender: request.spender,
-                token: request.token,
-            })
-            .collect())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

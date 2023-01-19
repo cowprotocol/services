@@ -5,6 +5,7 @@ use {
         infra::blockchain::{contracts::ContractAt, Ethereum},
     },
     anyhow::Result,
+    async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
     ethcontract::dyns::DynWeb3,
     futures::StreamExt,
@@ -19,13 +20,13 @@ use {
         },
     },
     solver::{
-        interactions::allowances::{Allowances, NoAllowanceManaging},
+        interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
         liquidity::{uniswap_v2, uniswap_v2::UniswapLikeLiquidity, ConstantProductOrder},
         liquidity_collector::LiquidityCollecting,
     },
     std::{
-        sync,
-        sync::{Arc, Mutex},
+        collections::HashSet,
+        sync::{self, Arc, Mutex},
     },
     tracing::Instrument,
 };
@@ -40,7 +41,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
         .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v2::Inner>()
-        .expect("downcast uniswap settlment handler");
+        .expect("downcast uniswap settlement handler");
 
     liquidity::Liquidity {
         id,
@@ -162,5 +163,29 @@ async fn cache_update(blocks: CurrentBlockStream, pool_cache: sync::Weak<PoolCac
                 }
             })
             .await;
+    }
+}
+
+/// An allowance manager that always reports no allowances.
+struct NoAllowanceManaging;
+
+#[async_trait]
+impl AllowanceManaging for NoAllowanceManaging {
+    async fn get_allowances(
+        &self,
+        _: HashSet<eth::H160>,
+        spender: eth::H160,
+    ) -> Result<Allowances> {
+        Ok(Allowances::empty(spender))
+    }
+
+    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
+        Ok(requests
+            .iter()
+            .map(|request| Approval {
+                spender: request.spender,
+                token: request.token,
+            })
+            .collect())
     }
 }
