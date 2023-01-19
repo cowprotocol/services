@@ -47,8 +47,8 @@ impl PartialEq<usize> for Id {
 /// liquidity, as well as state required by the solver engine.
 #[derive(Debug, Clone)]
 pub enum Kind {
-    UnswapV2(uniswap::v2::Pool),
-    UnswapV3(uniswap::v3::Pool),
+    UniswapV2(uniswap::v2::Pool),
+    UniswapV3(uniswap::v3::Pool),
     BalancerV2Stable(balancer::stable::Pool),
     BalancerV2Weighted(balancer::weighted::Pool),
     Swapr(swapr::Pool),
