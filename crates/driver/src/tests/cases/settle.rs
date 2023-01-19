@@ -9,7 +9,7 @@ use {
     serde_json::json,
 };
 
-/// Test that the /solve endpoint behaves as expected.
+/// Test that the /settle endpoint behaves as expected.
 #[ignore]
 #[tokio::test]
 async fn test() {
@@ -140,7 +140,7 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let result = client
+    let solution = client
         .solve(
             SOLVER_NAME,
             json!({
@@ -185,10 +185,31 @@ async fn test() {
         )
         .await;
 
+    let solution_id = solution.get("id").unwrap().as_str().unwrap();
+    let old_tx_count = web3
+        .eth()
+        .transaction_count(solver_address, None)
+        .await
+        .unwrap();
+    let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
+    let old_token_a = token_a.balance_of(admin).call().await.unwrap();
+    let old_token_b = token_b.balance_of(admin).call().await.unwrap();
+
+    client.settle(SOLVER_NAME, solution_id).await;
+
     // Assert.
-    assert!(result.is_object());
-    assert_eq!(result.as_object().unwrap().len(), 2);
-    assert!(result.get("id").is_some());
-    assert!(result.get("score").is_some());
-    assert_eq!(result.get("score").unwrap(), -79291602683462.0);
+    let new_tx_count = web3
+        .eth()
+        .transaction_count(solver_address, None)
+        .await
+        .unwrap();
+    let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
+    let new_token_a = token_a.balance_of(admin).call().await.unwrap();
+    let new_token_b = token_b.balance_of(admin).call().await.unwrap();
+    assert_eq!(new_tx_count, old_tx_count + 1);
+    // ETH balance is lower due to transaction fees.
+    assert!(new_balance < old_balance);
+    // The balance of the trader changes according to the swap.
+    assert_eq!(new_token_a, old_token_a - token_a_in_amount - user_fee);
+    assert_eq!(new_token_b, old_token_b + token_b_out_amount);
 }

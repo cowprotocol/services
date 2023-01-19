@@ -40,6 +40,7 @@ impl Client {
         let status = res.status();
         let text = res.text().await.unwrap();
         tracing::debug!(?status, ?text, "got a response from /solve");
+        assert_eq!(status, 200);
         serde_json::from_str(&text).unwrap()
     }
 
@@ -54,7 +55,24 @@ impl Client {
         let status = res.status();
         let text = res.text().await.unwrap();
         tracing::debug!(?status, ?text, "got a response from /quote");
+        assert_eq!(status, 200);
         serde_json::from_str(&text).unwrap()
+    }
+
+    pub async fn settle(&self, solver: &str, solution_id: &str) {
+        let res = self
+            .client
+            .post(format!(
+                "http://{}/{solver}/settle/{solution_id}",
+                self.addr
+            ))
+            .send()
+            .await
+            .unwrap();
+        let status = res.status();
+        let text = res.text().await.unwrap();
+        assert_eq!(status, 200);
+        tracing::debug!(?status, ?text, "got a response from /settle");
     }
 }
 
@@ -90,7 +108,7 @@ pub async fn setup(config: Config) -> Client {
         }
         SolversConfig::LoadConfigFile(path) => path,
     };
-    let solver_address = setup::blockchain::primary_account(&setup::blockchain::web3()).await;
+    let solver_address = setup::blockchain::primary_address(&setup::blockchain::web3()).await;
     let mut args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
@@ -103,6 +121,8 @@ pub async fn setup(config: Config) -> Client {
         QUOTE_TIMEOUT_MS.to_string(),
         "--solver-address".to_owned(),
         hex_address(solver_address),
+        "--submission-gas-price-cap".to_owned(),
+        "1000000000000".to_owned(),
     ];
     if let Some(settlement) = config.contracts.gp_v2_settlement {
         args.push("--gp-v2-settlement".to_owned());

@@ -1,4 +1,5 @@
 use {
+    super::SOLVER_NAME,
     crate::{
         domain::competition,
         infra::{self, config::cli},
@@ -53,7 +54,7 @@ async fn test() {
 
     // Set up the solver.
     let solver = setup::solver::setup(setup::solver::Config {
-        name: "test1".to_owned(),
+        name: SOLVER_NAME.to_owned(),
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
         address: hex_address(admin),
@@ -111,7 +112,7 @@ async fn test() {
     // Call /quote.
     let result = client
         .quote(
-            "test1",
+            SOLVER_NAME,
             json!({
                 "sellToken": hex_address(sell_token),
                 "buyToken": hex_address(buy_token),
