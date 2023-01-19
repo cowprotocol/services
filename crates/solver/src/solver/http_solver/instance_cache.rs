@@ -73,7 +73,7 @@ impl SharedInstanceCreator {
                     }
                 };
                 std::mem::drop(instances);
-                if let Err(err) = uploader.upload_instance(id, auction).await {
+                if let Err(err) = uploader.upload_instance(id, &auction).await {
                     tracing::error!(%id, ?err, "error uploading instance");
                 }
             };
