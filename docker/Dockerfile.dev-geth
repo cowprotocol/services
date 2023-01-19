@@ -2,7 +2,7 @@ FROM docker.io/rust:1-slim-bullseye
 
 # Copy and build code
 WORKDIR /src
-RUN apt-get update && apt-get install -y git libssl-dev pkg-config curl tar
+RUN apt-get update && apt-get install -y git libssl-dev pkg-config curl tar tini
 COPY . .
 WORKDIR /src/crates/dev-geth
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
@@ -12,7 +12,8 @@ WORKDIR /geth
 RUN curl https://gethstore.blob.core.windows.net/builds/geth-linux-amd64-1.10.26-e5eb32ac.tar.gz -o geth.tar.gz
 RUN tar -xf geth.tar.gz
 
-COPY /src/target/release/dev-geth /usr/local/bin/
-COPY /geth/geth-linux-amd64-1.10.26-e5eb32ac/geth /usr/local/bin/
+RUN cp /src/target/release/dev-geth /usr/local/bin/
+RUN cp /geth/geth-linux-amd64-1.10.26-e5eb32ac/geth /usr/local/bin/
 
-ENTRYPOINT ["dev-geth"]
+ENTRYPOINT ["tini", "--"]
+CMD ["dev-geth"]
