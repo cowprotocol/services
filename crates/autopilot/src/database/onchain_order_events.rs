@@ -442,7 +442,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
             let meta = match meta {
                 Some(meta) => meta,
                 None => {
-                    metrics.inc_onchain_order_errors("no metadata available");
+                    metrics.inc_onchain_order_errors("no_metadata");
                     return Err(anyhow!("event without metadata"));
                 }
             };
@@ -457,7 +457,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
             let detailed_order_data =
                 extract_order_data_from_onchain_order_placement_event(&event, domain_separator);
             if detailed_order_data.is_err() {
-                metrics.inc_onchain_order_errors("unable to parse event to order");
+                metrics.inc_onchain_order_errors("bad_parsing");
             }
             let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
 
