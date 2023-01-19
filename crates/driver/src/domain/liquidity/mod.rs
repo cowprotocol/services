@@ -11,6 +11,9 @@ pub mod zeroex;
 #[derive(Debug, Clone)]
 pub struct Liquidity {
     pub id: Id,
+    /// Depending on the liquidity provider, this can mean different things.
+    /// Usually it's the address of the liquidity pool.
+    pub address: eth::Address,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
     pub kind: Kind,
