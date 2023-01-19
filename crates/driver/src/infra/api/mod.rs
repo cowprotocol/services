@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{self, competition},
-        infra::{self, time, Ethereum, Mempool, Simulator},
+        infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
         solver::Solver,
     },
     futures::Future,
@@ -26,6 +26,7 @@ pub enum Addr {
 
 pub struct Api {
     pub solvers: Vec<Solver>,
+    pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub mempools: Vec<Mempool>,
@@ -58,6 +59,7 @@ impl Api {
             let router = settle::route(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
+                liquidity: self.liquidity.clone(),
                 competition: domain::Competition {
                     solver,
                     eth: self.eth.clone(),
@@ -98,6 +100,10 @@ impl State {
         &self.0.solver
     }
 
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.0.liquidity
+    }
+
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
@@ -114,6 +120,7 @@ impl State {
 #[derive(Debug)]
 struct Inner {
     solver: Solver,
+    liquidity: liquidity::Fetcher,
     competition: domain::Competition,
     quote_config: competition::quote::Config,
     now: time::Now,

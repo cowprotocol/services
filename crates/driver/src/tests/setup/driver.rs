@@ -8,7 +8,7 @@ use {
     tokio::{fs, sync::oneshot},
 };
 
-const SOLVERS_CONFIG_FILE: &str = "testing.solvers.toml";
+const CONFIG_FILE: &str = "testing.toml";
 
 pub const QUOTE_TIMEOUT_MS: u64 = 100;
 
@@ -86,34 +86,34 @@ impl Drop for Client {
 pub struct Config {
     pub now: infra::time::Now,
     pub contracts: cli::ContractAddresses,
-    pub solvers: SolversConfig,
+    pub file: ConfigFile,
 }
 
 #[derive(Debug)]
-pub enum SolversConfig {
-    /// Create a new config file using [`SOLVERS_CONFIG_FILE`] for the given
+pub enum ConfigFile {
+    /// Create a new config file using [`CONFIG_FILE`] for the given
     /// solvers.
-    CreateConfigFile(Vec<setup::Solver>),
+    Create(Vec<setup::Solver>),
     /// Load an existing config file.
-    LoadConfigFile(PathBuf),
+    Load(PathBuf),
 }
 
 /// Set up the driver.
 pub async fn setup(config: Config) -> Client {
     let (addr_sender, addr_receiver) = oneshot::channel();
-    let config_file = match config.solvers {
-        SolversConfig::CreateConfigFile(solvers) => {
-            create_solvers_config_file(&solvers).await;
-            SOLVERS_CONFIG_FILE.into()
+    let config_file = match config.file {
+        ConfigFile::Create(config) => {
+            create_config_file(&config).await;
+            CONFIG_FILE.into()
         }
-        SolversConfig::LoadConfigFile(path) => path,
+        ConfigFile::Load(path) => path,
     };
     let solver_address = setup::blockchain::primary_address(&setup::blockchain::web3()).await;
     let mut args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
         "auto".to_owned(),
-        "--solvers-config".to_owned(),
+        "--config".to_owned(),
         config_file.to_str().unwrap().to_owned(),
         "--ethrpc".to_owned(),
         super::blockchain::WEB3_URL.to_owned(),
@@ -140,7 +140,7 @@ pub async fn setup(config: Config) -> Client {
 }
 
 /// Create the config file for the solvers for the driver use.
-async fn create_solvers_config_file(solvers: &[setup::Solver]) {
+async fn create_config_file(solvers: &[setup::Solver]) {
     let configs = solvers
         .iter()
         .map(|solver| {
@@ -157,15 +157,15 @@ async fn create_solvers_config_file(solvers: &[setup::Solver]) {
             } = solver;
             #[rustfmt::skip]
             let config = format!(
-                "[[solvers]]\n\
-                name = \"{name}\"\n\
-                endpoint = \"http://{addr}\"\n\
-                absolute-slippage = \"{absolute_slippage}\"\n\
-                relative-slippage = \"{relative_slippage}\"\n\
-                address = \"{address}\"\n"
+                "[[solver]]\n\
+                 name = \"{name}\"\n\
+                 endpoint = \"http://{addr}\"\n\
+                 absolute-slippage = \"{absolute_slippage}\"\n\
+                 relative-slippage = \"{relative_slippage}\"\n\
+                 address = \"{address}\"\n"
             );
             config
         })
         .join("\n");
-    fs::write(SOLVERS_CONFIG_FILE, configs).await.unwrap();
+    fs::write(CONFIG_FILE, configs).await.unwrap();
 }
