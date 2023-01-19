@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::Result,
+        boundary::{self, Result},
         domain::{competition::solution::settlement, eth},
         infra::blockchain::Ethereum,
     },
@@ -73,7 +73,7 @@ impl Mempool {
     ) -> Result<Self> {
         Ok(Self {
             submit_api: Arc::new(PublicMempoolApi::new(
-                vec![config.eth.web3()],
+                vec![boundary::web3(&config.eth)],
                 matches!(high_risk, HighRisk::Disabled),
             )),
             submitted_transactions: config.pool.add_sub_pool(Strategy::PublicMempool),
@@ -99,7 +99,7 @@ impl Mempool {
     }
 
     pub async fn send(&self, settlement: settlement::Simulated) -> Result<()> {
-        let web3 = self.config.eth.web3();
+        let web3 = boundary::web3(&self.config.eth);
         let nonce = web3
             .eth()
             .transaction_count(self.config.account.address(), None)
@@ -145,7 +145,7 @@ pub async fn gas_price_estimator(config: &Config) -> Result<Arc<dyn GasPriceEsti
             &HttpClientFactory::new(&shared::http_client::Arguments {
                 http_timeout: std::time::Duration::from_secs(10),
             }),
-            &config.eth.web3(),
+            &boundary::web3(&config.eth),
             &[shared::gas_price_estimation::GasEstimatorType::Native],
             None,
         )

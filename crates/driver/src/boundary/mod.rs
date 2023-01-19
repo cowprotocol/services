@@ -39,7 +39,7 @@ use crate::infra::blockchain::Ethereum;
 
 /// Returns a Web3 instance with a trait object transport needed by various
 /// boundary components.
-pub fn web3(eth: &Ethereum) -> Web3 {
+fn web3(eth: &Ethereum) -> Web3 {
     // Ugly way to get access to one of these... However, this way we don't
     // leak this into our domain logic.
     eth.contracts().settlement().raw_instance().web3()
