@@ -43,3 +43,8 @@ impl Contracts {
         &self.weth
     }
 }
+
+/// A trait for initializing contract instances with dynamic addresses.
+pub trait ContractAt {
+    fn at(web3: &DynWeb3, address: eth::ContractAddress) -> Self;
+}
