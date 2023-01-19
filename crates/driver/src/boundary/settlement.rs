@@ -104,7 +104,7 @@ impl Settlement {
             settlement
                 .encoder
                 .append_to_execution_plan(Erc20ApproveInteraction {
-                    token: eth.contract_at::<contracts::ERC20>(approval.0.spender.token.into()),
+                    token: eth.contract_at(approval.0.spender.token.into()),
                     spender: approval.0.spender.address.into(),
                     amount: approval.0.amount,
                 });
@@ -299,8 +299,6 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         uid: data.uid(domain, &order.signature.signer.into()),
         // These fields do not seem to be used at all for order
         // encoding, so we just use the default values.
-        settlement_contract: Default::default(),
-        // For other metdata fields, the default value is correct.
         ..Default::default()
     };
     let signature = to_boundary_signature(&order.signature);
