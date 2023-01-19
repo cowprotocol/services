@@ -80,7 +80,7 @@ pub trait SettlementHandling<L>: Send + Sync
 where
     L: Settleable,
 {
-    /// What is his craziness?!
+    /// What is this craziness?!
     ///
     /// While developing the `driver`, we want to access information that is
     /// part of a liquidity's settlement handler. Unfortunately, with how the

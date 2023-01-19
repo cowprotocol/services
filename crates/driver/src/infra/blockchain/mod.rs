@@ -124,12 +124,6 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    /// Necessary for the boundary integration. This breaks the encapsulation of
-    /// this type and should never be used from the [`crate::domain`] code.
-    pub fn web3(&self) -> DynWeb3 {
-        self.web3.clone()
-    }
-
     fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {
         web3::types::TransactionRequest {
             from: tx.from.into(),

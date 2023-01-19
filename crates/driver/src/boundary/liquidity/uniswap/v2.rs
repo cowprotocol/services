@@ -5,7 +5,8 @@ use {
         infra::blockchain::{contracts::ContractAt, Ethereum},
     },
     anyhow::Result,
-    contracts::IUniswapLikeRouter,
+    async_trait::async_trait,
+    contracts::{GPv2Settlement, IUniswapLikeRouter},
     ethcontract::dyns::DynWeb3,
     futures::StreamExt,
     shared::{
@@ -19,10 +20,14 @@ use {
         },
     },
     solver::{
+        interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
         liquidity::{uniswap_v2, uniswap_v2::UniswapLikeLiquidity, ConstantProductOrder},
         liquidity_collector::LiquidityCollecting,
     },
-    std::{sync, sync::Arc},
+    std::{
+        collections::HashSet,
+        sync::{self, Arc, Mutex},
+    },
     tracing::Instrument,
 };
 
@@ -36,7 +41,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
         .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v2::Inner>()
-        .expect("downcast uniswap settlment handler");
+        .expect("downcast uniswap settlement handler");
 
     liquidity::Liquidity {
         id,
@@ -56,6 +61,32 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
             )
             .expect("invalid uniswap token pair"),
         }),
+    }
+}
+
+pub fn to_interaction(
+    pool: &liquidity::uniswap::v2::Pool,
+    input: &liquidity::MaxInput,
+    output: &liquidity::ExactOutput,
+    receiver: &eth::Address,
+) -> eth::Interaction {
+    let handler = uniswap_v2::Inner::new(
+        IUniswapLikeRouter::at(&shared::ethrpc::dummy::web3(), pool.router.into()),
+        GPv2Settlement::at(&shared::ethrpc::dummy::web3(), receiver.0),
+        Mutex::new(Allowances::empty(receiver.0)),
+    );
+
+    let (_, interaction) = handler.settle(
+        (input.0.token.into(), input.0.amount),
+        (output.0.token.into(), output.0.amount),
+    );
+
+    let (target, value, call_data) = interaction.encode_swap();
+
+    eth::Interaction {
+        target: target.into(),
+        value: value.into(),
+        call_data: call_data.0,
     }
 }
 
@@ -94,10 +125,10 @@ pub async fn collector(
         pool_cache
     };
 
-    Ok(Box::new(UniswapLikeLiquidity::new(
+    Ok(Box::new(UniswapLikeLiquidity::with_allowances(
         router,
         settlement,
-        web3,
+        Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))
 }
@@ -132,5 +163,29 @@ async fn cache_update(blocks: CurrentBlockStream, pool_cache: sync::Weak<PoolCac
                 }
             })
             .await;
+    }
+}
+
+/// An allowance manager that always reports no allowances.
+struct NoAllowanceManaging;
+
+#[async_trait]
+impl AllowanceManaging for NoAllowanceManaging {
+    async fn get_allowances(
+        &self,
+        _: HashSet<eth::H160>,
+        spender: eth::H160,
+    ) -> Result<Allowances> {
+        Ok(Allowances::empty(spender))
+    }
+
+    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
+        Ok(requests
+            .iter()
+            .map(|request| Approval {
+                spender: request.spender,
+                token: request.token,
+            })
+            .collect())
     }
 }

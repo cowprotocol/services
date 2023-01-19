@@ -33,21 +33,6 @@ pub struct Inner {
     allowances: Mutex<Allowances>,
 }
 
-#[cfg(test)]
-impl Inner {
-    pub fn new(
-        router: IUniswapLikeRouter,
-        gpv2_settlement: GPv2Settlement,
-        allowances: Mutex<Allowances>,
-    ) -> Self {
-        Inner {
-            router,
-            gpv2_settlement,
-            allowances,
-        }
-    }
-}
-
 impl UniswapLikeLiquidity {
     pub fn new(
         router: IUniswapLikeRouter,
@@ -55,9 +40,18 @@ impl UniswapLikeLiquidity {
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let router_address = router.address();
         let settlement_allowances =
             Box::new(AllowanceManager::new(web3, gpv2_settlement.address()));
+        Self::with_allowances(router, gpv2_settlement, settlement_allowances, pool_fetcher)
+    }
+
+    pub fn with_allowances(
+        router: IUniswapLikeRouter,
+        gpv2_settlement: GPv2Settlement,
+        settlement_allowances: Box<dyn AllowanceManaging>,
+        pool_fetcher: Arc<dyn PoolFetching>,
+    ) -> Self {
+        let router_address = router.address();
         Self {
             inner: Arc::new(Inner {
                 router,
@@ -114,7 +108,19 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
 }
 
 impl Inner {
-    fn settle(
+    pub fn new(
+        router: IUniswapLikeRouter,
+        gpv2_settlement: GPv2Settlement,
+        allowances: Mutex<Allowances>,
+    ) -> Self {
+        Inner {
+            router,
+            gpv2_settlement,
+            allowances,
+        }
+    }
+
+    pub fn settle(
         &self,
         (token_in, amount_in_max): (H160, U256),
         (token_out, amount_out): (H160, U256),
