@@ -63,7 +63,7 @@ impl Reserves {
         (&self.0.token == a && &self.1.token == b) || (&self.1.token == a && &self.0.token == b)
     }
 
-    /// Returns an interator over the reserve assets.
+    /// Returns an iterator over the reserve assets.
     pub fn iter(&self) -> impl Iterator<Item = eth::Asset> {
         self.into_iter()
     }
