@@ -5,11 +5,9 @@ use {
             eth,
             liquidity,
         },
-        infra::blockchain,
         Ethereum,
     },
     anyhow::{Context, Result},
-    ethcontract::dyns::DynWeb3,
     model::{
         app_id::AppId,
         interaction::InteractionData,
@@ -385,10 +383,4 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
-}
-
-impl blockchain::contracts::ContractAt for contracts::ERC20 {
-    fn at(web3: &DynWeb3, address: eth::ContractAddress) -> Self {
-        contracts::ERC20::at(web3, address.into())
-    }
 }
