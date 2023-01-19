@@ -46,9 +46,8 @@ pub enum HighRisk {
     Disabled,
 }
 
-/// The mempool to use for publishing settlements onchain. The public mempool
-/// of an [`Ethereum`] node can be used, or one of the private mempools offered
-/// by various transaction relay services.
+// TODO Perhaps a better name for this in the future might be Relay
+/// The mempool to use for publishing settlements onchain.
 #[derive(Clone)]
 pub struct Mempool {
     config: Config,
