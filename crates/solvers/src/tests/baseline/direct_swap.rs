@@ -64,7 +64,7 @@ async fn test() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
-                    "gasEstimate": 110000
+                    "gasEstimate": "110000"
                 }
             ],
             "effectiveGasPrice": "15000000000",
@@ -90,7 +90,7 @@ async fn test() {
             ],
             "interactions": [
                 {
-                    "kind": "Liquidity",
+                    "kind": "liquidity",
                     "internalize": false,
                     "id": "0",
                     "inputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
