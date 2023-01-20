@@ -4,6 +4,7 @@ use {
         boundary,
         infra::{
             blockchain::Ethereum,
+            liquidity,
             mempool,
             solver::{self, Solver},
             time,
@@ -33,6 +34,7 @@ pub use {
 pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
+    pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
@@ -42,9 +44,10 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
+        let liquidity = self.liquidity.fetch(&auction.orders).await?;
         let solution = self
             .solver
-            .solve(auction, auction.deadline.timeout(self.now)?)
+            .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
             .await?;
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
@@ -96,4 +99,6 @@ pub enum Error {
     DeadlineExceeded(#[from] auction::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("liquidity fetcher error: {0:?}")]
+    Liquidity(#[from] liquidity::fetcher::Error),
 }

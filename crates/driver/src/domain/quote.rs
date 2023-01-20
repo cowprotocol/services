@@ -97,7 +97,7 @@ impl Order {
     /// returns.
     pub async fn quote(&self, solver: &Solver, now: time::Now) -> Result<Quote, Error> {
         let timeout = self.deadline.timeout(now)?;
-        let solution = solver.solve(&self.fake_auction(), timeout).await?;
+        let solution = solver.solve(&self.fake_auction(), &[], timeout).await?;
         Quote::new(self, solution)
     }
 
@@ -126,7 +126,6 @@ impl Order {
                 },
                 reward: FAKE_AUCTION_REWARD,
             }],
-            liquidity: Default::default(),
             gas_price: self.gas_price,
             deadline: Default::default(),
         }
