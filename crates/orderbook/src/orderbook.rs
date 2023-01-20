@@ -32,20 +32,47 @@ enum OrderOperation {
     Cancelled,
 }
 
+fn operation_label(op: &OrderOperation) -> &'static str {
+    match op {
+        OrderOperation::Created => "created",
+        OrderOperation::Cancelled => "cancelled",
+    }
+}
+
+fn order_class_label(class: &OrderClass) -> &'static str {
+    match class {
+        OrderClass::Market => "user",
+        OrderClass::Liquidity => "liquidity",
+        OrderClass::Limit(_) => "limit",
+    }
+}
+
 impl Metrics {
+    fn get() -> &'static Self {
+        Self::instance(global_metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance")
+    }
+
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let metrics = Self::instance(global_metrics::get_metric_storage_registry())
-            .expect("unexpected error getting metrics instance");
-        let kind = match order.metadata.class {
-            OrderClass::Market => "user",
-            OrderClass::Liquidity => "liquidity",
-            OrderClass::Limit(_) => "limit",
-        };
-        let op = match operation {
-            OrderOperation::Created => "created",
-            OrderOperation::Cancelled => "cancelled",
-        };
-        metrics.orders.with_label_values(&[kind, op]).inc();
+        let class = order_class_label(&order.metadata.class);
+        let op = operation_label(&operation);
+        Self::get().orders.with_label_values(&[class, op]).inc();
+    }
+
+    // Resets all the counters to 0 so we can always use them in Grafana queries.
+    fn initialize() {
+        let metrics = Self::get();
+        for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
+            let op = operation_label(op);
+            for class in &[
+                OrderClass::Market,
+                OrderClass::Liquidity,
+                OrderClass::Limit(Default::default()),
+            ] {
+                let class = order_class_label(class);
+                metrics.orders.with_label_values(&[class, op]).reset();
+            }
+        }
     }
 }
 
@@ -134,6 +161,7 @@ impl Orderbook {
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
     ) -> Self {
+        Metrics::initialize();
         Self {
             domain_separator,
             settlement_contract,
