@@ -13,10 +13,9 @@ pub struct SolverConfiguration {
     pub client: Client,
 }
 
-impl SolverConfiguration {
-    /// Return type is `Token, Option<Owner>` because there are
-    /// entries containing `Null` instead of owner address.
-    async fn query(&self) -> Result<HashMap<Token, Option<Vec<Owner>>>> {
+#[async_trait::async_trait]
+impl TokenOwnerSolverApi for SolverConfiguration {
+    async fn get_token_owner_pairs(&self) -> Result<HashMap<Token, Vec<Owner>>> {
         let response = self
             .client
             .get(self.url.clone())
@@ -25,17 +24,5 @@ impl SolverConfiguration {
             .text()
             .await?;
         serde_json::from_str(&response).context(format!("bad query response: {:?}", response))
-    }
-}
-
-#[async_trait::async_trait]
-impl TokenOwnerSolverApi for SolverConfiguration {
-    async fn get_token_owner_pairs(&self) -> Result<HashMap<Token, Vec<Owner>>> {
-        self.query().await.map(|token_owner_pairs| {
-            token_owner_pairs
-                .into_iter()
-                .filter_map(|(token, owners)| owners.map(|owners| (token, owners)))
-                .collect()
-        })
     }
 }
