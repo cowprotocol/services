@@ -44,7 +44,7 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
-        let liquidity = self.liquidity.fetch(&auction.orders).await?;
+        let liquidity = self.liquidity.for_auction(auction).await?;
         let solution = self
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)

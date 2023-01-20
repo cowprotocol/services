@@ -61,6 +61,7 @@ impl Api {
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
                 },
+                liquidity: self.liquidity.clone(),
                 now: self.now,
             })));
             app = app.nest(&format!("/{name}"), router);
@@ -87,6 +88,10 @@ impl State {
         &self.0.competition
     }
 
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.0.liquidity
+    }
+
     fn now(&self) -> time::Now {
         self.0.now
     }
@@ -96,5 +101,6 @@ impl State {
 struct Inner {
     solver: Solver,
     competition: domain::Competition,
+    liquidity: liquidity::Fetcher,
     now: time::Now,
 }

@@ -2,6 +2,7 @@ use crate::{
     domain::{
         competition::{self, order, solution},
         eth,
+        liquidity,
     },
     infra::{
         solver::{self, Solver},
@@ -25,12 +26,12 @@ impl Quote {
     fn new(order: &Order, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .prices
-            .get(&order.sell_token)
+            .get(&order.tokens.sell)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let buy_price = solution
             .prices
-            .get(&order.buy_token)
+            .get(&order.tokens.buy)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let amount = match order.side {
@@ -55,39 +56,11 @@ impl Quote {
 /// An order which needs to be quoted.
 #[derive(Debug)]
 pub struct Order {
-    pub sell_token: eth::TokenAddress,
-    pub buy_token: eth::TokenAddress,
+    pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub gas_price: eth::EffectiveGasPrice,
     pub deadline: Deadline,
-}
-
-/// The deadline for computing a quote for an order.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Deadline(chrono::DateTime<chrono::Utc>);
-
-impl Deadline {
-    /// Computes the timeout for solving an auction.
-    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
-    }
-
-    pub fn time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
-    }
-}
-
-impl From<chrono::DateTime<chrono::Utc>> for Deadline {
-    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Deadline> for chrono::DateTime<chrono::Utc> {
-    fn from(value: Deadline) -> Self {
-        value.0
-    }
 }
 
 impl Order {
@@ -95,9 +68,16 @@ impl Order {
     /// a "fake" auction which contains a single order, and then determines
     /// the quote for the order based on the solution that the solver
     /// returns.
-    pub async fn quote(&self, solver: &Solver, now: time::Now) -> Result<Quote, Error> {
+    pub async fn quote(
+        &self,
+        solver: &Solver,
+        liquidity: &[liquidity::Liquidity],
+        now: time::Now,
+    ) -> Result<Quote, Error> {
         let timeout = self.deadline.timeout(now)?;
-        let solution = solver.solve(&self.fake_auction(), &[], timeout).await?;
+        let solution = solver
+            .solve(&self.fake_auction(), liquidity, timeout)
+            .await?;
         Quote::new(self, solution)
     }
 
@@ -137,11 +117,11 @@ impl Order {
         match self.side {
             order::Side::Sell => eth::Asset {
                 amount: eth::U256::one(),
-                token: self.buy_token,
+                token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
                 amount: self.amount.into(),
-                token: self.buy_token,
+                token: self.tokens.buy,
             },
         }
     }
@@ -152,13 +132,67 @@ impl Order {
         match self.side {
             order::Side::Sell => eth::Asset {
                 amount: self.amount.into(),
-                token: self.sell_token,
+                token: self.tokens.sell,
             },
             order::Side::Buy => eth::Asset {
                 amount: eth::U256::max_value(),
-                token: self.sell_token,
+                token: self.tokens.sell,
             },
         }
+    }
+}
+
+/// The deadline for computing a quote for an order.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Deadline(chrono::DateTime<chrono::Utc>);
+
+impl Deadline {
+    /// Computes the timeout for solving an auction.
+    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    }
+
+    pub fn time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Deadline {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Deadline> for chrono::DateTime<chrono::Utc> {
+    fn from(value: Deadline) -> Self {
+        value.0
+    }
+}
+
+/// The sell and buy tokens to quote for. This type maintains the invariant that
+/// the sell and buy tokens are distinct.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Tokens {
+    sell: eth::TokenAddress,
+    buy: eth::TokenAddress,
+}
+
+impl Tokens {
+    /// Creates a new instance of [`Tokens`], verifying that the input buy and
+    /// sell tokens are distinct.
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
+        if sell == buy {
+            return Err(SameTokens);
+        }
+        Ok(Self { sell, buy })
+    }
+
+    pub fn sell(&self) -> eth::TokenAddress {
+        self.sell
+    }
+
+    pub fn buy(&self) -> eth::TokenAddress {
+        self.buy
     }
 }
 
@@ -177,3 +211,7 @@ pub enum Error {
 #[derive(Debug, thiserror::Error)]
 #[error("the quoting deadline has been exceeded")]
 pub struct DeadlineExceeded;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the quoted tokens are the same")]
+pub struct SameTokens;

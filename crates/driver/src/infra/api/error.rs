@@ -4,7 +4,7 @@ use {
             competition::{self, solution},
             quote,
         },
-        infra::api,
+        infra::{self, api},
     },
     serde::Serialize,
 };
@@ -22,6 +22,7 @@ enum Kind {
     InvalidAuctionId,
     MissingSurplusFee,
     LiquidityError,
+    QuoteSameTokens,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +45,7 @@ impl From<Kind> for axum::Json<Error> {
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::LiquidityError => "Failed to fetch onchain liquidity",
+            Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
         };
         axum::Json(Error {
             kind: value,
@@ -87,5 +89,20 @@ impl From<api::routes::AuctionError> for axum::Json<Error> {
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
         };
         error.into()
+    }
+}
+
+impl From<api::routes::OrderError> for axum::Json<Error> {
+    fn from(value: api::routes::OrderError) -> Self {
+        let error = match value {
+            api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,
+        };
+        error.into()
+    }
+}
+
+impl From<infra::liquidity::fetcher::Error> for axum::Json<Error> {
+    fn from(_: infra::liquidity::fetcher::Error) -> Self {
+        Kind::LiquidityError.into()
     }
 }

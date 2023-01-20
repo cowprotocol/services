@@ -1,9 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{competition::order, liquidity},
-        infra::{self, blockchain::Ethereum},
+        domain::{competition, competition::order, liquidity, quote},
+        infra::{self, blockchain::Ethereum, liquidity::TokenPair},
     },
+    itertools::Itertools,
     std::sync::Arc,
 };
 
@@ -24,8 +25,32 @@ impl Fetcher {
     }
 
     /// Fetches all relevant liquidity for the orders.
-    pub async fn fetch(&self, orders: &[order::Order]) -> Result<Vec<liquidity::Liquidity>, Error> {
-        let liquidity = self.inner.fetch(orders).await?;
+    pub async fn for_auction(
+        &self,
+        auction: &competition::Auction,
+    ) -> Result<Vec<liquidity::Liquidity>, Error> {
+        let pairs = auction
+            .orders
+            .iter()
+            .filter_map(|order| match order.kind {
+                order::Kind::Market | order::Kind::Limit { .. } => {
+                    TokenPair::new(order.sell.token, order.buy.token)
+                }
+                order::Kind::Liquidity => None,
+            })
+            .collect_vec();
+        let liquidity = self.inner.fetch(&pairs).await?;
+        Ok(liquidity)
+    }
+
+    /// Fetches all liquidity relevant for a quote.
+    pub async fn for_quote(
+        &self,
+        quote: &quote::Order,
+    ) -> Result<Vec<liquidity::Liquidity>, Error> {
+        let pair = TokenPair::new(quote.tokens.sell(), quote.tokens.buy())
+            .expect("sell != buy by construction");
+        let liquidity = self.inner.fetch(&[pair]).await?;
         Ok(liquidity)
     }
 }
