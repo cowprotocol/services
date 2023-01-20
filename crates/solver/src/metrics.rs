@@ -230,7 +230,8 @@ impl Metrics {
             HistogramOpts::new(
                 "transaction_submission_seconds",
                 "Time it takes to submit a settlement transaction.",
-            ),
+            )
+            .buckets(vec![f64::INFINITY]),
             &["strategy"],
         )?;
         registry.register(Box::new(transaction_submission.clone()))?;
