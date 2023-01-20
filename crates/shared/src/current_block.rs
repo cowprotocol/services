@@ -1,13 +1,14 @@
 mod arguments;
 mod eth_call;
 
-pub use self::arguments::Arguments;
+pub use self::arguments::{Arguments, BlockRetrieverStrategy};
 use crate::ethrpc::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
+use tracing::Instrument;
 use web3::{
     helpers,
     types::{BlockId, BlockNumber, U64},
@@ -57,17 +58,18 @@ pub struct BlockInfo {
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
 pub async fn current_block_stream(
-    retreiver: Arc<dyn BlockRetrieving>,
+    retriever: Arc<dyn BlockRetrieving>,
     poll_interval: Duration,
 ) -> Result<CurrentBlockStream> {
-    let first_block = retreiver.current_block().await?;
+    let first_block = retriever.current_block().await?;
+    tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match retreiver.current_block().await {
+            let block = match retriever.current_block().await {
                 Ok(block) => block,
                 Err(err) => {
                     tracing::warn!("failed to get current block: {:?}", err);
@@ -75,15 +77,23 @@ pub async fn current_block_stream(
                 }
             };
 
-            if previous_block == block {
-                continue;
-            }
-            if !block_number_increased(previous_block.number, block.number) {
+            // If the block is exactly the same, ignore it.
+            if previous_block.hash == block.hash {
                 continue;
             }
 
-            tracing::debug!(number =% block.number, hash =% block.hash, "new block");
+            // The new block is different but might still have the same number.
+
+            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
+            update_block_metrics(previous_block.number, block.number);
+
+            // Only update the stream if the number has increased.
+            if block.number <= previous_block.number {
+                continue;
+            }
+
             if sender.send(block).is_err() {
+                tracing::debug!("exiting polling loop");
                 break;
             }
 
@@ -91,7 +101,7 @@ pub async fn current_block_stream(
         }
     };
 
-    tokio::task::spawn(update_future);
+    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
     Ok(receiver)
 }
 
@@ -218,23 +228,18 @@ pub struct Metrics {
     block_stream_update_delta: prometheus::HistogramVec,
 }
 
-/// Only updates the current block if the new block number is strictly bigger than the current one.
 /// Updates metrics about the difference of the new block number compared to the current block.
-fn block_number_increased(current_block: u64, new_block: u64) -> bool {
+fn update_block_metrics(current_block: u64, new_block: u64) {
     let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
         .unwrap()
         .block_stream_update_delta;
 
     let delta = (i128::from(new_block) - i128::from(current_block)) as f64;
     if delta <= 0. {
-        tracing::debug!(delta, new_block, "ignored new block number");
         metric.with_label_values(&["negative"]).observe(delta.abs());
     } else {
-        tracing::debug!(delta, new_block, "increased current block number");
         metric.with_label_values(&["positive"]).observe(delta.abs());
     }
-
-    new_block > current_block
 }
 
 #[cfg(test)]
@@ -247,6 +252,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
+        crate::tracing::initialize_for_tests("shared=debug");
         let node = std::env::var("NODE_URL").unwrap();
         let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);
@@ -291,16 +297,5 @@ mod tests {
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);
-    }
-
-    #[test]
-    fn more_recent_block_gets_propagated() {
-        assert!(block_number_increased(100, 101));
-    }
-
-    #[test]
-    fn outdated_block_does_not_get_propagated() {
-        assert!(!block_number_increased(100, 100));
-        assert!(!block_number_increased(100, 99));
     }
 }

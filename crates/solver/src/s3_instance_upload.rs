@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use aws_sdk_s3::{types::ByteStream, Client, Credentials, Region};
 use aws_types::credentials::SharedCredentialsProvider;
+use flate2::{bufread::GzEncoder, Compression};
 use model::auction::AuctionId;
+use std::io::Read;
 
 #[derive(Default)]
 pub struct Config {
@@ -40,22 +42,32 @@ impl S3InstanceUploader {
     /// Upload the bytes (expected to represent a json encoded solver instance) to the configured S3
     /// bucket.
     ///
-    /// The final filename is the configured prefix followed by `{current_date}/{auction_id}`.
-    pub async fn upload_instance(&self, auction: AuctionId, value: Vec<u8>) -> Result<()> {
-        let key = self.filename(auction);
-        self.upload(key, value).await
+    /// The final filename is the configured prefix followed by `{auction_id}.json.gzip`.
+    pub async fn upload_instance(&self, auction: AuctionId, value: &[u8]) -> Result<()> {
+        self.upload(self.filename(auction), value).await
+    }
+
+    /// Compresses the input bytes using Gzip.
+    fn gzip(&self, bytes: &[u8]) -> Result<Vec<u8>> {
+        let mut encoder = GzEncoder::new(bytes, Compression::best());
+        let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
+        encoder.read_to_end(&mut encoded).context("gzip encoding")?;
+        Ok(encoded)
     }
 
     fn filename(&self, auction: AuctionId) -> String {
         format!("{}{auction}.json", self.filename_prefix)
     }
 
-    async fn upload(&self, key: String, value: Vec<u8>) -> Result<()> {
+    async fn upload(&self, key: String, bytes: &[u8]) -> Result<()> {
+        let encoded = self.gzip(bytes)?;
         self.client
             .put_object()
             .bucket(self.bucket.clone())
             .key(key)
-            .body(ByteStream::new(value.into()))
+            .body(ByteStream::new(encoded.into()))
+            .content_encoding("gzip")
+            .content_type("application/json")
             .send()
             .await?;
         Ok(())
@@ -65,6 +77,8 @@ impl S3InstanceUploader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::read::GzDecoder;
+    use serde_json::json;
 
     #[test]
     #[ignore]
@@ -88,12 +102,18 @@ mod tests {
             filename_prefix: "".to_string(),
         };
 
-        let key = "test.txt".to_string();
-        let value = format!("Hello {:?}", std::time::SystemTime::now());
+        let key = "test.json".to_string();
+        // Upload a reasonable amount of data. This helps see the benefits of
+        // compression.
+        let value = serde_json::to_string(&json!({
+            "content": include_str!("../../../README.md"),
+            "timestamp": chrono::Utc::now(),
+        }))
+        .unwrap();
 
         let uploader = S3InstanceUploader::new(config);
         uploader
-            .upload(key.clone(), value.as_bytes().to_vec())
+            .upload(key.clone(), value.as_bytes())
             .await
             .unwrap();
 
@@ -106,8 +126,11 @@ mod tests {
             .await
             .unwrap();
         let body = get_object.body.collect().await.unwrap().to_vec();
-        let body = std::str::from_utf8(&body).unwrap();
 
-        assert_eq!(value, body);
+        let mut decoder = GzDecoder::new(body.as_slice());
+        let mut decoded = String::new();
+        decoder.read_to_string(&mut decoded).unwrap();
+
+        assert_eq!(value, decoded);
     }
 }

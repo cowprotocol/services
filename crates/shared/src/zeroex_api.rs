@@ -506,7 +506,7 @@ impl DefaultZeroExApi {
         &self,
         url: Url,
     ) -> Result<T, ZeroExResponseError> {
-        tracing::debug!("Querying 0x API: {}", url);
+        tracing::trace!("Querying 0x API: {}", url);
 
         let request = self.client.get(url.clone());
         let response_text = request
@@ -516,7 +516,7 @@ impl DefaultZeroExApi {
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
-        tracing::debug!("Response from 0x API: {}", response_text);
+        tracing::trace!("Response from 0x API: {}", response_text);
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),

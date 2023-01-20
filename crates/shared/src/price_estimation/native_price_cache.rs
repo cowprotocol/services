@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, Weak},
     time::{Duration, Instant},
 };
+use tracing::Instrument;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
@@ -165,13 +166,16 @@ impl CachingNativePriceEstimator {
             estimator,
             cache: Default::default(),
         });
-        tokio::spawn(update_recently_used_outdated_prices(
-            Arc::downgrade(&inner),
-            update_interval,
-            update_size,
-            max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
-            concurrent_requests,
-        ));
+        tokio::spawn(
+            update_recently_used_outdated_prices(
+                Arc::downgrade(&inner),
+                update_interval,
+                update_size,
+                max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
+                concurrent_requests,
+            )
+            .instrument(tracing::info_span!("caching_native_price_estimator")),
+        );
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         Self {
             inner,

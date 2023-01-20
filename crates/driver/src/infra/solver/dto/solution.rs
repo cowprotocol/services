@@ -258,6 +258,7 @@ enum Interaction {
 #[serde(rename_all = "camelCase")]
 struct LiquidityInteraction {
     internalize: bool,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     input_token: eth::H160,
     output_token: eth::H160,

@@ -43,12 +43,12 @@ impl Auction {
             liquidity: self
                 .liquidity
                 .iter()
-                .filter_map(|liquidity| match liquidity {
-                    Liquidity::ConstantProduct(liquidity) => Some(liquidity.to_domain()),
-                    Liquidity::WeightedProduct(liquidity) => Some(liquidity.to_domain()),
-                    Liquidity::Stable(_)
-                    | Liquidity::ConcentratedLiquidity(_)
-                    | Liquidity::LimitOrder(_) => None,
+                .map(|liquidity| match liquidity {
+                    Liquidity::ConstantProduct(liquidity) => liquidity.to_domain(),
+                    Liquidity::WeightedProduct(liquidity) => liquidity.to_domain(),
+                    Liquidity::Stable(liquidity) => liquidity.to_domain(),
+                    Liquidity::ConcentratedLiquidity(liquidity) => liquidity.to_domain(),
+                    Liquidity::LimitOrder(liquidity) => Ok(liquidity.to_domain()),
                 })
                 .try_collect()?,
         })
@@ -59,7 +59,7 @@ impl Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    id: Option<i64>,
+    id: Option<String>,
     tokens: HashMap<H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,
@@ -132,7 +132,8 @@ enum Liquidity {
 struct ConstantProductPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, ConstantProductReserve>,
     fee: BigDecimal,
 }
@@ -163,7 +164,7 @@ impl ConstantProductPool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::ConstantProduct(liquidity::constant_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&self.fee).ok_or("invalid constant product fee")?,
@@ -178,7 +179,8 @@ impl ConstantProductPool {
 struct WeightedProductPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, WeightedProductReserve>,
     fee: BigDecimal,
 }
@@ -207,10 +209,8 @@ impl WeightedProductPool {
                         },
                         weight: conv::decimal_to_rational(&token.weight)
                             .ok_or("invalid token weight")?,
-                        scale: liquidity::weighted_product::ScalingFactor::new(
-                            token.scaling_factor,
-                        )
-                        .ok_or("invalid token scaling factor")?,
+                        scale: liquidity::ScalingFactor::new(token.scaling_factor)
+                            .ok_or("invalid token scaling factor")?,
                     })
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -221,10 +221,10 @@ impl WeightedProductPool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(self.id.clone()),
             address: self.address,
-            gas: eth::Gas(self.gas_estimate.into()),
+            gas: eth::Gas(self.gas_estimate),
             state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
                 reserves,
-                fee: conv::decimal_to_rational(&self.fee).ok_or("invalid constant product fee")?,
+                fee: conv::decimal_to_rational(&self.fee).ok_or("invalid weighted product fee")?,
             }),
         })
     }
@@ -236,7 +236,8 @@ impl WeightedProductPool {
 struct StablePool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: HashMap<H160, StableReserve>,
     amplification_parameter: BigDecimal,
     fee: BigDecimal,
@@ -252,13 +253,48 @@ struct StableReserve {
     scaling_factor: U256,
 }
 
+impl StablePool {
+    fn to_domain(&self) -> Result<liquidity::Liquidity, Error> {
+        let reserves = {
+            let entries = self
+                .tokens
+                .iter()
+                .map(|(address, token)| {
+                    Ok(liquidity::stable::Reserve {
+                        asset: eth::Asset {
+                            token: eth::TokenAddress(*address),
+                            amount: token.balance,
+                        },
+                        scale: liquidity::ScalingFactor::new(token.scaling_factor)
+                            .ok_or("invalid token scaling factor")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            liquidity::stable::Reserves::new(entries).ok_or("duplicate stable token addresss")?
+        };
+
+        Ok(liquidity::Liquidity {
+            id: liquidity::Id(self.id.clone()),
+            address: self.address,
+            gas: eth::Gas(self.gas_estimate),
+            state: liquidity::State::Stable(liquidity::stable::Pool {
+                reserves,
+                amplification_parameter: conv::decimal_to_rational(&self.amplification_parameter)
+                    .ok_or("invalid amplification parameter")?,
+                fee: conv::decimal_to_rational(&self.fee).ok_or("invalid stable pool fee")?,
+            }),
+        })
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConcentratedLiquidityPool {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     tokens: Vec<H160>,
     #[serde_as(as = "serialize::U256")]
     sqrt_price: U256,
@@ -270,13 +306,54 @@ struct ConcentratedLiquidityPool {
     fee: BigDecimal,
 }
 
+impl ConcentratedLiquidityPool {
+    fn to_domain(&self) -> Result<liquidity::Liquidity, Error> {
+        let tokens = {
+            let (a, b) = self
+                .tokens
+                .iter()
+                .copied()
+                .map(eth::TokenAddress)
+                .collect_tuple()
+                .ok_or("invalid number of concentrated liquidity pool tokens")?;
+            liquidity::TokenPair::new(a, b)
+                .ok_or("duplicate concentrated liquidity pool token address")?
+        };
+
+        Ok(liquidity::Liquidity {
+            id: liquidity::Id(self.id.clone()),
+            address: self.address,
+            gas: eth::Gas(self.gas_estimate),
+            state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
+                tokens,
+                sqrt_price: liquidity::concentrated::SqrtPrice(self.sqrt_price),
+                liquidity: liquidity::concentrated::Amount(self.liquidity),
+                tick: liquidity::concentrated::Tick(self.tick),
+                liquidity_net: self
+                    .liquidity_net
+                    .iter()
+                    .map(|(tick, liquidity)| {
+                        (
+                            liquidity::concentrated::Tick(*tick),
+                            liquidity::concentrated::Amount(*liquidity),
+                        )
+                    })
+                    .collect(),
+                fee: conv::decimal_to_rational(&self.fee)
+                    .ok_or("invalid concentrated liquidity pool fee")?,
+            }),
+        })
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ForeignLimitOrder {
     id: String,
     address: H160,
-    gas_estimate: u64,
+    #[serde_as(as = "serialize::U256")]
+    gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
     hash: [u8; 32],
     maker_token: H160,
@@ -287,4 +364,25 @@ struct ForeignLimitOrder {
     taker_amount: U256,
     #[serde_as(as = "serialize::U256")]
     taker_token_fee_amount: U256,
+}
+
+impl ForeignLimitOrder {
+    fn to_domain(&self) -> liquidity::Liquidity {
+        liquidity::Liquidity {
+            id: liquidity::Id(self.id.clone()),
+            address: self.address,
+            gas: eth::Gas(self.gas_estimate),
+            state: liquidity::State::LimitOrder(liquidity::limit_order::LimitOrder {
+                maker: eth::Asset {
+                    token: eth::TokenAddress(self.maker_token),
+                    amount: self.maker_amount,
+                },
+                taker: eth::Asset {
+                    token: eth::TokenAddress(self.taker_token),
+                    amount: self.taker_amount,
+                },
+                fee: liquidity::limit_order::TakerAmount(self.taker_token_fee_amount),
+            }),
+        }
+    }
 }

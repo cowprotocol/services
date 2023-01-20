@@ -142,12 +142,13 @@ impl Driver {
 
     pub async fn run_forever(&mut self) -> ! {
         loop {
+            let start = Instant::now();
             match self.single_run().await {
                 Ok(()) => tracing::debug!("single run finished ok"),
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
             self.metrics.runloop_completed();
-            tokio::time::sleep(self.settle_interval).await;
+            tokio::time::sleep_until((start + self.settle_interval).into()).await;
         }
     }
 
@@ -336,7 +337,7 @@ impl Driver {
                     solver: solver.name().to_string(),
                     objective: Objective {
                         total: rated_settlement
-                            .objective_value()
+                            .objective_value
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),

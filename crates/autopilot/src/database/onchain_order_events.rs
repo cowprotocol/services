@@ -3,7 +3,7 @@ pub mod event_retriever;
 
 use super::{
     events::{bytes_to_order_uid, meta_to_event_index},
-    Metrics, Postgres,
+    Metrics as DatabaseMetrics, Postgres,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{TimeZone, Utc};
@@ -55,6 +55,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     liquidity_order_owners: HashSet<H160>,
+    metrics: &'static Metrics,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -79,6 +80,7 @@ where
             domain_separator,
             settlement_contract,
             liquidity_order_owners,
+            metrics: Metrics::get(),
         }
     }
 }
@@ -157,7 +159,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
-        let _timer = Metrics::get()
+        let _timer = DatabaseMetrics::get()
             .database_queries
             .with_label_values(&["replace_onchain_order_events"])
             .start_timer();
@@ -228,7 +230,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
 
-        let _timer = Metrics::get()
+        let _timer = DatabaseMetrics::get()
             .database_queries
             .with_label_values(&["append_onchain_order_events"])
             .start_timer();
@@ -271,7 +273,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        let _timer = Metrics::get()
+        let _timer = DatabaseMetrics::get()
             .database_queries
             .with_label_values(&["last_event_block"])
             .start_timer();
@@ -287,7 +289,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
 impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
     async fn extract_custom_and_general_order_data(
         &self,
-        events: Vec<EthContractEvent<ContractEvent>>,
+        order_placement_events: Vec<EthContractEvent<ContractEvent>>,
     ) -> Result<(
         Vec<W>,
         Vec<Option<database::orders::Quote>>,
@@ -295,10 +297,10 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<Order>,
     )> {
         let block_number_timestamp_hashmap =
-            get_block_numbers_of_events(&self.web3, &events).await?;
+            get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
         let custom_event_data = self
             .custom_onchain_data_parser
-            .parse_custom_event_data(&events)?;
+            .parse_custom_event_data(&order_placement_events)?;
         let mut custom_data_hashmap = HashMap::new();
         let mut quote_id_hashmap = HashMap::new();
         for (event_index, custom_onchain_data) in custom_event_data.iter() {
@@ -308,7 +310,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             quote_id_hashmap.insert(*event_index, custom_onchain_data.quote_id);
         }
         let mut events_and_quotes = Vec::new();
-        for event in events.iter() {
+        for event in order_placement_events.iter() {
             let EthContractEvent { meta, .. } = event;
             if let Some(meta) = meta {
                 let event_index = meta_to_event_index(meta);
@@ -331,8 +333,10 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             self.domain_separator,
             self.settlement_contract,
             &self.liquidity_order_owners,
+            self.metrics,
         )
         .await;
+
         let data_tuple = onchain_order_data.into_iter().map(
             |(event_index, quote, onchain_order_placement, order)| {
                 (
@@ -425,29 +429,37 @@ type GeneralOnchainOrderPlacementData = (
     OnchainOrderPlacement,
     Order,
 );
-async fn parse_general_onchain_order_placement_data(
-    quoter: &dyn OrderQuoting,
-    contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
+async fn parse_general_onchain_order_placement_data<'a>(
+    quoter: &'a dyn OrderQuoting,
+    order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
-    liquidity_order_owners: &HashSet<H160>,
+    liquidity_order_owners: &'a HashSet<H160>,
+    metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
-    let futures = contract_events_and_quotes_zipped.into_iter().map(
+    let futures = order_placement_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
             let meta = match meta {
                 Some(meta) => meta,
-                None => return Err(anyhow!("event without metadata")),
+                None => {
+                    metrics.inc_onchain_order_errors("no_metadata");
+                    return Err(anyhow!("event without metadata"));
+                }
             };
             let event = match data {
                 ContractEvent::OrderPlacement(event) => event,
                 _ => {
-                    return Err(anyhow!(
-                        "parse_general_onchain_order_placement_data should not reach this state"
-                    ))
+                    unreachable!(
+                        "Should not try to parse orders from events other than OrderPlacement"
+                    )
                 }
             };
-            let (order_data, owner, signing_scheme, order_uid) =
-                extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
+            let detailed_order_data =
+                extract_order_data_from_onchain_order_placement_event(&event, domain_separator);
+            if detailed_order_data.is_err() {
+                metrics.inc_onchain_order_errors("bad_parsing");
+            }
+            let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
 
             let quote_result =
                 get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
@@ -461,18 +473,26 @@ async fn parse_general_onchain_order_placement_data(
                 owner,
                 settlement_contract,
                 liquidity_order_owners,
-            )?;
-            let quote = if let Ok(quote) = quote_result {
-                Some(database::orders::Quote {
+            );
+            let quote = match quote_result {
+                Ok(quote) => Some(database::orders::Quote {
                     order_uid: order_data.1.uid,
                     gas_amount: quote.data.fee_parameters.gas_amount,
                     gas_price: quote.data.fee_parameters.gas_price,
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
-                })
-            } else {
-                None
+                }),
+                Err(err) => {
+                    let err_label = err.to_metrics_label();
+                    tracing::debug!(
+                        "Could not retrieve a quote for order {:?}: {}",
+                        order_data.1.uid,
+                        err_label
+                    );
+                    metrics.inc_onchain_order_errors(err_label);
+                    None
+                }
             };
             Ok((
                 meta_to_event_index(&meta),
@@ -547,7 +567,7 @@ fn convert_onchain_order_placement(
     owner: H160,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
-) -> Result<(OnchainOrderPlacement, Order)> {
+) -> (OnchainOrderPlacement, Order) {
     let full_fee_amount = if let Ok(ref quote) = quote {
         quote.data.fee_parameters.unsubsidized()
     } else {
@@ -613,7 +633,7 @@ fn convert_onchain_order_placement(
         sender: ByteArray(order_placement.sender.0),
         placement_error: quote.err(),
     };
-    Ok((onchain_order_placement_event, order))
+    (onchain_order_placement_event, order)
 }
 
 fn extract_order_data_from_onchain_order_placement_event(
@@ -653,6 +673,28 @@ fn extract_order_data_from_onchain_order_placement_event(
     };
     let order_uid = order_data.uid(&domain_separator, &owner);
     Ok((order_data, owner, signing_scheme, order_uid))
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "onchain_orders")]
+struct Metrics {
+    /// Keeps track of errors in picking up onchain orders.
+    /// Note that an order might be created even if an error is encountered.
+    #[metric(labels("error_type"))]
+    onchain_order_errors: prometheus::IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Self::instance(global_metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance")
+    }
+
+    fn inc_onchain_order_errors(&self, error_label: &str) {
+        self.onchain_order_errors
+            .with_label_values(&[error_label])
+            .inc();
+    }
 }
 
 #[cfg(test)]
@@ -845,8 +887,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
-        )
-        .unwrap();
+        );
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
@@ -958,8 +999,7 @@ mod test {
             owner,
             settlement_contract,
             &hashset! {owner},
-        )
-        .unwrap();
+        );
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
@@ -1070,8 +1110,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
-        )
-        .unwrap();
+        );
         let expected_order_data = OrderData {
             sell_token,
             buy_token,
@@ -1197,6 +1236,7 @@ mod test {
             domain_separator,
             settlement_contract,
             &Default::default(),
+            Metrics::get(),
         )
         .await;
         assert_eq!(result_vec.len(), 2);
@@ -1318,6 +1358,7 @@ mod test {
             domain_separator,
             settlement_contract: H160::zero(),
             liquidity_order_owners: Default::default(),
+            metrics: Metrics::get(),
         };
         let result = onchain_order_parser
             .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])

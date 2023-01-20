@@ -20,7 +20,7 @@ impl Interaction for UniswapInteraction {
 }
 
 impl UniswapInteraction {
-    fn encode_swap(&self) -> EncodedInteraction {
+    pub fn encode_swap(&self) -> EncodedInteraction {
         let method = self.router.swap_tokens_for_exact_tokens(
             self.amount_out,
             self.amount_in_max,

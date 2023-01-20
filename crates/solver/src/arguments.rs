@@ -70,7 +70,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1",
+        default_value = "10",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub settle_interval: Duration,

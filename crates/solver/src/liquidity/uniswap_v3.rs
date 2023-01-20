@@ -165,6 +165,10 @@ impl UniswapV3SettlementHandler {
 }
 
 impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     // Creates the required interaction to convert the given input into output. Assumes slippage is
     // already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {

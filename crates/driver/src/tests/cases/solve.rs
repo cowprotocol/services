@@ -1,4 +1,5 @@
 use {
+    super::SOLVER_NAME,
     crate::{
         domain::competition,
         infra::{self, config::cli},
@@ -26,6 +27,7 @@ async fn test() {
         weth,
         admin_secret_key,
         interactions,
+        solver_address,
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -67,10 +69,10 @@ async fn test() {
 
     // Set up the solver.
     let solver = setup::solver::setup(setup::solver::Config {
-        name: "test1".to_owned(),
+        name: SOLVER_NAME.to_owned(),
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
-        address: hex_address(admin),
+        address: hex_address(solver_address),
         solve: vec![setup::solver::Solve {
             req: json!({
                 "id": "1",
@@ -130,16 +132,17 @@ async fn test() {
     let client = setup::driver::setup(setup::driver::Config {
         now,
         contracts: cli::ContractAddresses {
-            gp_v2_settlement: Some(hex_address(settlement.address())),
-            weth: Some(hex_address(weth.address())),
+            gp_v2_settlement: Some(settlement.address()),
+            weth: Some(weth.address()),
         },
-        solvers: setup::driver::SolversConfig::CreateConfigFile(vec![solver]),
+        file: setup::driver::ConfigFile::Create(vec![solver]),
     })
     .await;
 
     // Call /solve.
     let result = client
         .solve(
+            SOLVER_NAME,
             json!({
                 "id": "1",
                 "tokens": {
@@ -179,7 +182,6 @@ async fn test() {
                 "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
-            "test1",
         )
         .await;
 

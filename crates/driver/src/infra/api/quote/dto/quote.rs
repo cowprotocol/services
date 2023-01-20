@@ -27,10 +27,11 @@ impl Quote {
     }
 }
 
-#[derive(Debug, Serialize)]
 #[serde_as]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
+    #[serde_as(as = "serialize::U256")]
     amount: eth::U256,
     interactions: Vec<Interaction>,
 }

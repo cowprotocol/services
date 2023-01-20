@@ -218,6 +218,12 @@ impl From<TokenAddress> for H160 {
     }
 }
 
+impl From<TokenAddress> for ContractAddress {
+    fn from(token: TokenAddress) -> Self {
+        token.0
+    }
+}
+
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy)]
@@ -285,11 +291,29 @@ impl Tx {
             ..self
         }
     }
+}
 
-    pub fn merge_access_list(self, access_list: AccessList) -> Self {
-        Self {
-            access_list: self.access_list.merge(access_list),
-            ..self
-        }
+/// The Keccak-256 hash of a contract's initialization code.
+///
+/// This value is meaningful in the context of the EVM `CREATE2` opcode in that
+/// it influences the deterministic address that the contract ends up on.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CodeDigest(pub H256);
+
+impl From<H256> for CodeDigest {
+    fn from(value: H256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CodeDigest> for H256 {
+    fn from(value: CodeDigest) -> Self {
+        value.0
+    }
+}
+
+impl From<CodeDigest> for [u8; 32] {
+    fn from(value: CodeDigest) -> Self {
+        value.0 .0
     }
 }

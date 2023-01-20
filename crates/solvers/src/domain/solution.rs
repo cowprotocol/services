@@ -13,6 +13,13 @@ pub struct Solution {
 /// addresses to price in an arbitrarily denominated price.
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 
+impl ClearingPrices {
+    /// Creates a new set of clearing prices.
+    pub fn new(prices: impl IntoIterator<Item = (eth::TokenAddress, U256)>) -> Self {
+        Self(prices.into_iter().collect())
+    }
+}
+
 /// A traded order within a solution.
 pub struct Trade {
     order: order::Order,
