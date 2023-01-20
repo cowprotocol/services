@@ -1,6 +1,5 @@
 use {
     crate::{
-        boundary,
         domain::{eth, quote},
         util::serialize,
     },
@@ -9,8 +8,8 @@ use {
 };
 
 impl Quote {
-    pub fn from_domain(quote: &quote::Quote) -> Result<Self, boundary::Error> {
-        Ok(Self {
+    pub fn from_domain(quote: &quote::Quote) -> Self {
+        Self {
             amount: quote.amount,
             interactions: quote
                 .interactions
@@ -21,7 +20,7 @@ impl Quote {
                     call_data: interaction.call_data.clone(),
                 })
                 .collect(),
-        })
+        }
     }
 }
 

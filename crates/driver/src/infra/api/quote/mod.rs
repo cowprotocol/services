@@ -15,5 +15,5 @@ async fn quote(
         .quote(state.eth(), state.solver(), &liquidity, state.now())
         .await
         .unwrap();
-    axum::response::Json(dto::Quote::from_domain(&quote).unwrap())
+    axum::response::Json(dto::Quote::from_domain(&quote))
 }
