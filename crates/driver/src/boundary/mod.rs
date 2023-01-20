@@ -22,12 +22,25 @@
 //! By Eric Evans, Domain-Driven Design: Tackling Complexity in the Heart of
 //! Software (2014)
 
+pub mod liquidity;
+pub mod mempool;
 pub mod settlement;
 
 pub use {
-    anyhow::Error,
+    anyhow::{Error, Result},
     contracts,
+    mempool::Mempool,
     model::order::OrderData,
     settlement::Settlement,
-    shared::{exit_process_on_panic, tracing::initialize as initialize_tracing},
+    shared::{ethrpc::Web3, exit_process_on_panic, tracing::initialize as initialize_tracing},
 };
+
+use crate::infra::blockchain::Ethereum;
+
+/// Returns a Web3 instance with a trait object transport needed by various
+/// boundary components.
+fn web3(eth: &Ethereum) -> Web3 {
+    // Ugly way to get access to one of these... However, this way we don't
+    // leak this into our domain logic.
+    eth.contracts().settlement().raw_instance().web3()
+}

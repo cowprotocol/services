@@ -208,7 +208,7 @@ pub struct SingleOrderSettlement {
 }
 
 impl SingleOrderSettlement {
-    fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
+    pub fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
         let prices = [
             (order.sell_token, self.sell_token_price),
             (order.buy_token, self.buy_token_price),

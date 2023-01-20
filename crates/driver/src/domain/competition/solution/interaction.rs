@@ -8,6 +8,16 @@ pub enum Interaction {
     Liquidity(Liquidity),
 }
 
+impl Interaction {
+    /// Returns whether or not the interaction should be internalized.
+    pub fn internalize(&self) -> bool {
+        match self {
+            Interaction::Custom(custom) => custom.internalize,
+            Interaction::Liquidity(liquidity) => liquidity.internalize,
+        }
+    }
+}
+
 /// An arbitrary interaction with any smart contract.
 #[derive(Debug)]
 pub struct Custom {

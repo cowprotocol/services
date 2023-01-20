@@ -1,13 +1,17 @@
 use {
-    crate::{domain::competition, infra, solver::Solver, Ethereum, Simulator},
+    crate::{
+        domain::{self, competition},
+        infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
+        solver::Solver,
+    },
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
-mod execute;
 mod info;
 mod quote;
+mod settle;
 mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
@@ -22,8 +26,10 @@ pub enum Addr {
 
 pub struct Api {
     pub solvers: Vec<Solver>,
+    pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub eth: Ethereum,
+    pub mempools: Vec<Mempool>,
     pub now: infra::time::Now,
     pub quote_config: competition::quote::Config,
     pub addr: Addr,
@@ -44,21 +50,27 @@ impl Api {
         );
 
         // Multiplex each solver as part of the API.
-        let shared = Arc::new(SharedState {
-            simulator: self.simulator,
-            eth: self.eth,
-            now: self.now,
-            quote_config: self.quote_config,
-        });
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();
-            let router = solve::route(router);
             let router = info::route(router);
-            let router = router.with_state(State {
-                solver,
-                shared: Arc::clone(&shared),
-            });
+            let router = quote::route(router);
+            let router = solve::route(router);
+            let router = settle::route(router);
+            let router = router.with_state(State(Arc::new(Inner {
+                solver: solver.clone(),
+                liquidity: self.liquidity.clone(),
+                competition: domain::Competition {
+                    solver,
+                    eth: self.eth.clone(),
+                    simulator: self.simulator.clone(),
+                    now: self.now,
+                    mempools: self.mempools.clone(),
+                    settlement: Default::default(),
+                },
+                quote_config: self.quote_config.clone(),
+                now: self.now,
+            })));
             app = app.nest(&format!("/{name}"), router);
         }
 
@@ -81,38 +93,35 @@ impl Api {
 }
 
 #[derive(Debug, Clone)]
-struct State {
-    solver: Solver,
-    shared: Arc<SharedState>,
-}
+struct State(Arc<Inner>);
 
 impl State {
-    fn solver(&self) -> Solver {
-        self.solver.clone()
+    fn solver(&self) -> &Solver {
+        &self.0.solver
     }
 
-    fn simulator(&self) -> &Simulator {
-        &self.shared.simulator
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.0.liquidity
     }
 
-    fn ethereum(&self) -> &Ethereum {
-        &self.shared.eth
-    }
-
-    fn now(&self) -> infra::time::Now {
-        self.shared.now
+    fn competition(&self) -> &domain::Competition {
+        &self.0.competition
     }
 
     fn quote_config(&self) -> &competition::quote::Config {
-        &self.shared.quote_config
+        &self.0.quote_config
+    }
+
+    fn now(&self) -> time::Now {
+        self.0.now
     }
 }
 
-/// State which is shared among all multiplexed solvers.
 #[derive(Debug)]
-struct SharedState {
-    simulator: Simulator,
-    eth: Ethereum,
-    now: infra::time::Now,
+struct Inner {
+    solver: Solver,
+    liquidity: liquidity::Fetcher,
+    competition: domain::Competition,
     quote_config: competition::quote::Config,
+    now: time::Now,
 }

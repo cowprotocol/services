@@ -139,12 +139,20 @@ impl SettlementHandler {
 }
 
 impl SettlementHandling<WeightedProductOrder> for SettlementHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         self.inner_encode(execution, encoder)
     }
 }
 
 impl SettlementHandling<StablePoolOrder> for SettlementHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         self.inner_encode(execution, encoder)
     }
