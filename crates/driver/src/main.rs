@@ -3,10 +3,24 @@
 #![forbid(unsafe_code)]
 
 use {
-    crate::{domain::competition, infra::api},
-    infra::blockchain,
-    std::net::SocketAddr,
+    crate::{
+        domain::competition,
+        infra::{api, mempool, Mempool},
+    },
+    clap::Parser,
+    config::cli,
+    futures::future::join_all,
+    infra::{
+        blockchain::{self, Ethereum},
+        config,
+        liquidity,
+        simulator::{self, Simulator},
+        solver::{self, Solver},
+        Api,
+    },
+    std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
+    tracing::level_filters::LevelFilter,
 };
 
 mod boundary;
@@ -16,20 +30,6 @@ mod util;
 
 #[cfg(test)]
 mod tests;
-
-use {
-    clap::Parser,
-    config::cli,
-    infra::{
-        blockchain::Ethereum,
-        config,
-        simulator::{self, Simulator},
-        solver::{self, Solver},
-        Api,
-    },
-    std::time::Duration,
-    tracing::level_filters::LevelFilter,
-};
 
 #[tokio::main]
 async fn main() {
@@ -56,11 +56,86 @@ pub async fn run(
     boundary::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with arguments:\n{}", args);
 
+    let config = config::file::load(&args.config, now).await;
+
+    let tx_pool = mempool::GlobalTxPool::default();
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&args).await;
+    let mempool_config = mempool::Config {
+        additional_tip_percentage: args.submission.submission_additional_tip_percentage,
+        max_additional_tip: None,
+        gas_price_cap: args.submission.submission_gas_price_cap,
+        target_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_target_confirm_time_secs,
+        ),
+        max_confirm_time: std::time::Duration::from_secs(
+            args.submission.submission_max_confirm_time_secs,
+        ),
+        retry_interval: std::time::Duration::from_secs(
+            args.submission.submission_retry_interval_secs,
+        ),
+        account: match (args.solver_address, args.solver_private_key.clone()) {
+            (Some(address), None) => ethcontract::Account::Local(address, None),
+            (None, Some(private_key)) => ethcontract::Account::Offline(
+                ethcontract::PrivateKey::from_hex_str(private_key)
+                    .expect("a valid private key in --solver-private-key"),
+                None,
+            ),
+            _ => panic!("exactly one of --solver-address, --solver-private-key must be specified",),
+        },
+        eth: eth.clone(),
+        pool: tx_pool.clone(),
+    };
+    let gas_price_estimator = mempool::gas_price_estimator(&mempool_config).await.unwrap();
     let serve = Api {
-        solvers: solvers(&args, now).await,
+        solvers: solvers(&config),
+        liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&args, &eth),
+        mempools: join_all(args.mempools.iter().map(|&mempool| {
+            let args = &args;
+            let config = mempool_config.clone();
+            let gas_price_estimator = gas_price_estimator.clone();
+            async move {
+                match mempool {
+                    cli::Mempool::Public => vec![Mempool::public(
+                        config,
+                        if args
+                            .submission
+                            .submission_disable_high_risk_public_mempool_transactions
+                        {
+                            mempool::HighRisk::Disabled
+                        } else {
+                            mempool::HighRisk::Enabled
+                        },
+                        gas_price_estimator,
+                    )
+                    .await
+                    .unwrap()],
+                    cli::Mempool::Flashbots => {
+                        join_all(args.flashbots_api_urls.iter().map(|url| async {
+                            Mempool::flashbots(
+                                mempool::Config {
+                                    max_additional_tip: Some(
+                                        args.submission.submission_max_additional_flashbots_tip,
+                                    ),
+                                    ..config.clone()
+                                },
+                                url.to_owned(),
+                                gas_price_estimator.clone(),
+                            )
+                            .await
+                            .unwrap()
+                        }))
+                        .await
+                    }
+                }
+            }
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect(),
         eth,
         addr: match args.bind_addr.as_str() {
             "auto" => api::Addr::Auto(addr_sender),
@@ -114,28 +189,22 @@ async fn ethereum(args: &cli::Args) -> Ethereum {
     Ethereum::ethrpc(
         &args.ethrpc,
         blockchain::contracts::Addresses {
-            settlement: args
-                .contract_addresses
-                .gp_v2_settlement
-                .as_ref()
-                .map(|a| cli::hex_address(a).into()),
-            weth: args
-                .contract_addresses
-                .weth
-                .as_ref()
-                .map(|a| cli::hex_address(a).into()),
+            settlement: args.contract_addresses.gp_v2_settlement.map(Into::into),
+            weth: args.contract_addresses.weth.map(Into::into),
         },
     )
     .await
     .expect("initialize ethereum RPC API")
 }
 
-async fn solvers(args: &cli::Args, now: infra::time::Now) -> Vec<Solver> {
-    config::solvers::load(&args.solvers_config, now)
+fn solvers(config: &config::Config) -> Vec<Solver> {
+    config.solvers.iter().cloned().map(Solver::new).collect()
+}
+
+async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
+    liquidity::Fetcher::new(eth, &config.liquidity)
         .await
-        .into_iter()
-        .map(Solver::new)
-        .collect()
+        .expect("initalize liquidity fetcher")
 }
 
 #[cfg(unix)]

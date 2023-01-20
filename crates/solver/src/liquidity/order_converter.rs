@@ -115,6 +115,10 @@ fn compute_synthetic_order_amounts_for_limit_order(
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
         if is_native_token_buy_order {

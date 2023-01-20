@@ -15,6 +15,21 @@ pub enum OnchainOrderPlacementError {
     Other,
 }
 
+impl OnchainOrderPlacementError {
+    pub fn to_metrics_label(&self) -> &str {
+        match self {
+            Self::QuoteNotFound => "no_quote",
+            Self::InvalidQuote => "invalid_quote",
+            Self::PreValidationError => "invalid_order",
+            Self::DisabledOrderClass => "disabled_class",
+            Self::ValidToTooFarInFuture => "expired",
+            Self::InvalidOrderData => "invalid_data",
+            Self::InsufficientFee => "low_fee",
+            Self::Other => "unspecified",
+        }
+    }
+}
+
 #[cfg(test)]
 impl OnchainOrderPlacementError {
     pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {

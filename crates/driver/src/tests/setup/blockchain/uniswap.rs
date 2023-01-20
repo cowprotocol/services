@@ -19,6 +19,7 @@ pub struct Uniswap {
     pub user_fee: ethcontract::U256,
     /// Interactions needed for the solution.
     pub interactions: Vec<(ethcontract::H160, Vec<u8>)>,
+    pub solver_address: ethcontract::H160,
 }
 
 /// Set up a Uniswap V2 pair ready for the following swap:
@@ -28,6 +29,8 @@ pub struct Uniswap {
 ///   |                                              v
 /// [USDT]<---(Uniswap Pair 1000 A / 600.000 B)--->[WETH]
 pub async fn setup() -> Uniswap {
+    super::reset().await;
+
     let web3 = super::web3();
 
     // Move ETH into the admin account.
@@ -42,12 +45,12 @@ pub async fn setup() -> Uniswap {
     );
     let balance = web3
         .eth()
-        .balance(super::primary_account(&web3).await, None)
+        .balance(super::primary_address(&web3).await, None)
         .await
         .unwrap();
     web3.eth()
         .send_transaction(web3::types::TransactionRequest {
-            from: super::primary_account(&web3).await,
+            from: super::primary_address(&web3).await,
             to: Some(admin),
             value: Some(balance / 2),
             ..Default::default()
@@ -94,8 +97,9 @@ pub async fn setup() -> Uniswap {
         .send()
         .await
         .unwrap();
+    let solver_address = super::primary_address(&web3).await;
     authenticator
-        .add_solver(admin)
+        .add_solver(solver_address)
         .from(admin_account.clone())
         .send()
         .await
@@ -221,5 +225,6 @@ pub async fn setup() -> Uniswap {
         web3: super::web3(),
         admin_secret_key,
         token_a,
+        solver_address,
     }
 }
