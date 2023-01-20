@@ -16,13 +16,11 @@ use {
 
 pub mod auction;
 pub mod order;
-pub mod quote;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
-    quote::Quote,
     solution::{Score, Solution, SolverTimeout},
 };
 

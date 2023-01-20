@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, quote},
         infra::time,
         util::serialize,
     },
@@ -9,8 +9,8 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self, now: time::Now) -> Result<competition::quote::Order, Error> {
-        Ok(competition::quote::Order {
+    pub fn into_domain(self, now: time::Now) -> Result<quote::Order, Error> {
+        Ok(quote::Order {
             sell_token: self.sell_token.into(),
             buy_token: self.buy_token.into(),
             amount: self.amount.into(),
@@ -19,8 +19,8 @@ impl Order {
                 Kind::Buy => competition::order::Side::Buy,
             },
             gas_price: self.effective_gas_price.into(),
-            deadline: competition::quote::Deadline::new(self.deadline, now)
-                .map_err(|competition::quote::DeadlineExceeded| Error::DeadlineExceeded)?,
+            deadline: quote::Deadline::new(self.deadline, now)
+                .map_err(|quote::DeadlineExceeded| Error::DeadlineExceeded)?,
         })
     }
 }

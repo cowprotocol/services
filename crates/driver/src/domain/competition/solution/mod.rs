@@ -3,9 +3,10 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, order, quote},
+            competition::{self, order},
             eth,
             liquidity,
+            quote,
         },
         infra::{self, blockchain, time},
         simulator,

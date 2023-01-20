@@ -1,7 +1,7 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::{competition, competition::SolverTimeout},
+        domain::{competition::SolverTimeout, quote},
         infra,
         tests::{hex_address, setup},
     },
@@ -75,7 +75,7 @@ async fn test() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": competition::quote::FAKE_AUCTION_REWARD,
+                        "reward": quote::FAKE_AUCTION_REWARD,
                     }
                 ],
                 "liquidity": [],
