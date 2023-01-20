@@ -34,9 +34,9 @@ impl Interaction {
                 vec![eth::Allowance {
                     spender: eth::allowance::Spender {
                         address,
-                        token: interaction.output.token,
+                        token: interaction.input.token,
                     },
-                    amount: interaction.output.amount,
+                    amount: interaction.input.amount,
                 }
                 .into()]
             }

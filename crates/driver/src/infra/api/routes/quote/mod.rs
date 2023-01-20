@@ -16,7 +16,5 @@ async fn route(
     let quote = order
         .quote(state.eth(), state.solver(), state.liquidity(), state.now())
         .await?;
-    Ok(axum::response::Json(
-        dto::Quote::from_domain(&quote).unwrap(),
-    ))
+    Ok(axum::response::Json(dto::Quote::from_domain(&quote)))
 }
