@@ -14,7 +14,9 @@ async fn route(
 ) -> Result<axum::Json<dto::Quote>, axum::Json<Error>> {
     let order = order.0.into_domain()?;
     let quote = order
-        .quote(state.solver(), state.liquidity(), state.now())
+        .quote(state.eth(), state.solver(), state.liquidity(), state.now())
         .await?;
-    Ok(axum::response::Json(dto::Quote::from_domain(&quote)))
+    Ok(axum::response::Json(
+        dto::Quote::from_domain(&quote).unwrap(),
+    ))
 }

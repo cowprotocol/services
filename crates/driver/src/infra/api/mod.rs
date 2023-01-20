@@ -51,6 +51,7 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
+                eth: self.eth.clone(),
                 solver: solver.clone(),
                 competition: domain::Competition {
                     solver,
@@ -80,6 +81,10 @@ impl Api {
 struct State(Arc<Inner>);
 
 impl State {
+    fn eth(&self) -> &Ethereum {
+        &self.0.eth
+    }
+
     fn solver(&self) -> &Solver {
         &self.0.solver
     }
@@ -99,6 +104,7 @@ impl State {
 
 #[derive(Debug)]
 struct Inner {
+    eth: Ethereum,
     solver: Solver,
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,

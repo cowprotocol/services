@@ -1,4 +1,4 @@
-use crate::domain::{self, eth};
+use crate::domain::{self, eth, liquidity};
 
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
@@ -14,6 +14,32 @@ impl Interaction {
         match self {
             Interaction::Custom(custom) => custom.internalize,
             Interaction::Liquidity(liquidity) => liquidity.internalize,
+        }
+    }
+
+    /// Returns the ERC20 allowances required for executing this interaction
+    /// onchain.
+    pub fn allowances(&self) -> Vec<eth::allowance::Required> {
+        match self {
+            Interaction::Custom(interaction) => interaction.allowances.clone(),
+            Interaction::Liquidity(interaction) => {
+                let address = match &interaction.liquidity.kind {
+                    liquidity::Kind::UniswapV2(pool) => pool.router.into(),
+                    liquidity::Kind::UniswapV3(_) => todo!(),
+                    liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                    liquidity::Kind::BalancerV2Weighted(_) => todo!(),
+                    liquidity::Kind::Swapr(_) => todo!(),
+                    liquidity::Kind::ZeroEx(_) => todo!(),
+                };
+                vec![eth::Allowance {
+                    spender: eth::allowance::Spender {
+                        address,
+                        token: interaction.output.token,
+                    },
+                    amount: interaction.output.amount,
+                }
+                .into()]
+            }
         }
     }
 }

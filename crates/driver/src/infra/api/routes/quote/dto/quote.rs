@@ -1,6 +1,7 @@
 use {
     crate::{
-        domain::{competition, eth, quote},
+        boundary,
+        domain::{eth, quote},
         util::serialize,
     },
     serde::Serialize,
@@ -8,22 +9,19 @@ use {
 };
 
 impl Quote {
-    pub fn from_domain(quote: &quote::Quote) -> Self {
-        Self {
+    pub fn from_domain(quote: &quote::Quote) -> Result<Self, boundary::Error> {
+        Ok(Self {
             amount: quote.amount,
             interactions: quote
                 .interactions
                 .iter()
-                .map(|interaction| match interaction {
-                    competition::solution::Interaction::Custom(interaction) => Interaction {
-                        target: interaction.target.into(),
-                        value: interaction.value.into(),
-                        call_data: interaction.call_data.clone(),
-                    },
-                    competition::solution::Interaction::Liquidity(..) => todo!(),
+                .map(|interaction| Interaction {
+                    target: interaction.target.into(),
+                    value: interaction.value.into(),
+                    call_data: interaction.call_data.clone(),
                 })
                 .collect(),
-        }
+        })
     }
 }
 

@@ -61,6 +61,7 @@ impl From<quote::Error> for axum::Json<Error> {
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
             quote::Error::Liquidity(_) => Kind::LiquidityError,
+            quote::Error::Boundary(_) => Kind::Unknown,
         };
         error.into()
     }
