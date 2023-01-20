@@ -3,7 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, order},
+            competition::{self, order, quote},
             eth,
             liquidity,
         },
@@ -212,18 +212,42 @@ impl SolverTimeout {
     /// time left for the driver to forward the results back to the protocol
     /// or do some other necessary work.
     pub fn for_solving(
-        deadline: competition::auction::Deadline,
+        deadline: auction::Deadline,
         now: time::Now,
     ) -> Result<SolverTimeout, auction::DeadlineExceeded> {
-        let deadline = chrono::DateTime::from(deadline) - now.now() - Self::solving_time_buffer();
-        deadline
-            .to_std()
-            .map(Self)
-            .map_err(|_| auction::DeadlineExceeded)
+        Self::with_time_buffer(deadline.into(), now, Self::solving_time_buffer())
+            .ok_or(auction::DeadlineExceeded)
+    }
+
+    /// The time limit passed to the solver when quoting.
+    ///
+    /// Similar to [`SolverTimeout::for_solving`] but for handling quotes. The
+    /// reason for a different value is that less post-processing work is
+    /// required for quoting, meaning a smaller "time buffer" is needed on the
+    /// auction deadline.
+    pub fn for_quoting(
+        deadline: quote::Deadline,
+        now: time::Now,
+    ) -> Result<SolverTimeout, quote::DeadlineExceeded> {
+        Self::with_time_buffer(deadline.into(), now, Self::quoting_time_buffer())
+            .ok_or(quote::DeadlineExceeded)
+    }
+
+    fn with_time_buffer(
+        deadline: chrono::DateTime<chrono::Utc>,
+        now: time::Now,
+        buffer: chrono::Duration,
+    ) -> Option<SolverTimeout> {
+        let deadline = deadline - now.now() - buffer;
+        deadline.to_std().map(Self).ok()
     }
 
     pub fn solving_time_buffer() -> chrono::Duration {
         chrono::Duration::seconds(1)
+    }
+
+    pub fn quoting_time_buffer() -> chrono::Duration {
+        chrono::Duration::milliseconds(100)
     }
 
     pub fn deadline(self, now: infra::time::Now) -> chrono::DateTime<chrono::Utc> {

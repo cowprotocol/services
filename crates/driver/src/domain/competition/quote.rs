@@ -1,18 +1,16 @@
 use crate::{
     domain::{
-        competition::{self, order, solution},
+        competition::{self, order},
         eth,
     },
-    infra::solver::{self, Solver},
+    infra::{
+        solver::{self, Solver},
+        time,
+    },
     util::{self, conv},
 };
 
 pub const FAKE_AUCTION_REWARD: f64 = 35.;
-
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub timeout: solution::SolverTimeout,
-}
 
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
@@ -62,6 +60,30 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub gas_price: eth::EffectiveGasPrice,
+    pub deadline: Deadline,
+}
+
+/// The deadline for computing a quote for an order.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Deadline(chrono::DateTime<chrono::Utc>);
+
+impl Deadline {
+    pub fn new(
+        deadline: chrono::DateTime<chrono::Utc>,
+        now: time::Now,
+    ) -> Result<Self, DeadlineExceeded> {
+        if deadline <= now.now() {
+            Err(DeadlineExceeded)
+        } else {
+            Ok(Self(deadline))
+        }
+    }
+}
+
+impl From<Deadline> for chrono::DateTime<chrono::Utc> {
+    fn from(value: Deadline) -> Self {
+        value.0
+    }
 }
 
 impl Order {
@@ -69,8 +91,9 @@ impl Order {
     /// a "fake" auction which contains a single order, and then determines
     /// the quote for the order based on the solution that the solver
     /// returns.
-    pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, Error> {
-        let solution = solver.solve(&self.fake_auction(), config.timeout).await?;
+    pub async fn quote(&self, solver: &Solver, now: time::Now) -> Result<Quote, Error> {
+        let timeout = competition::solution::SolverTimeout::for_quoting(self.deadline, now)?;
+        let solution = solver.solve(&self.fake_auction(), timeout).await?;
         Quote::new(self, solution)
     }
 
@@ -142,6 +165,12 @@ pub enum Error {
     /// which the user is trying to trade.
     #[error("solver was unable to generate a quote for this order")]
     QuotingFailed,
+    #[error("{0:?}")]
+    DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("the quoting deadline has been exceeded")]
+pub struct DeadlineExceeded;

@@ -73,8 +73,8 @@ impl std::fmt::Display for Port {
 impl Port {
     /// The port range from [`FIRST`] to [`LAST`] is expected to be controlled
     /// by `dev-geth` and not be touched by any other process.
-    const FIRST: Self = Port(1500);
-    const LAST: Self = Port(15000);
+    const FIRST: Self = Port(18545);
+    const LAST: Self = Port(19545);
 
     fn next(self) -> Self {
         if self >= Self::LAST {
