@@ -119,7 +119,7 @@ impl Processes {
             .spawn()
             .unwrap();
         Self::wait_for_geth(&port).await;
-        self.children.insert(port.clone(), child);
+        self.children.insert(port, child);
         port
     }
 
