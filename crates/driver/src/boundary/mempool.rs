@@ -123,6 +123,7 @@ impl Mempool {
             &web3,
         )?;
         let gas = settlement.gas;
+        let id = settlement.id();
         submitter
             .submit(
                 settlement.boundary().inner,
@@ -132,6 +133,7 @@ impl Mempool {
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
                     network_id: self.config.eth.network_id().to_string(),
+                    additional_call_data: &id.to_be_bytes(),
                 },
             )
             .await?;

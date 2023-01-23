@@ -49,17 +49,19 @@ const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
-pub struct SubmitterParams {
+pub struct SubmitterParams<'a> {
     /// Desired duration to include the transaction in a block
     pub target_confirm_time: Duration, //todo ds change to blocks in the following PR
     /// Estimated gas consumption of a transaction
     pub gas_estimate: U256,
     /// Maximum duration of a single run loop
     pub deadline: Option<Instant>,
-    /// Resimulate and resend transaction on every retry_interval seconds
+    /// Re-simulate and resend transaction on every retry_interval seconds
     pub retry_interval: Duration,
     /// Network id (mainnet, rinkeby, goerli, gnosis chain)
     pub network_id: String,
+    /// Additional bytes to append to the call data. This is required by the `driver`.
+    pub additional_call_data: &'a [u8],
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -214,7 +216,7 @@ impl<'a> Submitter<'a> {
     pub async fn submit(
         &self,
         settlement: Settlement,
-        params: SubmitterParams,
+        params: SubmitterParams<'_>,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
 
@@ -363,7 +365,7 @@ impl<'a> Submitter<'a> {
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
         settlement: Settlement,
-        params: &SubmitterParams,
+        params: &SubmitterParams<'_>,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
@@ -403,9 +405,15 @@ impl<'a> Submitter<'a> {
 
             // create transaction
 
-            let method = self
+            let mut method = self
                 .build_method(settlement.clone(), &gas_price, self.nonce, gas_limit)
                 .await;
+
+            // append additional call data
+
+            let mut data = method.tx.data.take().unwrap();
+            data.0.extend(params.additional_call_data);
+            method.tx = method.tx.data(data);
 
             // append access list
 
@@ -757,6 +765,7 @@ mod tests {
             deadline: Some(Instant::now() + Duration::from_secs(90)),
             retry_interval: Duration::from_secs(5),
             network_id: "1".to_string(),
+            additional_call_data: &[],
         };
         let result = submitter.submit(settlement, params).await;
         tracing::debug!("finished with result {:?}", result);
