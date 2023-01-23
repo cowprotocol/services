@@ -35,10 +35,15 @@ impl Geth {
 
 impl Drop for Geth {
     fn drop(&mut self) {
-        // Use ureq because it's blocking and doesn't rely on an async runtime.
-        ureq::delete(&format!("http://localhost:{DEV_GETH_PORT}/{}", self.port))
-            .call()
-            .unwrap();
+        let port = std::mem::take(&mut self.port);
+        tokio::spawn(async move {
+            let client = reqwest::Client::new();
+            client
+                .delete(&format!("http://localhost:{DEV_GETH_PORT}/{}", port))
+                .send()
+                .await
+                .unwrap();
+        });
     }
 }
 
