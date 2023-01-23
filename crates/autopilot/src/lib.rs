@@ -21,7 +21,7 @@ use crate::{
         Postgres,
     },
     event_updater::{EventUpdater, GPv2SettlementContract},
-    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
+    limit_orders::{BalanceTracker, LimitOrderMetrics, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{
@@ -562,7 +562,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
     let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
         web3,
         db: db.clone(),
-        current_block: current_block_stream,
+        current_block: current_block_stream.clone(),
     };
     tokio::task::spawn(
         auction_transaction_updater
@@ -573,6 +573,9 @@ pub async fn main(args: arguments::Arguments) -> ! {
     if args.enable_limit_orders {
         let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
+        if args.skip_quoting_unfunded_orders {
+            BalanceTracker::new(balance_fetcher.clone(), db.clone()).spawn(current_block_stream);
+        }
         LimitOrderQuoter {
             limit_order_age,
             quoter,
@@ -580,6 +583,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             signature_validator,
             domain_separator,
             parallelism: args.limit_order_quoter_parallelism,
+            skip_quoting_unfunded_orders: args.skip_quoting_unfunded_orders,
         }
         .spawn();
         LimitOrderMetrics {

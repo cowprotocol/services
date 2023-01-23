@@ -1,12 +1,18 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use database::orders::{OrderFeeSpecifier, Quote};
+use database::{
+    byte_array::ByteArray,
+    orders::{OrderFeeSpecifier, Quote},
+};
 use ethcontract::U256;
 use futures::{StreamExt, TryStreamExt};
-use model::time::now_in_epoch_seconds;
+use model::{
+    order::{Order, OrderUid},
+    time::now_in_epoch_seconds,
+};
 use number_conversions::u256_to_big_decimal;
-use shared::fee_subsidy::FeeParameters;
+use shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters};
 
 /// New fee data to update a limit order with.
 ///
@@ -40,10 +46,57 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
+    /// Returns all limit orders that are currently open. This function doesn't care about the
+    /// recency of the `surplus_fee` or the `has_sufficient_balance` flag.
+    pub async fn open_limit_orders_without_pre_interactions(&self) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["open_limit_orders_without_pre_interactions"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        let orders = database::orders::open_limit_orders_without_pre_interactions(
+            &mut ex,
+            now_in_epoch_seconds().into(),
+        )
+        .filter_map(|result| async move {
+            match result {
+                Ok(order) => full_order_into_model_order(order).ok(),
+                Err(_) => None,
+            }
+        })
+        .collect()
+        .await;
+        Ok(orders)
+    }
+
+    pub async fn update_has_sufficient_balance_flags(
+        &self,
+        updates: &[(OrderUid, bool)],
+    ) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["update_has_sufficient_balance_flag"])
+            .start_timer();
+        let mut ex = self.0.begin().await?;
+        for (uid, has_sufficient_balance) in updates {
+            database::orders::update_has_sufficient_balance_flag(
+                &mut ex,
+                &ByteArray(uid.0),
+                *has_sufficient_balance,
+            )
+            .await
+            .context("update_has_sufficient_balance_flag")?;
+        }
+        ex.commit().await.context("commit")?;
+        Ok(())
+    }
+
     pub async fn order_specs_with_outdated_fees(
         &self,
         age: Duration,
         limit: usize,
+        quote_unfunded_orders: bool,
     ) -> Result<Vec<OrderFeeSpecifier>> {
         let limit: i64 = limit.try_into().context("convert limit")?;
 
@@ -59,6 +112,7 @@ impl Postgres {
             timestamp,
             now_in_epoch_seconds().into(),
             limit,
+            quote_unfunded_orders,
         )
         .map(|result| result.map_err(anyhow::Error::from))
         .try_collect()

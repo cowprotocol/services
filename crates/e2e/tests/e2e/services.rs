@@ -10,7 +10,7 @@ use autopilot::{
         },
     },
     event_updater::GPv2SettlementContract,
-    limit_orders::LimitOrderQuoter,
+    limit_orders::{BalanceTracker, LimitOrderQuoter},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{IUniswapLikeRouter, WETH9};
@@ -194,8 +194,11 @@ impl OrderbookServices {
             signature_validator: signature_validator.clone(),
             domain_separator: contracts.domain_separator,
             parallelism: 2,
+            skip_quoting_unfunded_orders: true,
         }
         .spawn();
+        BalanceTracker::new(balance_fetcher.clone(), autopilot_db.clone())
+            .spawn(current_block_stream.clone());
         let mut code_fetcher = MockCodeFetching::new();
         code_fetcher.expect_code_size().returning(|_| Ok(0));
         let order_validator = Arc::new(

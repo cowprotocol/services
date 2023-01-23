@@ -132,7 +132,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    // Enable background quoting for limit orders.
+    /// Enable background quoting for limit orders.
     #[clap(long, env)]
     pub enable_limit_orders: bool,
 
@@ -143,6 +143,11 @@ pub struct Arguments {
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
+
+    /// Skip updating the `surplus_fee` for orders where the owner currently doesn't have enough
+    /// balance.
+    #[clap(long, env)]
+    pub skip_quoting_unfunded_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -199,6 +204,11 @@ impl std::fmt::Display for Arguments {
             f,
             "limit_order_quoter_parallelism: {:?}",
             self.limit_order_quoter_parallelism
+        )?;
+        writeln!(
+            f,
+            "skip_quoting_unfunded_orders: {:?}",
+            self.skip_quoting_unfunded_orders
         )?;
         Ok(())
     }

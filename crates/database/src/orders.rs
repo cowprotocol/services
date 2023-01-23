@@ -443,7 +443,7 @@ const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class, o.surplus_fee, o.surplus_fee_timestamp,
+o.class, o.surplus_fee, o.surplus_fee_timestamp, o.has_sufficient_balance,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -602,6 +602,20 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
+/// All limit orders that are not yet expired. Does not take
+/// `surplus_fee_timestamp` or `has_sufficient_balance` into account.
+pub fn open_limit_orders_without_pre_interactions(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
+    const QUERY: &str = const_format::concatcp!(
+        OPEN_ORDERS,
+        " AND class = 'limit'",
+        " AND cardinality(pre_interactions) = 0",
+    );
+    sqlx::query_as(QUERY).bind(min_valid_to).fetch(ex)
+}
+
 /// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
 /// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
 /// identical orders in bulk so in order to not do unnecessary price estimation requests during
@@ -615,6 +629,7 @@ pub fn order_parameters_with_most_outdated_fees(
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
     limit: i64,
+    quote_unfunded_orders: bool,
 ) -> BoxStream<'_, Result<OrderFeeSpecifier, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         " WITH outdated_groups as (",
@@ -624,18 +639,20 @@ pub fn order_parameters_with_most_outdated_fees(
         OPEN_ORDERS,
         "       AND class = 'limit'",
         "       AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "       AND ($3 OR has_sufficient_balance)",
         "   ) as subquery",
         "   GROUP BY sell_token, buy_token, sell_amount",
         " )",
         " SELECT sell_token, buy_token, sell_amount",
         " FROM outdated_groups",
         " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
-        " LIMIT $3"
+        " LIMIT $4"
     );
 
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(quote_unfunded_orders)
         .bind(limit)
         .fetch(ex)
 }
@@ -702,6 +719,27 @@ pub async fn update_limit_order_fees(
         .bind(&order_spec.sell_amount)
         .fetch_all(ex)
         .await
+}
+
+/// Updates the `has_sufficient_balance` flag of an order.
+pub async fn update_has_sufficient_balance_flag(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    has_sufficient_balance: bool,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "
+        UPDATE orders
+        SET
+            has_sufficient_balance = $1
+        WHERE
+            uid = $2
+    ";
+    sqlx::query(QUERY)
+        .bind(has_sufficient_balance)
+        .bind(uid)
+        .execute(ex)
+        .await?;
+    Ok(())
 }
 
 /// Count the number of valid limit orders.
@@ -1809,10 +1847,11 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
-            .try_collect()
-            .await
-            .unwrap();
+        let orders: Vec<_> =
+            order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100, true)
+                .try_collect()
+                .await
+                .unwrap();
 
         assert_eq!(orders.len(), 2);
         // order with uid 5 (higher priority because it was never estimated)
@@ -1847,10 +1886,66 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
-            .try_collect()
+        let orders: Vec<_> =
+            order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100, true)
+                .try_collect()
+                .await
+                .unwrap();
+        assert_eq!(orders.len(), 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_skip_quoting_unfunded_orders_respects_configuration() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        // Valid limit order with an outdated surplus fee.
+        insert_order(
+            &mut db,
+            &Order {
+                uid: ByteArray([1; 56]),
+                class: OrderClass::Limit,
+                valid_to: 3,
+                surplus_fee: Some(0.into()),
+                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
+                sell_token: ByteArray([1; 20]),
+                buy_token: ByteArray([2; 20]),
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // Per default orders get created as having enough funds.
+        let orders: Vec<_> =
+            order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100, false)
+                .try_collect()
+                .await
+                .unwrap();
+        assert_eq!(orders.len(), 1);
+
+        update_has_sufficient_balance_flag(&mut db, &ByteArray([1; 56]), false)
             .await
             .unwrap();
+        let orders: Vec<_> =
+            order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100, false)
+                .try_collect()
+                .await
+                .unwrap();
+        // Quoting unfunded orders can be skipped.
+        assert!(orders.is_empty());
+
+        let orders: Vec<_> =
+            order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100, true)
+                .try_collect()
+                .await
+                .unwrap();
+        // But we could also still quote them.
         assert_eq!(orders.len(), 1);
     }
 
