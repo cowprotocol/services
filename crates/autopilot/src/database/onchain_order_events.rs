@@ -473,6 +473,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
                 owner,
                 settlement_contract,
                 liquidity_order_owners,
+                metrics,
             );
             let quote = match quote_result {
                 Ok(quote) => Some(database::orders::Quote {
@@ -567,6 +568,7 @@ fn convert_onchain_order_placement(
     owner: H160,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
+    metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
     let full_fee_amount = if let Ok(ref quote) = quote {
         quote.data.fee_parameters.unsubsidized()
@@ -578,6 +580,7 @@ fn convert_onchain_order_placement(
     let is_outside_market_price = if let Ok(ref quote) = quote {
         if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
+            metrics.inc_onchain_order_errors("outside_market_price");
             true
         } else {
             false
@@ -887,6 +890,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
@@ -999,6 +1003,7 @@ mod test {
             owner,
             settlement_contract,
             &hashset! {owner},
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
@@ -1110,6 +1115,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
