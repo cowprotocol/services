@@ -17,7 +17,10 @@
 
 use {
     dashmap::DashMap,
-    std::{process::Stdio, sync::Arc},
+    std::{
+        process::Stdio,
+        sync::{Arc, Mutex},
+    },
 };
 
 const PORT: &str = "8547";
@@ -52,29 +55,46 @@ async fn run() {
         .unwrap();
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Port(String);
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Port(u16);
+
+impl Default for Port {
+    fn default() -> Self {
+        Self::LAST
+    }
+}
+
+impl std::fmt::Display for Port {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl Port {
-    fn free() -> Self {
-        Self(
-            std::net::TcpListener::bind("0.0.0.0:0")
-                .unwrap()
-                .local_addr()
-                .unwrap()
-                .port()
-                .to_string(),
-        )
+    /// The port range from [`FIRST`] to [`LAST`] is expected to be controlled
+    /// by `dev-geth` and not be touched by any other process.
+    const FIRST: Self = Port(1500);
+    const LAST: Self = Port(15000);
+
+    fn next(self) -> Self {
+        if self >= Self::LAST {
+            Self::FIRST
+        } else {
+            Self(self.0 + 1)
+        }
     }
 }
 
 #[derive(Debug, Default)]
-struct Processes(DashMap<Port, tokio::process::Child>);
+struct Processes {
+    last_port: Mutex<Port>,
+    children: DashMap<Port, tokio::process::Child>,
+}
 
 impl Processes {
     async fn start(&self) -> Port {
-        let port = Port::free();
-        let datadir = format!("/{}", port.0);
+        let port = self.next_port();
+        let datadir = format!("/{}", port);
         let status = tokio::process::Command::new("cp")
             .arg("-r")
             .arg(BASE_DATADIR)
@@ -85,27 +105,27 @@ impl Processes {
             .await
             .unwrap();
         assert!(status.success());
-        let process = tokio::process::Command::new(GETH_PROGRAM)
+        let child = tokio::process::Command::new(GETH_PROGRAM)
             .args(GETH_ARGS.into_iter().chain([
                 "--http.port",
-                &port.0,
+                &port.to_string(),
                 "--datadir",
                 &datadir,
                 "--authrpc.port",
-                &Port::free().0,
+                &self.next_port().to_string(),
             ]))
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
         Self::wait_for_geth(&port).await;
-        self.0.insert(port.clone(), process);
+        self.children.insert(port.clone(), child);
         port
     }
 
     async fn stop(&self, port: Port) {
         let (_, mut process) = self
-            .0
+            .children
             .remove(&port)
             .expect("no process running at given port");
         tokio::fs::remove_dir_all(format!("/{}", port.0))
@@ -114,14 +134,26 @@ impl Processes {
         process.kill().await.unwrap();
     }
 
+    fn next_port(&self) -> Port {
+        let mut last_port = self.last_port.lock().unwrap();
+        let port = last_port.next();
+        *last_port = port;
+        port
+    }
+
     async fn wait_for_geth(port: &Port) {
         let web3 = web3::Web3::new(
             web3::transports::Http::new(&format!("http://localhost:{}", port.0))
                 .expect("valid URL"),
         );
         tokio::time::timeout(std::time::Duration::from_secs(15), async {
-            loop {
-                if web3.eth().accounts().await.is_ok() {
+            for i in 1.. {
+                if let Ok(Ok(..)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(50 * i),
+                    web3.eth().accounts(),
+                )
+                .await
+                {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -133,14 +165,14 @@ impl Processes {
 }
 
 async fn start(axum::extract::State(state): axum::extract::State<State>) -> String {
-    state.0.start().await.0
+    state.0.start().await.0.to_string()
 }
 
 async fn stop(
     axum::extract::State(state): axum::extract::State<State>,
     axum::extract::Path(port): axum::extract::Path<String>,
 ) {
-    state.0.stop(Port(port)).await;
+    state.0.stop(Port(port.parse().unwrap())).await;
 }
 
 #[derive(Debug, Clone)]
