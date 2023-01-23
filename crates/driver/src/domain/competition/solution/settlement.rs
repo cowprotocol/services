@@ -12,7 +12,10 @@ use crate::{
 /// settlement. The intention with this type is to represent the settlement
 /// transaction itself, not an intermediate state.
 #[derive(Debug, Clone)]
-pub(super) struct Settlement(boundary::Settlement);
+pub(super) struct Settlement {
+    id: super::Id,
+    boundary: boundary::Settlement,
+}
 
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
@@ -21,14 +24,18 @@ impl Settlement {
         auction: &competition::Auction,
         solution: &competition::Solution,
     ) -> anyhow::Result<Self> {
-        boundary::Settlement::encode(eth, solution, auction)
-            .await
-            .map(Self)
+        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
+        Ok(Self {
+            id: solution.id,
+            boundary,
+        })
     }
 
     /// The onchain transaction representing this settlement.
     pub fn tx(self) -> eth::Tx {
-        self.0.tx()
+        let mut tx = self.boundary.tx();
+        tx.input.extend(self.id.to_be_bytes());
+        tx
     }
 }
 
@@ -49,11 +56,15 @@ impl Simulated {
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Result<super::Score, boundary::Error> {
-        self.inner.0.score(eth, auction, self.gas).await
+        self.inner.boundary.score(eth, auction, self.gas).await
+    }
+
+    pub fn id(&self) -> super::Id {
+        self.inner.id
     }
 
     /// Necessary for the boundary integration, to allow executing settlements.
     pub fn boundary(self) -> boundary::Settlement {
-        self.inner.0
+        self.inner.boundary
     }
 }
