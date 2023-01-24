@@ -134,7 +134,7 @@ pub async fn setup(config: Config<'_>) -> Client {
     let mut args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
-        "auto".to_owned(),
+        "0.0.0.0:0".to_owned(),
         "--config".to_owned(),
         config_file.0.clone(),
         "--ethrpc".to_owned(),

@@ -33,6 +33,7 @@ pub struct Args {
     #[clap(long, env)]
     pub disable_access_list_simulation: bool,
 
+    // TODO No need to support this anymore
     /// The time to allocate to generating quotes, in milliseconds.
     #[clap(long, env, default_value = "5000")]
     pub quote_timeout_ms: u64,

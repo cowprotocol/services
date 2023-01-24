@@ -5,7 +5,7 @@
 use {
     crate::{
         domain::competition,
-        infra::{api, mempool, Mempool},
+        infra::{mempool, Mempool},
     },
     clap::Parser,
     config::cli,
@@ -137,14 +137,12 @@ pub async fn run(
         .flatten()
         .collect(),
         eth,
-        addr: match args.bind_addr.as_str() {
-            "auto" => api::Addr::Auto(addr_sender),
-            addr => api::Addr::Bind(addr.parse().expect("a valid address and port")),
-        },
         now,
         quote_config: competition::quote::Config {
             timeout: std::time::Duration::from_millis(args.quote_timeout_ms).into(),
         },
+        addr: args.bind_addr.parse().unwrap(),
+        addr_sender,
     }
     .serve(async {
         let _ = shutdown_receiver.await;
@@ -204,7 +202,7 @@ fn solvers(config: &config::Config) -> Vec<Solver> {
 async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
     liquidity::Fetcher::new(eth, &config.liquidity)
         .await
-        .expect("initalize liquidity fetcher")
+        .expect("initialize liquidity fetcher")
 }
 
 #[cfg(unix)]
