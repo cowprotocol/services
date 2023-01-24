@@ -182,6 +182,7 @@ impl OrderbookServices {
             Some(contracts.ethflow.address()),
             Duration::from_secs(5),
             Default::default(),
+            true,
         );
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),

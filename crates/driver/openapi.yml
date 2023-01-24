@@ -126,7 +126,7 @@ components:
         prices:
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/BigUint"
+            $ref: "#/components/schemas/TokenAmount"
           description: |
             The reference prices for all traded tokens in the auction as a mapping from token
             addresses to a price denominated in native token (i.e. 1e18 represents a token that

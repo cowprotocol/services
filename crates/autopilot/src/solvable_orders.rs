@@ -68,11 +68,14 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
+    // Will be obsolete when the new autopilot run loop takes over the competition.
+    store_in_db: bool,
 }
 
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
+    auction: Option<Auction>,
     orders: SolvableOrders,
     balances: Balances,
 }
@@ -101,6 +104,7 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
+        store_in_db: bool,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -109,6 +113,7 @@ impl SolvableOrdersCache {
             balance_fetcher,
             bad_token_detector,
             cache: Mutex::new(Inner {
+                auction: None,
                 orders: SolvableOrders {
                     orders: Default::default(),
                     update_time: Instant::now(),
@@ -124,12 +129,17 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             surplus_fee_age,
             limit_order_price_factor,
+            store_in_db,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
                 .instrument(tracing::info_span!("solvable_orders_cache")),
         );
         self_
+    }
+
+    pub fn current_auction(&self) -> Option<Auction> {
+        self.cache.lock().unwrap().auction.clone()
     }
 
     /// Manually update solvable orders. Usually called by the background updating task.
@@ -237,9 +247,14 @@ impl SolvableOrdersCache {
             prices,
             rewards,
         };
-        let _id = self.database.replace_current_auction(&auction).await?;
+        counter.record(&auction.orders);
+
+        if self.store_in_db {
+            let _id = self.database.replace_current_auction(&auction).await?;
+        }
 
         *self.cache.lock().unwrap() = Inner {
+            auction: Some(auction),
             orders: SolvableOrders {
                 orders,
                 update_time: Instant::now(),
@@ -248,12 +263,6 @@ impl SolvableOrdersCache {
             },
             balances: new_balances,
         };
-
-        counter.record(&auction.orders);
-        tracing::debug!(
-            "updated auction with {} solvable orders",
-            auction.orders.len(),
-        );
 
         Ok(())
     }

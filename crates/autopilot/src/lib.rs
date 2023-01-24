@@ -5,8 +5,10 @@ pub mod event_updater;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
+pub mod driver_api;
 pub mod driver_model;
 pub mod limit_orders;
+pub mod run_loop;
 
 use crate::{
     database::{
@@ -545,6 +547,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
+        true,
     );
     solvable_orders_cache
         .update(block)
