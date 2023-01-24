@@ -25,7 +25,7 @@ use {
 
 const PORT: &str = "8547";
 const GETH_PROGRAM: &str = "geth";
-const GETH_ARGS: [&str; 6] = [
+const GETH_ARGS: &[&str] = &[
     "--dev",
     "--http",
     "--http.addr",
@@ -106,7 +106,7 @@ impl Processes {
             .unwrap();
         assert!(status.success());
         let child = tokio::process::Command::new(GETH_PROGRAM)
-            .args(GETH_ARGS.into_iter().chain([
+            .args(GETH_ARGS.iter().map(ToOwned::to_owned).chain([
                 "--http.port",
                 &port.to_string(),
                 "--datadir",
