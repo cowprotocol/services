@@ -9,10 +9,6 @@ async fn test() {
     let example_config_file = std::env::current_dir().unwrap().join("example.toml");
     setup::driver::setup(setup::driver::Config {
         now: infra::time::Now::Real,
-        contracts: infra::config::file::ContractsConfig {
-            gp_v2_settlement: Some(Default::default()),
-            weth: Some(Default::default()),
-        },
         file: setup::driver::ConfigFile::Load(example_config_file),
         geth: &geth,
     })

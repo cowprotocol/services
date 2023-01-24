@@ -106,7 +106,6 @@ impl Drop for Client {
 pub struct Config<'a> {
     pub geth: &'a setup::blockchain::Geth,
     pub now: infra::time::Now,
-    pub contracts: infra::config::file::ContractsConfig,
     pub file: ConfigFile,
 }
 
@@ -114,7 +113,10 @@ pub struct Config<'a> {
 pub enum ConfigFile {
     /// Create a new config file using [`CONFIG_FILE`] for the given
     /// solvers.
-    Create(Vec<setup::Solver>),
+    Create {
+        contracts: infra::config::file::ContractsConfig,
+        solvers: Vec<setup::Solver>,
+    },
     /// Load an existing config file.
     Load(PathBuf),
 }
@@ -123,9 +125,9 @@ pub enum ConfigFile {
 pub async fn setup(config: Config<'_>) -> Client {
     let (addr_sender, addr_receiver) = oneshot::channel();
     let config_file = match &config.file {
-        ConfigFile::Create(solvers) => {
+        ConfigFile::Create { contracts, solvers } => {
             let path = ConfigPath::random();
-            create_config_file(&path, solvers, config.contracts).await;
+            create_config_file(&path, solvers, contracts).await;
             path
         }
         ConfigFile::Load(path) => ConfigPath(path.to_str().unwrap().to_owned()),
@@ -147,7 +149,7 @@ pub async fn setup(config: Config<'_>) -> Client {
         driver_addr,
         handle,
         match config.file {
-            ConfigFile::Create(_) => Some(config_file),
+            ConfigFile::Create { .. } => Some(config_file),
             ConfigFile::Load(_) => None,
         },
     )
@@ -157,7 +159,7 @@ pub async fn setup(config: Config<'_>) -> Client {
 async fn create_config_file(
     path: &ConfigPath,
     solvers: &[setup::Solver],
-    contracts: ContractsConfig,
+    contracts: &ContractsConfig,
 ) {
     #[rustfmt::skip]
     let contracts_config = format!(

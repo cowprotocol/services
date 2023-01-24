@@ -104,11 +104,13 @@ async fn test() {
     // Set up the driver.
     let client = setup::driver::setup(setup::driver::Config {
         now,
-        contracts: infra::config::file::ContractsConfig {
-            gp_v2_settlement: Some(settlement.address()),
-            weth: Some(weth.address()),
+        file: setup::driver::ConfigFile::Create {
+            solvers: vec![solver],
+            contracts: infra::config::file::ContractsConfig {
+                gp_v2_settlement: Some(settlement.address()),
+                weth: Some(weth.address()),
+            },
         },
-        file: setup::driver::ConfigFile::Create(vec![solver]),
         geth: &geth,
     })
     .await;
