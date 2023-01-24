@@ -32,6 +32,7 @@ pub use {interaction::Interaction, trade::Trade};
 /// [`super::auction::Auction`].
 #[derive(Debug)]
 pub struct Solution {
+    pub id: Id,
     /// Trades settled by this solution.
     pub trades: Vec<Trade>,
     /// Token prices for this solution, expressed using an arbitrary reference
@@ -267,6 +268,10 @@ impl From<Id> for u64 {
 impl Id {
     pub fn random() -> Self {
         Self(rand::thread_rng().gen())
+    }
+
+    pub fn to_be_bytes(self) -> [u8; 8] {
+        self.0.to_be_bytes()
     }
 }
 

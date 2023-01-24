@@ -17,6 +17,7 @@ impl Solution {
         solver: Solver,
     ) -> Result<competition::Solution, super::Error> {
         Ok(competition::Solution {
+            id: competition::solution::Id::random(),
             trades: self
                 .trades
                 .into_iter()

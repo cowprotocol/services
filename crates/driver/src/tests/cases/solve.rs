@@ -190,5 +190,5 @@ async fn test() {
     assert_eq!(result.as_object().unwrap().len(), 2);
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
-    assert_eq!(result.get("score").unwrap(), -79291602683462.0);
+    assert_eq!(result.get("score").unwrap(), -79336169261766.0);
 }

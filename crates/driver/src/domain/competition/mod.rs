@@ -58,9 +58,9 @@ impl Competition {
             .simulate(&self.eth, &self.simulator, auction)
             .await?;
         let score = settlement.score(&self.eth, auction).await?;
-        let solution_id = solution::Id::random();
-        *self.settlement.lock().unwrap() = Some((solution_id, settlement));
-        Ok((solution_id, score))
+        let id = settlement.id();
+        *self.settlement.lock().unwrap() = Some((id, settlement));
+        Ok((id, score))
     }
 
     // TODO Rename this to settle()?
