@@ -24,6 +24,7 @@ async fn test() {
         token_b_out_amount,
         weth,
         interactions: uniswap_interactions,
+        geth,
         ..
     } = setup::blockchain::uniswap::setup().await;
 
@@ -106,6 +107,7 @@ async fn test() {
             weth: Some(weth.address()),
         },
         file: setup::driver::ConfigFile::Create(vec![solver]),
+        geth: &geth,
     })
     .await;
 

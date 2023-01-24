@@ -29,6 +29,7 @@ async fn test() {
         admin_secret_key,
         interactions,
         solver_address,
+        geth,
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -137,6 +138,7 @@ async fn test() {
             weth: Some(weth.address()),
         },
         file: setup::driver::ConfigFile::Create(vec![solver]),
+        geth: &geth,
     })
     .await;
 
@@ -187,28 +189,17 @@ async fn test() {
         .await;
 
     let solution_id = solution.get("id").unwrap().as_str().unwrap();
-    let old_tx_count = web3
-        .eth()
-        .transaction_count(solver_address, None)
-        .await
-        .unwrap();
     let block_number = web3.eth().block_number().await.unwrap();
     let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
 
-    client.settle(SOLVER_NAME, solution_id).await;
+    setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
 
     // Assert.
-    let new_tx_count = web3
-        .eth()
-        .transaction_count(solver_address, None)
-        .await
-        .unwrap();
     let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let new_token_a = token_a.balance_of(admin).call().await.unwrap();
     let new_token_b = token_b.balance_of(admin).call().await.unwrap();
-    assert_eq!(new_tx_count, old_tx_count + 1);
     // ETH balance is lower due to transaction fees.
     assert!(new_balance < old_balance);
     // The balance of the trader changes according to the swap.

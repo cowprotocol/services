@@ -1,6 +1,6 @@
 //! Test cases.
 
-pub mod example_solvers_config;
+pub mod example_config;
 pub mod quote;
 pub mod settle;
 pub mod solve;

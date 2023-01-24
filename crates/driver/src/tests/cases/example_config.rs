@@ -5,6 +5,7 @@ use crate::{infra, infra::config::cli, tests::setup};
 #[ignore]
 #[tokio::test]
 async fn test() {
+    let geth = setup::blockchain::geth().await;
     let example_config_file = std::env::current_dir().unwrap().join("example.toml");
     setup::driver::setup(setup::driver::Config {
         now: infra::time::Now::Real,
@@ -13,6 +14,7 @@ async fn test() {
             weth: Some(Default::default()),
         },
         file: setup::driver::ConfigFile::Load(example_config_file),
+        geth: &geth,
     })
     .await;
 }

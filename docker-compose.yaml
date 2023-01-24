@@ -47,9 +47,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev-geth
     restart: on-failure
-    ports:
-      - 8546:8545
-      - 8547:8547
+    network_mode: host
 
 volumes:
   postgres:

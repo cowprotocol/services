@@ -2,4 +2,4 @@
 
 /target
 /.vscode
-**/testing.toml
+**/testing.*.toml

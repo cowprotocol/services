@@ -20,6 +20,7 @@ pub struct Uniswap {
     /// Interactions needed for the solution.
     pub interactions: Vec<(ethcontract::H160, Vec<u8>)>,
     pub solver_address: ethcontract::H160,
+    pub geth: super::Geth,
 }
 
 /// Set up a Uniswap V2 pair ready for the following swap:
@@ -29,9 +30,8 @@ pub struct Uniswap {
 ///   |                                              v
 /// [USDT]<---(Uniswap Pair 1000 A / 600.000 B)--->[WETH]
 pub async fn setup() -> Uniswap {
-    super::reset().await;
-
-    let web3 = super::web3();
+    let geth = super::geth().await;
+    let web3 = super::web3(&geth.url());
 
     // Move ETH into the admin account.
     let admin = "d2525C68A663295BBE347B65C87c8e17De936a0a".parse().unwrap();
@@ -48,88 +48,123 @@ pub async fn setup() -> Uniswap {
         .balance(super::primary_address(&web3).await, None)
         .await
         .unwrap();
-    web3.eth()
-        .send_transaction(web3::types::TransactionRequest {
-            from: super::primary_address(&web3).await,
-            to: Some(admin),
-            value: Some(balance / 2),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-    // Deploy contracts
-    let weth = contracts::WETH9::builder(&web3)
-        .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
-    let vault_authorizer = contracts::BalancerV2Authorizer::builder(&web3, admin)
-        .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
-    let vault = contracts::BalancerV2Vault::builder(
+    super::wait_for(
         &web3,
-        vault_authorizer.address(),
-        weth.address(),
-        0.into(),
-        0.into(),
+        web3.eth()
+            .send_transaction(web3::types::TransactionRequest {
+                from: super::primary_address(&web3).await,
+                to: Some(admin),
+                value: Some(balance / 2),
+                ..Default::default()
+            }),
     )
-    .from(admin_account.clone())
-    .deploy()
     .await
     .unwrap();
-    let authenticator = contracts::GPv2AllowListAuthentication::builder(&web3)
+
+    // Deploy contracts
+    let weth = super::wait_for(
+        &web3,
+        contracts::WETH9::builder(&web3)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    let vault_authorizer = super::wait_for(
+        &web3,
+        contracts::BalancerV2Authorizer::builder(&web3, admin)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    let vault = super::wait_for(
+        &web3,
+        contracts::BalancerV2Vault::builder(
+            &web3,
+            vault_authorizer.address(),
+            weth.address(),
+            0.into(),
+            0.into(),
+        )
         .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
-    let settlement =
+        .deploy(),
+    )
+    .await
+    .unwrap();
+    let authenticator = super::wait_for(
+        &web3,
+        contracts::GPv2AllowListAuthentication::builder(&web3)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    let settlement = super::wait_for(
+        &web3,
         contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
             .from(admin_account.clone())
-            .deploy()
-            .await
-            .unwrap();
-    authenticator
-        .initialize_manager(admin)
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        authenticator
+            .initialize_manager(admin)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
     let solver_address = super::primary_address(&web3).await;
-    authenticator
-        .add_solver(solver_address)
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+    super::wait_for(
+        &web3,
+        authenticator
+            .add_solver(solver_address)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
 
     let domain_separator =
         boundary::DomainSeparator(settlement.domain_separator().call().await.unwrap().0);
 
-    let token_a = contracts::ERC20Mintable::builder(&web3)
-        .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
-    let token_b = contracts::ERC20Mintable::builder(&web3)
-        .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
+    let token_a = super::wait_for(
+        &web3,
+        contracts::ERC20Mintable::builder(&web3)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    let token_b = super::wait_for(
+        &web3,
+        contracts::ERC20Mintable::builder(&web3)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
 
-    let uniswap_factory = contracts::UniswapV2Factory::builder(&web3, admin)
-        .from(admin_account.clone())
-        .deploy()
-        .await
-        .unwrap();
-    uniswap_factory
-        .create_pair(token_a.address(), token_b.address())
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+    let uniswap_factory = super::wait_for(
+        &web3,
+        contracts::UniswapV2Factory::builder(&web3, admin)
+            .from(admin_account.clone())
+            .deploy(),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        uniswap_factory
+            .create_pair(token_a.address(), token_b.address())
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
     let uniswap_pair = contracts::IUniswapLikePair::at(
         &web3,
         uniswap_factory
@@ -142,48 +177,73 @@ pub async fn setup() -> Uniswap {
     let token_a_reserve = ethcontract::U256::from_dec_str("1000000000000000000000").unwrap();
     let token_b_reserve = ethcontract::U256::from_dec_str("600000000000").unwrap();
 
-    token_a
-        .mint(uniswap_pair.address(), token_a_reserve)
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
-    token_b
-        .mint(uniswap_pair.address(), token_b_reserve)
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
-    uniswap_pair
-        .mint(
-            "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
-                .parse()
-                .unwrap(),
-        )
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+    super::wait_for(
+        &web3,
+        token_a
+            .mint(uniswap_pair.address(), token_a_reserve)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        token_b
+            .mint(uniswap_pair.address(), token_b_reserve)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        uniswap_pair
+            .mint(
+                "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
+                    .parse()
+                    .unwrap(),
+            )
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
+    // UniswapV2Pair._update, which is called by both mint() and swap(), will check
+    // the block.timestamp and decide what to do based on it. If the block.timestamp
+    // has changed since the last _update call, a conditional block will be
+    // executed, which affects the gas used. The mint call above will result in the
+    // first call to _update, and the onchain settlement will be the second.
+    //
+    // This timeout ensures that when the settlement is executed at least one UNIX
+    // second has passed, so that conditional block always gets executed and the
+    // gas usage is deterministic.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
     let token_a_in_amount = ethcontract::U256::from_dec_str("500000000000000000").unwrap();
     // The out amount according to the constant AMM formula.
     let token_b_out_amount = ethcontract::U256::from_dec_str("298950972").unwrap();
     let user_fee = ethcontract::U256::from_dec_str("1000000000000000").unwrap();
 
-    token_a
-        .mint(admin, token_a_in_amount + user_fee)
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+    super::wait_for(
+        &web3,
+        token_a
+            .mint(admin, token_a_in_amount + user_fee)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
 
     let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-    token_a
-        .approve(vault_relayer, ethcontract::U256::max_value())
-        .from(admin_account.clone())
-        .send()
-        .await
-        .unwrap();
+    super::wait_for(
+        &web3,
+        token_a
+            .approve(vault_relayer, ethcontract::U256::max_value())
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
 
     let transfer_interaction = token_a
         .transfer(uniswap_pair.address(), token_a_in_amount)
@@ -215,6 +275,7 @@ pub async fn setup() -> Uniswap {
             (uniswap_pair.address(), swap_interaction),
         ],
         admin,
+        token_a,
         token_b,
         settlement,
         domain_separator,
@@ -222,9 +283,9 @@ pub async fn setup() -> Uniswap {
         token_b_out_amount,
         user_fee,
         weth,
-        web3: super::web3(),
+        web3,
         admin_secret_key,
-        token_a,
         solver_address,
+        geth,
     }
 }
