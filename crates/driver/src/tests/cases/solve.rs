@@ -193,5 +193,5 @@ async fn test() {
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
     // TODO This needs to be updated due to the solution ID
-    assert_eq!(result.get("score").unwrap(), -94756205354950.0);
+    assert_eq!(result.get("score").unwrap(), -94800771933254.0);
 }
