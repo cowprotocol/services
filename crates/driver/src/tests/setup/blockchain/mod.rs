@@ -77,7 +77,7 @@ pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
             if next_block > block {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     })
     .await
