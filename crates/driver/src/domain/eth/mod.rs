@@ -170,6 +170,24 @@ impl From<Address> for H160 {
     }
 }
 
+// TODO This type should be more complex and ensure that the private key is
+// valid, use secp256k1?
+/// A private key that can be used to sign transactions.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PrivateKey(pub H256);
+
+impl From<H256> for PrivateKey {
+    fn from(inner: H256) -> Self {
+        Self(inner)
+    }
+}
+
+impl From<PrivateKey> for H256 {
+    fn from(address: PrivateKey) -> Self {
+        address.0
+    }
+}
+
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
 /// A smart contract address.

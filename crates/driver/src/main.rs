@@ -54,84 +54,22 @@ pub async fn run(
 ) {
     let args = cli::Args::parse_from(args);
     boundary::exit_process_on_panic::set_panic_hook();
-    tracing::info!("running driver with arguments:\n{}", args);
 
-    let config = config::file::load(&args.config, now).await;
-
-    let tx_pool = mempool::GlobalTxPool::default();
+    let config = config::file::load(&args.config).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&args).await;
-    let mempool_config = mempool::Config {
-        additional_tip_percentage: args.submission.submission_additional_tip_percentage,
-        max_additional_tip: None,
-        gas_price_cap: args.submission.submission_gas_price_cap,
-        target_confirm_time: std::time::Duration::from_secs(
-            args.submission.submission_target_confirm_time_secs,
-        ),
-        max_confirm_time: std::time::Duration::from_secs(
-            args.submission.submission_max_confirm_time_secs,
-        ),
-        retry_interval: std::time::Duration::from_secs(
-            args.submission.submission_retry_interval_secs,
-        ),
-        account: match (args.solver_address, args.solver_private_key.clone()) {
-            (Some(address), None) => ethcontract::Account::Local(address, None),
-            (None, Some(private_key)) => ethcontract::Account::Offline(
-                ethcontract::PrivateKey::from_hex_str(private_key)
-                    .expect("a valid private key in --solver-private-key"),
-                None,
-            ),
-            _ => panic!("exactly one of --solver-address, --solver-private-key must be specified",),
-        },
-        eth: eth.clone(),
-        pool: tx_pool.clone(),
-    };
-    let gas_price_estimator = mempool::gas_price_estimator(&mempool_config).await.unwrap();
+    let eth = ethereum(&config, &args).await;
+    let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
-        solvers: solvers(&config),
+        solvers: solvers(&config, now),
         liquidity: liquidity(&config, &eth).await,
-        simulator: simulator(&args, &eth),
-        mempools: join_all(args.mempools.iter().map(|&mempool| {
-            let args = &args;
-            let config = mempool_config.clone();
-            let gas_price_estimator = gas_price_estimator.clone();
-            async move {
-                match mempool {
-                    cli::Mempool::Public => vec![Mempool::public(
-                        config,
-                        if args
-                            .submission
-                            .submission_disable_high_risk_public_mempool_transactions
-                        {
-                            mempool::HighRisk::Disabled
-                        } else {
-                            mempool::HighRisk::Enabled
-                        },
-                        gas_price_estimator,
-                    )
-                    .await
-                    .unwrap()],
-                    cli::Mempool::Flashbots => {
-                        join_all(args.flashbots_api_urls.iter().map(|url| async {
-                            Mempool::flashbots(
-                                mempool::Config {
-                                    max_additional_tip: Some(
-                                        args.submission.submission_max_additional_flashbots_tip,
-                                    ),
-                                    ..config.clone()
-                                },
-                                url.to_owned(),
-                                gas_price_estimator.clone(),
-                            )
-                            .await
-                            .unwrap()
-                        }))
-                        .await
-                    }
-                }
-            }
-        }))
+        simulator: simulator(&config, &eth),
+        mempools: join_all(
+            config
+                .mempools
+                .iter()
+                .map(|mempool| Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone())),
+        )
         .await
         .into_iter()
         .flatten()
@@ -139,9 +77,10 @@ pub async fn run(
         eth,
         now,
         quote_config: competition::quote::Config {
-            timeout: std::time::Duration::from_millis(args.quote_timeout_ms).into(),
+            // TODO Nick is removing this in one of his PRs
+            timeout: std::time::Duration::from_millis(100).into(),
         },
-        addr: args.bind_addr.parse().unwrap(),
+        addr: args.bind_addr,
         addr_sender,
     }
     .serve(async {
@@ -162,41 +101,46 @@ pub async fn run(
     };
 }
 
-fn simulator(args: &cli::Args, eth: &Ethereum) -> Simulator {
-    let simulator = if args.tenderly.is_specified() {
-        Simulator::tenderly(simulator::tenderly::Config {
-            url: args.tenderly.tenderly_url.clone(),
-            api_key: args.tenderly.tenderly_api_key.clone().unwrap(),
-            user: args.tenderly.tenderly_user.clone().unwrap(),
-            project: args.tenderly.tenderly_project.clone().unwrap(),
-            network_id: eth.network_id().to_owned(),
-            save: args.tenderly.tenderly_save,
-            save_if_fails: args.tenderly.tenderly_save_if_fails,
-        })
-    } else {
-        Simulator::ethereum(eth.to_owned())
+fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
+    let simulator = match &config.tenderly {
+        Some(tenderly) => Simulator::tenderly(
+            simulator::tenderly::Config {
+                url: tenderly.url.to_owned(),
+                api_key: tenderly.api_key.to_owned(),
+                user: tenderly.user.to_owned(),
+                project: tenderly.project.to_owned(),
+                save: tenderly.save,
+                save_if_fails: tenderly.save_if_fails,
+            },
+            eth.network_id().to_owned(),
+        ),
+        None => Simulator::ethereum(eth.to_owned()),
     };
-    if args.disable_access_list_simulation {
+    if config.disable_access_list_simulation {
         simulator.disable_access_lists()
     } else {
         simulator
     }
 }
 
-async fn ethereum(args: &cli::Args) -> Ethereum {
+async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {
     Ethereum::ethrpc(
         &args.ethrpc,
         blockchain::contracts::Addresses {
-            settlement: args.contract_addresses.gp_v2_settlement.map(Into::into),
-            weth: args.contract_addresses.weth.map(Into::into),
+            settlement: config.contracts.gp_v2_settlement.map(Into::into),
+            weth: config.contracts.weth.map(Into::into),
         },
     )
     .await
     .expect("initialize ethereum RPC API")
 }
 
-fn solvers(config: &config::Config) -> Vec<Solver> {
-    config.solvers.iter().cloned().map(Solver::new).collect()
+fn solvers(config: &config::Config, now: infra::time::Now) -> Vec<Solver> {
+    config
+        .solvers
+        .iter()
+        .map(|config| Solver::new(config.clone(), now))
+        .collect()
 }
 
 async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {

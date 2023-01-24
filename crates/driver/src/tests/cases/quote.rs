@@ -2,7 +2,7 @@ use {
     super::SOLVER_NAME,
     crate::{
         domain::competition,
-        infra::{self, config::cli},
+        infra,
         tests::{hex_address, setup},
     },
     itertools::Itertools,
@@ -19,12 +19,13 @@ async fn test() {
         settlement,
         token_a,
         token_b,
-        admin,
         token_a_in_amount,
         token_b_out_amount,
         weth,
         interactions: uniswap_interactions,
         geth,
+        solver_address,
+        solver_secret_key,
         ..
     } = setup::blockchain::uniswap::setup().await;
 
@@ -58,7 +59,8 @@ async fn test() {
         name: SOLVER_NAME.to_owned(),
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
-        address: hex_address(admin),
+        address: hex_address(solver_address),
+        private_key: format!("0x{}", solver_secret_key.display_secret()),
         solve: vec![setup::solver::Solve {
             req: json!({
                 "id": null,
@@ -102,7 +104,7 @@ async fn test() {
     // Set up the driver.
     let client = setup::driver::setup(setup::driver::Config {
         now,
-        contracts: cli::ContractAddresses {
+        contracts: infra::config::file::ContractsConfig {
             gp_v2_settlement: Some(settlement.address()),
             weth: Some(weth.address()),
         },

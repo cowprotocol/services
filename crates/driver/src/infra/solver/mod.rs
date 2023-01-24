@@ -47,6 +47,7 @@ impl std::fmt::Display for Name {
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
+    now: infra::time::Now,
 }
 
 #[derive(Debug, Clone)]
@@ -58,11 +59,12 @@ pub struct Config {
     pub slippage: Slippage,
     /// The address of this solver.
     pub address: eth::Address,
-    pub now: infra::time::Now,
+    /// The private key of this solver.
+    pub private_key: eth::PrivateKey,
 }
 
 impl Solver {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, now: infra::time::Now) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -76,6 +78,7 @@ impl Solver {
                 .build()
                 .unwrap(),
             config,
+            now,
         }
     }
 
@@ -93,6 +96,11 @@ impl Solver {
         self.config.address
     }
 
+    /// The private key of this solver.
+    pub fn private_key(&self) -> eth::PrivateKey {
+        self.config.private_key
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
@@ -100,12 +108,8 @@ impl Solver {
         auction: &Auction,
         timeout: SolverTimeout,
     ) -> Result<Solution, Error> {
-        let body = serde_json::to_string(&dto::Auction::from_domain(
-            auction,
-            timeout,
-            self.config.now,
-        ))
-        .unwrap();
+        let body =
+            serde_json::to_string(&dto::Auction::from_domain(auction, timeout, self.now)).unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
         let req = self
             .client

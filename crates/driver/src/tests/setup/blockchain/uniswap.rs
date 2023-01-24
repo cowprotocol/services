@@ -20,6 +20,7 @@ pub struct Uniswap {
     /// Interactions needed for the solution.
     pub interactions: Vec<(ethcontract::H160, Vec<u8>)>,
     pub solver_address: ethcontract::H160,
+    pub solver_secret_key: SecretKey,
     pub geth: super::Geth,
 }
 
@@ -43,6 +44,15 @@ pub async fn setup() -> Uniswap {
         ethcontract::PrivateKey::from_slice(admin_secret_key.as_ref()).unwrap(),
         None,
     );
+
+    let solver_address = "0x72B92eE5f847fbb0d243047C263aCD40C34a63b9"
+        .parse()
+        .unwrap();
+    let solver_secret_key = SecretKey::from_slice(
+        &hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326").unwrap(),
+    )
+    .unwrap();
+
     let balance = web3
         .eth()
         .balance(super::primary_address(&web3).await, None)
@@ -54,7 +64,19 @@ pub async fn setup() -> Uniswap {
             .send_transaction(web3::types::TransactionRequest {
                 from: super::primary_address(&web3).await,
                 to: Some(admin),
-                value: Some(balance / 2),
+                value: Some(balance / 3),
+                ..Default::default()
+            }),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        web3.eth()
+            .send_transaction(web3::types::TransactionRequest {
+                from: super::primary_address(&web3).await,
+                to: Some(solver_address),
+                value: Some(balance / 3),
                 ..Default::default()
             }),
     )
@@ -117,7 +139,6 @@ pub async fn setup() -> Uniswap {
     )
     .await
     .unwrap();
-    let solver_address = super::primary_address(&web3).await;
     super::wait_for(
         &web3,
         authenticator
@@ -286,6 +307,7 @@ pub async fn setup() -> Uniswap {
         web3,
         admin_secret_key,
         solver_address,
+        solver_secret_key,
         geth,
     }
 }

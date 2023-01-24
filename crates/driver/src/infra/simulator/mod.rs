@@ -11,9 +11,9 @@ pub struct Simulator {
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config) -> Self {
+    pub fn tenderly(config: tenderly::Config, network_id: eth::NetworkId) -> Self {
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config)),
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config, network_id)),
             disable_access_lists: false,
         }
     }

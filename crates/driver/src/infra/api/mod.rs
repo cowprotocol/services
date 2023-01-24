@@ -25,6 +25,8 @@ pub struct Api {
     pub now: infra::time::Now,
     pub quote_config: competition::quote::Config,
     pub addr: SocketAddr,
+    /// If this channel is specified, the bound address will be sent to it. This
+    /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
 }
 
