@@ -132,6 +132,7 @@ impl TraceCallDetector {
 
         let balance_before_in = match decode_u256(&traces[0]) {
             Ok(balance) => balance,
+            // Common cause of the failure: https://github.com/cowprotocol/services/pull/781
             Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
         let balance_after_in = match decode_u256(&traces[2]) {
