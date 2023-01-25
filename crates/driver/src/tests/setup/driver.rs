@@ -161,20 +161,19 @@ async fn create_config_file(
     solvers: &[setup::Solver],
     contracts: &ContractsConfig,
 ) {
-    #[rustfmt::skip]
     let contracts_config = format!(
-        "[contracts]\n\
-        gp-v2-settlement = \"0x{}\"\n\
-        weth = \"0x{}\"",
+        r#"[contracts]
+           gp-v2-settlement = "0x{}"
+           weth = "0x{}""#,
         hex::encode(contracts.gp_v2_settlement.unwrap().as_bytes()),
         hex::encode(contracts.weth.unwrap().as_bytes()),
     );
-    #[rustfmt::skip]
-    let submission_config = "\
-        [submission]\n\
-        gas-price-cap = 1000000000000\n\
-        [[submission.mempool]]\n\
-        mempool = \"public\"".to_owned();
+    let submission_config = r#"
+        [submission]
+        gas-price-cap = 1000000000000
+        [[submission.mempool]]
+        mempool = "public""#
+        .to_owned();
     let solver_configs = solvers.iter().map(|solver| {
         let setup::Solver {
             config:
@@ -190,13 +189,13 @@ async fn create_config_file(
         } = solver;
         #[rustfmt::skip]
             let config = format!(
-                "[[solver]]\n\
-                 name = \"{name}\"\n\
-                 endpoint = \"http://{addr}\"\n\
-                 absolute-slippage = \"{absolute_slippage}\"\n\
-                 relative-slippage = \"{relative_slippage}\"\n\
-                 address = \"{address}\"\n\
-                 private-key = \"{private_key}\"\n"
+                r#"[[solver]]
+                   name = "{name}"
+                   endpoint = "http://{addr}"
+                   absolute-slippage = "{absolute_slippage}"
+                   relative-slippage = "{relative_slippage}"
+                   address = "{address}"
+                   private-key = "{private_key}""#
             );
         config
     });
