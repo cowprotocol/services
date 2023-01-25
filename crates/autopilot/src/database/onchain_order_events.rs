@@ -1,6 +1,8 @@
 pub mod ethflow_events;
 pub mod event_retriever;
+mod metrics;
 
+use self::metrics::{get_most_recent_block, Metrics, OrdersByBlockNumber};
 use super::{
     events::{bytes_to_order_uid, meta_to_event_index},
     Metrics as DatabaseMetrics, Postgres,
@@ -56,6 +58,10 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     settlement_contract: H160,
     liquidity_order_owners: HashSet<H160>,
     metrics: &'static Metrics,
+    /// A helper to keep track of metrics changes on reorg. It collects orders
+    /// that were already considered in the metrics so that they can be deleted
+    /// in case a reorg occurs.
+    revertible_orders: OrdersByBlockNumber,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -72,6 +78,8 @@ where
         settlement_contract: H160,
         liquidity_order_owners: HashSet<H160>,
     ) -> Self {
+        let metrics = Metrics::get();
+        metrics.init();
         OnchainOrderParser {
             db,
             web3,
@@ -80,7 +88,8 @@ where
             domain_separator,
             settlement_contract,
             liquidity_order_owners,
-            metrics: Metrics::get(),
+            metrics,
+            revertible_orders: Default::default(),
         }
     }
 }
@@ -155,9 +164,17 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
+        let onchain_order_data = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
+        let new_orders_for_metrics =
+            OrdersByBlockNumber::prepare_created_orders(&onchain_order_data);
+
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders) =
+            OnchainOrderData::unzip(onchain_order_data);
+
+        let most_recent_block =
+            get_most_recent_block(&invalided_order_uids, &broadcasted_order_data);
 
         let _timer = DatabaseMetrics::get()
             .database_queries
@@ -213,6 +230,15 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("insert_orders failed")?;
         transaction.commit().await.context("commit")?;
+
+        self.revertible_orders
+            .remove_orders_in_range(range, self.metrics);
+        self.revertible_orders
+            .add_orders(new_orders_for_metrics, self.metrics);
+        if let Some(most_recent_block) = most_recent_block {
+            self.revertible_orders.purge_old_orders(most_recent_block);
+        }
+
         Ok(())
     }
 
@@ -226,9 +252,17 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .collect();
         let invalidation_events = get_invalidation_events(events)?;
         let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_order_data, quotes, broadcasted_order_data, orders) = self
+        let onchain_order_data = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
+        let new_orders_for_metrics =
+            OrdersByBlockNumber::prepare_created_orders(&onchain_order_data);
+
+        let (custom_onchain_data, quotes, broadcasted_order_data, orders) =
+            OnchainOrderData::unzip(onchain_order_data);
+
+        let most_recent_block =
+            get_most_recent_block(&invalided_order_uids, &broadcasted_order_data);
 
         let _timer = DatabaseMetrics::get()
             .database_queries
@@ -250,7 +284,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .context("append_onchain_orders failed")?;
 
         self.custom_onchain_data_parser
-            .append_custom_order_info_to_db(&mut transaction, custom_order_data)
+            .append_custom_order_info_to_db(&mut transaction, custom_onchain_data)
             .await
             .context("append_custom_onchain_orders failed")?;
 
@@ -269,6 +303,13 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .context("insert_orders failed")?;
 
         transaction.commit().await.context("commit")?;
+
+        self.revertible_orders
+            .add_orders(new_orders_for_metrics, self.metrics);
+        if let Some(most_recent_block) = most_recent_block {
+            self.revertible_orders.purge_old_orders(most_recent_block);
+        }
+
         Ok(())
     }
 
@@ -286,16 +327,36 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 }
 
+pub struct OnchainOrderData<W> {
+    custom_order_data: W,
+    quote: Option<database::orders::Quote>,
+    broadcasted_order_data: (database::events::EventIndex, OnchainOrderPlacement),
+    order: Order,
+}
+type UnzippedOnchainOrderData<W> = (
+    Vec<W>,
+    Vec<Option<database::orders::Quote>>,
+    Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
+    Vec<Order>,
+);
+impl<W> OnchainOrderData<W> {
+    fn unzip(vec: Vec<Self>) -> UnzippedOnchainOrderData<W> {
+        multiunzip(vec.into_iter().map(|data| {
+            (
+                data.custom_order_data,
+                data.quote,
+                data.broadcasted_order_data,
+                data.order,
+            )
+        }))
+    }
+}
+
 impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
     async fn extract_custom_and_general_order_data(
         &self,
         order_placement_events: Vec<EthContractEvent<ContractEvent>>,
-    ) -> Result<(
-        Vec<W>,
-        Vec<Option<database::orders::Quote>>,
-        Vec<(database::events::EventIndex, OnchainOrderPlacement)>,
-        Vec<Order>,
-    )> {
+    ) -> Result<Vec<OnchainOrderData<W>>> {
         let block_number_timestamp_hashmap =
             get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
         let custom_event_data = self
@@ -337,10 +398,12 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         )
         .await;
 
-        let data_tuple = onchain_order_data.into_iter().map(
-            |(event_index, quote, onchain_order_placement, order)| {
-                (
-                    self.custom_onchain_data_parser
+        Ok(onchain_order_data
+            .into_iter()
+            .map(
+                |(event_index, quote, onchain_order_placement, order)| OnchainOrderData::<W> {
+                    custom_order_data: self
+                        .custom_onchain_data_parser
                         .customized_event_data_for_event_index(
                             &event_index,
                             &order,
@@ -348,12 +411,11 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                             &onchain_order_placement,
                         ),
                     quote,
-                    (event_index, onchain_order_placement),
+                    broadcasted_order_data: (event_index, onchain_order_placement),
                     order,
-                )
-            },
-        );
-        Ok(multiunzip(data_tuple))
+                },
+            )
+            .collect())
     }
 }
 
@@ -676,28 +738,6 @@ fn extract_order_data_from_onchain_order_placement_event(
     };
     let order_uid = order_data.uid(&domain_separator, &owner);
     Ok((order_data, owner, signing_scheme, order_uid))
-}
-
-#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "onchain_orders")]
-struct Metrics {
-    /// Keeps track of errors in picking up onchain orders.
-    /// Note that an order might be created even if an error is encountered.
-    #[metric(labels("error_type"))]
-    onchain_order_errors: prometheus::IntCounterVec,
-}
-
-impl Metrics {
-    fn get() -> &'static Self {
-        Self::instance(global_metrics::get_metric_storage_registry())
-            .expect("unexpected error getting metrics instance")
-    }
-
-    fn inc_onchain_order_errors(&self, error_label: &str) {
-        self.onchain_order_errors
-            .with_label_values(&[error_label])
-            .inc();
-    }
 }
 
 #[cfg(test)]
@@ -1356,16 +1396,15 @@ mod test {
             .expect_customized_event_data_for_event_index()
             .returning(|_, _, _, _| 1u8);
         let web3 = Web3::new(create_env_test_transport());
-        let onchain_order_parser = OnchainOrderParser {
-            db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
+        let onchain_order_parser = OnchainOrderParser::new(
+            Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
             web3,
-            quoter: Arc::new(order_quoter),
-            custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
+            Arc::new(order_quoter),
+            Box::new(custom_onchain_order_parser),
             domain_separator,
-            settlement_contract: H160::zero(),
-            liquidity_order_owners: Default::default(),
-            metrics: Metrics::get(),
-        };
+            H160::zero(),
+            Default::default(),
+        );
         let result = onchain_order_parser
             .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])
             .await
@@ -1397,10 +1436,16 @@ mod test {
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
         };
-        assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(
-            result.2,
-            vec![(
+            result.iter().map(|data| &data.quote).collect::<Vec<_>>(),
+            vec![&Some(expected_quote)]
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|data| &data.broadcasted_order_data)
+                .collect::<Vec<_>>(),
+            vec![&(
                 expected_event_index,
                 OnchainOrderPlacement {
                     order_uid: ByteArray(expected_uid.0),

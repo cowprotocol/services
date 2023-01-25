@@ -20,7 +20,7 @@ pub enum OrderKind {
     Sell,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, sqlx::Type, strum::EnumIter)]
 #[sqlx(type_name = "OrderClass")]
 #[sqlx(rename_all = "lowercase")]
 pub enum OrderClass {

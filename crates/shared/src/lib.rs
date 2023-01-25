@@ -31,6 +31,7 @@ pub mod network;
 pub mod oneinch_api;
 pub mod order_quoting;
 pub mod order_validation;
+pub mod orderbook_metrics;
 pub mod paraswap_api;
 pub mod price_estimation;
 pub mod rate_limiter;

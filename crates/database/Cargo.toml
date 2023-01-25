@@ -12,6 +12,7 @@ const_format = "0.2"
 futures = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
+strum = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }

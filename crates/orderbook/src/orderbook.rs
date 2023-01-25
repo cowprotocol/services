@@ -15,6 +15,7 @@ use primitive_types::H160;
 use shared::{
     metrics::LivenessChecking,
     order_validation::{OrderValidating, ValidationError},
+    orderbook_metrics::{operation_label, order_class_label, OrderOperation},
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -25,26 +26,6 @@ struct Metrics {
     /// Counter for measuring order statistics.
     #[metric(labels("kind", "operation"))]
     orders: prometheus::IntCounterVec,
-}
-
-enum OrderOperation {
-    Created,
-    Cancelled,
-}
-
-fn operation_label(op: &OrderOperation) -> &'static str {
-    match op {
-        OrderOperation::Created => "created",
-        OrderOperation::Cancelled => "cancelled",
-    }
-}
-
-fn order_class_label(class: &OrderClass) -> &'static str {
-    match class {
-        OrderClass::Market => "user",
-        OrderClass::Liquidity => "liquidity",
-        OrderClass::Limit(_) => "limit",
-    }
 }
 
 impl Metrics {

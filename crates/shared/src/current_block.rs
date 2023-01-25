@@ -37,6 +37,10 @@ impl<T: Ord> RangeInclusive<T> {
     pub fn into_inner(self) -> (T, T) {
         (self.start, self.end)
     }
+
+    pub fn contains(&self, elt: T) -> bool {
+        elt >= self.start && elt <= self.end
+    }
 }
 
 /// Block information.
@@ -297,5 +301,16 @@ mod tests {
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);
+    }
+
+    #[test]
+    fn range_contains() {
+        let range = RangeInclusive::try_new(42, 1337).unwrap();
+        assert!(!range.contains(41));
+        assert!(range.contains(42));
+        assert!(range.contains(43));
+        assert!(range.contains(1336));
+        assert!(range.contains(1337));
+        assert!(!range.contains(1338));
     }
 }
