@@ -30,7 +30,7 @@ pub async fn load(path: &Path) -> infra::Config {
                     absolute: config.absolute_slippage.map(Into::into),
                 },
                 address: config.address.into(),
-                private_key: config.private_key.into(),
+                private_key: eth::PrivateKey::from_raw(config.private_key.0).unwrap(),
             })
             .collect(),
         liquidity: liquidity::Config {

@@ -98,7 +98,7 @@ impl Solver {
 
     /// The private key of this solver.
     pub fn private_key(&self) -> eth::PrivateKey {
-        self.config.private_key
+        self.config.private_key.clone()
     }
 
     /// Make a POST request instructing the solver to solve an auction.
