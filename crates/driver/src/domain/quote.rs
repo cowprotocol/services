@@ -1,6 +1,6 @@
 use crate::{
     domain::{
-        competition::{self, order},
+        competition::{self, order, solution},
         eth,
     },
     infra::{
@@ -68,15 +68,19 @@ pub struct Order {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
-    pub fn new(
-        deadline: chrono::DateTime<chrono::Utc>,
-        now: time::Now,
-    ) -> Result<Self, DeadlineExceeded> {
-        if deadline <= now.now() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(Self(deadline))
-        }
+    /// Computes the timeout for solving an auction.
+    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    }
+
+    pub fn time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Deadline {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
     }
 }
 
@@ -92,7 +96,7 @@ impl Order {
     /// the quote for the order based on the solution that the solver
     /// returns.
     pub async fn quote(&self, solver: &Solver, now: time::Now) -> Result<Quote, Error> {
-        let timeout = competition::solution::SolverTimeout::for_quoting(self.deadline, now)?;
+        let timeout = self.deadline.timeout(now)?;
         let solution = solver.solve(&self.fake_auction(), timeout).await?;
         Quote::new(self, solution)
     }

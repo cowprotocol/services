@@ -1,12 +1,10 @@
 use {
-    super::auction,
     crate::{
         boundary,
         domain::{
             competition::{self, order},
             eth,
             liquidity,
-            quote,
         },
         infra::{self, blockchain, time},
         simulator,
@@ -206,49 +204,20 @@ impl From<SolverTimeout> for std::time::Duration {
 }
 
 impl SolverTimeout {
-    /// The time limit passed to the solver when solving an auction. The solvers
-    /// are given a time limit that's slightly less than the actual auction
-    /// [`Deadline`]. The reason for this is to allow the solver sufficient time
-    /// to search for the most optimal solution, but still ensure there is
-    /// time left for the driver to forward the results back to the protocol
-    /// or do some other necessary work.
-    pub fn for_solving(
-        deadline: auction::Deadline,
-        now: time::Now,
-    ) -> Result<SolverTimeout, auction::DeadlineExceeded> {
-        Self::with_time_buffer(deadline.into(), now, Self::solving_time_buffer())
-            .ok_or(auction::DeadlineExceeded)
-    }
-
-    /// The time limit passed to the solver when quoting.
+    /// The time limit passed to the solver for solving an auction.
     ///
-    /// Similar to [`SolverTimeout::for_solving`] but for handling quotes. The
-    /// reason for a different value is that less post-processing work is
-    /// required for quoting, meaning a smaller "time buffer" is needed on the
-    /// auction deadline.
-    pub fn for_quoting(
-        deadline: quote::Deadline,
-        now: time::Now,
-    ) -> Result<SolverTimeout, quote::DeadlineExceeded> {
-        Self::with_time_buffer(deadline.into(), now, Self::quoting_time_buffer())
-            .ok_or(quote::DeadlineExceeded)
-    }
-
-    fn with_time_buffer(
+    /// Solvers are given a time limit that's `buffer` less than the specified
+    /// deadline. The reason for this is to allow the solver sufficient time to
+    /// search for the most optimal solution, but still ensure there is time
+    /// left for the driver to do some other necessary work and forward the
+    /// results back to the protocol.
+    pub fn new(
         deadline: chrono::DateTime<chrono::Utc>,
-        now: time::Now,
         buffer: chrono::Duration,
+        now: time::Now,
     ) -> Option<SolverTimeout> {
         let deadline = deadline - now.now() - buffer;
         deadline.to_std().map(Self).ok()
-    }
-
-    pub fn solving_time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
-    }
-
-    pub fn quoting_time_buffer() -> chrono::Duration {
-        chrono::Duration::milliseconds(100)
     }
 
     pub fn deadline(self, now: infra::time::Now) -> chrono::DateTime<chrono::Utc> {

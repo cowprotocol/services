@@ -9,7 +9,7 @@ async fn quote(
     order: axum::extract::Json<dto::Order>,
 ) -> axum::response::Json<dto::Quote> {
     // TODO Report errors instead of unwrapping
-    let order = order.0.into_domain(state.now()).unwrap();
+    let order = order.0.into_domain();
     let quote = order.quote(state.solver(), state.now()).await.unwrap();
     axum::response::Json(dto::Quote::from_domain(&quote))
 }

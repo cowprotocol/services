@@ -1,7 +1,7 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition,
+        domain::competition::{self, auction},
         infra,
         tests::{self, hex_address, setup},
     },
@@ -111,7 +111,7 @@ async fn test() {
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline - competition::SolverTimeout::solving_time_buffer(),
+                "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {

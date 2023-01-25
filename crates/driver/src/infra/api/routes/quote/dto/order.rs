@@ -1,7 +1,6 @@
 use {
     crate::{
         domain::{competition, eth, quote},
-        infra::time,
         util::serialize,
     },
     serde::Deserialize,
@@ -9,8 +8,8 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self, now: time::Now) -> Result<quote::Order, Error> {
-        Ok(quote::Order {
+    pub fn into_domain(self) -> quote::Order {
+        quote::Order {
             sell_token: self.sell_token.into(),
             buy_token: self.buy_token.into(),
             amount: self.amount.into(),
@@ -19,9 +18,8 @@ impl Order {
                 Kind::Buy => competition::order::Side::Buy,
             },
             gas_price: self.effective_gas_price.into(),
-            deadline: quote::Deadline::new(self.deadline, now)
-                .map_err(|quote::DeadlineExceeded| Error::DeadlineExceeded)?,
-        })
+            deadline: self.deadline.into(),
+        }
     }
 }
 
@@ -44,10 +42,4 @@ pub struct Order {
 enum Kind {
     Sell,
     Buy,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("received an order with an exceeded deadline")]
-    DeadlineExceeded,
 }
