@@ -1,4 +1,4 @@
-use crate::infra::api::State;
+use crate::infra::api::{Error, State};
 
 pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/settle/:solution_id", axum::routing::post(route))
@@ -7,8 +7,10 @@ pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router
 async fn route(
     state: axum::extract::State<State>,
     axum::extract::Path(solution_id): axum::extract::Path<u64>,
-) {
-    // TODO Report errors instead of unwrapping
+) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    competition.settle(solution_id.into()).await.unwrap();
+    competition
+        .settle(solution_id.into())
+        .await
+        .map_err(Into::into)
 }

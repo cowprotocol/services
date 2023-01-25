@@ -1,4 +1,7 @@
 mod auction;
 mod solution;
 
-pub use {auction::Auction, solution::Solution};
+pub use {
+    auction::{Auction, Error as AuctionError},
+    solution::Solution,
+};

@@ -1,4 +1,4 @@
-use crate::infra::api::State;
+use crate::infra::api::{Error, State};
 
 mod dto;
 
@@ -8,13 +8,9 @@ pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<
 
 async fn route(
     state: axum::extract::State<State>,
-    order: axum::extract::Json<dto::Order>,
-) -> axum::response::Json<dto::Quote> {
-    // TODO Report errors instead of unwrapping
+    order: axum::Json<dto::Order>,
+) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let order = order.0.into_domain();
-    let quote = order
-        .quote(state.solver(), state.quote_config())
-        .await
-        .unwrap();
-    axum::response::Json(dto::Quote::from_domain(&quote))
+    let quote = order.quote(state.solver(), state.quote_config()).await?;
+    Ok(axum::response::Json(dto::Quote::from_domain(&quote)))
 }

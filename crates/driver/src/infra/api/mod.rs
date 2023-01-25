@@ -4,11 +4,13 @@ use {
         infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
         solver::Solver,
     },
+    error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
+mod error;
 mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;

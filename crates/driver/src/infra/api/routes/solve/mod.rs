@@ -1,6 +1,8 @@
-use crate::infra::api::State;
+use crate::infra::api::{Error, State};
 
 mod dto;
+
+pub use dto::AuctionError;
 
 pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/solve", axum::routing::post(route))
@@ -8,16 +10,13 @@ pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<
 
 async fn route(
     state: axum::extract::State<State>,
-    auction: axum::extract::Json<dto::Auction>,
-) -> axum::response::Json<dto::Solution> {
-    // TODO Report errors instead of unwrapping
+    auction: axum::Json<dto::Auction>,
+) -> Result<axum::Json<dto::Solution>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction = auction
         .0
         .into_domain(state.liquidity(), state.now())
-        .await
-        .unwrap();
-
+        .await?;
     let competition = state.competition();
-    let (solution_id, score) = competition.solve(&auction).await.unwrap();
-    axum::response::Json(dto::Solution::from_domain(solution_id, score))
+    let (solution_id, score) = competition.solve(&auction).await?;
+    Ok(axum::Json(dto::Solution::from_domain(solution_id, score)))
 }
