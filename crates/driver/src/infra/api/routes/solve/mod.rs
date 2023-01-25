@@ -1,11 +1,13 @@
+use crate::infra::api::State;
+
 mod dto;
 
-pub(super) fn route(router: axum::Router<super::State>) -> axum::Router<super::State> {
-    router.route("/solve", axum::routing::post(solve))
+pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<State> {
+    router.route("/solve", axum::routing::post(route))
 }
 
-async fn solve(
-    state: axum::extract::State<super::State>,
+async fn route(
+    state: axum::extract::State<State>,
     auction: axum::extract::Json<dto::Auction>,
 ) -> axum::response::Json<dto::Solution> {
     // TODO Report errors instead of unwrapping
