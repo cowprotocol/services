@@ -53,7 +53,7 @@ impl Drop for Geth {
             .enable_all()
             .build()
             .unwrap();
-        // block_on call must happen in a new thread because tokio forbids nesting
+        // block_on must be called in a new thread because tokio forbids nesting
         // runtimes.
         let handle = std::thread::spawn(move || runtime.block_on(task));
         handle.join().unwrap();
