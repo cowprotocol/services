@@ -49,7 +49,7 @@ const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
-pub struct SubmitterParams<'a> {
+pub struct SubmitterParams {
     /// Desired duration to include the transaction in a block
     pub target_confirm_time: Duration, //todo ds change to blocks in the following PR
     /// Estimated gas consumption of a transaction
@@ -61,7 +61,7 @@ pub struct SubmitterParams<'a> {
     /// Network id (mainnet, rinkeby, goerli, gnosis chain)
     pub network_id: String,
     /// Additional bytes to append to the call data. This is required by the `driver`.
-    pub additional_call_data: &'a [u8],
+    pub additional_call_data: Vec<u8>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -103,7 +103,7 @@ pub struct TransactionHandle {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait TransactionSubmitting: Send + Sync {
-    /// Submits transation to the specific network (public mempool, eden, flashbots...).
+    /// Submits transaction to the specific network (public mempool, eden, flashbots...).
     /// Returns transaction handle
     async fn submit_transaction(
         &self,
@@ -216,7 +216,7 @@ impl<'a> Submitter<'a> {
     pub async fn submit(
         &self,
         settlement: Settlement,
-        params: SubmitterParams<'_>,
+        params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
 
@@ -233,10 +233,12 @@ impl<'a> Submitter<'a> {
             .get(self.account.address(), self.nonce)
             .unwrap_or_default();
 
+        let deadline = params.deadline;
+
         // Continually simulate and submit transactions
         let submit_future = self.submit_with_increasing_gas_prices_until_simulation_fails(
             settlement,
-            &params,
+            params,
             &mut transactions,
         );
 
@@ -244,7 +246,7 @@ impl<'a> Submitter<'a> {
         let nonce_future = self.wait_for_nonce_to_change(self.nonce);
 
         // If specified, deadline future stops submitting when deadline is reached
-        let deadline_future = tokio::time::sleep(match params.deadline {
+        let deadline_future = tokio::time::sleep(match deadline {
             Some(deadline) => deadline.saturating_duration_since(Instant::now()),
             None => Duration::from_secs(u64::MAX),
         });
@@ -365,7 +367,7 @@ impl<'a> Submitter<'a> {
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
         settlement: Settlement,
-        params: &SubmitterParams<'_>,
+        params: SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
@@ -412,7 +414,7 @@ impl<'a> Submitter<'a> {
             // append additional call data
 
             let mut data = method.tx.data.take().unwrap();
-            data.0.extend(params.additional_call_data);
+            data.0.extend(params.additional_call_data.clone());
             method.tx = method.tx.data(data);
 
             // append access list
@@ -607,7 +609,7 @@ fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionE
             return Err(SubmissionError::Canceled(receipt.transaction_hash));
         }
     }
-    // successfull transaction
+    // successful transaction
     Ok(receipt)
 }
 
@@ -765,7 +767,7 @@ mod tests {
             deadline: Some(Instant::now() + Duration::from_secs(90)),
             retry_interval: Duration::from_secs(5),
             network_id: "1".to_string(),
-            additional_call_data: &[],
+            additional_call_data: Default::default(),
         };
         let result = submitter.submit(settlement, params).await;
         tracing::debug!("finished with result {:?}", result);

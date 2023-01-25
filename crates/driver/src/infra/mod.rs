@@ -11,6 +11,7 @@ pub use {
     self::solver::Solver,
     api::Api,
     blockchain::Ethereum,
+    config::Config,
     mempool::Mempool,
     simulator::Simulator,
 };

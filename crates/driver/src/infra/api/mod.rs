@@ -16,14 +16,6 @@ mod solve;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
-pub enum Addr {
-    /// Bind to a specific port and address.
-    Bind(SocketAddr),
-    /// Bind to 0.0.0.0 and any free port, then send the bound address down the
-    /// oneshot channel if specified.
-    Auto(Option<oneshot::Sender<SocketAddr>>),
-}
-
 pub struct Api {
     pub solvers: Vec<Solver>,
     pub liquidity: liquidity::Fetcher,
@@ -32,7 +24,10 @@ pub struct Api {
     pub mempools: Vec<Mempool>,
     pub now: infra::time::Now,
     pub quote_config: competition::quote::Config,
-    pub addr: Addr,
+    pub addr: SocketAddr,
+    /// If this channel is specified, the bound address will be sent to it. This
+    /// allows the driver to bind to 0.0.0.0:0 during testing.
+    pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
 }
 
 impl Api {
@@ -75,19 +70,10 @@ impl Api {
         }
 
         // Start the server.
-
-        let server = match self.addr {
-            Addr::Bind(addr) => axum::Server::bind(&addr).serve(app.into_make_service()),
-            Addr::Auto(addr_sender) => {
-                let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap())
-                    .serve(app.into_make_service());
-                if let Some(addr_sender) = addr_sender {
-                    addr_sender.send(server.local_addr()).unwrap();
-                }
-                server
-            }
-        };
-
+        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        if let Some(addr_sender) = self.addr_sender {
+            addr_sender.send(server.local_addr()).unwrap();
+        }
         server.with_graceful_shutdown(shutdown).await
     }
 }

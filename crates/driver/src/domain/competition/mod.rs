@@ -77,7 +77,7 @@ impl Competition {
                 return Err(Error::SolutionNotFound);
             }
         };
-        mempool::send(&self.mempools, settlement)
+        mempool::send(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)
     }

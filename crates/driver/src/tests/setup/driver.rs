@@ -1,7 +1,8 @@
 use {
     crate::{
-        infra::{self, config::cli},
-        tests::{self, hex_address, setup},
+        infra,
+        infra::config::file::ContractsConfig,
+        tests::{self, setup},
     },
     itertools::Itertools,
     rand::Rng,
@@ -105,7 +106,6 @@ impl Drop for Client {
 pub struct Config<'a> {
     pub geth: &'a setup::blockchain::Geth,
     pub now: infra::time::Now,
-    pub contracts: cli::ContractAddresses,
     pub file: ConfigFile,
 }
 
@@ -113,7 +113,10 @@ pub struct Config<'a> {
 pub enum ConfigFile {
     /// Create a new config file using [`CONFIG_FILE`] for the given
     /// solvers.
-    Create(Vec<setup::Solver>),
+    Create {
+        contracts: infra::config::file::ContractsConfig,
+        solvers: Vec<setup::Solver>,
+    },
     /// Load an existing config file.
     Load(PathBuf),
 }
@@ -122,38 +125,22 @@ pub enum ConfigFile {
 pub async fn setup(config: Config<'_>) -> Client {
     let (addr_sender, addr_receiver) = oneshot::channel();
     let config_file = match &config.file {
-        ConfigFile::Create(solvers) => {
+        ConfigFile::Create { contracts, solvers } => {
             let path = ConfigPath::random();
-            create_config_file(&path, solvers).await;
+            create_config_file(&path, solvers, contracts).await;
             path
         }
         ConfigFile::Load(path) => ConfigPath(path.to_str().unwrap().to_owned()),
     };
-    let web3 = setup::blockchain::web3(&config.geth.url());
-    let solver_address = setup::blockchain::primary_address(&web3).await;
-    let mut args = vec![
+    let args = vec![
         "/test/driver/path".to_owned(),
         "--bind-addr".to_owned(),
-        "auto".to_owned(),
-        "--config".to_owned(),
-        config_file.0.clone(),
+        "0.0.0.0:0".to_owned(),
         "--ethrpc".to_owned(),
         config.geth.url(),
-        "--quote-timeout-ms".to_owned(),
-        QUOTE_TIMEOUT_MS.to_string(),
-        "--solver-address".to_owned(),
-        hex_address(solver_address),
-        "--submission-gas-price-cap".to_owned(),
-        "1000000000000".to_owned(),
+        "--config".to_owned(),
+        config_file.0.clone(),
     ];
-    if let Some(settlement) = config.contracts.gp_v2_settlement {
-        args.push("--gp-v2-settlement".to_owned());
-        args.push(hex_address(settlement));
-    }
-    if let Some(weth) = config.contracts.weth {
-        args.push("--weth".to_owned());
-        args.push(hex_address(weth));
-    }
     tests::boundary::initialize_tracing("error,web3=warn,hyper=warn,driver::infra::solver=error");
     let run = crate::run(args.into_iter(), config.now, Some(addr_sender));
     let handle = tokio::spawn(run);
@@ -162,39 +149,59 @@ pub async fn setup(config: Config<'_>) -> Client {
         driver_addr,
         handle,
         match config.file {
-            ConfigFile::Create(_) => Some(config_file),
+            ConfigFile::Create { .. } => Some(config_file),
             ConfigFile::Load(_) => None,
         },
     )
 }
 
 /// Create the config file for the driver to use.
-async fn create_config_file(path: &ConfigPath, solvers: &[setup::Solver]) {
-    let configs = solvers
-        .iter()
-        .map(|solver| {
-            let setup::Solver {
-                config:
-                    setup::solver::Config {
-                        absolute_slippage,
-                        relative_slippage,
-                        address,
-                        name,
-                        ..
-                    },
-                addr,
-            } = solver;
-            #[rustfmt::skip]
+async fn create_config_file(
+    path: &ConfigPath,
+    solvers: &[setup::Solver],
+    contracts: &ContractsConfig,
+) {
+    let contracts_config = format!(
+        r#"[contracts]
+           gp-v2-settlement = "0x{}"
+           weth = "0x{}""#,
+        hex::encode(contracts.gp_v2_settlement.unwrap().as_bytes()),
+        hex::encode(contracts.weth.unwrap().as_bytes()),
+    );
+    let submission_config = r#"
+        [submission]
+        gas-price-cap = 1000000000000
+        [[submission.mempool]]
+        mempool = "public""#
+        .to_owned();
+    let solver_configs = solvers.iter().map(|solver| {
+        let setup::Solver {
+            config:
+                setup::solver::Config {
+                    absolute_slippage,
+                    relative_slippage,
+                    address,
+                    private_key,
+                    name,
+                    ..
+                },
+            addr,
+        } = solver;
+        #[rustfmt::skip]
             let config = format!(
-                "[[solver]]\n\
-                 name = \"{name}\"\n\
-                 endpoint = \"http://{addr}\"\n\
-                 absolute-slippage = \"{absolute_slippage}\"\n\
-                 relative-slippage = \"{relative_slippage}\"\n\
-                 address = \"{address}\"\n"
+                r#"[[solver]]
+                   name = "{name}"
+                   endpoint = "http://{addr}"
+                   absolute-slippage = "{absolute_slippage}"
+                   relative-slippage = "{relative_slippage}"
+                   address = "{address}"
+                   private-key = "{private_key}""#
             );
-            config
-        })
+        config
+    });
+    let config = [contracts_config, submission_config]
+        .into_iter()
+        .chain(solver_configs)
         .join("\n");
-    fs::write(&path.0, configs).await.unwrap();
+    fs::write(&path.0, config).await.unwrap();
 }

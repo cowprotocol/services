@@ -3,13 +3,19 @@ name = "mysolver" # Arbitrary name given to this solver, must be unique
 endpoint = "http://0.0.0.0:33219/solve"
 absolute-slippage = "12" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
-address = "0xE33bff104C4E1140A3f86f855AD5bDAb8Dc6CA8C" # The ETH address of this solver
+address = "0x2cf0a2Fef084b6DB3fb3161c8f2b6B61bcE2F73c" # The ETH address of this solver
+private-key = "0xaa1de59084f3b7e501f2d48cafb2ee04cd06a79ea126fd27ddf3d1b8903bb85a" # The private key of the solver
 
 [[solver]] # And so on, specify as many solvers as needed
 name = "othersolver"
 endpoint = "http://localhost:1235"
 relative-slippage = "0.1"
-address = "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"
+address = "0x1bDf4b007819cB9C26b980e34A2a226ad980441a"
+private-key = "0xfe1cbe78dbf9511c37be9716b9b347bcefaaaf8ee5e86dd40cfc3d763ac9a7b6"
+
+[contracts] # Optionally override the contract addresses, necessary on less popular blockchains
+gp-v2-settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
 [liquidity]
 base-tokens = [

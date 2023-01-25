@@ -31,7 +31,7 @@ impl TransactionSubmitting for PublicMempoolApi {
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         tracing::debug!("public mempool submit transaction entered");
-        let transaction_request = tx.build().now_or_never().unwrap().unwrap();
+        let transaction_request = tx.build().await.unwrap();
         if let Transaction::Raw { hash, .. } = &transaction_request {
             tracing::debug!(?hash, "creating transaction");
         }
