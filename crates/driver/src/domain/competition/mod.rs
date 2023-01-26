@@ -98,10 +98,6 @@ impl Competition {
             })
             .collect()
     }
-
-    fn expiration_time() -> std::time::Duration {
-        std::time::Duration::from_secs(60 * 60)
-    }
 }
 
 #[derive(Debug, thiserror::Error)]

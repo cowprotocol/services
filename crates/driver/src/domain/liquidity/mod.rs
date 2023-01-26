@@ -1,3 +1,6 @@
+// TODO Remove dead_code
+#![allow(dead_code)]
+
 use {crate::domain::eth, std::cmp::Ordering};
 
 pub mod balancer;
