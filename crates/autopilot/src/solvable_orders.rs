@@ -823,7 +823,7 @@ mod tests {
             Duration::from_secs(10),
             Duration::MAX,
             None,
-            None,
+            Default::default(),
             1,
         );
 

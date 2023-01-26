@@ -159,7 +159,7 @@ impl CachingNativePriceEstimator {
         max_age: Duration,
         update_interval: Duration,
         update_size: Option<usize>,
-        prefetch_time: Option<Duration>,
+        prefetch_time: Duration,
         concurrent_requests: usize,
     ) -> Self {
         let inner = Arc::new(Inner {
@@ -171,7 +171,7 @@ impl CachingNativePriceEstimator {
                 Arc::downgrade(&inner),
                 update_interval,
                 update_size,
-                max_age.saturating_sub(prefetch_time.unwrap_or(PREFETCH_TIME)),
+                max_age.saturating_sub(prefetch_time),
                 concurrent_requests,
             )
             .instrument(tracing::info_span!("caching_native_price_estimator")),
@@ -232,9 +232,6 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         stream.boxed()
     }
 }
-
-// Update prices early by this amount to increase the number of cache hits.
-const PREFETCH_TIME: Duration = Duration::from_millis(2_000);
 
 async fn update_recently_used_outdated_prices(
     inner: Weak<Inner>,
@@ -303,7 +300,7 @@ mod tests {
             Duration::from_millis(30),
             Default::default(),
             None,
-            None,
+            Default::default(),
             1,
         );
 
@@ -333,7 +330,7 @@ mod tests {
             Duration::from_millis(30),
             Default::default(),
             None,
-            None,
+            Default::default(),
             1,
         );
 
@@ -393,7 +390,7 @@ mod tests {
             Duration::from_millis(30),
             Duration::from_millis(50),
             Some(1),
-            Some(Duration::default()),
+            Duration::default(),
             1,
         );
 
@@ -451,7 +448,7 @@ mod tests {
             Duration::from_millis(30),
             Duration::from_millis(50),
             None,
-            Some(Duration::default()),
+            Duration::default(),
             1,
         );
 
@@ -507,7 +504,7 @@ mod tests {
             Duration::from_millis(30),
             Duration::from_millis(50),
             None,
-            Some(Duration::default()),
+            Duration::default(),
             BATCH_SIZE,
         );
 
