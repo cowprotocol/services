@@ -4,15 +4,14 @@ use {
         infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
         solver::Solver,
     },
+    error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
-mod info;
-mod quote;
-mod settle;
-mod solve;
+mod error;
+mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
@@ -48,10 +47,10 @@ impl Api {
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();
-            let router = info::route(router);
-            let router = quote::route(router);
-            let router = solve::route(router);
-            let router = settle::route(router);
+            let router = routes::info(router);
+            let router = routes::quote(router);
+            let router = routes::solve(router);
+            let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
                 liquidity: self.liquidity.clone(),
