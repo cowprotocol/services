@@ -223,18 +223,18 @@ components:
         auctionId:
           description: Id of the auction that should be executed.
           type: integer
+        transactionIdentifier:
+          description: |
+            Extra calldata that is appended to the settlement contract invocation by the Solver to
+            identify the transaction.
+
+            Hex encoded bytes. No fixed length.
+          type: string
+          example: "0x00112233"
     ExecuteResponse:
       description: Response of the execute endpoint.
       type: object
       properties:
-        transactionIdentifier:
-          description: |
-            Extra calldata that is appended to the settlement contract invocation by the Solver to
-            identify the transaction. Chosen by the Solver.
-
-            Hex encoded string of 4 bytes.
-          type: string
-          example: "0x00112233"
         clearingPrices:
           description: |
             Mapping of hex token address to price.
