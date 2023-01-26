@@ -9,7 +9,7 @@ pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<
 async fn route(
     state: axum::extract::State<State>,
     order: axum::Json<dto::Order>,
-) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
+) -> Result<axum::Json<dto::Quote>, axum::Json<Error>> {
     let order = order.0.into_domain();
     let quote = order.quote(state.solver(), state.quote_config()).await?;
     Ok(axum::response::Json(dto::Quote::from_domain(&quote)))

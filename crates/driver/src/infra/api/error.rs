@@ -3,13 +3,12 @@ use {
         domain::competition::{self, quote, solution},
         infra::api,
     },
-    hyper::StatusCode,
     serde::Serialize,
 };
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "PascalCase")]
-enum Type {
+enum Kind {
     QuotingFailed,
     SolverFailed,
     SolutionNotFound,
@@ -25,79 +24,64 @@ enum Type {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Error {
-    error_type: Type,
+    kind: Kind,
     description: &'static str,
 }
 
-impl From<Type> for (StatusCode, axum::Json<Error>) {
-    fn from(value: Type) -> Self {
-        let (description, status_code) = match value {
-            Type::QuotingFailed => ("No valid quote found", StatusCode::BAD_REQUEST),
-            Type::SolverFailed => (
-                "Solver engine returned an invalid response",
-                StatusCode::BAD_REQUEST,
-            ),
-            Type::SolutionNotFound => ("No solution found for given ID", StatusCode::BAD_REQUEST),
-            Type::DeadlineExceeded => ("Exceeded solution deadline", StatusCode::BAD_REQUEST),
-            Type::SimulationFailed => ("Solution simulation failed", StatusCode::BAD_REQUEST),
-            Type::Unknown => ("An unknown error occurred", StatusCode::BAD_REQUEST),
-            Type::TransactionPublishingFailed => (
-                "Failed to publish the settlement transaction",
-                StatusCode::BAD_REQUEST,
-            ),
-            Type::InvalidAuctionId => (
-                "Invalid ID specified in the auction",
-                StatusCode::BAD_REQUEST,
-            ),
-            Type::MissingSurplusFee => (
-                "Auction contains a limit order with no surplus fee",
-                StatusCode::BAD_REQUEST,
-            ),
-            Type::LiquidityError => ("Failed to fetch onchain liquidity", StatusCode::BAD_REQUEST),
+impl From<Kind> for axum::Json<Error> {
+    fn from(value: Kind) -> Self {
+        let description = match value {
+            Kind::QuotingFailed => "No valid quote found",
+            Kind::SolverFailed => "Solver engine returned an invalid response",
+            Kind::SolutionNotFound => "No solution found for given ID",
+            Kind::DeadlineExceeded => "Exceeded solution deadline",
+            Kind::SimulationFailed => "Solution simulation failed",
+            Kind::Unknown => "An unknown error occurred",
+            Kind::TransactionPublishingFailed => "Failed to publish the settlement transaction",
+            Kind::InvalidAuctionId => "Invalid ID specified in the auction",
+            Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
+            Kind::LiquidityError => "Failed to fetch onchain liquidity",
         };
-        (
-            status_code,
-            axum::Json(Error {
-                error_type: value,
-                description,
-            }),
-        )
+        axum::Json(Error {
+            kind: value,
+            description,
+        })
     }
 }
 
-impl From<quote::Error> for (StatusCode, axum::Json<Error>) {
+impl From<quote::Error> for axum::Json<Error> {
     fn from(value: quote::Error) -> Self {
         let error = match value {
-            quote::Error::QuotingFailed => Type::QuotingFailed,
-            quote::Error::Solver(_) => Type::SolverFailed,
+            quote::Error::QuotingFailed => Kind::QuotingFailed,
+            quote::Error::Solver(_) => Kind::SolverFailed,
         };
         error.into()
     }
 }
 
-impl From<competition::Error> for (StatusCode, axum::Json<Error>) {
+impl From<competition::Error> for axum::Json<Error> {
     fn from(value: competition::Error) -> Self {
         let error = match value {
-            competition::Error::SolutionNotFound => Type::SolutionNotFound,
-            competition::Error::Solution(solution::Error::Simulation(_)) => Type::SimulationFailed,
-            competition::Error::Solution(solution::Error::Blockchain(_)) => Type::Unknown,
-            competition::Error::Solution(solution::Error::Boundary(_)) => Type::Unknown,
-            competition::Error::Mempool(_) => Type::TransactionPublishingFailed,
-            competition::Error::Boundary(_) => Type::Unknown,
-            competition::Error::DeadlineExceeded(_) => Type::DeadlineExceeded,
-            competition::Error::Solver(_) => Type::SolverFailed,
+            competition::Error::SolutionNotFound => Kind::SolutionNotFound,
+            competition::Error::Solution(solution::Error::Simulation(_)) => Kind::SimulationFailed,
+            competition::Error::Solution(solution::Error::Blockchain(_)) => Kind::Unknown,
+            competition::Error::Solution(solution::Error::Boundary(_)) => Kind::Unknown,
+            competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
+            competition::Error::Boundary(_) => Kind::Unknown,
+            competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
+            competition::Error::Solver(_) => Kind::SolverFailed,
         };
         error.into()
     }
 }
 
-impl From<api::routes::AuctionError> for (StatusCode, axum::Json<Error>) {
+impl From<api::routes::AuctionError> for axum::Json<Error> {
     fn from(value: api::routes::AuctionError) -> Self {
         let error = match value {
-            api::routes::AuctionError::InvalidAuctionId => Type::InvalidAuctionId,
-            api::routes::AuctionError::MissingSurplusFee => Type::MissingSurplusFee,
-            api::routes::AuctionError::DeadlineExceeded => Type::DeadlineExceeded,
-            api::routes::AuctionError::Liquidity(_) => Type::LiquidityError,
+            api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
+            api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
+            api::routes::AuctionError::DeadlineExceeded => Kind::DeadlineExceeded,
+            api::routes::AuctionError::Liquidity(_) => Kind::LiquidityError,
         };
         error.into()
     }
