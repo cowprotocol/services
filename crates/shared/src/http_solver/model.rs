@@ -4,6 +4,7 @@ use model::{
     auction::AuctionId,
     order::{OrderData, OrderUid},
     ratio_as_decimal,
+    ratio_as_decimal::DecimalBigRational,
     signature::Signature,
     u256_decimal::{self, DecimalU256},
 };
@@ -187,6 +188,9 @@ pub struct SettledBatchAuctionModel {
     pub interaction_data: Vec<InteractionData>,
     #[serde(default)]
     pub submitter: SubmissionPreference,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DecimalBigRational>")]
+    pub score: Option<BigRational>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -780,6 +784,7 @@ mod tests {
                     }
                 },
                 "orders": {},
+                "score": "13.37",
                 "metadata": {},
                 "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                 "prices": {
