@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, competition},
+        domain,
         infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
         solver::Solver,
     },
@@ -22,7 +22,6 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Vec<Mempool>,
     pub now: infra::time::Now,
-    pub quote_config: competition::quote::Config,
     pub addr: SocketAddr,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -62,7 +61,6 @@ impl Api {
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
                 },
-                quote_config: self.quote_config.clone(),
                 now: self.now,
             })));
             app = app.nest(&format!("/{name}"), router);
@@ -93,10 +91,6 @@ impl State {
         &self.0.competition
     }
 
-    fn quote_config(&self) -> &competition::quote::Config {
-        &self.0.quote_config
-    }
-
     fn now(&self) -> time::Now {
         self.0.now
     }
@@ -107,6 +101,5 @@ struct Inner {
     solver: Solver,
     liquidity: liquidity::Fetcher,
     competition: domain::Competition,
-    quote_config: competition::quote::Config,
     now: time::Now,
 }
