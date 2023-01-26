@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{competition, eth},
-        infra::{self, liquidity},
+        infra::liquidity,
         util::serialize,
     },
     serde::Deserialize,
@@ -13,7 +13,6 @@ impl Auction {
     pub async fn into_domain(
         self,
         liquidity: &liquidity::Fetcher,
-        now: infra::time::Now,
     ) -> Result<competition::Auction, Error> {
         let orders = self
             .orders
@@ -115,8 +114,7 @@ impl Auction {
             orders,
             liquidity,
             gas_price: self.effective_gas_price.into(),
-            deadline: competition::auction::Deadline::new(self.deadline, now)
-                .map_err(|competition::auction::DeadlineExceeded| Error::DeadlineExceeded)?,
+            deadline: self.deadline.into(),
         })
     }
 }
@@ -127,8 +125,6 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
-    #[error("received an auction with an exceeded deadline")]
-    DeadlineExceeded,
     #[error("error fetching liquidity for auction: {0}")]
     Liquidity(#[from] liquidity::fetcher::Error),
 }

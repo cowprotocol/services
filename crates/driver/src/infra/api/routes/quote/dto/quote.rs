@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, quote},
         util::serialize,
     },
     serde::Serialize,
@@ -8,7 +8,7 @@ use {
 };
 
 impl Quote {
-    pub fn from_domain(quote: &competition::quote::Quote) -> Self {
+    pub fn from_domain(quote: &quote::Quote) -> Self {
         Self {
             amount: quote.amount,
             interactions: quote

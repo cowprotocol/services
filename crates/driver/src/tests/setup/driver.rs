@@ -10,8 +10,6 @@ use {
     tokio::{fs, sync::oneshot},
 };
 
-pub const QUOTE_TIMEOUT_MS: u64 = 100;
-
 #[derive(Debug)]
 struct ConfigPath(String);
 

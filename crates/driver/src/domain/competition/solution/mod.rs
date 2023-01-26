@@ -1,5 +1,4 @@
 use {
-    super::auction,
     crate::{
         boundary,
         domain::{
@@ -205,25 +204,20 @@ impl From<SolverTimeout> for std::time::Duration {
 }
 
 impl SolverTimeout {
-    /// The time limit passed to the solver when solving an auction. The solvers
-    /// are given a time limit that's slightly less than the actual auction
-    /// [`Deadline`]. The reason for this is to allow the solver sufficient time
-    /// to search for the most optimal solution, but still ensure there is
-    /// time left for the driver to forward the results back to the protocol
-    /// or do some other necessary work.
-    pub fn for_solving(
-        deadline: competition::auction::Deadline,
+    /// The time limit passed to the solver for solving an auction.
+    ///
+    /// Solvers are given a time limit that's `buffer` less than the specified
+    /// deadline. The reason for this is to allow the solver sufficient time to
+    /// search for the most optimal solution, but still ensure there is time
+    /// left for the driver to do some other necessary work and forward the
+    /// results back to the protocol.
+    pub fn new(
+        deadline: chrono::DateTime<chrono::Utc>,
+        buffer: chrono::Duration,
         now: time::Now,
-    ) -> Result<SolverTimeout, auction::DeadlineExceeded> {
-        let deadline = chrono::DateTime::from(deadline) - now.now() - Self::solving_time_buffer();
-        deadline
-            .to_std()
-            .map(Self)
-            .map_err(|_| auction::DeadlineExceeded)
-    }
-
-    pub fn solving_time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
+    ) -> Option<SolverTimeout> {
+        let deadline = deadline - now.now() - buffer;
+        deadline.to_std().map(Self).ok()
     }
 
     pub fn deadline(self, now: infra::time::Now) -> chrono::DateTime<chrono::Utc> {

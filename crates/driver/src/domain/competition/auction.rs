@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{
+            competition::{self, solution},
+            eth,
+            liquidity,
+        },
         infra::time,
     },
     std::{num::ParseIntError, str::FromStr},
@@ -58,15 +62,19 @@ impl From<eth::U256> for Price {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
-    pub fn new(
-        deadline: chrono::DateTime<chrono::Utc>,
-        now: time::Now,
-    ) -> Result<Self, DeadlineExceeded> {
-        if deadline <= now.now() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(Self(deadline))
-        }
+    /// Computes the timeout for solving an auction.
+    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    }
+
+    pub fn time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Deadline {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
     }
 }
 

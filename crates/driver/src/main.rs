@@ -3,10 +3,7 @@
 #![forbid(unsafe_code)]
 
 use {
-    crate::{
-        domain::competition,
-        infra::{mempool, Mempool},
-    },
+    crate::infra::{mempool, Mempool},
     clap::Parser,
     config::cli,
     futures::future::join_all,
@@ -76,10 +73,6 @@ pub async fn run(
         .collect(),
         eth,
         now,
-        quote_config: competition::quote::Config {
-            // TODO Nick is removing this in one of his PRs
-            timeout: std::time::Duration::from_millis(100).into(),
-        },
         addr: args.bind_addr,
         addr_sender,
     }

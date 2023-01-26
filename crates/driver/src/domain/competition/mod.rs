@@ -16,13 +16,11 @@ use {
 
 pub mod auction;
 pub mod order;
-pub mod quote;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
-    quote::Quote,
     solution::{Score, Solution, SolverTimeout},
 };
 
@@ -46,10 +44,7 @@ impl Competition {
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
         let solution = self
             .solver
-            .solve(
-                auction,
-                SolverTimeout::for_solving(auction.deadline, self.now)?,
-            )
+            .solve(auction, auction.deadline.timeout(self.now)?)
             .await?;
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay

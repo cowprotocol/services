@@ -1,18 +1,17 @@
 use {
     crate::{
-        domain::{self, competition},
+        domain,
         infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
         solver::Solver,
     },
+    error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
-mod info;
-mod quote;
-mod settle;
-mod solve;
+mod error;
+mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
@@ -23,7 +22,6 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Vec<Mempool>,
     pub now: infra::time::Now,
-    pub quote_config: competition::quote::Config,
     pub addr: SocketAddr,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -48,10 +46,10 @@ impl Api {
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();
-            let router = info::route(router);
-            let router = quote::route(router);
-            let router = solve::route(router);
-            let router = settle::route(router);
+            let router = routes::info(router);
+            let router = routes::quote(router);
+            let router = routes::solve(router);
+            let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
                 liquidity: self.liquidity.clone(),
@@ -63,7 +61,6 @@ impl Api {
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
                 },
-                quote_config: self.quote_config.clone(),
                 now: self.now,
             })));
             app = app.nest(&format!("/{name}"), router);
@@ -94,10 +91,6 @@ impl State {
         &self.0.competition
     }
 
-    fn quote_config(&self) -> &competition::quote::Config {
-        &self.0.quote_config
-    }
-
     fn now(&self) -> time::Now {
         self.0.now
     }
@@ -108,6 +101,5 @@ struct Inner {
     solver: Solver,
     liquidity: liquidity::Fetcher,
     competition: domain::Competition,
-    quote_config: competition::quote::Config,
     now: time::Now,
 }

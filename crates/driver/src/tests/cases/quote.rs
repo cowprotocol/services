@@ -1,7 +1,7 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition,
+        domain::quote,
         infra,
         tests::{hex_address, setup},
     },
@@ -36,8 +36,7 @@ async fn test() {
     let buy_amount = token_b_out_amount;
     let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
-    let deadline = now.now()
-        + chrono::Duration::milliseconds(setup::driver::QUOTE_TIMEOUT_MS.try_into().unwrap());
+    let deadline = now.now() + chrono::Duration::seconds(2);
     let interactions = uniswap_interactions
         .iter()
         .map(|(address, interaction)| {
@@ -76,12 +75,12 @@ async fn test() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": competition::quote::FAKE_AUCTION_REWARD,
+                        "reward": quote::FAKE_AUCTION_REWARD,
                     }
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline,
+                "deadline": deadline - quote::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
@@ -125,6 +124,7 @@ async fn test() {
                 "amount": sell_amount.to_string(),
                 "kind": "sell",
                 "effectiveGasPrice": gas_price,
+                "deadline": deadline,
             }),
         )
         .await;
