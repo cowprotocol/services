@@ -84,7 +84,7 @@ pub mod execute {
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
-        pub auction_id: u64,
+        pub auction_id: i64,
     }
 
     #[serde_as]
