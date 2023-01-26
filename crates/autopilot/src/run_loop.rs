@@ -67,7 +67,7 @@ impl RunLoop {
             {
                 Ok(()) => tracing::info!("settled"),
                 Err(err) => {
-                    tracing::error!(?err, "solver {} failed to execute", err);
+                    tracing::error!(?err, "solver {index} failed to execute");
                 }
             }
         }
