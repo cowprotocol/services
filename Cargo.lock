@@ -200,6 +200,7 @@ dependencies = [
  "primitive-types 0.10.1",
  "prometheus",
  "prometheus-metric-storage",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",
