@@ -85,6 +85,8 @@ pub mod execute {
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         pub auction_id: i64,
+        #[serde(with = "bytes_hex")]
+        pub tag: Vec<u8>,
     }
 
     #[serde_as]

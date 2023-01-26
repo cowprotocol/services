@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use model::auction::{Auction, AuctionId};
+use primitive_types::H256;
 use rand::seq::SliceRandom;
-use shared::current_block::CurrentBlockStream;
-use std::time::Duration;
+use shared::{current_block::CurrentBlockStream, ethrpc::Web3};
+use std::{collections::HashSet, time::Duration};
 use tracing::Instrument;
+use web3::types::Transaction;
 
 use crate::{
     database::Postgres,
@@ -20,6 +22,7 @@ pub struct RunLoop {
     database: Postgres,
     drivers: Vec<Driver>,
     current_block: CurrentBlockStream,
+    web3: Web3,
 }
 
 impl RunLoop {
@@ -121,9 +124,68 @@ impl RunLoop {
         driver: &Driver,
         _solution: &solve::Response,
     ) -> Result<()> {
-        let request = execute::Request { auction_id: id };
+        let request = execute::Request {
+            auction_id: id,
+            tag: id.to_be_bytes().into(),
+        };
         let _response = driver.execute(&request).await.context("execute")?;
-        // TODO: Wait for transaction to be mined or deadline to be reached.
+        // TODO: React to deadline expiring.
+        self.wait_for_settlement_transaction(&request.tag)
+            .await
+            .context("wait for settlement transaction")?;
         Ok(())
+    }
+
+    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    ///
+    /// Returns None if no transaction was found within the deadline.
+    pub async fn wait_for_settlement_transaction(&self, tag: &[u8]) -> Result<Option<Transaction>> {
+        // Start earlier than current block because there might be a delay when receiving the
+        // Solver's /execute response during which it already started broadcasting the tx.
+        let start_offset = 10;
+        let max_wait_time = 20;
+        let current = self.current_block.borrow().number;
+        let start = current.saturating_sub(start_offset);
+        let deadline = current.saturating_add(max_wait_time);
+        tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
+
+        // Use the existing event indexing infrastructure to find the transaction. We query all
+        // settlement events in the block range to get tx hashes and query the node for the full
+        // calldata.
+        //
+        // If the block range was large, we would make the query more efficient by moving the
+        // starting block up while taking reorgs into account. With the current range of 30 blocks
+        // this isn't necessary.
+        //
+        // We do keep track of hashes we have already seen to reduce load from the node.
+
+        let mut seen_transactions: HashSet<H256> = Default::default();
+        while self.current_block.borrow().number <= deadline {
+            let mut hashes = self
+                .database
+                .recent_settlement_tx_hashes(start as i64)
+                .await?;
+            hashes.retain(|hash| !seen_transactions.contains(hash));
+            for hash in hashes {
+                let tx: Option<Transaction> = self
+                    .web3
+                    .eth()
+                    .transaction(web3::types::TransactionId::Hash(hash))
+                    .await
+                    .with_context(|| format!("web3 transaction {hash:?}"))?;
+                let tx: Transaction = match tx {
+                    Some(tx) => tx,
+                    None => continue,
+                };
+                if tx.input.0.ends_with(tag) {
+                    return Ok(Some(tx));
+                }
+                seen_transactions.insert(hash);
+            }
+            // It would be more correct to wait until just after the last event update run, but
+            // that is hard to synchronize.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        Ok(None)
     }
 }

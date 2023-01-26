@@ -11,6 +11,7 @@ pub mod onchain_invalidations;
 pub mod order_execution;
 pub mod orders;
 pub mod quotes;
+pub mod settlements;
 pub mod solver_competition;
 pub mod trades;
 
