@@ -322,8 +322,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
-        assert!(
-            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs
+        anyhow::ensure!(
+            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            "price cache prefetch time needs to be less than price cache max age"
         );
         let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
