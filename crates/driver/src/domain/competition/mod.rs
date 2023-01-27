@@ -45,10 +45,7 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
-        let liquidity = self
-            .liquidity
-            .fetch(&Self::liquidity_pairs(auction))
-            .await?;
+        let liquidity = self.liquidity.fetch(&Self::liquidity_pairs(auction)).await;
         let solution = self
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
@@ -114,6 +111,4 @@ pub enum Error {
     DeadlineExceeded(#[from] auction::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
-    #[error("liquidity fetcher error: {0:?}")]
-    Liquidity(#[from] infra::liquidity::fetcher::Error),
 }
