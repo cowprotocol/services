@@ -25,6 +25,7 @@ pub struct RunLoop {
     drivers: Vec<Driver>,
     current_block: CurrentBlockStream,
     web3: Web3,
+    network_block_interval: Duration,
 }
 
 impl RunLoop {
@@ -146,13 +147,15 @@ impl RunLoop {
     ///
     /// Returns None if no transaction was found within the deadline.
     pub async fn wait_for_settlement_transaction(&self, tag: &[u8]) -> Result<Option<Transaction>> {
+        const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
         // Start earlier than current block because there might be a delay when receiving the
         // Solver's /execute response during which it already started broadcasting the tx.
         let start_offset = MAX_REORG_BLOCK_COUNT;
-        let max_wait_time = 20;
+        let max_wait_time_blocks =
+            (MAX_WAIT_TIME.as_secs_f32() / self.network_block_interval.as_secs_f32()).ceil() as u64;
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
-        let deadline = current.saturating_add(max_wait_time);
+        let deadline = current.saturating_add(max_wait_time_blocks);
         tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
 
         // Use the existing event indexing infrastructure to find the transaction. We query all
@@ -196,7 +199,7 @@ impl RunLoop {
             }
             // It would be more correct to wait until just after the last event update run, but
             // that is hard to synchronize.
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(self.network_block_interval.div_f32(2.)).await;
         }
         Ok(None)
     }
