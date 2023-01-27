@@ -126,11 +126,11 @@ impl RunLoop {
     ) -> Result<()> {
         let request = execute::Request {
             auction_id: id,
-            tag: id.to_be_bytes().into(),
+            transaction_identifier: id.to_be_bytes().into(),
         };
         let _response = driver.execute(&request).await.context("execute")?;
         // TODO: React to deadline expiring.
-        self.wait_for_settlement_transaction(&request.tag)
+        self.wait_for_settlement_transaction(&request.transaction_identifier)
             .await
             .context("wait for settlement transaction")?;
         Ok(())

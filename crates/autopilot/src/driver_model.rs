@@ -86,7 +86,7 @@ pub mod execute {
     pub struct Request {
         pub auction_id: i64,
         #[serde(with = "bytes_hex")]
-        pub tag: Vec<u8>,
+        pub transaction_identifier: Vec<u8>,
     }
 
     #[serde_as]
