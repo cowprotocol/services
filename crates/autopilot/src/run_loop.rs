@@ -68,7 +68,7 @@ impl RunLoop {
                 .execute(auction, id, &self.drivers[index], &solution)
                 .await
             {
-                Ok(()) => tracing::info!("settled"),
+                Ok(()) => (),
                 Err(err) => {
                     tracing::error!(?err, "solver {index} failed to execute");
                 }
@@ -130,9 +130,13 @@ impl RunLoop {
         };
         let _response = driver.execute(&request).await.context("execute")?;
         // TODO: React to deadline expiring.
-        self.wait_for_settlement_transaction(&request.transaction_identifier)
+        let transaction = self
+            .wait_for_settlement_transaction(&request.transaction_identifier)
             .await
             .context("wait for settlement transaction")?;
+        if let Some(tx) = transaction {
+            tracing::debug!("settled in tx {:?}", tx.hash);
+        }
         Ok(())
     }
 
