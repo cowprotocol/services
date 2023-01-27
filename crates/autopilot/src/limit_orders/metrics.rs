@@ -34,12 +34,12 @@ impl LimitOrderMetrics {
                     let limit_orders = self.database.count_limit_orders().await.unwrap();
                     let awaiting_quote = self
                         .database
-                        .count_limit_orders_with_outdated_fees(self.quoting_age)
+                        .count_limit_orders_with_outdated_fees(self.quoting_age, self.quote_unfunded_orders)
                         .await
                         .unwrap();
                     let unusable = self
                         .database
-                        .count_limit_orders_with_outdated_fees(self.validity_age)
+                        .count_limit_orders_with_outdated_fees(self.validity_age, self.quote_unfunded_orders)
                         .await
                         .unwrap();
 

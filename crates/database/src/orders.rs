@@ -765,17 +765,20 @@ pub async fn count_limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
+    quote_unfunded_orders: bool,
 ) -> Result<i64, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(
         "SELECT COUNT (*) FROM (",
         OPEN_ORDERS,
         " AND class = 'limit'",
         " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        " AND ($3 OR has_sufficient_balance)",
         ") AS subquery"
     );
     sqlx::query_scalar(QUERY)
         .bind(min_valid_to)
         .bind(max_fee_timestamp)
+        .bind(quote_unfunded_orders)
         .fetch_one(ex)
         .await
 }
@@ -2077,7 +2080,7 @@ mod tests {
 
         assert_eq!(count_limit_orders(&mut db, 2).await.unwrap(), 2);
         assert_eq!(
-            count_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+            count_limit_orders_with_outdated_fees(&mut db, timestamp, 2, true)
                 .await
                 .unwrap(),
             1
@@ -2087,6 +2090,15 @@ mod tests {
                 .await
                 .unwrap(),
             1
+        );
+
+        // Metrics discard unfunded orders if we configure them so.
+        update_has_sufficient_balance_flag(&mut db, &order_uid, false).await.unwrap();
+        assert_eq!(
+            count_limit_orders_with_outdated_fees(&mut db, timestamp, 2, false)
+                .await
+                .unwrap(),
+            0
         );
     }
 }
