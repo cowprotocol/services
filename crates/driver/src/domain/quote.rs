@@ -1,5 +1,6 @@
 use {
     crate::{
+        boundary,
         domain::{
             competition::{self, order, solution},
             eth,
@@ -7,6 +8,7 @@ use {
         },
         infra::{
             self,
+            blockchain::Ethereum,
             solver::{self, Solver},
             time,
         },
@@ -23,11 +25,11 @@ pub struct Quote {
     /// The amount that can be bought if this was a sell order, or sold if this
     /// was a buy order.
     pub amount: eth::U256,
-    pub interactions: Vec<competition::solution::Interaction>,
+    pub interactions: Vec<eth::Interaction>,
 }
 
 impl Quote {
-    fn new(order: &Order, solution: competition::Solution) -> Result<Self, Error> {
+    fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .prices
             .get(&order.tokens.sell)
@@ -52,7 +54,7 @@ impl Quote {
         };
         Ok(Self {
             amount,
-            interactions: solution.interactions,
+            interactions: boundary::quote::encode_interactions(eth, &solution.interactions)?,
         })
     }
 }
@@ -74,6 +76,7 @@ impl Order {
     /// returns.
     pub async fn quote(
         &self,
+        eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
         now: time::Now,
@@ -83,7 +86,7 @@ impl Order {
         let solution = solver
             .solve(&self.fake_auction(), &liquidity, timeout)
             .await?;
-        Quote::new(self, solution)
+        Quote::new(self, eth, solution)
     }
 
     fn fake_auction(&self) -> competition::Auction {
@@ -220,6 +223,8 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("liquidity fetcher error: {0:?}")]
     Liquidity(#[from] infra::liquidity::fetcher::Error),
+    #[error("boundary error: {0:?}")]
+    Boundary(#[from] boundary::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
