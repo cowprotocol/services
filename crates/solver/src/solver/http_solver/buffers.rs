@@ -113,7 +113,7 @@ mod test {
         let buffers = buffer_retriever
             .get_buffers(&[weth, dai, BUY_ETH_ADDRESS, not_a_token])
             .await;
-        println!("Buffers: {:#?}", buffers);
+        println!("Buffers: {buffers:#?}");
         assert!(buffers.get(&weth).unwrap().is_ok());
         assert!(buffers.get(&dai).unwrap().is_ok());
         assert!(buffers.get(&BUY_ETH_ADDRESS).unwrap().is_ok());

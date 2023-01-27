@@ -130,6 +130,6 @@ mod tests {
             .next()
             .unwrap();
 
-        println!("WETH <> wxDAI pool: {:#?}", pool);
+        println!("WETH <> wxDAI pool: {pool:#?}");
     }
 }

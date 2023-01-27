@@ -113,6 +113,6 @@ mod tests {
             recipient: addr!("0000000000000000000000000000000000000000"),
         };
         let response = api.request(&request).await.unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
     }
 }

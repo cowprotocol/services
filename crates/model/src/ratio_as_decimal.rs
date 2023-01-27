@@ -41,10 +41,8 @@ pub fn deserialize<'de, D>(deserializer: D) -> Result<BigRational, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let big_decimal =
-        BigDecimal::from_str(&Cow::<str>::deserialize(deserializer)?).map_err(|err| {
-            de::Error::custom(format!("failed to decode decimal BigDecimal: {}", err))
-        })?;
+    let big_decimal = BigDecimal::from_str(&Cow::<str>::deserialize(deserializer)?)
+        .map_err(|err| de::Error::custom(format!("failed to decode decimal BigDecimal: {err}")))?;
     let (x, exp) = big_decimal.into_bigint_and_exponent();
     let numerator_bytes = x.to_bytes_le();
     let base = num::bigint::BigInt::from_bytes_le(numerator_bytes.0, &numerator_bytes.1);
@@ -53,7 +51,7 @@ where
     Ok(numerator
         / ten.pow(
             exp.try_into()
-                .map_err(|err| de::Error::custom(format!("decimal exponent overflow: {}", err)))?,
+                .map_err(|err| de::Error::custom(format!("decimal exponent overflow: {err}")))?,
         ))
 }
 

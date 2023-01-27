@@ -326,7 +326,7 @@ mod tests {
 
         fn base(atoms: U256) -> String {
             let base = atoms.to_f64_lossy() / 1e18;
-            format!("{:.6}", base)
+            format!("{base:.6}")
         }
 
         let sell_quote = api

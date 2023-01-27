@@ -572,7 +572,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        println!("Found settlement for sell order: {:#?}", sell_settlement);
+        println!("Found settlement for sell order: {sell_settlement:#?}");
 
         let buy_settlement = solver
             .try_settle_order(
@@ -596,6 +596,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        println!("Found settlement for buy order: {:#?}", buy_settlement);
+        println!("Found settlement for buy order: {buy_settlement:#?}");
     }
 }

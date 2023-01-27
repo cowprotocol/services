@@ -52,7 +52,7 @@ pub enum PriceEstimatorType {
 impl PriceEstimatorType {
     /// Returns the name of this price estimator type.
     pub fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 }
 

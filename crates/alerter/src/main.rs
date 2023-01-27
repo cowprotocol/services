@@ -92,7 +92,7 @@ impl OrderBookApi {
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
-        let url = self.base.join(&format!("api/v1/orders/{}", uid)).unwrap();
+        let url = self.base.join(&format!("api/v1/orders/{uid}")).unwrap();
         self.client
             .get(url)
             .send()
@@ -142,7 +142,7 @@ impl ZeroExApi {
         let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
             .append_pair("sellToken", &format!("{:#x}", order.sell_token))
-            .append_pair("buyToken", &format!("{:#x}", buy_token))
+            .append_pair("buyToken", &format!("{buy_token:#x}"))
             .append_pair(amount_name, &amount.to_string());
 
         #[derive(Debug, serde::Deserialize)]

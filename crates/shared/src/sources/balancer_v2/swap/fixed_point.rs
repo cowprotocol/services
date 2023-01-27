@@ -71,7 +71,7 @@ impl FromStr for Bfp {
         if units.is_empty() || decimals.is_empty() || decimals.len() > 18 {
             bail!("Invalid decimal representation");
         }
-        Ok(Bfp(U256::from_dec_str(&format!("{:0<18}", decimals))?
+        Ok(Bfp(U256::from_dec_str(&format!("{decimals:0<18}"))?
             .checked_add(
                 U256::from_dec_str(units)?
                     .checked_mul(*ONE_18)
