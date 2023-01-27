@@ -17,6 +17,7 @@ WHERE
     "#;
     sqlx::query_scalar::<_, TransactionHash>(QUERY)
         .bind(block_range.start)
+        .bind(block_range.end)
         .fetch_all(ex)
         .await
 }
