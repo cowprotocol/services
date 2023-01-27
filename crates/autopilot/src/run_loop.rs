@@ -167,7 +167,7 @@ impl RunLoop {
         while self.current_block.borrow().number <= deadline {
             let mut hashes = self
                 .database
-                .recent_settlement_tx_hashes(start as i64)
+                .recent_settlement_tx_hashes(start..deadline + 1)
                 .await?;
             hashes.retain(|hash| !seen_transactions.contains(hash));
             for hash in hashes {

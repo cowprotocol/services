@@ -1,18 +1,22 @@
+use std::ops::Range;
+
 use sqlx::PgConnection;
 
 use crate::TransactionHash;
 
 pub async fn recent_settlement_tx_hashes(
     ex: &mut PgConnection,
-    start_block: i64,
+    block_range: Range<i64>,
 ) -> Result<Vec<TransactionHash>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT tx_hash
 FROM settlements
-WHERE block_number >= $1
+WHERE
+    block_number >= $1 AND
+    block_number < $2
     "#;
     sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(start_block)
+        .bind(block_range.start)
         .fetch_all(ex)
         .await
 }
@@ -73,13 +77,16 @@ mod tests {
         .await
         .unwrap();
 
-        let results = recent_settlement_tx_hashes(&mut db, 1).await.unwrap();
+        let results = recent_settlement_tx_hashes(&mut db, 0..1).await.unwrap();
+        assert_eq!(results, &[ByteArray([0u8; 32])]);
+
+        let results = recent_settlement_tx_hashes(&mut db, 1..5).await.unwrap();
         assert_eq!(results, &[ByteArray([1u8; 32]), ByteArray([2u8; 32])]);
 
-        let results = recent_settlement_tx_hashes(&mut db, 2).await.unwrap();
+        let results = recent_settlement_tx_hashes(&mut db, 2..5).await.unwrap();
         assert_eq!(results, &[ByteArray([2u8; 32])]);
 
-        let results = recent_settlement_tx_hashes(&mut db, 3).await.unwrap();
+        let results = recent_settlement_tx_hashes(&mut db, 3..5).await.unwrap();
         assert_eq!(results, &[]);
     }
 }
