@@ -34,7 +34,7 @@ pub fn get_user_orders(
                 return Ok(with_status(
                     super::error(
                         "LIMIT_OUT_OF_BOUNDS",
-                        format!("The pagination limit is [{},{}].", MIN_LIMIT, MAX_LIMIT),
+                        format!("The pagination limit is [{MIN_LIMIT},{MAX_LIMIT}]."),
                     ),
                     StatusCode::BAD_REQUEST,
                 ));

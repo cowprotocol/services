@@ -21,7 +21,7 @@ enum Kind {
     TransactionPublishingFailed,
     InvalidAuctionId,
     MissingSurplusFee,
-    LiquidityError,
+    QuoteSameTokens,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,7 +43,7 @@ impl From<Kind> for axum::Json<Error> {
             Kind::TransactionPublishingFailed => "Failed to publish the settlement transaction",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
-            Kind::LiquidityError => "Failed to fetch onchain liquidity",
+            Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
         };
         axum::Json(Error {
             kind: value,
@@ -58,6 +58,7 @@ impl From<quote::Error> for axum::Json<Error> {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
+            quote::Error::Boundary(_) => Kind::Unknown,
         };
         error.into()
     }
@@ -84,7 +85,15 @@ impl From<api::routes::AuctionError> for axum::Json<Error> {
         let error = match value {
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
-            api::routes::AuctionError::Liquidity(_) => Kind::LiquidityError,
+        };
+        error.into()
+    }
+}
+
+impl From<api::routes::OrderError> for axum::Json<Error> {
+    fn from(value: api::routes::OrderError) -> Self {
+        let error = match value {
+            api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,
         };
         error.into()
     }

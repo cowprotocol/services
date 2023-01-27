@@ -3,7 +3,6 @@ use {
         domain::{
             competition::{self, solution},
             eth,
-            liquidity,
         },
         infra::time,
     },
@@ -22,7 +21,6 @@ pub struct Auction {
     pub id: Option<Id>,
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
-    pub liquidity: Vec<liquidity::Liquidity>,
     pub gas_price: eth::EffectiveGasPrice,
     pub deadline: Deadline,
 }

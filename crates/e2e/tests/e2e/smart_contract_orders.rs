@@ -141,7 +141,7 @@ async fn smart_contract_orders(web3: Web3) {
     for order in &mut orders {
         let creation = order.clone().into_order_creation();
         let placement = client
-            .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+            .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
             .json(&creation)
             .send()
             .await

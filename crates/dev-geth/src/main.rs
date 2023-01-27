@@ -94,7 +94,7 @@ struct Processes {
 impl Processes {
     async fn start(&self) -> Port {
         let port = self.next_port();
-        let datadir = format!("/{}", port);
+        let datadir = format!("/{port}");
         let status = tokio::process::Command::new("cp")
             .arg("-r")
             .arg(BASE_DATADIR)

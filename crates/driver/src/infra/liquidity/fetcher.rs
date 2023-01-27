@@ -1,10 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{competition::order, liquidity},
+        domain::liquidity,
         infra::{self, blockchain::Ethereum},
     },
-    std::sync::Arc,
+    std::{collections::HashSet, sync::Arc},
 };
 
 /// Fetch liquidity for auctions to be sent to solver engines.
@@ -23,10 +23,16 @@ impl Fetcher {
         })
     }
 
-    /// Fetches all relevant liquidity for the orders.
-    pub async fn fetch(&self, orders: &[order::Order]) -> Result<Vec<liquidity::Liquidity>, Error> {
-        let liquidity = self.inner.fetch(orders).await?;
-        Ok(liquidity)
+    /// Fetches all relevant liquidity for the specified token pairs. Handles
+    /// failures by logging and returning an empty vector.
+    pub async fn fetch(&self, pairs: &HashSet<liquidity::TokenPair>) -> Vec<liquidity::Liquidity> {
+        match self.inner.fetch(pairs).await {
+            Ok(liquidity) => liquidity,
+            Err(e) => {
+                tracing::warn!(?e, "failed to fetch liquidity");
+                Default::default()
+            }
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, liquidity},
         util::serialize,
         Solver,
     },
@@ -14,6 +14,7 @@ impl Solution {
     pub fn into_domain(
         self,
         auction: &competition::Auction,
+        liquidity: &[liquidity::Liquidity],
         solver: Solver,
     ) -> Result<competition::Solution, super::Error> {
         Ok(competition::Solution {
@@ -150,8 +151,7 @@ impl Solution {
                         ))
                     }
                     Interaction::Liquidity(interaction) => {
-                        let liquidity = auction
-                            .liquidity
+                        let liquidity = liquidity
                             .iter()
                             .find(|liquidity| liquidity.id == interaction.id)
                             .ok_or(super::Error(

@@ -2,7 +2,9 @@ use {
     self::solution::settlement,
     crate::{
         boundary,
+        domain::liquidity,
         infra::{
+            self,
             blockchain::Ethereum,
             mempool,
             solver::{self, Solver},
@@ -11,7 +13,7 @@ use {
             Simulator,
         },
     },
-    std::sync::Mutex,
+    std::{collections::HashSet, sync::Mutex},
 };
 
 pub mod auction;
@@ -33,6 +35,7 @@ pub use {
 pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
+    pub liquidity: infra::liquidity::Fetcher,
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
@@ -42,9 +45,10 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
+        let liquidity = self.liquidity.fetch(&Self::liquidity_pairs(auction)).await;
         let solution = self
             .solver
-            .solve(auction, auction.deadline.timeout(self.now)?)
+            .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
             .await?;
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
@@ -77,8 +81,19 @@ impl Competition {
             .map_err(Into::into)
     }
 
-    fn expiration_time() -> std::time::Duration {
-        std::time::Duration::from_secs(60 * 60)
+    /// Returns token pairs for liquidity relevant to a solver competition for
+    /// the specified auction.
+    fn liquidity_pairs(auction: &Auction) -> HashSet<liquidity::TokenPair> {
+        auction
+            .orders
+            .iter()
+            .filter_map(|order| match order.kind {
+                order::Kind::Market | order::Kind::Limit { .. } => {
+                    liquidity::TokenPair::new(order.sell.token, order.buy.token)
+                }
+                order::Kind::Liquidity => None,
+            })
+            .collect()
     }
 }
 

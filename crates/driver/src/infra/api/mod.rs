@@ -51,16 +51,18 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
+                eth: self.eth.clone(),
                 solver: solver.clone(),
-                liquidity: self.liquidity.clone(),
                 competition: domain::Competition {
                     solver,
                     eth: self.eth.clone(),
+                    liquidity: self.liquidity.clone(),
                     simulator: self.simulator.clone(),
                     now: self.now,
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
                 },
+                liquidity: self.liquidity.clone(),
                 now: self.now,
             })));
             app = app.nest(&format!("/{name}"), router);
@@ -79,16 +81,20 @@ impl Api {
 struct State(Arc<Inner>);
 
 impl State {
+    fn eth(&self) -> &Ethereum {
+        &self.0.eth
+    }
+
     fn solver(&self) -> &Solver {
         &self.0.solver
     }
 
-    fn liquidity(&self) -> &liquidity::Fetcher {
-        &self.0.liquidity
-    }
-
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
+    }
+
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.0.liquidity
     }
 
     fn now(&self) -> time::Now {
@@ -98,8 +104,9 @@ impl State {
 
 #[derive(Debug)]
 struct Inner {
+    eth: Ethereum,
     solver: Solver,
-    liquidity: liquidity::Fetcher,
     competition: domain::Competition,
+    liquidity: liquidity::Fetcher,
     now: time::Now,
 }

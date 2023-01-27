@@ -8,10 +8,10 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self) -> quote::Order {
-        quote::Order {
-            sell_token: self.sell_token.into(),
-            buy_token: self.buy_token.into(),
+    pub fn into_domain(self) -> Result<quote::Order, Error> {
+        Ok(quote::Order {
+            tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into())
+                .map_err(|quote::SameTokens| Error::SameTokens)?,
             amount: self.amount.into(),
             side: match self.kind {
                 Kind::Sell => competition::order::Side::Sell,
@@ -19,7 +19,7 @@ impl Order {
             },
             gas_price: self.effective_gas_price.into(),
             deadline: self.deadline.into(),
-        }
+        })
     }
 }
 
@@ -42,4 +42,10 @@ pub struct Order {
 enum Kind {
     Sell,
     Buy,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("received an order with identical buy and sell tokens")]
+    SameTokens,
 }

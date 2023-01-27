@@ -167,7 +167,7 @@ impl Driver {
                         .await
                     {
                         Ok(inner) => {
-                            inner.map_err(|err| SolverRunError::Solving(format!("{:?}", err)))
+                            inner.map_err(|err| SolverRunError::Solving(format!("{err:?}")))
                         }
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };

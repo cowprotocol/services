@@ -116,7 +116,7 @@ mod tests {
         let cancellation = OrderCancellation::default();
 
         let request = request()
-            .path(&format!("/v1/orders/{:}", cancellation.order_uid))
+            .path(&format!("/v1/orders/{}", cancellation.order_uid))
             .method("DELETE")
             .header("content-type", "application/json")
             .json(&CancellationPayload {

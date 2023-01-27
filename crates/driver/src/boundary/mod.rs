@@ -24,6 +24,7 @@
 
 pub mod liquidity;
 pub mod mempool;
+pub mod quote;
 pub mod settlement;
 
 pub use {

@@ -343,7 +343,7 @@ mod tests {
             .next()
             .unwrap()
             .unwrap();
-        println!("{}", result);
+        println!("{result}");
         assert!(result >= U256::from(811));
 
         let call_result = fetcher.can_transfer_call(token, owner, 811.into()).await;

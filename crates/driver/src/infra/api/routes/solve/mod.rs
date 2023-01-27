@@ -12,7 +12,7 @@ async fn route(
     state: axum::extract::State<State>,
     auction: axum::Json<dto::Auction>,
 ) -> Result<axum::Json<dto::Solution>, axum::Json<Error>> {
-    let auction = auction.0.into_domain(state.liquidity()).await?;
+    let auction = auction.0.into_domain()?;
     let competition = state.competition();
     let (solution_id, score) = competition.solve(&auction).await?;
     Ok(axum::Json(dto::Solution::from_domain(solution_id, score)))

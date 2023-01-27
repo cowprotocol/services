@@ -79,20 +79,20 @@ mod tests {
     async fn postgres_fixed_bytes() {
         const TABLE: &str = "fixed_bytes_test";
         let db = PgPool::connect("postgresql://").await.unwrap();
-        db.execute(format!("CREATE TABLE IF NOT EXISTS {} (bytes bytea);", TABLE).as_str())
+        db.execute(format!("CREATE TABLE IF NOT EXISTS {TABLE} (bytes bytea);").as_str())
             .await
             .unwrap();
-        db.execute(format!("TRUNCATE {};", TABLE).as_str())
+        db.execute(format!("TRUNCATE {TABLE};").as_str())
             .await
             .unwrap();
 
         let data: ByteArray<3> = ByteArray([1, 2, 3]);
-        sqlx::query(&format!("INSERT INTO {} (bytes) VALUES ($1);", TABLE))
+        sqlx::query(&format!("INSERT INTO {TABLE} (bytes) VALUES ($1);"))
             .bind(&data)
             .execute(&db)
             .await
             .unwrap();
-        let query = format!("SELECT * FROM {} LIMIT 1;", TABLE);
+        let query = format!("SELECT * FROM {TABLE} LIMIT 1;");
 
         // unprepared raw query
         let row = db.fetch_one(query.as_str()).await.unwrap();

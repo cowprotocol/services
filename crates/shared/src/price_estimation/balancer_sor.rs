@@ -116,7 +116,7 @@ mod tests {
             kind: OrderKind::Sell,
         };
         let result = single_estimate(&estimator, &query).await;
-        println!("{:?}", result);
+        println!("{result:?}");
         result.unwrap();
     }
 }
