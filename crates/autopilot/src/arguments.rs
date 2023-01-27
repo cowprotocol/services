@@ -143,6 +143,10 @@ pub struct Arguments {
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
+
+    /// The time in seconds between new blocks on the network.
+    #[clap(long, env, value_parser = shared::arguments::duration_from_seconds)]
+    pub network_block_interval: Option<Duration>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -199,6 +203,13 @@ impl std::fmt::Display for Arguments {
             f,
             "limit_order_quoter_parallelism: {:?}",
             self.limit_order_quoter_parallelism
+        )?;
+        display_option(
+            f,
+            "network_block_interval",
+            &self
+                .network_block_interval
+                .map(|duration| duration.as_secs_f32()),
         )?;
         Ok(())
     }
