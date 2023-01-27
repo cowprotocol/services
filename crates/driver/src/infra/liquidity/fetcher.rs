@@ -1,11 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{competition, competition::order, liquidity, quote},
-        infra::{self, blockchain::Ethereum, liquidity::TokenPair},
+        domain::liquidity,
+        infra::{self, blockchain::Ethereum},
     },
-    itertools::Itertools,
-    std::sync::Arc,
+    std::{collections::HashSet, sync::Arc},
 };
 
 /// Fetch liquidity for auctions to be sent to solver engines.
@@ -24,33 +23,12 @@ impl Fetcher {
         })
     }
 
-    /// Fetches all relevant liquidity for the orders.
-    pub async fn for_auction(
+    /// Fetches all relevant liquidity for the specified token pairs.
+    pub async fn fetch(
         &self,
-        auction: &competition::Auction,
+        pairs: &HashSet<liquidity::TokenPair>,
     ) -> Result<Vec<liquidity::Liquidity>, Error> {
-        let pairs = auction
-            .orders
-            .iter()
-            .filter_map(|order| match order.kind {
-                order::Kind::Market | order::Kind::Limit { .. } => {
-                    TokenPair::new(order.sell.token, order.buy.token)
-                }
-                order::Kind::Liquidity => None,
-            })
-            .collect_vec();
-        let liquidity = self.inner.fetch(&pairs).await?;
-        Ok(liquidity)
-    }
-
-    /// Fetches all liquidity relevant for a quote.
-    pub async fn for_quote(
-        &self,
-        quote: &quote::Order,
-    ) -> Result<Vec<liquidity::Liquidity>, Error> {
-        let pair = TokenPair::new(quote.tokens.sell(), quote.tokens.buy())
-            .expect("sell != buy by construction");
-        let liquidity = self.inner.fetch(&[pair]).await?;
+        let liquidity = self.inner.fetch(pairs).await?;
         Ok(liquidity)
     }
 }

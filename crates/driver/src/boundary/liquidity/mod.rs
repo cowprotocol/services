@@ -18,6 +18,7 @@ use {
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     },
     std::{
+        collections::HashSet,
         num::{NonZeroU64, NonZeroUsize},
         sync::Arc,
         time::Duration,
@@ -86,7 +87,7 @@ impl Fetcher {
     /// Fetches liquidity for the specified auction.
     pub async fn fetch(
         &self,
-        pairs: &[infra::liquidity::TokenPair],
+        pairs: &HashSet<liquidity::TokenPair>,
     ) -> Result<Vec<liquidity::Liquidity>> {
         let pairs = pairs
             .iter()

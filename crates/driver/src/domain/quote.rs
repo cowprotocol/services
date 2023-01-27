@@ -1,14 +1,18 @@
-use crate::{
-    domain::{
-        competition::{self, order, solution},
-        eth,
-        liquidity,
+use {
+    crate::{
+        domain::{
+            competition::{self, order, solution},
+            eth,
+            liquidity,
+        },
+        infra::{
+            self,
+            solver::{self, Solver},
+            time,
+        },
+        util::{self, conv},
     },
-    infra::{
-        solver::{self, Solver},
-        time,
-    },
-    util::{self, conv},
+    std::{collections::HashSet, iter},
 };
 
 pub const FAKE_AUCTION_REWARD: f64 = 35.;
@@ -71,12 +75,13 @@ impl Order {
     pub async fn quote(
         &self,
         solver: &Solver,
-        liquidity: &[liquidity::Liquidity],
+        liquidity: &infra::liquidity::Fetcher,
         now: time::Now,
     ) -> Result<Quote, Error> {
+        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await?;
         let timeout = self.deadline.timeout(now)?;
         let solution = solver
-            .solve(&self.fake_auction(), liquidity, timeout)
+            .solve(&self.fake_auction(), &liquidity, timeout)
             .await?;
         Quote::new(self, solution)
     }
@@ -139,6 +144,13 @@ impl Order {
                 token: self.tokens.sell,
             },
         }
+    }
+
+    /// Returns the token pairs to fetch liquidity for.
+    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
+        let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
+            .expect("sell != buy by construction");
+        iter::once(pair).into_iter().collect()
     }
 }
 
@@ -206,6 +218,8 @@ pub enum Error {
     DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("liquidity fetcher error: {0:?}")]
+    Liquidity(#[from] infra::liquidity::fetcher::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

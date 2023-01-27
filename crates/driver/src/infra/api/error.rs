@@ -4,7 +4,7 @@ use {
             competition::{self, solution},
             quote,
         },
-        infra::{self, api},
+        infra::api,
     },
     serde::Serialize,
 };
@@ -60,6 +60,7 @@ impl From<quote::Error> for axum::Json<Error> {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
+            quote::Error::Liquidity(_) => Kind::LiquidityError,
         };
         error.into()
     }
@@ -98,11 +99,5 @@ impl From<api::routes::OrderError> for axum::Json<Error> {
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,
         };
         error.into()
-    }
-}
-
-impl From<infra::liquidity::fetcher::Error> for axum::Json<Error> {
-    fn from(_: infra::liquidity::fetcher::Error) -> Self {
-        Kind::LiquidityError.into()
     }
 }
