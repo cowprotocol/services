@@ -590,7 +590,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             quoting_age: limit_order_age,
             validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
             database: db,
-            quote_unfunded_orders: !args.skip_quoting_unfunded_orders
+            quote_unfunded_orders: !args.skip_quoting_unfunded_orders,
         }
         .spawn();
     }

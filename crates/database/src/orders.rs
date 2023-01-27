@@ -2093,7 +2093,9 @@ mod tests {
         );
 
         // Metrics discard unfunded orders if we configure them so.
-        update_has_sufficient_balance_flag(&mut db, &order_uid, false).await.unwrap();
+        update_has_sufficient_balance_flag(&mut db, &order_uid, false)
+            .await
+            .unwrap();
         assert_eq!(
             count_limit_orders_with_outdated_fees(&mut db, timestamp, 2, false)
                 .await

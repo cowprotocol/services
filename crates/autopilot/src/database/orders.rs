@@ -201,7 +201,11 @@ impl Postgres {
         Ok(database::orders::count_limit_orders(&mut ex, now_in_epoch_seconds().into()).await?)
     }
 
-    pub async fn count_limit_orders_with_outdated_fees(&self, age: Duration, quote_unfunded_orders: bool) -> Result<i64> {
+    pub async fn count_limit_orders_with_outdated_fees(
+        &self,
+        age: Duration,
+        quote_unfunded_orders: bool,
+    ) -> Result<i64> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["count_limit_orders_with_outdated_fees"])
