@@ -1,4 +1,4 @@
-use crate::domain::eth;
+use {crate::domain::eth, std::cmp::Ordering};
 
 pub mod balancer;
 pub mod swapr;
@@ -56,4 +56,25 @@ pub enum Kind {
     BalancerV2Weighted(balancer::weighted::Pool),
     Swapr(swapr::Pool),
     ZeroEx(zeroex::LimitOrder),
+}
+
+/// An ordered token pair.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TokenPair(eth::TokenAddress, eth::TokenAddress);
+
+impl TokenPair {
+    /// Returns a token pair for the given tokens, or `None` if `a` and `b` are
+    /// equal.
+    pub fn new(a: eth::TokenAddress, b: eth::TokenAddress) -> Option<Self> {
+        match a.cmp(&b) {
+            Ordering::Less => Some(Self(a, b)),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(Self(b, a)),
+        }
+    }
+
+    /// Returns the wrapped token pair as a tuple.
+    pub fn get(&self) -> (eth::TokenAddress, eth::TokenAddress) {
+        (self.0, self.1)
+    }
 }
