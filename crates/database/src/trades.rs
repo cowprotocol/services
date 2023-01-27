@@ -212,7 +212,7 @@ mod tests {
             .await
             .unwrap();
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
+        println!("{elapsed:?}");
         assert!(elapsed < std::time::Duration::from_secs(1));
     }
 

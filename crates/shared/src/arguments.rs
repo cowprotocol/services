@@ -298,7 +298,7 @@ pub fn display_option(
 ) -> std::fmt::Result {
     write!(f, "{name}: ")?;
     match option {
-        Some(display) => writeln!(f, "{}", display),
+        Some(display) => writeln!(f, "{display}"),
         None => writeln!(f, "None"),
     }
 }
@@ -536,17 +536,17 @@ mod test {
         let y = "0x0101010101010101010101010101010101010101010101010101010101010101";
         // without spaces
         assert_eq!(
-            parse_partner_fee_factor(&format!("{}:0.5,{}:0.7", x, y)).unwrap(),
+            parse_partner_fee_factor(&format!("{x}:0.5,{y}:0.7")).unwrap(),
             hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
         );
         // with spaces
         assert_eq!(
-            parse_partner_fee_factor(&format!("{}: 0.5, {}: 0.7", x, y)).unwrap(),
+            parse_partner_fee_factor(&format!("{x}: 0.5, {y}: 0.7")).unwrap(),
             hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
         );
         // whole numbers
         assert_eq!(
-            parse_partner_fee_factor(&format!("{}: 1, {}: 2", x, y)).unwrap(),
+            parse_partner_fee_factor(&format!("{x}: 1, {y}: 2")).unwrap(),
             hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
         );
     }

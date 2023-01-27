@@ -5,7 +5,7 @@ mod solve;
 
 pub(super) use {
     info::info,
-    quote::quote,
+    quote::{quote, OrderError},
     settle::settle,
     solve::{solve, AuctionError},
 };

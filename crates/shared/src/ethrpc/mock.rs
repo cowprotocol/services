@@ -101,7 +101,7 @@ fn extract_call(call: Call) -> (String, Vec<Value>) {
             params: Params::Array(params),
             ..
         }) => (method, params),
-        _ => panic!("unexpected call {:?}", call),
+        _ => panic!("unexpected call {call:?}"),
     }
 }
 

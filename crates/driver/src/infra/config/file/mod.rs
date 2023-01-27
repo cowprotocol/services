@@ -3,7 +3,6 @@ use {
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
-    std::net::SocketAddr,
 };
 
 mod load;
@@ -34,10 +33,6 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
-}
-
-fn default_bind() -> SocketAddr {
-    "0.0.0.0:11088".parse().unwrap()
 }
 
 #[derive(Debug, Default, Deserialize)]

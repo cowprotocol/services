@@ -339,7 +339,7 @@ fn generate_contract_with_config(
     config(ContractBuilder::new().visibility_modifier("pub"))
         .generate(&contract)
         .unwrap()
-        .write_to_file(Path::new(&dest).join(format!("{}.rs", name)))
+        .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
         .unwrap();
 }
 
