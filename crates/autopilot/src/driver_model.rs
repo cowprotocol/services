@@ -75,17 +75,20 @@ pub mod solve {
 }
 
 pub mod execute {
+    use derivative::Derivative;
     use model::{bytes_hex, order::OrderUid, u256_decimal};
     use primitive_types::{H160, U256};
     use serde::{Deserialize, Serialize};
     use serde_with::{serde_as, DisplayFromStr};
     use std::collections::BTreeMap;
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Derivative, Default, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
+    #[derivative(Debug)]
     pub struct Request {
         pub auction_id: i64,
         #[serde(with = "bytes_hex")]
+        #[derivative(Debug(format_with = "shared::debug_bytes"))]
         pub transaction_identifier: Vec<u8>,
     }
 
