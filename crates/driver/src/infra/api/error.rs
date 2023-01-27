@@ -21,7 +21,6 @@ enum Kind {
     TransactionPublishingFailed,
     InvalidAuctionId,
     MissingSurplusFee,
-    LiquidityError,
     QuoteSameTokens,
 }
 
@@ -44,7 +43,6 @@ impl From<Kind> for axum::Json<Error> {
             Kind::TransactionPublishingFailed => "Failed to publish the settlement transaction",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
-            Kind::LiquidityError => "Failed to fetch onchain liquidity",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
         };
         axum::Json(Error {
@@ -60,7 +58,6 @@ impl From<quote::Error> for axum::Json<Error> {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
-            quote::Error::Liquidity(_) => Kind::LiquidityError,
             quote::Error::Boundary(_) => Kind::Unknown,
         };
         error.into()
@@ -78,7 +75,6 @@ impl From<competition::Error> for axum::Json<Error> {
             competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
-            competition::Error::Liquidity(_) => Kind::LiquidityError,
         };
         error.into()
     }

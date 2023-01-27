@@ -81,7 +81,7 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         now: time::Now,
     ) -> Result<Quote, Error> {
-        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await?;
+        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let timeout = self.deadline.timeout(now)?;
         let solution = solver
             .solve(&self.fake_auction(), &liquidity, timeout)
@@ -221,8 +221,6 @@ pub enum Error {
     DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
-    #[error("liquidity fetcher error: {0:?}")]
-    Liquidity(#[from] infra::liquidity::fetcher::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
 }
