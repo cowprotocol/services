@@ -193,7 +193,7 @@ fn handle_batch_response(
     ids.iter()
         .map(|id| {
             outputs.remove(id).ok_or_else(|| {
-                Web3Error::InvalidResponse(format!("batch response is missing id {}", id))
+                Web3Error::InvalidResponse(format!("batch response is missing id {id}"))
             })
         })
         .collect()

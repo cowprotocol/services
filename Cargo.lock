@@ -187,6 +187,7 @@ dependencies = [
  "clap 4.0.8",
  "contracts",
  "database",
+ "derivative",
  "ethcontract",
  "futures",
  "gas-estimation",

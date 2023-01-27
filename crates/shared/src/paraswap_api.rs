@@ -724,7 +724,7 @@ mod tests {
             "Too much slippage on quote, please try again",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{}\"}}", liquidity_error)),
+                parse(&format!("{{\"error\": \"{liquidity_error}\"}}")),
                 Err(ParaswapResponseError::InsufficientLiquidity(message)) if &message == liquidity_error,
             ));
         }
@@ -737,7 +737,7 @@ mod tests {
             "It seems like the rate has changed, please re-query the latest Price",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{}\"}}", retryable_error)),
+                parse(&format!("{{\"error\": \"{retryable_error}\"}}")),
                 Err(ParaswapResponseError::Retryable(message)) if &message == retryable_error,
             ));
         }

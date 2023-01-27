@@ -124,7 +124,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             tracing::warn!("balancer contracts are not deployed on this network");
             None
         }
-        Err(err) => panic!("failed to get balancer vault contract: {}", err),
+        Err(err) => panic!("failed to get balancer vault contract: {err}"),
     };
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
@@ -595,5 +595,5 @@ pub async fn main(args: arguments::Arguments) -> ! {
     }
 
     let result = serve_metrics.await;
-    panic!("serve_metrics exited {:?}", result);
+    panic!("serve_metrics exited {result:?}");
 }

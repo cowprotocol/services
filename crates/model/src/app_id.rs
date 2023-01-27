@@ -50,8 +50,7 @@ impl<'de> Deserialize<'de> for AppId {
         let s = Cow::<str>::deserialize(deserializer)?;
         let value = s.parse().map_err(|err| {
             de::Error::custom(format!(
-                "failed to decode {:?} as hex appdata 32 bytes: {}",
-                s, err
+                "failed to decode {s:?} as hex appdata 32 bytes: {err}"
             ))
         })?;
         Ok(value)

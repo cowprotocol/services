@@ -396,7 +396,7 @@ mod tests {
                             addr!("2222222222222222222222222222222222222222") => {
                                 Err(web3::Error::Decoder("test error".to_string()))
                             }
-                            token => panic!("call to unexpected token {:?}", token),
+                            token => panic!("call to unexpected token {token:?}"),
                         }
                     })
                     .collect())

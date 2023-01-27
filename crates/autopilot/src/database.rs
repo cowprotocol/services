@@ -5,6 +5,7 @@ mod events;
 pub mod onchain_order_events;
 pub mod orders;
 mod quotes;
+pub mod recent_settlements;
 
 use sqlx::{PgConnection, PgPool};
 use std::time::Duration;
@@ -29,7 +30,7 @@ impl Postgres {
 }
 
 async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
-    let query = format!("SELECT COUNT(*) FROM {};", table);
+    let query = format!("SELECT COUNT(*) FROM {table};");
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 

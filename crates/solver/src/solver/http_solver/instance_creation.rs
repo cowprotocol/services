@@ -324,7 +324,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
                             })
                             .collect::<Result<_>>()
                             .with_context(|| {
-                                format!("error converting stable pool to solver model: {:?}", amm)
+                                format!("error converting stable pool to solver model: {amm:?}")
                             })?,
                         amplification_parameter: amm.amplification_parameter.as_big_rational(),
                     }),
