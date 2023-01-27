@@ -487,9 +487,8 @@ async fn parse_general_onchain_order_placement_data<'a>(
                 Err(err) => {
                     let err_label = err.to_metrics_label();
                     tracing::debug!(
-                        "Could not retrieve a quote for order {:?}: {}",
+                        "Could not retrieve a quote for order {:?}: {err_label}",
                         order_data.1.uid,
-                        err_label
                     );
                     metrics.inc_onchain_order_errors(err_label);
                     None
@@ -509,7 +508,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
         .into_iter()
         .filter_map(|data| match data {
             Err(err) => {
-                tracing::debug!("Error while parsing onchain orders: {:}", err);
+                tracing::debug!("Error while parsing onchain orders: {err:?}");
                 None
             }
             Ok(data) => Some(data),

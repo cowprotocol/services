@@ -188,7 +188,7 @@ impl HttpSolver {
         settled.add_missing_execution_plans();
 
         tracing::debug!(
-            "Solution received from http solver {} (json):\n{:}",
+            "Solution received from http solver {} (json):\n{}",
             self.solver.name,
             serde_json::to_string_pretty(&settled).unwrap()
         );
