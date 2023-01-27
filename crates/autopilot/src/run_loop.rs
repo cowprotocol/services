@@ -3,7 +3,9 @@ use chrono::Utc;
 use model::auction::{Auction, AuctionId};
 use primitive_types::H256;
 use rand::seq::SliceRandom;
-use shared::{current_block::CurrentBlockStream, ethrpc::Web3};
+use shared::{
+    current_block::CurrentBlockStream, ethrpc::Web3, event_handling::MAX_REORG_BLOCK_COUNT,
+};
 use std::{collections::HashSet, time::Duration};
 use tracing::Instrument;
 use web3::types::Transaction;
@@ -146,7 +148,7 @@ impl RunLoop {
     pub async fn wait_for_settlement_transaction(&self, tag: &[u8]) -> Result<Option<Transaction>> {
         // Start earlier than current block because there might be a delay when receiving the
         // Solver's /execute response during which it already started broadcasting the tx.
-        let start_offset = 10;
+        let start_offset = MAX_REORG_BLOCK_COUNT;
         let max_wait_time = 20;
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
