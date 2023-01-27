@@ -5,6 +5,7 @@ mod events;
 pub mod onchain_order_events;
 pub mod orders;
 mod quotes;
+pub mod recent_settlements;
 
 use sqlx::{PgConnection, PgPool};
 use std::time::Duration;
