@@ -1,5 +1,3 @@
-// TODO Remove dead_code ASAP
-#![allow(dead_code)]
 #![forbid(unsafe_code)]
 
 use {
