@@ -74,6 +74,7 @@ impl From<competition::Error> for axum::Json<Error> {
             competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
+            competition::Error::Liquidity(_) => Kind::LiquidityError,
         };
         error.into()
     }
@@ -84,7 +85,6 @@ impl From<api::routes::AuctionError> for axum::Json<Error> {
         let error = match value {
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
-            api::routes::AuctionError::Liquidity(_) => Kind::LiquidityError,
         };
         error.into()
     }

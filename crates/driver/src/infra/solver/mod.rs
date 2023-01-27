@@ -3,6 +3,7 @@ use {
         domain::{
             competition::{auction::Auction, solution::Solution, SolverTimeout},
             eth,
+            liquidity,
         },
         infra,
         util,
@@ -106,10 +107,13 @@ impl Solver {
     pub async fn solve(
         &self,
         auction: &Auction,
+        liquidity: &[liquidity::Liquidity],
         timeout: SolverTimeout,
     ) -> Result<Solution, Error> {
-        let body =
-            serde_json::to_string(&dto::Auction::from_domain(auction, timeout, self.now)).unwrap();
+        let body = serde_json::to_string(&dto::Auction::from_domain(
+            auction, liquidity, timeout, self.now,
+        ))
+        .unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
         let req = self
             .client
@@ -119,7 +123,8 @@ impl Solver {
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
-        res.into_domain(auction, self.clone()).map_err(Into::into)
+        res.into_domain(auction, liquidity, self.clone())
+            .map_err(Into::into)
     }
 }
 

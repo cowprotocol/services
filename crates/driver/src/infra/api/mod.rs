@@ -52,10 +52,10 @@ impl Api {
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
                 solver: solver.clone(),
-                liquidity: self.liquidity.clone(),
                 competition: domain::Competition {
                     solver,
                     eth: self.eth.clone(),
+                    liquidity: self.liquidity.clone(),
                     simulator: self.simulator.clone(),
                     now: self.now,
                     mempools: self.mempools.clone(),
@@ -83,10 +83,6 @@ impl State {
         &self.0.solver
     }
 
-    fn liquidity(&self) -> &liquidity::Fetcher {
-        &self.0.liquidity
-    }
-
     fn competition(&self) -> &domain::Competition {
         &self.0.competition
     }
@@ -99,7 +95,6 @@ impl State {
 #[derive(Debug)]
 struct Inner {
     solver: Solver,
-    liquidity: liquidity::Fetcher,
     competition: domain::Competition,
     now: time::Now,
 }
