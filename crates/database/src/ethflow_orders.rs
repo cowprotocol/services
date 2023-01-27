@@ -449,7 +449,7 @@ mod tests {
         let now = std::time::Instant::now();
         refundable_orders(&mut db, 1, 1, 1.0).await.unwrap();
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
+        println!("{elapsed:?}");
         assert!(elapsed < std::time::Duration::from_secs(1));
     }
 }

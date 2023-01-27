@@ -171,8 +171,15 @@ impl Solver for SingleOrderSolver {
         };
 
         // Subtract a small amount of time to ensure that the driver doesn't reach the deadline first.
-        let _ = tokio::time::timeout_at((auction.deadline - Duration::from_secs(1)).into(), settle)
-            .await;
+        let _ = tokio::time::timeout_at(
+            auction
+                .deadline
+                .checked_sub(Duration::from_secs(1))
+                .unwrap()
+                .into(),
+            settle,
+        )
+        .await;
 
         // Keep at most this many settlements. This is important in case where a solver produces
         // a large number of settlements which would hold up the driver logic when simulating

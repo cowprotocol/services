@@ -191,8 +191,7 @@ impl TraceCallDetector {
 
         if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
             return Ok(TokenQuality::bad(format!(
-                "can't approve max amount: {}",
-                err
+                "can't approve max amount: {err}"
             )));
         }
 
@@ -609,13 +608,13 @@ mod tests {
         println!("testing good tokens");
         for &token in base_tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
 
         println!("testing bad tokens");
         for &token in bad_tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
     }
 
@@ -770,7 +769,7 @@ mod tests {
 
         for token in tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
     }
 }

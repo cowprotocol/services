@@ -107,7 +107,7 @@ impl Inner {
         referrer_address: Option<H160>,
         spender_max_age: Duration,
     ) -> Self {
-        let outdated_timestamp = Instant::now() - spender_max_age;
+        let outdated_timestamp = Instant::now().checked_sub(spender_max_age).unwrap();
         let outdated_cache_entry = (H160::default(), outdated_timestamp);
 
         Self {

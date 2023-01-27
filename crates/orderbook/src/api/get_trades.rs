@@ -86,7 +86,7 @@ mod tests {
         };
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
-        let owner_path = format!("/v1/trades?owner=0x{:x}", owner);
+        let owner_path = format!("/v1/trades?owner=0x{owner:x}");
         let result = trade_filter(request().path(owner_path.as_str()))
             .await
             .unwrap()
@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(result.order_uid, None);
 
         let uid = OrderUid([1u8; 56]);
-        let order_uid_path = format!("/v1/trades?orderUid={:}", uid);
+        let order_uid_path = format!("/v1/trades?orderUid={uid:}");
         let result = trade_filter(request().path(order_uid_path.as_str()))
             .await
             .unwrap()
@@ -113,7 +113,7 @@ mod tests {
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
         let uid = OrderUid([1u8; 56]);
-        let path = format!("/v1/trades?owner=0x{:x}&orderUid={:}", owner, uid);
+        let path = format!("/v1/trades?owner=0x{owner:x}&orderUid={uid:}");
 
         let result = trade_filter(request().path(path.as_str())).await.unwrap();
         assert!(result.is_err());

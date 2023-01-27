@@ -101,7 +101,7 @@ async fn main() -> ! {
             tracing::warn!("balancer contracts are not deployed on this network");
             None
         }
-        Err(err) => panic!("failed to get balancer vault contract: {}", err),
+        Err(err) => panic!("failed to get balancer vault contract: {err}"),
     };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
@@ -472,8 +472,8 @@ async fn main() -> ! {
 
     futures::pin_mut!(serve_api);
     tokio::select! {
-        result = &mut serve_api => panic!("API task exited {:?}", result),
-        result = metrics_task => panic!("metrics task exited {:?}", result),
+        result = &mut serve_api => panic!("API task exited {result:?}"),
+        result = metrics_task => panic!("metrics task exited {result:?}"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");

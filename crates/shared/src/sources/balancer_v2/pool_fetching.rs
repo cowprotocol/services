@@ -507,7 +507,7 @@ mod tests {
         let web3 = Web3::new(transport);
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
-        println!("Indexing events for chain {}", chain_id);
+        println!("Indexing events for chain {chain_id}");
         crate::tracing::initialize_for_tests("warn,shared=debug");
 
         let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);

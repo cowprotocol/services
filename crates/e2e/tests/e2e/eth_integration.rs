@@ -122,7 +122,7 @@ async fn eth_integration(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_buy_eth_a)
         .send()
         .await;
@@ -143,7 +143,7 @@ async fn eth_integration(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_buy_eth_b)
         .send()
         .await;

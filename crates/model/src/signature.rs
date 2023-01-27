@@ -394,15 +394,13 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
             {
                 let s = s.strip_prefix("0x").ok_or_else(|| {
                     de::Error::custom(format!(
-                        "{:?} can't be decoded as hex ecdsa signature because it does not start with '0x'",
-                        s
+                        "{s:?} can't be decoded as hex ecdsa signature because it does not start with '0x'"
                     ))
                 })?;
                 let mut bytes = [0u8; 65];
                 hex::decode_to_slice(s, &mut bytes).map_err(|err| {
                     de::Error::custom(format!(
-                        "failed to decode {:?} as hex ecdsa signature: {}",
-                        s, err
+                        "failed to decode {s:?} as hex ecdsa signature: {err}"
                     ))
                 })?;
                 Ok(EcdsaSignature::from_bytes(&bytes))
