@@ -164,7 +164,13 @@ impl RunLoop {
         // We do keep track of hashes we have already seen to reduce load from the node.
 
         let mut seen_transactions: HashSet<H256> = Default::default();
-        while self.current_block.borrow().number <= deadline {
+        loop {
+            // This could be a while loop. It isn't, because some care must be taken to not
+            // accidentally keep the borrow alive, which would block senders. Technically this is
+            // fine with while conditions but this is clearer.
+            if self.current_block.borrow().number <= deadline {
+                break;
+            }
             let mut hashes = self
                 .database
                 .recent_settlement_tx_hashes(start..deadline + 1)
