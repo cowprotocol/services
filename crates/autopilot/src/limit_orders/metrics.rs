@@ -11,6 +11,7 @@ pub struct LimitOrderMetrics {
     /// At that age the [`SolvableOrdersCache`] would consider a `surplus_fee` too old.
     pub validity_age: chrono::Duration,
     pub database: Postgres,
+    pub quote_unfunded_orders: bool,
 }
 
 impl LimitOrderMetrics {

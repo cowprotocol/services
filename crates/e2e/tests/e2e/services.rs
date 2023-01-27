@@ -194,7 +194,7 @@ impl OrderbookServices {
             signature_validator: signature_validator.clone(),
             domain_separator: contracts.domain_separator,
             parallelism: 2,
-            skip_quoting_unfunded_orders: true,
+            quote_unfunded_orders: false,
         }
         .spawn();
         BalanceTracker::new(balance_fetcher.clone(), autopilot_db.clone())

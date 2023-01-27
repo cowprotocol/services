@@ -29,7 +29,7 @@ pub struct LimitOrderQuoter {
     pub signature_validator: Arc<dyn SignatureValidating>,
     pub domain_separator: DomainSeparator,
     pub parallelism: usize,
-    pub skip_quoting_unfunded_orders: bool,
+    pub quote_unfunded_orders: bool,
 }
 
 impl LimitOrderQuoter {
@@ -64,7 +64,7 @@ impl LimitOrderQuoter {
             .order_specs_with_outdated_fees(
                 self.limit_order_age,
                 self.parallelism,
-                !self.skip_quoting_unfunded_orders,
+                self.quote_unfunded_orders,
             )
             .await?;
         futures::stream::iter(&order_specs)
