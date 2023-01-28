@@ -94,6 +94,17 @@ pub struct Arguments {
     )]
     pub native_price_cache_max_age_secs: Duration,
 
+    /// How long before expiry the native price cache should try to update the price in the
+    /// background. This is useful to make sure that prices are usable at all times.
+    /// This value has to be smaller than `--native-price-cache-max-age-secs`.
+    #[clap(
+        long,
+        env,
+        default_value = "2",
+        value_parser = crate::arguments::duration_from_seconds,
+    )]
+    pub native_price_prefetch_time_secs: Duration,
+
     /// How many cached native token prices can be updated at most in one maintenance cycle.
     #[clap(long, env, default_value = "3")]
     pub native_price_cache_max_update_size: usize,
@@ -149,6 +160,11 @@ impl Display for Arguments {
             f,
             "native_price_cache_max_age_secs: {:?}",
             self.native_price_cache_max_age_secs
+        )?;
+        writeln!(
+            f,
+            "native_price_prefetch_time_secs: {:?}",
+            self.native_price_prefetch_time_secs
         )?;
         writeln!(
             f,

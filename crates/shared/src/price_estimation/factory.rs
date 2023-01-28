@@ -322,6 +322,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
+        anyhow::ensure!(
+            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            "price cache prefetch time needs to be less than price cache max age"
+        );
         let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
@@ -333,7 +337,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_max_age_secs,
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
-            None,
+            self.args.native_price_prefetch_time_secs,
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)
