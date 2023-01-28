@@ -51,7 +51,7 @@ impl Inner {
                     // will fetch the price during the next maintenance cycle.
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
-                    let outdated_timestamp = now - *max_age;
+                    let outdated_timestamp = now.checked_sub(*max_age).unwrap();
                     entry.insert(CachedPrice {
                         price: 0.,
                         updated_at: outdated_timestamp,

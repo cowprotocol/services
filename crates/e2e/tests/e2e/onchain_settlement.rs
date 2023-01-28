@@ -149,7 +149,7 @@ async fn onchain_settlement(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_a)
         .send()
         .await;
@@ -171,7 +171,7 @@ async fn onchain_settlement(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_b)
         .send()
         .await;

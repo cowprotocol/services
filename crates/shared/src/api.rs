@@ -242,7 +242,7 @@ impl IntoWarpReply for PriceEstimationError {
     fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
             Self::UnsupportedToken(token) => with_status(
-                error("UnsupportedToken", format!("Token address {:?}", token)),
+                error("UnsupportedToken", format!("Token address {token:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             Self::NoLiquidity => with_status(

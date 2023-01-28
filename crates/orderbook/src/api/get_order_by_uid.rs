@@ -46,9 +46,7 @@ mod tests {
     #[tokio::test]
     async fn get_order_by_uid_request_ok() {
         let uid = OrderUid::default();
-        let request = request()
-            .path(&format!("/v1/orders/{:}", uid))
-            .method("GET");
+        let request = request().path(&format!("/v1/orders/{uid}")).method("GET");
         let filter = get_order_by_uid_request();
         let result = request.filter(&filter).await.unwrap();
         assert_eq!(result, uid);

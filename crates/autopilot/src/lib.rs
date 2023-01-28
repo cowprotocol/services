@@ -124,7 +124,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             tracing::warn!("balancer contracts are not deployed on this network");
             None
         }
-        Err(err) => panic!("failed to get balancer vault contract: {}", err),
+        Err(err) => panic!("failed to get balancer vault contract: {err}"),
     };
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
@@ -143,6 +143,10 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
+    let _network_time_between_blocks = args
+        .network_block_interval
+        .or_else(|| shared::network::block_interval(&network, chain_id))
+        .expect("unknown network block interval");
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
@@ -591,5 +595,5 @@ pub async fn main(args: arguments::Arguments) -> ! {
     }
 
     let result = serve_metrics.await;
-    panic!("serve_metrics exited {:?}", result);
+    panic!("serve_metrics exited {result:?}");
 }

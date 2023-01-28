@@ -85,12 +85,12 @@ pub struct SellOrderQuoteQuery {
 // the full address and instead uses ellipsis (e.g. "0xeeee…eeee"). This
 // helper just works around that.
 fn addr2str(addr: H160) -> String {
-    format!("{:?}", addr)
+    format!("{addr:?}")
 }
 
 impl SellOrderQuoteQuery {
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
-        let endpoint = format!("v5.0/{}/quote", chain_id);
+        let endpoint = format!("v5.0/{chain_id}/quote");
         let mut url = base_url
             .join(&endpoint)
             .expect("unexpectedly invalid URL segment");
@@ -241,7 +241,7 @@ impl Display for Slippage {
 impl SwapQuery {
     /// Encodes the swap query as
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
-        let endpoint = format!("v5.0/{}/swap", chain_id);
+        let endpoint = format!("v5.0/{chain_id}/swap");
         let mut url = base_url
             .join(&endpoint)
             .expect("unexpectedly invalid URL segment");
@@ -883,7 +883,7 @@ mod tests {
             })
             .await
             .unwrap();
-        println!("{:#?}", swap);
+        println!("{swap:#?}");
     }
 
     #[tokio::test]
@@ -917,7 +917,7 @@ mod tests {
             })
             .await
             .unwrap();
-        println!("{:#?}", swap);
+        println!("{swap:#?}");
     }
 
     #[tokio::test]
@@ -927,7 +927,7 @@ mod tests {
             .get_liquidity_sources()
             .await
             .unwrap();
-        println!("{:#?}", protocols);
+        println!("{protocols:#?}");
     }
 
     #[tokio::test]
@@ -938,7 +938,7 @@ mod tests {
             .get_spender()
             .await
             .unwrap();
-        println!("{:#?}", spender);
+        println!("{spender:#?}");
     }
 
     #[test]
@@ -1136,7 +1136,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        println!("{:#?}", swap);
+        println!("{swap:#?}");
     }
 
     #[tokio::test]
@@ -1163,7 +1163,7 @@ mod tests {
             })
             .await
             .unwrap();
-        println!("{:#?}", swap);
+        println!("{swap:#?}");
     }
 
     #[tokio::test]

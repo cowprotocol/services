@@ -348,7 +348,7 @@ pub async fn setup_naive_solver_uniswapv2_driver(
 pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
     let condition = || async {
         let response = client
-            .get(format!("{}/api/v1/auction", API_HOST))
+            .get(format!("{API_HOST}/api/v1/auction"))
             .send()
             .await
             .unwrap();
@@ -358,7 +358,7 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
                 auction.auction.orders.len() >= minimum
             }
             StatusCode::NOT_FOUND => false,
-            other => panic!("unexpected status code {}", other),
+            other => panic!("unexpected status code {other}"),
         }
     };
     wait_for_condition(Duration::from_secs(30), condition).await

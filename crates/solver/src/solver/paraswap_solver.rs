@@ -571,6 +571,6 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 }

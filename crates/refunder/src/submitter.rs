@@ -55,7 +55,7 @@ impl Submitter {
             .eth()
             .transaction_count(self.account.address(), None)
             .await
-            .map_err(|err| anyhow!("Could not get latest nonce due to err: {:}", err))
+            .map_err(|err| anyhow!("Could not get latest nonce due to err: {err}"))
     }
 
     pub async fn submit(

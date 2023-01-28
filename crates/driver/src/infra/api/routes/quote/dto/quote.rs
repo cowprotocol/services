@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth, quote},
+        domain::{eth, quote},
         util::serialize,
     },
     serde::Serialize,
@@ -14,13 +14,10 @@ impl Quote {
             interactions: quote
                 .interactions
                 .iter()
-                .map(|interaction| match interaction {
-                    competition::solution::Interaction::Custom(interaction) => Interaction {
-                        target: interaction.target.into(),
-                        value: interaction.value.into(),
-                        call_data: interaction.call_data.clone(),
-                    },
-                    competition::solution::Interaction::Liquidity(..) => todo!(),
+                .map(|interaction| Interaction {
+                    target: interaction.target.into(),
+                    value: interaction.value.into(),
+                    call_data: interaction.call_data.clone(),
                 })
                 .collect(),
         }

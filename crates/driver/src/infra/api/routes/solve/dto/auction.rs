@@ -1,102 +1,16 @@
 use {
     crate::{
         domain::{competition, eth},
-        infra::liquidity,
         util::serialize,
     },
+    itertools::Itertools,
     serde::Deserialize,
     serde_with::serde_as,
     std::{collections::HashMap, str::FromStr},
 };
 
 impl Auction {
-    pub async fn into_domain(
-        self,
-        liquidity: &liquidity::Fetcher,
-    ) -> Result<competition::Auction, Error> {
-        let orders = self
-            .orders
-            .into_iter()
-            .map(|order| {
-                Ok(competition::Order {
-                    uid: order.uid.into(),
-                    receiver: order.receiver.map(Into::into),
-                    valid_to: order.valid_to.into(),
-                    sell: eth::Asset {
-                        amount: order.sell_amount,
-                        token: order.sell_token.into(),
-                    },
-                    buy: eth::Asset {
-                        amount: order.buy_amount,
-                        token: order.buy_token.into(),
-                    },
-                    side: match order.kind {
-                        Kind::Sell => competition::order::Side::Sell,
-                        Kind::Buy => competition::order::Side::Buy,
-                    },
-                    fee: competition::order::Fee {
-                        user: order.user_fee.into(),
-                        solver: order.solver_fee.into(),
-                    },
-                    kind: match order.class {
-                        Class::Market => competition::order::Kind::Market,
-                        Class::Limit => competition::order::Kind::Limit {
-                            surplus_fee: order.surplus_fee.ok_or(Error::MissingSurplusFee)?.into(),
-                        },
-                        Class::Liquidity => competition::order::Kind::Liquidity,
-                    },
-                    app_data: order.app_data.into(),
-                    partial: if order.partially_fillable {
-                        competition::order::Partial::Yes {
-                            executed: order.executed.into(),
-                        }
-                    } else {
-                        competition::order::Partial::No
-                    },
-                    interactions: order
-                        .interactions
-                        .into_iter()
-                        .map(|interaction| eth::Interaction {
-                            target: interaction.target.into(),
-                            value: interaction.value.into(),
-                            call_data: interaction.call_data,
-                        })
-                        .collect(),
-                    sell_token_balance: match order.sell_token_balance {
-                        SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
-                        SellTokenBalance::Internal => {
-                            competition::order::SellTokenBalance::Internal
-                        }
-                        SellTokenBalance::External => {
-                            competition::order::SellTokenBalance::External
-                        }
-                    },
-                    buy_token_balance: match order.buy_token_balance {
-                        BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
-                        BuyTokenBalance::Internal => competition::order::BuyTokenBalance::Internal,
-                    },
-                    signature: competition::order::Signature {
-                        scheme: match order.signing_scheme {
-                            SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
-                            SigningScheme::EthSign => {
-                                competition::order::signature::Scheme::EthSign
-                            }
-                            SigningScheme::PreSign => {
-                                competition::order::signature::Scheme::PreSign
-                            }
-                            SigningScheme::Eip1271 => {
-                                competition::order::signature::Scheme::Eip1271
-                            }
-                        },
-                        data: order.signature,
-                        signer: order.owner.into(),
-                    },
-                    reward: order.reward,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        let liquidity = liquidity.fetch(&orders).await?;
-
+    pub fn into_domain(self) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
             id: Some(FromStr::from_str(&self.id).map_err(|_| Error::InvalidAuctionId)?),
             tokens: self
@@ -111,8 +25,94 @@ impl Auction {
                     trusted: token.trusted,
                 })
                 .collect(),
-            orders,
-            liquidity,
+            orders: self
+                .orders
+                .into_iter()
+                .map(|order| {
+                    Ok(competition::Order {
+                        uid: order.uid.into(),
+                        receiver: order.receiver.map(Into::into),
+                        valid_to: order.valid_to.into(),
+                        sell: eth::Asset {
+                            amount: order.sell_amount,
+                            token: order.sell_token.into(),
+                        },
+                        buy: eth::Asset {
+                            amount: order.buy_amount,
+                            token: order.buy_token.into(),
+                        },
+                        side: match order.kind {
+                            Kind::Sell => competition::order::Side::Sell,
+                            Kind::Buy => competition::order::Side::Buy,
+                        },
+                        fee: competition::order::Fee {
+                            user: order.user_fee.into(),
+                            solver: order.solver_fee.into(),
+                        },
+                        kind: match order.class {
+                            Class::Market => competition::order::Kind::Market,
+                            Class::Limit => competition::order::Kind::Limit {
+                                surplus_fee: order
+                                    .surplus_fee
+                                    .ok_or(Error::MissingSurplusFee)?
+                                    .into(),
+                            },
+                            Class::Liquidity => competition::order::Kind::Liquidity,
+                        },
+                        app_data: order.app_data.into(),
+                        partial: if order.partially_fillable {
+                            competition::order::Partial::Yes {
+                                executed: order.executed.into(),
+                            }
+                        } else {
+                            competition::order::Partial::No
+                        },
+                        interactions: order
+                            .interactions
+                            .into_iter()
+                            .map(|interaction| eth::Interaction {
+                                target: interaction.target.into(),
+                                value: interaction.value.into(),
+                                call_data: interaction.call_data,
+                            })
+                            .collect(),
+                        sell_token_balance: match order.sell_token_balance {
+                            SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
+                            SellTokenBalance::Internal => {
+                                competition::order::SellTokenBalance::Internal
+                            }
+                            SellTokenBalance::External => {
+                                competition::order::SellTokenBalance::External
+                            }
+                        },
+                        buy_token_balance: match order.buy_token_balance {
+                            BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
+                            BuyTokenBalance::Internal => {
+                                competition::order::BuyTokenBalance::Internal
+                            }
+                        },
+                        signature: competition::order::Signature {
+                            scheme: match order.signing_scheme {
+                                SigningScheme::Eip712 => {
+                                    competition::order::signature::Scheme::Eip712
+                                }
+                                SigningScheme::EthSign => {
+                                    competition::order::signature::Scheme::EthSign
+                                }
+                                SigningScheme::PreSign => {
+                                    competition::order::signature::Scheme::PreSign
+                                }
+                                SigningScheme::Eip1271 => {
+                                    competition::order::signature::Scheme::Eip1271
+                                }
+                            },
+                            data: order.signature,
+                            signer: order.owner.into(),
+                        },
+                        reward: order.reward,
+                    })
+                })
+                .try_collect()?,
             gas_price: self.effective_gas_price.into(),
             deadline: self.deadline.into(),
         })
@@ -125,8 +125,6 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
-    #[error("error fetching liquidity for auction: {0}")]
-    Liquidity(#[from] liquidity::fetcher::Error),
 }
 
 #[serde_as]

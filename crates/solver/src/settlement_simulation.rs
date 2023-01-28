@@ -235,7 +235,7 @@ pub fn tenderly_link(
                     format!("0x{:x}", item.address),
                     item.storage_keys
                         .into_iter()
-                        .map(|key| format!("0x{:x}", key))
+                        .map(|key| format!("0x{key:x}"))
                         .collect_vec(),
                 )
             })
@@ -695,7 +695,7 @@ mod tests {
         let settlement_encoded = settlement
             .clone()
             .encode(InternalizationStrategy::SkipInternalizableInteraction);
-        println!("Settlement_encoded: {:?}", settlement_encoded);
+        println!("Settlement_encoded: {settlement_encoded:?}");
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
             "Tenderly simulation for generated tx: {:?}",

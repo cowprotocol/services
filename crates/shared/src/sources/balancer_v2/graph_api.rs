@@ -442,7 +442,7 @@ mod tests {
     #[ignore]
     async fn balancer_subgraph_query() {
         for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5)] {
-            println!("### {}", network_name);
+            println!("### {network_name}");
 
             let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
             let result = client.get_registered_pools().await.unwrap();

@@ -28,7 +28,7 @@ impl SolverEngine {
         let handle = tokio::spawn(async move { crate::run(arguments, command, Some(bind)).await });
 
         let addr = bind_receiver.await.unwrap();
-        let url = format!("http://{}/", addr).parse().unwrap();
+        let url = format!("http://{addr}/").parse().unwrap();
 
         Self { url, handle }
     }
