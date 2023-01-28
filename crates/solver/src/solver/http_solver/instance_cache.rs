@@ -79,7 +79,7 @@ impl SharedInstanceCreator {
                 let label = match uploader.upload_instance(id, &auction).await {
                     Ok(()) => "success",
                     Err(err) => {
-                        tracing::error!(%id, ?err, "error uploading instance");
+                        tracing::warn!(%id, ?err, "error uploading instance");
                         "failure"
                     }
                 };
