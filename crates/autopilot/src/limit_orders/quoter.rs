@@ -3,20 +3,20 @@ use crate::database::{
     Postgres,
 };
 use anyhow::Result;
-use database::orders::OrderFeeSpecifier;
+use database::orders::{OrderFeeSpecifier, OrderQuotingData};
 use ethcontract::H160;
 use futures::StreamExt;
-use model::{
-    quote::{OrderQuoteSide, SellAmount},
-    DomainSeparator,
-};
+use itertools::Itertools;
+use model::quote::{OrderQuoteSide, SellAmount};
 use number_conversions::big_decimal_to_u256;
+use primitive_types::U256;
 use shared::{
+    account_balances::{BalanceFetching, Query},
+    db_order_conversions::sell_token_source_from,
     order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
     price_estimation::PriceEstimationError,
-    signature_validator::SignatureValidating,
 };
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::Instrument as _;
 
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
@@ -26,9 +26,9 @@ pub struct LimitOrderQuoter {
     pub limit_order_age: chrono::Duration,
     pub quoter: Arc<dyn OrderQuoting>,
     pub database: Postgres,
-    pub signature_validator: Arc<dyn SignatureValidating>,
-    pub domain_separator: DomainSeparator,
     pub parallelism: usize,
+    pub strategies: Vec<QuotingStrategy>,
+    pub balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
 impl LimitOrderQuoter {
@@ -58,10 +58,13 @@ impl LimitOrderQuoter {
 
     /// Returns whether it is likely that there is no more work.
     async fn update(&self) -> Result<bool> {
-        let order_specs = self
+        let orders = self
             .database
-            .order_specs_with_outdated_fees(self.limit_order_age, self.parallelism)
+            .open_limit_orders(self.limit_order_age)
             .await?;
+        let orders = self.orders_with_sufficient_balance(orders).await;
+        let order_specs: Vec<_> = orders.into_iter().map(order_spec_from).unique().collect();
+
         futures::stream::iter(&order_specs)
             .for_each_concurrent(self.parallelism, |order_spec| {
                 async move {
@@ -154,6 +157,61 @@ impl LimitOrderQuoter {
             }
         }
     }
+
+    async fn orders_with_sufficient_balance(
+        &self,
+        mut orders: Vec<OrderQuotingData>,
+    ) -> Vec<OrderQuotingData> {
+        if !self.strategies.contains(&QuotingStrategy::SkipUnfunded) {
+            return orders;
+        }
+
+        let queries: Vec<_> = orders.iter().map(query_from).unique().collect();
+        let balances = self.balance_fetcher.get_balances(&queries).await;
+        let balances: HashMap<_, _> = queries
+            .iter()
+            .zip(balances.into_iter())
+            .filter_map(|(query, result)| Some((query, result.ok()?)))
+            .collect();
+
+        orders.retain(|order| {
+            if let Some(balance) = balances.get(&query_from(order)) {
+                let has_sufficient_balance = match order.partially_fillable {
+                    true => balance >= &U256::one(), // any amount would be enough
+                    false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
+                };
+                return has_sufficient_balance;
+            }
+
+            // In case the balance couldn't be fetched err on the safe side and assume
+            // the order can be filled to not discard limit orders unjustly.
+            true
+        });
+        orders
+    }
+}
+
+fn query_from(data: &OrderQuotingData) -> Query {
+    Query {
+        owner: H160(data.owner.0),
+        token: H160(data.sell_token.0),
+        source: sell_token_source_from(data.sell_token_balance),
+    }
+}
+
+fn order_spec_from(data: OrderQuotingData) -> OrderFeeSpecifier {
+    OrderFeeSpecifier {
+        sell_token: data.sell_token,
+        buy_token: data.buy_token,
+        sell_amount: data.sell_amount,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum QuotingStrategy {
+    SkipUnfunded,
+    // TODO add `PrioritizeByPrice`
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
