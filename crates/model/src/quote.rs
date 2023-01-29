@@ -97,7 +97,11 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
             (SigningScheme::EthSign, _, None) => Ok(Self::EthSign),
             (SigningScheme::Eip1271, onchain_order, verification_gas_limit) => Ok(Self::Eip1271 {
                 onchain_order,
-                verification_gas_limit: verification_gas_limit
+                // We explictely don't charge additional fees for on-chain
+                // EIP-1271 orders.
+                verification_gas_limit: onchain_order
+                    .then_some(0)
+                    .or(verification_gas_limit)
                     .unwrap_or_else(default_verification_gas_limit),
             }),
             (SigningScheme::PreSign, onchain_order, None) => Ok(Self::PreSign { onchain_order }),
@@ -454,5 +458,33 @@ mod tests {
                 String::from("ECDSA-signed orders cannot be on-chain")
             );
         }
+    }
+
+    #[test]
+    fn no_extra_fees_for_onchain_orders() {
+        assert_eq!(
+            QuoteSigningScheme::try_from(QuoteSigningDeserializationData {
+                signing_scheme: SigningScheme::Eip1271,
+                onchain_order: true,
+                verification_gas_limit: Some(1),
+            })
+            .unwrap(),
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+                verification_gas_limit: 0,
+            },
+        );
+        assert_eq!(
+            QuoteSigningScheme::try_from(QuoteSigningDeserializationData {
+                signing_scheme: SigningScheme::Eip1271,
+                onchain_order: false,
+                verification_gas_limit: Some(1),
+            })
+            .unwrap(),
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 1,
+            },
+        );
     }
 }
