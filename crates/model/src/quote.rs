@@ -355,7 +355,7 @@ mod tests {
                 "buyAmountAfterFee": "1",
                 "signingScheme": "eip1271",
                 "onchainOrder": true,
-                "verificationGasLimit": 10000000
+                "verificationGasLimit": 10000000, // ignored!
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -364,6 +364,15 @@ mod tests {
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
                 "signingScheme": "eip1271",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "eip1271",
+                "verificationGasLimit": 10000000,
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -399,15 +408,19 @@ mod tests {
             modify_signing_scheme(QuoteSigningScheme::EthSign),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit: default_verification_gas_limit(),
+                verification_gas_limit: 0,
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit: 10000000u64,
+                verification_gas_limit: 0,
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
                 verification_gas_limit: default_verification_gas_limit(),
+            }),
+            modify_signing_scheme(QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 10000000,
             }),
             modify_signing_scheme(QuoteSigningScheme::PreSign {
                 onchain_order: true,
