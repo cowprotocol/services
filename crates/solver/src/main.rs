@@ -262,6 +262,7 @@ async fn main() -> ! {
         args.shared.disabled_one_inch_protocols,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
+        args.shared.paraswap_rate_limiter,
         &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
