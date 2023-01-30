@@ -128,28 +128,11 @@ impl SingleOrderSolver {
 #[async_trait::async_trait]
 impl Solver for SingleOrderSolver {
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
-        let (market, limit): (Vec<_>, Vec<_>) = auction
-            .orders
-            .iter()
-            .filter(|order| !matches!(order.id, LimitOrderId::Liquidity(_)))
-            .cloned()
-            .partition(|order| matches!(order.id, LimitOrderId::Market(_)));
-
-        let mut market = get_prioritized_orders(
-            &market,
+        let mut orders = get_prioritized_orders(
+            &auction.orders,
             &auction.external_prices,
             &self.order_prioritization_config,
         );
-
-        let limit = get_prioritized_orders(
-            &limit,
-            &auction.external_prices,
-            &self.order_prioritization_config,
-        );
-
-        market.extend(limit);
-        let mut orders = market;
-
         tracing::trace!(name = self.name(), ?orders, "prioritized orders");
 
         let mut settlements = Vec::new();
@@ -260,6 +243,26 @@ impl From<anyhow::Error> for SettlementError {
     }
 }
 
+/// Prioritizes orders to settle in the auction. First come all the market orders and then all the
+/// limit orders. Orders within these groups get prioritized by their price achievability.
+/// See [`prioritize_orders`].
+fn get_prioritized_orders(
+    orders: &[LimitOrder],
+    prices: &ExternalPrices,
+    order_prioritization_config: &Arguments,
+) -> VecDeque<LimitOrder> {
+    let (market, limit) = orders
+        .iter()
+        .filter(|order| !matches!(order.id, LimitOrderId::Liquidity(_)))
+        .cloned()
+        .partition(|order| matches!(order.id, LimitOrderId::Market(_)));
+
+    let market = prioritize_orders(market, prices, order_prioritization_config);
+    let limit = prioritize_orders(limit, prices, order_prioritization_config);
+
+    market.into_iter().chain(limit.into_iter()).collect()
+}
+
 /// Returns the `native_sell_amount / native_buy_amount` of the given order under the current
 /// market conditions. The higher the value the more likely it is that this order could get filled.
 fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 {
@@ -276,20 +279,13 @@ fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 
 /// prioritize orders which are more likely to be matchable. This is implemented by rating each
 /// order's viability by comparing the ask price with the current market price. The lower the ask
 /// price is compared to the market price the higher the chance the order will get prioritized.
-fn get_prioritized_orders(
-    orders: &[LimitOrder],
+fn prioritize_orders(
+    mut orders: Vec<LimitOrder>,
     prices: &ExternalPrices,
     order_prioritization_config: &Arguments,
-) -> VecDeque<LimitOrder> {
-    // Liquidity orders don't make sense on their own and a `SingleOrderSolver` can't
-    // settle them together with a user order.
-    let mut user_orders: Vec<_> = orders
-        .iter()
-        .filter(|o| !o.is_liquidity_order())
-        .cloned()
-        .collect();
-    if user_orders.len() <= 1 {
-        return user_orders.into();
+) -> Vec<LimitOrder> {
+    if orders.len() <= 1 {
+        return orders;
     }
 
     let mut rng = rand::thread_rng();
@@ -297,7 +293,7 @@ fn get_prioritized_orders(
     // Chose `user_orders.len()` distinct items from `user_orders` weighted by the viability of the order.
     // This effectively sorts the orders by viability with a slight randomness to not get stuck on
     // bad orders.
-    match user_orders.choose_multiple_weighted(&mut rng, user_orders.len(), |order| {
+    match orders.choose_multiple_weighted(&mut rng, orders.len(), |order| {
         let price_viability = estimate_price_viability(order, prices);
         order_prioritization_config.apply_weight_constraints(price_viability)
     }) {
@@ -305,8 +301,8 @@ fn get_prioritized_orders(
         Err(err) => {
             // if weighted sorting by viability fails we fall back to shuffling randomly
             tracing::warn!(?err, "weighted order prioritization failed");
-            user_orders.shuffle(&mut rng);
-            user_orders.into()
+            orders.shuffle(&mut rng);
+            orders
         }
     }
 }
@@ -569,7 +565,7 @@ mod tests {
             buy_amount: amount(100),
             ..Default::default()
         };
-        let orders = [
+        let orders = vec![
             order(
                 500,
                 LimitOrderId::Liquidity(LiquidityOrderId::Protocol(OrderUid::from_integer(1))),
@@ -592,7 +588,7 @@ mod tests {
         const SAMPLES: usize = 1_000;
         let mut expected_results = 0;
         for _ in 0..SAMPLES {
-            let prioritized_orders = get_prioritized_orders(&orders, &prices, &config);
+            let prioritized_orders = prioritize_orders(orders.clone(), &prices, &config);
             let expected_output = &[orders[3].clone(), orders[2].clone(), orders[1].clone()];
             expected_results += usize::from(prioritized_orders == expected_output);
         }
@@ -615,7 +611,7 @@ mod tests {
             buy_amount: amount(100),
             ..Default::default()
         };
-        let orders = [
+        let orders = vec![
             order(105, Default::default()), //market order
             order(103, Default::default()), //market order
             order(101, Default::default()), //market order
@@ -634,7 +630,7 @@ mod tests {
         const SAMPLES: usize = 1_000;
         let mut expected_results = 0;
         for _ in 0..SAMPLES {
-            let prioritized_orders = get_prioritized_orders(&orders, &prices, &config);
+            let prioritized_orders = prioritize_orders(orders.clone(), &prices, &config);
             expected_results += usize::from(prioritized_orders == orders);
         }
         // Using weighted selection should give us some suboptimal orderings even with skewed
