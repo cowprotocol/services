@@ -1,7 +1,7 @@
 mod merge;
 
 use crate::{
-    liquidity::LimitOrder,
+    liquidity::{LimitOrder, LimitOrderId},
     metrics::SolverMetrics,
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
@@ -128,11 +128,27 @@ impl SingleOrderSolver {
 #[async_trait::async_trait]
 impl Solver for SingleOrderSolver {
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
-        let mut orders = get_prioritized_orders(
-            &auction.orders,
+        let (market, limit): (Vec<_>, Vec<_>) = auction
+            .orders
+            .iter()
+            .filter(|order| !matches!(order.id, LimitOrderId::Liquidity(_)))
+            .cloned()
+            .partition(|order| matches!(order.id, LimitOrderId::Market(_)));
+
+        let mut market = get_prioritized_orders(
+            &market,
             &auction.external_prices,
             &self.order_prioritization_config,
         );
+
+        let limit = get_prioritized_orders(
+            &limit,
+            &auction.external_prices,
+            &self.order_prioritization_config,
+        );
+
+        market.extend(limit);
+        let mut orders = market;
 
         tracing::trace!(name = self.name(), ?orders, "prioritized orders");
 
