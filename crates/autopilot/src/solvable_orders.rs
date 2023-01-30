@@ -821,11 +821,8 @@ mod tests {
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
             Duration::from_secs(10),
-            Duration::MAX,
-            None,
-            Default::default(),
-            1,
         );
+        native_price_estimator.spawn_update_task(Duration::MAX, None, Default::default(), 1);
 
         // We'll have no native prices in this call. But this call will cause a background task
         // to fetch the missing prices so we'll have them in the next call.

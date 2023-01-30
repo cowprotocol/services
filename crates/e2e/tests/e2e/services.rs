@@ -144,11 +144,8 @@ impl OrderbookServices {
         let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
             native_price_estimator,
             Duration::from_secs(10),
-            Duration::from_secs(10),
-            None,
-            Duration::from_secs(2),
-            1,
         ));
+
         let quoter = Arc::new(OrderQuoter::new(
             price_estimator.clone(),
             native_price_estimator.clone(),

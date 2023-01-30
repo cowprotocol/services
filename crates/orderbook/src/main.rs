@@ -335,6 +335,7 @@ async fn main() -> ! {
         .native_price_estimator(
             &args.native_price_estimators,
             &args.order_quoting.price_estimation_drivers,
+            false,
         )
         .unwrap();
 

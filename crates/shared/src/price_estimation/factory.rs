@@ -321,6 +321,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
+        spawn_update_task: bool,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
@@ -335,11 +336,15 @@ impl<'a> PriceEstimatorFactory<'a> {
                 self.native_token_price_estimation_amount()?,
             )),
             self.args.native_price_cache_max_age_secs,
-            self.args.native_price_cache_refresh_secs,
-            Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time_secs,
-            self.args.native_price_cache_concurrent_requests,
         ));
+        if spawn_update_task {
+            native_estimator.spawn_update_task(
+                self.args.native_price_cache_refresh_secs,
+                Some(self.args.native_price_cache_max_update_size),
+                self.args.native_price_prefetch_time_secs,
+                self.args.native_price_cache_concurrent_requests,
+            );
+        }
         Ok(native_estimator)
     }
 }

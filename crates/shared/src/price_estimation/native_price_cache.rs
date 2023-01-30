@@ -154,34 +154,36 @@ impl CachingNativePriceEstimator {
     /// Only soon to be outdated prices get updated and recently used prices have a higher priority.
     /// If `update_size` is `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
-    pub fn new(
-        estimator: Box<dyn NativePriceEstimating>,
-        max_age: Duration,
-        update_interval: Duration,
-        update_size: Option<usize>,
-        prefetch_time: Duration,
-        concurrent_requests: usize,
-    ) -> Self {
+    pub fn new(estimator: Box<dyn NativePriceEstimating>, max_age: Duration) -> Self {
         let inner = Arc::new(Inner {
             estimator,
             cache: Default::default(),
         });
-        tokio::spawn(
-            update_recently_used_outdated_prices(
-                Arc::downgrade(&inner),
-                update_interval,
-                update_size,
-                max_age.saturating_sub(prefetch_time),
-                concurrent_requests,
-            )
-            .instrument(tracing::info_span!("caching_native_price_estimator")),
-        );
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         Self {
             inner,
             max_age,
             metrics,
         }
+    }
+
+    pub fn spawn_update_task(
+        &self,
+        update_interval: Duration,
+        update_size: Option<usize>,
+        prefetch_time: Duration,
+        concurrent_requests: usize,
+    ) {
+        tokio::task::spawn(
+            update_recently_used_outdated_prices(
+                Arc::downgrade(&self.inner),
+                update_interval,
+                update_size,
+                self.max_age.saturating_sub(prefetch_time),
+                concurrent_requests,
+            )
+            .instrument(tracing::info_span!("caching_native_price_estimator")),
+        );
     }
 
     /// Only returns prices that are currently cached. Missing prices will get prioritized to get
@@ -295,14 +297,8 @@ mod tests {
                 futures::stream::iter([(0, Ok(1.0))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Default::default(),
-            None,
-            Default::default(),
-            1,
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -325,14 +321,8 @@ mod tests {
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Default::default(),
-            None,
-            Default::default(),
-            1,
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -385,14 +375,9 @@ mod tests {
                 futures::stream::iter([(0, Ok(3.0))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Duration::from_millis(50),
-            Some(1),
-            Duration::default(),
-            1,
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        estimator.spawn_update_task(Duration::from_millis(50), Some(1), Duration::default(), 1);
 
         // fill cache with 2 different queries
         let results = estimator
@@ -443,14 +428,9 @@ mod tests {
                 futures::stream::iter(std::iter::once(Ok(2.0)).enumerate()).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Duration::from_millis(50),
-            None,
-            Duration::default(),
-            1,
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        estimator.spawn_update_task(Duration::from_millis(50), None, Duration::default(), 1);
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
         let results = estimator
@@ -499,9 +479,9 @@ mod tests {
                 .boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        estimator.spawn_update_task(
             Duration::from_millis(50),
             None,
             Duration::default(),

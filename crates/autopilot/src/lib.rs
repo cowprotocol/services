@@ -365,6 +365,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .native_price_estimator(
             &args.native_price_estimators,
             &args.order_quoting.price_estimation_drivers,
+            true,
         )
         .unwrap();
 
