@@ -146,7 +146,7 @@ impl OrderbookServices {
             Duration::from_secs(10),
             Duration::from_secs(10),
             None,
-            None,
+            Duration::from_secs(2),
             1,
         ));
         let quoter = Arc::new(OrderQuoter::new(

@@ -143,6 +143,10 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
+    let _network_time_between_blocks = args
+        .network_block_interval
+        .or_else(|| shared::network::block_interval(&network, chain_id))
+        .expect("unknown network block interval");
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
