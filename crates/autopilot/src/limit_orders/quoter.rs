@@ -197,6 +197,8 @@ async fn orders_with_sufficient_balance(
         .filter_map(|(query, result)| Some((query, result.ok()?)))
         .collect();
 
+    let order_count_before = orders.len();
+
     orders.retain(|order| {
         if let Some(balance) = balances.get(&query_from(order)) {
             let has_sufficient_balance = match order.partially_fillable {
@@ -210,6 +212,10 @@ async fn orders_with_sufficient_balance(
         // the order can be filled to not discard limit orders unjustly.
         true
     });
+
+    Metrics::get()
+        .orders_skipped_for_missing_balance
+        .set((order_count_before - orders.len()) as i64);
     orders
 }
 
@@ -226,6 +232,10 @@ struct Metrics {
     /// Categorizes order quote update results.
     #[metric(labels("type"))]
     update_result: prometheus::IntCounterVec,
+
+    /// Tracks how many orders don't get quoted because their
+    /// owners don't have sufficient balance.
+    orders_skipped_for_missing_balance: prometheus::IntGauge,
 }
 
 impl Metrics {
@@ -296,7 +306,7 @@ mod tests {
             filtered_orders,
             vec![
                 order(1, 1_000.into(), false),
-                order(2, 1_000.into(), true),
+                order(2, U256::MAX, true),
                 order(3, U256::MAX, false),
             ]
         );
