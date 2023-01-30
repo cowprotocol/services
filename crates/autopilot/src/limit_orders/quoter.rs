@@ -63,7 +63,12 @@ impl LimitOrderQuoter {
             .open_limit_orders(self.limit_order_age)
             .await?;
         let orders = self.orders_with_sufficient_balance(orders).await;
-        let order_specs = orders.into_iter().map(order_spec_from).unique().collect_vec();
+        let order_specs = orders
+            .into_iter()
+            .map(order_spec_from)
+            .unique()
+            .take(self.parallelism)
+            .collect_vec();
 
         futures::stream::iter(&order_specs)
             .for_each_concurrent(self.parallelism, |order_spec| {

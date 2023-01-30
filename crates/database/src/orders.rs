@@ -691,6 +691,7 @@ pub fn open_limit_orders(
         OPEN_ORDERS,
         "     AND class = 'limit'",
         "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " ) as subquery"
     );
 
@@ -1811,8 +1812,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].uid, ByteArray([1; 56]),);
-        assert_eq!(orders[1].uid, ByteArray([5; 56]));
+        assert_eq!(orders[0].uid, ByteArray([5; 56]));
+        assert_eq!(orders[1].uid, ByteArray([1; 56]),);
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
