@@ -11,7 +11,7 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use primitive_types::{H160, H256, U256};
-use prometheus::{IntCounter, IntGaugeVec};
+use prometheus::{IntCounter, IntGauge, IntGaugeVec};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
@@ -45,6 +45,10 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
+
+    /// Auction filtered market orders due to missing native token price.
+    #[metric()]
+    auction_market_order_missing_price: IntGauge,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -208,8 +212,11 @@ impl SolvableOrdersCache {
         counter.checkpoint("insufficient_balance", &orders);
 
         // create auction
-        let (orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &self.native_price_estimator);
+        let (orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &self.native_price_estimator,
+            self.metrics,
+        );
         counter.checkpoint("missing_price", &orders);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
@@ -460,6 +467,7 @@ async fn update_task(
 fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
+    metrics: &Metrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
@@ -476,6 +484,7 @@ fn get_orders_with_native_prices(
 
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
+    let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
     orders.retain(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
@@ -485,9 +494,20 @@ fn get_orders_with_native_prices(
                 used_prices.insert(*t1, *p1);
                 true
             }
-            _ => false,
+            _ => {
+                if order.metadata.class == OrderClass::Market {
+                    filtered_market_orders += 1;
+                }
+                false
+            }
         }
     });
+
+    // Record separate metrics just for missing native token prices for market
+    // orders, as they should be prioritized.
+    metrics
+        .auction_market_order_missing_price
+        .set(filtered_market_orders);
 
     (orders, used_prices)
 }
@@ -617,18 +637,17 @@ impl OrderFilterCounter {
 
     /// Creates a new checkpoint from the current remaining orders.
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) {
-        let filtered_orders = orders.iter().fold(
-            self.orders.keys().copied().collect::<HashSet<_>>(),
-            |mut order_uids, order| {
+        let filtered_orders = orders
+            .iter()
+            .fold(self.orders.clone(), |mut order_uids, order| {
                 order_uids.remove(&order.metadata.uid);
                 order_uids
-            },
-        );
+            });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for order in filtered_orders {
+        for (order, class) in filtered_orders {
             self.orders.remove(&order).unwrap();
-            tracing::debug!(%order, %reason, "filtered order")
+            tracing::debug!(%order, ?class, %reason, "filtered order")
         }
     }
 
@@ -826,11 +845,12 @@ mod tests {
             Default::default(),
             1,
         );
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
 
         // We'll have no native prices in this call. But this call will cause a background task
         // to fetch the missing prices so we'll have them in the next call.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -839,7 +859,7 @@ mod tests {
 
         // Now we have all the native prices we want.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
