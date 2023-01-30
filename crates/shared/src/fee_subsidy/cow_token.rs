@@ -120,7 +120,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        crate::tracing::initialize_for_tests("orderbook=debug");
+        crate::tracing::initialize_reentrant("orderbook=debug");
         let transport = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();

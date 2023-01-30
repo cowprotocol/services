@@ -14,7 +14,6 @@ use {
     },
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
-    tracing::level_filters::LevelFilter,
 };
 
 mod boundary;
@@ -27,12 +26,7 @@ mod tests;
 
 #[tokio::main]
 async fn main() {
-    // TODO This should be set based on the CLI args, so it can't be here. I need to
-    // find a neat way to solve this.
-    boundary::initialize_tracing(
-        "debug,hyper=warn,driver::infra::solver=trace",
-        LevelFilter::ERROR,
-    );
+    boundary::exit_process_on_panic::set_panic_hook();
     run(std::env::args(), infra::time::Now::Real, None).await
 }
 
@@ -47,8 +41,7 @@ pub async fn run(
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
-    boundary::exit_process_on_panic::set_panic_hook();
-
+    boundary::initialize_tracing(&args.log);
     let config = config::file::load(&args.config).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();

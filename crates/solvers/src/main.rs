@@ -15,14 +15,13 @@ use std::net::SocketAddr;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
 use tokio::sync::oneshot;
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() {
     let cli = cli::Cli::parse();
 
-    shared::tracing::initialize(&cli.log_filter, LevelFilter::ERROR);
-    shared::exit_process_on_panic::set_panic_hook();
+    boundary::initialize_tracing(&cli.log);
+    boundary::exit_process_on_panic::set_panic_hook();
 
     // TODO implement Display for the arguments
     tracing::info!("running solver engine with {cli:#?}");

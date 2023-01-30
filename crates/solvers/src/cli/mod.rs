@@ -9,9 +9,9 @@ use std::net::SocketAddr;
 #[derive(Parser, Debug)]
 #[command(version)]
 pub struct Cli {
-    /// The log filter to use.
+    /// The log filter.
     #[arg(long, env, default_value = "debug")]
-    pub log_filter: String,
+    pub log: String,
 
     #[command(flatten)]
     pub arguments: Arguments,
