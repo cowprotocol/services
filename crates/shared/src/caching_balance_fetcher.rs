@@ -9,20 +9,70 @@ use model::order::SellTokenSource;
 use primitive_types::{H160, U256};
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
 };
 use tracing::Instrument;
 
+type BlockNumber = u64;
+
+/// Balances get removed from the cache after this many blocks without being requested.
+const EVICTION_TIME: BlockNumber = 5;
+
 #[derive(Default)]
 struct BalanceCache {
-    /// Block number the cached data was collected from.
-    block: u64,
-    data: HashMap<Query, U256>,
+    last_seen_block: BlockNumber,
+    data: HashMap<Query, BalanceEntry>,
+}
+
+impl BalanceCache {
+    /// Retrieves cached balance and updates the `requested_at` field.
+    fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
+        match self.data.get_mut(query) {
+            Some(mut entry) => {
+                entry.requested_at = self.last_seen_block;
+                Some(entry.balance)
+            }
+            None => None,
+        }
+    }
+
+    /// Only updates existing balances. This should always be used in the background task.
+    fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
+        if update_block < self.last_seen_block {
+            // This should never realistically happen.
+            return;
+        }
+
+        if let Some(mut entry) = self.data.get_mut(query) {
+            entry.updated_at = self.last_seen_block;
+            entry.balance = balance;
+        }
+    }
+
+    /// Only inserts new balances. This should always be used when we needed to fetch a balance
+    /// because it was requested by a backend component.
+    fn insert_balance(&mut self, query: Query, balance: U256, requested_at: BlockNumber) {
+        self.data.insert(
+            query,
+            BalanceEntry {
+                requested_at,
+                updated_at: requested_at,
+                balance,
+            },
+        );
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BalanceEntry {
+    requested_at: BlockNumber,
+    updated_at: BlockNumber,
+    balance: U256,
 }
 
 pub struct CachingBalanceFetcher {
     inner: Arc<dyn BalanceFetching>,
-    balance_cache: Arc<RwLock<BalanceCache>>,
+    balance_cache: Arc<Mutex<BalanceCache>>,
 }
 
 impl CachingBalanceFetcher {
@@ -39,44 +89,24 @@ struct CacheResponse {
     cached: Vec<(usize, Result<U256>)>,
     // Indices of queries that were not in the cache.
     missing: Vec<usize>,
-    // On what block number the balances got collected.
-    block: u64,
+    requested_at: BlockNumber,
 }
 
 impl CachingBalanceFetcher {
     fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
-        let read_lock = self.balance_cache.read().unwrap();
-        let block = read_lock.block;
-        let (cached, missing) = queries.iter().enumerate().partition_map(|(i, query)| {
-            let cached_value = read_lock.data.get(query);
-            match cached_value {
-                Some(balance) => itertools::Either::Left((i, Ok(*balance))),
+        let mut cache = self.balance_cache.lock().unwrap();
+        let (cached, missing) = queries
+            .iter()
+            .enumerate()
+            .partition_map(|(i, query)| match cache.get_cached_balance(query) {
+                Some(balance) => itertools::Either::Left((i, Ok(balance))),
                 None => itertools::Either::Right(i),
-            }
-        });
+            });
         CacheResponse {
             cached,
             missing,
-            block,
+            requested_at: cache.last_seen_block,
         }
-    }
-
-    /// Updates the cache if the it doesn't contain more recent data.
-    fn update_balance_cache(
-        cache: &RwLock<BalanceCache>,
-        start_block: u64,
-        updates: Vec<(Query, U256)>,
-    ) {
-        if updates.is_empty() {
-            return;
-        }
-
-        let mut write_lock = cache.write().unwrap();
-        if write_lock.block > start_block {
-            // Newer data might already be availble which we don't want to overwrite.
-            return;
-        }
-        write_lock.data.extend(updates);
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
@@ -87,24 +117,36 @@ impl CachingBalanceFetcher {
 
         let task = async move {
             while let Some(block) = stream.next().await {
-                // invalidate cache immediately
-                let old_cache = {
-                    let empty_cache = BalanceCache {
-                        block: block.number,
-                        data: Default::default(),
-                    };
-                    let mut old_cache = cache.write().unwrap();
-                    std::mem::replace(&mut *old_cache, empty_cache)
+                let balances_to_update = {
+                    let mut cache = cache.lock().unwrap();
+                    cache.last_seen_block = block.number;
+                    cache
+                        .data
+                        .iter()
+                        .filter_map(|(query, entry)| {
+                            // Only update balances that have been requested recently.
+                            let oldest_allowed_request =
+                                cache.last_seen_block.saturating_sub(EVICTION_TIME);
+                            (entry.requested_at >= oldest_allowed_request).then_some(*query)
+                        })
+                        .collect_vec()
                 };
 
-                let queries: Vec<_> = old_cache.data.into_keys().collect();
-                let results = inner.get_balances(&queries).await;
-                let updates = queries
+                let results = inner.get_balances(&balances_to_update).await;
+
+                let mut cache = cache.lock().unwrap();
+                balances_to_update
                     .into_iter()
                     .zip(results.into_iter())
-                    .filter_map(|(query, result)| Some((query, result.ok()?)))
-                    .collect();
-                Self::update_balance_cache(&cache, block.number, updates);
+                    .for_each(|(query, result)| {
+                        if let Ok(balance) = result {
+                            cache.update_balance(&query, balance, block.number);
+                        }
+                    });
+                cache.data.retain(|_, value| {
+                    // Only keep balances where we know we have the most recent data.
+                    value.updated_at >= block.number
+                });
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -118,7 +160,7 @@ impl BalanceFetching for CachingBalanceFetcher {
         let CacheResponse {
             mut cached,
             missing,
-            block: initial_block,
+            requested_at,
         } = self.get_cached_balances(queries);
 
         if missing.is_empty() {
@@ -128,12 +170,14 @@ impl BalanceFetching for CachingBalanceFetcher {
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i]).collect();
         let new_balances = self.inner.get_balances(&missing_queries).await;
 
-        let updates = missing
-            .iter()
-            .zip(new_balances.iter())
-            .filter_map(|(i, result)| Some((queries[*i], *result.as_ref().ok()?)))
-            .collect();
-        Self::update_balance_cache(&self.balance_cache, initial_block, updates);
+        {
+            let mut cache = self.balance_cache.lock().unwrap();
+            for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
+                if let Ok(balance) = result {
+                    cache.insert_balance(query, *balance, requested_at)
+                }
+            }
+        }
 
         cached.extend(missing.into_iter().zip(new_balances.into_iter()));
         cached.sort_by_key(|(i, _)| *i);
@@ -261,5 +305,43 @@ mod tests {
         // Now balance 2 is also in the cache. Skipping call to `inner`.
         let result = fetcher.get_balances(&[query(2)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &2.into());
+    }
+
+    #[tokio::test]
+    async fn unused_balances_get_evicted() {
+        let first_block = BlockInfo::default();
+        let (sender, receiver) = tokio::sync::watch::channel(first_block);
+
+        let mut inner = MockBalanceFetching::new();
+        inner
+            .expect_get_balances()
+            .times(7)
+            .returning(|_| vec![Ok(U256::one())]);
+
+        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        fetcher.spawn_background_task(receiver);
+
+        let cached_entry = || {
+            let cache = fetcher.balance_cache.lock().unwrap();
+            cache.data.get(&query(1)).cloned()
+        };
+
+        assert!(cached_entry().is_none());
+        // 1st call to `inner`. Balance gets cached.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+
+        for block in 1..=EVICTION_TIME + 1 {
+            assert!(cached_entry().is_some());
+            // New block gets detected.
+            sender
+                .send(BlockInfo {
+                    number: block,
+                    ..Default::default()
+                })
+                .unwrap();
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+        assert!(cached_entry().is_none());
     }
 }
