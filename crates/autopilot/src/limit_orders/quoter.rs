@@ -62,7 +62,12 @@ impl LimitOrderQuoter {
             .database
             .open_limit_orders(self.limit_order_age)
             .await?;
-        let orders = self.orders_with_sufficient_balance(orders).await;
+
+        let orders = match self.strategies.contains(&QuotingStrategy::SkipUnfunded) {
+            true => orders_with_sufficient_balance(&*self.balance_fetcher, orders).await,
+            false => orders,
+        };
+
         let order_specs = orders
             .into_iter()
             .map(order_spec_from)
@@ -162,38 +167,6 @@ impl LimitOrderQuoter {
             }
         }
     }
-
-    async fn orders_with_sufficient_balance(
-        &self,
-        mut orders: Vec<OrderQuotingData>,
-    ) -> Vec<OrderQuotingData> {
-        if !self.strategies.contains(&QuotingStrategy::SkipUnfunded) {
-            return orders;
-        }
-
-        let queries = orders.iter().map(query_from).unique().collect_vec();
-        let balances = self.balance_fetcher.get_balances(&queries).await;
-        let balances: HashMap<_, _> = queries
-            .iter()
-            .zip(balances.into_iter())
-            .filter_map(|(query, result)| Some((query, result.ok()?)))
-            .collect();
-
-        orders.retain(|order| {
-            if let Some(balance) = balances.get(&query_from(order)) {
-                let has_sufficient_balance = match order.partially_fillable {
-                    true => balance >= &U256::one(), // any amount would be enough
-                    false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
-                };
-                return has_sufficient_balance;
-            }
-
-            // In case the balance couldn't be fetched err on the safe side and assume
-            // the order can be filled to not discard limit orders unjustly.
-            true
-        });
-        orders
-    }
 }
 
 fn query_from(data: &OrderQuotingData) -> Query {
@@ -210,6 +183,34 @@ fn order_spec_from(data: OrderQuotingData) -> OrderFeeSpecifier {
         buy_token: data.buy_token,
         sell_amount: data.sell_amount,
     }
+}
+
+async fn orders_with_sufficient_balance(
+    balance_fetcher: &dyn BalanceFetching,
+    mut orders: Vec<OrderQuotingData>,
+) -> Vec<OrderQuotingData> {
+    let queries = orders.iter().map(query_from).unique().collect_vec();
+    let balances = balance_fetcher.get_balances(&queries).await;
+    let balances: HashMap<_, _> = queries
+        .iter()
+        .zip(balances.into_iter())
+        .filter_map(|(query, result)| Some((query, result.ok()?)))
+        .collect();
+
+    orders.retain(|order| {
+        if let Some(balance) = balances.get(&query_from(order)) {
+            let has_sufficient_balance = match order.partially_fillable {
+                true => balance >= &U256::one(), // any amount would be enough
+                false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
+            };
+            return has_sufficient_balance;
+        }
+
+        // In case the balance couldn't be fetched err on the safe side and assume
+        // the order can be filled to not discard limit orders unjustly.
+        true
+    });
+    orders
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
@@ -230,5 +231,74 @@ struct Metrics {
 impl Metrics {
     fn get() -> &'static Self {
         Self::instance(global_metrics::get_metric_storage_registry()).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use database::byte_array::ByteArray;
+    use number_conversions::u256_to_big_decimal;
+    use shared::account_balances::{MockBalanceFetching, Query};
+
+    fn query(token: u8) -> Query {
+        Query {
+            owner: H160([1; 20]),
+            token: H160([token; 20]),
+            source: model::order::SellTokenSource::Erc20,
+        }
+    }
+
+    #[tokio::test]
+    async fn removes_orders_with_insufficient_balance() {
+        let order = |sell_token, sell_amount: U256, partially_fillable| OrderQuotingData {
+            owner: ByteArray([1; 20]),
+            sell_token: ByteArray([sell_token; 20]),
+            sell_amount: u256_to_big_decimal(&sell_amount),
+            sell_token_balance: database::orders::SellTokenSource::Erc20,
+            partially_fillable,
+            ..Default::default()
+        };
+
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_get_balances()
+            .withf(|arg| {
+                arg == [
+                    // Only 1 query for token 1 because identical balance queries get deduplicated.
+                    query(1),
+                    query(2),
+                    query(3),
+                ]
+            })
+            .returning(|_| {
+                vec![
+                    Ok(1_000.into()),
+                    Ok(1.into()),
+                    Err(anyhow::anyhow!("some error")),
+                ]
+            });
+
+        let orders = vec![
+            // Balance is sufficient.
+            order(1, 1_000.into(), false),
+            // Balance is 1 short.
+            order(1, 1_001.into(), false),
+            // For partially fillable orders a single atom is enough.
+            order(2, U256::MAX, true),
+            // We always keep orders where our balance request fails.
+            order(3, U256::MAX, false),
+        ];
+
+        let filtered_orders = orders_with_sufficient_balance(&balance_fetcher, orders).await;
+
+        assert_eq!(
+            filtered_orders,
+            vec![
+                order(1, 1_000.into(), false),
+                order(2, 1_000.into(), true),
+                order(3, U256::MAX, false),
+            ]
+        );
     }
 }
