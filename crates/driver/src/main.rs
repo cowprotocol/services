@@ -1,9 +1,8 @@
 #![forbid(unsafe_code)]
 
 use {
-    crate::infra::{mempool, Mempool},
+    crate::infra::{cli, mempool, Mempool},
     clap::Parser,
-    config::cli,
     futures::future::join_all,
     infra::{
         blockchain::{self, Ethereum},
