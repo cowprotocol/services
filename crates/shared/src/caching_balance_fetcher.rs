@@ -67,6 +67,10 @@ impl CachingBalanceFetcher {
         start_block: u64,
         updates: Vec<(Query, U256)>,
     ) {
+        if updates.is_empty() {
+            return;
+        }
+
         let mut write_lock = cache.write().unwrap();
         if write_lock.block > start_block {
             // Newer data might already be availble which we don't want to overwrite.
@@ -117,6 +121,10 @@ impl BalanceFetching for CachingBalanceFetcher {
             block: initial_block,
         } = self.get_cached_balances(queries);
 
+        if missing.is_empty() {
+            return cached.into_iter().map(|(_, result)| result).collect();
+        }
+
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i]).collect();
         let new_balances = self.inner.get_balances(&missing_queries).await;
 
@@ -142,5 +150,116 @@ impl BalanceFetching for CachingBalanceFetcher {
         // This only gets called when creating or replacing an order which doesn't profit from
         // caching.
         self.inner.can_transfer(token, from, amount, source).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{account_balances::MockBalanceFetching, current_block::BlockInfo};
+
+    fn query(token: u8) -> Query {
+        Query {
+            owner: H160([1; 20]),
+            token: H160([token; 20]),
+            source: SellTokenSource::Erc20,
+        }
+    }
+
+    #[tokio::test]
+    async fn caches_ok_results() {
+        let mut inner = MockBalanceFetching::new();
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Ok(1.into())]);
+
+        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        // 1st call to `inner`.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        // Fetches balance from cache and skips calling `inner`.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+    }
+
+    #[tokio::test]
+    async fn does_not_cache_errors() {
+        let mut inner = MockBalanceFetching::new();
+        inner
+            .expect_get_balances()
+            .times(2)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
+
+        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        // 1st call to `inner`.
+        assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
+        // 2nd call to `inner`.
+        assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
+    }
+
+    #[tokio::test]
+    async fn background_task_updates_cache_on_new_block() {
+        let first_block = BlockInfo::default();
+        let (sender, receiver) = tokio::sync::watch::channel(first_block);
+
+        let mut inner = MockBalanceFetching::new();
+        inner
+            .expect_get_balances()
+            .times(2)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Ok(U256::one())]);
+
+        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        fetcher.spawn_background_task(receiver);
+
+        // 1st call to `inner`. Balance gets cached.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+
+        // New block gets detected.
+        sender
+            .send(BlockInfo {
+                number: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        // Wait for block to be noticed and cache to be updated. (2nd call to inner)
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Balance was already updated so this will hit the cache and skip calling `inner`.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+    }
+
+    #[tokio::test]
+    async fn can_return_new_and_cached_results_in_same_call() {
+        let mut inner = MockBalanceFetching::new();
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|arg| arg == [query(1)])
+            .returning(|_| vec![Ok(1.into())]);
+        inner
+            .expect_get_balances()
+            .times(1)
+            .withf(|arg| arg == [query(2)])
+            .returning(|_| vec![Ok(2.into())]);
+
+        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        // 1st call to `inner` putting balance 1 into the cache.
+        let result = fetcher.get_balances(&[query(1)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+
+        // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
+        let result = fetcher.get_balances(&[query(1), query(2)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &1.into());
+        assert_eq!(result[1].as_ref().unwrap(), &2.into());
+
+        // Now balance 2 is also in the cache. Skipping call to `inner`.
+        let result = fetcher.get_balances(&[query(2)]).await;
+        assert_eq!(result[0].as_ref().unwrap(), &2.into());
     }
 }
