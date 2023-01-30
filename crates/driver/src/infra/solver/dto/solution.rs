@@ -1,8 +1,8 @@
 use {
     crate::{
         domain::{competition, eth, liquidity},
+        infra::Solver,
         util::serialize,
-        Solver,
     },
     itertools::Itertools,
     serde::Deserialize,

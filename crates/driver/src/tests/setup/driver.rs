@@ -137,7 +137,11 @@ pub async fn setup(config: Config<'_>) -> Client {
         "--log".to_owned(),
         "error,web3=warn,hyper=warn,driver::infra::solver=error".to_owned(),
     ];
-    let handle = tokio::spawn(crate::run(args.into_iter(), config.now, Some(addr_sender)));
+    let handle = tokio::spawn(crate::run::run(
+        args.into_iter(),
+        config.now,
+        Some(addr_sender),
+    ));
     let driver_addr = addr_receiver.await.unwrap();
     Client::new(
         driver_addr,

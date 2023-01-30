@@ -1,31 +1,26 @@
-#![forbid(unsafe_code)]
-
 use {
-    crate::infra::{cli, mempool, Mempool},
+    crate::{
+        boundary,
+        infra::{
+            self,
+            blockchain::{self, Ethereum},
+            cli,
+            config,
+            liquidity,
+            mempool,
+            simulator::{self, Simulator},
+            solver::Solver,
+            Api,
+            Mempool,
+        },
+    },
     clap::Parser,
     futures::future::join_all,
-    infra::{
-        blockchain::{self, Ethereum},
-        config,
-        liquidity,
-        simulator::{self, Simulator},
-        solver::{self, Solver},
-        Api,
-    },
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
 };
 
-mod boundary;
-mod domain;
-mod infra;
-mod util;
-
-#[cfg(test)]
-mod tests;
-
-#[tokio::main]
-async fn main() {
+pub async fn main() {
     boundary::exit_process_on_panic::set_panic_hook();
     run(std::env::args(), infra::time::Now::Real, None).await
 }
