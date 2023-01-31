@@ -31,6 +31,7 @@ async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sender<So
     tracing::info!("running solver engine with {args:#?}");
 
     // TODO In the future, should use different load methods based on the command being executed
+    let cli::Command::Baseline = args.command;
     let baseline = config::baseline::file::load(&args.config).await;
     api::Api {
         addr: args.addr,
