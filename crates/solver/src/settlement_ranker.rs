@@ -8,15 +8,14 @@ use crate::{
 };
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
-use itertools::enumerate;
 use model::auction::AuctionId;
-use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
+use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive, Zero};
 use rand::prelude::SliceRandom;
 use shared::http_solver::model::{
     AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
     TransactionWithError,
 };
-use std::{cmp::Ordering, sync::Arc, time::Duration};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
@@ -169,12 +168,6 @@ impl SettlementRanker {
             .rate_settlements(solver_settlements, external_prices, gas_price)
             .await?;
 
-        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-        // preference to any specific solver when there is an objective value tie.
-        rated_settlements.shuffle(&mut rand::thread_rng());
-
-        rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
-
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
@@ -191,17 +184,83 @@ impl SettlementRanker {
                 )),
             );
         }
-        for (i, (solver, _, _)) in enumerate(&rated_settlements) {
-            let rank = rated_settlements.len() - i;
-            solver.notify_auction_result(auction_id, AuctionResult::Ranked(rank));
-            self.metrics
-                .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-        }
 
+        if cfg!(feature = "CIP17") {
+            // Filter out settlements that have negative score
+            rated_settlements.retain(|(solver, settlement, _)| {
+                if settlement.score < BigRational::zero() {
+                    tracing::debug!(
+                        solver_name = %solver.name(),
+                        "settlement(s) filtered for having negative score",
+                    );
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::NegativeScore(
+                            settlement.score.clone(),
+                        )),
+                    );
+                    return false;
+                }
+                true
+            });
+
+            // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+            // preference to any specific solver when there is an objective value tie.
+            rated_settlements.shuffle(&mut rand::thread_rng());
+
+            rated_settlements
+                .sort_by(|a, b| compare_solutions_cip17(&a.1, &b.1, self.decimal_cutoff));
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = i + 1;
+                },
+            );
+        } else {
+            // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+            // preference to any specific solver when there is an objective value tie.
+            rated_settlements.shuffle(&mut rand::thread_rng());
+
+            rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
+
+            let cip17_ranking = cip17_ranking(
+                rated_settlements
+                    .iter()
+                    .map(|(_, settlement, _)| settlement.clone())
+                    .collect(),
+            );
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = cip17_ranking.get(&settlement.id).copied().unwrap_or(0);
+                },
+            );
+        }
         Ok((rated_settlements, errors))
     }
 }
 
+// TODO: remove this once CIP-17 is implemented
+// Sort settlements by CIP-17 rules and return hashmap of settlement id to ranking
+fn cip17_ranking(settlements: Vec<RatedSettlement>) -> HashMap<usize, usize> {
+    let mut settlements = settlements;
+    settlements.retain(|settlement| settlement.score >= BigRational::zero());
+    settlements.sort_by(|a, b| compare_solutions_cip17(a, b, 0));
+    settlements
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(i, settlement)| (settlement.id, i + 1))
+        .collect()
+}
+
+// TODO: remove this once CIP-17 is implemented
 fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
     let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
     let rounded_lhs = lhs
@@ -211,6 +270,25 @@ fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16
         .floor();
     let rounded_rhs = rhs
         .objective_value
+        .checked_div(&precision)
+        .expect("precision cannot be 0")
+        .floor();
+    rounded_lhs.cmp(&rounded_rhs)
+}
+
+fn compare_solutions_cip17(
+    lhs: &RatedSettlement,
+    rhs: &RatedSettlement,
+    decimals: u16,
+) -> Ordering {
+    let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
+    let rounded_lhs = lhs
+        .score
+        .checked_div(&precision)
+        .expect("precision cannot be 0")
+        .floor();
+    let rounded_rhs = rhs
+        .score
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();

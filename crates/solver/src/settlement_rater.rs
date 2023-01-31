@@ -209,6 +209,7 @@ impl SettlementRating for SettlementRater {
                 gas_price: gas_price.clone(),
                 objective_value,
                 score,
+                ranking: Default::default(),
             }
         };
 

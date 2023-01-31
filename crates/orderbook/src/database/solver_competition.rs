@@ -117,6 +117,8 @@ mod tests {
                 solutions: vec![SolverSettlement {
                     solver: "asdf".to_string(),
                     objective: Default::default(),
+                    score: Default::default(),
+                    ranking: 1,
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![Default::default()],
                     call_data: vec![1, 2],

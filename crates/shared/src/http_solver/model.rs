@@ -338,6 +338,10 @@ pub enum SolverRejectionReason {
 
     /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
     SimulationFailure(TransactionWithError),
+
+    /// The solution score is negative. Includes the score.
+    #[serde(with = "ratio_as_decimal")]
+    NegativeScore(BigRational),
 }
 
 #[derive(Debug, Serialize)]
