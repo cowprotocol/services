@@ -3,20 +3,20 @@ use crate::database::{
     Postgres,
 };
 use anyhow::Result;
-use database::orders::OrderFeeSpecifier;
+use database::orders::{OrderFeeSpecifier, OrderQuotingData};
 use ethcontract::H160;
 use futures::StreamExt;
-use model::{
-    quote::{OrderQuoteSide, SellAmount},
-    DomainSeparator,
-};
+use itertools::Itertools;
+use model::quote::{OrderQuoteSide, SellAmount};
 use number_conversions::big_decimal_to_u256;
+use primitive_types::U256;
 use shared::{
+    account_balances::{BalanceFetching, Query},
+    db_order_conversions::sell_token_source_from,
     order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
     price_estimation::PriceEstimationError,
-    signature_validator::SignatureValidating,
 };
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::Instrument as _;
 
 /// Background task which quotes all limit orders and sets the surplus_fee for each one
@@ -26,9 +26,10 @@ pub struct LimitOrderQuoter {
     pub limit_order_age: chrono::Duration,
     pub quoter: Arc<dyn OrderQuoting>,
     pub database: Postgres,
-    pub signature_validator: Arc<dyn SignatureValidating>,
-    pub domain_separator: DomainSeparator,
     pub parallelism: usize,
+    pub strategies: Vec<QuotingStrategy>,
+    pub balance_fetcher: Arc<dyn BalanceFetching>,
+    pub batch_size: usize,
 }
 
 impl LimitOrderQuoter {
@@ -58,10 +59,23 @@ impl LimitOrderQuoter {
 
     /// Returns whether it is likely that there is no more work.
     async fn update(&self) -> Result<bool> {
-        let order_specs = self
+        let orders = self
             .database
-            .order_specs_with_outdated_fees(self.limit_order_age, self.parallelism)
+            .open_limit_orders(self.limit_order_age)
             .await?;
+
+        let orders = match self.strategies.contains(&QuotingStrategy::SkipUnfunded) {
+            true => orders_with_sufficient_balance(&*self.balance_fetcher, orders).await,
+            false => orders,
+        };
+
+        let order_specs = orders
+            .into_iter()
+            .map(order_spec_from)
+            .unique()
+            .take(self.batch_size)
+            .collect_vec();
+
         futures::stream::iter(&order_specs)
             .for_each_concurrent(self.parallelism, |order_spec| {
                 async move {
@@ -71,7 +85,7 @@ impl LimitOrderQuoter {
                 .instrument(tracing::debug_span!("surplus_fee", ?order_spec))
             })
             .await;
-        Ok(order_specs.len() < self.parallelism)
+        Ok(order_specs.len() < self.batch_size)
     }
 
     /// Handles errors internally.
@@ -156,16 +170,146 @@ impl LimitOrderQuoter {
     }
 }
 
+fn query_from(data: &OrderQuotingData) -> Query {
+    Query {
+        owner: H160(data.owner.0),
+        token: H160(data.sell_token.0),
+        source: sell_token_source_from(data.sell_token_balance),
+    }
+}
+
+fn order_spec_from(data: OrderQuotingData) -> OrderFeeSpecifier {
+    OrderFeeSpecifier {
+        sell_token: data.sell_token,
+        buy_token: data.buy_token,
+        sell_amount: data.sell_amount,
+    }
+}
+
+async fn orders_with_sufficient_balance(
+    balance_fetcher: &dyn BalanceFetching,
+    mut orders: Vec<OrderQuotingData>,
+) -> Vec<OrderQuotingData> {
+    let queries = orders.iter().map(query_from).unique().collect_vec();
+    let balances = balance_fetcher.get_balances(&queries).await;
+    let balances: HashMap<_, _> = queries
+        .iter()
+        .zip(balances.into_iter())
+        .filter_map(|(query, result)| Some((query, result.ok()?)))
+        .collect();
+
+    let order_count_before = orders.len();
+
+    orders.retain(|order| {
+        if let Some(balance) = balances.get(&query_from(order)) {
+            let has_sufficient_balance = match order.partially_fillable {
+                true => balance >= &U256::one(), // any amount would be enough
+                false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
+            };
+            return has_sufficient_balance;
+        }
+
+        // In case the balance couldn't be fetched err on the safe side and assume
+        // the order can be filled to not discard limit orders unjustly.
+        true
+    });
+
+    Metrics::get()
+        .orders_skipped_for_missing_balance
+        .set((order_count_before - orders.len()) as i64);
+    orders
+}
+
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum QuotingStrategy {
+    SkipUnfunded,
+    // TODO add `PrioritizeByPrice`
+}
+
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "limit_order_quoter")]
 struct Metrics {
     /// Categorizes order quote update results.
     #[metric(labels("type"))]
     update_result: prometheus::IntCounterVec,
+
+    /// Tracks how many orders don't get quoted because their
+    /// owners don't have sufficient balance.
+    orders_skipped_for_missing_balance: prometheus::IntGauge,
 }
 
 impl Metrics {
     fn get() -> &'static Self {
         Self::instance(global_metrics::get_metric_storage_registry()).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use database::byte_array::ByteArray;
+    use number_conversions::u256_to_big_decimal;
+    use shared::account_balances::{MockBalanceFetching, Query};
+
+    fn query(token: u8) -> Query {
+        Query {
+            owner: H160([1; 20]),
+            token: H160([token; 20]),
+            source: model::order::SellTokenSource::Erc20,
+        }
+    }
+
+    #[tokio::test]
+    async fn removes_orders_with_insufficient_balance() {
+        let order = |sell_token, sell_amount: U256, partially_fillable| OrderQuotingData {
+            owner: ByteArray([1; 20]),
+            sell_token: ByteArray([sell_token; 20]),
+            sell_amount: u256_to_big_decimal(&sell_amount),
+            sell_token_balance: database::orders::SellTokenSource::Erc20,
+            partially_fillable,
+            ..Default::default()
+        };
+
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_get_balances()
+            .withf(|arg| {
+                arg == [
+                    // Only 1 query for token 1 because identical balance queries get deduplicated.
+                    query(1),
+                    query(2),
+                    query(3),
+                ]
+            })
+            .returning(|_| {
+                vec![
+                    Ok(1_000.into()),
+                    Ok(1.into()),
+                    Err(anyhow::anyhow!("some error")),
+                ]
+            });
+
+        let orders = vec![
+            // Balance is sufficient.
+            order(1, 1_000.into(), false),
+            // Balance is 1 short.
+            order(1, 1_001.into(), false),
+            // For partially fillable orders a single atom is enough.
+            order(2, U256::MAX, true),
+            // We always keep orders where our balance request fails.
+            order(3, U256::MAX, false),
+        ];
+
+        let filtered_orders = orders_with_sufficient_balance(&balance_fetcher, orders).await;
+
+        assert_eq!(
+            filtered_orders,
+            vec![
+                order(1, 1_000.into(), false),
+                order(2, U256::MAX, true),
+                order(3, U256::MAX, false),
+            ]
+        );
     }
 }

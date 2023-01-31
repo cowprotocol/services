@@ -37,7 +37,7 @@ struct Config {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct SubmissionConfig {
+struct SubmissionConfig {
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation. Expects a floating point
     /// value between 0 and 1.
@@ -73,7 +73,7 @@ pub struct SubmissionConfig {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case")]
-pub enum Mempool {
+enum Mempool {
     Public {
         /// Don't submit transactions with high revert risk (i.e. transactions
         /// that interact with on-chain AMMs) to the public mempool.
@@ -156,7 +156,7 @@ pub struct ContractsConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct TenderlyConfig {
+struct TenderlyConfig {
     /// Optionally override the Tenderly API URL.
     url: Option<Url>,
 

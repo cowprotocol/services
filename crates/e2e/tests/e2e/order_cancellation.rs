@@ -29,7 +29,7 @@ async fn local_node_order_cancellation() {
 }
 
 async fn order_cancellation(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,shared=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,shared=debug");
     shared::exit_process_on_panic::set_panic_hook();
 
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");

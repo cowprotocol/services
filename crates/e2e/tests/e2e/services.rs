@@ -10,7 +10,7 @@ use autopilot::{
         },
     },
     event_updater::GPv2SettlementContract,
-    limit_orders::LimitOrderQuoter,
+    limit_orders::{LimitOrderQuoter, QuotingStrategy},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{IUniswapLikeRouter, WETH9};
@@ -23,6 +23,7 @@ use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
+    caching_balance_fetcher::CachingBalanceFetcher,
     code_fetching::{CachedCodeFetcher, MockCodeFetching},
     current_block::{current_block_stream, CurrentBlockStream},
     ethrpc::Web3,
@@ -167,6 +168,8 @@ impl OrderbookServices {
             contracts.allowance,
             contracts.gp_settlement.address(),
         ));
+        let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
+        balance_fetcher.spawn_background_task(current_block_stream.clone());
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
@@ -191,9 +194,10 @@ impl OrderbookServices {
                 fee: 1_000.into(),
             }),
             database: autopilot_db.clone(),
-            signature_validator: signature_validator.clone(),
-            domain_separator: contracts.domain_separator,
             parallelism: 2,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: vec![QuotingStrategy::SkipUnfunded],
+            batch_size: 10,
         }
         .spawn();
         let mut code_fetcher = MockCodeFetching::new();

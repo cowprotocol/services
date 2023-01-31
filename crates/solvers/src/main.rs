@@ -4,6 +4,7 @@
 mod api;
 mod boundary;
 mod cli;
+mod config;
 mod domain;
 #[cfg(test)]
 mod tests;
@@ -15,29 +16,25 @@ use std::net::SocketAddr;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
 use tokio::sync::oneshot;
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() {
-    let cli = cli::Cli::parse();
-
-    shared::tracing::initialize(&cli.log_filter, LevelFilter::ERROR);
-    shared::exit_process_on_panic::set_panic_hook();
+    boundary::exit_process_on_panic::set_panic_hook();
 
     // TODO implement Display for the arguments
-    tracing::info!("running solver engine with {cli:#?}");
-    run(cli.arguments, cli.command, None).await;
+    run(std::env::args(), None).await;
 }
 
-async fn run(
-    arguments: cli::Arguments,
-    command: cli::Command,
-    bind: Option<oneshot::Sender<SocketAddr>>,
-) {
-    let cli::Command::Baseline(baseline) = command;
+async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sender<SocketAddr>>) {
+    let args = cli::Args::parse_from(args);
+    boundary::initialize_tracing(&args.log);
+    tracing::info!("running solver engine with {args:#?}");
 
+    // TODO In the future, should use different load methods based on the command being executed
+    let cli::Command::Baseline = args.command;
+    let baseline = config::baseline::file::load(&args.config).await;
     api::Api {
-        addr: arguments.addr,
+        addr: args.addr,
         solver: baseline::Baseline {
             weth: baseline.weth,
             base_tokens: baseline.base_tokens.into_iter().collect(),

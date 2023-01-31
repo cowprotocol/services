@@ -47,7 +47,6 @@ pub struct Metrics {
     auction_filtered_orders: IntGaugeVec,
 
     /// Auction filtered market orders due to missing native token price.
-    #[metric()]
     auction_market_order_missing_price: IntGauge,
 }
 
@@ -481,6 +480,16 @@ fn get_orders_with_native_prices(
         .into_iter()
         .flat_map(|(token, price)| to_normalized_price(price).map(|price| (token, price)))
         .collect();
+
+    let high_priority_tokens = orders
+        .iter()
+        .filter_map(|order| match order.metadata.class {
+            OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
+            OrderClass::Liquidity => None,
+            OrderClass::Limit(_) => None,
+        })
+        .flatten();
+    native_price_estimator.replace_high_priority(high_priority_tokens.collect());
 
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.

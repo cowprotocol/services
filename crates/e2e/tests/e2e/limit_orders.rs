@@ -67,7 +67,7 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 async fn single_limit_order_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -287,7 +287,7 @@ async fn single_limit_order_test(web3: Web3) {
 }
 
 async fn two_limit_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -532,7 +532,7 @@ async fn two_limit_orders_test(web3: Web3) {
 }
 
 async fn mixed_limit_and_market_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -785,7 +785,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 

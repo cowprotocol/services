@@ -7,6 +7,7 @@ pub mod arguments;
 pub mod bad_token;
 pub mod balancer_sor_api;
 pub mod baseline_solver;
+pub mod caching_balance_fetcher;
 pub mod code_fetching;
 pub mod code_simulation;
 pub mod contracts;
