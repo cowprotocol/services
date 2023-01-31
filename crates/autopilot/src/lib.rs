@@ -583,6 +583,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             parallelism: args.limit_order_quoter_parallelism,
             balance_fetcher: balance_fetcher.clone(),
             strategies: args.quoting_strategies,
+            batch_size: args.limit_order_quoter_batch_size,
         }
         .spawn();
         LimitOrderMetrics {

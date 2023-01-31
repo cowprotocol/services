@@ -29,6 +29,7 @@ pub struct LimitOrderQuoter {
     pub parallelism: usize,
     pub strategies: Vec<QuotingStrategy>,
     pub balance_fetcher: Arc<dyn BalanceFetching>,
+    pub batch_size: usize,
 }
 
 impl LimitOrderQuoter {
@@ -72,7 +73,7 @@ impl LimitOrderQuoter {
             .into_iter()
             .map(order_spec_from)
             .unique()
-            .take(self.parallelism)
+            .take(self.batch_size)
             .collect_vec();
 
         futures::stream::iter(&order_specs)
@@ -84,7 +85,7 @@ impl LimitOrderQuoter {
                 .instrument(tracing::debug_span!("surplus_fee", ?order_spec))
             })
             .await;
-        Ok(order_specs.len() < self.parallelism)
+        Ok(order_specs.len() < self.batch_size)
     }
 
     /// Handles errors internally.

@@ -194,6 +194,7 @@ impl OrderbookServices {
             parallelism: 2,
             balance_fetcher: balance_fetcher.clone(),
             strategies: vec![QuotingStrategy::SkipUnfunded],
+            batch_size: 10,
         }
         .spawn();
         let mut code_fetcher = MockCodeFetching::new();

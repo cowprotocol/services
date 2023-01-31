@@ -141,6 +141,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub limit_order_quoter_parallelism: usize,
 
+    /// How many quotes the limit order quoter updates per update cycle.
+    #[clap(long, env, default_value = "25")]
+    pub limit_order_quoter_batch_size: usize,
+
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
@@ -208,6 +212,11 @@ impl std::fmt::Display for Arguments {
             f,
             "limit_order_quoter_parallelism: {:?}",
             self.limit_order_quoter_parallelism
+        )?;
+        writeln!(
+            f,
+            "limit_order_quoter_batch_size: {:?}",
+            self.limit_order_quoter_batch_size,
         )?;
         display_option(
             f,
