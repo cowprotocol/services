@@ -63,7 +63,7 @@ pub async fn run(
         .collect(),
         eth,
         now,
-        addr: args.bind_addr,
+        addr: args.addr,
         addr_sender,
     }
     .serve(async {
