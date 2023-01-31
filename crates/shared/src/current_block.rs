@@ -252,7 +252,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        crate::tracing::initialize_for_tests("shared=debug");
+        crate::tracing::initialize_reentrant("shared=debug");
         let node = std::env::var("NODE_URL").unwrap();
         let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);
