@@ -679,7 +679,8 @@ pub struct OrderQuotingData {
     pub partially_fillable: bool,
 }
 
-/// Returns all limit orders that are currently waiting to be filled.
+/// Returns all limit orders that are currently waiting to be filled sorted
+/// by `surplus_fee_timestamp` with the most outdated ones coming first.
 pub fn open_limit_orders(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
