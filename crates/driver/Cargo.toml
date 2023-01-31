@@ -5,6 +5,15 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
 
+[lib]
+name = "driver"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
 [dependencies]
 axum = "0.6"
 num = "0.4"
