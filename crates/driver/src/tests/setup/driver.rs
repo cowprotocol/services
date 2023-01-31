@@ -1,9 +1,5 @@
 use {
-    crate::{
-        infra,
-        infra::config::file::ContractsConfig,
-        tests::{self, setup},
-    },
+    crate::{infra, infra::config::file::ContractsConfig, tests::setup},
     itertools::Itertools,
     rand::Rng,
     std::{net::SocketAddr, path::PathBuf},
@@ -138,10 +134,10 @@ pub async fn setup(config: Config<'_>) -> Client {
         config.geth.url(),
         "--config".to_owned(),
         config_file.0.clone(),
+        "--log".to_owned(),
+        "error,web3=warn,hyper=warn,driver::infra::solver=error".to_owned(),
     ];
-    tests::boundary::initialize_tracing("error,web3=warn,hyper=warn,driver::infra::solver=error");
-    let run = crate::run(args.into_iter(), config.now, Some(addr_sender));
-    let handle = tokio::spawn(run);
+    let handle = tokio::spawn(crate::run(args.into_iter(), config.now, Some(addr_sender)));
     let driver_addr = addr_receiver.await.unwrap();
     Client::new(
         driver_addr,

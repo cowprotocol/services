@@ -61,7 +61,7 @@ async fn local_node_eth_flow_indexing_after_refund() {
 }
 
 async fn eth_flow_tx(web3: Web3) {
-    shared::tracing::initialize_for_tests(
+    shared::tracing::initialize_reentrant(
         "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
     );
     shared::exit_process_on_panic::set_panic_hook();
@@ -137,7 +137,7 @@ async fn eth_flow_tx(web3: Web3) {
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
-    shared::tracing::initialize_for_tests(
+    shared::tracing::initialize_reentrant(
         "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
     );
     shared::exit_process_on_panic::set_panic_hook();

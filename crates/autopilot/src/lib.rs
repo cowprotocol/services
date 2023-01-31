@@ -39,6 +39,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    caching_balance_fetcher::CachingBalanceFetcher,
     current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -156,6 +157,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         vault_relayer,
         settlement_contract.address(),
     ));
+    let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
+    balance_fetcher.spawn_background_task(current_block_stream.clone());
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
