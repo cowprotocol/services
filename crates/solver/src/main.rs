@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
 use futures::{future, FutureExt};
@@ -333,7 +332,7 @@ async fn main() -> ! {
         liquidity_sources,
         base_tokens,
     };
-    let submission_nodes = future::join_all(
+    let submission_nodes = future::try_join_all(
         args.transaction_submission_nodes
             .into_iter()
             .enumerate()
@@ -365,8 +364,6 @@ async fn main() -> ! {
             ),
     )
     .await
-    .into_iter()
-    .collect::<Result<Vec<_>, _>>()
     .unwrap();
     let submitted_transactions = GlobalTxPool::default();
     let mut transaction_strategies = vec![];
