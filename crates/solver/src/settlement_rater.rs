@@ -195,6 +195,7 @@ impl SettlementRating for SettlementRater {
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
+            let score = settlement.score.clone().unwrap_or_else(|| objective_value.clone());
             RatedSettlement {
                 id,
                 settlement,
@@ -204,6 +205,7 @@ impl SettlementRating for SettlementRater {
                 gas_estimate,
                 gas_price: gas_price.clone(),
                 objective_value,
+                score,
             }
         };
 
