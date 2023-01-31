@@ -495,9 +495,7 @@ fn get_orders_with_native_prices(
                 true
             }
             _ => {
-                if order.metadata.class == OrderClass::Market {
-                    filtered_market_orders += 1;
-                }
+                filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
                 false
             }
         }
