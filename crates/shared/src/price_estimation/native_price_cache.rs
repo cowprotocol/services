@@ -2,7 +2,7 @@ use crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEsti
 use futures::stream::StreamExt;
 use itertools::{Either, Itertools};
 use primitive_types::H160;
-use prometheus::IntCounterVec;
+use prometheus::{IntCounter, IntCounterVec, IntGauge};
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::{Arc, Mutex, MutexGuard, Weak},
@@ -14,7 +14,13 @@ use tracing::Instrument;
 struct Metrics {
     /// native price cache hits misses
     #[metric(labels("result"))]
-    native_price_cache: IntCounterVec,
+    native_price_cache_access: IntCounterVec,
+    /// number of items in cache
+    native_price_cache_size: IntGauge,
+    /// number of background updates performed
+    native_price_cache_background_updates: IntCounter,
+    /// number of items in cache that are outdated
+    native_price_cache_outdated_entries: IntGauge,
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +172,7 @@ impl CachingNativePriceEstimator {
             estimator,
             cache: Default::default(),
         });
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         tokio::spawn(
             update_recently_used_outdated_prices(
                 Arc::downgrade(&inner),
@@ -173,10 +180,10 @@ impl CachingNativePriceEstimator {
                 update_size,
                 max_age.saturating_sub(prefetch_time),
                 concurrent_requests,
+                metrics,
             )
             .instrument(tracing::info_span!("caching_native_price_estimator")),
         );
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         Self {
             inner,
             max_age,
@@ -187,7 +194,12 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get prioritized to get
     /// fetched during the next cycles of the maintenance background task.
     pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
-        let (cached_prices, _) = self.inner.get_cached_prices(tokens, &self.max_age, true);
+        let (cached_prices, missing_indices) =
+            self.inner.get_cached_prices(tokens, &self.max_age, true);
+        self.metrics
+            .native_price_cache_access
+            .with_label_values(&["misses"])
+            .inc_by(missing_indices.len() as u64);
         let result = cached_prices
             .iter()
             .map(|(index, price)| (tokens[*index], *price))
@@ -206,11 +218,11 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let (cached_prices, missing_indices) =
                 self.inner.get_cached_prices(tokens, &self.max_age, false);
             self.metrics
-                .native_price_cache
+                .native_price_cache_access
                 .with_label_values(&["misses"])
                 .inc_by(missing_indices.len() as u64);
             self.metrics
-                .native_price_cache
+                .native_price_cache_access
                 .with_label_values(&["hits"])
                 .inc_by(cached_prices.len() as u64);
 
@@ -239,19 +251,25 @@ async fn update_recently_used_outdated_prices(
     update_size: Option<usize>,
     max_age: Duration,
     concurrent_requests: usize,
+    metrics: &Metrics,
 ) {
     while let Some(inner) = inner.upgrade() {
         let now = Instant::now();
 
-        let mut outdated_entries: Vec<_> = inner
-            .cache
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
-            .map(|(token, cached)| (*token, cached.requested_at))
-            .collect();
+        let mut outdated_entries: Vec<_> = {
+            let cache = inner.cache.lock().unwrap();
+            metrics.native_price_cache_size.set(cache.len() as i64);
+            cache
+                .iter()
+                .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
+                .map(|(token, cached)| (*token, cached.requested_at))
+                .collect()
+        };
         outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+
+        metrics
+            .native_price_cache_outdated_entries
+            .set(outdated_entries.len() as i64);
 
         let tokens_to_update: Vec<_> = outdated_entries
             .iter()
@@ -266,6 +284,9 @@ async fn update_recently_used_outdated_prices(
                 concurrent_requests,
             );
             while stream.next().await.is_some() {}
+            metrics
+                .native_price_cache_background_updates
+                .inc_by(tokens_to_update.len() as u64);
         }
 
         tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
