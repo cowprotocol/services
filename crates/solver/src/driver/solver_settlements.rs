@@ -21,6 +21,7 @@ pub struct RatedSettlement {
     pub gas_estimate: U256,                   // In gas units.
     pub gas_price: BigRational,               // In wei per gas unit.
     pub objective_value: BigRational,
+    pub score: BigRational,
 }
 
 /// Filters out all settlements without any user order which is mature by age or mature by association.
