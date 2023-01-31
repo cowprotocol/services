@@ -12,7 +12,7 @@ use {
         settlement_submission::{
             submitter::{
                 flashbots_api::FlashbotsApi,
-                public_mempool_api::PublicMempoolApi,
+                public_mempool_api::{PublicMempoolApi, SubmissionNode},
                 Strategy,
                 Submitter,
                 SubmitterGasPriceEstimator,
@@ -89,7 +89,7 @@ impl Mempool {
         Ok(match &config.kind {
             Kind::Public(high_risk) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
-                    vec![boundary::web3(&eth)],
+                    vec![SubmissionNode::Broadcast(boundary::web3(&eth))],
                     matches!(high_risk, HighRisk::Disabled),
                 )),
                 submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),

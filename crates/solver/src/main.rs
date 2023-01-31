@@ -1,6 +1,7 @@
-use anyhow::Context;
+use anyhow::Result;
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
+use futures::{future, FutureExt};
 use model::DomainSeparator;
 use num::rational::Ratio;
 use shared::{
@@ -39,7 +40,9 @@ use solver::{
     settlement_submission::{
         gelato::GelatoSubmitter,
         submitter::{
-            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
+            eden_api::EdenApi,
+            flashbots_api::FlashbotsApi,
+            public_mempool_api::{PublicMempoolApi, SubmissionNode},
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -330,37 +333,41 @@ async fn main() -> ! {
         liquidity_sources,
         base_tokens,
     };
-    let submission_nodes_with_url = args
-        .transaction_submission_nodes
-        .into_iter()
-        .enumerate()
-        .map(|(index, url)| {
-            (
-                ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, index),
-                url,
-            )
-        })
-        .collect::<Vec<_>>();
-    for (node, url) in &submission_nodes_with_url {
-        let node_network_id = node
-            .net()
-            .version()
-            .await
-            .with_context(|| {
-                format!(
-                    "Unable to retrieve network id on startup using the submission node at {url}"
+    let submission_nodes = future::join_all(
+        args.transaction_submission_nodes
+            .into_iter()
+            .enumerate()
+            .map(|(index, url)| {
+                SubmissionNode::validated_broadcast_node(
+                    &args.shared.ethrpc,
+                    &http_factory,
+                    url,
+                    format!("broadcast {index}"),
+                    &network_id,
                 )
+                .boxed()
             })
-            .unwrap();
-        assert_eq!(
-            node_network_id, network_id,
-            "network id of submission node doesn't match main node"
-        );
-    }
-    let submission_nodes = submission_nodes_with_url
-        .into_iter()
-        .map(|(node, _)| node)
-        .collect::<Vec<_>>();
+            .chain(
+                args.transaction_notification_nodes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, url)| {
+                        SubmissionNode::from_notification_url(
+                            &args.shared.ethrpc,
+                            &http_factory,
+                            url,
+                            format!("notification {index}"),
+                            &network_id,
+                        )
+                        .then(|node| async move { Ok(node) })
+                        .boxed()
+                    }),
+            ),
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
     let submitted_transactions = GlobalTxPool::default();
     let mut transaction_strategies = vec![];
     for strategy in args.transaction_strategy {
@@ -389,8 +396,8 @@ async fn main() -> ! {
             }
             TransactionStrategyArg::PublicMempool => {
                 assert!(
-                    !submission_nodes.is_empty(),
-                    "missing transaction submission nodes"
+                    submission_nodes.iter().any(|node| node.can_broadcast()),
+                    "At least one submission node that can broadcast transactions must be available"
                 );
                 transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(

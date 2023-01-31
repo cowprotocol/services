@@ -4,19 +4,24 @@ use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
-use shared::ethrpc::{Web3, Web3Transport};
+use reqwest::Url;
+use shared::{
+    ethrpc::{self, Web3, Web3Transport},
+    http_client::HttpClientFactory,
+};
+use std::ops::Deref;
 
 #[derive(Clone)]
 pub struct PublicMempoolApi {
-    nodes: Vec<Web3>,
+    nodes: Vec<SubmissionNode>,
     high_risk_disabled: bool,
 }
 
 impl PublicMempoolApi {
-    pub fn new(nodes: Vec<Web3>, high_risk_disabled: bool) -> Self {
+    pub fn new(nodes: Vec<SubmissionNode>, high_risk_disabled: bool) -> Self {
         Self {
             nodes,
             high_risk_disabled,
@@ -40,7 +45,13 @@ impl TransactionSubmitting for PublicMempoolApi {
             .iter()
             .enumerate()
             .map(|(i, node)| {
-                let label = format!("public_mempool_{i}");
+                let label = format!(
+                    "public_mempool_{i}_{}",
+                    match node {
+                        SubmissionNode::Broadcast(_) => "broadcast",
+                        SubmissionNode::Notification(_) => "notification",
+                    }
+                );
                 let transaction_request = transaction_request.clone();
                 async move {
                     tracing::debug!(%label, "sending transaction...");
@@ -119,6 +130,77 @@ impl TransactionSubmitting for PublicMempoolApi {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum SubmissionNode {
+    /// Transactions that are sent to this nodes are expected to be broadcast to the mempool and
+    /// eventually be included in a block.
+    Broadcast(Web3),
+    /// A notification node is an endpoint that is not expected to submit transactions to the
+    /// mempool once a transaction has been received. Its purpose is notifying the node owner that a
+    /// transaction has been submitted.
+    /// In general, there are lower expectations on the availability of this node variant.
+    Notification(Web3),
+}
+
+impl Deref for SubmissionNode {
+    type Target = Web3;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SubmissionNode::Broadcast(web3) => web3,
+            SubmissionNode::Notification(web3) => web3,
+        }
+    }
+}
+
+impl SubmissionNode {
+    pub async fn validated_broadcast_node(
+        ethrpc_configs: &ethrpc::Arguments,
+        http_factory: &HttpClientFactory,
+        url: Url,
+        name: impl ToString,
+        expected_network_id: &String,
+    ) -> Result<Self> {
+        let node = ethrpc::web3(ethrpc_configs, http_factory, &url, name);
+        validate_submission_node(&node, expected_network_id)
+            .await
+            .with_context(|| format!("Validation error for broadcast node {url}"))?;
+        Ok(Self::Broadcast(node))
+    }
+
+    pub async fn from_notification_url(
+        ethrpc_configs: &ethrpc::Arguments,
+        http_factory: &HttpClientFactory,
+        url: Url,
+        name: impl ToString,
+        expected_network_id: &String,
+    ) -> Self {
+        let node = ethrpc::web3(ethrpc_configs, http_factory, &url, name);
+        if let Err(err) = validate_submission_node(&node, expected_network_id).await {
+            tracing::error!("Error validating submission notification node {url}: {err}");
+        }
+        Self::Notification(node)
+    }
+
+    pub fn can_broadcast(&self) -> bool {
+        match self {
+            SubmissionNode::Broadcast(_) => true,
+            SubmissionNode::Notification(_) => false,
+        }
+    }
+}
+
+pub async fn validate_submission_node(node: &Web3, expected_network_id: &String) -> Result<()> {
+    let node_network_id = node
+        .net()
+        .version()
+        .await
+        .context("Unable to retrieve network id on startup")?;
+    if &node_network_id != expected_network_id {
+        bail!("Network id doesn't match expected network id");
+    };
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
