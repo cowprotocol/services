@@ -99,7 +99,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn manual_node_test() {
-        shared::tracing::initialize_for_tests("autopilot=trace");
+        shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new("postgresql://").await.unwrap();
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();

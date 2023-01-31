@@ -300,7 +300,7 @@ mod tests {
             ),
         ];
 
-        shared::tracing::initialize_for_tests("INFO");
+        shared::tracing::initialize_reentrant("INFO");
         DriverLogger::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
     }
 }
