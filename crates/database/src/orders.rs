@@ -602,44 +602,6 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-/// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
-/// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
-/// identical orders in bulk so in order to not do unnecessary price estimation requests during
-/// `surplus_fee` computations we only do it once per group.
-///
-/// The ordering by most outdated in combination with updating the timestamp when updating the fee
-/// fails is important. It ensures that we cannot get stuck on orders for which the update process
-/// keeps failing.
-pub fn order_parameters_with_most_outdated_fees(
-    ex: &mut PgConnection,
-    max_fee_timestamp: DateTime<Utc>,
-    min_valid_to: i64,
-    limit: i64,
-) -> BoxStream<'_, Result<OrderFeeSpecifier, sqlx::Error>> {
-    const QUERY: &str = const_format::concatcp!(
-        " WITH outdated_groups as (",
-        "   SELECT sell_token, buy_token, sell_amount,",
-        "          NULLIF(MIN(COALESCE(surplus_fee_timestamp, '-infinity'::timestamp)), '-infinity'::timestamp) as surplus_fee_timestamp",
-        "   FROM (",
-        OPEN_ORDERS,
-        "       AND class = 'limit'",
-        "       AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
-        "   ) as subquery",
-        "   GROUP BY sell_token, buy_token, sell_amount",
-        " )",
-        " SELECT sell_token, buy_token, sell_amount",
-        " FROM outdated_groups",
-        " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
-        " LIMIT $3"
-    );
-
-    sqlx::query_as(QUERY)
-        .bind(min_valid_to)
-        .bind(max_fee_timestamp)
-        .bind(limit)
-        .fetch(ex)
-}
-
 /// Count the number of valid limit orders belonging to a particular user.
 pub async fn count_limit_orders_by_owner(
     ex: &mut PgConnection,
@@ -661,7 +623,7 @@ pub async fn count_limit_orders_by_owner(
 }
 
 /// These parameters have to match in an order for a [`FeeUpdate`] update to apply to it.
-#[derive(Debug, FromRow, PartialEq, Eq)]
+#[derive(Clone, Debug, FromRow, PartialEq, Eq, Hash)]
 pub struct OrderFeeSpecifier {
     pub sell_token: Address,
     pub buy_token: Address,
@@ -702,6 +664,42 @@ pub async fn update_limit_order_fees(
         .bind(&order_spec.sell_amount)
         .fetch_all(ex)
         .await
+}
+
+/// All data required to filter, select and update orders to update the
+/// `surplus_fee` for.
+#[derive(Debug, Clone, sqlx::FromRow, PartialEq, Eq, Default)]
+pub struct OrderQuotingData {
+    pub uid: OrderUid,
+    pub owner: Address,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub sell_token_balance: SellTokenSource,
+    pub partially_fillable: bool,
+}
+
+/// Returns all limit orders that are currently waiting to be filled sorted
+/// by `surplus_fee_timestamp` with the most outdated ones coming first.
+pub fn open_limit_orders(
+    ex: &mut PgConnection,
+    max_fee_timestamp: DateTime<Utc>,
+    min_valid_to: i64,
+) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
+    const QUERY: &str = const_format::concatcp!(
+        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, partially_fillable",
+        " FROM (",
+        OPEN_ORDERS,
+        "     AND class = 'limit'",
+        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
+        " ) as subquery"
+    );
+
+    sqlx::query_as(QUERY)
+        .bind(min_valid_to)
+        .bind(max_fee_timestamp)
+        .fetch(ex)
 }
 
 /// Count the number of valid limit orders.
@@ -1809,30 +1807,14 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
 
         assert_eq!(orders.len(), 2);
-        // order with uid 5 (higher priority because it was never estimated)
-        assert_eq!(
-            orders[0],
-            OrderFeeSpecifier {
-                sell_token: ByteArray([3; 20]),
-                buy_token: ByteArray([4; 20]),
-                sell_amount: 1.into(),
-            }
-        );
-        // order with uid 1
-        assert_eq!(
-            orders[1],
-            OrderFeeSpecifier {
-                sell_token: ByteArray([1; 20]),
-                buy_token: ByteArray([2; 20]),
-                sell_amount: 1.into(),
-            }
-        );
+        assert_eq!(orders[0].uid, ByteArray([5; 56]));
+        assert_eq!(orders[1].uid, ByteArray([1; 56]),);
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
@@ -1847,11 +1829,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
         assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].uid, ByteArray([5; 56]));
     }
 
     #[tokio::test]

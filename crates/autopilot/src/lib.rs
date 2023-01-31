@@ -578,15 +578,15 @@ pub async fn main(args: arguments::Arguments) -> ! {
     );
 
     if args.enable_limit_orders {
-        let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,
             quoter,
             database: db.clone(),
-            signature_validator,
-            domain_separator,
             parallelism: args.limit_order_quoter_parallelism,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: args.quoting_strategies,
+            batch_size: args.limit_order_quoter_batch_size,
         }
         .spawn();
         LimitOrderMetrics {

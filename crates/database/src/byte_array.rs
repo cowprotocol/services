@@ -7,7 +7,7 @@ use sqlx::{
 use std::fmt::{self, Debug, Formatter};
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> Debug for ByteArray<N> {
@@ -21,14 +21,6 @@ impl<const N: usize> Default for ByteArray<N> {
         Self([0; N])
     }
 }
-
-impl<const N: usize> PartialEq for ByteArray<N> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<const N: usize> Eq for ByteArray<N> {}
 
 impl<const N: usize> Type<Postgres> for ByteArray<N> {
     fn type_info() -> PgTypeInfo {

@@ -10,7 +10,7 @@ use autopilot::{
         },
     },
     event_updater::GPv2SettlementContract,
-    limit_orders::LimitOrderQuoter,
+    limit_orders::{LimitOrderQuoter, QuotingStrategy},
     solvable_orders::SolvableOrdersCache,
 };
 use contracts::{IUniswapLikeRouter, WETH9};
@@ -194,9 +194,10 @@ impl OrderbookServices {
                 fee: 1_000.into(),
             }),
             database: autopilot_db.clone(),
-            signature_validator: signature_validator.clone(),
-            domain_separator: contracts.domain_separator,
             parallelism: 2,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: vec![QuotingStrategy::SkipUnfunded],
+            batch_size: 10,
         }
         .spawn();
         let mut code_fetcher = MockCodeFetching::new();
