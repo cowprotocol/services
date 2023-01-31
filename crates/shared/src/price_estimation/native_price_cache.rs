@@ -4,7 +4,7 @@ use itertools::{Either, Itertools};
 use primitive_types::H160;
 use prometheus::{IntCounter, IntCounterVec, IntGauge};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::{Arc, Mutex, MutexGuard, Weak},
     time::{Duration, Instant},
 };
@@ -23,16 +23,26 @@ struct Metrics {
     native_price_cache_outdated_entries: IntGauge,
 }
 
+/// Wrapper around `Box<dyn PriceEstimating>` which caches successful price estimates for some time
+/// and supports updating the cache in the background.
+/// The size of the underlying cache is unbounded.
+pub struct CachingNativePriceEstimator {
+    inner: Arc<Inner>,
+    max_age: Duration,
+    metrics: &'static Metrics,
+}
+
+struct Inner {
+    cache: Mutex<HashMap<H160, CachedPrice>>,
+    high_priority: Mutex<HashSet<H160>>,
+    estimator: Box<dyn NativePriceEstimating>,
+}
+
 #[derive(Debug, Clone)]
 struct CachedPrice {
     price: f64,
     updated_at: Instant,
     requested_at: Instant,
-}
-
-struct Inner {
-    cache: Mutex<HashMap<H160, CachedPrice>>,
-    estimator: Box<dyn NativePriceEstimating>,
 }
 
 impl Inner {
@@ -142,15 +152,27 @@ impl Inner {
             .buffered(parallelism)
             .boxed()
     }
-}
 
-/// Wrapper around `Box<dyn PriceEstimating>` which caches successful price estimates for some time
-/// and supports updating the cache in the background.
-/// The size of the underlying cache is unbounded.
-pub struct CachingNativePriceEstimator {
-    inner: Arc<Inner>,
-    max_age: Duration,
-    metrics: &'static Metrics,
+    /// Tokens with highest priority first.
+    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<(H160, Instant)> {
+        let mut outdated: Vec<_> = self
+            .cache
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
+            .map(|(token, cached)| (*token, cached.requested_at))
+            .collect();
+        let high_priority = self.high_priority.lock().unwrap().clone();
+        let priority = |token: &H160| high_priority.contains(token) as u8;
+        outdated.sort_unstable_by_key(|entry| {
+            (
+                std::cmp::Reverse(priority(&entry.0)),
+                std::cmp::Reverse(entry.1),
+            )
+        });
+        outdated
+    }
 }
 
 impl CachingNativePriceEstimator {
@@ -171,6 +193,7 @@ impl CachingNativePriceEstimator {
         let inner = Arc::new(Inner {
             estimator,
             cache: Default::default(),
+            high_priority: Default::default(),
         });
         let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         tokio::spawn(
@@ -205,6 +228,10 @@ impl CachingNativePriceEstimator {
             .map(|(index, price)| (tokens[*index], *price))
             .collect();
         result
+    }
+
+    pub fn replace_high_priority(&self, tokens: HashSet<H160>) {
+        *self.inner.high_priority.lock().unwrap() = tokens;
     }
 }
 
@@ -255,22 +282,13 @@ async fn update_recently_used_outdated_prices(
 ) {
     while let Some(inner) = inner.upgrade() {
         let now = Instant::now();
-
-        let mut outdated_entries: Vec<_> = {
-            let cache = inner.cache.lock().unwrap();
-            metrics.native_price_cache_size.set(cache.len() as i64);
-            cache
-                .iter()
-                .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
-                .map(|(token, cached)| (*token, cached.requested_at))
-                .collect()
-        };
-        outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
-
+        metrics
+            .native_price_cache_size
+            .set(inner.cache.lock().unwrap().len() as i64);
+        let outdated_entries = inner.sorted_tokens_to_update(max_age, now);
         metrics
             .native_price_cache_outdated_entries
             .set(outdated_entries.len() as i64);
-
         let tokens_to_update: Vec<_> = outdated_entries
             .iter()
             .take(update_size.unwrap_or(outdated_entries.len()))
@@ -550,5 +568,50 @@ mod tests {
         for (_, price) in &results {
             assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 2);
         }
+    }
+
+    #[test]
+    fn outdated_entries_prioritized() {
+        let t0 = H160::from_low_u64_be(0);
+        let t1 = H160::from_low_u64_be(1);
+        let now = Instant::now();
+        let inner = Inner {
+            cache: Mutex::new(
+                [
+                    (
+                        t0,
+                        CachedPrice {
+                            price: 0.,
+                            updated_at: now,
+                            requested_at: now,
+                        },
+                    ),
+                    (
+                        t1,
+                        CachedPrice {
+                            price: 0.,
+                            updated_at: now,
+                            requested_at: now,
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            high_priority: Default::default(),
+            estimator: Box::new(MockNativePriceEstimating::new()),
+        };
+
+        let now = now + Duration::from_secs(1);
+
+        *inner.high_priority.lock().unwrap() = std::iter::once(t0).collect();
+        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        assert_eq!(tokens[0].0, t0);
+        assert_eq!(tokens[1].0, t1);
+
+        *inner.high_priority.lock().unwrap() = std::iter::once(t1).collect();
+        let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
+        assert_eq!(tokens[0].0, t1);
+        assert_eq!(tokens[1].0, t0);
     }
 }
