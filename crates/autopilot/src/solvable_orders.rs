@@ -47,7 +47,6 @@ pub struct Metrics {
     auction_filtered_orders: IntGaugeVec,
 
     /// Auction filtered market orders due to missing native token price.
-    #[metric()]
     auction_market_order_missing_price: IntGauge,
 }
 
