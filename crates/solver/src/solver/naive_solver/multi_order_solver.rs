@@ -148,18 +148,36 @@ fn solve_with_uniswap(
     // Because the smart contracts round in the favour of the traders, it could
     // be that we actually require a bit more from the Uniswap pool in order to
     // pay out all proceeds. We move the rounding error to the sell token so that
-    // it either comes out of the fees or existing buffers. Compute that amount:
-    let uniswap_out_with_rounding = big_int_to_u256(&settlement.trade_executions().fold(
+    // it either comes out of the fees or existing buffers. It is also important
+    // to use the **synthetic** order amounts for this, as this output amount
+    // needs to be computed for what is actually intented to be traded against
+    // an AMM and not how the order will be executed (including things like
+    // surplus fees).
+    let uniswap_out_required_by_orders = big_int_to_u256(&orders.iter().try_fold(
         BigInt::default(),
-        |mut total, execution| {
-            if execution.sell_token == uniswap_out_token {
-                total -= execution.sell_amount.to_big_int();
+        |mut total, order| {
+            if order.sell_token == uniswap_out_token {
+                total -= match order.kind {
+                    OrderKind::Sell => order.sell_amount,
+                    OrderKind::Buy => order
+                        .buy_amount
+                        .checked_mul(uniswap_out)?
+                        .checked_div(uniswap_in)?,
+                }
+                .to_big_int();
             } else {
-                total += execution.buy_amount.to_big_int();
+                total += match order.kind {
+                    OrderKind::Sell => order
+                        .sell_amount
+                        .checked_mul(uniswap_out)?
+                        .checked_ceil_div(&uniswap_in)?,
+                    OrderKind::Buy => order.buy_amount,
+                }
+                .to_big_int();
             };
-            total
+            Some(total)
         },
-    ))
+    )?)
     .ok()?;
 
     // In theory, not all limit orders are GPv2 trades (although in practice
@@ -168,8 +186,7 @@ fn solve_with_uniswap(
     // don't get any surplus anyway, so we can just use the original output
     // amount as the rounding error will come from the surplus that those orders
     // would have otherwise received.
-    // This only really matters for unit tests anyway ¯\_(ツ)_/¯.
-    let uniswap_out_with_rounding = uniswap_out_with_rounding.max(uniswap_out);
+    let uniswap_out_with_rounding = uniswap_out_required_by_orders.max(uniswap_out);
 
     settlement
         .with_liquidity(
