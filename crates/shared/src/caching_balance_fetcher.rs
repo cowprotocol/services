@@ -44,7 +44,7 @@ impl BalanceCache {
         }
 
         if let Some(mut entry) = self.data.get_mut(query) {
-            entry.updated_at = self.last_seen_block;
+            entry.updated_at = update_block;
             entry.balance = balance;
         }
     }
