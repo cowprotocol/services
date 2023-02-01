@@ -1,8 +1,8 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition,
-        infra::{self, config::cli},
+        domain::competition::{self, auction},
+        infra,
         tests::{self, hex_address, setup},
     },
     itertools::Itertools,
@@ -30,6 +30,7 @@ async fn test() {
         interactions,
         solver_address,
         geth,
+        solver_secret_key,
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -75,6 +76,7 @@ async fn test() {
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
         address: hex_address(solver_address),
+        private_key: format!("0x{}", solver_secret_key.display_secret()),
         solve: vec![setup::solver::Solve {
             req: json!({
                 "id": "1",
@@ -110,7 +112,7 @@ async fn test() {
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline - competition::SolverTimeout::solving_time_buffer(),
+                "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
@@ -133,11 +135,13 @@ async fn test() {
     // Set up the driver.
     let client = setup::driver::setup(setup::driver::Config {
         now,
-        contracts: cli::ContractAddresses {
-            gp_v2_settlement: Some(settlement.address()),
-            weth: Some(weth.address()),
+        file: setup::driver::ConfigFile::Create {
+            solvers: vec![solver],
+            contracts: infra::config::file::ContractsConfig {
+                gp_v2_settlement: Some(settlement.address()),
+                weth: Some(weth.address()),
+            },
         },
-        file: setup::driver::ConfigFile::Create(vec![solver]),
         geth: &geth,
     })
     .await;

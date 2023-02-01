@@ -5,7 +5,7 @@ use {
             eth,
             liquidity,
         },
-        Ethereum,
+        infra::Ethereum,
     },
     anyhow::{Context, Result},
     model::{
@@ -328,7 +328,7 @@ fn to_boundary_signature(signature: &order::Signature) -> model::signature::Sign
     }
 }
 
-fn to_boundary_interaction(
+pub fn to_boundary_interaction(
     slippage_context: &SlippageContext,
     settlement_contract: eth::ContractAddress,
     interaction: &competition::solution::Interaction,

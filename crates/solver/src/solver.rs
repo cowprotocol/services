@@ -43,6 +43,7 @@ use shared::{
         model::{AuctionResult, SimulatedTransaction},
         DefaultHttpSolverApi, SolverConfig,
     },
+    rate_limiter::{RateLimiter, RateLimitingStrategy},
     token_info::TokenInfoFetching,
     token_list::AutoUpdatingTokenList,
     zeroex_api::ZeroExApi,
@@ -272,6 +273,7 @@ pub fn create(
     disabled_one_inch_protocols: Vec<String>,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
+    paraswap_rate_limiter: Option<RateLimitingStrategy>,
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
@@ -436,7 +438,9 @@ pub fn create(
                     disabled_paraswap_dexs.clone(),
                     http_factory.create(),
                     paraswap_partner.clone(),
-                    None,
+                    paraswap_rate_limiter.clone().map(|strategy| {
+                        RateLimiter::from_strategy(strategy, "paraswap_solver".into())
+                    }),
                     slippage_calculator,
                 )))),
                 SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(

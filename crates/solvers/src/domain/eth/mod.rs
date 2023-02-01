@@ -1,4 +1,4 @@
-use ethereum_types::{H160, U256};
+pub use ethereum_types::{H160, U256};
 use std::{
     fmt::{self, Display, Formatter},
     str::FromStr,

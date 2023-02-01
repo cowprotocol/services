@@ -132,6 +132,7 @@ impl TraceCallDetector {
 
         let balance_before_in = match decode_u256(&traces[0]) {
             Ok(balance) => balance,
+            // Common cause of the failure: https://github.com/cowprotocol/services/pull/781
             Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
         let balance_after_in = match decode_u256(&traces[2]) {
@@ -190,8 +191,7 @@ impl TraceCallDetector {
 
         if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
             return Ok(TokenQuality::bad(format!(
-                "can't approve max amount: {}",
-                err
+                "can't approve max amount: {err}"
             )));
         }
 
@@ -608,20 +608,20 @@ mod tests {
         println!("testing good tokens");
         for &token in base_tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
 
         println!("testing bad tokens");
         for &token in bad_tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
     }
 
     #[tokio::test]
     #[ignore]
     async fn mainnet_univ3() {
-        crate::tracing::initialize_for_tests("shared=debug");
+        crate::tracing::initialize_reentrant("shared=debug");
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let base_tokens = vec![testlib::tokens::WETH];
@@ -769,7 +769,7 @@ mod tests {
 
         for token in tokens {
             let result = token_cache.detect(token).await;
-            println!("token {:?} is {:?}", token, result);
+            println!("token {token:?} is {result:?}");
         }
     }
 }

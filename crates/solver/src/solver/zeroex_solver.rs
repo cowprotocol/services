@@ -254,7 +254,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 
     #[tokio::test]
@@ -296,7 +296,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 
     #[tokio::test]

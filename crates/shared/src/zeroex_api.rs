@@ -36,7 +36,7 @@ const AFFILIATE_ADDRESS: &str = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 // the full address ad instead uses ellipsis (e.g. "0xeeee…eeee"). This
 // helper just works around that.
 fn addr2str(addr: H160) -> String {
-    format!("{:#x}", addr)
+    format!("{addr:#x}")
 }
 
 /// A 0x API quote query parameters.
@@ -523,7 +523,7 @@ impl DefaultZeroExApi {
             Ok(RawResponse::ResponseErr { reason, code }) => match code {
                 // Validation Error
                 100 => Err(ZeroExResponseError::InsufficientLiquidity),
-                500..=599 => Err(ZeroExResponseError::ServerError(format!("{:?}", url))),
+                500..=599 => Err(ZeroExResponseError::ServerError(format!("{url:?}"))),
                 _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
             },
             Err(err) => Err(ZeroExResponseError::DeserializeError(

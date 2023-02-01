@@ -24,6 +24,7 @@
 
 pub mod liquidity;
 pub mod mempool;
+pub mod quote;
 pub mod settlement;
 
 pub use {
@@ -32,7 +33,11 @@ pub use {
     mempool::Mempool,
     model::order::OrderData,
     settlement::Settlement,
-    shared::{ethrpc::Web3, exit_process_on_panic, tracing::initialize as initialize_tracing},
+    shared::{
+        ethrpc::Web3,
+        exit_process_on_panic,
+        tracing::initialize_reentrant as initialize_tracing,
+    },
 };
 
 use crate::infra::blockchain::Ethereum;

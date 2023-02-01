@@ -29,7 +29,7 @@ async fn local_node_order_cancellation() {
 }
 
 async fn order_cancellation(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,shared=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,shared=debug");
     shared::exit_process_on_panic::set_panic_hook();
 
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
@@ -80,7 +80,7 @@ async fn order_cancellation(web3: Web3) {
         };
         async move {
             let quote = client
-                .post(&format!("{}{}", API_HOST, QUOTE_ENDPOINT))
+                .post(&format!("{API_HOST}{QUOTE_ENDPOINT}"))
                 .json(&request)
                 .send()
                 .await
@@ -108,7 +108,7 @@ async fn order_cancellation(web3: Web3) {
                 .into_order_creation();
 
             let placement = client
-                .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+                .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
                 .json(&order)
                 .send()
                 .await
@@ -130,10 +130,7 @@ async fn order_cancellation(web3: Web3) {
 
         async move {
             let cancellation = client
-                .delete(&format!(
-                    "{}{}{}",
-                    API_HOST, ORDER_PLACEMENT_ENDPOINT, order_uid
-                ))
+                .delete(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_uid}"))
                 .json(&CancellationPayload {
                     signature: cancellation.signature,
                     signing_scheme: cancellation.signing_scheme,
@@ -165,7 +162,7 @@ async fn order_cancellation(web3: Web3) {
 
         async move {
             let cancellation = client
-                .delete(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+                .delete(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
                 .json(&signed_cancellations)
                 .send()
                 .await
@@ -185,10 +182,7 @@ async fn order_cancellation(web3: Web3) {
         let client = &client;
         async move {
             client
-                .get(&format!(
-                    "{}{}{}",
-                    API_HOST, ORDER_PLACEMENT_ENDPOINT, order_uid
-                ))
+                .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_uid}"))
                 .send()
                 .await
                 .unwrap()

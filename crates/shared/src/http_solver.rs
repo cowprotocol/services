@@ -171,7 +171,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
         tracing::trace!(body = %text, "response");
-        let context = || format!("request query {}, response body {}", query, text);
+        let context = || format!("request query {query}, response body {text}");
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::RateLimited);
         }

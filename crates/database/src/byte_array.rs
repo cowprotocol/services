@@ -7,7 +7,7 @@ use sqlx::{
 use std::fmt::{self, Debug, Formatter};
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> Debug for ByteArray<N> {
@@ -21,14 +21,6 @@ impl<const N: usize> Default for ByteArray<N> {
         Self([0; N])
     }
 }
-
-impl<const N: usize> PartialEq for ByteArray<N> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<const N: usize> Eq for ByteArray<N> {}
 
 impl<const N: usize> Type<Postgres> for ByteArray<N> {
     fn type_info() -> PgTypeInfo {
@@ -79,20 +71,20 @@ mod tests {
     async fn postgres_fixed_bytes() {
         const TABLE: &str = "fixed_bytes_test";
         let db = PgPool::connect("postgresql://").await.unwrap();
-        db.execute(format!("CREATE TABLE IF NOT EXISTS {} (bytes bytea);", TABLE).as_str())
+        db.execute(format!("CREATE TABLE IF NOT EXISTS {TABLE} (bytes bytea);").as_str())
             .await
             .unwrap();
-        db.execute(format!("TRUNCATE {};", TABLE).as_str())
+        db.execute(format!("TRUNCATE {TABLE};").as_str())
             .await
             .unwrap();
 
         let data: ByteArray<3> = ByteArray([1, 2, 3]);
-        sqlx::query(&format!("INSERT INTO {} (bytes) VALUES ($1);", TABLE))
+        sqlx::query(&format!("INSERT INTO {TABLE} (bytes) VALUES ($1);"))
             .bind(&data)
             .execute(&db)
             .await
             .unwrap();
-        let query = format!("SELECT * FROM {} LIMIT 1;", TABLE);
+        let query = format!("SELECT * FROM {TABLE} LIMIT 1;");
 
         // unprepared raw query
         let row = db.fetch_one(query.as_str()).await.unwrap();

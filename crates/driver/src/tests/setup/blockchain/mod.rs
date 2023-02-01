@@ -44,7 +44,7 @@ impl Drop for Geth {
         let task = async move {
             let client = reqwest::Client::new();
             client
-                .delete(&format!("http://localhost:{DEV_GETH_PORT}/{}", port))
+                .delete(&format!("http://localhost:{DEV_GETH_PORT}/{port}"))
                 .send()
                 .await
                 .unwrap();

@@ -12,6 +12,7 @@ use {
 impl Auction {
     pub fn from_domain(
         auction: &competition::Auction,
+        liquidity: &[liquidity::Liquidity],
         timeout: competition::SolverTimeout,
         now: infra::time::Now,
     ) -> Self {
@@ -56,8 +57,7 @@ impl Auction {
                     reward: order.reward,
                 })
                 .collect(),
-            liquidity: auction
-                .liquidity
+            liquidity: liquidity
                 .iter()
                 .map(|liquidity| match &liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => {
@@ -154,6 +154,8 @@ struct Token {
     trusted: bool,
 }
 
+// TODO Remove dead_code
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Liquidity {

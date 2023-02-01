@@ -13,6 +13,7 @@ pub struct Config {
     pub absolute_slippage: String,
     pub relative_slippage: String,
     pub address: String,
+    pub private_key: String,
 }
 
 #[derive(Debug, Clone)]

@@ -47,7 +47,7 @@ async fn local_node_onchain_settlement() {
 }
 
 async fn onchain_settlement(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -149,7 +149,7 @@ async fn onchain_settlement(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_a)
         .send()
         .await;
@@ -171,7 +171,7 @@ async fn onchain_settlement(web3: Web3) {
         .build()
         .into_order_creation();
     let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
         .json(&order_b)
         .send()
         .await;

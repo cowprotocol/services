@@ -291,7 +291,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        shared::tracing::initialize_for_tests("autopilot=trace");
+        shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new(&std::env::var("DB_URL").unwrap())
             .await
             .unwrap();

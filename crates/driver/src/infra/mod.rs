@@ -1,5 +1,6 @@
 pub mod api;
 pub mod blockchain;
+pub mod cli;
 pub mod config;
 pub mod liquidity;
 pub mod mempool;
@@ -11,6 +12,7 @@ pub use {
     self::solver::Solver,
     api::Api,
     blockchain::Ethereum,
+    config::Config,
     mempool::Mempool,
     simulator::Simulator,
 };

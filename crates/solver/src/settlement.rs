@@ -398,7 +398,7 @@ impl Settlement {
                     .mul(&external_price_buy_token.mul(&clearing_price_sell_token)));
                 if !price_check_result {
                     tracing::debug!(
-                        token_pair =% format!("{:?}-{:?}", sell_token, buy_token),
+                        token_pair =% format!("{sell_token:?}-{buy_token:?}"),
                         %solver_name, settlement =? self,
                         "price violation",
                     );

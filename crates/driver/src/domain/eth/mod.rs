@@ -9,6 +9,7 @@ mod eip712;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
+    ethcontract::PrivateKey,
     primitive_types::{H160, H256, U256},
 };
 

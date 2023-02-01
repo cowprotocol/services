@@ -47,7 +47,7 @@ where
             E: de::Error,
         {
             U256::from_dec_str(s).map_err(|err| {
-                de::Error::custom(format!("failed to decode {:?} as decimal u256: {}", s, err))
+                de::Error::custom(format!("failed to decode {s:?} as decimal u256: {err}"))
             })
         }
     }
@@ -71,7 +71,7 @@ pub fn format_units(amount: U256, decimals: usize) -> String {
     if decimals == 0 {
         str_amount
     } else if str_amount.len() <= decimals {
-        format!("0.{:0>pad_left$}", str_amount, pad_left = decimals)
+        format!("0.{str_amount:0>decimals$}")
     } else {
         format!(
             "{}.{}",

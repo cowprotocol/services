@@ -21,18 +21,18 @@ impl std::str::FromStr for SubsidyTiers {
         for tier in serialized.split(',') {
             let (threshold, fee_factor) = tier
                 .split_once(':')
-                .with_context(|| format!("too few arguments for subsidy tier in \"{}\"", tier))?;
+                .with_context(|| format!("too few arguments for subsidy tier in \"{tier}\""))?;
 
             let threshold: u64 = threshold
                 .parse()
-                .with_context(|| format!("can not parse threshold \"{}\" as u64", threshold))?;
+                .with_context(|| format!("can not parse threshold \"{threshold}\" as u64"))?;
             let threshold = U256::from(threshold)
                 .checked_mul(U256::exp10(18))
                 .with_context(|| format!("threshold {threshold} would overflow U256"))?;
 
             let fee_factor: f64 = fee_factor
                 .parse()
-                .with_context(|| format!("can not parse fee factor \"{}\" as f64", fee_factor))?;
+                .with_context(|| format!("can not parse fee factor \"{fee_factor}\" as f64"))?;
 
             anyhow::ensure!(
                 (0.0..=1.0).contains(&fee_factor),
@@ -120,7 +120,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        crate::tracing::initialize_for_tests("orderbook=debug");
+        crate::tracing::initialize_reentrant("orderbook=debug");
         let transport = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
@@ -138,7 +138,7 @@ mod tests {
         ] {
             let user = H160(user);
             let result = subsidy.cow_subsidy_factor(user).await;
-            println!("{:?} {:?}", user, result);
+            println!("{user:?} {result:?}");
         }
     }
 }

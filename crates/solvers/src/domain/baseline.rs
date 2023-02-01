@@ -74,7 +74,7 @@ pub struct Segment<'a> {
     pub liquidity: &'a liquidity::Liquidity,
     // TODO: There is no type-level guarantee here that both `input.token` and
     // `output.token` are valid for the liquidity in this segment. This is
-    // unfortunate beacuse this type leaks out of this module (currently into
+    // unfortunate because this type leaks out of this module (currently into
     // the `boundary::baseline` module) but should no longer need to be `pub`
     // once the `boundary::baseline` module gets refactored into the domain
     // logic, so I think it is fine for now.

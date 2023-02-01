@@ -23,6 +23,6 @@ impl TokenOwnerSolverApi for SolverConfiguration {
             .await?
             .text()
             .await?;
-        serde_json::from_str(&response).context(format!("bad query response: {:?}", response))
+        serde_json::from_str(&response).context(format!("bad query response: {response:?}"))
     }
 }

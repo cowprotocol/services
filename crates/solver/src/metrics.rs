@@ -20,6 +20,7 @@ use strum::{IntoEnumIterator, VariantNames};
 const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
 
 /// The outcome of a solver run.
+#[derive(strum::EnumIter)]
 pub enum SolverRunOutcome {
     /// Computed a non-trivial settlement.
     Success,
@@ -30,6 +31,17 @@ pub enum SolverRunOutcome {
     Timeout,
     /// The solver returned an error.
     Failure,
+}
+
+impl SolverRunOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            SolverRunOutcome::Success => "success",
+            SolverRunOutcome::Empty => "empty",
+            SolverRunOutcome::Timeout => "timeout",
+            SolverRunOutcome::Failure => "failure",
+        }
+    }
 }
 
 /// The outcome of settlement submission.
@@ -278,6 +290,11 @@ impl Metrics {
                     .with_label_values(&[outcome.label(), solver])
                     .reset();
             }
+            for outcome in SolverRunOutcome::iter() {
+                self.solver_runs
+                    .with_label_values(&[outcome.label(), solver])
+                    .reset();
+            }
         }
     }
 }
@@ -349,13 +366,9 @@ impl SolverMetrics for Metrics {
     }
 
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str) {
-        let result = match outcome {
-            SolverRunOutcome::Success => "success",
-            SolverRunOutcome::Empty => "empty",
-            SolverRunOutcome::Timeout => "timeout",
-            SolverRunOutcome::Failure => "failure",
-        };
-        self.solver_runs.with_label_values(&[result, solver]).inc()
+        self.solver_runs
+            .with_label_values(&[outcome.label(), solver])
+            .inc()
     }
 
     fn single_order_solver_succeeded(&self, solver: &str) {
