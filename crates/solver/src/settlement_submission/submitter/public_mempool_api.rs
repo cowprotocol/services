@@ -56,8 +56,9 @@ impl TransactionSubmitting for PublicMempoolApi {
                             node.web3.eth().send_raw_transaction(bytes.0.into()).await
                         }
                     };
+                    let can_broadcast = node.can_broadcast();
 
-                    (label, result)
+                    (label, result, can_broadcast)
                 }
                 .boxed()
             })
@@ -65,15 +66,21 @@ impl TransactionSubmitting for PublicMempoolApi {
 
         let mut errors = vec![];
         loop {
-            let ((label, result), _, rest) = futures::future::select_all(futures).await;
+            let ((label, result, can_broadcast), _, rest) =
+                futures::future::select_all(futures).await;
             match result {
                 Ok(tx_hash) => {
                     super::track_submission_success(&label, true);
-                    tracing::debug!(%label, "created transaction with hash: {:?}", tx_hash);
-                    return Ok(TransactionHandle {
-                        tx_hash,
-                        handle: tx_hash,
-                    });
+                    if can_broadcast {
+                        tracing::debug!(%label, "created transaction with hash: {:?}", tx_hash);
+                        return Ok(TransactionHandle {
+                            tx_hash,
+                            handle: tx_hash,
+                        });
+                    } else {
+                        tracing::debug!(%label, "non-broadcasting node reports transaction creation with hash: {:?}", tx_hash);
+                        futures = rest;
+                    }
                 }
                 Err(err) => {
                     let err = err.to_string();
