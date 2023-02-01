@@ -50,7 +50,10 @@ use solver::{
     orderbook::OrderBookApi,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
+        submitter::{
+            public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+            Strategy,
+        },
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
@@ -324,7 +327,13 @@ pub async fn setup_naive_solver_uniswapv2_driver(
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),

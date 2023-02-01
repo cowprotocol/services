@@ -28,7 +28,10 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
+        submitter::{
+            public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+            Strategy,
+        },
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
@@ -230,7 +233,13 @@ async fn single_limit_order_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -475,7 +484,13 @@ async fn two_limit_orders_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -729,7 +744,13 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),

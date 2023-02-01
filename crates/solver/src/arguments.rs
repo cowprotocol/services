@@ -251,6 +251,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
+    /// Additional RPC endpoints that we notify when we submit a transaction to the network.
+    /// These endpoints are usually third parties that seek to be timely informed of a submission.
+    /// These URLs are expected to respond to valid RPC requests. however they are not expected to
+    /// be available nor we expect that transaction will eventually be mined.   
+    #[clap(long, env, use_value_delimiter = true)]
+    pub transaction_notification_nodes: Vec<Url>,
+
     /// Don't submit high revert risk (i.e. transactions that interact with on-chain
     /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
     /// transaction submission strategies are available.
@@ -389,6 +396,11 @@ impl std::fmt::Display for Arguments {
             f,
             "transaction_submission_nodes",
             &self.transaction_submission_nodes,
+        )?;
+        display_list(
+            f,
+            "submission_notification_nodes",
+            &self.transaction_notification_nodes,
         )?;
         writeln!(
             f,
