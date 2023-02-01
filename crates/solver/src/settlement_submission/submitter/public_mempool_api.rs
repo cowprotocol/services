@@ -8,7 +8,6 @@ use anyhow::{ensure, Context, Result};
 use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
 use shared::ethrpc::{Web3, Web3Transport};
-use std::ops::Deref;
 
 #[derive(Clone)]
 pub struct PublicMempoolApi {
@@ -52,9 +51,9 @@ impl TransactionSubmitting for PublicMempoolApi {
                 async move {
                     tracing::debug!(%label, "sending transaction...");
                     let result = match transaction_request {
-                        Transaction::Request(tx) => node.eth().send_transaction(tx).await,
+                        Transaction::Request(tx) => node.web3.eth().send_transaction(tx).await,
                         Transaction::Raw { bytes, .. } => {
-                            node.eth().send_raw_transaction(bytes.0.into()).await
+                            node.web3.eth().send_raw_transaction(bytes.0.into()).await
                         }
                     };
 
@@ -142,14 +141,6 @@ pub enum SubmissionNodeKind {
 pub struct SubmissionNode {
     kind: SubmissionNodeKind,
     web3: Web3,
-}
-
-impl Deref for SubmissionNode {
-    type Target = Web3;
-
-    fn deref(&self) -> &Self::Target {
-        &self.web3
-    }
 }
 
 impl SubmissionNode {
