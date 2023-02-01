@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
 use futures::{future, FutureExt};
@@ -41,7 +42,7 @@ use solver::{
         submitter::{
             eden_api::EdenApi,
             flashbots_api::FlashbotsApi,
-            public_mempool_api::{PublicMempoolApi, SubmissionNode},
+            public_mempool_api::{validate_submission_node, PublicMempoolApi, SubmissionNode},
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -337,13 +338,16 @@ async fn main() -> ! {
             .into_iter()
             .enumerate()
             .map(|(index, url)| {
-                SubmissionNode::validated_broadcast_node(
-                    &args.shared.ethrpc,
-                    &http_factory,
-                    url,
-                    format!("broadcast {index}"),
-                    &network_id,
-                )
+                let name = format!("broadcast {index}");
+                let node = ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, name);
+                let expected_network_id = &network_id;
+                (async move {
+                    validate_submission_node(&node, expected_network_id)
+                        .await
+                        .with_context(|| format!("Validation error for broadcast node {url}"))?;
+                    let result: Result<_> = Ok(SubmissionNode::Broadcast(node));
+                    result
+                })
                 .boxed()
             })
             .chain(
@@ -351,14 +355,20 @@ async fn main() -> ! {
                     .into_iter()
                     .enumerate()
                     .map(|(index, url)| {
-                        SubmissionNode::from_notification_url(
-                            &args.shared.ethrpc,
-                            &http_factory,
-                            url,
-                            format!("notification {index}"),
-                            &network_id,
-                        )
-                        .then(|node| async move { Ok(node) })
+                        let name = format!("broadcast {index}");
+                        let node = ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, name);
+                        let expected_network_id = &network_id;
+                        (async move {
+                            if let Err(err) =
+                                validate_submission_node(&node, expected_network_id).await
+                            {
+                                tracing::error!(
+                                    "Error validating submission notification node {url}: {err}"
+                                );
+                            }
+                            // We intentionally continue despite the error.
+                            Ok(SubmissionNode::Notification(node))
+                        })
                         .boxed()
                     }),
             ),

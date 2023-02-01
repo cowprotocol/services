@@ -7,11 +7,7 @@ use super::{
 use anyhow::{ensure, Context, Result};
 use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
-use reqwest::Url;
-use shared::{
-    ethrpc::{self, Web3, Web3Transport},
-    http_client::HttpClientFactory,
-};
+use shared::ethrpc::{Web3, Web3Transport};
 use std::ops::Deref;
 
 #[derive(Clone)]
@@ -154,34 +150,6 @@ impl Deref for SubmissionNode {
 }
 
 impl SubmissionNode {
-    pub async fn validated_broadcast_node(
-        ethrpc_configs: &ethrpc::Arguments,
-        http_factory: &HttpClientFactory,
-        url: Url,
-        name: impl ToString,
-        expected_network_id: &String,
-    ) -> Result<Self> {
-        let node = ethrpc::web3(ethrpc_configs, http_factory, &url, name);
-        validate_submission_node(&node, expected_network_id)
-            .await
-            .with_context(|| format!("Validation error for broadcast node {url}"))?;
-        Ok(Self::Broadcast(node))
-    }
-
-    pub async fn from_notification_url(
-        ethrpc_configs: &ethrpc::Arguments,
-        http_factory: &HttpClientFactory,
-        url: Url,
-        name: impl ToString,
-        expected_network_id: &String,
-    ) -> Self {
-        let node = ethrpc::web3(ethrpc_configs, http_factory, &url, name);
-        if let Err(err) = validate_submission_node(&node, expected_network_id).await {
-            tracing::error!("Error validating submission notification node {url}: {err}");
-        }
-        Self::Notification(node)
-    }
-
     pub fn can_broadcast(&self) -> bool {
         match self {
             SubmissionNode::Broadcast(_) => true,
