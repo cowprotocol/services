@@ -4,7 +4,7 @@ use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{ensure, Context, Result};
 use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
 use reqwest::Url;
@@ -196,9 +196,10 @@ pub async fn validate_submission_node(node: &Web3, expected_network_id: &String)
         .version()
         .await
         .context("Unable to retrieve network id on startup")?;
-    if &node_network_id != expected_network_id {
-        bail!("Network id doesn't match expected network id");
-    };
+    ensure!(
+        &node_network_id == expected_network_id,
+        "Network id doesn't match expected network id"
+    );
     Ok(())
 }
 #[cfg(test)]
