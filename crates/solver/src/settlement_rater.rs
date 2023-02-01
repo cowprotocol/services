@@ -11,7 +11,7 @@ use ethcontract::errors::ExecutionError;
 use futures::future::join_all;
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
-use num::BigRational;
+use num::{BigRational, ToPrimitive};
 use primitive_types::U256;
 use shared::{
     code_fetching::CodeFetching,
@@ -197,8 +197,7 @@ impl SettlementRating for SettlementRater {
             let objective_value = inputs.objective_value();
             let score = settlement
                 .score
-                .clone()
-                .unwrap_or_else(|| objective_value.clone());
+                .unwrap_or_else(|| objective_value.to_f64().unwrap_or(f64::NAN));
             RatedSettlement {
                 id,
                 settlement,

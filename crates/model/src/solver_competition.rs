@@ -2,10 +2,8 @@ use crate::{
     auction::AuctionId,
     bytes_hex::BytesHex,
     order::OrderUid,
-    ratio_as_decimal,
     u256_decimal::{self, DecimalU256},
 };
-use num::BigRational;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -76,8 +74,7 @@ pub struct CompetitionAuction {
 pub struct SolverSettlement {
     pub solver: String,
     pub objective: Objective,
-    #[serde(with = "ratio_as_decimal")]
-    pub score: BigRational, // CIP17 score
+    pub score: f64,     // CIP17 score
     pub ranking: usize, // CIP17 ranking
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
@@ -149,7 +146,7 @@ mod tests {
                         "cost": 6.0f64,
                         "gas": 7u64,
                     },
-                    "score": "1",
+                    "score": 1.0f64,
                     "ranking": 1,
                     "clearingPrices": {
                         "0x2222222222222222222222222222222222222222": "8",
@@ -197,7 +194,7 @@ mod tests {
                         cost: 6.,
                         gas: 7,
                     },
-                    score: BigRational::from_integer(1.into()),
+                    score: 1.,
                     ranking: 1,
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),

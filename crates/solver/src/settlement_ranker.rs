@@ -9,7 +9,7 @@ use crate::{
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
 use model::auction::AuctionId;
-use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive, Zero};
+use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
 use rand::prelude::SliceRandom;
 use shared::http_solver::model::{
     AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
@@ -190,17 +190,17 @@ impl SettlementRanker {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         if cfg!(feature = "CIP17") {
-            // Filter out settlements that have negative score
+            // Filter out settlements that have negative score or NaN score.
             rated_settlements.retain(|(solver, settlement, _)| {
-                if settlement.score < BigRational::zero() {
+                if settlement.score.is_nan() || settlement.score < 0.0 {
                     tracing::debug!(
                         solver_name = %solver.name(),
-                        "settlement(s) filtered for having negative score",
+                        "settlement(s) filtered for having negative or NaN score",
                     );
                     solver.notify_auction_result(
                         auction_id,
                         AuctionResult::Rejected(SolverRejectionReason::NegativeScore(
-                            settlement.score.clone(),
+                            settlement.score,
                         )),
                     );
                     return false;
@@ -208,8 +208,7 @@ impl SettlementRanker {
                 true
             });
 
-            rated_settlements
-                .sort_by(|a, b| compare_solutions_cip17(&a.1, &b.1, self.decimal_cutoff));
+            rated_settlements.sort_by(|a, b| a.1.score.total_cmp(&b.1.score));
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
                 |(i, (solver, settlement, _))| {
@@ -228,7 +227,6 @@ impl SettlementRanker {
                     .iter()
                     .map(|(_, settlement, _)| settlement)
                     .collect::<Vec<_>>(),
-                self.decimal_cutoff,
             );
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
@@ -246,10 +244,10 @@ impl SettlementRanker {
 
 // TODO: remove this once CIP-17 is implemented
 // Sort settlements by CIP-17 rules and return hashmap of settlement id to ranking
-fn cip17_ranking(settlements: Vec<&RatedSettlement>, decimals: u16) -> HashMap<usize, usize> {
+fn cip17_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
     let mut settlements = settlements;
-    settlements.retain(|settlement| settlement.score >= BigRational::zero());
-    settlements.sort_by(|a, b| compare_solutions_cip17(a, b, decimals));
+    settlements.retain(|settlement| !settlement.score.is_nan() && settlement.score >= 0.0);
+    settlements.sort_by(|a, b| a.score.total_cmp(&b.score));
     settlements
         .iter()
         .rev()
@@ -268,25 +266,6 @@ fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16
         .floor();
     let rounded_rhs = rhs
         .objective_value
-        .checked_div(&precision)
-        .expect("precision cannot be 0")
-        .floor();
-    rounded_lhs.cmp(&rounded_rhs)
-}
-
-fn compare_solutions_cip17(
-    lhs: &RatedSettlement,
-    rhs: &RatedSettlement,
-    decimals: u16,
-) -> Ordering {
-    let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
-    let rounded_lhs = lhs
-        .score
-        .checked_div(&precision)
-        .expect("precision cannot be 0")
-        .floor();
-    let rounded_rhs = rhs
-        .score
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();

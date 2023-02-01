@@ -219,7 +219,7 @@ impl Interaction for NoopInteraction {
 pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, // todo - extract submitter and score into a separate struct
-    pub score: Option<BigRational>,
+    pub score: Option<f64>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -267,7 +267,7 @@ impl Settlement {
         Self {
             encoder,
             submitter: self.submitter.clone(),
-            score: self.score.clone(),
+            score: self.score,
         }
     }
 

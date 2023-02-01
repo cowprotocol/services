@@ -4,7 +4,6 @@ use model::{
     auction::AuctionId,
     order::{OrderData, OrderUid},
     ratio_as_decimal,
-    ratio_as_decimal::DecimalBigRational,
     signature::Signature,
     u256_decimal::{self, DecimalU256},
 };
@@ -189,8 +188,7 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub submitter: SubmissionPreference,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DecimalBigRational>")]
-    pub score: Option<BigRational>,
+    pub score: Option<f64>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -340,8 +338,7 @@ pub enum SolverRejectionReason {
     SimulationFailure(TransactionWithError),
 
     /// The solution score is negative. Includes the score.
-    #[serde(with = "ratio_as_decimal")]
-    NegativeScore(BigRational),
+    NegativeScore(f64),
 }
 
 #[derive(Debug, Serialize)]
