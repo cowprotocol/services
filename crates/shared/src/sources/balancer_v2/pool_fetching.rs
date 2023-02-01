@@ -508,7 +508,7 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
         println!("Indexing events for chain {chain_id}");
-        crate::tracing::initialize_for_tests("warn,shared=debug");
+        crate::tracing::initialize_reentrant("warn,shared=debug");
 
         let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };

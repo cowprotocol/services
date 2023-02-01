@@ -5,7 +5,7 @@ use {
             eth,
             liquidity,
         },
-        Ethereum,
+        infra::Ethereum,
     },
     anyhow::{Context, Result},
     model::{

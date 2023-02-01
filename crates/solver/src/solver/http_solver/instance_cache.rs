@@ -1,6 +1,8 @@
 use super::instance_creation::{InstanceCreator, Instances};
 use crate::{s3_instance_upload::S3InstanceUploader, solver::Auction};
 use model::auction::AuctionId;
+use once_cell::sync::OnceCell;
+use prometheus::IntCounterVec;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{Instrument, Span};
@@ -73,12 +75,44 @@ impl SharedInstanceCreator {
                     }
                 };
                 std::mem::drop(instances);
-                if let Err(err) = uploader.upload_instance(id, &auction).await {
-                    tracing::error!(%id, ?err, "error uploading instance");
-                }
+
+                let label = match uploader.upload_instance(id, &auction).await {
+                    Ok(()) => "success",
+                    Err(err) => {
+                        tracing::warn!(%id, ?err, "error uploading instance");
+                        "failure"
+                    }
+                };
+                Metrics::get()
+                    .instance_cache_uploads
+                    .with_label_values(&[label])
+                    .inc();
             };
             tokio::task::spawn(task.instrument(Span::current()));
         }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// Auction filtered orders grouped by class.
+    #[metric(labels("result"))]
+    instance_cache_uploads: IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        static INIT: OnceCell<&'static Metrics> = OnceCell::new();
+        INIT.get_or_init(|| {
+            let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+            for result in ["success", "failure"] {
+                metrics
+                    .instance_cache_uploads
+                    .with_label_values(&[result])
+                    .reset();
+            }
+            metrics
+        })
     }
 }
 

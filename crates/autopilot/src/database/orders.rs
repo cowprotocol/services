@@ -1,7 +1,7 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use database::orders::{OrderFeeSpecifier, Quote};
+use database::orders::{OrderFeeSpecifier, OrderQuotingData, Quote};
 use ethcontract::U256;
 use futures::{StreamExt, TryStreamExt};
 use model::time::now_in_epoch_seconds;
@@ -40,29 +40,19 @@ pub struct LimitOrderQuote {
 }
 
 impl Postgres {
-    pub async fn order_specs_with_outdated_fees(
-        &self,
-        age: Duration,
-        limit: usize,
-    ) -> Result<Vec<OrderFeeSpecifier>> {
-        let limit: i64 = limit.try_into().context("convert limit")?;
-
+    /// Returns all limit orders that are waiting to be filled.
+    pub async fn open_limit_orders(&self, age: Duration) -> Result<Vec<OrderQuotingData>> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["limit_orders_with_outdated_fees"])
+            .with_label_values(&["open_limit_orders"])
             .start_timer();
 
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        database::orders::order_parameters_with_most_outdated_fees(
-            &mut ex,
-            timestamp,
-            now_in_epoch_seconds().into(),
-            limit,
-        )
-        .map(|result| result.map_err(anyhow::Error::from))
-        .try_collect()
-        .await
+        database::orders::open_limit_orders(&mut ex, timestamp, now_in_epoch_seconds().into())
+            .map(|result| result.map_err(anyhow::Error::from))
+            .try_collect()
+            .await
     }
 
     /// Updates the `surplus_fee` of all limit orders matching the [`OrderFeeSpecifier`]

@@ -33,17 +33,30 @@ impl Geth {
     }
 }
 
+// What we really want here is "AsyncDrop", which is an unsolved problem in the
+// async ecosystem. As a workaround we create a new runtime so that we can block
+// on the delete request. Spawning a task for this isn't enough because tokio
+// runtimes when they exit drop background tasks, like when a #[tokio::test]
+// function returns.
 impl Drop for Geth {
     fn drop(&mut self) {
         let port = std::mem::take(&mut self.port);
-        tokio::spawn(async move {
+        let task = async move {
             let client = reqwest::Client::new();
             client
                 .delete(&format!("http://localhost:{DEV_GETH_PORT}/{port}"))
                 .send()
                 .await
                 .unwrap();
-        });
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        // block_on must be called in a new thread because tokio forbids nesting
+        // runtimes.
+        let handle = std::thread::spawn(move || runtime.block_on(task));
+        handle.join().unwrap();
     }
 }
 

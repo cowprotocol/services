@@ -1,3 +1,4 @@
+use crate::limit_orders::QuotingStrategy;
 use primitive_types::H160;
 use shared::{
     arguments::display_option, bad_token::token_owner_finder, http_client, price_estimation,
@@ -132,13 +133,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    // Enable background quoting for limit orders.
+    /// Enable background quoting for limit orders.
     #[clap(long, env)]
     pub enable_limit_orders: bool,
 
     /// How many quotes the limit order quoter updates in parallel.
     #[clap(long, env, default_value = "5")]
     pub limit_order_quoter_parallelism: usize,
+
+    /// How many quotes the limit order quoter updates per update cycle.
+    #[clap(long, env, default_value = "25")]
+    pub limit_order_quoter_batch_size: usize,
 
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
@@ -147,6 +152,10 @@ pub struct Arguments {
     /// The time in seconds between new blocks on the network.
     #[clap(long, env, value_parser = shared::arguments::duration_from_seconds)]
     pub network_block_interval: Option<Duration>,
+
+    /// Defines which strategies to apply when updating the `surplus_fee` of limit orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub quoting_strategies: Vec<QuotingStrategy>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -204,6 +213,11 @@ impl std::fmt::Display for Arguments {
             "limit_order_quoter_parallelism: {:?}",
             self.limit_order_quoter_parallelism
         )?;
+        writeln!(
+            f,
+            "limit_order_quoter_batch_size: {:?}",
+            self.limit_order_quoter_batch_size,
+        )?;
         display_option(
             f,
             "network_block_interval",
@@ -211,6 +225,7 @@ impl std::fmt::Display for Arguments {
                 .network_block_interval
                 .map(|duration| duration.as_secs_f32()),
         )?;
+        writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
         Ok(())
     }
 }

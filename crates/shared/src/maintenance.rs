@@ -133,11 +133,9 @@ impl ServiceMaintenance {
 #[metric(subsystem = "maintenance")]
 struct Metrics {
     /// Service maintenance last seen block.
-    #[metric()]
     last_seen_block: prometheus::IntGauge,
 
     /// Service maintenance last successfully updated block.
-    #[metric()]
     last_updated_block: prometheus::IntGauge,
 
     /// Service maintenance error counter

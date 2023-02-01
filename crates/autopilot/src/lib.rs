@@ -39,6 +39,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
+    caching_balance_fetcher::CachingBalanceFetcher,
     current_block::block_number_to_block_number_hash,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -156,6 +157,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         vault_relayer,
         settlement_contract.address(),
     ));
+    let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
+    balance_fetcher.spawn_background_task(current_block_stream.clone());
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -575,15 +578,15 @@ pub async fn main(args: arguments::Arguments) -> ! {
     );
 
     if args.enable_limit_orders {
-        let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,
             quoter,
             database: db.clone(),
-            signature_validator,
-            domain_separator,
             parallelism: args.limit_order_quoter_parallelism,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: args.quoting_strategies,
+            batch_size: args.limit_order_quoter_batch_size,
         }
         .spawn();
         LimitOrderMetrics {

@@ -45,7 +45,7 @@ async fn local_node_vault_balances() {
 }
 
 async fn vault_balances(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
