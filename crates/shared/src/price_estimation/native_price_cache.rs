@@ -43,7 +43,6 @@ struct Inner {
     high_priority: Mutex<HashSet<H160>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
-    metrics: &'static Metrics,
 }
 
 #[derive(Debug, Clone)]
@@ -203,7 +202,6 @@ impl CachingNativePriceEstimator {
             cache: Default::default(),
             high_priority: Default::default(),
             max_age,
-            metrics: Metrics::get(),
         });
         tokio::spawn(
             update_recently_used_outdated_prices(
@@ -223,8 +221,7 @@ impl CachingNativePriceEstimator {
     pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
         let (cached_prices, missing_indices) =
             self.0.get_cached_prices(tokens, &self.0.max_age, true);
-        self.0
-            .metrics
+        Metrics::get()
             .native_price_cache_access
             .with_label_values(&["misses"])
             .inc_by(missing_indices.len() as u64);
@@ -249,13 +246,11 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         let stream = async_stream::stream!({
             let (cached_prices, missing_indices) =
                 self.0.get_cached_prices(tokens, &self.0.max_age, false);
-            self.0
-                .metrics
+            Metrics::get()
                 .native_price_cache_access
                 .with_label_values(&["misses"])
                 .inc_by(missing_indices.len() as u64);
-            self.0
-                .metrics
+            Metrics::get()
                 .native_price_cache_access
                 .with_label_values(&["hits"])
                 .inc_by(cached_prices.len() as u64);
@@ -286,15 +281,14 @@ async fn update_recently_used_outdated_prices(
     max_age: Duration,
     concurrent_requests: usize,
 ) {
+    let metrics = Metrics::get();
     while let Some(inner) = inner.upgrade() {
         let now = Instant::now();
-        inner
-            .metrics
+        metrics
             .native_price_cache_size
             .set(inner.cache.lock().unwrap().len() as i64);
         let outdated_entries = inner.sorted_tokens_to_update(max_age, now);
-        inner
-            .metrics
+        metrics
             .native_price_cache_outdated_entries
             .set(outdated_entries.len() as i64);
         let tokens_to_update: Vec<_> = outdated_entries
@@ -310,8 +304,7 @@ async fn update_recently_used_outdated_prices(
                 concurrent_requests,
             );
             while stream.next().await.is_some() {}
-            inner
-                .metrics
+            metrics
                 .native_price_cache_background_updates
                 .inc_by(tokens_to_update.len() as u64);
         }
@@ -610,7 +603,6 @@ mod tests {
             high_priority: Default::default(),
             estimator: Box::new(MockNativePriceEstimating::new()),
             max_age: Default::default(),
-            metrics: Metrics::get(),
         };
 
         let now = now + Duration::from_secs(1);
