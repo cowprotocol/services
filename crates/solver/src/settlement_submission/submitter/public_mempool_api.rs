@@ -43,9 +43,9 @@ impl TransactionSubmitting for PublicMempoolApi {
             .map(|(i, node)| {
                 let label = format!(
                     "public_mempool_{i}_{}",
-                    match node {
-                        SubmissionNode::Broadcast(_) => "broadcast",
-                        SubmissionNode::Notification(_) => "notification",
+                    match node.kind {
+                        SubmissionNodeKind::Broadcast => "broadcast",
+                        SubmissionNodeKind::Notification => "notification",
                     }
                 );
                 let transaction_request = transaction_request.clone();
@@ -126,34 +126,41 @@ impl TransactionSubmitting for PublicMempoolApi {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum SubmissionNode {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubmissionNodeKind {
     /// Transactions that are sent to this nodes are expected to be broadcast to the mempool and
     /// eventually be included in a block.
-    Broadcast(Web3),
+    Broadcast,
     /// A notification node is an endpoint that is not expected to submit transactions to the
     /// mempool once a transaction has been received. Its purpose is notifying the node owner that a
     /// transaction has been submitted.
     /// In general, there are lower expectations on the availability of this node variant.
-    Notification(Web3),
+    Notification,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionNode {
+    kind: SubmissionNodeKind,
+    web3: Web3,
 }
 
 impl Deref for SubmissionNode {
     type Target = Web3;
 
     fn deref(&self) -> &Self::Target {
-        match self {
-            SubmissionNode::Broadcast(web3) => web3,
-            SubmissionNode::Notification(web3) => web3,
-        }
+        &self.web3
     }
 }
 
 impl SubmissionNode {
+    pub fn new(kind: SubmissionNodeKind, web3: Web3) -> Self {
+        Self { kind, web3 }
+    }
+
     pub fn can_broadcast(&self) -> bool {
-        match self {
-            SubmissionNode::Broadcast(_) => true,
-            SubmissionNode::Notification(_) => false,
+        match self.kind {
+            SubmissionNodeKind::Broadcast => true,
+            SubmissionNodeKind::Notification => false,
         }
     }
 }

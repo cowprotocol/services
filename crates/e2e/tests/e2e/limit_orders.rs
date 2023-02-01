@@ -29,7 +29,7 @@ use solver::{
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
         submitter::{
-            public_mempool_api::{PublicMempoolApi, SubmissionNode},
+            public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
@@ -234,7 +234,10 @@ async fn single_limit_order_test(web3: Web3) {
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::Broadcast(web3.clone())],
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
                         false,
                     )),
                     max_additional_tip: 0.,
@@ -482,7 +485,10 @@ async fn two_limit_orders_test(web3: Web3) {
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::Broadcast(web3.clone())],
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
                         false,
                     )),
                     max_additional_tip: 0.,
@@ -739,7 +745,10 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::Broadcast(web3.clone())],
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
                         false,
                     )),
                     max_additional_tip: 0.,
