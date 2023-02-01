@@ -185,6 +185,10 @@ impl SettlementRanker {
             );
         }
 
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+        // preference to any specific solver when there is an objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
+
         if cfg!(feature = "CIP17") {
             // Filter out settlements that have negative score
             rated_settlements.retain(|(solver, settlement, _)| {
@@ -204,10 +208,6 @@ impl SettlementRanker {
                 true
             });
 
-            // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-            // preference to any specific solver when there is an objective value tie.
-            rated_settlements.shuffle(&mut rand::thread_rng());
-
             rated_settlements
                 .sort_by(|a, b| compare_solutions_cip17(&a.1, &b.1, self.decimal_cutoff));
 
@@ -221,18 +221,14 @@ impl SettlementRanker {
             );
         } else {
             // TODO: remove this block of code once CIP-17 is implemented
-
-            // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-            // preference to any specific solver when there is an objective value tie.
-            rated_settlements.shuffle(&mut rand::thread_rng());
-
             rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
 
             let cip17_ranking = cip17_ranking(
                 rated_settlements
                     .iter()
-                    .map(|(_, settlement, _)| settlement.clone())
-                    .collect(),
+                    .map(|(_, settlement, _)| settlement)
+                    .collect::<Vec<_>>(),
+                self.decimal_cutoff,
             );
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
@@ -250,10 +246,10 @@ impl SettlementRanker {
 
 // TODO: remove this once CIP-17 is implemented
 // Sort settlements by CIP-17 rules and return hashmap of settlement id to ranking
-fn cip17_ranking(settlements: Vec<RatedSettlement>) -> HashMap<usize, usize> {
+fn cip17_ranking(settlements: Vec<&RatedSettlement>, decimals: u16) -> HashMap<usize, usize> {
     let mut settlements = settlements;
     settlements.retain(|settlement| settlement.score >= BigRational::zero());
-    settlements.sort_by(|a, b| compare_solutions_cip17(a, b, 0));
+    settlements.sort_by(|a, b| compare_solutions_cip17(a, b, decimals));
     settlements
         .iter()
         .rev()
