@@ -45,6 +45,14 @@ struct Inner {
     max_age: Duration,
 }
 
+struct UpdateTask {
+    inner: Weak<Inner>,
+    update_interval: Duration,
+    update_size: Option<usize>,
+    prefetch_time: Duration,
+    concurrent_requests: usize,
+}
+
 #[derive(Debug, Clone)]
 struct CachedPrice {
     price: f64,
@@ -182,6 +190,50 @@ impl Inner {
     }
 }
 
+impl UpdateTask {
+    /// Single run of the background updating process.
+    async fn single_update(&self, inner: &Inner) {
+        let metrics = Metrics::get();
+        metrics
+            .native_price_cache_size
+            .set(inner.cache.lock().unwrap().len() as i64);
+
+        let max_age = inner.max_age.saturating_sub(self.prefetch_time);
+        let outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
+
+        metrics
+            .native_price_cache_outdated_entries
+            .set(outdated_entries.len() as i64);
+
+        let tokens_to_update: Vec<_> = outdated_entries
+            .iter()
+            .take(self.update_size.unwrap_or(outdated_entries.len()))
+            .map(|(token, _)| *token)
+            .collect();
+
+        if !tokens_to_update.is_empty() {
+            let mut stream = inner.estimate_prices_and_update_cache(
+                &tokens_to_update,
+                max_age,
+                self.concurrent_requests,
+            );
+            while stream.next().await.is_some() {}
+            metrics
+                .native_price_cache_background_updates
+                .inc_by(tokens_to_update.len() as u64);
+        }
+    }
+
+    /// Runs background updates until inner is no longer alive.
+    async fn run(self) {
+        while let Some(inner) = self.inner.upgrade() {
+            let now = Instant::now();
+            self.single_update(&inner).await;
+            tokio::time::sleep(self.update_interval.saturating_sub(now.elapsed())).await;
+        }
+    }
+}
+
 impl CachingNativePriceEstimator {
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate native prices which
     /// get cached a duration of `max_age`.
@@ -203,16 +255,18 @@ impl CachingNativePriceEstimator {
             high_priority: Default::default(),
             max_age,
         });
-        tokio::spawn(
-            update_recently_used_outdated_prices(
-                Arc::downgrade(&inner),
-                update_interval,
-                update_size,
-                max_age.saturating_sub(prefetch_time),
-                concurrent_requests,
-            )
-            .instrument(tracing::info_span!("caching_native_price_estimator")),
-        );
+
+        let update_task = UpdateTask {
+            inner: Arc::downgrade(&inner),
+            update_interval,
+            update_size,
+            prefetch_time,
+            concurrent_requests,
+        }
+        .run()
+        .instrument(tracing::info_span!("caching_native_price_estimator"));
+        tokio::spawn(update_task);
+
         Self(inner)
     }
 
@@ -271,45 +325,6 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
         });
         stream.boxed()
-    }
-}
-
-async fn update_recently_used_outdated_prices(
-    inner: Weak<Inner>,
-    update_interval: Duration,
-    update_size: Option<usize>,
-    max_age: Duration,
-    concurrent_requests: usize,
-) {
-    let metrics = Metrics::get();
-    while let Some(inner) = inner.upgrade() {
-        let now = Instant::now();
-        metrics
-            .native_price_cache_size
-            .set(inner.cache.lock().unwrap().len() as i64);
-        let outdated_entries = inner.sorted_tokens_to_update(max_age, now);
-        metrics
-            .native_price_cache_outdated_entries
-            .set(outdated_entries.len() as i64);
-        let tokens_to_update: Vec<_> = outdated_entries
-            .iter()
-            .take(update_size.unwrap_or(outdated_entries.len()))
-            .map(|(token, _)| *token)
-            .collect();
-
-        if !tokens_to_update.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(
-                &tokens_to_update,
-                max_age,
-                concurrent_requests,
-            );
-            while stream.next().await.is_some() {}
-            metrics
-                .native_price_cache_background_updates
-                .inc_by(tokens_to_update.len() as u64);
-        }
-
-        tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
     }
 }
 
