@@ -26,6 +26,8 @@ impl SolverEngine {
         let handle = tokio::spawn(crate::run::run(
             vec![
                 "/test/solvers/path".to_owned(),
+                "--chain-id".to_owned(),
+                "1".to_owned(),
                 "--addr".to_owned(),
                 "0.0.0.0:0".to_owned(),
                 "--config".to_owned(),

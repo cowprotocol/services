@@ -1,9 +1,13 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    str::FromStr,
+mod chain;
+
+pub use {
+    self::chain::ChainId,
+    ethereum_types::{H160, U256},
 };
 
-pub use ethereum_types::{H160, U256};
+/// A contract address.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContractAddress(pub H160);
 
 /// An ERC20 token address.
 ///
@@ -11,41 +15,9 @@ pub use ethereum_types::{H160, U256};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenAddress(pub H160);
 
-impl Display for TokenAddress {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.write_str("0x")?;
-        for b in self.0.as_bytes() {
-            write!(f, "{b:02x}")?;
-        }
-        Ok(())
-    }
-}
-
-impl FromStr for TokenAddress {
-    type Err = <H160 as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse().map(Self)
-    }
-}
-
 /// The WETH token (or equivalent) for the EVM compatible network.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WethAddress(pub H160);
-
-impl Display for WethAddress {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", TokenAddress(self.0))
-    }
-}
-
-impl FromStr for WethAddress {
-    type Err = <H160 as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse().map(Self)
-    }
-}
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
@@ -56,7 +28,7 @@ pub struct Asset {
 }
 
 /// Gas amount.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
 
 /// A 256-bit rational type.

@@ -4,7 +4,7 @@ use {crate::domain::eth, serde::Deserialize, std::path::Path, tokio::fs};
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The address of the WETH contract.
-    pub weth: eth::H160,
+    pub weth: Option<eth::H160>,
 
     /// List of base tokens to use when path finding. This defines the tokens
     /// that can appear as intermediate "hops" within a trading route. Note that
@@ -28,7 +28,7 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
     let config: Config = toml::de::from_str(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
     super::BaselineConfig {
-        weth: eth::WethAddress(config.weth),
+        weth: config.weth.map(eth::WethAddress),
         base_tokens: config
             .base_tokens
             .into_iter()
