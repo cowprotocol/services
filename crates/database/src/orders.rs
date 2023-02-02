@@ -1711,6 +1711,10 @@ mod tests {
         )
         .await
         .unwrap();
+
+        // Give the order a pre-interaction to test that the query finds it.
+        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56])).await.unwrap();
+
         // Expired limit order.
         insert_order(
             &mut db,
@@ -1816,6 +1820,7 @@ mod tests {
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].uid, ByteArray([5; 56]));
         assert_eq!(orders[1].uid, ByteArray([1; 56]),);
+        assert_eq!(orders[1].pre_interactions, 1);
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
