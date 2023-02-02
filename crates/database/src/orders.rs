@@ -677,6 +677,7 @@ pub struct OrderQuotingData {
     pub sell_amount: BigDecimal,
     pub sell_token_balance: SellTokenSource,
     pub partially_fillable: bool,
+    pub pre_interactions: i32,
 }
 
 /// Returns all limit orders that are currently waiting to be filled sorted
@@ -687,7 +688,7 @@ pub fn open_limit_orders(
     min_valid_to: i64,
 ) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
-        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, partially_fillable",
+        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, partially_fillable, cardinality(pre_interactions) as pre_interactions",
         " FROM (",
         OPEN_ORDERS,
         "     AND class = 'limit'",

@@ -190,7 +190,12 @@ async fn orders_with_sufficient_balance(
     balance_fetcher: &dyn BalanceFetching,
     mut orders: Vec<OrderQuotingData>,
 ) -> Vec<OrderQuotingData> {
-    let queries = orders.iter().map(query_from).unique().collect_vec();
+    let queries = orders
+        .iter()
+        .filter(|order| order.pre_interactions <= 0)
+        .map(query_from)
+        .unique()
+        .collect_vec();
     let balances = balance_fetcher.get_balances(&queries).await;
     let balances: HashMap<_, _> = queries
         .iter()
@@ -206,7 +211,11 @@ async fn orders_with_sufficient_balance(
                 true => balance >= &U256::one(), // any amount would be enough
                 false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
             };
-            return has_sufficient_balance;
+
+            // It's possible that a pre_interaction transfers the owner the required balance
+            // so we want to keep them even if the balance is insufficient at the moment.
+            let could_transfer_money_in = order.pre_interactions > 0;
+            return could_transfer_money_in || has_sufficient_balance;
         }
 
         // In case the balance couldn't be fetched err on the safe side and assume
@@ -262,13 +271,16 @@ mod tests {
 
     #[tokio::test]
     async fn removes_orders_with_insufficient_balance() {
-        let order = |sell_token, sell_amount: U256, partially_fillable| OrderQuotingData {
-            owner: ByteArray([1; 20]),
-            sell_token: ByteArray([sell_token; 20]),
-            sell_amount: u256_to_big_decimal(&sell_amount),
-            sell_token_balance: database::orders::SellTokenSource::Erc20,
-            partially_fillable,
-            ..Default::default()
+        let order = |sell_token, sell_amount: U256, partially_fillable, pre_interactions| {
+            OrderQuotingData {
+                owner: ByteArray([1; 20]),
+                sell_token: ByteArray([sell_token; 20]),
+                sell_amount: u256_to_big_decimal(&sell_amount),
+                sell_token_balance: database::orders::SellTokenSource::Erc20,
+                partially_fillable,
+                pre_interactions,
+                ..Default::default()
+            }
         };
 
         let mut balance_fetcher = MockBalanceFetching::new();
@@ -292,13 +304,16 @@ mod tests {
 
         let orders = vec![
             // Balance is sufficient.
-            order(1, 1_000.into(), false),
+            order(1, 1_000.into(), false, 0),
             // Balance is 1 short.
-            order(1, 1_001.into(), false),
+            order(1, 1_001.into(), false, 0),
             // For partially fillable orders a single atom is enough.
-            order(2, U256::MAX, true),
+            order(2, U256::MAX, true, 0),
+            // We always keep orders with pre_interactions in case they
+            // would transfer enough money to the owner before settling the order.
+            order(2, U256::MAX, false, 1),
             // We always keep orders where our balance request fails.
-            order(3, U256::MAX, false),
+            order(3, U256::MAX, false, 0),
         ];
 
         let filtered_orders = orders_with_sufficient_balance(&balance_fetcher, orders).await;
@@ -306,9 +321,10 @@ mod tests {
         assert_eq!(
             filtered_orders,
             vec![
-                order(1, 1_000.into(), false),
-                order(2, U256::MAX, true),
-                order(3, U256::MAX, false),
+                order(1, 1_000.into(), false, 0),
+                order(2, U256::MAX, true, 0),
+                order(2, U256::MAX, false, 1),
+                order(3, U256::MAX, false, 0),
             ]
         );
     }
