@@ -1713,7 +1713,9 @@ mod tests {
         .unwrap();
 
         // Give the order a pre-interaction to test that the query finds it.
-        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56])).await.unwrap();
+        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
+            .await
+            .unwrap();
 
         // Expired limit order.
         insert_order(
