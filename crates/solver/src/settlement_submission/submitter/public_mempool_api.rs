@@ -79,7 +79,6 @@ impl TransactionSubmitting for PublicMempoolApi {
                         });
                     } else {
                         tracing::debug!(%label, "non-broadcasting node reports transaction creation with hash: {:?}", tx_hash);
-                        futures = rest;
                     }
                 }
                 Err(err) => {
@@ -100,14 +99,15 @@ impl TransactionSubmitting for PublicMempoolApi {
                     if !is_benign_error {
                         tracing::warn!(%err, %label, "single submission node tx failed");
                     }
-
-                    if rest.is_empty() {
-                        return Err(anyhow::anyhow!(errors.join("\n"))
-                            .context("all submission nodes failed"));
-                    }
-                    futures = rest;
                 }
             }
+
+            if rest.is_empty() {
+                return Err(
+                    anyhow::anyhow!(errors.join("\n")).context("all submission nodes failed")
+                );
+            }
+            futures = rest;
         }
     }
 
