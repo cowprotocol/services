@@ -5,7 +5,10 @@ use super::{
     AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{ensure, Context, Result};
-use ethcontract::transaction::{Transaction, TransactionBuilder};
+use ethcontract::{
+    transaction::{Transaction, TransactionBuilder},
+    H256,
+};
 use futures::FutureExt;
 use shared::ethrpc::{Web3, Web3Transport};
 
@@ -35,37 +38,56 @@ impl TransactionSubmitting for PublicMempoolApi {
         if let Transaction::Raw { hash, .. } = &transaction_request {
             tracing::debug!(?hash, "creating transaction");
         }
-        let mut futures = self
+        let (notification_nodes, other_nodes) = self
             .nodes
             .iter()
             .enumerate()
             .map(|(i, node)| {
-                let label = format!(
-                    "public_mempool_{i}_{}",
-                    match node.kind {
-                        SubmissionNodeKind::Broadcast => "broadcast",
-                        SubmissionNodeKind::Notification => "notification",
-                    }
-                );
-                let transaction_request = transaction_request.clone();
-                async move {
-                    tracing::debug!(%label, "sending transaction...");
-                    let result = match transaction_request {
-                        Transaction::Request(tx) => node.web3.eth().send_transaction(tx).await,
-                        Transaction::Raw { bytes, .. } => {
-                            node.web3.eth().send_raw_transaction(bytes.0.into()).await
+                (
+                    node,
+                    format!(
+                        "public_mempool_{i}_{}",
+                        match node.kind {
+                            SubmissionNodeKind::Broadcast => "broadcast",
+                            SubmissionNodeKind::Notification => "notification",
                         }
-                    };
+                    ),
+                )
+            })
+            .partition::<Vec<_>, _>(|(node, _)| node.kind == SubmissionNodeKind::Notification);
 
-                    (label, result)
-                }
+        // We are not interested in the response from a notification node.
+        for (node, label) in notification_nodes {
+            let transaction_request = transaction_request.clone();
+            let node = node.clone();
+            tokio::spawn(async move {
+                match submit_transaction(transaction_request, &node, &label).await {
+                    Ok(tx_hash) => {
+                        tracing::debug!(%label, "notification node reports transaction creation with hash: {:?}", tx_hash);
+                    }
+                    Err(err) => {
+                        tracing::debug!(%label, "notification node reports failed transaction creation: {}", err.to_string());
+                    }
+                };
+            });
+        }
+
+        let mut futures = other_nodes
+            .into_iter()
+            .map(|(node, label)| {
+                let transaction_request = transaction_request.clone();
+                (async move {
+                    (
+                        submit_transaction(transaction_request, node, &label).await,
+                        label,
+                    )
+                })
                 .boxed()
             })
             .collect::<Vec<_>>();
-
         let mut errors = vec![];
         loop {
-            let ((label, result), _, rest) = futures::future::select_all(futures).await;
+            let ((result, label), _, rest) = futures::future::select_all(futures).await;
             match result {
                 Ok(tx_hash) => {
                     super::track_submission_success(&label, true);
@@ -122,6 +144,20 @@ impl TransactionSubmitting for PublicMempoolApi {
 
     fn name(&self) -> Strategy {
         Strategy::PublicMempool
+    }
+}
+
+async fn submit_transaction(
+    transaction_request: Transaction,
+    node: &SubmissionNode,
+    label: &String,
+) -> Result<H256, web3::Error> {
+    tracing::debug!(%label, "sending transaction...");
+    match transaction_request {
+        Transaction::Request(tx) => node.web3.eth().send_transaction(tx).await,
+        Transaction::Raw { bytes, .. } => {
+            node.web3.eth().send_raw_transaction(bytes.0.into()).await
+        }
     }
 }
 
