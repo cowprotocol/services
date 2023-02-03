@@ -677,6 +677,7 @@ pub struct OrderQuotingData {
     pub sell_amount: BigDecimal,
     pub sell_token_balance: SellTokenSource,
     pub partially_fillable: bool,
+    pub pre_interactions: i32,
 }
 
 /// Returns all limit orders that are currently waiting to be filled sorted
@@ -687,7 +688,7 @@ pub fn open_limit_orders(
     min_valid_to: i64,
 ) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
-        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, partially_fillable",
+        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, partially_fillable, cardinality(pre_interactions) as pre_interactions",
         " FROM (",
         OPEN_ORDERS,
         "     AND class = 'limit'",
@@ -1710,6 +1711,12 @@ mod tests {
         )
         .await
         .unwrap();
+
+        // Give the order a pre-interaction to test that the query finds it.
+        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
+            .await
+            .unwrap();
+
         // Expired limit order.
         insert_order(
             &mut db,
@@ -1815,6 +1822,7 @@ mod tests {
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].uid, ByteArray([5; 56]));
         assert_eq!(orders[1].uid, ByteArray([1; 56]),);
+        assert_eq!(orders[1].pre_interactions, 1);
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
