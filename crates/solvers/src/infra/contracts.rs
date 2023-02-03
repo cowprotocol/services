@@ -1,8 +1,8 @@
-use {crate::domain::eth, ethcontract::H160};
+use crate::domain::eth;
 
 #[derive(Clone, Debug)]
 pub struct Contracts {
-    pub weth: eth::WethAddress,
+    weth: eth::WethAddress,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -14,7 +14,13 @@ impl Contracts {
     pub fn new(chain: eth::ChainId, addresses: Addresses) -> Self {
         Self {
             weth: addresses.weth.unwrap_or_else(|| {
-                eth::WethAddress(address_for_chain(contracts::WETH9::raw_contract(), chain))
+                eth::WethAddress(
+                    contracts::WETH9::raw_contract()
+                        .networks
+                        .get(chain.network_id())
+                        .expect("contract address for all supported chains")
+                        .address,
+                )
             }),
         }
     }
@@ -22,12 +28,4 @@ impl Contracts {
     pub fn weth(&self) -> &eth::WethAddress {
         &self.weth
     }
-}
-
-fn address_for_chain(contract: &ethcontract::Contract, chain: eth::ChainId) -> H160 {
-    contract
-        .networks
-        .get(chain.network_id())
-        .expect("contract address for all supported chains")
-        .address
 }
