@@ -119,7 +119,7 @@ pub struct Arguments {
     #[clap(long, env, value_parser = U256::from_dec_str)]
     pub amount_to_estimate_prices_with: Option<U256>,
 
-    /// The API endpoint to call the mip v2 solver for price estimation
+    /// The API endpoint to call the Quasimodo solver for price estimation
     #[clap(long, env)]
     pub quasimodo_solver_url: Option<Url>,
 

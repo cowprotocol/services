@@ -181,7 +181,6 @@ pub struct SimulationWithError {
 pub enum SolverType {
     Naive,
     Baseline,
-    Mip,
     CowDexAg,
     OneInch,
     Paraswap,
@@ -261,7 +260,6 @@ pub fn create(
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
-    mip_solver_url: Url,
     cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
     balancer_sor_url: Url,
@@ -278,8 +276,7 @@ pub fn create(
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     disabled_zeroex_sources: Vec<String>,
-    quasimodo_uses_internal_buffers: bool,
-    mip_uses_internal_buffers: bool,
+    use_internal_buffers: bool,
     one_inch_url: Url,
     one_inch_referrer_address: Option<H160>,
     external_solvers: Vec<ExternalSolverArg>,
@@ -373,17 +370,6 @@ pub fn create(
                     base_tokens.clone(),
                     slippage_calculator,
                 )),
-                SolverType::Mip => shared(create_http_solver(
-                    account,
-                    mip_solver_url.clone(),
-                    "Mip".to_string(),
-                    SolverConfig {
-                        use_internal_buffers: Some(mip_uses_internal_buffers),
-                        ..Default::default()
-                    },
-                    InstanceType::Filtered,
-                    slippage_calculator,
-                )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
@@ -397,7 +383,7 @@ pub fn create(
                     quasimodo_solver_url.clone(),
                     "Quasimodo".to_string(),
                     SolverConfig {
-                        use_internal_buffers: Some(quasimodo_uses_internal_buffers),
+                        use_internal_buffers: Some(use_internal_buffers),
                         ..Default::default()
                     },
                     InstanceType::Filtered,
@@ -474,7 +460,7 @@ pub fn create(
             solver.url,
             solver.name,
             SolverConfig {
-                use_internal_buffers: Some(mip_uses_internal_buffers),
+                use_internal_buffers: Some(use_internal_buffers),
                 ..Default::default()
             },
             InstanceType::Plain,

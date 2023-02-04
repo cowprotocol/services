@@ -228,13 +228,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
-    /// If quasimodo should use internal buffers to improve solution quality.
+    /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env)]
-    pub quasimodo_uses_internal_buffers: bool,
-
-    /// If mipsolver should use internal buffers to improve solution quality.
-    #[clap(long, env)]
-    pub mip_uses_internal_buffers: bool,
+    pub use_internal_buffers: bool,
 
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
@@ -396,16 +392,7 @@ impl Display for Arguments {
         display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
-        writeln!(
-            f,
-            "quasimodo_uses_internal_buffers: {}",
-            self.quasimodo_uses_internal_buffers
-        )?;
-        writeln!(
-            f,
-            "mip_uses_internal_buffers: {}",
-            self.mip_uses_internal_buffers
-        )?;
+        writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         display_list(
             f,

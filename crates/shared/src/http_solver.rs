@@ -106,7 +106,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     ) -> Result<model::SettledBatchAuctionModel, Error> {
         // The timeout we give to the solver is one second less than
         // the deadline to make up for overhead from the network.
-        // We use one second because the old MIP solver uses integer timeouts.
+        // We use one second because a now-deleted solver used integer timeouts.
         let solver_timeout = timeout
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
@@ -119,9 +119,9 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
-            // Use integer remaining seconds for the time limit as the MIP solver
-            // does not support fractional values here. Note that this means that
-            // we don't have much granularity with the time limit.
+            // We use integer remaining seconds for legacy reasons. Note that
+            // this means that we don't have much granularity with the time
+            // limit.
             .append_pair("time_limit", &solver_timeout.as_secs().to_string())
             .append_pair(
                 "max_nr_exec_orders",
