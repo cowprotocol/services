@@ -1,14 +1,13 @@
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
-pub mod event_updater;
-pub mod risk_adjusted_rewards;
-pub mod solvable_orders;
-
 pub mod driver_api;
 pub mod driver_model;
+pub mod event_updater;
 pub mod limit_orders;
+pub mod risk_adjusted_rewards;
 pub mod run_loop;
+pub mod solvable_orders;
 
 use {
     crate::{
@@ -33,6 +32,7 @@ use {
         WETH9,
     },
     ethcontract::{errors::DeployError, BlockNumber},
+    futures::StreamExt,
     model::DomainSeparator,
     shared::{
         account_balances::Web3BalanceFetcher,
@@ -67,7 +67,7 @@ use {
                 BalancerFactoryKind,
                 BalancerPoolFetcher,
             },
-            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,

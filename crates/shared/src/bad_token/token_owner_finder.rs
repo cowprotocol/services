@@ -204,7 +204,7 @@ pub async fn init(
                 .iter()
                 .map(|provider| -> Arc<dyn TokenOwnerProposing> {
                     Arc::new(UniswapLikePairProviderFinder {
-                        inner: provider.clone(),
+                        inner: *provider,
                         base_tokens: base_tokens.tokens().iter().copied().collect(),
                     })
                 }),
