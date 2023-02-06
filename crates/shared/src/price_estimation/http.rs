@@ -431,6 +431,7 @@ mod tests {
                     pool_fetching::test_util::FakePoolFetcher,
                 },
                 uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+                BaselineSource,
             },
             token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
@@ -715,7 +716,11 @@ mod tests {
         let pools = Arc::new(
             PoolCache::new(
                 CacheConfig::default(),
-                uniswap_v2::get_liquidity_source(&web3).await.unwrap().1,
+                uniswap_v2::uniswap_like_liquidity_source(BaselineSource::UniswapV2, &web3)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .1,
                 current_block_stream(Arc::new(web3.clone()), Duration::from_secs(1))
                     .await
                     .unwrap(),

@@ -4,7 +4,7 @@ use {
     ethcontract::{Account, Bytes, H160, H256, U256},
     shared::{
         ethrpc::Web3,
-        sources::uniswap_v2::{self, pair_provider::PairProvider},
+        sources::uniswap_v2::{pair_provider::PairProvider, UNISWAP_INIT},
     },
     web3::signing::{Key as _, SecretKeyRef},
 };
@@ -186,6 +186,6 @@ pub async fn deploy_token_with_weth_uniswap_pool(
 pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
     PairProvider {
         factory: contracts.uniswap_factory.address(),
-        init_code_digest: uniswap_v2::INIT_CODE_DIGEST,
+        init_code_digest: UNISWAP_INIT,
     }
 }
