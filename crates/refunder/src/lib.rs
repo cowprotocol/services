@@ -3,14 +3,16 @@ pub mod ethflow_order;
 pub mod refund_service;
 pub mod submitter;
 
-use contracts::CoWSwapEthFlow;
-use ethcontract::{Account, PrivateKey};
-use refund_service::RefundService;
-use shared::{http_client::HttpClientFactory, metrics::LivenessChecking};
-use sqlx::PgPool;
-use std::{
-    sync::{Arc, RwLock},
-    time::{Duration, Instant},
+use {
+    contracts::CoWSwapEthFlow,
+    ethcontract::{Account, PrivateKey},
+    refund_service::RefundService,
+    shared::{http_client::HttpClientFactory, metrics::LivenessChecking},
+    sqlx::PgPool,
+    std::{
+        sync::{Arc, RwLock},
+        time::{Duration, Instant},
+    },
 };
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(30);

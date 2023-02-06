@@ -1,11 +1,13 @@
-//! This is a private, undocumented api which will get replaced when we move the solution
-//! competition into the api.
+//! This is a private, undocumented api which will get replaced when we move the
+//! solution competition into the api.
 
-use crate::solver_competition::SolverCompetitionStoring;
-use model::solver_competition::Request;
-use reqwest::StatusCode;
-use std::{convert::Infallible, sync::Arc};
-use warp::{reply::with_status, Filter, Rejection};
+use {
+    crate::solver_competition::SolverCompetitionStoring,
+    model::solver_competition::Request,
+    reqwest::StatusCode,
+    std::{convert::Infallible, sync::Arc},
+    warp::{reply::with_status, Filter, Rejection},
+};
 
 fn request() -> impl Filter<Extract = (Option<String>, Request), Error = Rejection> + Clone {
     warp::path!("v1" / "solver_competition")
@@ -46,9 +48,11 @@ pub fn post(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::solver_competition::MockSolverCompetitionStoring;
-    use warp::{test::request, Reply};
+    use {
+        super::*,
+        crate::solver_competition::MockSolverCompetitionStoring,
+        warp::{test::request, Reply},
+    };
 
     #[tokio::test]
     async fn test_no_auth() {

@@ -1,10 +1,12 @@
-use super::{Exchange, LimitOrder, LimitOrderId, LiquidityOrderId, SettlementHandling};
-use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
-use anyhow::{Context, Result};
-use contracts::WETH9;
-use ethcontract::U256;
-use model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS};
-use std::{sync::Arc, time::Duration};
+use {
+    super::{Exchange, LimitOrder, LimitOrderId, LiquidityOrderId, SettlementHandling},
+    crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
+    anyhow::{Context, Result},
+    contracts::WETH9,
+    ethcontract::U256,
+    model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
+    std::{sync::Arc, time::Duration},
+};
 
 pub struct OrderConverter {
     pub native_token: WETH9,
@@ -90,8 +92,8 @@ struct OrderSettlementHandler {
     scaled_unsubsidized_fee_amount: U256,
 }
 
-/// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the values accordingly
-/// for limit orders.
+/// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the
+/// values accordingly for limit orders.
 fn compute_synthetic_order_amounts_for_limit_order(
     order: &Order,
     limit: &LimitOrderClass,
@@ -100,7 +102,8 @@ fn compute_synthetic_order_amounts_for_limit_order(
         order.metadata.class.is_limit(),
         "this function should only be called for limit orders"
     );
-    // Solvable limit orders always have a surplus fee. It would be nice if this was enforced in the API.
+    // Solvable limit orders always have a surplus fee. It would be nice if this was
+    // enforced in the API.
     let surplus_fee = limit
         .surplus_fee
         .context("solvable order without surplus fee")?;
@@ -144,12 +147,14 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::settlement::tests::assert_settlement_encoded_with;
-    use ethcontract::H160;
-    use maplit::hashmap;
-    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata};
-    use shared::dummy_contract;
+    use {
+        super::*,
+        crate::settlement::tests::assert_settlement_encoded_with,
+        ethcontract::H160,
+        maplit::hashmap,
+        model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata},
+        shared::dummy_contract,
+    };
 
     #[test]
     fn eth_buy_liquidity_is_assigned_to_weth() {

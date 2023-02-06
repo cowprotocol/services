@@ -1,7 +1,8 @@
-//! Pool Fetching is primarily concerned with retrieving relevant pools from the `BalancerPoolRegistry`
-//! when given a collection of `TokenPair`. Each of these pools are then queried for
-//! their `token_balances` and the `PoolFetcher` returns all up-to-date `Weighted` and `Stable`
-//! pools to be consumed by external users (e.g. Price Estimators and Solvers).
+//! Pool Fetching is primarily concerned with retrieving relevant pools from the
+//! `BalancerPoolRegistry` when given a collection of `TokenPair`. Each of these
+//! pools are then queried for their `token_balances` and the `PoolFetcher`
+//! returns all up-to-date `Weighted` and `Stable` pools to be consumed by
+//! external users (e.g. Price Estimators and Solvers).
 
 mod aggregate;
 mod cache;
@@ -9,44 +10,58 @@ mod internal;
 mod pool_storage;
 mod registry;
 
-use self::{
-    aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
-};
-use super::{
-    graph_api::{BalancerSubgraphClient, RegisteredPools},
-    pool_init::PoolInitializing,
-    pools::{
-        common::{self, PoolInfoFetcher},
-        stable, weighted, FactoryIndexing, Pool, PoolIndexing, PoolKind,
+use {
+    self::{
+        aggregate::Aggregate,
+        cache::Cache,
+        internal::InternalPoolFetching,
+        registry::Registry,
     },
-    swap::fixed_point::Bfp,
+    super::{
+        graph_api::{BalancerSubgraphClient, RegisteredPools},
+        pool_init::PoolInitializing,
+        pools::{
+            common::{self, PoolInfoFetcher},
+            stable,
+            weighted,
+            FactoryIndexing,
+            Pool,
+            PoolIndexing,
+            PoolKind,
+        },
+        swap::fixed_point::Bfp,
+    },
+    crate::{
+        current_block::{BlockRetrieving, CurrentBlockStream},
+        ethrpc::{Web3, Web3Transport},
+        maintenance::Maintaining,
+        recent_block_cache::{Block, CacheConfig},
+        token_info::TokenInfoFetching,
+    },
+    anyhow::{Context, Result},
+    clap::ValueEnum,
+    contracts::{
+        BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+        BalancerV2StablePoolFactory,
+        BalancerV2StablePoolFactoryV2,
+        BalancerV2Vault,
+        BalancerV2WeightedPool2TokensFactory,
+        BalancerV2WeightedPoolFactory,
+    },
+    ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
+    model::TokenPair,
+    reqwest::Client,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
-use crate::{
-    current_block::{BlockRetrieving, CurrentBlockStream},
-    ethrpc::{Web3, Web3Transport},
-    maintenance::Maintaining,
-    recent_block_cache::{Block, CacheConfig},
-    token_info::TokenInfoFetching,
+pub use {
+    common::TokenState,
+    stable::AmplificationParameter,
+    weighted::TokenState as WeightedTokenState,
 };
-use anyhow::{Context, Result};
-use clap::ValueEnum;
-use contracts::{
-    BalancerV2LiquidityBootstrappingPoolFactory,
-    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
-    BalancerV2StablePoolFactoryV2, BalancerV2Vault, BalancerV2WeightedPool2TokensFactory,
-    BalancerV2WeightedPoolFactory,
-};
-use ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256};
-use model::TokenPair;
-use reqwest::Client;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
-
-pub use common::TokenState;
-pub use stable::AmplificationParameter;
-pub use weighted::TokenState as WeightedTokenState;
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
 }
@@ -425,17 +440,19 @@ fn pool_address_from_id(pool_id: H256) -> H160 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        ethrpc,
-        sources::balancer_v2::{
-            graph_api::{BalancerSubgraphClient, PoolData, PoolType},
-            pool_init::EmptyPoolInitializer,
+    use {
+        super::*,
+        crate::{
+            ethrpc,
+            sources::balancer_v2::{
+                graph_api::{BalancerSubgraphClient, PoolData, PoolType},
+                pool_init::EmptyPoolInitializer,
+            },
+            token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         },
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        hex_literal::hex,
+        std::time::Duration,
     };
-    use hex_literal::hex;
-    use std::time::Duration;
 
     #[test]
     fn can_extract_address_from_pool_id() {

@@ -1,12 +1,18 @@
-use super::{
-    trade_finder::{TradeEstimator, TradeVerifier},
-    PriceEstimateResult, PriceEstimating, Query,
+use {
+    super::{
+        trade_finder::{TradeEstimator, TradeVerifier},
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
+    },
+    crate::{
+        rate_limiter::RateLimiter,
+        trade_finding::zeroex::ZeroExTradeFinder,
+        zeroex_api::ZeroExApi,
+    },
+    ethcontract::H160,
+    std::sync::Arc,
 };
-use crate::{
-    rate_limiter::RateLimiter, trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi,
-};
-use ethcontract::H160;
-use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator(TradeEstimator);
 
@@ -40,14 +46,16 @@ impl PriceEstimating for ZeroExPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        price_estimation::single_estimate,
-        zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+    use {
+        super::*,
+        crate::{
+            price_estimation::single_estimate,
+            zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+        },
+        ethcontract::futures::FutureExt as _,
+        model::order::OrderKind,
+        reqwest::Client,
     };
-    use ethcontract::futures::FutureExt as _;
-    use model::order::OrderKind;
-    use reqwest::Client;
 
     fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
         ZeroExPriceEstimator::new(

@@ -1,10 +1,12 @@
-use crate::orderbook::Orderbook;
-use anyhow::Result;
-use ethcontract::H256;
-use reqwest::StatusCode;
-use shared::api::ApiReply;
-use std::{convert::Infallible, sync::Arc};
-use warp::{reply::with_status, Filter, Rejection};
+use {
+    crate::orderbook::Orderbook,
+    anyhow::Result,
+    ethcontract::H256,
+    reqwest::StatusCode,
+    shared::api::ApiReply,
+    std::{convert::Infallible, sync::Arc},
+    warp::{reply::with_status, Filter, Rejection},
+};
 
 pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Rejection> + Clone {
     warp::path!("v1" / "transactions" / H256 / "orders").and(warp::get())
@@ -30,8 +32,7 @@ pub fn get_orders_by_tx(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::str::FromStr;
+    use {super::*, std::str::FromStr};
 
     #[tokio::test]
     async fn request_ok() {

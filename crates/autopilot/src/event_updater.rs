@@ -1,13 +1,15 @@
-use anyhow::Result;
-use contracts::gpv2_settlement;
-use shared::{
-    current_block::{BlockNumberHash, BlockRetrieving},
-    event_handling::{EventHandler, EventRetrieving, EventStoring},
-    impl_event_retrieving,
-    maintenance::Maintaining,
+use {
+    anyhow::Result,
+    contracts::gpv2_settlement,
+    shared::{
+        current_block::{BlockNumberHash, BlockRetrieving},
+        event_handling::{EventHandler, EventRetrieving, EventStoring},
+        impl_event_retrieving,
+        maintenance::Maintaining,
+    },
+    std::sync::Arc,
+    tokio::sync::Mutex,
 };
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub struct EventUpdater<
     Database: EventStoring<<W as EventRetrieving>::Event>,
@@ -25,8 +27,9 @@ where
 {
     /// Creates a new event updater.
     ///
-    /// If a start sync block is specified, it will always resync events from this poing on creation,
-    /// regardless of them being already available in the database.
+    /// If a start sync block is specified, it will always resync events from
+    /// this poing on creation, regardless of them being already available
+    /// in the database.
     pub fn new(
         contract: W,
         db: Database,
@@ -43,9 +46,10 @@ where
 
     /// Creates a new event updater.
     ///
-    /// Similar to [`Self::new()`]: the main different is that the required starting sync point
-    /// specifies a value before which events should not be indexed. If there are no events
-    /// available in the database (or only older events) it starts indexing from this point. If
+    /// Similar to [`Self::new()`]: the main different is that the required
+    /// starting sync point specifies a value before which events should not
+    /// be indexed. If there are no events available in the database (or
+    /// only older events) it starts indexing from this point. If
     /// there are more recent events available, then the sync start is ignored.
     pub async fn new_skip_blocks_before(
         contract: W,

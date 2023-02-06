@@ -1,20 +1,23 @@
 //! Global block stream arguments.
 
-use super::{current_block_stream, eth_call, BlockRetrieving, CurrentBlockStream};
-use crate::{arguments::duration_from_seconds, ethrpc::Web3};
-use anyhow::Result;
-use clap::{Parser, ValueEnum};
-use std::{
-    fmt::{self, Display, Formatter},
-    sync::Arc,
-    time::Duration,
+use {
+    super::{current_block_stream, eth_call, BlockRetrieving, CurrentBlockStream},
+    crate::{arguments::duration_from_seconds, ethrpc::Web3},
+    anyhow::Result,
+    clap::{Parser, ValueEnum},
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+        time::Duration,
+    },
 };
 
 /// Command line arguments for creating global block stream.
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct Arguments {
-    /// How often in seconds we poll the node to check if the current block has changed.
+    /// How often in seconds we poll the node to check if the current block has
+    /// changed.
     #[clap(
         long,
         env,

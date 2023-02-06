@@ -4,16 +4,18 @@ pub mod database;
 pub mod orderbook;
 pub mod solver_competition;
 
-use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
-use anyhow::{anyhow, Context as _, Result};
-use contracts::GPv2Settlement;
-use futures::Future;
-use model::DomainSeparator;
-use shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating};
-use solver_competition::SolverCompetitionStoring;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{task, task::JoinHandle};
-use warp::Filter;
+use {
+    crate::{database::trades::TradeRetrieving, orderbook::Orderbook},
+    anyhow::{anyhow, Context as _, Result},
+    contracts::GPv2Settlement,
+    futures::Future,
+    model::DomainSeparator,
+    shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating},
+    solver_competition::SolverCompetitionStoring,
+    std::{net::SocketAddr, sync::Arc},
+    tokio::{task, task::JoinHandle},
+    warp::Filter,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub fn serve_api(
@@ -41,8 +43,10 @@ pub fn serve_api(
 }
 
 /**
- * Check that important constants such as the EIP 712 Domain Separator and Order Type Hash used in this binary match the ones on the deployed contract instance.
- * Signature inconsistencies due to a mismatch of these constants are hard to debug.
+ * Check that important constants such as the EIP 712 Domain Separator and
+ * Order Type Hash used in this binary match the ones on the deployed
+ * contract instance. Signature inconsistencies due to a mismatch of these
+ * constants are hard to debug.
  */
 pub async fn verify_deployed_contract_constants(
     contract: &GPv2Settlement,

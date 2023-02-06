@@ -1,25 +1,28 @@
-use crate::{
-    analytics,
-    driver::solver_settlements::RatedSettlement,
-    metrics::{SolverMetrics, SolverSimulationOutcome},
-    settlement::Settlement,
-    settlement_simulation::{
-        simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
+use {
+    crate::{
+        analytics,
+        driver::solver_settlements::RatedSettlement,
+        metrics::{SolverMetrics, SolverSimulationOutcome},
+        settlement::Settlement,
+        settlement_simulation::{
+            simulate_and_error_with_tenderly_link,
+            simulate_before_after_access_list,
+        },
+        settlement_submission::SubmissionError,
+        solver::{Simulation, SimulationWithError, Solver},
     },
-    settlement_submission::SubmissionError,
-    solver::{Simulation, SimulationWithError, Solver},
+    anyhow::{Context, Result},
+    contracts::GPv2Settlement,
+    gas_estimation::GasPrice1559,
+    itertools::Itertools,
+    model::order::{Order, OrderKind},
+    num::{BigRational, ToPrimitive},
+    primitive_types::H256,
+    shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
+    std::sync::Arc,
+    tracing::{Instrument as _, Span},
+    web3::types::{AccessList, TransactionReceipt},
 };
-use anyhow::{Context, Result};
-use contracts::GPv2Settlement;
-use gas_estimation::GasPrice1559;
-use itertools::Itertools;
-use model::order::{Order, OrderKind};
-use num::{BigRational, ToPrimitive};
-use primitive_types::H256;
-use shared::{ethrpc::Web3, tenderly_api::TenderlyApi};
-use std::sync::Arc;
-use tracing::{Instrument as _, Span};
-use web3::types::{AccessList, TransactionReceipt};
 
 pub struct DriverLogger {
     pub metrics: Arc<dyn SolverMetrics>,
@@ -51,9 +54,10 @@ impl DriverLogger {
         Ok(())
     }
 
-    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
-    /// orders multiple times will not result in duplicates. Partially fillable orders get
-    /// considered as traded only the first time we tap into their liquidity.
+    /// Collects all orders which got traded in the settlement. Tapping into
+    /// partially fillable orders multiple times will not result in
+    /// duplicates. Partially fillable orders get considered as traded only
+    /// the first time we tap into their liquidity.
     fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
         let mut traded_orders = Vec::new();
         for (_, group) in &settlement
@@ -113,8 +117,9 @@ impl DriverLogger {
                 }
             }
             Err(err) => {
-                // Since we simulate and only submit solutions when they used to pass before, there is no
-                // point in logging transaction failures in the form of race conditions as hard errors.
+                // Since we simulate and only submit solutions when they used to pass before,
+                // there is no point in logging transaction failures in the form
+                // of race conditions as hard errors.
                 tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver_name);
@@ -127,11 +132,12 @@ impl DriverLogger {
         }
     }
 
-    // Log simulation errors only if the simulation also fails in the block at which on chain
-    // liquidity was queried. If the simulation succeeds at the previous block then the solver
-    // worked correctly and the error doesn't have to be reported.
-    // Note that we could still report a false positive because the earlier block might be off by if
-    // the block has changed just as were were querying the node.
+    // Log simulation errors only if the simulation also fails in the block at which
+    // on chain liquidity was queried. If the simulation succeeds at the
+    // previous block then the solver worked correctly and the error doesn't
+    // have to be reported. Note that we could still report a false positive
+    // because the earlier block might be off by if the block has changed just
+    // as were were querying the node.
     pub fn report_simulation_errors(
         &self,
         errors: Vec<SimulationWithError>,
@@ -198,7 +204,8 @@ impl DriverLogger {
                     tracing::debug!(
                         name = solver.name(),
                         ?error_at_latest_block,
-                        "simulation only failed on the latest block but not on the block the auction started",
+                        "simulation only failed on the latest block but not on the block the \
+                         auction started",
                     );
                 }
             }
@@ -215,11 +222,9 @@ impl DriverLogger {
             use std::fmt::Write;
             write!(
                 text,
-                "\nid={} solver={} \
-             objective={:.2e} surplus={:.2e} \
-             gas_estimate={:.2e} gas_price={:.2e} \
-             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-             access_list_addreses={}",
+                "\nid={} solver={} objective={:.2e} surplus={:.2e} gas_estimate={:.2e} \
+                 gas_price={:.2e} unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
+                 access_list_addreses={}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
@@ -240,11 +245,14 @@ impl DriverLogger {
         tracing::info!("Rated Settlements: {}", text);
     }
 
-    /// Record metrics on the matched orders from a single batch. Specifically we report on
-    /// the number of orders that were;
-    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
-    ///  - matched but not settled in this runloop (effectively queued for the next one)
-    /// Should help us to identify how much we can save by parallelizing execution.
+    /// Record metrics on the matched orders from a single batch. Specifically
+    /// we report on the number of orders that were;
+    ///  - surplus in winning settlement vs unrealized surplus from other
+    ///    feasible solutions.
+    ///  - matched but not settled in this runloop (effectively queued for the
+    ///    next one)
+    /// Should help us to identify how much we can save by parallelizing
+    /// execution.
     pub fn report_on_batch(
         &self,
         submitted: &(Arc<dyn Solver>, RatedSettlement),
@@ -263,8 +271,7 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::solver::dummy_arc_solver;
+    use {super::*, crate::solver::dummy_arc_solver};
 
     #[test]
     #[ignore]

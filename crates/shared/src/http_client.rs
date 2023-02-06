@@ -1,9 +1,11 @@
-use crate::arguments::duration_from_seconds;
-use anyhow::{anyhow, Result};
-use reqwest::{Client, ClientBuilder, Response};
-use std::{
-    fmt::{self, Display, Formatter},
-    time::Duration,
+use {
+    crate::arguments::duration_from_seconds,
+    anyhow::{anyhow, Result},
+    reqwest::{Client, ClientBuilder, Response},
+    std::{
+        fmt::{self, Display, Formatter},
+        time::Duration,
+    },
 };
 
 const USER_AGENT: &str = "cowprotocol-services/2.0.0";
@@ -92,8 +94,7 @@ pub async fn response_body_with_size_limit(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use reqwest::Client;
+    use {super::*, reqwest::Client};
 
     #[tokio::test]
     #[ignore]

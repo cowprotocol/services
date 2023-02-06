@@ -56,8 +56,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Run a future and callback with the time the future took. The call back can for example log the
-/// time.
+/// Run a future and callback with the time the future took. The call back can
+/// for example log the time.
 pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce(Duration)) -> T {
     let start = Instant::now();
     let result = future.await;
@@ -72,8 +72,9 @@ pub fn debug_bytes(
     formatter.write_fmt(format_args!("0x{}", hex::encode(bytes.as_ref())))
 }
 
-/// anyhow errors are not clonable natively. This is a workaround that creates a new anyhow error
-/// based on formatting the error with its inner sources without backtrace.
+/// anyhow errors are not clonable natively. This is a workaround that creates a
+/// new anyhow error based on formatting the error with its inner sources
+/// without backtrace.
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
 }

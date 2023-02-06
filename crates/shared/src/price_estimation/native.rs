@@ -1,8 +1,10 @@
-use crate::price_estimation::{PriceEstimating, PriceEstimationError, Query};
-use futures::{stream::BoxStream, StreamExt};
-use model::order::OrderKind;
-use primitive_types::{H160, U256};
-use std::sync::Arc;
+use {
+    crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    futures::{stream::BoxStream, StreamExt},
+    model::order::OrderKind,
+    primitive_types::{H160, U256},
+    std::sync::Arc,
+};
 
 pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
 
@@ -28,8 +30,8 @@ pub trait NativePriceEstimating: Send + Sync {
     ) -> BoxStream<'_, (usize, NativePriceEstimateResult)>;
 }
 
-/// Wrapper around price estimators specialized to estimate a token's price compared to the current
-/// chain's native token.
+/// Wrapper around price estimators specialized to estimate a token's price
+/// compared to the current chain's native token.
 pub struct NativePriceEstimator {
     inner: Arc<dyn PriceEstimating>,
     native_token: H160,
@@ -107,10 +109,12 @@ pub async fn native_vec_estimates(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::price_estimation::{Estimate, MockPriceEstimating};
-    use futures::{FutureExt, StreamExt};
-    use primitive_types::H160;
+    use {
+        super::*,
+        crate::price_estimation::{Estimate, MockPriceEstimating},
+        futures::{FutureExt, StreamExt},
+        primitive_types::H160,
+    };
 
     #[test]
     fn prices_dont_get_modified() {

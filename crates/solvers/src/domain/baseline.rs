@@ -5,13 +5,14 @@
 //! **does not** try to split large orders into multiple parts and route them
 //! over separate paths.
 
-use crate::{
-    boundary,
-    domain::{auction, eth, liquidity, order, solution},
+use {
+    super::solution::Interaction,
+    crate::{
+        boundary,
+        domain::{auction, eth, liquidity, order, solution},
+    },
+    std::collections::HashSet,
 };
-use std::collections::HashSet;
-
-use super::solution::Interaction;
 
 pub struct Baseline {
     pub weth: eth::WethAddress,

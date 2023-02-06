@@ -1,7 +1,9 @@
-use contracts::UniswapV3SwapRouter;
-use ethcontract::Bytes;
-use primitive_types::{H160, U256};
-use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    contracts::UniswapV3SwapRouter,
+    ethcontract::Bytes,
+    primitive_types::{H160, U256},
+    shared::interaction::{EncodedInteraction, Interaction},
+};
 
 #[derive(Debug)]
 pub struct UniswapV3Interaction {
@@ -39,10 +41,7 @@ impl Interaction for UniswapV3Interaction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use contracts::UniswapV3SwapRouter;
-    use hex_literal::hex;
-    use shared::dummy_contract;
+    use {super::*, contracts::UniswapV3SwapRouter, hex_literal::hex, shared::dummy_contract};
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];

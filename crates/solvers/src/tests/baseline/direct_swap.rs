@@ -1,8 +1,7 @@
 //! Simple test case that verifies that the baseline solver can settle an order
 //! directly with a Uniswap V2 pool.
 
-use crate::tests;
-use serde_json::json;
+use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {

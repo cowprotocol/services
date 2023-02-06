@@ -5,8 +5,7 @@ pub mod roundtrip;
 pub mod token_owner_finder;
 pub mod trace_call;
 
-use anyhow::Result;
-use primitive_types::H160;
+use {anyhow::Result, primitive_types::H160};
 
 /// How well behaved a token is.
 #[derive(Debug, Clone, Eq, PartialEq)]

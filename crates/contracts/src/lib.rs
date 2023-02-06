@@ -72,13 +72,15 @@ mod tests {
     const GOERLI: u64 = 5;
     const GNOSIS: u64 = 100;
 
-    use super::*;
-    use ethcontract::{
-        common::DeploymentInformation,
-        futures::future::{self, FutureExt as _, Ready},
-        json::json,
-        jsonrpc::{Call, Id, MethodCall, Params, Value},
-        web3::{error::Result as Web3Result, BatchTransport, RequestId, Transport, Web3},
+    use {
+        super::*,
+        ethcontract::{
+            common::DeploymentInformation,
+            futures::future::{self, FutureExt as _, Ready},
+            json::json,
+            jsonrpc::{Call, Id, MethodCall, Params, Value},
+            web3::{error::Result as Web3Result, BatchTransport, RequestId, Transport, Web3},
+        },
     };
 
     #[derive(Debug, Clone)]

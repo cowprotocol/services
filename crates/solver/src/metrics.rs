@@ -1,22 +1,32 @@
-use crate::{
-    liquidity::{LimitOrder, Liquidity},
-    settlement::Revertable,
+use {
+    crate::{
+        liquidity::{LimitOrder, Liquidity},
+        settlement::Revertable,
+    },
+    anyhow::Result,
+    ethcontract::U256,
+    model::order::{Order, OrderClass},
+    prometheus::{
+        Gauge,
+        Histogram,
+        HistogramOpts,
+        HistogramVec,
+        IntCounter,
+        IntCounterVec,
+        IntGaugeVec,
+        Opts,
+    },
+    shared::metrics::LivenessChecking,
+    std::{
+        convert::TryInto,
+        sync::Mutex,
+        time::{Duration, Instant},
+    },
+    strum::{IntoEnumIterator, VariantNames},
 };
-use anyhow::Result;
-use ethcontract::U256;
-use model::order::{Order, OrderClass};
-use prometheus::{
-    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
-};
-use shared::metrics::LivenessChecking;
-use std::{
-    convert::TryInto,
-    sync::Mutex,
-    time::{Duration, Instant},
-};
-use strum::{IntoEnumIterator, VariantNames};
 
-/// The maximum time between the completion of two run loops. If exceeded the service will be considered unhealthy.
+/// The maximum time between the completion of two run loops. If exceeded the
+/// service will be considered unhealthy.
 const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
 
 /// The outcome of a solver run.
@@ -49,7 +59,8 @@ impl SolverRunOutcome {
 pub enum SettlementSubmissionOutcome {
     /// A settlement transaction was mined and included on the blockchain.
     Success,
-    /// A settlement transaction was mined and included on the blockchain but reverted.
+    /// A settlement transaction was mined and included on the blockchain but
+    /// reverted.
     Revert,
     /// A transaction reverted in the simulation stage.
     SimulationRevert,
@@ -59,7 +70,8 @@ pub enum SettlementSubmissionOutcome {
     Cancel,
     /// Submission disabled
     Disabled,
-    /// General message for failures (for example, failing to connect to client node)
+    /// General message for failures (for example, failing to connect to client
+    /// node)
     Failed,
 }
 
@@ -114,7 +126,8 @@ pub trait SolverMetrics: Send + Sync {
     fn transaction_gas_price(&self, gas_price: U256);
 }
 
-// TODO add labeled interaction counter once we support more than one interaction
+// TODO add labeled interaction counter once we support more than one
+// interaction
 pub struct Metrics {
     trade_counter: IntCounterVec,
     order_settlement_time: IntCounterVec,
@@ -215,7 +228,8 @@ impl Metrics {
 
         let matched_but_unsettled_orders = IntCounter::new(
             "orders_matched_not_settled",
-            "Counter for the number of orders for which at least one solver computed an execution which was not chosen in this run-loop",
+            "Counter for the number of orders for which at least one solver computed an execution \
+             which was not chosen in this run-loop",
         )?;
         registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
 
@@ -230,7 +244,8 @@ impl Metrics {
 
         let opts = prometheus::opts!(
             "complete_runloop_until_transaction_seconds",
-            "Time a runloop that wants to submit a solution takes until the transaction submission starts."
+            "Time a runloop that wants to submit a solution takes until the transaction \
+             submission starts."
         );
         let complete_runloop_until_transaction = Histogram::with_opts(HistogramOpts {
             common_opts: opts,
@@ -277,7 +292,8 @@ impl Metrics {
 
     /// Initialize known to exist labels on solver related metrics to 0.
     ///
-    /// Useful to make sure the prometheus metric exists for example for alerting.
+    /// Useful to make sure the prometheus metric exists for example for
+    /// alerting.
     pub fn initialize_solver_metrics(&self, solver_names: &[&str]) {
         for solver in solver_names {
             for outcome in SolverSimulationOutcome::iter() {
@@ -452,21 +468,37 @@ pub struct NoopMetrics {}
 
 impl SolverMetrics for NoopMetrics {
     fn orders_fetched(&self, _liquidity: &[LimitOrder]) {}
+
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
+
     fn settlement_computed(&self, _solver_type: &str, _response: &str, _start: Instant) {}
+
     fn order_settled(&self, _: &Order, _: &str) {}
+
     fn solver_run(&self, _: SolverRunOutcome, _: &str) {}
+
     fn single_order_solver_succeeded(&self, _: &str) {}
+
     fn single_order_solver_failed(&self, _: &str) {}
+
     fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &str) {}
+
     fn settlement_revertable_status(&self, _: Revertable, _: &str) {}
+
     fn settlement_access_list_saved_gas(&self, _: f64, _: &str) {}
+
     fn orders_matched_but_not_settled(&self, _: usize) {}
+
     fn report_order_surplus(&self, _: f64) {}
+
     fn runloop_completed(&self) {}
+
     fn complete_runloop_until_transaction(&self, _: Duration) {}
+
     fn transaction_submission(&self, _: Duration) {}
+
     fn transaction_gas_price(&self, _: U256) {}
+
     fn settlement_simulation(&self, _: &str, _: SolverSimulationOutcome) {}
 }
 

@@ -4,27 +4,31 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::{
-    debug_bytes,
-    http_client::HttpClientFactory,
-    interaction::{EncodedInteraction, Interaction},
+use {
+    crate::{
+        debug_bytes,
+        http_client::HttpClientFactory,
+        interaction::{EncodedInteraction, Interaction},
+    },
+    anyhow::{Context, Result},
+    chrono::{DateTime, NaiveDateTime, Utc},
+    derivative::Derivative,
+    ethcontract::{Bytes, H160, H256, U256},
+    model::u256_decimal,
+    reqwest::{
+        header::{HeaderMap, HeaderValue},
+        Client,
+        IntoUrl,
+        Url,
+    },
+    serde::Deserialize,
+    serde_with::{serde_as, DisplayFromStr},
+    std::{
+        collections::HashSet,
+        fmt::{self, Display, Formatter},
+    },
+    thiserror::Error,
 };
-use anyhow::{Context, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
-use derivative::Derivative;
-use ethcontract::{Bytes, H160, H256, U256};
-use model::u256_decimal;
-use reqwest::{
-    header::{HeaderMap, HeaderValue},
-    Client, IntoUrl, Url,
-};
-use serde::Deserialize;
-use serde_with::{serde_as, DisplayFromStr};
-use std::{
-    collections::HashSet,
-    fmt::{self, Display, Formatter},
-};
-use thiserror::Error;
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
@@ -57,7 +61,8 @@ pub struct SwapQuery {
     pub slippage_percentage: Option<Slippage>,
     /// List of sources to exclude.
     pub excluded_sources: Vec<String>,
-    /// Requests trade routes which aim to protect against high slippage and MEV attacks.
+    /// Requests trade routes which aim to protect against high slippage and MEV
+    /// attacks.
     pub enable_slippage_protection: bool,
 }
 
@@ -96,7 +101,8 @@ impl SwapQuery {
             .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
         // We do not provide a takerAddress so validation does not make sense.
         url.query_pairs_mut().append_pair("skipValidation", "true");
-        // Ensure that we do not request binding quotes that we might be penalized for not taking.
+        // Ensure that we do not request binding quotes that we might be penalized for
+        // not taking.
         url.query_pairs_mut()
             .append_pair("intentOnFilling", "false");
         url
@@ -203,36 +209,38 @@ pub struct ZeroExSignature {
 pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
-    /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
+    /// Timestamp in seconds of when the order expires. Expired orders cannot be
+    /// filled.
     #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
     #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
-    /// The address of the entity that will receive any fees stipulated by the order.
-    /// This is typically used to incentivize off-chain order relay.
+    /// The address of the entity that will receive any fees stipulated by the
+    /// order. This is typically used to incentivize off-chain order relay.
     pub fee_recipient: H160,
-    /// The address of the party that creates the order. The maker is also one of the
-    /// two parties that will be involved in the trade if the order gets filled.
+    /// The address of the party that creates the order. The maker is also one
+    /// of the two parties that will be involved in the trade if the order
+    /// gets filled.
     pub maker: H160,
     /// The amount of `maker_token` being sold by the maker.
     #[serde_as(as = "DisplayFromStr")]
     pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
     pub maker_token: H160,
-    /// The staking pool to attribute the 0x protocol fee from this order. Set to zero
-    /// to attribute to the default pool, not owned by anyone.
+    /// The staking pool to attribute the 0x protocol fee from this order. Set
+    /// to zero to attribute to the default pool, not owned by anyone.
     pub pool: H256,
-    /// A value that can be used to guarantee order uniqueness. Typically it is set
-    /// to a random number.
+    /// A value that can be used to guarantee order uniqueness. Typically it is
+    /// set to a random number.
     #[serde(with = "u256_decimal")]
     pub salt: U256,
-    /// It allows the maker to enforce that the order flow through some additional
-    /// logic before it can be filled (e.g., a KYC whitelist).
+    /// It allows the maker to enforce that the order flow through some
+    /// additional logic before it can be filled (e.g., a KYC whitelist).
     pub sender: H160,
     /// The signature of the signed order.
     pub signature: ZeroExSignature,
     /// The address of the party that is allowed to fill the order. If set to a
-    /// specific party, the order cannot be filled by anyone else. If left unspecified,
-    /// anyone can fill the order.
+    /// specific party, the order cannot be filled by anyone else. If left
+    /// unspecified, anyone can fill the order.
     pub taker: H160,
     /// The amount of `taker_token` being sold by the taker.
     #[serde_as(as = "DisplayFromStr")]
@@ -242,8 +250,8 @@ pub struct Order {
     /// Amount of takerToken paid by the taker to the feeRecipient.
     #[serde_as(as = "DisplayFromStr")]
     pub taker_token_fee_amount: u128,
-    /// Address of the contract where the transaction should be sent, usually this is
-    /// the 0x exchange proxy contract.
+    /// Address of the contract where the transaction should be sent, usually
+    /// this is the 0x exchange proxy contract.
     pub verifying_contract: H160,
 }
 
@@ -255,8 +263,8 @@ pub struct OrderRecord {
 }
 
 impl OrderRecord {
-    /// Scales the `maker_amount` according to how much of the partially fillable
-    /// amount was already used.
+    /// Scales the `maker_amount` according to how much of the partially
+    /// fillable amount was already used.
     pub fn remaining_maker_amount(&self) -> Result<u128> {
         if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
             anyhow::bail!("remaining taker amount bigger than total taker amount");
@@ -267,7 +275,8 @@ impl OrderRecord {
             * U256::from(self.metadata.remaining_fillable_taker_amount)
             / U256::from(self.order.taker_amount);
 
-        // `scaled_maker_amount` is at most as big as `maker_amount` which already fits in an u128
+        // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
+        // in an u128
         Ok(scaled_maker_amount.as_u128())
     }
 }
@@ -351,7 +360,6 @@ pub struct DefaultZeroExApi {
 impl DefaultZeroExApi {
     /// Default 0x API URL.
     pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
-
     /// Default 0x verifying contract.
     /// The currently latest 0x v4 contract.
     pub const DEFAULT_VERIFICATION_CONTRACT: H160 =
@@ -478,7 +486,8 @@ impl ZeroExApi for DefaultZeroExApi {
     }
 }
 
-/// Append data of response to results and return whether another page should be fetched.
+/// Append data of response to results and return whether another page should be
+/// fetched.
 fn expect_more_results_after_handling_response(
     results: &mut Vec<OrderRecord>,
     mut response: OrdersResponse,
@@ -536,9 +545,7 @@ impl DefaultZeroExApi {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::addr;
-    use chrono::TimeZone;
+    use {super::*, crate::addr, chrono::TimeZone};
 
     #[tokio::test]
     #[ignore]
@@ -625,9 +632,10 @@ mod tests {
     #[ignore]
     async fn test_get_orders_paginated_with_empty_result() {
         let api = DefaultZeroExApi::default();
-        // `get_orders()` relies on `get_orders_with_pagination()` not producing and error instead
-        // of an response with 0 records. To test that we request a page which should never have a
-        // any records and check that it doesn't throw an error.
+        // `get_orders()` relies on `get_orders_with_pagination()` not producing and
+        // error instead of an response with 0 records. To test that we request
+        // a page which should never have a any records and check that it
+        // doesn't throw an error.
         let result = api
             .get_orders_with_pagination(&OrdersQuery::default(), 100, 1000000)
             .await;

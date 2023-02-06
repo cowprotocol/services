@@ -1,8 +1,10 @@
-use contracts::IZeroEx;
-use ethcontract::Bytes;
-use shared::{
-    interaction::{EncodedInteraction, Interaction},
-    zeroex_api::Order,
+use {
+    contracts::IZeroEx,
+    ethcontract::Bytes,
+    shared::{
+        interaction::{EncodedInteraction, Interaction},
+        zeroex_api::Order,
+    },
 };
 
 #[derive(Clone, Debug)]

@@ -1,12 +1,15 @@
 //! Module implementing two-token weighted pool specific indexing logic.
 
+use {
+    super::{common, FactoryIndexing},
+    crate::ethrpc::Web3CallBatch,
+    anyhow::Result,
+    contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory},
+    ethcontract::BlockId,
+    futures::future::BoxFuture,
+};
+
 pub use super::weighted::{PoolInfo, PoolState};
-use super::{common, FactoryIndexing};
-use crate::ethrpc::Web3CallBatch;
-use anyhow::Result;
-use contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory};
-use ethcontract::BlockId;
-use futures::future::BoxFuture;
 
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2WeightedPool2TokensFactory {

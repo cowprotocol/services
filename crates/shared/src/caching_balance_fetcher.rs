@@ -1,21 +1,24 @@
-use crate::{
-    account_balances::{BalanceFetching, Query, TransferSimulationError},
-    current_block::{into_stream, CurrentBlockStream},
+use {
+    crate::{
+        account_balances::{BalanceFetching, Query, TransferSimulationError},
+        current_block::{into_stream, CurrentBlockStream},
+    },
+    anyhow::Result,
+    futures::StreamExt,
+    itertools::Itertools,
+    model::order::SellTokenSource,
+    primitive_types::{H160, U256},
+    std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    },
+    tracing::Instrument,
 };
-use anyhow::Result;
-use futures::StreamExt;
-use itertools::Itertools;
-use model::order::SellTokenSource;
-use primitive_types::{H160, U256};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-use tracing::Instrument;
 
 type BlockNumber = u64;
 
-/// Balances get removed from the cache after this many blocks without being requested.
+/// Balances get removed from the cache after this many blocks without being
+/// requested.
 const EVICTION_TIME: BlockNumber = 5;
 
 #[derive(Default)]
@@ -36,7 +39,8 @@ impl BalanceCache {
         }
     }
 
-    /// Only updates existing balances. This should always be used in the background task.
+    /// Only updates existing balances. This should always be used in the
+    /// background task.
     fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
         if update_block < self.last_seen_block {
             // This should never realistically happen.
@@ -49,8 +53,8 @@ impl BalanceCache {
         }
     }
 
-    /// Only inserts new balances. This should always be used when we needed to fetch a balance
-    /// because it was requested by a backend component.
+    /// Only inserts new balances. This should always be used when we needed to
+    /// fetch a balance because it was requested by a backend component.
     fn insert_balance(&mut self, query: Query, balance: U256, requested_at: BlockNumber) {
         self.data.insert(
             query,
@@ -191,16 +195,18 @@ impl BalanceFetching for CachingBalanceFetcher {
         amount: U256,
         source: SellTokenSource,
     ) -> Result<(), TransferSimulationError> {
-        // This only gets called when creating or replacing an order which doesn't profit from
-        // caching.
+        // This only gets called when creating or replacing an order which doesn't
+        // profit from caching.
         self.inner.can_transfer(token, from, amount, source).await
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{account_balances::MockBalanceFetching, current_block::BlockInfo};
+    use {
+        super::*,
+        crate::{account_balances::MockBalanceFetching, current_block::BlockInfo},
+    };
 
     fn query(token: u8) -> Query {
         Query {
@@ -273,7 +279,8 @@ mod tests {
         // Wait for block to be noticed and cache to be updated. (2nd call to inner)
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        // Balance was already updated so this will hit the cache and skip calling `inner`.
+        // Balance was already updated so this will hit the cache and skip calling
+        // `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &1.into());
     }

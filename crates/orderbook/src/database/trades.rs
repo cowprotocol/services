@@ -1,12 +1,14 @@
-use crate::database::Postgres;
-use anyhow::{Context, Result};
-use database::{byte_array::ByteArray, trades::TradesQueryRow};
-use ethcontract::H160;
-use futures::{stream::TryStreamExt, StreamExt};
-use model::{order::OrderUid, trade::Trade};
-use number_conversions::big_decimal_to_big_uint;
-use primitive_types::H256;
-use std::convert::TryInto;
+use {
+    crate::database::Postgres,
+    anyhow::{Context, Result},
+    database::{byte_array::ByteArray, trades::TradesQueryRow},
+    ethcontract::H160,
+    futures::{stream::TryStreamExt, StreamExt},
+    model::{order::OrderUid, trade::Trade},
+    number_conversions::big_decimal_to_big_uint,
+    primitive_types::H256,
+    std::convert::TryInto,
+};
 
 #[async_trait::async_trait]
 pub trait TradeRetrieving: Send + Sync {

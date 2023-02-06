@@ -1,14 +1,16 @@
-use crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating};
-use futures::stream::StreamExt;
-use itertools::{Either, Itertools};
-use primitive_types::H160;
-use prometheus::{IntCounter, IntCounterVec, IntGauge};
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::{Arc, Mutex, MutexGuard, Weak},
-    time::{Duration, Instant},
+use {
+    crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    futures::stream::StreamExt,
+    itertools::{Either, Itertools},
+    primitive_types::H160,
+    prometheus::{IntCounter, IntCounterVec, IntGauge},
+    std::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        sync::{Arc, Mutex, MutexGuard, Weak},
+        time::{Duration, Instant},
+    },
+    tracing::Instrument,
 };
-use tracing::Instrument;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
@@ -29,8 +31,8 @@ impl Metrics {
     }
 }
 
-/// Wrapper around `Box<dyn PriceEstimating>` which caches successful price estimates for some time
-/// and supports updating the cache in the background.
+/// Wrapper around `Box<dyn PriceEstimating>` which caches successful price
+/// estimates for some time and supports updating the cache in the background.
 ///
 /// The size of the underlying cache is unbounded.
 ///
@@ -115,10 +117,11 @@ impl Inner {
         })
     }
 
-    /// Checks cache for the given tokens one by one. If the price is already cached it gets
-    /// returned. If it's not in the cache a new price estimation request gets issued.
-    /// We check the cache before each request because they can take a long time and some other
-    /// task might have fetched some requested price in the meantime.
+    /// Checks cache for the given tokens one by one. If the price is already
+    /// cached it gets returned. If it's not in the cache a new price
+    /// estimation request gets issued. We check the cache before each
+    /// request because they can take a long time and some other task might
+    /// have fetched some requested price in the meantime.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
         tokens: &'a [H160],
@@ -235,11 +238,12 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    /// Creates new CachingNativePriceEstimator using `estimator` to calculate native prices which
-    /// get cached a duration of `max_age`.
-    /// Spawns a background task maintaining the cache once per `update_interval`.
-    /// Only soon to be outdated prices get updated and recently used prices have a higher priority.
-    /// If `update_size` is `Some(n)` at most `n` prices get updated per interval.
+    /// Creates new CachingNativePriceEstimator using `estimator` to calculate
+    /// native prices which get cached a duration of `max_age`.
+    /// Spawns a background task maintaining the cache once per
+    /// `update_interval`. Only soon to be outdated prices get updated and
+    /// recently used prices have a higher priority. If `update_size` is
+    /// `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
     pub fn new(
         estimator: Box<dyn NativePriceEstimating>,
@@ -270,8 +274,9 @@ impl CachingNativePriceEstimator {
         Self(inner)
     }
 
-    /// Only returns prices that are currently cached. Missing prices will get prioritized to get
-    /// fetched during the next cycles of the maintenance background task.
+    /// Only returns prices that are currently cached. Missing prices will get
+    /// prioritized to get fetched during the next cycles of the maintenance
+    /// background task.
     pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
         let (cached_prices, missing_indices) =
             self.0.get_cached_prices(tokens, &self.0.max_age, true);
@@ -330,10 +335,12 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
-    use futures::FutureExt;
-    use num::ToPrimitive;
+    use {
+        super::*,
+        crate::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+        futures::FutureExt,
+        num::ToPrimitive,
+    };
 
     fn token(u: u64) -> H160 {
         H160::from_low_u64_be(u)
@@ -470,12 +477,12 @@ mod tests {
             .collect::<Vec<_>>()
             .await;
 
-        // this result has been updated in the background and therefore comes from the cache
-        // the cached result is returned first
+        // this result has been updated in the background and therefore comes from the
+        // cache the cached result is returned first
         assert_eq!(results[0].0, 1);
         assert!(results[0].1.as_ref().unwrap().to_i64().unwrap() == 4);
-        // this result has been skipped during maintenance and therefore needs to be estimated by the
-        // wrapped native price estimator
+        // this result has been skipped during maintenance and therefore needs to be
+        // estimated by the wrapped native price estimator
         assert_eq!(results[1].0, 0);
         assert!(results[1].1.as_ref().unwrap().to_i64().unwrap() == 3);
     }
@@ -574,8 +581,9 @@ mod tests {
         }
 
         // wait for maintenance cycle
-        // although we have 100 requests which all take 100ms to complete the maintenance cycle
-        // completes sooner because all requests are handled concurrently.
+        // although we have 100 requests which all take 100ms to complete the
+        // maintenance cycle completes sooner because all requests are handled
+        // concurrently.
         tokio::time::sleep(Duration::from_millis(60 + WAIT_TIME_MS)).await;
 
         let results = estimator

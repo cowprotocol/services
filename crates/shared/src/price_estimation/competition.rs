@@ -1,9 +1,15 @@
-use crate::price_estimation::{
-    Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+use {
+    crate::price_estimation::{
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+    },
+    futures::stream::StreamExt,
+    model::order::OrderKind,
+    std::{cmp::Ordering, num::NonZeroUsize, sync::Arc},
 };
-use futures::stream::StreamExt;
-use model::order::OrderKind;
-use std::{cmp::Ordering, num::NonZeroUsize, sync::Arc};
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Returns a price estimation
@@ -42,8 +48,9 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
         let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
             |(i, (_, estimator))| estimator.estimates(queries).map(move |result| (i, result)),
         ));
-        // Stores the estimates for each query and estimator. When we have collected enough results
-        // to produce a result of our own the corresponding element is set to None.
+        // Stores the estimates for each query and estimator. When we have collected
+        // enough results to produce a result of our own the corresponding
+        // element is set to None.
         let mut estimates: Vec<Option<Vec<(usize, PriceEstimateResult)>>> =
             vec![Some(Vec::with_capacity(self.inner.len())); queries.len()];
         // Receives items from the combined stream.
@@ -62,7 +69,8 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             if successes < self.successful_results_for_early_return.get() && remaining > 0 {
                 return None;
             }
-            // We have enough successes or there are no remaining estimators running for this query.
+            // We have enough successes or there are no remaining estimators running for
+            // this query.
 
             // Find the best result.
             let results = estimates.get_mut(query_index).unwrap().take().unwrap();
@@ -189,14 +197,16 @@ fn metrics() -> &'static Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::price_estimation::{old_estimator_to_stream, vec_estimates, MockPriceEstimating};
-    use anyhow::anyhow;
-    use futures::StreamExt;
-    use model::order::OrderKind;
-    use primitive_types::H160;
-    use std::time::Duration;
-    use tokio::time::sleep;
+    use {
+        super::*,
+        crate::price_estimation::{old_estimator_to_stream, vec_estimates, MockPriceEstimating},
+        anyhow::anyhow,
+        futures::StreamExt,
+        model::order::OrderKind,
+        primitive_types::H160,
+        std::time::Duration,
+        tokio::time::sleep,
+    };
 
     #[tokio::test]
     async fn works() {
@@ -354,8 +364,8 @@ mod tests {
             futures::stream::once(async {
                 sleep(Duration::from_millis(20)).await;
                 unreachable!(
-                    "This estimation gets canceled because the racing estimator\
-                    already got enough estimates to return early."
+                    "This estimation gets canceled because the racing estimatoralready got enough \
+                     estimates to return early."
                 )
             })
             .boxed()

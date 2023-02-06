@@ -1,53 +1,70 @@
-use clap::Parser;
-use contracts::{
-    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, GPv2Settlement, IUniswapV3Factory,
-    WETH9,
+use {
+    clap::Parser,
+    contracts::{
+        BalancerV2Vault,
+        CowProtocolToken,
+        CowProtocolVirtualToken,
+        GPv2Settlement,
+        IUniswapV3Factory,
+        WETH9,
+    },
+    ethcontract::errors::DeployError,
+    model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    orderbook::{
+        database::Postgres,
+        orderbook::Orderbook,
+        serve_api,
+        verify_deployed_contract_constants,
+    },
+    shared::{
+        account_balances::Web3BalanceFetcher,
+        bad_token::{
+            cache::CachingDetector,
+            instrumented::InstrumentedBadTokenDetectorExt,
+            list_based::{ListBasedDetector, UnknownTokenStrategy},
+            token_owner_finder,
+            trace_call::TraceCallDetector,
+        },
+        baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
+        fee_subsidy::{
+            config::FeeSubsidyConfiguration,
+            cow_token::CowSubsidy,
+            FeeSubsidies,
+            FeeSubsidizing,
+        },
+        gas_price::InstrumentedGasEstimator,
+        http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
+        metrics::{serve_metrics, DEFAULT_METRICS_PORT},
+        network::network_name,
+        oneinch_api::OneInchClientImpl,
+        order_quoting::{OrderQuoter, QuoteHandler},
+        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
+        price_estimation::{
+            factory::{self, PriceEstimatorFactory},
+            PriceEstimating,
+        },
+        recent_block_cache::CacheConfig,
+        signature_validator::Web3SignatureValidator,
+        sources::{
+            self,
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
+            PoolAggregator,
+        },
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        zeroex_api::DefaultZeroExApi,
+    },
+    std::{sync::Arc, time::Duration},
+    tokio::task,
 };
-use ethcontract::errors::DeployError;
-use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
-use orderbook::{
-    database::Postgres, orderbook::Orderbook, serve_api, verify_deployed_contract_constants,
-};
-use shared::{
-    account_balances::Web3BalanceFetcher,
-    bad_token::{
-        cache::CachingDetector,
-        instrumented::InstrumentedBadTokenDetectorExt,
-        list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder,
-        trace_call::TraceCallDetector,
-    },
-    baseline_solver::BaseTokens,
-    code_fetching::CachedCodeFetcher,
-    fee_subsidy::{
-        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
-    },
-    gas_price::InstrumentedGasEstimator,
-    http_client::HttpClientFactory,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-    network::network_name,
-    oneinch_api::OneInchClientImpl,
-    order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
-    price_estimation::{
-        factory::{self, PriceEstimatorFactory},
-        PriceEstimating,
-    },
-    recent_block_cache::CacheConfig,
-    signature_validator::Web3SignatureValidator,
-    sources::{
-        self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource, PoolAggregator,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    zeroex_api::DefaultZeroExApi,
-};
-use std::{sync::Arc, time::Duration};
-use tokio::task;
 
 #[tokio::main]
 async fn main() -> ! {
