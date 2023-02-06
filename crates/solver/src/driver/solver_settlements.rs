@@ -1,5 +1,5 @@
 use crate::{settlement::Settlement, solver::Solver};
-use model::auction::AuctionId;
+use model::{auction::AuctionId, solver_competition::Score};
 use num::BigRational;
 use primitive_types::U256;
 use shared::http_solver::model::{AuctionResult, SolverRejectionReason};
@@ -21,8 +21,8 @@ pub struct RatedSettlement {
     pub gas_estimate: U256,                   // In gas units.
     pub gas_price: BigRational,               // In wei per gas unit.
     pub objective_value: BigRational,
-    pub score: f64,     // CIP17 score.
-    pub ranking: usize, // CIP17 ranking.
+    pub score: Score,   // auction based score.
+    pub ranking: usize, // auction based ranking.
 }
 
 /// Filters out all settlements without any user order which is mature by age or mature by association.

@@ -14,7 +14,7 @@ use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::{
     conversions::U256Ext as _,
-    http_solver::model::{InternalizationStrategy, SubmissionPreference},
+    http_solver::model::{InternalizationStrategy, Score, SubmissionPreference},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -219,7 +219,7 @@ impl Interaction for NoopInteraction {
 pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, // todo - extract submitter and score into a separate struct
-    pub score: Option<f64>,
+    pub score: Option<Score>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -267,7 +267,7 @@ impl Settlement {
         Self {
             encoder,
             submitter: self.submitter.clone(),
-            score: self.score,
+            score: self.score.clone(),
         }
     }
 
@@ -441,7 +441,10 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(left), Some(right)) => Some(left + right),
+                (Some(left), Some(right)) => match (left, right) {
+                    (Score::Score(left), Score::Score(right)) => Some(Score::Score(left + right)),
+                    _ => None,
+                },
                 _ => None,
             },
         })

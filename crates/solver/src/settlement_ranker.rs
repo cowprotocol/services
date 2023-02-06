@@ -189,10 +189,10 @@ impl SettlementRanker {
         // preference to any specific solver when there is an objective value tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
 
-        if cfg!(feature = "CIP17") {
+        if cfg!(feature = "auction-rewards") {
             // Filter out settlements that have negative score or NaN score.
             rated_settlements.retain(|(solver, settlement, _)| {
-                if settlement.score.is_nan() || settlement.score < 0.0 {
+                if settlement.score.score().is_nan() || settlement.score.score() < 0.0 {
                     tracing::debug!(
                         solver_name = %solver.name(),
                         "settlement(s) filtered for having negative or NaN score",
@@ -200,7 +200,7 @@ impl SettlementRanker {
                     solver.notify_auction_result(
                         auction_id,
                         AuctionResult::Rejected(SolverRejectionReason::NegativeScore(
-                            settlement.score,
+                            settlement.score.score(),
                         )),
                     );
                     return false;
@@ -208,14 +208,14 @@ impl SettlementRanker {
                 true
             });
 
-            rated_settlements.sort_by(|a, b| a.1.score.total_cmp(&b.1.score));
+            rated_settlements.sort_by(|a, b| a.1.score.score().total_cmp(&b.1.score.score()));
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
                 |(i, (solver, settlement, _))| {
-                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
                     self.metrics
                         .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
                     settlement.ranking = i + 1;
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
                 },
             );
         } else {
@@ -231,10 +231,15 @@ impl SettlementRanker {
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
                 |(i, (solver, settlement, _))| {
-                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
                     self.metrics
                         .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
                     settlement.ranking = cip17_ranking.get(&settlement.id).copied().unwrap_or(0);
+                    // notify solvers about their real ranking and simulated auction based ranking
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Ranked(settlement.ranking),
+                    );
                 },
             );
         }
@@ -246,8 +251,9 @@ impl SettlementRanker {
 // Sort settlements by CIP-17 rules and return hashmap of settlement id to ranking
 fn cip17_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
     let mut settlements = settlements;
-    settlements.retain(|settlement| !settlement.score.is_nan() && settlement.score >= 0.0);
-    settlements.sort_by(|a, b| a.score.total_cmp(&b.score));
+    settlements
+        .retain(|settlement| !settlement.score.score().is_nan() && settlement.score.score() >= 0.0);
+    settlements.sort_by(|a, b| a.score.score().total_cmp(&b.score.score()));
     settlements
         .iter()
         .rev()

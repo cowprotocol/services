@@ -74,8 +74,9 @@ pub struct CompetitionAuction {
 pub struct SolverSettlement {
     pub solver: String,
     pub objective: Objective,
-    pub score: f64,     // CIP17 score
-    pub ranking: usize, // CIP17 ranking
+    #[serde(flatten)]
+    pub score: Score, // auction based score
+    pub ranking: usize, // auction based ranking
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
@@ -94,6 +95,35 @@ pub struct Objective {
     pub fees: f64,
     pub cost: f64,
     pub gas: u64,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum Score {
+    /// The score is provided by the solver.
+    #[serde(rename = "score")]
+    Solver(f64),
+    /// The score is calculated by the protocol (and equal to the objective function).
+    #[serde(rename = "scoreProtocol")]
+    Protocol(f64),
+    /// The score is calculated by the protocol, by applying a discount to the protocol calculated score.
+    #[serde(rename = "scoreDiscounted")]
+    Discounted(f64),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::Protocol(0.0)
+    }
+}
+
+impl Score {
+    pub fn score(&self) -> f64 {
+        match self {
+            Self::Solver(score) => *score,
+            Self::Protocol(score) => *score,
+            Self::Discounted(score) => *score,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
@@ -194,7 +224,7 @@ mod tests {
                         cost: 6.,
                         gas: 7,
                     },
-                    score: 1.,
+                    score: Score::Solver(1.),
                     ranking: 1,
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),

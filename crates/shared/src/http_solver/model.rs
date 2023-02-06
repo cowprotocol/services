@@ -170,6 +170,18 @@ impl Interaction for InteractionData {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Score {
+    /// The score used for ranking.
+    Score(f64),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score is computed by the protocol.
+    /// To have more flexibility, the protocol score can be tweaked by the solver by providing a multiplication factor.
+    /// Expected value: [0, inf], 0 being 100% discount, 1 being the same as protocol score
+    MulFactor(f64),
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
@@ -188,7 +200,8 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub submitter: SubmissionPreference,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub score: Option<f64>,
+    #[serde(flatten)]
+    pub score: Option<Score>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -795,6 +808,38 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(empty_solution).is_ok());
+    }
+
+    #[test]
+    fn decode_score() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "score": 13.37,
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(deserialized.score, Some(Score::Score(13.37)));
+    }
+
+    #[test]
+    fn decode_multiplication_factor() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "mulFactor": 13.37,
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(deserialized.score, Some(Score::MulFactor(13.37)));
     }
 
     #[test]

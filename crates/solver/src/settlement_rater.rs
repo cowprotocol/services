@@ -11,6 +11,7 @@ use ethcontract::errors::ExecutionError;
 use futures::future::join_all;
 use gas_estimation::GasPrice1559;
 use itertools::{Either, Itertools};
+use model::solver_competition::Score;
 use num::{BigRational, ToPrimitive};
 use primitive_types::U256;
 use shared::{
@@ -18,7 +19,7 @@ use shared::{
     ethrpc::Web3,
     http_solver::model::{InternalizationStrategy, SimulatedTransaction},
 };
-use std::{borrow::Borrow, sync::Arc};
+use std::{borrow::Borrow, ops::Mul, sync::Arc};
 use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
@@ -195,9 +196,18 @@ impl SettlementRating for SettlementRater {
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
-            let score = settlement
-                .score
-                .unwrap_or_else(|| objective_value.to_f64().unwrap_or(f64::NAN));
+            let score = match &settlement.score {
+                Some(solver_score) => match solver_score {
+                    shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
+                    shared::http_solver::model::Score::MulFactor(factor) => Score::Discounted(
+                        objective_value
+                            .to_f64()
+                            .map(|value| value.mul(factor))
+                            .unwrap_or(f64::NAN),
+                    ),
+                },
+                None => Score::Protocol(objective_value.to_f64().unwrap_or(f64::NAN)),
+            };
             RatedSettlement {
                 id,
                 settlement,
