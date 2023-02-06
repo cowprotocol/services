@@ -1,9 +1,6 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
-pub mod baoswap;
-pub mod honeyswap;
-pub mod sushiswap;
 pub mod swapr;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
@@ -74,18 +71,9 @@ pub async fn uniswap_like_liquidity_sources(
 ) -> Result<HashMap<BaselineSource, (PairProvider, Arc<dyn PoolFetching>)>> {
     let mut liquidity_sources = HashMap::new();
     for source in sources {
-        let liquidity_source = match source {
-            BaselineSource::UniswapV2 => uniswap_v2::get_liquidity_source(web3).await?,
-            BaselineSource::SushiSwap => sushiswap::get_liquidity_source(web3).await?,
-            BaselineSource::Honeyswap => honeyswap::get_liquidity_source(web3).await?,
-            BaselineSource::Baoswap => baoswap::get_liquidity_source(web3).await?,
-            BaselineSource::Swapr => swapr::get_liquidity_source(web3).await?,
-            BaselineSource::BalancerV2 => continue,
-            BaselineSource::ZeroEx => continue,
-            BaselineSource::UniswapV3 => continue,
-        };
-
-        liquidity_sources.insert(*source, liquidity_source);
+        if let Some(inner) = uniswap_v2::uniswap_like_liquidity_source(*source, web3).await? {
+            liquidity_sources.insert(*source, inner);
+        }
     }
     Ok(liquidity_sources)
 }

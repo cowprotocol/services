@@ -1,5 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between
 //! the binaries.
+
 use {
     crate::{
         current_block,

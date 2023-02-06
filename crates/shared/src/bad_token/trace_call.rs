@@ -260,7 +260,7 @@ mod tests {
                 TokenOwnerFinder,
             },
             ethrpc::create_env_test_transport,
-            sources::{sushiswap, uniswap_v2},
+            sources::{uniswap_v2, BaselineSource},
         },
         contracts::{BalancerV2Vault, IUniswapV3Factory},
         hex_literal::hex,
@@ -590,11 +590,25 @@ mod tests {
             web3: web3.clone(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: uniswap_v2::get_liquidity_source(&web3).await.unwrap().0,
+                    inner: uniswap_v2::uniswap_like_liquidity_source(
+                        BaselineSource::UniswapV2,
+                        &web3,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .0,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: sushiswap::get_liquidity_source(&web3).await.unwrap().0,
+                    inner: uniswap_v2::uniswap_like_liquidity_source(
+                        BaselineSource::SushiSwap,
+                        &web3,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .0,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(

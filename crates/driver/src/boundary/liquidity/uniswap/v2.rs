@@ -15,7 +15,7 @@ use {
         sources::uniswap_v2::{
             pair_provider::PairProvider,
             pool_cache::PoolCache,
-            pool_fetching::{DefaultPoolReader, PoolFetcher, PoolReading},
+            pool_fetching::{DefaultPoolReader, PoolFetcher},
         },
     },
     solver::{
@@ -103,7 +103,10 @@ pub async fn collector(
             factory,
             init_code_digest: config.pool_code.into(),
         };
-        let pool_reader = DefaultPoolReader::for_pair_provider(pair_provider, web3.clone());
+        let pool_reader = DefaultPoolReader {
+            pair_provider,
+            web3: web3.clone(),
+        };
 
         let pool_fetcher = PoolFetcher {
             pool_reader,
