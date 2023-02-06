@@ -1,7 +1,9 @@
-use super::Postgres;
-use anyhow::{Context, Result};
-use shared::maintenance::Maintaining;
-use sqlx::types::chrono::{DateTime, Utc};
+use {
+    super::Postgres,
+    anyhow::{Context, Result},
+    shared::maintenance::Maintaining,
+    sqlx::types::chrono::{DateTime, Utc},
+};
 
 impl Postgres {
     pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {

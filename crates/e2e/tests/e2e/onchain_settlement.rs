@@ -1,40 +1,53 @@
-use crate::{
-    onchain_components::{
-        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
-    },
-    services::{
-        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
-        API_HOST,
-    },
-    tx,
-};
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use hex_literal::hex;
-use model::{
-    order::{OrderBuilder, OrderKind},
-    signature::EcdsaSigningScheme,
-};
-use secp256k1::SecretKey;
-use shared::{
-    code_fetching::MockCodeFetching, ethrpc::Web3, http_client::HttpClientFactory,
-    maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{
-            public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-            Strategy,
+use {
+    crate::{
+        onchain_components::{
+            deploy_token_with_weth_uniswap_pool,
+            to_wei,
+            uniswap_pair_provider,
+            WethPoolConfig,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
+        services::{
+            create_order_converter,
+            create_orderbook_api,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
+        tx,
     },
+    contracts::IUniswapLikeRouter,
+    ethcontract::prelude::{Account, Address, PrivateKey, U256},
+    hex_literal::hex,
+    model::{
+        order::{OrderBuilder, OrderKind},
+        signature::EcdsaSigningScheme,
+    },
+    secp256k1::SecretKey,
+    shared::{
+        code_fetching::MockCodeFetching,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        maintenance::Maintaining,
+        sources::uniswap_v2::pool_fetching::PoolFetcher,
+    },
+    solver::{
+        liquidity::uniswap_v2::UniswapLikeLiquidity,
+        liquidity_collector::LiquidityCollector,
+        metrics::NoopMetrics,
+        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        settlement_submission::{
+            submitter::{
+                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+        },
+    },
+    std::{sync::Arc, time::Duration},
+    web3::signing::SecretKeyRef,
 };
-use std::{sync::Arc, time::Duration};
-use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
     hex!("0000000000000000000000000000000000000000000000000000000000000001");

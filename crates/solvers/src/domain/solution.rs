@@ -1,6 +1,8 @@
-use crate::domain::{eth, liquidity, order};
-use ethereum_types::U256;
-use std::collections::HashMap;
+use {
+    crate::domain::{eth, liquidity, order},
+    ethereum_types::U256,
+    std::collections::HashMap,
+};
 
 /// A solution to an auction.
 pub struct Solution {

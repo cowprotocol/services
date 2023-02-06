@@ -1,11 +1,13 @@
 //! A module implementing a client for querying subgraphs.
 
-use anyhow::{bail, Result};
-use lazy_static::lazy_static;
-use reqwest::{Client, IntoUrl, Url};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use thiserror::Error;
+use {
+    anyhow::{bail, Result},
+    lazy_static::lazy_static,
+    reqwest::{Client, IntoUrl, Url},
+    serde::{de::DeserializeOwned, Deserialize, Serialize},
+    serde_json::{json, Map, Value},
+    thiserror::Error,
+};
 
 pub const QUERY_PAGE_SIZE: usize = 1000;
 const MAX_NUMBER_OF_RETRIES: usize = 10;
@@ -61,8 +63,8 @@ impl SubgraphClient {
         T: DeserializeOwned,
     {
         // for long lasting queries subgraph call might randomly fail
-        // introduced retry mechanism that should efficiently help since failures are quick
-        // and we need 1 or 2 retries to succeed.
+        // introduced retry mechanism that should efficiently help since failures are
+        // quick and we need 1 or 2 retries to succeed.
         for _ in 0..MAX_NUMBER_OF_RETRIES {
             match self
                 .client
@@ -85,7 +87,8 @@ impl SubgraphClient {
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
-    /// This function should be called for queries that return very long(paginated) result.
+    /// This function should be called for queries that return very
+    /// long(paginated) result.
     pub async fn paginated_query<T>(
         &self,
         query: &str,
@@ -180,8 +183,10 @@ fn empty_data<T>() -> Option<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::{json, Value};
+    use {
+        super::*,
+        serde_json::{json, Value},
+    };
 
     #[test]
     fn serialize_query() {

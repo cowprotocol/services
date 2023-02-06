@@ -1,8 +1,10 @@
-use reqwest::StatusCode;
-use serde_json::json;
-use shared::api::ApiReply;
-use std::convert::Infallible;
-use warp::{reply::with_status, Filter, Rejection};
+use {
+    reqwest::StatusCode,
+    serde_json::json,
+    shared::api::ApiReply,
+    std::convert::Infallible,
+    warp::{reply::with_status, Filter, Rejection},
+};
 
 pub fn version() -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     warp::path!("v1" / "version")

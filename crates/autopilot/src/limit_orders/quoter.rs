@@ -1,27 +1,29 @@
-use crate::database::{
-    orders::{FeeUpdate, LimitOrderQuote},
-    Postgres,
+use {
+    crate::database::{
+        orders::{FeeUpdate, LimitOrderQuote},
+        Postgres,
+    },
+    anyhow::Result,
+    database::orders::{OrderFeeSpecifier, OrderQuotingData},
+    ethcontract::H160,
+    futures::StreamExt,
+    itertools::Itertools,
+    model::quote::{OrderQuoteSide, SellAmount},
+    number_conversions::big_decimal_to_u256,
+    primitive_types::U256,
+    shared::{
+        account_balances::{BalanceFetching, Query},
+        db_order_conversions::sell_token_source_from,
+        order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
+        price_estimation::PriceEstimationError,
+    },
+    std::{collections::HashMap, sync::Arc, time::Duration},
+    tracing::Instrument as _,
 };
-use anyhow::Result;
-use database::orders::{OrderFeeSpecifier, OrderQuotingData};
-use ethcontract::H160;
-use futures::StreamExt;
-use itertools::Itertools;
-use model::quote::{OrderQuoteSide, SellAmount};
-use number_conversions::big_decimal_to_u256;
-use primitive_types::U256;
-use shared::{
-    account_balances::{BalanceFetching, Query},
-    db_order_conversions::sell_token_source_from,
-    order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
-    price_estimation::PriceEstimationError,
-};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use tracing::Instrument as _;
 
-/// Background task which quotes all limit orders and sets the surplus_fee for each one
-/// to the fee returned by the quoting process. If quoting fails, the corresponding
-/// order is skipped.
+/// Background task which quotes all limit orders and sets the surplus_fee for
+/// each one to the fee returned by the quoting process. If quoting fails, the
+/// corresponding order is skipped.
 pub struct LimitOrderQuoter {
     pub limit_order_age: chrono::Duration,
     pub quoter: Arc<dyn OrderQuoting>,
@@ -256,10 +258,12 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use database::byte_array::ByteArray;
-    use number_conversions::u256_to_big_decimal;
-    use shared::account_balances::{MockBalanceFetching, Query};
+    use {
+        super::*,
+        database::byte_array::ByteArray,
+        number_conversions::u256_to_big_decimal,
+        shared::account_balances::{MockBalanceFetching, Query},
+    };
 
     fn query(token: u8) -> Query {
         Query {

@@ -1,16 +1,18 @@
-use crate::{
-    liquidity::{self, slippage::SlippageContext},
-    settlement::{PricedTrade, Settlement},
+use {
+    crate::{
+        liquidity::{self, slippage::SlippageContext},
+        settlement::{PricedTrade, Settlement},
+    },
+    anyhow::Result,
+    liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
+    model::order::OrderKind,
+    num::{rational::Ratio, BigInt, BigRational, CheckedDiv},
+    number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int},
+    primitive_types::U256,
+    shared::conversions::{RatioExt, U256Ext},
+    std::collections::HashMap,
+    web3::types::Address,
 };
-use anyhow::Result;
-use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
-use model::order::OrderKind;
-use num::{rational::Ratio, BigInt, BigRational, CheckedDiv};
-use number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int};
-use primitive_types::U256;
-use shared::conversions::{RatioExt, U256Ext};
-use std::collections::HashMap;
-use web3::types::Address;
 
 #[derive(Debug, Clone)]
 struct TokenContext {
@@ -51,7 +53,8 @@ pub fn solve(
         {
             return Some(valid_solution);
         } else {
-            // remove order with worst limit price that is selling excess token (to make it less excessive) and try again
+            // remove order with worst limit price that is selling excess token (to make it
+            // less excessive) and try again
             let excess_token = if context_a.is_excess_before_fees(&context_b) {
                 context_a.address
             } else {
@@ -76,10 +79,10 @@ pub fn solve(
 }
 
 ///
-/// Computes a settlement using orders of a single pair and the direct AMM between those tokens.get(.
-/// Panics if orders are not already filtered for a specific token pair, or the reserve information
-/// for that pair is not available.
-///
+/// Computes a settlement using orders of a single pair and the direct AMM
+/// between those tokens.get(. Panics if orders are not already filtered for a
+/// specific token pair, or the reserve information for that pair is not
+/// available.
 fn solve_orders(
     slippage: &SlippageContext,
     orders: &[LimitOrder],
@@ -97,8 +100,8 @@ fn solve_orders(
 }
 
 ///
-/// Creates a solution using the current AMM spot price, without using any of its liquidity
-///
+/// Creates a solution using the current AMM spot price, without using any of
+/// its liquidity
 fn solve_without_uniswap(
     orders: &[LimitOrder],
     context_a: &TokenContext,
@@ -116,9 +119,9 @@ fn solve_without_uniswap(
 }
 
 ///
-/// Creates a solution using the current AMM's liquidity to balance excess and shortage.
-/// The clearing price is the effective exchange rate used by the AMM interaction.
-///
+/// Creates a solution using the current AMM's liquidity to balance excess and
+/// shortage. The clearing price is the effective exchange rate used by the AMM
+/// interaction.
 fn solve_with_uniswap(
     slippage: &SlippageContext,
     orders: &[LimitOrder],
@@ -256,12 +259,14 @@ fn split_into_contexts(
 }
 
 ///
-/// Given information about the shortage token (the one we need to take from Uniswap) and the excess token (the one we give to Uniswap), this function
-/// computes the exact out_amount required from Uniswap to perfectly match demand and supply at the effective Uniswap price (the one used for that in/out swap).
+/// Given information about the shortage token (the one we need to take from
+/// Uniswap) and the excess token (the one we give to Uniswap), this function
+/// computes the exact out_amount required from Uniswap to perfectly match
+/// demand and supply at the effective Uniswap price (the one used for that
+/// in/out swap).
 ///
 /// The derivation of this formula is described in https://docs.google.com/document/d/1jS22wxbCqo88fGsqEMZgRQgiAcHlPqxoMw3CJTHst6c/edit
 /// It assumes GP fee (φ) to be 1
-///
 fn compute_uniswap_out(
     shortage: &TokenContext,
     excess: &TokenContext,
@@ -280,11 +285,11 @@ fn compute_uniswap_out(
 }
 
 ///
-/// Given the desired amount to receive and the state of the pool, this computes the required amount
-/// of tokens to be sent to the pool.
+/// Given the desired amount to receive and the state of the pool, this computes
+/// the required amount of tokens to be sent to the pool.
 /// Taken from: https://github.com/Uniswap/uniswap-v2-periphery/blob/4123f93278b60bcf617130629c69d4016f9e7584/contracts/libraries/UniswapV2Library.sol#L53
-/// Not adding + 1 in the end, because we are working with rationals and thus don't round up.
-///
+/// Not adding + 1 in the end, because we are working with rationals and thus
+/// don't round up.
 fn compute_uniswap_in(
     out: BigRational,
     shortage: &TokenContext,
@@ -300,9 +305,9 @@ fn compute_uniswap_in(
 }
 
 ///
-/// Returns true if for each trade the executed price is not smaller than the limit price
-/// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
-///
+/// Returns true if for each trade the executed price is not smaller than the
+/// limit price Thus we ensure that `buy_token_price / sell_token_price >=
+/// limit_buy_amount / limit_sell_amount`
 fn is_valid_solution(solution: &Settlement) -> bool {
     for PricedTrade {
         data,
@@ -325,20 +330,23 @@ fn is_valid_solution(solution: &Settlement) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        liquidity::slippage::SlippageCalculator, settlement::external_prices::ExternalPrices,
+    use {
+        super::*,
+        crate::{
+            liquidity::slippage::SlippageCalculator,
+            settlement::external_prices::ExternalPrices,
+        },
+        ethcontract::H160,
+        liquidity::tests::CapturingSettlementHandler,
+        maplit::hashmap,
+        model::{
+            order::{Order, OrderData},
+            TokenPair,
+        },
+        num::rational::Ratio,
+        once_cell::sync::OnceCell,
+        shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool},
     };
-    use ethcontract::H160;
-    use liquidity::tests::CapturingSettlementHandler;
-    use maplit::hashmap;
-    use model::{
-        order::{Order, OrderData},
-        TokenPair,
-    };
-    use num::rational::Ratio;
-    use once_cell::sync::OnceCell;
-    use shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool};
 
     fn to_wei(base: u128) -> U256 {
         U256::from(base) * U256::from(10).pow(18.into())
@@ -395,12 +403,14 @@ mod tests {
         assert!(orders[0].sell_amount + interaction.output.1 >= orders[1].buy_amount);
         assert!(orders[1].sell_amount - interaction.input_max.1 > orders[0].buy_amount);
 
-        // Make sure the sell amounts +/- uniswap interaction satisfy expected buy amounts given clearing price
+        // Make sure the sell amounts +/- uniswap interaction satisfy expected buy
+        // amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
         let price_b = result.clearing_price(token_b).unwrap();
 
-        // Multiplying sellAmount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
-        // We should have at least as much to give (sell amount +/- uniswap) as is expected by the buyer
+        // Multiplying sellAmount with priceA, gives us sell value in "$", divided by
+        // priceB gives us value in buy token We should have at least as much to
+        // give (sell amount +/- uniswap) as is expected by the buyer
         let expected_buy = (orders[0].sell_amount * price_a).ceil_div(&price_b);
         assert!(orders[1].sell_amount - interaction.input_max.1 >= expected_buy);
 
@@ -448,11 +458,13 @@ mod tests {
         assert_eq!(interaction.input_max.0, token_a);
         assert_eq!(interaction.output.0, token_b);
 
-        // Make sure the sell amounts cover the uniswap in, and min buy amounts are covered by uniswap out
+        // Make sure the sell amounts cover the uniswap in, and min buy amounts are
+        // covered by uniswap out
         assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input_max.1);
         assert!(interaction.output.1 >= orders[0].buy_amount + orders[1].buy_amount);
 
-        // Make sure expected buy amounts (given prices) are also covered by uniswap out amounts
+        // Make sure expected buy amounts (given prices) are also covered by uniswap out
+        // amounts
         let price_a = result.clearing_price(token_a).unwrap();
         let price_b = result.clearing_price(token_b).unwrap();
 
@@ -505,12 +517,14 @@ mod tests {
         assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
         assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input_max.1);
 
-        // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
+        // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell
+        // amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
         let price_b = result.clearing_price(token_b).unwrap();
 
-        // Multiplying buyAmount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
-        // The seller should expect to sell at least as much as we require for the buyer + uniswap.
+        // Multiplying buyAmount with priceB, gives us sell value in "$", divided by
+        // priceA gives us value in sell token The seller should expect to sell
+        // at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
         assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
 
@@ -558,23 +572,28 @@ mod tests {
         assert_eq!(interaction.input_max.0, token_b);
         assert_eq!(interaction.output.0, token_a);
 
-        // Make sure the buy order's sell amount - uniswap interaction satisfies sell order's limit
+        // Make sure the buy order's sell amount - uniswap interaction satisfies sell
+        // order's limit
         assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
 
-        // Make sure the sell order's buy amount + uniswap interaction satisfies buy order's limit
+        // Make sure the sell order's buy amount + uniswap interaction satisfies buy
+        // order's limit
         assert!(orders[1].buy_amount + interaction.input_max.1 >= orders[0].sell_amount);
 
-        // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
+        // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell
+        // amounts given clearing price
         let price_a = result.clearing_price(token_a).unwrap();
         let price_b = result.clearing_price(token_b).unwrap();
 
-        // Multiplying buy_amount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
-        // The seller should expect to sell at least as much as we require for the buyer + uniswap.
+        // Multiplying buy_amount with priceB, gives us sell value in "$", divided by
+        // priceA gives us value in sell token The seller should expect to sell
+        // at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
         assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
 
-        // Multiplying sell_amount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
-        // We should have at least as much to give (sell amount + uniswap out) as is expected by the buyer
+        // Multiplying sell_amount with priceA, gives us sell value in "$", divided by
+        // priceB gives us value in buy token We should have at least as much to
+        // give (sell amount + uniswap out) as is expected by the buyer
         let expected_buy = orders[1].sell_amount * price_b / price_a;
         assert!(orders[0].sell_amount + interaction.output.1 >= expected_buy);
     }

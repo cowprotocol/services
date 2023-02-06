@@ -1,9 +1,11 @@
-use crate::orderbook::{OrderCancellationError, Orderbook};
-use anyhow::Result;
-use model::order::SignedOrderCancellations;
-use shared::api::{convert_json_response, extract_payload};
-use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection};
+use {
+    crate::orderbook::{OrderCancellationError, Orderbook},
+    anyhow::Result,
+    model::order::SignedOrderCancellations,
+    shared::api::{convert_json_response, extract_payload},
+    std::{convert::Infallible, sync::Arc},
+    warp::{Filter, Rejection},
+};
 
 pub fn request() -> impl Filter<Extract = (SignedOrderCancellations,), Error = Rejection> + Clone {
     warp::path!("v1" / "orders")

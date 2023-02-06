@@ -1,7 +1,9 @@
-use anyhow::{ensure, Result};
-use bigdecimal::{num_bigint::ToBigInt, BigDecimal};
-use num::{bigint::Sign, BigInt, BigRational, BigUint, Zero};
-use primitive_types::U256;
+use {
+    anyhow::{ensure, Result},
+    bigdecimal::{num_bigint::ToBigInt, BigDecimal},
+    num::{bigint::Sign, BigInt, BigRational, BigUint, Zero},
+    primitive_types::U256,
+};
 
 pub fn u256_to_big_uint(input: &U256) -> BigUint {
     let mut bytes = [0; 32];
@@ -33,8 +35,9 @@ pub fn big_rational_to_u256(ratio: &BigRational) -> Result<U256> {
     big_int_to_u256(&(ratio.numer() / ratio.denom()))
 }
 
-// TODO: It would be nice to avoid copying the underlying BigInt when converting BigDecimal to
-// anything else but the simple big_decimal.to_bigint makes a copy internally.
+// TODO: It would be nice to avoid copying the underlying BigInt when converting
+// BigDecimal to anything else but the simple big_decimal.to_bigint makes a copy
+// internally.
 
 pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
     let big_uint = u256_to_big_uint(u256);
@@ -55,9 +58,7 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use num::One;
-    use std::str::FromStr;
+    use {super::*, num::One, std::str::FromStr};
 
     #[test]
     fn big_integer_to_u256() {

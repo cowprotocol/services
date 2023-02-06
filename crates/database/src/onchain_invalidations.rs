@@ -1,5 +1,7 @@
-use crate::{events::EventIndex, OrderUid, PgTransaction};
-use sqlx::{Executor, PgConnection};
+use {
+    crate::{events::EventIndex, OrderUid, PgTransaction},
+    sqlx::{Executor, PgConnection},
+};
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct OnchainInvalidationRow {
@@ -22,8 +24,8 @@ pub async fn delete_invalidations(
     ex: &mut PgTransaction<'_>,
     block_number: i64,
 ) -> Result<(), sqlx::Error> {
-    const QUERY_INVALIDATION: &str = "DELETE FROM onchain_order_invalidations \
-                                      WHERE block_number >= $1;";
+    const QUERY_INVALIDATION: &str =
+        "DELETE FROM onchain_order_invalidations WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_INVALIDATION).bind(block_number))
         .await?;
     Ok(())
@@ -34,9 +36,8 @@ pub async fn insert_onchain_invalidation(
     index: &EventIndex,
     order_uid: &OrderUid,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str =
-        "INSERT INTO onchain_order_invalidations (block_number, log_index, uid) VALUES ($1, $2, $3) \
-        ON CONFLICT (uid) DO UPDATE SET
+    const QUERY: &str = "INSERT INTO onchain_order_invalidations (block_number, log_index, uid) \
+                         VALUES ($1, $2, $3) ON CONFLICT (uid) DO UPDATE SET
          block_number = $1, log_index = $2;
     ;";
     sqlx::query(QUERY)
@@ -61,10 +62,7 @@ pub async fn read_onchain_invalidation(
 
 #[cfg(test)]
 mod tests {
-    use crate::byte_array::ByteArray;
-
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

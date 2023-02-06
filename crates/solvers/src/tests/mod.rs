@@ -6,8 +6,10 @@
 
 mod baseline;
 
-use reqwest::Url;
-use tokio::{sync::oneshot, task::JoinHandle};
+use {
+    reqwest::Url,
+    tokio::{sync::oneshot, task::JoinHandle},
+};
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {

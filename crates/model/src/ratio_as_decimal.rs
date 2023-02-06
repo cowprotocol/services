@@ -1,8 +1,10 @@
-use bigdecimal::BigDecimal;
-use num::{BigInt, BigRational};
-use serde::{de, Deserialize, Deserializer, Serializer};
-use serde_with::{DeserializeAs, SerializeAs};
-use std::{borrow::Cow, convert::TryInto, str::FromStr};
+use {
+    bigdecimal::BigDecimal,
+    num::{BigInt, BigRational},
+    serde::{de, Deserialize, Deserializer, Serializer},
+    serde_with::{DeserializeAs, SerializeAs},
+    std::{borrow::Cow, convert::TryInto, str::FromStr},
+};
 
 pub struct DecimalBigRational;
 
@@ -57,9 +59,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use num::{BigRational, Zero};
-    use serde_json::{json, value::Serializer};
+    use {
+        super::*,
+        num::{BigRational, Zero},
+        serde_json::{json, value::Serializer},
+    };
 
     #[test]
     fn serializer() {

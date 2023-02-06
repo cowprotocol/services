@@ -14,9 +14,7 @@ impl_uniswap_like_liquidity! {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract_mock::Mock;
-    use model::TokenPair;
+    use {super::*, ethcontract_mock::Mock, model::TokenPair};
 
     #[tokio::test]
     async fn test_create2_uniswapv2() {

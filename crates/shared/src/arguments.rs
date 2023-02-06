@@ -1,25 +1,29 @@
-//! Contains command line arguments and related helpers that are shared between the binaries.
-use crate::{
-    current_block, ethrpc,
-    fee_subsidy::cow_token::SubsidyTiers,
-    gas_price_estimation::GasEstimatorType,
-    price_estimation::PriceEstimatorType,
-    rate_limiter::RateLimitingStrategy,
-    sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
-    tenderly_api,
+//! Contains command line arguments and related helpers that are shared between
+//! the binaries.
+use {
+    crate::{
+        current_block,
+        ethrpc,
+        fee_subsidy::cow_token::SubsidyTiers,
+        gas_price_estimation::GasEstimatorType,
+        price_estimation::PriceEstimatorType,
+        rate_limiter::RateLimitingStrategy,
+        sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+        tenderly_api,
+    },
+    anyhow::{anyhow, ensure, Context, Result},
+    ethcontract::{H160, H256, U256},
+    model::app_id::AppId,
+    std::{
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        num::{NonZeroU64, ParseFloatError},
+        str::FromStr,
+        time::Duration,
+    },
+    tracing::level_filters::LevelFilter,
+    url::Url,
 };
-use anyhow::{anyhow, ensure, Context, Result};
-use ethcontract::{H160, H256, U256};
-use model::app_id::AppId;
-use std::{
-    collections::HashMap,
-    fmt::{self, Display, Formatter},
-    num::{NonZeroU64, ParseFloatError},
-    str::FromStr,
-    time::Duration,
-};
-use tracing::level_filters::LevelFilter;
-use url::Url;
 
 #[macro_export]
 macro_rules! logging_args_with_default_filter {
@@ -55,8 +59,8 @@ pub struct OrderQuotingArguments {
     )]
     pub price_estimators: Vec<PriceEstimatorType>,
 
-    /// A list of external drivers used for price estimation in the following format:
-    /// `<NAME>|<URL>,<NAME>|<URL>`
+    /// A list of external drivers used for price estimation in the following
+    /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<Driver>,
 
@@ -87,33 +91,40 @@ pub struct OrderQuotingArguments {
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
 
-    /// A flat fee discount denominated in the network's native token (i.e. Ether for Mainnet).
+    /// A flat fee discount denominated in the network's native token (i.e.
+    /// Ether for Mainnet).
     ///
-    /// Note that flat fee discounts are applied BEFORE any multiplicative factors from either
-    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    /// Note that flat fee discounts are applied BEFORE any multiplicative
+    /// factors from either `--fee-factor` or
+    /// `--partner-additional-fee-factors` configuration.
     #[clap(long, env, default_value = "0")]
     pub fee_discount: f64,
 
-    /// The minimum value for the discounted fee in the network's native token (i.e. Ether for
-    /// Mainnet).
+    /// The minimum value for the discounted fee in the network's native token
+    /// (i.e. Ether for Mainnet).
     ///
-    /// Note that this minimum is applied BEFORE any multiplicative factors from either
-    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    /// Note that this minimum is applied BEFORE any multiplicative factors from
+    /// either `--fee-factor` or `--partner-additional-fee-factors`
+    /// configuration.
     #[clap(long, env, default_value = "0")]
     pub min_discounted_fee: f64,
 
-    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
-    /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
+    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9
+    /// means there is a 10% subsidy, 1.1 means users pay 10% in fees than
+    /// what we estimate we pay for gas.
     #[clap(long, env, default_value = "1", value_parser = parse_unbounded_factor)]
     pub fee_factor: f64,
 
-    /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
-    /// Should take the form of a json string as shown in the following example:
+    /// Used to specify additional fee subsidy factor based on app_ids contained
+    /// in orders. Should take the form of a json string as shown in the
+    /// following example:
     ///
-    /// '0x0000000000000000000000000000000000000000000000000000000000000000:0.5,$PROJECT_APP_ID:0.7'
+    /// '0x0000000000000000000000000000000000000000000000000000000000000000:0.5,
+    /// $PROJECT_APP_ID:0.7'
     ///
     /// Furthermore, a value of
-    /// - 1 means no subsidy and is the default for all app_data not contained in this list.
+    /// - 1 means no subsidy and is the default for all app_data not contained
+    ///   in this list.
     /// - 0.5 means that this project pays only 50% of the estimated fees.
     #[clap(
         long,
@@ -123,12 +134,13 @@ pub struct OrderQuotingArguments {
     )]
     pub partner_additional_fee_factors: HashMap<AppId, f64>,
 
-    /// Used to configure how much of the regular fee a user should pay based on their
-    /// COW + VCOW balance in base units on the current network.
+    /// Used to configure how much of the regular fee a user should pay based on
+    /// their COW + VCOW balance in base units on the current network.
     ///
     /// The expected format is "10:0.75,150:0.5" for 2 subsidy tiers.
-    /// A balance of [10,150) COW will cause you to pay 75% of the regular fee and a balance of
-    /// [150, inf) COW will cause you to pay 50% of the regular fee.
+    /// A balance of [10,150) COW will cause you to pay 75% of the regular fee
+    /// and a balance of [150, inf) COW will cause you to pay 50% of the
+    /// regular fee.
     #[clap(long, env)]
     pub cow_fee_factors: Option<SubsidyTiers>,
 }
@@ -157,9 +169,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
-    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators support different networks.
-    /// `EthGasStation`: supports mainnet.
+    /// Which gas estimators to use. Multiple estimators are used in sequence if
+    /// a previous one fails. Individual estimators support different
+    /// networks. `EthGasStation`: supports mainnet.
     /// `GasNow`: supports mainnet.
     /// `GnosisSafe`: supports mainnet and goerli.
     /// `Web3`: supports every network.
@@ -174,7 +186,8 @@ pub struct Arguments {
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
-    /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
+    /// BlockNative requires api key to work. Optional since BlockNative could
+    /// be skipped in gas estimators.
     #[clap(long, env)]
     pub blocknative_api_key: Option<String>,
 
@@ -203,7 +216,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
-    /// Special partner authentication for Paraswap API (allowing higher rater limits)
+    /// Special partner authentication for Paraswap API (allowing higher rater
+    /// limits)
     #[clap(long, env)]
     pub paraswap_partner: Option<String>,
 
@@ -213,9 +227,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
     pub disabled_paraswap_dexs: Vec<String>,
 
-    /// Configures the back off strategy for the paraswap API when our requests get rate limited.
-    /// Requests issued while back off is active get dropped entirely.
-    /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
+    /// Configures the back off strategy for the paraswap API when our requests
+    /// get rate limited. Requests issued while back off is active get
+    /// dropped entirely. Needs to be passed as
+    /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 >= 1.0
     /// min_back_off: f64 in seconds
     /// max_back_off: f64 in seconds
@@ -268,8 +283,8 @@ pub struct Arguments {
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
 
-    /// If liquidity pool fetcher has caching mechanism, this argument defines how old pool data is allowed
-    /// to be before updating
+    /// If liquidity pool fetcher has caching mechanism, this argument defines
+    /// how old pool data is allowed to be before updating
     #[clap(
         long,
         env,
@@ -357,8 +372,8 @@ impl Display for OrderQuotingArguments {
         Ok(())
     }
 }
-// We have a custom Display implementation so that we can log the arguments on start up without
-// leaking any potentially secret values.
+// We have a custom Display implementation so that we can log the arguments on
+// start up without leaking any potentially secret values.
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.ethrpc)?;
@@ -497,7 +512,8 @@ impl FromStr for RateLimitingStrategy {
     }
 }
 
-/// Parses a comma separated list of colon separated values representing fee factors for AppIds.
+/// Parses a comma separated list of colon separated values representing fee
+/// factors for AppIds.
 fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
     let mut res = HashMap::default();
     if s.is_empty() {
@@ -527,9 +543,7 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
 
 #[cfg(test)]
 mod test {
-    use maplit::hashmap;
-
-    use super::*;
+    use {super::*, maplit::hashmap};
     #[test]
     fn parse_partner_fee_factor_ok() {
         let x = "0x0000000000000000000000000000000000000000000000000000000000000000";

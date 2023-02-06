@@ -1,37 +1,55 @@
-use super::Postgres;
-use anyhow::{Context as _, Result};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use database::{
-    byte_array::ByteArray,
-    orders::{FullOrder, OrderKind as DbOrderKind},
-};
-use ethcontract::H256;
-use futures::{stream::TryStreamExt, FutureExt, StreamExt};
-use model::{
-    app_id::AppId,
-    order::{
-        EthflowData, Interactions, LimitOrderClass, OnchainOrderData, Order, OrderClass, OrderData,
-        OrderMetadata, OrderStatus, OrderUid,
+use {
+    super::Postgres,
+    anyhow::{Context as _, Result},
+    async_trait::async_trait,
+    chrono::{DateTime, Utc},
+    database::{
+        byte_array::ByteArray,
+        orders::{FullOrder, OrderKind as DbOrderKind},
     },
-    signature::Signature,
-    time::now_in_epoch_seconds,
-};
-use num::Zero;
-use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
-use primitive_types::H160;
-use shared::{
-    db_order_conversions::{
-        buy_token_destination_from, buy_token_destination_into, extract_pre_interactions,
-        onchain_order_placement_error_from, order_class_from, order_class_into, order_kind_from,
-        order_kind_into, sell_token_source_from, sell_token_source_into, signing_scheme_from,
-        signing_scheme_into,
+    ethcontract::H256,
+    futures::{stream::TryStreamExt, FutureExt, StreamExt},
+    model::{
+        app_id::AppId,
+        order::{
+            EthflowData,
+            Interactions,
+            LimitOrderClass,
+            OnchainOrderData,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderMetadata,
+            OrderStatus,
+            OrderUid,
+        },
+        signature::Signature,
+        time::now_in_epoch_seconds,
     },
-    order_quoting::Quote,
-    order_validation::LimitOrderCounting,
+    num::Zero,
+    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    primitive_types::H160,
+    shared::{
+        db_order_conversions::{
+            buy_token_destination_from,
+            buy_token_destination_into,
+            extract_pre_interactions,
+            onchain_order_placement_error_from,
+            order_class_from,
+            order_class_into,
+            order_kind_from,
+            order_kind_into,
+            sell_token_source_from,
+            sell_token_source_into,
+            signing_scheme_from,
+            signing_scheme_into,
+        },
+        order_quoting::Quote,
+        order_validation::LimitOrderCounting,
+    },
+    sqlx::{types::BigDecimal, Connection, PgConnection},
+    std::convert::TryInto,
 };
-use sqlx::{types::BigDecimal, Connection, PgConnection};
-use std::convert::TryInto;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -48,7 +66,8 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
-    /// All orders of a single user ordered by creation date descending (newest orders first).
+    /// All orders of a single user ordered by creation date descending (newest
+    /// orders first).
     async fn user_orders(
         &self,
         owner: &H160,
@@ -427,21 +446,26 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use chrono::Duration;
-    use database::{
-        byte_array::ByteArray,
-        orders::{
-            BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderClass as DbOrderClass,
-            OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
-            SigningScheme as DbSigningScheme,
+    use {
+        super::*,
+        chrono::Duration,
+        database::{
+            byte_array::ByteArray,
+            orders::{
+                BuyTokenDestination as DbBuyTokenDestination,
+                FullOrder,
+                OrderClass as DbOrderClass,
+                OrderKind as DbOrderKind,
+                SellTokenSource as DbSellTokenSource,
+                SigningScheme as DbSigningScheme,
+            },
         },
+        model::{
+            order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+            signature::{Signature, SigningScheme},
+        },
+        std::sync::atomic::{AtomicI64, Ordering},
     };
-    use model::{
-        order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
-        signature::{Signature, SigningScheme},
-    };
-    use std::sync::atomic::{AtomicI64, Ordering};
 
     #[test]
     fn order_status() {
@@ -803,10 +827,8 @@ mod tests {
             let owner = order.metadata.owner.as_bytes();
             async move {
                 sqlx::query(
-                    "INSERT INTO presignature_events \
-                    (block_number, log_index, owner, order_uid, signed) \
-                 VALUES \
-                    ($1, $2, $3, $4, $5)",
+                    "INSERT INTO presignature_events (block_number, log_index, owner, order_uid, \
+                     signed) VALUES ($1, $2, $3, $4, $5)",
                 )
                 .bind(block_number.fetch_add(1, Ordering::SeqCst))
                 .bind(0i64)

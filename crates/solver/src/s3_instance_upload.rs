@@ -1,9 +1,11 @@
-use anyhow::{Context, Result};
-use aws_sdk_s3::{types::ByteStream, Client, Credentials, Region};
-use aws_types::credentials::SharedCredentialsProvider;
-use flate2::{bufread::GzEncoder, Compression};
-use model::auction::AuctionId;
-use std::io::Read;
+use {
+    anyhow::{Context, Result},
+    aws_sdk_s3::{types::ByteStream, Client, Credentials, Region},
+    aws_types::credentials::SharedCredentialsProvider,
+    flate2::{bufread::GzEncoder, Compression},
+    model::auction::AuctionId,
+    std::io::Read,
+};
 
 #[derive(Default)]
 pub struct Config {
@@ -12,7 +14,8 @@ pub struct Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     /// Prepended to the auction id to form the final filename. Something like
-    /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a folder.
+    /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a
+    /// folder.
     pub filename_prefix: String,
 }
 
@@ -39,10 +42,11 @@ impl S3InstanceUploader {
         }
     }
 
-    /// Upload the bytes (expected to represent a json encoded solver instance) to the configured S3
-    /// bucket.
+    /// Upload the bytes (expected to represent a json encoded solver instance)
+    /// to the configured S3 bucket.
     ///
-    /// The final filename is the configured prefix followed by `{auction_id}.json.gzip`.
+    /// The final filename is the configured prefix followed by
+    /// `{auction_id}.json.gzip`.
     pub async fn upload_instance(&self, auction: AuctionId, value: &[u8]) -> Result<()> {
         self.upload(self.filename(auction), value).await
     }
@@ -76,9 +80,7 @@ impl S3InstanceUploader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use flate2::read::GzDecoder;
-    use serde_json::json;
+    use {super::*, flate2::read::GzDecoder, serde_json::json};
 
     #[test]
     #[ignore]

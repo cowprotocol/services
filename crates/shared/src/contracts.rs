@@ -1,14 +1,15 @@
-use anyhow::{anyhow, bail, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{
-    common::{contract::Network, DeploymentInformation},
-    Contract,
-};
-use web3::types::U64;
-
-use crate::{
-    current_block::{block_number_to_block_number_hash, BlockNumberHash},
-    ethrpc::Web3,
+use {
+    crate::{
+        current_block::{block_number_to_block_number_hash, BlockNumberHash},
+        ethrpc::Web3,
+    },
+    anyhow::{anyhow, bail, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{
+        common::{contract::Network, DeploymentInformation},
+        Contract,
+    },
+    web3::types::U64,
 };
 
 pub fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {

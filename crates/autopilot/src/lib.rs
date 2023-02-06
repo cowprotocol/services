@@ -10,66 +10,81 @@ pub mod driver_model;
 pub mod limit_orders;
 pub mod run_loop;
 
-use crate::{
-    database::{
-        ethflow_events::event_retriever::EthFlowRefundRetriever,
-        onchain_order_events::{
-            ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
-            event_retriever::CoWSwapOnchainOrdersContract,
-            OnchainOrderParser,
+use {
+    crate::{
+        database::{
+            ethflow_events::event_retriever::EthFlowRefundRetriever,
+            onchain_order_events::{
+                ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
+                event_retriever::CoWSwapOnchainOrdersContract,
+                OnchainOrderParser,
+            },
+            Postgres,
         },
-        Postgres,
+        event_updater::{EventUpdater, GPv2SettlementContract},
+        limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
+        solvable_orders::SolvableOrdersCache,
     },
-    event_updater::{EventUpdater, GPv2SettlementContract},
-    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
-    solvable_orders::SolvableOrdersCache,
+    contracts::{
+        BalancerV2Vault,
+        CowProtocolToken,
+        CowProtocolVirtualToken,
+        IUniswapV3Factory,
+        WETH9,
+    },
+    ethcontract::{errors::DeployError, BlockNumber},
+    model::DomainSeparator,
+    shared::{
+        account_balances::Web3BalanceFetcher,
+        bad_token::{
+            cache::CachingDetector,
+            instrumented::InstrumentedBadTokenDetectorExt,
+            list_based::{ListBasedDetector, UnknownTokenStrategy},
+            token_owner_finder,
+            trace_call::TraceCallDetector,
+        },
+        baseline_solver::BaseTokens,
+        caching_balance_fetcher::CachingBalanceFetcher,
+        current_block::block_number_to_block_number_hash,
+        fee_subsidy::{
+            config::FeeSubsidyConfiguration,
+            cow_token::CowSubsidy,
+            FeeSubsidies,
+            FeeSubsidizing,
+        },
+        gas_price::InstrumentedGasEstimator,
+        http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
+        metrics::LivenessChecking,
+        oneinch_api::OneInchClientImpl,
+        order_quoting::OrderQuoter,
+        price_estimation::factory::{self, PriceEstimatorFactory},
+        recent_block_cache::CacheConfig,
+        signature_validator::Web3SignatureValidator,
+        sources::{
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
+            PoolAggregator,
+        },
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        zeroex_api::DefaultZeroExApi,
+    },
+    std::{collections::HashSet, sync::Arc, time::Duration},
+    tracing::Instrument,
 };
-use contracts::{
-    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
-};
-use ethcontract::{errors::DeployError, BlockNumber};
-use model::DomainSeparator;
-use shared::{
-    account_balances::Web3BalanceFetcher,
-    bad_token::{
-        cache::CachingDetector,
-        instrumented::InstrumentedBadTokenDetectorExt,
-        list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder,
-        trace_call::TraceCallDetector,
-    },
-    baseline_solver::BaseTokens,
-    caching_balance_fetcher::CachingBalanceFetcher,
-    current_block::block_number_to_block_number_hash,
-    fee_subsidy::{
-        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
-    },
-    gas_price::InstrumentedGasEstimator,
-    http_client::HttpClientFactory,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::LivenessChecking,
-    oneinch_api::OneInchClientImpl,
-    order_quoting::OrderQuoter,
-    price_estimation::factory::{self, PriceEstimatorFactory},
-    recent_block_cache::CacheConfig,
-    signature_validator::Web3SignatureValidator,
-    sources::{
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource, PoolAggregator,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    zeroex_api::DefaultZeroExApi,
-};
-use std::{collections::HashSet, sync::Arc, time::Duration};
-use tracing::Instrument;
 
-/// To never get to the state where a limit order can not be considered usable because the
-/// `surplus_fee` is too old the `surplus_fee` is valid for longer than its update interval.
-/// This factor controls how much longer it's considered valid.
-/// If the `surplus_fee` gets updated every 5 minutes and the factor is 2 we consider limit orders
-/// valid where the `surplus_fee` was computed up to 10 minutes ago.
+/// To never get to the state where a limit order can not be considered usable
+/// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
+/// than its update interval. This factor controls how much longer it's
+/// considered valid. If the `surplus_fee` gets updated every 5 minutes and the
+/// factor is 2 we consider limit orders valid where the `surplus_fee` was
+/// computed up to 10 minutes ago.
 const SURPLUS_FEE_EXPIRATION_FACTOR: u8 = 2;
 
 struct Liveness {

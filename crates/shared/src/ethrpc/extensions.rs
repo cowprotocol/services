@@ -1,13 +1,15 @@
 //! Module containing Ethereum RPC extension methods.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use web3::{
-    self,
-    api::Namespace,
-    helpers::{self, CallFuture},
-    types::{BlockId, Bytes, CallRequest, H160, H256, U256, U64},
-    Transport,
+use {
+    serde::{Deserialize, Serialize},
+    std::collections::HashMap,
+    web3::{
+        self,
+        api::Namespace,
+        helpers::{self, CallFuture},
+        types::{BlockId, Bytes, CallRequest, H160, H256, U256, U64},
+        Transport,
+    },
 };
 
 /// Web3 convenience extension trait.
@@ -76,10 +78,12 @@ pub struct StateOverride {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::{create_env_test_transport, Web3};
-    use maplit::hashmap;
-    use web3::types::BlockNumber;
+    use {
+        super::*,
+        crate::ethrpc::{create_env_test_transport, Web3},
+        maplit::hashmap,
+        web3::types::BlockNumber,
+    };
 
     #[ignore]
     #[tokio::test]

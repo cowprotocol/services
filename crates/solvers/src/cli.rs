@@ -1,7 +1,9 @@
 //! CLI arguments for the `solvers` binary.
 
-use clap::{Parser, Subcommand};
-use std::{net::SocketAddr, path::PathBuf};
+use {
+    clap::{Parser, Subcommand},
+    std::{net::SocketAddr, path::PathBuf},
+};
 
 /// Run a solver engine
 #[derive(Parser, Debug)]

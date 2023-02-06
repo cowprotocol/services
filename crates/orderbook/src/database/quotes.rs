@@ -1,11 +1,13 @@
-use super::Postgres;
-use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
-use database::quotes::QuoteKind;
-use model::quote::QuoteId;
-use shared::{
-    event_storing_helpers::{create_db_search_parameters, create_quote_row},
-    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+use {
+    super::Postgres,
+    anyhow::{Context, Result},
+    chrono::{DateTime, Utc},
+    database::quotes::QuoteKind,
+    model::quote::QuoteId,
+    shared::{
+        event_storing_helpers::{create_db_search_parameters, create_quote_row},
+        order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+    },
 };
 
 #[async_trait::async_trait]

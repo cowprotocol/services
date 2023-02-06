@@ -1,12 +1,15 @@
-use super::SettlementSimulating;
-use crate::{settlement::Settlement, solver::http_solver::buffers::BufferRetrieving};
-use contracts::WETH9;
-use primitive_types::U256;
+use {
+    super::SettlementSimulating,
+    crate::{settlement::Settlement, solver::http_solver::buffers::BufferRetrieving},
+    contracts::WETH9,
+    primitive_types::U256,
+};
 
 /// Tries to do one of 2 optimizations.
-/// 1) Drop WETH unwraps and instead pay ETH with the settlment contract's buffer.
-/// 2) Top up settlement contract's ETH buffer by unwrapping way more WETH than this settlement
-///    needs. This will cause the next few settlements to use optimization 1.
+/// 1) Drop WETH unwraps and instead pay ETH with the settlment contract's
+/// buffer. 2) Top up settlement contract's ETH buffer by unwrapping way more
+/// WETH than this settlement    needs. This will cause the next few settlements
+/// to use optimization 1.
 pub async fn optimize_unwrapping(
     settlement: Settlement,
     settlement_simulator: &impl SettlementSimulating,
@@ -19,9 +22,10 @@ pub async fn optimize_unwrapping(
         return settlement;
     }
 
-    // We can't determine how much of the WETH and ETH buffers solvers are using for their
-    // solution. Dropping the unwrap could alter the buffers such that the proposed solution is no
-    // longer possible. That's why a simulation is necessary.
+    // We can't determine how much of the WETH and ETH buffers solvers are using for
+    // their solution. Dropping the unwrap could alter the buffers such that the
+    // proposed solution is no longer possible. That's why a simulation is
+    // necessary.
     let mut optimized_settlement = settlement.clone();
     optimized_settlement.encoder.drop_unwrap(weth.address());
 
@@ -53,9 +57,10 @@ pub async fn optimize_unwrapping(
             amount: amount_to_unwrap,
         });
 
-    // We can't determine how much of the WETH and ETH buffers solvers are using for their
-    // solution. Increasing the unwrap could alter the buffers such that the proposed solution is no
-    // longer possible. That's why a simulation is necessary.
+    // We can't determine how much of the WETH and ETH buffers solvers are using for
+    // their solution. Increasing the unwrap could alter the buffers such that
+    // the proposed solution is no longer possible. That's why a simulation is
+    // necessary.
     if settlement_simulator
         .settlement_would_succeed(optimized_settlement.clone())
         .await
@@ -72,14 +77,17 @@ pub async fn optimize_unwrapping(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::UnwrapWethInteraction, settlement_post_processing::MockSettlementSimulating,
-        solver::http_solver::buffers::MockBufferRetrieving,
+    use {
+        super::*,
+        crate::{
+            interactions::UnwrapWethInteraction,
+            settlement_post_processing::MockSettlementSimulating,
+            solver::http_solver::buffers::MockBufferRetrieving,
+        },
+        maplit::hashmap,
+        shared::dummy_contract,
+        std::collections::HashMap,
     };
-    use maplit::hashmap;
-    use shared::dummy_contract;
-    use std::collections::HashMap;
 
     fn to_wei(base: u128) -> U256 {
         U256::from(base) * U256::from(10).pow(18.into())
@@ -156,7 +164,8 @@ mod tests {
         )
         .await;
 
-        // we unwrap way more than needed to hopefully drop unwraps on the next few settlements
+        // we unwrap way more than needed to hopefully drop unwraps on the next few
+        // settlements
         assert_eq!(
             to_wei(60),
             settlement.encoder.amount_to_unwrap(weth.address())
@@ -165,9 +174,10 @@ mod tests {
 
     #[tokio::test]
     async fn leave_settlement_unchanged_if_buffers_are_too_small_for_optimizations() {
-        // Although we would have enough WETH to cover the ETH payout, we pretend the bulk unwrap
-        // would fail anyway. This can happen if the execution_plan of the settlement also tries to
-        // use the WETH buffer (In this case more than 10 WETH).
+        // Although we would have enough WETH to cover the ETH payout, we pretend the
+        // bulk unwrap would fail anyway. This can happen if the execution_plan
+        // of the settlement also tries to use the WETH buffer (In this case
+        // more than 10 WETH).
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
             .expect_settlement_would_succeed()

@@ -2,10 +2,12 @@
 // The original contract code can be found at:
 // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/LogExpMath.sol
 
-use super::super::error::Error;
-use ethcontract::{I256, U256};
-use lazy_static::lazy_static;
-use std::convert::TryFrom;
+use {
+    super::super::error::Error,
+    ethcontract::{I256, U256},
+    lazy_static::lazy_static,
+    std::convert::TryFrom,
+};
 
 /// Fixed point number stored in a type of bit size 256 that stores exactly 18
 /// decimal digits.
@@ -208,8 +210,7 @@ fn _ln_36(mut x: I256) -> I256 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use regex::Regex;
+    use {super::*, regex::Regex};
 
     // Compare computed constants with smart contract code.
     fn logexpmath_contract_constants(
@@ -261,7 +262,8 @@ mod tests {
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/LogExpMath.sol#L61-L64
         let code = "
         int256 constant x0 = 128000000000000000000; // 2ˆ7
-        int256 constant a0 = 38877084059945950922200000000000000000000000000000000000; // eˆ(x0) (no decimals)
+        int256 constant a0 = 38877084059945950922200000000000000000000000000000000000; // eˆ(x0) \
+                    (no decimals)
         int256 constant x1 = 64000000000000000000; // 2ˆ6
         int256 constant a1 = 6235149080811616882910000000; // eˆ(x1) (no decimals)
     ";
@@ -299,7 +301,7 @@ mod tests {
             "100000000000000000000000000000000000",
             "100000000000000000000000000000000000000000",
             "100000000000000000000000000000000000000000000000000000000000000000",
-            "10000000000000000000000000000000000000000000000000000000000000000000000000000", // ≈2**255
+            "10000000000000000000000000000000000000000000000000000000000000000000000000000", /* ≈2**255 */
         ];
         // generated with `await generateOk("_ln", input)`
         let output = [
@@ -421,7 +423,7 @@ mod tests {
     fn pow_error() {
         let input = [
             [
-                "57896044618658097711785492504343953926634992332820282019728792003956564819968", // I256::MAX + 1
+                "57896044618658097711785492504343953926634992332820282019728792003956564819968", /* I256::MAX + 1 */
                 "1",
             ],
             [
@@ -429,7 +431,7 @@ mod tests {
                 "289480223093290488558927462521719769633174961664101410098", // MILD_EXPONENT_BOUND
             ],
             [
-                "287300000000000000000000000000000000000000000000000000000000000000000000000", // slightly larger than f64::exp(MAX_NATURAL_EXPONENT)
+                "287300000000000000000000000000000000000000000000000000000000000000000000000", /* slightly larger than f64::exp(MAX_NATURAL_EXPONENT) */
                 "1000000000000000000",                                                         // 1
             ],
             [
@@ -437,12 +439,12 @@ mod tests {
                 "2000000000000000000", // 2
             ],
             [
-                "115792089237316195423570985008687907853269984665640564039457584007913129639935", // U256::MAX
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935", /* U256::MAX */
                 "1",
             ],
             [
                 "1",
-                "115792089237316195423570985008687907853269984665640564039457584007913129639935", // U256::MAX
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935", /* U256::MAX */
             ],
             [
                 "130000000000000000001", // MAX_NATURAL_EXPONENT + 1
@@ -469,15 +471,15 @@ mod tests {
     fn pow_success() {
         let input = [
             [
-                "57896044618658097711785492504343953926634992332820282019728792003956564819967", // I256::MAX
+                "57896044618658097711785492504343953926634992332820282019728792003956564819967", /* I256::MAX */
                 "1",
             ],
             [
                 "1000000000000000000",
-                "289480223093290488558927462521719769633174961664101410097", // MILD_EXPONENT_BOUND - 1
+                "289480223093290488558927462521719769633174961664101410097", /* MILD_EXPONENT_BOUND - 1 */
             ],
             [
-                "287200000000000000000000000000000000000000000000000000000000000000000000000", // slightly smaller than f64::exp(MAX_NATURAL_EXPONENT)
+                "287200000000000000000000000000000000000000000000000000000000000000000000000", /* slightly smaller than f64::exp(MAX_NATURAL_EXPONENT) */
                 "1000000000000000000",                                                         // 1
             ],
             [
