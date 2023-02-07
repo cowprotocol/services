@@ -1,4 +1,5 @@
 //! Uniswap V2 baseline liquidity source implementation.
+
 pub mod pair_provider;
 pub mod pool_cache;
 pub mod pool_fetching;
@@ -13,9 +14,10 @@ use {
         sources::{swapr::reader::SwaprPoolReader, BaselineSource},
     },
     anyhow::{Context, Result},
+    contracts::IUniswapLikeRouter,
     ethcontract::{H160, H256},
     hex_literal::hex,
-    std::sync::Arc,
+    std::{fmt::Display, str::FromStr, sync::Arc},
 };
 
 pub const UNISWAP_INIT: [u8; 32] =
@@ -29,74 +31,152 @@ pub const BAOSWAP_INIT: [u8; 32] =
 pub const SWAPR_INIT: [u8; 32] =
     hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776");
 
-/// If the baseline source is uniswapv2-like, returns the address of the router
-/// contract and the init code digest needed for calculating pair addresses.
-pub fn from_baseline_source(source: BaselineSource, net_version: &str) -> Option<(H160, H256)> {
-    let (contract, init_code_digest) = match source {
-        BaselineSource::BalancerV2 => None,
-        BaselineSource::ZeroEx => None,
-        BaselineSource::UniswapV3 => None,
-        BaselineSource::UniswapV2 => {
-            Some((contracts::UniswapV2Router02::raw_contract(), UNISWAP_INIT))
-        }
-        BaselineSource::Honeyswap => {
-            Some((contracts::HoneyswapRouter::raw_contract(), HONEYSWAP_INIT))
-        }
-        BaselineSource::SushiSwap => {
-            Some((contracts::SushiSwapRouter::raw_contract(), SUSHISWAP_INIT))
-        }
-        BaselineSource::Baoswap => Some((contracts::BaoswapRouter::raw_contract(), BAOSWAP_INIT)),
-        BaselineSource::Swapr => Some((contracts::SwaprRouter::raw_contract(), SWAPR_INIT)),
-    }?;
-    let address = contract.networks.get(net_version)?.address;
-    Some((address, H256(init_code_digest)))
+#[derive(Debug, Clone, Copy)]
+pub struct UniV2BaselineSourceParameters {
+    router: H160,
+    init_code_digest: H256,
+    pool_reading: PoolReadingStyle,
 }
 
-/// If the baseline source is uniswapv2-like, returns the corresponding
-/// PoolReading implementation.
-pub fn pool_reader(
-    source: BaselineSource,
-    pair_provider: PairProvider,
-    web3: &Web3,
-) -> Option<Box<dyn PoolReading>> {
-    let default_reader = DefaultPoolReader {
-        pair_provider,
-        web3: web3.clone(),
-    };
-    match source {
-        BaselineSource::BalancerV2 => None,
-        BaselineSource::ZeroEx => None,
-        BaselineSource::UniswapV3 => None,
-        BaselineSource::UniswapV2 => Some(Box::new(default_reader)),
-        BaselineSource::Honeyswap => Some(Box::new(default_reader)),
-        BaselineSource::SushiSwap => Some(Box::new(default_reader)),
-        BaselineSource::Baoswap => Some(Box::new(default_reader)),
-        BaselineSource::Swapr => Some(Box::new(SwaprPoolReader(default_reader))),
+#[derive(Clone, Copy, Debug, strum::EnumString, strum::Display)]
+enum PoolReadingStyle {
+    Default,
+    Swapr,
+}
+
+pub struct UniV2BaselineSource {
+    pub router: IUniswapLikeRouter,
+    pub pair_provider: PairProvider,
+    pub pool_fetching: Arc<dyn PoolFetching>,
+}
+
+impl UniV2BaselineSourceParameters {
+    pub fn from_baseline_source(source: BaselineSource, net_version: &str) -> Option<Self> {
+        use BaselineSource as BS;
+        let (contract, init_code_digest, pool_reading) = match source {
+            BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
+            BS::UniswapV2 => Some((
+                contracts::UniswapV2Router02::raw_contract(),
+                UNISWAP_INIT,
+                PoolReadingStyle::Default,
+            )),
+            BS::Honeyswap => Some((
+                contracts::HoneyswapRouter::raw_contract(),
+                HONEYSWAP_INIT,
+                PoolReadingStyle::Default,
+            )),
+            BS::SushiSwap => Some((
+                contracts::SushiSwapRouter::raw_contract(),
+                SUSHISWAP_INIT,
+                PoolReadingStyle::Default,
+            )),
+            BS::Baoswap => Some((
+                contracts::BaoswapRouter::raw_contract(),
+                BAOSWAP_INIT,
+                PoolReadingStyle::Default,
+            )),
+            BS::Swapr => Some((
+                contracts::SwaprRouter::raw_contract(),
+                SWAPR_INIT,
+                PoolReadingStyle::Swapr,
+            )),
+        }?;
+        Some(Self {
+            router: contract.networks.get(net_version)?.address,
+            init_code_digest: H256(init_code_digest),
+            pool_reading,
+        })
+    }
+
+    pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
+        let router = contracts::IUniswapLikeRouter::at(web3, self.router);
+        let factory = router.factory().call().await.context("factory")?;
+        let pair_provider = pair_provider::PairProvider {
+            factory,
+            init_code_digest: self.init_code_digest.0,
+        };
+        let pool_reader = DefaultPoolReader {
+            pair_provider,
+            web3: web3.clone(),
+        };
+        let pool_reader: Box<dyn PoolReading> = match self.pool_reading {
+            PoolReadingStyle::Default => Box::new(pool_reader),
+            PoolReadingStyle::Swapr => Box::new(SwaprPoolReader(pool_reader)),
+        };
+        let fetcher = pool_fetching::PoolFetcher {
+            pool_reader,
+            web3: web3.clone(),
+        };
+        Ok(UniV2BaselineSource {
+            router,
+            pair_provider,
+            pool_fetching: Arc::new(fetcher),
+        })
     }
 }
 
-pub async fn uniswap_like_liquidity_source(
-    source: BaselineSource,
-    web3: &Web3,
-) -> Result<Option<(PairProvider, Arc<dyn PoolFetching>)>> {
-    let net_version = web3.net().version().await.context("net_version")?;
-    let (router, init_code_digest) = match from_baseline_source(source, &net_version) {
-        Some(inner) => inner,
-        None => return Ok(None),
-    };
-    let router = contracts::IUniswapLikeRouter::at(web3, router);
-    let factory = router.factory().call().await.context("factory")?;
-    let provider = pair_provider::PairProvider {
-        factory,
-        init_code_digest: init_code_digest.0,
-    };
-    let pool_reader = match pool_reader(source, provider, web3) {
-        Some(inner) => inner,
-        None => return Ok(None),
-    };
-    let fetcher = pool_fetching::PoolFetcher {
-        pool_reader,
-        web3: web3.clone(),
-    };
-    Ok(Some((provider, Arc::new(fetcher))))
+impl Display for UniV2BaselineSourceParameters {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?}|{:?}|{}",
+            self.router.0, self.init_code_digest, self.pool_reading
+        )
+    }
+}
+
+impl FromStr for UniV2BaselineSourceParameters {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('|');
+        let router: H160 = parts
+            .next()
+            .context("no factory address")?
+            .parse()
+            .context("parse factory address")?;
+        let init_code_digest: H256 = parts
+            .next()
+            .context("no init code digest")?
+            .parse()
+            .context("parse init code digest")?;
+        let pool_reading = parts
+            .next()
+            .map(|part| part.parse().context("parse pool reading"))
+            .transpose()?
+            .unwrap_or(PoolReadingStyle::Default);
+        Ok(Self {
+            router,
+            init_code_digest,
+            pool_reading,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_address_init() {
+        let arg = "0x0000000000000000000000000000000000000001|0x0000000000000000000000000000000000000000000000000000000000000002";
+        let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
+        assert_eq!(parsed.router, H160::from_low_u64_be(1));
+        assert_eq!(parsed.init_code_digest, H256::from_low_u64_be(2));
+    }
+
+    #[test]
+    fn parse_pool_reading() {
+        let arg = "0x0000000000000000000000000000000000000000|0x0000000000000000000000000000000000000000000000000000000000000000";
+        let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
+        assert!(matches!(parsed.pool_reading, PoolReadingStyle::Default));
+
+        let arg = "0x0000000000000000000000000000000000000000|0x0000000000000000000000000000000000000000000000000000000000000000|Default";
+        let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
+        assert!(matches!(parsed.pool_reading, PoolReadingStyle::Default));
+
+        let arg = "0x0000000000000000000000000000000000000000|0x0000000000000000000000000000000000000000000000000000000000000000|Swapr";
+        let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
+        assert!(matches!(parsed.pool_reading, PoolReadingStyle::Swapr));
+    }
 }

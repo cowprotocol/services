@@ -1,3 +1,5 @@
+use {futures::StreamExt, shared::sources::uniswap_v2::UniV2BaselineSourceParameters};
+
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
@@ -191,13 +193,22 @@ pub async fn main(args: arguments::Arguments) -> ! {
             .expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
-        shared::sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
-            .await
-            .expect("failed to load baseline source pair providers")
-            .values()
-            .cloned()
-            .unzip();
+    let univ2_sources = baseline_sources
+        .iter()
+        .filter_map(|source: &BaselineSource| {
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+        })
+        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
+    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
+        .then(|source: UniV2BaselineSourceParameters| {
+            let web3 = &web3;
+            async move {
+                let source = source.into_source(web3).await.unwrap();
+                (source.pair_provider, source.pool_fetching)
+            }
+        })
+        .unzip()
+        .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
         native_token.address(),

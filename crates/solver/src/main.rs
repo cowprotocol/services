@@ -1,13 +1,13 @@
 use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
-    futures::future,
+    futures::{future, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        ethrpc::{self, Web3},
+        ethrpc::{self},
         gelato_api::GelatoClient,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -21,7 +21,7 @@ use {
                 BalancerFactoryKind,
                 BalancerPoolFetcher,
             },
-            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
         },
@@ -63,7 +63,7 @@ use {
             TransactionStrategy,
         },
     },
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
 };
 
 #[tokio::main]
@@ -148,19 +148,33 @@ async fn main() -> ! {
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![];
 
     tracing::info!(?baseline_sources, "using baseline sources");
-    let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
-            .await
-            .expect("failed to load baseline source uniswap liquidity")
-            .into_iter()
-            .map(|(source, (_, pool_fetcher))| {
-                let pool_cache =
-                    PoolCache::new(cache_config, pool_fetcher, current_block_stream.clone())
-                        .expect("failed to create pool cache");
-                (source, Arc::new(pool_cache))
+    let univ2_sources = baseline_sources
+        .iter()
+        .filter_map(|source: &BaselineSource| {
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &network_id)
+        })
+        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
+    let univ2_sources: Vec<(IUniswapLikeRouter, Arc<PoolCache>)> =
+        futures::stream::iter(univ2_sources)
+            .then(|source: UniV2BaselineSourceParameters| {
+                let web3 = &web3;
+                let block_stream = &current_block_stream;
+                async move {
+                    let source = source.into_source(web3).await.unwrap();
+                    let cache = Arc::new(
+                        PoolCache::new(cache_config, source.pool_fetching, block_stream.clone())
+                            .unwrap(),
+                    );
+                    (source.router, cache)
+                }
             })
-            .collect();
-    maintainers.extend(pool_caches.values().cloned().map(|p| p as Arc<_>));
+            .collect()
+            .await;
+    maintainers.extend(
+        univ2_sources
+            .iter()
+            .map(|(_, cache)| cache.clone() as Arc<_>),
+    );
 
     if baseline_sources.contains(&BaselineSource::BalancerV2) {
         let factories = args
@@ -192,8 +206,17 @@ async fn main() -> ! {
         )));
     }
 
-    let uniswap_like_liquidity =
-        build_amm_artifacts(&pool_caches, settlement_contract.clone(), web3.clone()).await;
+    let uniswap_like_liquidity: Vec<Box<dyn LiquidityCollecting>> = univ2_sources
+        .into_iter()
+        .map(|(router, cache)| -> Box<dyn LiquidityCollecting> {
+            Box::new(UniswapLikeLiquidity::new(
+                router,
+                settlement_contract.clone(),
+                web3.clone(),
+                cache,
+            ))
+        })
+        .collect();
     liquidity_sources.extend(uniswap_like_liquidity);
 
     let solvers = {
@@ -502,46 +525,4 @@ async fn main() -> ! {
 
     serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await
-}
-
-async fn build_amm_artifacts(
-    sources: &HashMap<BaselineSource, Arc<PoolCache>>,
-    settlement_contract: contracts::GPv2Settlement,
-    web3: Web3,
-) -> Vec<Box<dyn LiquidityCollecting>> {
-    let mut res: Vec<Box<dyn LiquidityCollecting>> = vec![];
-    for (source, pool_cache) in sources {
-        let router_address = match source {
-            BaselineSource::UniswapV2 => contracts::UniswapV2Router02::deployed(&web3)
-                .await
-                .expect("couldn't load deployed UniswapV2 router")
-                .address(),
-            BaselineSource::SushiSwap => contracts::SushiSwapRouter::deployed(&web3)
-                .await
-                .expect("couldn't load deployed SushiSwap router")
-                .address(),
-            BaselineSource::Honeyswap => contracts::HoneyswapRouter::deployed(&web3)
-                .await
-                .expect("couldn't load deployed Honeyswap router")
-                .address(),
-            BaselineSource::Baoswap => contracts::BaoswapRouter::deployed(&web3)
-                .await
-                .expect("couldn't load deployed Baoswap router")
-                .address(),
-            BaselineSource::Swapr => contracts::SwaprRouter::deployed(&web3)
-                .await
-                .expect("couldn't load deployed Swapr router")
-                .address(),
-            BaselineSource::BalancerV2 => continue,
-            BaselineSource::ZeroEx => continue,
-            BaselineSource::UniswapV3 => continue,
-        };
-        res.push(Box::new(UniswapLikeLiquidity::new(
-            IUniswapLikeRouter::at(&web3, router_address),
-            settlement_contract.clone(),
-            web3.clone(),
-            pool_cache.clone(),
-        )));
-    }
-    res
 }

@@ -9,7 +9,11 @@ use {
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimatorType,
         rate_limiter::RateLimitingStrategy,
-        sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+        sources::{
+            balancer_v2::BalancerFactoryKind,
+            uniswap_v2::UniV2BaselineSourceParameters,
+            BaselineSource,
+        },
         tenderly_api,
     },
     anyhow::{anyhow, ensure, Context, Result},
@@ -200,6 +204,10 @@ pub struct Arguments {
     /// Which Liquidity sources to be used by Price Estimator.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub baseline_sources: Option<Vec<BaselineSource>>,
+
+    /// List of non hardcoded univ2-like contracts.
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
+    pub custom_univ2_baseline_sources: Vec<UniV2BaselineSourceParameters>,
 
     /// The number of blocks kept in the pool cache.
     #[clap(long, env, default_value = "10")]
@@ -441,6 +449,11 @@ impl Display for Arguments {
             self.balancer_pool_deny_list
         )?;
         display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_list(
+            f,
+            "custom_univ2_baseline_sources",
+            &self.custom_univ2_baseline_sources,
+        )?;
 
         Ok(())
     }
