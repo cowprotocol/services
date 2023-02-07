@@ -1,17 +1,21 @@
 //! Mockable Web3 transport implementation.
 
-use ethcontract::{
-    futures::future::{self, Ready},
-    jsonrpc::{Call, Id, MethodCall, Params},
-    web3::{self, BatchTransport, RequestId, Transport},
-    Web3,
-};
-use serde_json::Value;
-use std::{
-    fmt::{self, Debug, Formatter},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+use {
+    ethcontract::{
+        futures::future::{self, Ready},
+        jsonrpc::{Call, Id, MethodCall, Params},
+        web3::{self, BatchTransport, RequestId, Transport},
+        Web3,
+    },
+    serde_json::Value,
+    std::{
+        fmt::{self, Debug, Formatter},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+            Mutex,
+            MutexGuard,
+        },
     },
 };
 
@@ -107,9 +111,7 @@ fn extract_call(call: Call) -> (String, Vec<Value>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mockall::predicate::*;
-    use serde_json::json;
+    use {super::*, mockall::predicate::*, serde_json::json};
 
     #[tokio::test]
     async fn can_mock_single_requests() {

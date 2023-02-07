@@ -1,4 +1,5 @@
-//! Submodule containing helper methods to pre-process auction data before passing it on to the solvers.
+//! Submodule containing helper methods to pre-process auction data before
+//! passing it on to the solvers.
 
 use crate::liquidity::LimitOrder;
 

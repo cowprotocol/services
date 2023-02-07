@@ -1,5 +1,7 @@
-use crate::domain::{eth, liquidity};
-use itertools::Itertools as _;
+use {
+    crate::domain::{eth, liquidity},
+    itertools::Itertools as _,
+};
 
 /// The state of a Curve-like stable pool.
 #[derive(Clone, Debug)]

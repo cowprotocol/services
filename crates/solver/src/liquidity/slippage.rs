@@ -1,22 +1,24 @@
 //! Module defining slippage computation for AMM liquidity.
 
-use super::{AmmOrderExecution, LimitOrder};
-use crate::{
-    settlement::external_prices::ExternalPrices,
-    solver::{Auction, SolverType},
-};
-use anyhow::{anyhow, Context as _, Result};
-use clap::{Parser, ValueEnum as _};
-use ethcontract::{H160, U256};
-use model::order::OrderKind;
-use num::{BigInt, BigRational, Integer as _, ToPrimitive as _};
-use once_cell::sync::OnceCell;
-use std::{
-    borrow::Cow,
-    cmp,
-    collections::HashMap,
-    fmt::{self, Display, Formatter},
-    str::FromStr,
+use {
+    super::{AmmOrderExecution, LimitOrder},
+    crate::{
+        settlement::external_prices::ExternalPrices,
+        solver::{Auction, SolverType},
+    },
+    anyhow::{anyhow, Context as _, Result},
+    clap::{Parser, ValueEnum as _},
+    ethcontract::{H160, U256},
+    model::order::OrderKind,
+    num::{BigInt, BigRational, Integer as _, ToPrimitive as _},
+    once_cell::sync::OnceCell,
+    std::{
+        borrow::Cow,
+        cmp,
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        str::FromStr,
+    },
 };
 
 /// Slippage configuration command line arguments.
@@ -415,10 +417,12 @@ fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::external_prices::externalprices;
-    use shared::conversions::U256Ext as _;
-    use testlib::tokens::{GNO, USDC, WETH};
+    use {
+        super::*,
+        crate::settlement::external_prices::externalprices,
+        shared::conversions::U256Ext as _,
+        testlib::tokens::{GNO, USDC, WETH},
+    };
 
     #[test]
     fn limits_max_slippage() {

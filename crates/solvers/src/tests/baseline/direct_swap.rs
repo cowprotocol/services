@@ -1,19 +1,12 @@
 //! Simple test case that verifies that the baseline solver can settle an order
 //! directly with a Uniswap V2 pool.
 
-use crate::{cli, tests};
-use serde_json::json;
+use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new(cli::Command::Baseline(cli::baseline::Arguments {
-        weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            .parse()
-            .unwrap(),
-        base_tokens: Vec::new(),
-        max_hops: 0,
-    }))
-    .await;
+    let engine =
+        tests::SolverEngine::new("baseline".to_owned(), "example.baseline.toml".to_owned()).await;
 
     let solution = engine
         .solve(json!({

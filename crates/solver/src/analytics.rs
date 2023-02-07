@@ -1,15 +1,19 @@
-use crate::{
-    driver::solver_settlements::RatedSettlement, metrics::SolverMetrics, settlement::Settlement,
-    solver::Solver,
-};
-use ethcontract::H160;
-use model::order::OrderUid;
-use num::{BigRational, ToPrimitive, Zero};
-use shared::conversions::U256Ext;
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Display, Formatter},
-    sync::Arc,
+use {
+    crate::{
+        driver::solver_settlements::RatedSettlement,
+        metrics::SolverMetrics,
+        settlement::Settlement,
+        solver::Solver,
+    },
+    ethcontract::H160,
+    model::order::OrderUid,
+    num::{BigRational, ToPrimitive, Zero},
+    shared::conversions::U256Ext,
+    std::{
+        collections::{HashMap, HashSet},
+        fmt::{Display, Formatter},
+        sync::Arc,
+    },
 };
 
 pub fn report_matched_but_not_settled(

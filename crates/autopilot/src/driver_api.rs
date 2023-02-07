@@ -1,8 +1,10 @@
-use crate::driver_model::{execute, solve};
-use anyhow::{anyhow, Context, Result};
-use reqwest::Client;
-use shared::http_client::response_body_with_size_limit;
-use url::Url;
+use {
+    crate::driver_model::{execute, solve},
+    anyhow::{anyhow, Context, Result},
+    reqwest::Client,
+    shared::http_client::response_body_with_size_limit,
+    url::Url,
+};
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 

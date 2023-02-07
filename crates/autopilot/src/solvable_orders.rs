@@ -1,33 +1,35 @@
-use crate::{database::Postgres, risk_adjusted_rewards};
-use anyhow::{Context as _, Result};
-use bigdecimal::BigDecimal;
-use chrono::Utc;
-use itertools::Itertools;
-use model::{
-    auction::Auction,
-    order::{Order, OrderClass, OrderUid},
-    signature::Signature,
-    time::now_in_epoch_seconds,
+use {
+    crate::{database::Postgres, risk_adjusted_rewards},
+    anyhow::{Context as _, Result},
+    bigdecimal::BigDecimal,
+    chrono::Utc,
+    itertools::Itertools,
+    model::{
+        auction::Auction,
+        order::{Order, OrderClass, OrderUid},
+        signature::Signature,
+        time::now_in_epoch_seconds,
+    },
+    number_conversions::u256_to_big_decimal,
+    primitive_types::{H160, H256, U256},
+    prometheus::{IntCounter, IntGauge, IntGaugeVec},
+    shared::{
+        account_balances::{BalanceFetching, Query},
+        bad_token::BadTokenDetecting,
+        current_block::CurrentBlockStream,
+        price_estimation::native_price_cache::CachingNativePriceEstimator,
+        signature_validator::{SignatureCheck, SignatureValidating},
+    },
+    std::{
+        collections::{BTreeMap, HashMap, HashSet},
+        iter::FromIterator,
+        sync::{Arc, Mutex, Weak},
+        time::Duration,
+    },
+    strum::VariantNames,
+    tokio::time::Instant,
+    tracing::Instrument,
 };
-use number_conversions::u256_to_big_decimal;
-use primitive_types::{H160, H256, U256};
-use prometheus::{IntCounter, IntGaugeVec};
-use shared::{
-    account_balances::{BalanceFetching, Query},
-    bad_token::BadTokenDetecting,
-    current_block::CurrentBlockStream,
-    price_estimation::native_price_cache::CachingNativePriceEstimator,
-    signature_validator::{SignatureCheck, SignatureValidating},
-};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    iter::FromIterator,
-    sync::{Arc, Mutex, Weak},
-    time::Duration,
-};
-use strum::VariantNames;
-use tokio::time::Instant;
-use tracing::Instrument;
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
@@ -45,14 +47,17 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
+
+    /// Auction filtered market orders due to missing native token price.
+    auction_market_order_missing_price: IntGauge,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
-/// For this we also need to keep track of user sell token balances for open orders so this is
-/// retrievable as well.
-/// The cache is updated in the background whenever a new block appears or when the cache is
-/// explicitly notified that it should update for example because a new order got added to the order
-/// book.
+/// For this we also need to keep track of user sell token balances for open
+/// orders so this is retrievable as well.
+/// The cache is updated in the background whenever a new block appears or when
+/// the cache is explicitly notified that it should update for example because a
+/// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     database: Postgres,
@@ -63,7 +68,8 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    // Optional because reward calculation only makes sense on mainnet. Other networks have 0 rewards.
+    // Optional because reward calculation only makes sense on mainnet. Other networks have 0
+    // rewards.
     reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
@@ -142,10 +148,12 @@ impl SolvableOrdersCache {
         self.cache.lock().unwrap().auction.clone()
     }
 
-    /// Manually update solvable orders. Usually called by the background updating task.
+    /// Manually update solvable orders. Usually called by the background
+    /// updating task.
     ///
-    /// Usually this method is called from update_task. If it isn't, which is the case in unit tests,
-    /// then concurrent calls might overwrite each other's results.
+    /// Usually this method is called from update_task. If it isn't, which is
+    /// the case in unit tests, then concurrent calls might overwrite each
+    /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self
@@ -171,8 +179,8 @@ impl SolvableOrdersCache {
         let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
         counter.checkpoint("insufficient_sell", &orders);
 
-        // If we update due to an explicit notification we can reuse existing balances as they
-        // cannot have changed.
+        // If we update due to an explicit notification we can reuse existing balances
+        // as they cannot have changed.
         let old_balances = {
             let inner = self.cache.lock().unwrap();
             if inner.orders.block == block {
@@ -208,8 +216,11 @@ impl SolvableOrdersCache {
         counter.checkpoint("insufficient_balance", &orders);
 
         // create auction
-        let (orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &self.native_price_estimator);
+        let (orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &self.native_price_estimator,
+            self.metrics,
+        );
         counter.checkpoint("missing_price", &orders);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
@@ -343,9 +354,9 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
     (new_balances, missing_queries)
 }
 
-// The order book has to make a choice for which orders to include when a user has multiple orders
-// selling the same token but not enough balance for all of them.
-// Assumes balance fetcher is already tracking all balances.
+// The order book has to make a choice for which orders to include when a user
+// has multiple orders selling the same token but not enough balance for all of
+// them. Assumes balance fetcher is already tracking all balances.
 fn solvable_orders(
     mut orders: Vec<Order>,
     balances: &Balances,
@@ -372,10 +383,11 @@ fn solvable_orders(
                 result.push(order);
                 continue;
             }
-            // TODO: This is overly pessimistic for partially filled orders where the needed balance
-            // is lower. For partially fillable orders that cannot be fully filled because of the
-            // balance we could also give them as much balance as possible instead of skipping. For
-            // that we first need a way to communicate this to the solver. We could repurpose
+            // TODO: This is overly pessimistic for partially filled orders where the needed
+            // balance is lower. For partially fillable orders that cannot be
+            // fully filled because of the balance we could also give them as
+            // much balance as possible instead of skipping. For that we first
+            // need a way to communicate this to the solver. We could repurpose
             // availableBalance for this.
             let needed_balance = match max_transfer_out_amount(&order) {
                 // Should only ever happen if a partially fillable order has been filled completely
@@ -418,8 +430,8 @@ fn max_transfer_out_amount(order: &Order) -> Result<U256> {
     sell.checked_add(fee).context("add")
 }
 
-/// Keep updating the cache every N seconds or when an update notification happens.
-/// Exits when this becomes the only reference to the cache.
+/// Keep updating the cache every N seconds or when an update notification
+/// happens. Exits when this becomes the only reference to the cache.
 async fn update_task(
     cache: Weak<SolvableOrdersCache>,
     update_interval: Duration,
@@ -427,10 +439,10 @@ async fn update_task(
 ) {
     loop {
         // We are not updating on block changes because
-        // - the state of orders could change even when the block does not like when an order
-        //   gets cancelled off chain
-        // - the event updater takes some time to run and if we go first we would not update the
-        //   orders with the most recent events.
+        // - the state of orders could change even when the block does not like when an
+        //   order gets cancelled off chain
+        // - the event updater takes some time to run and if we go first we would not
+        //   update the orders with the most recent events.
         let start = Instant::now();
         let cache = match cache.upgrade() {
             Some(self_) => self_,
@@ -460,6 +472,7 @@ async fn update_task(
 fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
+    metrics: &Metrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
@@ -474,8 +487,19 @@ fn get_orders_with_native_prices(
         .flat_map(|(token, price)| to_normalized_price(price).map(|price| (token, price)))
         .collect();
 
-    // Filter both orders and prices so that we only return orders that have prices and prices that
-    // have orders.
+    let high_priority_tokens = orders
+        .iter()
+        .filter_map(|order| match order.metadata.class {
+            OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
+            OrderClass::Liquidity => None,
+            OrderClass::Limit(_) => None,
+        })
+        .flatten();
+    native_price_estimator.replace_high_priority(high_priority_tokens.collect());
+
+    // Filter both orders and prices so that we only return orders that have prices
+    // and prices that have orders.
+    let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
     orders.retain(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
@@ -485,9 +509,18 @@ fn get_orders_with_native_prices(
                 used_prices.insert(*t1, *p1);
                 true
             }
-            _ => false,
+            _ => {
+                filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
+                false
+            }
         }
     });
+
+    // Record separate metrics just for missing native token prices for market
+    // orders, as they should be prioritized.
+    metrics
+        .auction_market_order_missing_price
+        .set(filtered_market_orders);
 
     (orders, used_prices)
 }
@@ -507,8 +540,8 @@ async fn filter_unsupported_tokens(
     mut orders: Vec<Order>,
     bad_token: &dyn BadTokenDetecting,
 ) -> Result<Vec<Order>> {
-    // Can't use normal `retain` or `filter` because the bad token detection is async. So either
-    // this manual iteration or conversion to stream.
+    // Can't use normal `retain` or `filter` because the bad token detection is
+    // async. So either this manual iteration or conversion to stream.
     let mut index = 0;
     'outer: while index < orders.len() {
         for token in orders[index].data.token_pair().unwrap() {
@@ -531,7 +564,8 @@ fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> 
     orders
 }
 
-/// Filter out limit orders which are far enough outside the estimated native token price.
+/// Filter out limit orders which are far enough outside the estimated native
+/// token price.
 fn filter_mispriced_limit_orders(
     mut orders: Vec<Order>,
     prices: &BTreeMap<H160, U256>,
@@ -552,8 +586,9 @@ fn filter_mispriced_limit_orders(
         let sell_price = *prices.get(&order.data.sell_token).unwrap();
         let buy_price = *prices.get(&order.data.buy_token).unwrap();
 
-        // Convert the sell and buy price to the native token (ETH) and make sure that sell
-        // discounting the surplus fee is higher than buy with the configurable price factor.
+        // Convert the sell and buy price to the native token (ETH) and make sure that
+        // sell discounting the surplus fee is higher than buy with the
+        // configurable price factor.
         let (sell_native, buy_native) = match (
             effective_sell_amount.checked_mul(sell_price),
             order.data.buy_amount.checked_mul(buy_price),
@@ -617,18 +652,17 @@ impl OrderFilterCounter {
 
     /// Creates a new checkpoint from the current remaining orders.
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) {
-        let filtered_orders = orders.iter().fold(
-            self.orders.keys().copied().collect::<HashSet<_>>(),
-            |mut order_uids, order| {
+        let filtered_orders = orders
+            .iter()
+            .fold(self.orders.clone(), |mut order_uids, order| {
                 order_uids.remove(&order.metadata.uid);
                 order_uids
-            },
-        );
+            });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for order in filtered_orders {
+        for (order, class) in filtered_orders {
             self.orders.remove(&order).unwrap();
-            tracing::debug!(%order, %reason, "filtered order")
+            tracing::debug!(%order, ?class, %reason, "filtered order")
         }
     }
 
@@ -660,19 +694,26 @@ impl OrderFilterCounter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use chrono::{DateTime, NaiveDateTime, Utc};
-    use futures::{FutureExt, StreamExt};
-    use maplit::{btreemap, hashmap, hashset};
-    use mockall::predicate::eq;
-    use model::order::{
-        LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid,
-    };
-    use primitive_types::H160;
-    use shared::{
-        bad_token::list_based::ListBasedDetector,
-        price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
-        signature_validator::{MockSignatureValidating, SignatureValidationError},
+    use {
+        super::*,
+        chrono::{DateTime, NaiveDateTime, Utc},
+        futures::{FutureExt, StreamExt},
+        maplit::{btreemap, hashmap, hashset},
+        mockall::predicate::eq,
+        model::order::{
+            LimitOrderClass,
+            OrderBuilder,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
+        },
+        primitive_types::H160,
+        shared::{
+            bad_token::list_based::ListBasedDetector,
+            price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+            signature_validator::{MockSignatureValidating, SignatureValidationError},
+        },
     };
 
     #[tokio::test]
@@ -823,14 +864,16 @@ mod tests {
             Duration::from_secs(10),
             Duration::MAX,
             None,
-            None,
+            Default::default(),
             1,
         );
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
 
-        // We'll have no native prices in this call. But this call will cause a background task
-        // to fetch the missing prices so we'll have them in the next call.
+        // We'll have no native prices in this call. But this call will cause a
+        // background task to fetch the missing prices so we'll have them in the
+        // next call.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -839,7 +882,7 @@ mod tests {
 
         // Now we have all the native prices we want.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(

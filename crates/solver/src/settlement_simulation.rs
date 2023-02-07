@@ -1,28 +1,31 @@
-use crate::encoding::EncodedSettlement;
-use anyhow::{anyhow, Context, Error, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{
-    batch::CallBatch,
-    contract::MethodBuilder,
-    dyns::{DynMethodBuilder, DynTransport},
-    errors::ExecutionError,
-    transaction::TransactionBuilder,
-    Account,
+use {
+    crate::encoding::EncodedSettlement,
+    anyhow::{anyhow, Context, Error, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{
+        batch::CallBatch,
+        contract::MethodBuilder,
+        dyns::{DynMethodBuilder, DynTransport},
+        errors::ExecutionError,
+        transaction::TransactionBuilder,
+        Account,
+    },
+    futures::FutureExt,
+    gas_estimation::GasPrice1559,
+    itertools::Itertools,
+    primitive_types::{H160, H256, U256},
+    shared::{
+        conversions::into_gas_price,
+        ethrpc::Web3,
+        tenderly_api::{SimulationRequest, TenderlyApi},
+    },
+    web3::types::{AccessList, BlockId},
 };
-use futures::FutureExt;
-use gas_estimation::GasPrice1559;
-use itertools::Itertools;
-use primitive_types::{H160, H256, U256};
-use shared::{
-    conversions::into_gas_price,
-    ethrpc::Web3,
-    tenderly_api::{SimulationRequest, TenderlyApi},
-};
-use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
-/// The maximum amount the base gas fee can increase from one block to the other.
+/// The maximum amount the base gas fee can increase from one block to the
+/// other.
 ///
 /// This is derived from [EIP-1559](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md):
 /// ```text
@@ -30,17 +33,19 @@ const SIMULATE_BATCH_SIZE: usize = 10;
 /// base_fee_per_gas_delta = max(parent_base_fee_per_gas * gas_used_delta // parent_gas_target // BASE_FEE_MAX_CHANGE_DENOMINATOR, 1)
 /// ```
 ///
-/// Because the elasticity factor is 2, this means that the highes possible `gas_used_delta == parent_gas_target`.
-/// Therefore, the highest possible `base_fee_per_gas_delta` is `parent_base_fee_per_gas / 8`.
+/// Because the elasticity factor is 2, this means that the highes possible
+/// `gas_used_delta == parent_gas_target`. Therefore, the highest possible
+/// `base_fee_per_gas_delta` is `parent_base_fee_per_gas / 8`.
 ///
 /// Example of this in action:
 /// [Block 12998225](https://etherscan.io/block/12998225) with base fee of `43.353224173` and ~100% over the gas target.
 /// Next [block 12998226](https://etherscan.io/block/12998226) has base fee of `48.771904644` which is an increase of ~12.5%.
 ///
 /// Increase the gas price by the highest possible base gas fee increase. This
-/// is done because the between retrieving the gas price and executing the simulation,
-/// a block may have been mined that increases the base gas fee and causes the
-/// `eth_call` simulation to fail with `max fee per gas less than block base fee`.
+/// is done because the between retrieving the gas price and executing the
+/// simulation, a block may have been mined that increases the base gas fee and
+/// causes the `eth_call` simulation to fail with `max fee per gas less than
+/// block base fee`.
 pub const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 
 pub async fn simulate_and_estimate_gas_at_current_block(
@@ -48,7 +53,8 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     contract: &GPv2Settlement,
     gas_price: GasPrice1559,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
-    // Collect into Vec to not rely on Itertools::chunk which would make this future !Send.
+    // Collect into Vec to not rely on Itertools::chunk which would make this future
+    // !Send.
     let settlements: Vec<_> = settlements.collect();
 
     // Force settlement simulations to be done in smaller batches. They can be
@@ -251,35 +257,42 @@ pub fn tenderly_link(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::{Allowances, MockAllowanceManaging},
-        liquidity::{
-            balancer_v2::SettlementHandler, order_converter::OrderConverter,
-            slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
-            StablePoolOrder,
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::{Allowances, MockAllowanceManaging},
+            liquidity::{
+                balancer_v2::SettlementHandler,
+                order_converter::OrderConverter,
+                slippage::SlippageContext,
+                uniswap_v2::Inner,
+                ConstantProductOrder,
+                Liquidity,
+                StablePoolOrder,
+            },
+            settlement::Settlement,
+            solver::http_solver::settlement::{convert_settlement, SettlementContext},
         },
-        settlement::Settlement,
-        solver::http_solver::settlement::{convert_settlement, SettlementContext},
-    };
-    use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
-    use ethcontract::{Account, PrivateKey};
-    use maplit::hashmap;
-    use model::{order::Order, TokenPair};
-    use num::{rational::Ratio, BigRational};
-    use serde_json::json;
-    use shared::{
-        ethrpc::create_env_test_transport,
-        http_solver::model::{InternalizationStrategy, SettledBatchAuctionModel},
-        sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
-        tenderly_api::TenderlyHttpApi,
-    };
-    use std::{
-        str::FromStr,
-        sync::{Arc, Mutex},
+        contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9},
+        ethcontract::{Account, PrivateKey},
+        maplit::hashmap,
+        model::{order::Order, TokenPair},
+        num::{rational::Ratio, BigRational},
+        serde_json::json,
+        shared::{
+            ethrpc::create_env_test_transport,
+            http_solver::model::{InternalizationStrategy, SettledBatchAuctionModel},
+            sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
+            tenderly_api::TenderlyHttpApi,
+        },
+        std::{
+            str::FromStr,
+            sync::{Arc, Mutex},
+        },
     };
 
-    // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored --nocapture
+    // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored
+    // --nocapture
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
@@ -340,13 +353,15 @@ mod tests {
         let _ = dbg!(result);
     }
 
-    // cargo test decode_quasimodo_solution_with_liquidity_orders_and_simulate_onchain_tx -- --ignored --nocapture
+    // cargo test
+    // decode_quasimodo_solution_with_liquidity_orders_and_simulate_onchain_tx --
+    // --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn decode_quasimodo_solution_with_liquidity_orders_and_simulate_onchain_tx() {
         // This e2e test re-simulates the settlement from here: https://etherscan.io/tx/0x6756c294eb84c899247f2ec64d6eee73e7aaf50d6cb49ba9bab636f450240f51
-        // This settlement was wrongly settled, because the liquidity order did receive a surplus.
-        // The liquidity order is:
+        // This settlement was wrongly settled, because the liquidity order did receive
+        // a surplus. The liquidity order is:
         // https://explorer.cow.fi/orders/0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542
 
         let transport = create_env_test_transport();
@@ -703,7 +718,8 @@ mod tests {
         );
     }
 
-    // cargo test -p solver settlement_simulation::tests::mainnet_chunked -- --ignored --nocapture
+    // cargo test -p solver settlement_simulation::tests::mainnet_chunked --
+    // --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn mainnet_chunked() {

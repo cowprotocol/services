@@ -1,20 +1,22 @@
-use super::pair_provider::PairProvider;
-use crate::{
-    baseline_solver::BaselineSolvable,
-    ethcontract_error::EthcontractErrorType,
-    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
-    recent_block_cache::Block,
+use {
+    super::pair_provider::PairProvider,
+    crate::{
+        baseline_solver::BaselineSolvable,
+        ethcontract_error::EthcontractErrorType,
+        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+        recent_block_cache::Block,
+    },
+    anyhow::Result,
+    contracts::{IUniswapLikePair, ERC20},
+    ethcontract::{errors::MethodError, BlockId, H160, U256},
+    futures::{
+        future::{self, BoxFuture},
+        FutureExt as _,
+    },
+    model::TokenPair,
+    num::rational::Ratio,
+    std::collections::HashSet,
 };
-use anyhow::Result;
-use contracts::{IUniswapLikePair, ERC20};
-use ethcontract::{errors::MethodError, BlockId, H160, U256};
-use futures::{
-    future::{self, BoxFuture},
-    FutureExt as _,
-};
-use model::TokenPair;
-use num::rational::Ratio;
-use std::collections::HashSet;
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
@@ -70,8 +72,9 @@ impl Pool {
         }
     }
 
-    /// Given an input amount and token, returns the maximum output amount and address of the other asset.
-    /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow)
+    /// Given an input amount and token, returns the maximum output amount and
+    /// address of the other asset. Returns None if operation not possible
+    /// due to arithmetic issues (e.g. over or underflow)
     fn get_amount_out(&self, token_in: H160, amount_in: U256) -> Option<(U256, H160)> {
         let (reserve_in, reserve_out, token_out) = self.get_relative_reserves(token_in);
         Some((
@@ -80,8 +83,9 @@ impl Pool {
         ))
     }
 
-    /// Given an output amount and token, returns a required input amount and address of the other asset.
-    /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow, reserve too small)
+    /// Given an output amount and token, returns a required input amount and
+    /// address of the other asset. Returns None if operation not possible
+    /// due to arithmetic issues (e.g. over or underflow, reserve too small)
     fn get_amount_in(&self, token_out: H160, amount_out: U256) -> Option<(U256, H160)> {
         let (reserve_out, reserve_in, token_in) = self.get_relative_reserves(token_out);
         Some((
@@ -90,12 +94,14 @@ impl Pool {
         ))
     }
 
-    /// Given one of the pool's two tokens, returns a tuple containing the `RelativeReserves`
-    /// along with the opposite token. That is, the elements returned are (respectively)
+    /// Given one of the pool's two tokens, returns a tuple containing the
+    /// `RelativeReserves` along with the opposite token. That is, the
+    /// elements returned are (respectively)
     /// - the pool's reserve of token provided
     /// - the reserve of the other token
     /// - the pool's other token
-    /// This is essentially a helper method for shuffling values in `get_amount_in` and `get_amount_out`
+    /// This is essentially a helper method for shuffling values in
+    /// `get_amount_in` and `get_amount_out`
     fn get_relative_reserves(&self, token: H160) -> RelativeReserves {
         // https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol#L53
         if token == self.tokens.get().0 {
@@ -289,7 +295,8 @@ struct FetchedPool {
     token1_balance: Result<U256, MethodError>,
 }
 
-// Node errors should be bubbled up but contract errors should lead to the pool being skipped.
+// Node errors should be bubbled up but contract errors should lead to the pool
+// being skipped.
 pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option<T>> {
     match result {
         Ok(t) => Ok(Some(t)),
@@ -306,13 +313,19 @@ fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Poo
     let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
 
     let pool = reserves.and_then(|reserves| {
-        // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the balance of their owners without any transfer or other interaction ("rebase").
-        // Such behavior can implicitly change the *k* in the pool's constant product formula. E.g. a pool with 10 USDC and 10 AMPL has k = 100. After a negative
-        // rebase the pool's AMPL balance may reduce to 9, thus k should be implicitly updated to 90 (figuratively speaking the pool is undercollateralized).
-        // Uniswap pools however only update their reserves upon swaps. Such an "out of sync" pool has numerical issues when computing the right clearing price.
-        // Note, that a positive rebase is not problematic as k would increase in this case giving the pool excess in the elastic token (an arbitrageur could
+        // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the
+        // balance of their owners without any transfer or other interaction ("rebase").
+        // Such behavior can implicitly change the *k* in the pool's constant product
+        // formula. E.g. a pool with 10 USDC and 10 AMPL has k = 100. After a negative
+        // rebase the pool's AMPL balance may reduce to 9, thus k should be implicitly
+        // updated to 90 (figuratively speaking the pool is undercollateralized).
+        // Uniswap pools however only update their reserves upon swaps. Such an "out of
+        // sync" pool has numerical issues when computing the right clearing price.
+        // Note, that a positive rebase is not problematic as k would increase in this
+        // case giving the pool excess in the elastic token (an arbitrageur could
         // benefit by withdrawing the excess from the pool without selling anything).
-        // We therefore exclude all pools where the pool's token balance of either token in the pair is less than the cached reserve.
+        // We therefore exclude all pools where the pool's token balance of either token
+        // in the pair is less than the cached reserve.
         if U256::from(reserves.0) > token0_balance? || U256::from(reserves.1) > token1_balance? {
             return None;
         }
@@ -327,14 +340,13 @@ fn handle_results(fetched_pool: FetchedPool, address: H160) -> Result<Option<Poo
 }
 
 pub mod test_util {
-    use std::collections::HashSet;
-
-    use anyhow::Result;
-    use model::TokenPair;
-
-    use crate::recent_block_cache::Block;
-
-    use super::{Pool, PoolFetching};
+    use {
+        super::{Pool, PoolFetching},
+        crate::recent_block_cache::Block,
+        anyhow::Result,
+        model::TokenPair,
+        std::collections::HashSet,
+    };
 
     #[derive(Default)]
     pub struct FakePoolFetcher(pub Vec<Pool>);
@@ -353,8 +365,7 @@ pub mod test_util {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethcontract_error;
+    use {super::*, crate::ethcontract_error};
 
     #[test]
     fn test_get_amounts_out() {

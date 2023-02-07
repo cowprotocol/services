@@ -1,16 +1,18 @@
 // Design:
-// As in the traditional transaction submission workflow the main work in this module is checking
-// the gas price in a loop and updating the transaction when the gas price increases. This differs
-// so that we can make use of the property that flashbots transactions do not cost gas if they fail.
-// When we detect that the transaction would no longer succeed we stop trying to submit and return
+// As in the traditional transaction submission workflow the main work in this
+// module is checking the gas price in a loop and updating the transaction when
+// the gas price increases. This differs so that we can make use of the property
+// that flashbots transactions do not cost gas if they fail. When we detect that
+// the transaction would no longer succeed we stop trying to submit and return
 // so that the solver can run again.
-// In addition to simulation failure we make use of a deadline after which submission attempts also
-// stop. This allows the solver to update and improve a solution even if it hasn't yet become
-// invalid.
-// We do not know in advance which of our submitted transactions will get mined. Instead of polling
-// all of them we only check the account's nonce as an optimization. When this happens all our
-// transactions definitely become invalid (even if the transaction came for whatever reason
-// from outside) so it is only at that point that we need to check the hashes individually to the
+// In addition to simulation failure we make use of a deadline after which
+// submission attempts also stop. This allows the solver to update and improve a
+// solution even if it hasn't yet become invalid.
+// We do not know in advance which of our submitted transactions will get mined.
+// Instead of polling all of them we only check the account's nonce as an
+// optimization. When this happens all our transactions definitely become
+// invalid (even if the transaction came for whatever reason from outside) so it
+// is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
 mod common;
@@ -18,31 +20,33 @@ pub mod eden_api;
 pub mod flashbots_api;
 pub mod public_mempool_api;
 
-use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
-use crate::{
-    settlement::Settlement,
-    settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
-    settlement_simulation::settle_method_builder,
+use {
+    super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR},
+    crate::{
+        settlement::Settlement,
+        settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
+        settlement_simulation::settle_method_builder,
+    },
+    anyhow::{anyhow, ensure, Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account},
+    futures::FutureExt,
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    primitive_types::{H256, U256},
+    shared::{
+        code_fetching::CodeFetching,
+        conversions::into_gas_price,
+        ethrpc::{Web3, Web3Transport},
+        http_solver::model::InternalizationStrategy,
+        submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
+    },
+    std::{
+        fmt,
+        time::{Duration, Instant},
+    },
+    strum::IntoStaticStr,
+    web3::types::{AccessList, TransactionReceipt, U64},
 };
-use anyhow::{anyhow, ensure, Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account};
-use futures::FutureExt;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use primitive_types::{H256, U256};
-use shared::{
-    code_fetching::CodeFetching,
-    conversions::into_gas_price,
-    ethrpc::{Web3, Web3Transport},
-    http_solver::model::InternalizationStrategy,
-    submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
-};
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
-use strum::IntoStaticStr;
-use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
@@ -60,7 +64,8 @@ pub struct SubmitterParams {
     pub retry_interval: Duration,
     /// Network id (mainnet, rinkeby, goerli, gnosis chain)
     pub network_id: String,
-    /// Additional bytes to append to the call data. This is required by the `driver`.
+    /// Additional bytes to append to the call data. This is required by the
+    /// `driver`.
     pub additional_call_data: Vec<u8>,
 }
 
@@ -103,8 +108,8 @@ pub struct TransactionHandle {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait TransactionSubmitting: Send + Sync {
-    /// Submits transaction to the specific network (public mempool, eden, flashbots...).
-    /// Returns transaction handle
+    /// Submits transaction to the specific network (public mempool, eden,
+    /// flashbots...). Returns transaction handle
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
@@ -124,7 +129,9 @@ pub trait TransactionSubmitting: Send + Sync {
 #[derive(Clone)]
 pub struct SubmitterGasPriceEstimator<'a> {
     pub inner: &'a dyn GasPriceEstimating,
-    /// Additionally increase max_priority_fee_per_gas by percentage of max_fee_per_gas, in order to increase the chances of a transaction being mined
+    /// Additionally increase max_priority_fee_per_gas by percentage of
+    /// max_fee_per_gas, in order to increase the chances of a transaction being
+    /// mined
     pub additional_tip_percentage_of_max_fee: Option<f64>,
     /// Maximum max_priority_fee_per_gas additional increase
     pub max_additional_tip: Option<f64>,
@@ -210,7 +217,8 @@ impl<'a> Submitter<'a> {
 }
 
 impl<'a> Submitter<'a> {
-    /// Submit a settlement to the contract, updating the transaction with gas prices if they increase.
+    /// Submit a settlement to the contract, updating the transaction with gas
+    /// prices if they increase.
     ///
     /// Only works on mainnet.
     pub async fn submit(
@@ -227,7 +235,8 @@ impl<'a> Submitter<'a> {
         // Take pending transactions from previous submission loops with the same nonce
         // Those exist if
         // 1. Previous loop timed out and no transaction was mined
-        // 2. Previous loop ended with simulation revert, and cancellation tx was sent but not mined
+        // 2. Previous loop ended with simulation revert, and cancellation tx was sent
+        // but not mined
         let mut transactions = self
             .submitted_transactions
             .get(self.account.address(), self.nonce)
@@ -277,21 +286,25 @@ impl<'a> Submitter<'a> {
             },
         };
 
-        // After stopping submission of new transactions we wait for some time to give a potentially
-        // mined previously submitted transaction time to propagate to our node.
+        // After stopping submission of new transactions we wait for some time to give a
+        // potentially mined previously submitted transaction time to propagate
+        // to our node.
 
         // Example:
-        // 1. We submit tx to ethereum node, and we start counting 10s pause before new loop iteration.
-        // 2. In the meantime, block A gets mined somewhere in the network (not containing our tx)
-        // 3. After some time block B is mined somewhere in the network (containing our tx)
-        // 4. Our node receives block A.
-        // 5. Our 10s is up but our node received only block A because of the delay in block propagation. We simulate tx and it fails, we return back
-        // 6. If we don't wait another 20s to receive block B, we wont see mined tx.
+        // 1. We submit tx to ethereum node, and we start counting 10s pause before new
+        // loop iteration. 2. In the meantime, block A gets mined somewhere in
+        // the network (not containing our tx) 3. After some time block B is
+        // mined somewhere in the network (containing our tx) 4. Our node
+        // receives block A. 5. Our 10s is up but our node received only block A
+        // because of the delay in block propagation. We simulate tx and it fails, we
+        // return back 6. If we don't wait another 20s to receive block B, we
+        // wont see mined tx.
 
         if !transactions.is_empty() {
-            // Update (overwrite) the submitted transaction list with `transactions` variable that,
-            // at this point, contains both transactions from previous submission loop and
-            // transactions from current submission loop
+            // Update (overwrite) the submitted transaction list with `transactions`
+            // variable that, at this point, contains both transactions from
+            // previous submission loop and transactions from current submission
+            // loop
             self.submitted_transactions.update(
                 self.account.address(),
                 self.nonce,
@@ -344,8 +357,8 @@ impl<'a> Submitter<'a> {
             .context("transaction_count")
     }
 
-    /// Keep polling the account's nonce until it is different from initial_nonce returning the new
-    /// nonce.
+    /// Keep polling the account's nonce until it is different from
+    /// initial_nonce returning the new nonce.
     async fn wait_for_nonce_to_change(&self, initial_nonce: U256) -> U256 {
         const POLL_INTERVAL: Duration = Duration::from_secs(1);
         loop {
@@ -358,12 +371,15 @@ impl<'a> Submitter<'a> {
         }
     }
 
-    /// Keep submitting the settlement transaction to the network as gas price changes.
+    /// Keep submitting the settlement transaction to the network as gas price
+    /// changes.
     ///
-    /// Returns when simulation of the transaction fails. This likely happens if the settlement
-    /// becomes invalid due to changing prices or the account's nonce changes.
+    /// Returns when simulation of the transaction fails. This likely happens if
+    /// the settlement becomes invalid due to changing prices or the
+    /// account's nonce changes.
     ///
-    /// Potential transaction hashes are communicated back through a shared vector.
+    /// Potential transaction hashes are communicated back through a shared
+    /// vector.
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
         settlement: Settlement,
@@ -374,7 +390,8 @@ impl<'a> Submitter<'a> {
 
         let mut access_list: Option<AccessList> = None;
 
-        // Try to find submitted transaction from previous submission attempt (with the same address and nonce)
+        // Try to find submitted transaction from previous submission attempt (with the
+        // same address and nonce)
         let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
         loop {
@@ -393,7 +410,8 @@ impl<'a> Submitter<'a> {
                     self.gas_price_estimator.clone()
                 }
             };
-            // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
+            // Account for some buffer in the gas limit in case racing state changes result
+            // in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
             let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
@@ -464,7 +482,8 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}",
+                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas \
+                 estimate {}",
                 gas_price.base_fee_per_gas,
                 gas_price.max_fee_per_gas,
                 gas_price.max_priority_fee_per_gas,
@@ -574,7 +593,8 @@ impl<'a> Submitter<'a> {
         }
     }
 
-    /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
+    /// Prepare noop transaction. This transaction does transfer of 0 value to
+    /// self and always spends 21000 gas.
     fn build_noop_transaction(
         &self,
         gas_price: &GasPrice1559,
@@ -588,7 +608,8 @@ impl<'a> Submitter<'a> {
             .gas(21000.into())
     }
 
-    /// Prepare all data needed for cancellation of previously submitted transaction and execute cancellation
+    /// Prepare all data needed for cancellation of previously submitted
+    /// transaction and execute cancellation
     async fn cancel_transaction(
         &self,
         gas_price: &GasPrice1559,
@@ -615,8 +636,9 @@ fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionE
 
 /// From a list of potential hashes find one that was mined.
 async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<TransactionReceipt> {
-    // It would be nice to use the nonce and account address to find the transaction hash but there
-    // is no way to do this in ethrpc api so we have to check the candidates one by one.
+    // It would be nice to use the nonce and account address to find the transaction
+    // hash but there is no way to do this in ethrpc api so we have to check the
+    // candidates one by one.
     let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport()));
     let futures = hashes
         .iter()
@@ -641,10 +663,12 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "submission_strategies")]
 struct Metrics {
-    /// Tracks how many transactions get successfully submitted with the different submission strategies.
+    /// Tracks how many transactions get successfully submitted with the
+    /// different submission strategies.
     #[metric(labels("submitter", "result"))]
     submissions: prometheus::IntCounterVec,
-    /// Tracks how many transactions get successfully mined by the different submission strategies.
+    /// Tracks how many transactions get successfully mined by the different
+    /// submission strategies.
     #[metric(labels("submitter"))]
     mined_transactions: prometheus::IntCounterVec,
 }
@@ -668,17 +692,20 @@ fn track_mined_transactions(submitter: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{super::submitter::flashbots_api::FlashbotsApi, *};
-    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
-    use ethcontract::PrivateKey;
-    use gas_estimation::blocknative::BlockNative;
-    use reqwest::Client;
-    use shared::{
-        code_fetching::MockCodeFetching, ethrpc::create_env_test_transport,
-        gas_price_estimation::FakeGasPriceEstimator,
+    use {
+        super::{super::submitter::flashbots_api::FlashbotsApi, *},
+        crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        ethcontract::PrivateKey,
+        gas_estimation::blocknative::BlockNative,
+        reqwest::Client,
+        shared::{
+            code_fetching::MockCodeFetching,
+            ethrpc::create_env_test_transport,
+            gas_price_estimation::FakeGasPriceEstimator,
+        },
+        std::sync::Arc,
+        tracing::level_filters::LevelFilter,
     };
-    use std::sync::Arc;
-    use tracing::level_filters::LevelFilter;
 
     #[tokio::test]
     #[ignore]

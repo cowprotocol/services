@@ -1,12 +1,13 @@
-use crate::domain::{eth, liquidity};
-use ethereum_types::{H160, H256, U256};
-use shared::sources::balancer_v2::{
-    pool_fetching::{CommonPoolState, TokenState, WeightedTokenState},
-    swap::fixed_point::Bfp,
-};
-use std::collections::HashMap;
-
 pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
+use {
+    crate::domain::{eth, liquidity},
+    ethereum_types::{H160, H256, U256},
+    shared::sources::balancer_v2::{
+        pool_fetching::{CommonPoolState, TokenState, WeightedTokenState},
+        swap::fixed_point::Bfp,
+    },
+    std::collections::HashMap,
+};
 
 /// Converts a domain pool into a [`shared`] Balancer V2 weighted pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.

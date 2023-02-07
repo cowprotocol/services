@@ -1,11 +1,13 @@
 //! Module containing liquidity-based token owner finding implementations.
 
-use super::TokenOwnerProposing;
-use crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider};
-use anyhow::Result;
-use contracts::{BalancerV2Vault, IUniswapV3Factory};
-use ethcontract::{BlockNumber, H160};
-use model::TokenPair;
+use {
+    super::TokenOwnerProposing,
+    crate::sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
+    anyhow::Result,
+    contracts::{BalancerV2Vault, IUniswapV3Factory},
+    ethcontract::{BlockNumber, H160},
+    model::TokenPair,
+};
 
 pub struct UniswapLikePairProviderFinder {
     pub inner: PairProvider,
@@ -45,7 +47,8 @@ pub enum FeeValues {
     /// Use hardcoded list
     Static,
     /// Fetch on creation based on events queried from node.
-    /// Some nodes struggle with the request and take a long time to respond leading to timeouts.
+    /// Some nodes struggle with the request and take a long time to respond
+    /// leading to timeouts.
     Dynamic,
 }
 
@@ -72,8 +75,9 @@ impl UniswapV3Finder {
     // Possible fee values as given by
     // https://github.com/Uniswap/v3-core/blob/9161f9ae4aaa109f7efdff84f1df8d4bc8bfd042/contracts/UniswapV3Factory.sol#L26
     async fn fee_values(factory: &IUniswapV3Factory) -> Result<Vec<u32>> {
-        // We expect there to be few of these kind of events (currently there are 4) so fetching all
-        // of them is fine. Alternatively we could index these events in the database.
+        // We expect there to be few of these kind of events (currently there are 4) so
+        // fetching all of them is fine. Alternatively we could index these
+        // events in the database.
         let events = factory
             .events()
             .fee_amount_enabled()

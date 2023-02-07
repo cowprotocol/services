@@ -1,7 +1,9 @@
-use crate::settlement::{external_prices::ExternalPrices, Settlement};
-use num::BigRational;
-use number_conversions::u256_to_big_rational;
-use primitive_types::U256;
+use {
+    crate::settlement::{external_prices::ExternalPrices, Settlement},
+    num::BigRational,
+    number_conversions::u256_to_big_rational,
+    primitive_types::U256,
+};
 
 #[derive(Debug)]
 pub struct Inputs {

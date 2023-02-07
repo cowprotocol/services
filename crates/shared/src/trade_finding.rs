@@ -6,11 +6,13 @@ pub mod oneinch;
 pub mod paraswap;
 pub mod zeroex;
 
-use crate::{price_estimation::Query, rate_limiter::RateLimiterError};
-use contracts::ERC20;
-use ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256};
-use serde::Deserialize;
-use thiserror::Error;
+use {
+    crate::{price_estimation::Query, rate_limiter::RateLimiterError},
+    contracts::ERC20,
+    ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    serde::Deserialize,
+    thiserror::Error,
+};
 
 /// Find a trade for a token pair.
 ///
@@ -130,8 +132,7 @@ impl Clone for TradeError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn encode_trade_to_interactions() {

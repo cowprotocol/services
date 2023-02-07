@@ -1,7 +1,7 @@
 use crate::{
     boundary,
     domain::{competition, eth},
-    Ethereum,
+    infra::blockchain::Ethereum,
 };
 
 /// A transaction calling into our settlement contract on the blockchain.

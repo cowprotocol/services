@@ -1,6 +1,8 @@
-use hex_literal::hex;
-use primitive_types::{H160, U256};
-use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    hex_literal::hex,
+    primitive_types::{H160, U256},
+    shared::interaction::{EncodedInteraction, Interaction},
+};
 
 // vk: A simple contract I made with verified code on etherscan:
 // https://etherscan.io/address/0x5c2cD95CF750B8f8A4881d96F04bf571A07042B1

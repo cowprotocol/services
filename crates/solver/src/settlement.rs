@@ -1,25 +1,28 @@
 pub mod external_prices;
 mod settlement_encoder;
 
-use self::external_prices::ExternalPrices;
+use {
+    self::external_prices::ExternalPrices,
+    crate::{
+        encoding::{self, EncodedSettlement, EncodedTrade},
+        liquidity::Settleable,
+    },
+    anyhow::{ensure, Result},
+    itertools::Itertools,
+    model::order::{Order, OrderKind},
+    num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero},
+    primitive_types::{H160, U256},
+    shared::{
+        conversions::U256Ext as _,
+        http_solver::model::{InternalizationStrategy, SubmissionPreference},
+    },
+    std::{
+        collections::{HashMap, HashSet},
+        ops::{Mul, Sub},
+    },
+};
+
 pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, SettlementEncoder};
-use crate::{
-    encoding::{self, EncodedSettlement, EncodedTrade},
-    liquidity::Settleable,
-};
-use anyhow::{ensure, Result};
-use itertools::Itertools;
-use model::order::{Order, OrderKind};
-use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
-use primitive_types::{H160, U256};
-use shared::{
-    conversions::U256Ext as _,
-    http_solver::model::{InternalizationStrategy, SubmissionPreference},
-};
-use std::{
-    collections::{HashMap, HashSet},
-    ops::{Mul, Sub},
-};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
@@ -158,7 +161,8 @@ impl Trade {
         }
     }
 
-    /// Computes and returns the executed trade amounts given sell and buy prices.
+    /// Computes and returns the executed trade amounts given sell and buy
+    /// prices.
     pub fn executed_amounts(&self, sell_price: U256, buy_price: U256) -> Option<TradeExecution> {
         let order = &self.order.data;
         let (sell_amount, buy_amount) = match order.kind {
@@ -188,8 +192,8 @@ impl Trade {
 }
 
 impl Trade {
-    /// Encodes the settlement's order_trade as a tuple, as expected by the smart
-    /// contract.
+    /// Encodes the settlement's order_trade as a tuple, as expected by the
+    /// smart contract.
     pub fn encode(&self, sell_token_index: usize, buy_token_index: usize) -> EncodedTrade {
         encoding::encode_trade(
             &self.order.data,
@@ -341,7 +345,8 @@ impl Settlement {
         }
     }
 
-    // Checks whether the settlement prices do not deviate more than max_settlement_price_deviation from the auction prices on certain pairs.
+    // Checks whether the settlement prices do not deviate more than
+    // max_settlement_price_deviation from the auction prices on certain pairs.
     pub fn satisfies_price_checks(
         &self,
         solver_name: &str,
@@ -353,12 +358,15 @@ impl Settlement {
         {
             return true;
         }
-        // The following check is quadratic in run-time, although a similar check with linear run-time would also be possible.
-        // For the linear implementation, one would have to find a unique scaling factor that scales the external prices into
-        // the settlement prices. Though, this scaling factor is not easy to define, if reference tokens like ETH are missing.
+        // The following check is quadratic in run-time, although a similar check with
+        // linear run-time would also be possible. For the linear
+        // implementation, one would have to find a unique scaling factor that scales
+        // the external prices into the settlement prices. Though, this scaling
+        // factor is not easy to define, if reference tokens like ETH are missing.
         // Since the checks would heavily depend on this scaling factor, and its
-        // derivation is non-trivial, we decided to go for the implementation with quadratic run time. Settlements
-        // will not have enough tokens, such that the run-time is important.
+        // derivation is non-trivial, we decided to go for the implementation with
+        // quadratic run time. Settlements will not have enough tokens, such
+        // that the run-time is important.
         self
             .clearing_prices()
             .iter()
@@ -409,7 +417,8 @@ impl Settlement {
             })
     }
 
-    // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
+    // Computes the total scaled unsubsidized fee of all protocol trades (in wei
+    // ETH).
     pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.user_trades()
             .filter_map(|trade| {
@@ -421,7 +430,8 @@ impl Settlement {
             .sum()
     }
 
-    // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
+    // Computes the total scaled unsubsidized fee of all protocol trades (in wei
+    // ETH).
     pub fn total_unscaled_subsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.user_trades()
             .filter_map(|trade| {
@@ -472,9 +482,10 @@ impl Settlement {
     }
 }
 
-// The difference between what you were willing to sell (executed_amount * limit_price)
-// converted into reference token (multiplied by buy_token_price)
-// and what you had to sell denominated in the reference token (executed_amount * buy_token_price)
+// The difference between what you were willing to sell (executed_amount *
+// limit_price) converted into reference token (multiplied by buy_token_price)
+// and what you had to sell denominated in the reference token (executed_amount
+// * buy_token_price)
 fn buy_order_surplus(
     sell_token_price: &BigRational,
     buy_token_price: &BigRational,
@@ -494,9 +505,11 @@ fn buy_order_surplus(
     }
 }
 
-// The difference of your proceeds denominated in the reference token (executed_sell_amount * sell_token_price)
-// and what you were minimally willing to receive in buy tokens (executed_sell_amount * limit_price)
-// converted to amount in reference token at the effective price (multiplied by buy_token_price)
+// The difference of your proceeds denominated in the reference token
+// (executed_sell_amount * sell_token_price) and what you were minimally willing
+// to receive in buy tokens (executed_sell_amount * limit_price) converted to
+// amount in reference token at the effective price (multiplied by
+// buy_token_price)
 fn sell_order_surplus(
     sell_token_price: &BigRational,
     buy_token_price: &BigRational,
@@ -516,9 +529,10 @@ fn sell_order_surplus(
     }
 }
 
-/// Surplus Ratio represents the percentage difference of the executed price with the limit price.
-/// This is calculated for orders with a corresponding trade. This value is always non-negative
-/// since orders are contractually bound to be settled on or beyond their limit price.
+/// Surplus Ratio represents the percentage difference of the executed price
+/// with the limit price. This is calculated for orders with a corresponding
+/// trade. This value is always non-negative since orders are contractually
+/// bound to be settled on or beyond their limit price.
 fn surplus_ratio(
     sell_token_price: &BigRational,
     buy_token_price: &BigRational,
@@ -528,8 +542,9 @@ fn surplus_ratio(
     if buy_token_price.is_zero() || buy_amount_limit.is_zero() {
         return None;
     }
-    // We subtract 1 here to give the give the percent beyond limit price instead of the
-    // whole amount according to the definition of "surplus" (that which is more).
+    // We subtract 1 here to give the give the percent beyond limit price instead of
+    // the whole amount according to the definition of "surplus" (that which is
+    // more).
     let res = (sell_amount_limit * sell_token_price) / (buy_amount_limit * buy_token_price)
         - BigRational::one();
     if res.is_negative() {
@@ -540,12 +555,14 @@ fn surplus_ratio(
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
-    use maplit::hashmap;
-    use model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata};
-    use num::FromPrimitive;
-    use shared::addr;
+    use {
+        super::*,
+        crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices},
+        maplit::hashmap,
+        model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
+        num::FromPrimitive,
+        shared::addr,
+    };
 
     pub fn assert_settlement_encoded_with<L, S>(
         prices: HashMap<H160, U256>,
@@ -678,7 +695,8 @@ pub mod tests {
             hashmap! {token3 => BigInt::from(100000i32).into()},
         )
         .unwrap();
-        // Token3 from external price is not in settlement, hence, it should accept any price
+        // Token3 from external price is not in settlement, hence, it should accept any
+        // price
         assert!(settlement.satisfies_price_checks(
             "test_solver",
             &external_prices,
@@ -872,14 +890,16 @@ pub mod tests {
         // trade1: 100 - 100 = 0
         let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1]);
 
-        // If the external prices of the two tokens is the same, then both settlements are symmetric.
+        // If the external prices of the two tokens is the same, then both settlements
+        // are symmetric.
         let external_prices = externalprices! { native_token: token0, token1 => r(1) };
         assert_eq!(
             settlement0.total_surplus(&external_prices),
             settlement1.total_surplus(&external_prices)
         );
 
-        // If the external price of the first token is higher, then the first settlement is preferred.
+        // If the external price of the first token is higher, then the first settlement
+        // is preferred.
         let external_prices = externalprices! { native_token: token0, token1 => r(1)/r(2) };
 
         // Settlement0 gets the following normalized surpluses:
@@ -895,8 +915,9 @@ pub mod tests {
                 > settlement1.total_surplus(&external_prices)
         );
 
-        // If the external price of the second token is higher, then the second settlement is preferred.
-        // (swaps above normalized surpluses of settlement0 and settlement1)
+        // If the external price of the second token is higher, then the second
+        // settlement is preferred. (swaps above normalized surpluses of
+        // settlement0 and settlement1)
         let external_prices = externalprices! { native_token: token0, token1 => r(2) };
         assert!(
             settlement0.total_surplus(&external_prices)
@@ -946,8 +967,9 @@ pub mod tests {
     #[test]
     #[allow(clippy::just_underscores_and_digits)]
     fn test_buy_order_surplus() {
-        // Two goods are worth the same (100 each). If we were willing to pay up to 60 to receive 50,
-        // but ended paying the price (1) we have a surplus of 10 sell units, so a total surplus of 1000.
+        // Two goods are worth the same (100 each). If we were willing to pay up to 60
+        // to receive 50, but ended paying the price (1) we have a surplus of 10
+        // sell units, so a total surplus of 1000.
         assert_eq!(
             buy_order_surplus(&r(100), &r(100), &r(60), &r(50), &r(50)),
             Some(r(1000))
@@ -977,15 +999,15 @@ pub mod tests {
             None
         );
 
-        // Sell Token worth twice as much as buy token. If we were willing to sell at parity, we will
-        // have a surplus of 50% of tokens, worth 200 each.
+        // Sell Token worth twice as much as buy token. If we were willing to sell at
+        // parity, we will have a surplus of 50% of tokens, worth 200 each.
         assert_eq!(
             buy_order_surplus(&r(200), &r(100), &r(50), &r(50), &r(50)),
             Some(r(5000))
         );
 
-        // Buy Token worth twice as much as sell token. If we were willing to sell at 3:1, we will
-        // have a surplus of 20 sell tokens, worth 100 each.
+        // Buy Token worth twice as much as sell token. If we were willing to sell at
+        // 3:1, we will have a surplus of 20 sell tokens, worth 100 each.
         assert_eq!(
             buy_order_surplus(&r(100), &r(200), &r(60), &r(20), &r(20)),
             Some(r(2000))
@@ -995,8 +1017,9 @@ pub mod tests {
     #[test]
     #[allow(clippy::just_underscores_and_digits)]
     fn test_sell_order_surplus() {
-        // Two goods are worth the same (100 each). If we were willing to receive as little as 40,
-        // but ended paying the price (1) we have a surplus of 10 bought units, so a total surplus of 1000.
+        // Two goods are worth the same (100 each). If we were willing to receive as
+        // little as 40, but ended paying the price (1) we have a surplus of 10
+        // bought units, so a total surplus of 1000.
         assert_eq!(
             sell_order_surplus(&r(100), &r(100), &r(50), &r(40), &r(50)),
             Some(r(1000))
@@ -1026,15 +1049,15 @@ pub mod tests {
             None
         );
 
-        // Sell token worth twice as much as buy token. If we were willing to buy at parity, we will
-        // have a surplus of 100% of buy tokens, worth 100 each.
+        // Sell token worth twice as much as buy token. If we were willing to buy at
+        // parity, we will have a surplus of 100% of buy tokens, worth 100 each.
         assert_eq!(
             sell_order_surplus(&r(200), &r(100), &r(50), &r(50), &r(50)),
             Some(r(5000))
         );
 
-        // Buy Token worth twice as much as sell token. If we were willing to sell at 3:1, we will
-        // have a surplus of 10 buy tokens, worth 200 each.
+        // Buy Token worth twice as much as sell token. If we were willing to sell at
+        // 3:1, we will have a surplus of 10 buy tokens, worth 200 each.
         assert_eq!(
             sell_order_surplus(&r(100), &r(200), &r(60), &r(20), &r(60)),
             Some(r(2000))
@@ -1055,8 +1078,9 @@ pub mod tests {
 
         assert_eq!(surplus_ratio(&r(2), &r(1), &r(1), &r(1)), Some(r(1)));
 
-        // Two goods are worth the same (100 each). If we were willing to sell up to 60 to receive 50,
-        // but ended paying the price (1) we have a surplus of 10 sell units, so a total surplus of 1000.
+        // Two goods are worth the same (100 each). If we were willing to sell up to 60
+        // to receive 50, but ended paying the price (1) we have a surplus of 10
+        // sell units, so a total surplus of 1000.
         assert_eq!(
             surplus_ratio(&r(100), &r(100), &r(60), &r(50)),
             Some(BigRational::new(1.into(), 5.into())),
@@ -1068,12 +1092,12 @@ pub mod tests {
         // Arithmetic error when limit price not respected
         assert_eq!(surplus_ratio(&r(100), &r(100), &r(40), &r(50)), None);
 
-        // Sell Token worth twice as much as buy token. If we were willing to sell at parity, we will
-        // have a surplus of 50% of tokens, worth 200 each.
+        // Sell Token worth twice as much as buy token. If we were willing to sell at
+        // parity, we will have a surplus of 50% of tokens, worth 200 each.
         assert_eq!(surplus_ratio(&r(200), &r(100), &r(50), &r(50)), Some(r(1)));
 
-        // Buy Token worth twice as much as sell token. If we were willing to sell at 3:1, we will
-        // have a surplus of 20 sell tokens, worth 100 each.
+        // Buy Token worth twice as much as sell token. If we were willing to sell at
+        // 3:1, we will have a surplus of 20 sell tokens, worth 100 each.
         assert_eq!(
             surplus_ratio(&r(100), &r(200), &r(60), &r(20)),
             Some(BigRational::new(1.into(), 2.into()))

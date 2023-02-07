@@ -1,8 +1,10 @@
-use crate::{auction::AuctionId, Address, TransactionHash};
-use sqlx::{postgres::PgQueryResult, PgConnection};
+use {
+    crate::{auction::AuctionId, Address, TransactionHash},
+    sqlx::{postgres::PgQueryResult, PgConnection},
+};
 
-/// "upsert" because we might have previously unsuccessfully attempted to settle an auction with the
-/// same address-nonce.
+/// "upsert" because we might have previously unsuccessfully attempted to settle
+/// an auction with the same address-nonce.
 pub async fn upsert_auction_transaction(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -70,11 +72,11 @@ LIMIT 1
 
 #[cfg(test)]
 mod tests {
-    use sqlx::Connection;
-
-    use crate::events::{Event, EventIndex, Settlement};
-
-    use super::*;
+    use {
+        super::*,
+        crate::events::{Event, EventIndex, Settlement},
+        sqlx::Connection,
+    };
 
     fn is_duplicate_auction_id_error(err: &sqlx::Error) -> bool {
         match err {

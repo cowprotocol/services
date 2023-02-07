@@ -1,14 +1,18 @@
-use super::SettlementSimulating;
-use crate::settlement::Settlement;
-use shared::token_list::AutoUpdatingTokenList;
+use {
+    super::SettlementSimulating,
+    crate::settlement::Settlement,
+    shared::token_list::AutoUpdatingTokenList,
+};
 
-/// If a settlement only trades trusted tokens try to optimize it by trading with internal buffers.
+/// If a settlement only trades trusted tokens try to optimize it by trading
+/// with internal buffers.
 pub async fn optimize_buffer_usage(
     settlement: Settlement,
     market_makable_token_list: AutoUpdatingTokenList,
     settlement_simulator: &impl SettlementSimulating,
 ) -> Settlement {
-    // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
+    // We don't want to buy tokens that we don't trust. If no list is set, we settle
+    // with external liquidity.
     if !is_only_selling_trusted_tokens(&settlement, &market_makable_token_list) {
         return settlement;
     }
@@ -38,12 +42,14 @@ fn is_only_selling_trusted_tokens(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::Trade;
-    use maplit::hashmap;
-    use model::order::{Order, OrderData};
-    use primitive_types::H160;
-    use shared::token_list::Token;
+    use {
+        super::*,
+        crate::settlement::Trade,
+        maplit::hashmap,
+        model::order::{Order, OrderData},
+        primitive_types::H160,
+        shared::token_list::Token,
+    };
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {

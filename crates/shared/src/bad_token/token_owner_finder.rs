@@ -4,53 +4,61 @@ pub mod liquidity;
 pub mod solvers;
 pub mod token_owner_list;
 
-use self::{
-    blockscout::BlockscoutTokenOwnerFinder,
-    liquidity::{BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder},
-};
-use crate::{
-    arguments::duration_from_seconds,
-    bad_token::token_owner_finder::{
-        ethplorer::EthplorerTokenOwnerFinder,
-        solvers::{
-            solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+use {
+    self::{
+        blockscout::BlockscoutTokenOwnerFinder,
+        liquidity::{
+            BalancerVaultFinder,
+            FeeValues,
+            UniswapLikePairProviderFinder,
+            UniswapV3Finder,
         },
-        token_owner_list::TokenOwnerList,
     },
-    baseline_solver::BaseTokens,
-    ethcontract_error::EthcontractErrorType,
-    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
-    http_client::HttpClientFactory,
-    rate_limiter::RateLimitingStrategy,
-    sources::uniswap_v2::pair_provider::PairProvider,
-};
-use anyhow::{Context, Result};
-use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
-use ethcontract::U256;
-use futures::{Stream, StreamExt as _};
-use primitive_types::H160;
-use reqwest::Url;
-use std::{
-    collections::HashMap,
-    fmt::{self, Display, Formatter},
-    sync::Arc,
-    time::Duration,
+    crate::{
+        arguments::duration_from_seconds,
+        bad_token::token_owner_finder::{
+            ethplorer::EthplorerTokenOwnerFinder,
+            solvers::{
+                solver_api::SolverConfiguration,
+                solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+            },
+            token_owner_list::TokenOwnerList,
+        },
+        baseline_solver::BaseTokens,
+        ethcontract_error::EthcontractErrorType,
+        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+        http_client::HttpClientFactory,
+        rate_limiter::RateLimitingStrategy,
+        sources::uniswap_v2::pair_provider::PairProvider,
+    },
+    anyhow::{Context, Result},
+    contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20},
+    ethcontract::U256,
+    futures::{Stream, StreamExt as _},
+    primitive_types::H160,
+    reqwest::Url,
+    std::{
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+        time::Duration,
+    },
 };
 
-/// This trait abstracts various sources for proposing token owner candidates which are likely, but
-/// not guaranteed, to have some token balance.
+/// This trait abstracts various sources for proposing token owner candidates
+/// which are likely, but not guaranteed, to have some token balance.
 #[async_trait::async_trait]
 pub trait TokenOwnerProposing: Send + Sync {
     /// Find candidate addresses that might own the token.
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
 }
 
-/// To detect bad tokens we need to find some address on the network that owns the token so that we
-/// can use it in our simulations.
+/// To detect bad tokens we need to find some address on the network that owns
+/// the token so that we can use it in our simulations.
 #[async_trait::async_trait]
 pub trait TokenOwnerFinding: Send + Sync {
-    /// Find an addresses with at least `min_balance` of tokens and return it, along with its
-    /// actual balance.
+    /// Find an addresses with at least `min_balance` of tokens and return it,
+    /// along with its actual balance.
     async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>>;
 }
 
@@ -62,12 +70,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true, value_enum)]
     pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
 
-    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
-    /// detection.
+    /// The fee value strategy to use for locating Uniswap V3 pools as token
+    /// holders for bad token detection.
     #[clap(long, env, default_value = "static", value_enum)]
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
-    /// Override the Blockscout token owner finder-specific timeout configuration.
+    /// Override the Blockscout token owner finder-specific timeout
+    /// configuration.
     #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
@@ -75,8 +84,8 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethplorer_api_key: Option<String>,
 
-    /// Token owner finding rate limiting strategy. See --price-estimation-rate-limiter
-    /// documentation for format details.
+    /// Token owner finding rate limiting strategy. See
+    /// --price-estimation-rate-limiter documentation for format details.
     #[clap(long, env)]
     pub token_owner_finder_rate_limiter: Option<RateLimitingStrategy>,
 
@@ -94,8 +103,9 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub solver_token_owners_urls: Vec<Url>,
 
-    /// Interval in seconds between consecutive queries to update the solver token owner pairs.
-    /// Values should be in pair with `solver_token_owners_urls`
+    /// Interval in seconds between consecutive queries to update the solver
+    /// token owner pairs. Values should be in pair with
+    /// `solver_token_owners_urls`
     #[clap(long, env, use_value_delimiter = true, value_parser = duration_from_seconds)]
     pub solver_token_owners_cache_update_intervals: Vec<Duration>,
 }
@@ -258,8 +268,8 @@ pub async fn init(
     Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
 }
 
-/// A `TokenOwnerFinding` implementation that queries a node with proposed owner candidates from an
-/// internal list of `TokenOwnerProposing` implementations.
+/// A `TokenOwnerFinding` implementation that queries a node with proposed owner
+/// candidates from an internal list of `TokenOwnerProposing` implementations.
 pub struct TokenOwnerFinder {
     pub web3: Web3,
     pub proposers: Vec<Arc<dyn TokenOwnerProposing>>,
@@ -292,8 +302,9 @@ impl TokenOwnerFinding for TokenOwnerFinder {
     async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>> {
         let instance = ERC20::at(&self.web3, token);
 
-        // We use a stream with ready_chunks so that we can start with the addresses of fast
-        // TokenOwnerFinding implementations first without having to wait for slow ones.
+        // We use a stream with ready_chunks so that we can start with the addresses of
+        // fast TokenOwnerFinding implementations first without having to wait
+        // for slow ones.
         let stream = self.candidate_owners(token).ready_chunks(MAX_BATCH_SIZE);
         futures::pin_mut!(stream);
 

@@ -2,33 +2,42 @@ mod dry_run;
 pub mod gelato;
 pub mod submitter;
 
-use crate::{
-    metrics::SettlementSubmissionOutcome, settlement::Settlement,
-    settlement_access_list::AccessListEstimating,
+use {
+    self::gelato::GelatoSubmitter,
+    crate::{
+        metrics::SettlementSubmissionOutcome,
+        settlement::Settlement,
+        settlement_access_list::AccessListEstimating,
+    },
+    anyhow::{anyhow, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{
+        errors::{ExecutionError, MethodError},
+        Account,
+        Address,
+        TransactionHash,
+    },
+    futures::FutureExt,
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    primitive_types::{H256, U256},
+    shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference},
+    std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    },
+    submitter::{
+        DisabledReason,
+        Strategy,
+        Submitter,
+        SubmitterGasPriceEstimator,
+        SubmitterParams,
+        TransactionHandle,
+        TransactionSubmitting,
+    },
+    tracing::Instrument,
+    web3::types::TransactionReceipt,
 };
-use anyhow::{anyhow, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{
-    errors::{ExecutionError, MethodError},
-    Account, Address, TransactionHash,
-};
-use futures::FutureExt;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use primitive_types::{H256, U256};
-use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
-use submitter::{
-    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
-    TransactionHandle, TransactionSubmitting,
-};
-use tracing::Instrument;
-use web3::types::TransactionReceipt;
-
-use self::gelato::GelatoSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
@@ -61,8 +70,8 @@ impl GlobalTxPool {
     }
 }
 
-/// Currently used to access only specific sub tx pool (indexed one) in the list of pools.
-/// Can be used to access other sub tx pools if needed.
+/// Currently used to access only specific sub tx pool (indexed one) in the list
+/// of pools. Can be used to access other sub tx pools if needed.
 #[derive(Default, Clone)]
 pub struct SubTxPoolRef {
     pools: TxPool,
@@ -414,9 +423,7 @@ impl From<MethodError> for SubmissionError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::H256;
-    use submitter::MockTransactionSubmitting;
+    use {super::*, ethcontract::H256, submitter::MockTransactionSubmitting};
 
     impl PartialEq for SubmissionError {
         fn eq(&self, other: &Self) -> bool {

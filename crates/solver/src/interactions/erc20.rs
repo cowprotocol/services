@@ -1,9 +1,11 @@
 //! Module continaing ERC20 token interaction implementations.
 
-use contracts::ERC20;
-use ethcontract::Bytes;
-use primitive_types::{H160, U256};
-use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    contracts::ERC20,
+    ethcontract::Bytes,
+    primitive_types::{H160, U256},
+    shared::interaction::{EncodedInteraction, Interaction},
+};
 
 #[derive(Debug)]
 pub struct Erc20ApproveInteraction {
@@ -28,9 +30,7 @@ impl Interaction for Erc20ApproveInteraction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use shared::dummy_contract;
+    use {super::*, hex_literal::hex, shared::dummy_contract};
 
     #[test]
     fn encode_erc20_approve() {

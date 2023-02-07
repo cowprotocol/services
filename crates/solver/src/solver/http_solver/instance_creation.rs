@@ -1,28 +1,30 @@
-use super::{
-    buffers::{BufferRetrievalError, BufferRetrieving},
-    settlement::SettlementContext,
-};
-use crate::{
-    liquidity::{Exchange, LimitOrder, Liquidity},
-    settlement::external_prices::ExternalPrices,
-};
-use anyhow::{Context, Result};
-use ethcontract::{errors::ExecutionError, U256};
-use itertools::{Either, Itertools as _};
-use maplit::{btreemap, hashset};
-use model::{auction::AuctionId, order::OrderKind};
-use num::{BigInt, BigRational};
-use primitive_types::H160;
-use shared::{
-    http_solver::{gas_model::GasModel, model::*},
-    sources::balancer_v2::pools::common::compute_scaling_rate,
-    token_info::{TokenInfo, TokenInfoFetching},
-    token_list::AutoUpdatingTokenList,
-};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    iter::FromIterator as _,
-    sync::Arc,
+use {
+    super::{
+        buffers::{BufferRetrievalError, BufferRetrieving},
+        settlement::SettlementContext,
+    },
+    crate::{
+        liquidity::{Exchange, LimitOrder, Liquidity},
+        settlement::external_prices::ExternalPrices,
+    },
+    anyhow::{Context, Result},
+    ethcontract::{errors::ExecutionError, U256},
+    itertools::{Either, Itertools as _},
+    maplit::{btreemap, hashset},
+    model::{auction::AuctionId, order::OrderKind},
+    num::{BigInt, BigRational},
+    primitive_types::H160,
+    shared::{
+        http_solver::{gas_model::GasModel, model::*},
+        sources::balancer_v2::pools::common::compute_scaling_rate,
+        token_info::{TokenInfo, TokenInfoFetching},
+        token_list::AutoUpdatingTokenList,
+    },
+    std::{
+        collections::{BTreeMap, HashMap, HashSet},
+        iter::FromIterator as _,
+        sync::Arc,
+    },
 };
 
 pub struct Instances {
@@ -100,10 +102,11 @@ impl InstanceCreator {
             })
             .collect();
 
-        // We are guaranteed to have price estimates for all tokens that are relevant to the
-        // objective value by the driver. It is possible that we have AMM pools that contain tokens
-        // that are not any order's tokens. We used to fetch these extra prices but it would often
-        // slow down the solver and the solver can estimate them on its own.
+        // We are guaranteed to have price estimates for all tokens that are relevant to
+        // the objective value by the driver. It is possible that we have AMM
+        // pools that contain tokens that are not any order's tokens. We used to
+        // fetch these extra prices but it would often slow down the solver and
+        // the solver can estimate them on its own.
         let price_estimates = external_prices.into_http_solver_prices();
 
         let gas_model = GasModel {
@@ -111,8 +114,8 @@ impl InstanceCreator {
             gas_price,
         };
 
-        // Some solvers require that there are no isolated islands of orders whose tokens are
-        // unconnected to the native token.
+        // Some solvers require that there are no isolated islands of orders whose
+        // tokens are unconnected to the native token.
         let fee_connected_tokens: HashSet<H160> =
             compute_fee_connected_tokens(&amms, self.native_token);
         let filtered_order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
@@ -359,8 +362,8 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
 }
 
 fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> HashSet<H160> {
-    // Find all tokens that are connected through potentially multiple amm hops to the fee.
-    // TODO: Replace with a more optimal graph algorithm.
+    // Find all tokens that are connected through potentially multiple amm hops to
+    // the fee. TODO: Replace with a more optimal graph algorithm.
     let mut pairs = liquidity
         .iter()
         .flat_map(|amm| amm.all_token_pairs())
@@ -399,14 +402,16 @@ fn is_transaction_failure(error: &ExecutionError) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder},
-        settlement::external_prices::externalprices,
-        solver::http_solver::buffers::MockBufferRetrieving,
+    use {
+        super::*,
+        crate::{
+            liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder},
+            settlement::external_prices::externalprices,
+            solver::http_solver::buffers::MockBufferRetrieving,
+        },
+        model::TokenPair,
+        shared::token_info::MockTokenInfoFetching,
     };
-    use model::TokenPair;
-    use shared::token_info::MockTokenInfoFetching;
 
     #[tokio::test]
     async fn remove_orders_without_native_connection_() {

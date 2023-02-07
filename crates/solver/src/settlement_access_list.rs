@@ -1,26 +1,28 @@
-use anyhow::{anyhow, Context, Result};
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Account, H160, H256};
-use futures::future::try_join_all;
-use itertools::Itertools;
-use model::order::BUY_ETH_ADDRESS;
-use serde::Deserialize;
-use shared::{
-    addr,
-    code_fetching::CodeFetching,
-    ethrpc::Web3,
-    tenderly_api::{self, SimulationRequest, TenderlyApi},
+use {
+    crate::{settlement::Settlement, settlement_simulation::tenderly_link},
+    anyhow::{anyhow, Context, Result},
+    ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Account, H160, H256},
+    futures::future::try_join_all,
+    itertools::Itertools,
+    model::order::BUY_ETH_ADDRESS,
+    serde::Deserialize,
+    shared::{
+        addr,
+        code_fetching::CodeFetching,
+        ethrpc::Web3,
+        tenderly_api::{self, SimulationRequest, TenderlyApi},
+    },
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
+    web3::{
+        helpers,
+        types::{AccessList, AccessListItem, Bytes, CallRequest},
+        BatchTransport,
+        Transport,
+    },
 };
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
-use web3::{
-    helpers,
-    types::{AccessList, AccessListItem, Bytes, CallRequest},
-    BatchTransport, Transport,
-};
-
-use crate::{settlement::Settlement, settlement_simulation::tenderly_link};
 
 #[async_trait::async_trait]
 pub trait AccessListEstimating: Send + Sync {
@@ -45,19 +47,21 @@ pub trait AccessListEstimating: Send + Sync {
     ) -> Result<Vec<Result<AccessList>>>;
 }
 
-/// Does access list estimation for a transaction interacting with our settlement contract. In
-/// particular, our settlement contract will fail if the receiver is a smart contract. Because of
-/// this, if the receiver is a smart contract and we try to estimate the access list, the access
-/// list estimation will also fail.
+/// Does access list estimation for a transaction interacting with our
+/// settlement contract. In particular, our settlement contract will fail if the
+/// receiver is a smart contract. Because of this, if the receiver is a smart
+/// contract and we try to estimate the access list, the access list estimation
+/// will also fail.
 ///
-/// The reason why this failure happens is because the Ethereum protocol sets a hard gas limit on
-/// transferring ETH into a smart contract, which some contracts exceed unless the access list is
-/// already specified.
+/// The reason why this failure happens is because the Ethereum protocol sets a
+/// hard gas limit on transferring ETH into a smart contract, which some
+/// contracts exceed unless the access list is already specified.
 ///
-/// The solution is to do access list estimation in two steps: first, simulate moving 1 wei
-/// into every smart contract to get a partial access list, and then simulate the full access list,
-/// passing the partial access list into the simulation. This way the settlement contract does not
-/// fail, and hence the full access list estimation also does not fail.
+/// The solution is to do access list estimation in two steps: first, simulate
+/// moving 1 wei into every smart contract to get a partial access list, and
+/// then simulate the full access list, passing the partial access list into the
+/// simulation. This way the settlement contract does not fail, and hence the
+/// full access list estimation also does not fail.
 pub async fn estimate_settlement_access_list(
     estimator: &dyn AccessListEstimating,
     code_fetcher: &dyn CodeFetching,
@@ -186,7 +190,8 @@ impl AccessListEstimating for NodeAccessList {
             })
             .collect::<Vec<_>>();
 
-        // send_batch guarantees the size and order of the responses to match the requests
+        // send_batch guarantees the size and order of the responses to match the
+        // requests
         let mut batch_response = self
             .web3
             .transport()
@@ -281,11 +286,13 @@ fn resolve_call_request(tx: &TransactionBuilder<DynTransport>) -> Result<(H160, 
 }
 
 // this function should remove duplicates and elements that are not useful
-// currently only eliminating addresses and storages with value '1', that should probably represent the address of the
-// precompiled contract for signature recovery: https://github.com/ethereum/go-ethereum/blob/70da74e73a182620a09bb0cfbff173e6d65d0518/core/vm/contracts.go#L84
-// for some reason it happens that access list estimators return this address, but when this address is used as part of the transaction, it does not lower
-// the overall gas usage of the transaction, it increases it (might be a bug in node clients that became a consensys).
-// should be updated continually as we learn more about the imperfections of 3rd party access_list calculators
+// currently only eliminating addresses and storages with value '1', that should
+// probably represent the address of the precompiled contract for signature recovery: https://github.com/ethereum/go-ethereum/blob/70da74e73a182620a09bb0cfbff173e6d65d0518/core/vm/contracts.go#L84
+// for some reason it happens that access list estimators return this address,
+// but when this address is used as part of the transaction, it does not lower
+// the overall gas usage of the transaction, it increases it (might be a bug in
+// node clients that became a consensys). should be updated continually as we
+// learn more about the imperfections of 3rd party access_list calculators
 #[allow(dead_code)]
 fn filter_access_list(access_list: AccessList) -> AccessList {
     access_list
@@ -304,8 +311,8 @@ fn filter_access_list(access_list: AccessList) -> AccessList {
         .collect()
 }
 
-/// Contains multiple estimators, and uses them one by one until the first of them returns successful result.
-/// Also does the filtering of the access list
+/// Contains multiple estimators, and uses them one by one until the first of
+/// them returns successful result. Also does the filtering of the access list
 pub struct PriorityAccessListEstimating {
     estimators: Vec<Box<dyn AccessListEstimating>>,
 }
@@ -380,13 +387,15 @@ pub fn create_priority_estimator(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::{Account, H160};
-    use hex_literal::hex;
-    use serde_json::json;
-    use shared::{
-        ethrpc::{create_env_test_transport, Web3},
-        tenderly_api::TenderlyHttpApi,
+    use {
+        super::*,
+        ethcontract::{Account, H160},
+        hex_literal::hex,
+        serde_json::json,
+        shared::{
+            ethrpc::{create_env_test_transport, Web3},
+            tenderly_api::TenderlyHttpApi,
+        },
     };
 
     fn example_tx() -> TransactionBuilder<DynTransport> {

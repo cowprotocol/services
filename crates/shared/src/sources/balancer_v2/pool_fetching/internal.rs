@@ -1,13 +1,17 @@
 //! Module providing an internal interface to enable composing pool fetching
 //! strategies.
 
-use crate::{
-    maintenance::Maintaining, recent_block_cache::Block, sources::balancer_v2::pools::Pool,
+use {
+    crate::{
+        maintenance::Maintaining,
+        recent_block_cache::Block,
+        sources::balancer_v2::pools::Pool,
+    },
+    anyhow::Result,
+    ethcontract::H256,
+    model::TokenPair,
+    std::collections::HashSet,
 };
-use anyhow::Result;
-use ethcontract::H256;
-use model::TokenPair;
-use std::collections::HashSet;
 
 /// An internal trait implementing the required methods for implementing pool
 /// fetching.

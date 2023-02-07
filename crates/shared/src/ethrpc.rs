@@ -5,14 +5,16 @@ pub mod http;
 pub mod mock;
 pub mod multicall;
 
-use self::{buffered::BufferedTransport, http::HttpTransport};
-use crate::{arguments::duration_from_seconds, http_client::HttpClientFactory};
-use ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport};
-use reqwest::{Client, Url};
-use std::{
-    fmt::{self, Display, Formatter},
-    num::NonZeroUsize,
-    time::Duration,
+use {
+    self::{buffered::BufferedTransport, http::HttpTransport},
+    crate::{arguments::duration_from_seconds, http_client::HttpClientFactory},
+    ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
+    reqwest::{Client, Url},
+    std::{
+        fmt::{self, Display, Formatter},
+        num::NonZeroUsize,
+        time::Duration,
+    },
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
@@ -25,7 +27,8 @@ pub type Web3CallBatch = CallBatch<Web3Transport>;
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
-    /// Maximum batch size for Ethereum RPC requests. Use '0' to disable batching.
+    /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
+    /// batching.
     #[clap(long, env, default_value = "100")]
     pub ethrpc_max_batch_size: usize,
 
@@ -34,8 +37,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10")]
     pub ethrpc_max_concurrent_requests: usize,
 
-    /// Buffering "nagle" delay to wait for additional requests before sending out
-    /// an incomplete batch.
+    /// Buffering "nagle" delay to wait for additional requests before sending
+    /// out an incomplete batch.
     #[clap(long, env, value_parser = duration_from_seconds, default_value = "0")]
     pub ethrpc_batch_delay: Duration,
 }

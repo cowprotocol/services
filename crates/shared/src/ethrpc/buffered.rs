@@ -1,20 +1,22 @@
 //! A buffered `Transport` implementation that automatically groups JSON RPC
 //! requests into batches.
 
-use super::MAX_BATCH_SIZE;
-use ethcontract::{
-    jsonrpc::Call,
-    web3::{BatchTransport, Error as Web3Error, RequestId, Transport},
+use {
+    super::MAX_BATCH_SIZE,
+    ethcontract::{
+        jsonrpc::Call,
+        web3::{BatchTransport, Error as Web3Error, RequestId, Transport},
+    },
+    futures::{
+        channel::{mpsc, oneshot},
+        future::{self, BoxFuture, FutureExt as _},
+        stream::{self, FusedStream, Stream, StreamExt as _},
+    },
+    serde_json::Value,
+    std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
+    tokio::task::JoinHandle,
+    tracing::Instrument as _,
 };
-use futures::{
-    channel::{mpsc, oneshot},
-    future::{self, BoxFuture, FutureExt as _},
-    stream::{self, FusedStream, Stream, StreamExt as _},
-};
-use serde_json::Value;
-use std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration};
-use tokio::task::JoinHandle;
-use tracing::Instrument as _;
 
 /// Buffered transport configuration.
 pub struct Configuration {
@@ -225,11 +227,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::mock::MockTransport;
-    use ethcontract::{Web3, U256};
-    use mockall::predicate;
-    use serde_json::json;
+    use {
+        super::*,
+        crate::ethrpc::mock::MockTransport,
+        ethcontract::{Web3, U256},
+        mockall::predicate,
+        serde_json::json,
+    };
 
     #[tokio::test]
     async fn batches_calls_when_joining() {
