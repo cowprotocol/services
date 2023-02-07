@@ -105,10 +105,12 @@ pub enum Score {
     /// The score is provided by the solver.
     #[serde(rename = "score")]
     Solver(f64),
-    /// The score is calculated by the protocol (and equal to the objective function).
+    /// The score is calculated by the protocol (and equal to the objective
+    /// function).
     #[serde(rename = "scoreProtocol")]
     Protocol(f64),
-    /// The score is calculated by the protocol, by applying a discount to the `Self::Protocol` value.
+    /// The score is calculated by the protocol, by applying a discount to the
+    /// `Self::Protocol` value.
     #[serde(rename = "scoreDiscounted")]
     Discounted(f64),
 }
