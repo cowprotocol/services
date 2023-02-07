@@ -1,8 +1,7 @@
 use {
     crate::{
         domain,
-        infra::{self, liquidity, time, Ethereum, Mempool, Simulator},
-        solver::Solver,
+        infra::{self, liquidity, solver::Solver, time, Ethereum, Mempool, Simulator},
     },
     error::Error,
     futures::Future,

@@ -1,28 +1,34 @@
-//! This module is responsible for associating auction ids with transaction hashes.
+//! This module is responsible for associating auction ids with transaction
+//! hashes.
 //!
 //! see database/sql/V037__auction_transaction.sql
 //!
-//! When we put settlement transactions on chain there is no reliable way to know the transaction
-//! hash because we can create multiple transactions with different gas prices. What we do know is
-//! the account and nonce that the transaction will have which is enough to uniquely identify it.
+//! When we put settlement transactions on chain there is no reliable way to
+//! know the transaction hash because we can create multiple transactions with
+//! different gas prices. What we do know is the account and nonce that the
+//! transaction will have which is enough to uniquely identify it.
 //!
-//! We build an association between account-nonce and tx hash by backfilling settlement events with
-//! the account and nonce of their tx hash. This happens in an always running background task.
+//! We build an association between account-nonce and tx hash by backfilling
+//! settlement events with the account and nonce of their tx hash. This happens
+//! in an always running background task.
 //!
-//! Alternatively we could change the event insertion code to do this but I (vk) would like to keep
-//! that code as fast as possible to not slow down event insertion which also needs to deal with
-//! reorgs. It is also nicer from a code organization standpoint.
+//! Alternatively we could change the event insertion code to do this but I (vk)
+//! would like to keep that code as fast as possible to not slow down event
+//! insertion which also needs to deal with reorgs. It is also nicer from a code
+//! organization standpoint.
 
-use std::time::Duration;
-
-use anyhow::{anyhow, Context, Result};
-use primitive_types::H256;
-use shared::{
-    current_block::CurrentBlockStream, ethrpc::Web3, event_handling::MAX_REORG_BLOCK_COUNT,
+use {
+    crate::database::Postgres,
+    anyhow::{anyhow, Context, Result},
+    primitive_types::H256,
+    shared::{
+        current_block::CurrentBlockStream,
+        ethrpc::Web3,
+        event_handling::MAX_REORG_BLOCK_COUNT,
+    },
+    std::time::Duration,
+    web3::types::TransactionId,
 };
-use web3::types::TransactionId;
-
-use crate::database::Postgres;
 
 pub struct AuctionTransactionUpdater {
     pub web3: Web3,
@@ -92,14 +98,12 @@ impl AuctionTransactionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sqlx::Executor;
-    use std::sync::Arc;
+    use {super::*, sqlx::Executor, std::sync::Arc};
 
     #[tokio::test]
     #[ignore]
     async fn manual_node_test() {
-        shared::tracing::initialize_for_tests("autopilot=trace");
+        shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new("postgresql://").await.unwrap();
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();

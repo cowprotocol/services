@@ -1,5 +1,7 @@
-use crate::{auction::AuctionId, TransactionHash};
-use sqlx::{types::JsonValue, PgConnection};
+use {
+    crate::{auction::AuctionId, TransactionHash},
+    sqlx::{types::JsonValue, PgConnection},
+};
 
 pub async fn save(
     ex: &mut PgConnection,
@@ -57,13 +59,15 @@ WHERE s.tx_hash = $1
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement},
-        Address,
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            events::{Event, EventIndex, Settlement},
+            Address,
+        },
+        sqlx::Connection,
     };
-    use sqlx::Connection;
 
     #[tokio::test]
     #[ignore]
@@ -98,8 +102,8 @@ mod tests {
         // no hash because hash columns isn't used to find it
         assert!(value_by_id.tx_hash.is_none());
 
-        // Fails because the tx_hash stored directly in the solver_competitions table is no longer
-        // used to look the competition up.
+        // Fails because the tx_hash stored directly in the solver_competitions table is
+        // no longer used to look the competition up.
         assert!(load_by_tx_hash(&mut db, &hash).await.unwrap().is_none());
 
         // Now insert the proper settlement event and account-nonce.

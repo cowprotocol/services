@@ -1,8 +1,10 @@
 //! Serve a solver engine API.
 
-use crate::domain::baseline;
-use std::{future::Future, net::SocketAddr, sync::Arc};
-use tokio::sync::oneshot;
+use {
+    crate::domain::baseline,
+    std::{future::Future, net::SocketAddr, sync::Arc},
+    tokio::sync::oneshot,
+};
 
 pub mod dto;
 

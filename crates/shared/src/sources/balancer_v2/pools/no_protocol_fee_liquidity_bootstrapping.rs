@@ -1,16 +1,19 @@
 //! Module implementing liquidity bootstrapping (with no protocol fees) pool
 //! specific indexing logic.
 
-pub use super::liquidity_bootstrapping::{PoolInfo, PoolState};
-use super::{common, FactoryIndexing};
-use crate::ethrpc::Web3CallBatch;
-use anyhow::Result;
-use contracts::{
-    BalancerV2LiquidityBootstrappingPoolFactory,
-    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+use {
+    super::{common, FactoryIndexing},
+    crate::ethrpc::Web3CallBatch,
+    anyhow::Result,
+    contracts::{
+        BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+    },
+    ethcontract::BlockId,
+    futures::future::BoxFuture,
 };
-use ethcontract::BlockId;
-use futures::future::BoxFuture;
+
+pub use super::liquidity_bootstrapping::{PoolInfo, PoolState};
 
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {

@@ -1,5 +1,4 @@
-use crate::domain::eth;
-use ethereum_types::U256;
+use {crate::domain::eth, ethereum_types::U256};
 
 /// A 0x-like foreign limit order.
 #[derive(Clone, Debug)]

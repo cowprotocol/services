@@ -1,10 +1,7 @@
 pub mod solver_api;
 pub mod solver_finder;
 
-use std::collections::HashMap;
-
-use anyhow::Result;
-use ethcontract::H160;
+use {anyhow::Result, ethcontract::H160, std::collections::HashMap};
 
 type Token = H160;
 type Owner = H160;

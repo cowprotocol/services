@@ -1,4 +1,7 @@
-use crate::{domain::eth, infra::blockchain, Ethereum};
+use crate::{
+    domain::eth,
+    infra::blockchain::{self, Ethereum},
+};
 
 pub mod tenderly;
 

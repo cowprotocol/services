@@ -1,9 +1,11 @@
-use crate::orderbook::Orderbook;
-use anyhow::Result;
-use reqwest::StatusCode;
-use shared::api::ApiReply;
-use std::{convert::Infallible, sync::Arc};
-use warp::{reply::with_status, Filter, Rejection};
+use {
+    crate::orderbook::Orderbook,
+    anyhow::Result,
+    reqwest::StatusCode,
+    shared::api::ApiReply,
+    std::{convert::Infallible, sync::Arc},
+    warp::{reply::with_status, Filter, Rejection},
+};
 
 fn get_auction_request() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("v1" / "auction").and(warp::get())

@@ -6,9 +6,10 @@
 
 mod baseline;
 
-use crate::cli;
-use reqwest::Url;
-use tokio::{sync::oneshot, task::JoinHandle};
+use {
+    reqwest::Url,
+    tokio::{sync::oneshot, task::JoinHandle},
+};
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {
@@ -19,13 +20,21 @@ pub struct SolverEngine {
 impl SolverEngine {
     /// Creates a new solver engine handle for the specified command
     /// configuration.
-    pub async fn new(command: cli::Command) -> Self {
-        let arguments = cli::Arguments {
-            addr: "127.0.0.1:0".parse().unwrap(),
-        };
+    pub async fn new(command: String, config: String) -> Self {
         let (bind, bind_receiver) = oneshot::channel();
 
-        let handle = tokio::spawn(async move { crate::run(arguments, command, Some(bind)).await });
+        let handle = tokio::spawn(crate::run(
+            vec![
+                "/test/solvers/path".to_owned(),
+                "--addr".to_owned(),
+                "0.0.0.0:0".to_owned(),
+                "--config".to_owned(),
+                config,
+                command,
+            ]
+            .into_iter(),
+            Some(bind),
+        ));
 
         let addr = bind_receiver.await.unwrap();
         let url = format!("http://{addr}/").parse().unwrap();

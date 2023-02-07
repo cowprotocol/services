@@ -1,14 +1,16 @@
-use chrono::{DateTime, Utc};
-use ethcontract::{futures::FutureExt, Account, Address, U256};
-use lazy_static::lazy_static;
-use shared::ethrpc::{create_test_transport, Web3};
-use std::{
-    fmt::Debug,
-    future::Future,
-    panic::{self, AssertUnwindSafe},
-    sync::Mutex,
+use {
+    chrono::{DateTime, Utc},
+    ethcontract::{futures::FutureExt, Account, Address, U256},
+    lazy_static::lazy_static,
+    shared::ethrpc::{create_test_transport, Web3},
+    std::{
+        fmt::Debug,
+        future::Future,
+        panic::{self, AssertUnwindSafe},
+        sync::Mutex,
+    },
+    web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-use web3::{api::Namespace, helpers::CallFuture, Transport};
 
 lazy_static! {
     static ref NODE_MUTEX: Mutex<()> = Mutex::new(());
@@ -137,6 +139,9 @@ impl AccountAssigner {
     }
 
     pub fn assign_free_account(&mut self) -> Account {
-        self.free_accounts.pop().expect("No testing accounts available, consider increasing the number of testing account in the test node")
+        self.free_accounts.pop().expect(
+            "No testing accounts available, consider increasing the number of testing account in \
+             the test node",
+        )
     }
 }

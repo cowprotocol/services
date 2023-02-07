@@ -4,9 +4,11 @@
 //! like alert when gas prices get too high as well as detect spikes and other
 //! anomalies.
 
-use anyhow::Result;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use std::time::Duration;
+use {
+    anyhow::Result,
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    std::time::Duration,
+};
 
 /// An instrumented gas price estimator that wraps an inner one.
 pub struct InstrumentedGasEstimator<T> {

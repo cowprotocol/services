@@ -1,14 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
-    time::Duration,
+use {
+    anyhow::Result,
+    ethcontract::H160,
+    reqwest::Client,
+    serde::Deserialize,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, RwLock},
+        time::Duration,
+    },
+    tracing::Instrument,
 };
-
-use anyhow::Result;
-use ethcontract::H160;
-use reqwest::Client;
-use serde::Deserialize;
-use tracing::Instrument;
 
 #[derive(Clone, Debug, Default)]
 pub struct TokenListConfiguration {

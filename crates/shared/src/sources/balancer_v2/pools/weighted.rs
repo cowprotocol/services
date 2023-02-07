@@ -1,18 +1,20 @@
 //! Module implementing weighted pool specific indexing logic.
 
-use super::{common, FactoryIndexing, PoolIndexing};
-use crate::{
-    ethrpc::Web3CallBatch,
-    sources::balancer_v2::{
-        graph_api::{PoolData, PoolType},
-        swap::fixed_point::Bfp,
+use {
+    super::{common, FactoryIndexing, PoolIndexing},
+    crate::{
+        ethrpc::Web3CallBatch,
+        sources::balancer_v2::{
+            graph_api::{PoolData, PoolType},
+            swap::fixed_point::Bfp,
+        },
     },
+    anyhow::{anyhow, Result},
+    contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory},
+    ethcontract::{BlockId, H160},
+    futures::{future::BoxFuture, FutureExt as _},
+    std::collections::BTreeMap,
 };
-use anyhow::{anyhow, Result};
-use contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory};
-use ethcontract::{BlockId, H160};
-use futures::{future::BoxFuture, FutureExt as _};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -101,12 +103,14 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::graph_api::Token;
-    use ethcontract::{H160, H256};
-    use ethcontract_mock::Mock;
-    use futures::future;
-    use maplit::btreemap;
+    use {
+        super::*,
+        crate::sources::balancer_v2::graph_api::Token,
+        ethcontract::{H160, H256},
+        ethcontract_mock::Mock,
+        futures::future,
+        maplit::btreemap,
+    };
 
     #[test]
     fn convert_graph_pool_to_weighted_pool_info() {

@@ -1,20 +1,25 @@
-use crate::{
-    onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-    services::{
-        create_orderbook_api, setup_naive_solver_uniswapv2_driver, wait_for_solvable_orders,
-        OrderbookServices, API_HOST,
+use {
+    crate::{
+        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+        services::{
+            create_orderbook_api,
+            setup_naive_solver_uniswapv2_driver,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
+        tx,
     },
-    tx,
+    ethcontract::prelude::{Account, Address, PrivateKey, U256},
+    model::{
+        order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
+        signature::EcdsaSigningScheme,
+    },
+    secp256k1::SecretKey,
+    serde_json::json,
+    shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining},
+    web3::signing::SecretKeyRef,
 };
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use model::{
-    order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
-    signature::EcdsaSigningScheme,
-};
-use secp256k1::SecretKey;
-use serde_json::json;
-use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
-use web3::signing::SecretKeyRef;
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
 const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
@@ -28,7 +33,7 @@ async fn local_node_eth_integration() {
 }
 
 async fn eth_integration(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 

@@ -1,7 +1,4 @@
-use std::ops::Range;
-
-use anyhow::Context;
-use primitive_types::H256;
+use {anyhow::Context, primitive_types::H256, std::ops::Range};
 
 impl super::Postgres {
     pub async fn recent_settlement_tx_hashes(

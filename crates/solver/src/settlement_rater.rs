@@ -1,34 +1,41 @@
-use crate::{
-    driver::solver_settlements::RatedSettlement,
-    settlement::{external_prices::ExternalPrices, Settlement},
-    settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
-    settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+use {
+    crate::{
+        driver::solver_settlements::RatedSettlement,
+        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
+        settlement_simulation::{
+            call_data,
+            settle_method,
+            simulate_and_estimate_gas_at_current_block,
+        },
+        solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+    },
+    anyhow::{Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::errors::ExecutionError,
+    futures::future::join_all,
+    gas_estimation::GasPrice1559,
+    itertools::{Either, Itertools},
+    model::solver_competition::Score,
+    num::{BigRational, ToPrimitive},
+    primitive_types::U256,
+    shared::{
+        code_fetching::CodeFetching,
+        ethrpc::Web3,
+        http_solver::model::{InternalizationStrategy, SimulatedTransaction},
+    },
+    std::{borrow::Borrow, ops::Mul, sync::Arc},
+    web3::types::AccessList,
 };
-use anyhow::{Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::errors::ExecutionError;
-use futures::future::join_all;
-use gas_estimation::GasPrice1559;
-use itertools::{Either, Itertools};
-use model::solver_competition::Score;
-use num::{BigRational, ToPrimitive};
-use primitive_types::U256;
-use shared::{
-    code_fetching::CodeFetching,
-    ethrpc::Web3,
-    http_solver::model::{InternalizationStrategy, SimulatedTransaction},
-};
-use std::{borrow::Borrow, ops::Mul, sync::Arc};
-use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
 pub struct SimulationWithResult {
     pub simulation: Simulation,
-    /// The outcome of the simulation. Contains either how much gas the settlement used or the
-    /// reason why the transaction reverted during the simulation.
+    /// The outcome of the simulation. Contains either how much gas the
+    /// settlement used or the reason why the transaction reverted during
+    /// the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
 }
 
@@ -43,8 +50,8 @@ pub trait SettlementRating: Send + Sync {
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)>;
 
-    /// Simulates the settlements and returns the gas used (or reason for revert) as well as
-    /// the access list for each settlement.
+    /// Simulates the settlements and returns the gas used (or reason for
+    /// revert) as well as the access list for each settlement.
     async fn simulate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
@@ -164,7 +171,8 @@ impl SettlementRating for SettlementRater {
             )
             .await?;
 
-        // split simulations into succeeded and failed groups, then do the rating only for succeeded settlements
+        // split simulations into succeeded and failed groups, then do the rating only
+        // for succeeded settlements
         let (settlements, simulations_failed): (Vec<_>, Vec<_>) = simulations
             .into_iter()
             .partition_map(|simulation| match simulation.gas_estimate {
@@ -175,7 +183,8 @@ impl SettlementRating for SettlementRater {
                 Err(_) => Either::Right(simulation),
             });
 
-        // since rating is done with internalizations, repeat the simulations for previously succeeded simulations
+        // since rating is done with internalizations, repeat the simulations for
+        // previously succeeded simulations
         let mut simulations = self
             .simulate_settlements(
                 settlements,

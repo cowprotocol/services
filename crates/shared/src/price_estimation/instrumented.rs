@@ -1,7 +1,9 @@
-use crate::price_estimation::{PriceEstimating, PriceEstimationError, Query};
-use futures::stream::StreamExt;
-use prometheus::{HistogramVec, IntCounterVec};
-use std::time::Instant;
+use {
+    crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    futures::stream::StreamExt,
+    prometheus::{HistogramVec, IntCounterVec},
+    std::time::Instant,
+};
 
 /// An instrumented price estimator.
 pub struct InstrumentedPriceEstimator {
@@ -69,14 +71,19 @@ struct Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::price_estimation::{
-        vec_estimates, Estimate, MockPriceEstimating, PriceEstimationError,
+    use {
+        super::*,
+        crate::price_estimation::{
+            vec_estimates,
+            Estimate,
+            MockPriceEstimating,
+            PriceEstimationError,
+        },
+        anyhow::anyhow,
+        ethcontract::H160,
+        futures::StreamExt,
+        model::order::OrderKind,
     };
-    use anyhow::anyhow;
-    use ethcontract::H160;
-    use futures::StreamExt;
-    use model::order::OrderKind;
 
     #[tokio::test]
     async fn records_metrics_for_each_query() {

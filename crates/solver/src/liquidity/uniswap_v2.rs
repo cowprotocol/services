@@ -1,23 +1,27 @@
-use super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling};
-use crate::{
-    interactions::{
-        allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
-        UniswapInteraction,
+use {
+    super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling},
+    crate::{
+        interactions::{
+            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
+            UniswapInteraction,
+        },
+        liquidity::Liquidity,
+        liquidity_collector::LiquidityCollecting,
+        settlement::SettlementEncoder,
     },
-    liquidity::Liquidity,
-    liquidity_collector::LiquidityCollecting,
-    settlement::SettlementEncoder,
-};
-use anyhow::Result;
-use contracts::{GPv2Settlement, IUniswapLikeRouter};
-use model::TokenPair;
-use primitive_types::{H160, U256};
-use shared::{
-    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v2::pool_fetching::PoolFetching,
-};
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
+    anyhow::Result,
+    contracts::{GPv2Settlement, IUniswapLikeRouter},
+    model::TokenPair,
+    primitive_types::{H160, U256},
+    shared::{
+        ethrpc::Web3,
+        recent_block_cache::Block,
+        sources::uniswap_v2::pool_fetching::PoolFetching,
+    },
+    std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    },
 };
 
 pub struct UniswapLikeLiquidity {
@@ -29,7 +33,8 @@ pub struct UniswapLikeLiquidity {
 pub struct Inner {
     router: IUniswapLikeRouter,
     gpv2_settlement: GPv2Settlement,
-    // Mapping of how much allowance the router has per token to spend on behalf of the settlement contract
+    // Mapping of how much allowance the router has per token to spend on behalf of the settlement
+    // contract
     allowances: Mutex<Allowances>,
 }
 
@@ -82,7 +87,8 @@ impl UniswapLikeLiquidity {
 
 #[async_trait::async_trait]
 impl LiquidityCollecting for UniswapLikeLiquidity {
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    /// Given a list of offchain orders returns the list of AMM liquidity to be
+    /// considered
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,
@@ -154,8 +160,8 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
         self
     }
 
-    // Creates the required interaction to convert the given input into output. Assumes slippage is
-    // already applied to `input_max`.
+    // Creates the required interaction to convert the given input into output.
+    // Assumes slippage is already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
         if let Some(approval) = approval {
@@ -168,9 +174,7 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::dummy_contract;
-    use std::collections::HashMap;
+    use {super::*, shared::dummy_contract, std::collections::HashMap};
 
     impl Inner {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {

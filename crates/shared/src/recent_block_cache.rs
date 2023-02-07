@@ -1,36 +1,43 @@
 //! Module containing a generic cache for recent on-chain data.
 //!
-//! The design of this module is driven by the need to always return data quickly so that end users
-//! going through the api do not have to wait longer than necessary:
-//! - The mutex is never locked while waiting on an async operation (getting on-chain data from the node).
-//! - Automatically updating the cache is decoupled from normal on-chain data fetches.
+//! The design of this module is driven by the need to always return data
+//! quickly so that end users going through the api do not have to wait longer
+//! than necessary:
+//! - The mutex is never locked while waiting on an async operation (getting
+//!   on-chain data from the node).
+//! - Automatically updating the cache is decoupled from normal on-chain data
+//!   fetches.
 //!
-//! A result of this is that it is possible that the same uncached entry is requested multiple times
-//! simultaneously and some work is wasted. This is unlikely to happen in practice and the value is
-//! going to be cached the next time it is needed.
+//! A result of this is that it is possible that the same uncached entry is
+//! requested multiple times simultaneously and some work is wasted. This is
+//! unlikely to happen in practice and the value is going to be cached the next
+//! time it is needed.
 //!
-//! When entries are requested we mark all those entries as recently used which potentially evicts
-//! other entries from the lru cache. Cache misses are fetched and inserted into the cache.
-//! Then when the automatic update runs the next time, we request and cache all recently used
-//! entries. For some consumers we only care about the "recent" state of the entries. So we can
+//! When entries are requested we mark all those entries as recently used which
+//! potentially evicts other entries from the lru cache. Cache misses are
+//! fetched and inserted into the cache. Then when the automatic update runs the
+//! next time, we request and cache all recently used entries. For some
+//! consumers we only care about the "recent" state of the entries. So we can
 //! return any result from the cache even if it comes from previous blocks.
 //!
-//! On the other hand for others we need to fetch on-chain data at exact blocks which is why we keep
-//! a cache of previous blocks in the first place as we could simplify this module if it was only
-//! used by by the former.
+//! On the other hand for others we need to fetch on-chain data at exact blocks
+//! which is why we keep a cache of previous blocks in the first place as we
+//! could simplify this module if it was only used by by the former.
 
-use crate::current_block::CurrentBlockStream;
-use anyhow::Result;
-use ethcontract::BlockNumber;
-use lru::LruCache;
-use prometheus::IntCounterVec;
-use std::{
-    cmp,
-    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
-    hash::Hash,
-    num::{NonZeroU64, NonZeroUsize},
-    sync::Mutex,
-    time::Duration,
+use {
+    crate::current_block::CurrentBlockStream,
+    anyhow::Result,
+    ethcontract::BlockNumber,
+    lru::LruCache,
+    prometheus::IntCounterVec,
+    std::{
+        cmp,
+        collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+        hash::Hash,
+        num::{NonZeroU64, NonZeroUsize},
+        sync::Mutex,
+        time::Duration,
+    },
 };
 
 /// A trait used to define `RecentBlockCache` updating behaviour.
@@ -52,8 +59,9 @@ pub trait CacheKey<V>: Clone + Eq + Hash + Ord {
 /// The state of the chain at which information should be retrieved.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum Block {
-    /// The most recent state. This is on a best effort basis so that for example a cache can still
-    /// return results that are slightly out of date.
+    /// The most recent state. This is on a best effort basis so that for
+    /// example a cache can still return results that are slightly out of
+    /// date.
     Recent,
     Number(u64),
 }
@@ -69,8 +77,9 @@ impl From<Block> for BlockNumber {
 
 /// Recent block cache for arbitrary key-value pairs.
 ///
-/// Caches on-chain data for a specific number of blocks and automatically updates the N most
-/// recently used entries automatically when a new block arrives.
+/// Caches on-chain data for a specific number of blocks and automatically
+/// updates the N most recently used entries automatically when a new block
+/// arrives.
 pub struct RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
@@ -124,15 +133,17 @@ where
     V: Clone,
     F: CacheFetching<K, V>,
 {
-    /// number_of_blocks_to_cache: Previous blocks stay cached until the block is this much older
-    /// than the current block. If there is a request for a block that is already too old then the
-    /// result stays cached until the automatic updating runs the next time.
+    /// number_of_blocks_to_cache: Previous blocks stay cached until the block
+    /// is this much older than the current block. If there is a request for
+    /// a block that is already too old then the result stays cached until
+    /// the automatic updating runs the next time.
     ///
-    /// number_of_entries_to_auto_update: The number of most recently used entries to keep track of
-    /// and auto update when the current block changes.
+    /// number_of_entries_to_auto_update: The number of most recently used
+    /// entries to keep track of and auto update when the current block
+    /// changes.
     ///
-    /// maximum_recent_block_age: When a recent block is requested, this is the maximum a cached
-    /// block can have to be considered.
+    /// maximum_recent_block_age: When a recent block is requested, this is the
+    /// maximum a cached block can have to be considered.
     pub fn new(
         config: CacheConfig,
         fetcher: F,
@@ -182,9 +193,10 @@ where
         Ok(())
     }
 
-    // Sometimes nodes requests error when we try to get state from what we think is the current
-    // block when the node has been load balanced out to one that hasn't seen the block yet. As a
-    // workaround we repeat the request up to N times while sleeping in between.
+    // Sometimes nodes requests error when we try to get state from what we think is
+    // the current block when the node has been load balanced out to one that
+    // hasn't seen the block yet. As a workaround we repeat the request up to N
+    // times while sleeping in between.
     async fn fetch_inner(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
         let fetch = || self.fetcher.fetch_values(keys.clone(), block);
         for _ in 0..self.maximum_retries {
@@ -345,10 +357,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::current_block::{self, BlockInfo};
-    use futures::FutureExt;
-    use std::sync::Arc;
+    use {
+        super::*,
+        crate::current_block::{self, BlockInfo},
+        futures::FutureExt,
+        std::sync::Arc,
+    };
 
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     struct TestKey(usize);
@@ -357,6 +371,7 @@ mod tests {
         fn first_ord() -> Self {
             Self(0)
         }
+
         fn for_value(value: &TestValue) -> Self {
             Self(value.key)
         }
@@ -594,7 +609,8 @@ mod tests {
             .unwrap();
         assert_eq!(result, vec![TestValue::new(0, "bar")]);
 
-        // Now cache at an earlier block and see that it doesn't override the most recent entry.
+        // Now cache at an earlier block and see that it doesn't override the most
+        // recent entry.
         *values.lock().unwrap() = vec![TestValue::new(0, "baz")];
         let result = cache
             .fetch(test_keys(0..1), Block::Number(4))

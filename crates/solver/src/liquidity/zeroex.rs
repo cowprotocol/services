@@ -1,25 +1,27 @@
-use super::{LimitOrderId, LiquidityOrderId, SettlementHandling};
-use crate::{
-    interactions::{
-        allowances::{AllowanceManager, AllowanceManaging, Allowances},
-        ZeroExInteraction,
+use {
+    super::{LimitOrderId, LiquidityOrderId, SettlementHandling},
+    crate::{
+        interactions::{
+            allowances::{AllowanceManager, AllowanceManaging, Allowances},
+            ZeroExInteraction,
+        },
+        liquidity::{Exchange, LimitOrder, Liquidity},
+        liquidity_collector::LiquidityCollecting,
+        settlement::SettlementEncoder,
     },
-    liquidity::{Exchange, LimitOrder, Liquidity},
-    liquidity_collector::LiquidityCollecting,
-    settlement::SettlementEncoder,
-};
-use anyhow::Result;
-use contracts::{GPv2Settlement, IZeroEx};
-use model::{order::OrderKind, TokenPair};
-use primitive_types::{H160, U256};
-use shared::{
-    ethrpc::Web3,
-    recent_block_cache::Block,
-    zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
-};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+    anyhow::Result,
+    contracts::{GPv2Settlement, IZeroEx},
+    model::{order::OrderKind, TokenPair},
+    primitive_types::{H160, U256},
+    shared::{
+        ethrpc::Web3,
+        recent_block_cache::Block,
+        zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
+    },
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct ZeroExLiquidity {
@@ -161,7 +163,8 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
             continue;
         }
         // Sorting to have best priced orders at the end of the vector
-        // best priced orders are those that have the maximum maker_amount / taker_amount ratio
+        // best priced orders are those that have the maximum maker_amount /
+        // taker_amount ratio
         orders.sort_by(|order_1, order_2| {
             let price_1 = order_1.order.maker_amount as f64 / order_1.order.taker_amount as f64;
             let price_2 = order_2.order.maker_amount as f64 / order_2.order.taker_amount as f64;
@@ -207,12 +210,16 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::interactions::allowances::Approval;
-    use maplit::hashmap;
-    use shared::{
-        baseline_solver::BaseTokens, http_solver::model::InternalizationStrategy,
-        interaction::Interaction, zeroex_api::OrderMetadata,
+    use {
+        super::*,
+        crate::interactions::allowances::Approval,
+        maplit::hashmap,
+        shared::{
+            baseline_solver::BaseTokens,
+            http_solver::model::InternalizationStrategy,
+            interaction::Interaction,
+            zeroex_api::OrderMetadata,
+        },
     };
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
@@ -335,9 +342,11 @@ pub mod tests {
             generate_order_buckets([order_1, order_2, order_3].into_iter(), relevant_pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
-        // First item in the list will be on the basis of maker_amount/taker_amount ratio
+        // First item in the list will be on the basis of maker_amount/taker_amount
+        // ratio
         assert_eq!(filtered_zeroex_orders[0].order.taker_amount, 1_000);
-        // Second item in the list will be on the basis of remaining_fillable_taker_amount
+        // Second item in the list will be on the basis of
+        // remaining_fillable_taker_amount
         assert_eq!(filtered_zeroex_orders[1].order.taker_amount, 10_000_000);
     }
 

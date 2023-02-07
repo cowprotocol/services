@@ -1,13 +1,15 @@
-use super::post_order::PartialValidationErrorWrapper;
-use anyhow::Result;
-use model::quote::OrderQuoteRequest;
-use reqwest::StatusCode;
-use shared::{
-    api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
-    order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
+use {
+    super::post_order::PartialValidationErrorWrapper,
+    anyhow::Result,
+    model::quote::OrderQuoteRequest,
+    reqwest::StatusCode,
+    shared::{
+        api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
+        order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
+    },
+    std::{convert::Infallible, sync::Arc},
+    warp::{Filter, Rejection},
 };
-use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection};
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("v1" / "quote")
@@ -73,25 +75,32 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use anyhow::anyhow;
-    use chrono::{DateTime, NaiveDateTime, Utc};
-    use ethcontract::{H160, U256};
-    use model::{
-        app_id::AppId,
-        order::{BuyTokenDestination, SellTokenSource},
-        quote::{
-            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
-            SellAmount, Validity,
+    use {
+        super::*,
+        anyhow::anyhow,
+        chrono::{DateTime, NaiveDateTime, Utc},
+        ethcontract::{H160, U256},
+        model::{
+            app_id::AppId,
+            order::{BuyTokenDestination, SellTokenSource},
+            quote::{
+                OrderQuote,
+                OrderQuoteResponse,
+                OrderQuoteSide,
+                PriceQuality,
+                QuoteSigningScheme,
+                SellAmount,
+                Validity,
+            },
         },
+        reqwest::StatusCode,
+        serde_json::json,
+        shared::{
+            api::response_body,
+            order_quoting::{CalculateQuoteError, OrderQuoteError},
+        },
+        warp::{test::request, Reply},
     };
-    use reqwest::StatusCode;
-    use serde_json::json;
-    use shared::{
-        api::response_body,
-        order_quoting::{CalculateQuoteError, OrderQuoteError},
-    };
-    use warp::{test::request, Reply};
 
     #[test]
     fn deserializes_sell_after_fees_quote_request() {
@@ -292,6 +301,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
         let expected_error = json!({"errorType": "InternalServerError", "description": ""});
         assert_eq!(body, expected_error);
-        // There are many other FeeAndQuoteErrors, but writing a test for each would follow the same pattern as this.
+        // There are many other FeeAndQuoteErrors, but writing a test for each
+        // would follow the same pattern as this.
     }
 }

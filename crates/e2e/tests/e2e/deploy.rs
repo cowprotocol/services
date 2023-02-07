@@ -1,11 +1,19 @@
-use anyhow::{Context, Result};
-use contracts::{
-    BalancerV2Authorizer, BalancerV2Vault, CoWSwapEthFlow, GPv2AllowListAuthentication,
-    GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9,
+use {
+    anyhow::{Context, Result},
+    contracts::{
+        BalancerV2Authorizer,
+        BalancerV2Vault,
+        CoWSwapEthFlow,
+        GPv2AllowListAuthentication,
+        GPv2Settlement,
+        UniswapV2Factory,
+        UniswapV2Router02,
+        WETH9,
+    },
+    ethcontract::{Address, U256},
+    model::DomainSeparator,
+    shared::ethrpc::Web3,
 };
-use ethcontract::{Address, U256};
-use model::DomainSeparator;
-use shared::ethrpc::Web3;
 
 pub struct Contracts {
     pub balancer_vault: BalancerV2Vault,

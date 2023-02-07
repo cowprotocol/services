@@ -1,10 +1,12 @@
-use super::{BadTokenDetecting, TokenQuality};
-use anyhow::Result;
-use primitive_types::H160;
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-    time::{Duration, Instant},
+use {
+    super::{BadTokenDetecting, TokenQuality},
+    anyhow::Result,
+    primitive_types::H160,
+    std::{
+        collections::HashMap,
+        sync::Mutex,
+        time::{Duration, Instant},
+    },
 };
 
 pub struct CachingDetector {
@@ -57,9 +59,7 @@ impl CachingDetector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::bad_token::MockBadTokenDetecting;
-    use futures::FutureExt;
+    use {super::*, crate::bad_token::MockBadTokenDetecting, futures::FutureExt};
 
     #[test]
     fn goes_to_cache() {

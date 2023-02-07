@@ -1,10 +1,12 @@
-use std::{
-    panic::PanicInfo,
-    sync::atomic::{AtomicBool, Ordering},
+use {
+    std::{
+        panic::PanicInfo,
+        sync::atomic::{AtomicBool, Ordering},
+    },
+    time::macros::format_description,
+    tracing::level_filters::LevelFilter,
+    tracing_subscriber::fmt::{time::UtcTime, writer::MakeWriterExt as _},
 };
-use time::macros::format_description;
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::fmt::{time::UtcTime, writer::MakeWriterExt as _};
 
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
@@ -14,10 +16,13 @@ pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
     std::panic::set_hook(Box::new(tracing_panic_hook));
 }
 
-// Like above but meant to be used in tests.
-pub fn initialize_for_tests(env_filter: &str) {
-    // The tracing subscriber below is global object so initializing it again in the same process by
-    // a different thread would fail.
+/// Like [`initialize`], but can be called multiple times in a row. Later calls
+/// are ignored.
+///
+/// Useful for tests.
+pub fn initialize_reentrant(env_filter: &str) {
+    // The tracing subscriber below is global object so initializing it again in the
+    // same process by a different thread would fail.
     static INITIALIZED: AtomicBool = AtomicBool::new(false);
     if INITIALIZED
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -26,7 +31,7 @@ pub fn initialize_for_tests(env_filter: &str) {
         return;
     }
 
-    set_tracing_subscriber(env_filter, LevelFilter::OFF);
+    set_tracing_subscriber(env_filter, LevelFilter::ERROR);
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
@@ -49,8 +54,8 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
     }
 }
 
-/// Panic hook that prints roughly the same message as the default panic hook but uses
-/// tracing:error instead of stderr.
+/// Panic hook that prints roughly the same message as the default panic hook
+/// but uses tracing:error instead of stderr.
 ///
 /// Useful when we want panic messages to have the proper log format for Kibana.
 fn tracing_panic_hook(panic: &PanicInfo) {

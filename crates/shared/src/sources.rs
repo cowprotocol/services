@@ -9,16 +9,18 @@ pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod uniswap_v3_pair_provider;
 
-use self::uniswap_v2::{
-    pair_provider::PairProvider,
-    pool_fetching::{Pool, PoolFetching},
-};
-use crate::{ethrpc::Web3, recent_block_cache::Block};
-use anyhow::{bail, Result};
-use model::TokenPair;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+use {
+    self::uniswap_v2::{
+        pair_provider::PairProvider,
+        pool_fetching::{Pool, PoolFetching},
+    },
+    crate::{ethrpc::Web3, recent_block_cache::Block},
+    anyhow::{bail, Result},
+    model::TokenPair,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
@@ -95,8 +97,9 @@ pub struct PoolAggregator {
 #[async_trait::async_trait]
 impl PoolFetching for PoolAggregator {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        // vk: Using try join means if any pool fetcher fails we fail too. Alternatively we could
-        // return the succeeding ones but I feel it is cleaner to forward the error.
+        // vk: Using try join means if any pool fetcher fails we fail too. Alternatively
+        // we could return the succeeding ones but I feel it is cleaner to
+        // forward the error.
         let results = futures::future::try_join_all(
             self.pool_fetchers
                 .iter()

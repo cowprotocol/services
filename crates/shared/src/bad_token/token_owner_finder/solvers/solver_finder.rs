@@ -1,18 +1,20 @@
-use super::TokenOwnerSolverApi;
-use crate::bad_token::token_owner_finder::TokenOwnerProposing;
-use anyhow::Result;
-use ethcontract::H160;
-use prometheus::{
-    core::{AtomicU64, GenericCounter},
-    IntCounterVec,
+use {
+    super::TokenOwnerSolverApi,
+    crate::bad_token::token_owner_finder::TokenOwnerProposing,
+    anyhow::Result,
+    ethcontract::H160,
+    prometheus::{
+        core::{AtomicU64, GenericCounter},
+        IntCounterVec,
+    },
+    std::{
+        collections::HashMap,
+        fmt::{self, Debug, Formatter},
+        sync::{Arc, RwLock},
+        time::Duration,
+    },
+    tracing::Instrument,
 };
-use std::{
-    collections::HashMap,
-    fmt::{self, Debug, Formatter},
-    sync::{Arc, RwLock},
-    time::Duration,
-};
-use tracing::Instrument;
 
 type Token = H160;
 type Owner = H160;
@@ -121,12 +123,12 @@ impl TokenOwnerProposing for AutoUpdatingSolverTokenOwnerFinder {
 
 #[cfg(test)]
 mod tests {
-    use reqwest::{Client, Url};
-    use std::str::FromStr;
-
-    use crate::bad_token::token_owner_finder::solvers::solver_api::SolverConfiguration;
-
-    use super::*;
+    use {
+        super::*,
+        crate::bad_token::token_owner_finder::solvers::solver_api::SolverConfiguration,
+        reqwest::{Client, Url},
+        std::str::FromStr,
+    };
 
     #[tokio::test]
     #[ignore]
