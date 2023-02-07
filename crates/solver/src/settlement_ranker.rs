@@ -219,10 +219,10 @@ impl SettlementRanker {
                 },
             );
         } else {
-            // TODO: remove this block of code once CIP-17 is implemented
+            // TODO: remove this block of code once `auction-rewards` is implemented
             rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
 
-            let cip17_ranking = cip17_ranking(
+            let auction_based_ranking = auction_based_ranking(
                 rated_settlements
                     .iter()
                     .map(|(_, settlement, _)| settlement)
@@ -233,7 +233,7 @@ impl SettlementRanker {
                 |(i, (solver, settlement, _))| {
                     self.metrics
                         .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-                    settlement.ranking = cip17_ranking.get(&settlement.id).copied().unwrap_or(0);
+                    settlement.ranking = auction_based_ranking.get(&settlement.id).copied().unwrap_or(0);
                     // notify solvers about their real ranking and simulated auction based ranking
                     solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
                     solver.notify_auction_result(
@@ -247,9 +247,9 @@ impl SettlementRanker {
     }
 }
 
-// TODO: remove this once CIP-17 is implemented
-// Sort settlements by CIP-17 rules and return hashmap of settlement id to ranking
-fn cip17_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
+// TODO: remove this once `auction-rewards` is implemented
+// Sort settlements by `auction-rewards` rules and return hashmap of settlement id to ranking
+fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
     let mut settlements = settlements;
     settlements
         .retain(|settlement| !settlement.score.score().is_nan() && settlement.score.score() >= 0.0);
@@ -262,7 +262,7 @@ fn cip17_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
         .collect()
 }
 
-// TODO: remove this once CIP-17 is implemented
+// TODO: remove this once `auction-rewards` is implemented
 fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
     let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
     let rounded_lhs = lhs

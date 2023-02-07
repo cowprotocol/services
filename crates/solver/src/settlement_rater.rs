@@ -197,7 +197,7 @@ impl SettlementRating for SettlementRater {
             );
             let objective_value = inputs.objective_value();
             let score = match &settlement.score {
-                Some(solver_score) => match solver_score {
+                Some(score) => match score {
                     shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
                     shared::http_solver::model::Score::MulFactor(factor) => Score::Discounted(
                         objective_value

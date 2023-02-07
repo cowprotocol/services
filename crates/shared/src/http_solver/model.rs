@@ -176,7 +176,7 @@ pub enum Score {
     /// The score used for ranking.
     Score(f64),
     /// This option is used to indicate that the solver did not provide a score.
-    /// Instead, the score is computed by the protocol.
+    /// Instead, the score should be computed by the protocol.
     /// To have more flexibility, the protocol score can be tweaked by the solver by providing a multiplication factor.
     /// Expected value: [0, inf], 0 being 100% discount, 1 being the same as protocol score
     MulFactor(f64),

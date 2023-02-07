@@ -105,7 +105,7 @@ pub enum Score {
     /// The score is calculated by the protocol (and equal to the objective function).
     #[serde(rename = "scoreProtocol")]
     Protocol(f64),
-    /// The score is calculated by the protocol, by applying a discount to the protocol calculated score.
+    /// The score is calculated by the protocol, by applying a discount to the `Self::Protocol` value.
     #[serde(rename = "scoreDiscounted")]
     Discounted(f64),
 }
