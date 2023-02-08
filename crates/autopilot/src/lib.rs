@@ -123,17 +123,23 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .unwrap();
 
-    let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
-        .await
-        .expect("Couldn't load deployed settlement");
+    let settlement_contract = match args.shared.settlement_contract_address {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => contracts::GPv2Settlement::deployed(&web3)
+            .await
+            .expect("load settlement contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
+    let native_token = match args.shared.native_token_address {
+        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
+        None => WETH9::deployed(&web3)
+            .await
+            .expect("load native token contract"),
+    };
     let vault = match BalancerV2Vault::deployed(&web3).await {
         Ok(contract) => Some(contract),
         Err(DeployError::NotFound(_)) => {

@@ -292,6 +292,14 @@ pub struct Arguments {
     /// The number of pools to initially populate the UniswapV3 cache
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: u64,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub settlement_contract_address: Option<H160>,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub native_token_address: Option<H160>,
 }
 
 pub fn display_secret_option<T>(
@@ -427,6 +435,12 @@ impl Display for Arguments {
             self.balancer_pool_deny_list
         )?;
         display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_option(
+            f,
+            "settlement_contract_address",
+            &self.settlement_contract_address,
+        )?;
+        display_option(f, "native_token_address", &self.native_token_address)?;
 
         Ok(())
     }
