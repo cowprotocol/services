@@ -1,8 +1,10 @@
-use super::{BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive};
-use crate::ethrpc::Web3;
-use anyhow::{ensure, Context as _, Result};
-use contracts::support::FetchBlock;
-use web3::types::{BlockNumber, CallRequest, H256, U256};
+use {
+    super::{BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive},
+    crate::ethrpc::Web3,
+    anyhow::{ensure, Context as _, Result},
+    contracts::support::FetchBlock,
+    web3::types::{BlockNumber, CallRequest, H256, U256},
+};
 
 /// An `eth_call`-based block fetcher.
 ///
@@ -58,8 +60,7 @@ impl BlockRetrieving for BlockRetriever {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::create_env_test_transport;
+    use {super::*, crate::ethrpc::create_env_test_transport};
 
     #[ignore]
     #[tokio::test]

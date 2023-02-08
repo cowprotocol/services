@@ -7,8 +7,10 @@ pub mod orders;
 mod quotes;
 pub mod recent_settlements;
 
-use sqlx::{PgConnection, PgPool};
-use std::time::Duration;
+use {
+    sqlx::{PgConnection, PgPool},
+    std::time::Duration,
+};
 
 #[derive(Debug, Clone)]
 pub struct Postgres(pub PgPool);

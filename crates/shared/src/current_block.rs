@@ -1,19 +1,23 @@
 mod arguments;
 mod eth_call;
 
-pub use self::arguments::{Arguments, BlockRetrieverStrategy};
-use crate::ethrpc::Web3;
-use anyhow::{anyhow, ensure, Context as _, Result};
-use primitive_types::H256;
-use std::{sync::Arc, time::Duration};
-use tokio::sync::watch;
-use tokio_stream::wrappers::WatchStream;
-use tracing::Instrument;
-use web3::{
-    helpers,
-    types::{BlockId, BlockNumber, U64},
-    BatchTransport, Transport,
+use {
+    crate::ethrpc::Web3,
+    anyhow::{anyhow, ensure, Context as _, Result},
+    primitive_types::H256,
+    std::{sync::Arc, time::Duration},
+    tokio::sync::watch,
+    tokio_stream::wrappers::WatchStream,
+    tracing::Instrument,
+    web3::{
+        helpers,
+        types::{BlockId, BlockNumber, U64},
+        BatchTransport,
+        Transport,
+    },
 };
+
+pub use self::arguments::{Arguments, BlockRetrieverStrategy};
 
 pub type BlockNumberHash = (u64, H256);
 
@@ -28,12 +32,15 @@ impl<T: Ord> RangeInclusive<T> {
         ensure!(end >= start, "end has to be bigger or equal to start");
         Ok(Self { start, end })
     }
+
     pub fn start(&self) -> &T {
         &self.start
     }
+
     pub fn end(&self) -> &T {
         &self.end
     }
+
     pub fn into_inner(self) -> (T, T) {
         (self.start, self.end)
     }
@@ -47,16 +54,19 @@ pub struct BlockInfo {
     pub parent_hash: H256,
 }
 
-/// Creates a cloneable stream that yields the current block whenever it changes.
+/// Creates a cloneable stream that yields the current block whenever it
+/// changes.
 ///
-/// The stream is not guaranteed to yield *every* block individually without gaps but it does yield
-/// the newest block whenever it detects a block number increase. In practice this means that if
-/// the node changes the current block in quick succession we might only observe the last block,
-/// skipping some blocks in between.
+/// The stream is not guaranteed to yield *every* block individually without
+/// gaps but it does yield the newest block whenever it detects a block number
+/// increase. In practice this means that if the node changes the current block
+/// in quick succession we might only observe the last block, skipping some
+/// blocks in between.
 ///
-/// The stream is cloneable so that we only have to poll the node once while being able to share the
-/// result with several consumers. Calling this function again would create a new poller so it is
-/// preferable to clone an existing stream instead.
+/// The stream is cloneable so that we only have to poll the node once while
+/// being able to share the result with several consumers. Calling this function
+/// again would create a new poller so it is preferable to clone an existing
+/// stream instead.
 pub async fn current_block_stream(
     retriever: Arc<dyn BlockRetrieving>,
     poll_interval: Duration,
@@ -105,8 +115,9 @@ pub async fn current_block_stream(
     Ok(receiver)
 }
 
-/// A method for creating a block stream with an initial value that never observes any new blocks.
-/// This is useful for testing and creating "mock" components.
+/// A method for creating a block stream with an initial value that never
+/// observes any new blocks. This is useful for testing and creating "mock"
+/// components.
 pub fn mock_single_block(block: BlockInfo) -> CurrentBlockStream {
     let (sender, receiver) = watch::channel(block);
     // Make sure the `sender` never drops so the `receiver` stays open.
@@ -141,7 +152,8 @@ impl BlockRetrieving for Web3 {
     }
 
     /// get blocks defined by the range (inclusive)
-    /// if successful, function guarantees full range of blocks in Result (does not return partial results)
+    /// if successful, function guarantees full range of blocks in Result (does
+    /// not return partial results)
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let include_txs = helpers::serialize(&false);
         let (start, end) = range.into_inner();
@@ -154,7 +166,8 @@ impl BlockRetrieving for Web3 {
             batch_request.push(request);
         }
 
-        // send_batch guarantees the size and order of the responses to match the requests
+        // send_batch guarantees the size and order of the responses to match the
+        // requests
         self.transport()
             .send_batch(batch_request.iter().cloned())
             .await?
@@ -228,7 +241,8 @@ pub struct Metrics {
     block_stream_update_delta: prometheus::HistogramVec,
 }
 
-/// Updates metrics about the difference of the new block number compared to the current block.
+/// Updates metrics about the difference of the new block number compared to the
+/// current block.
 fn update_block_metrics(current_block: u64, new_block: u64) {
     let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
         .unwrap()
@@ -244,10 +258,12 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::{create_env_test_transport, create_test_transport};
-    use futures::StreamExt;
-    use num::Saturating;
+    use {
+        super::*,
+        crate::ethrpc::{create_env_test_transport, create_test_transport},
+        futures::StreamExt,
+        num::Saturating,
+    };
 
     #[tokio::test]
     #[ignore]

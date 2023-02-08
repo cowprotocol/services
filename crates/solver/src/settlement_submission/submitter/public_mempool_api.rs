@@ -1,13 +1,17 @@
-use crate::settlement::{Revertable, Settlement};
-
-use super::{
-    super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
+use {
+    super::{
+        super::submitter::{TransactionHandle, TransactionSubmitting},
+        AdditionalTip,
+        DisabledReason,
+        Strategy,
+        SubmissionLoopStatus,
+    },
+    crate::settlement::{Revertable, Settlement},
+    anyhow::{ensure, Context, Result},
+    ethcontract::transaction::{Transaction, TransactionBuilder},
+    futures::FutureExt,
+    shared::ethrpc::{Web3, Web3Transport},
 };
-use anyhow::{ensure, Context, Result};
-use ethcontract::transaction::{Transaction, TransactionBuilder};
-use futures::FutureExt;
-use shared::ethrpc::{Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct PublicMempoolApi {
@@ -112,7 +116,8 @@ impl TransactionSubmitting for PublicMempoolApi {
     }
 
     fn submission_status(&self, settlement: &Settlement, _: &str) -> SubmissionLoopStatus {
-        // disable strategy if there is a slightest possibility for a transaction to be reverted (check done only for mainnet)
+        // disable strategy if there is a slightest possibility for a transaction to be
+        // reverted (check done only for mainnet)
         if self.high_risk_disabled && settlement.revertable() == Revertable::HighRisk {
             return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
         }
@@ -127,13 +132,14 @@ impl TransactionSubmitting for PublicMempoolApi {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubmissionNodeKind {
-    /// Transactions that are sent to this nodes are expected to be broadcast to the mempool and
-    /// eventually be included in a block.
+    /// Transactions that are sent to this nodes are expected to be broadcast to
+    /// the mempool and eventually be included in a block.
     Broadcast,
-    /// A notification node is an endpoint that is not expected to submit transactions to the
-    /// mempool once a transaction has been received. Its purpose is notifying the node owner that a
-    /// transaction has been submitted.
-    /// In general, there are lower expectations on the availability of this node variant.
+    /// A notification node is an endpoint that is not expected to submit
+    /// transactions to the mempool once a transaction has been received.
+    /// Its purpose is notifying the node owner that a transaction has been
+    /// submitted. In general, there are lower expectations on the
+    /// availability of this node variant.
     Notification,
 }
 
@@ -170,8 +176,7 @@ pub async fn validate_submission_node(node: &Web3, expected_network_id: &String)
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::NoopInteraction;
+    use {super::*, crate::settlement::NoopInteraction};
 
     #[test]
     fn submission_status_configuration() {

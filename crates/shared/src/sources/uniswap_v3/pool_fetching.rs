@@ -1,26 +1,28 @@
-use super::{
-    event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
-    graph_api::{PoolData, Token, UniV3SubgraphClient},
-};
-use crate::{
-    current_block::{BlockRetrieving, RangeInclusive},
-    ethrpc::Web3,
-    event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
-    maintenance::Maintaining,
-    recent_block_cache::Block,
-};
-use anyhow::{Context, Result};
-use ethcontract::{Event, H160, U256};
-use itertools::{Either, Itertools};
-use model::{u256_decimal, TokenPair};
-use num::{rational::Ratio, BigInt, Zero};
-use reqwest::Client;
-use serde::Serialize;
-use serde_with::{serde_as, DisplayFromStr};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    ops::Neg,
-    sync::{Arc, Mutex},
+use {
+    super::{
+        event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher},
+        graph_api::{PoolData, Token, UniV3SubgraphClient},
+    },
+    crate::{
+        current_block::{BlockRetrieving, RangeInclusive},
+        ethrpc::Web3,
+        event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+        maintenance::Maintaining,
+        recent_block_cache::Block,
+    },
+    anyhow::{Context, Result},
+    ethcontract::{Event, H160, U256},
+    itertools::{Either, Itertools},
+    model::{u256_decimal, TokenPair},
+    num::{rational::Ratio, BigInt, Zero},
+    reqwest::Client,
+    serde::Serialize,
+    serde_with::{serde_as, DisplayFromStr},
+    std::{
+        collections::{BTreeMap, HashMap, HashSet},
+        ops::Neg,
+        sync::{Arc, Mutex},
+    },
 };
 
 #[async_trait::async_trait]
@@ -35,7 +37,8 @@ pub trait PoolFetching: Send + Sync {
 /// Pool data in a format prepared for solvers.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolInfo {
-    /// Skip serializing address since it's redundant (already serialized outside of this struct)
+    /// Skip serializing address since it's redundant (already serialized
+    /// outside of this struct)
     #[serde(skip_serializing)]
     pub address: H160,
     pub tokens: Vec<Token>,
@@ -106,8 +109,8 @@ struct PoolsCheckpoint {
     pools: HashMap<H160, PoolInfo>,
     /// Block number for which `pools` field was populated.
     block_number: u64,
-    /// Pools that don't exist in `pools` field, therefore need to be initialized and moved to `pools`
-    /// in the next maintainance run
+    /// Pools that don't exist in `pools` field, therefore need to be
+    /// initialized and moved to `pools` in the next maintainance run
     missing_pools: HashSet<H160>,
 }
 
@@ -120,8 +123,9 @@ struct PoolsCheckpointHandler {
 }
 
 impl PoolsCheckpointHandler {
-    /// Fetches the list of existing UniswapV3 pools and their metadata (without state/ticks).
-    /// Then fetches state/ticks for the most deepest pools (subset of all existing pools)
+    /// Fetches the list of existing UniswapV3 pools and their metadata (without
+    /// state/ticks). Then fetches state/ticks for the most deepest pools
+    /// (subset of all existing pools)
     pub async fn new(
         chain_id: u64,
         client: Client,
@@ -142,7 +146,8 @@ impl PoolsCheckpointHandler {
         }
 
         // can't fetch the state of all pools in constructor for performance reasons,
-        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest liquidity
+        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
+        // liquidity
         registered_pools.pools.sort_unstable_by(|a, b| {
             a.total_value_locked_eth
                 .partial_cmp(&b.total_value_locked_eth)
@@ -175,8 +180,9 @@ impl PoolsCheckpointHandler {
         })
     }
 
-    /// For a given list of token pairs, fetches the pools for the ones that exist in the checkpoint.
-    /// For the ones that don't exist, flag as missing and expect to exist after the next maintenance run.
+    /// For a given list of token pairs, fetches the pools for the ones that
+    /// exist in the checkpoint. For the ones that don't exist, flag as
+    /// missing and expect to exist after the next maintenance run.
     fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<H160, PoolInfo>, u64) {
         let mut pool_ids = token_pairs
             .iter()
@@ -208,7 +214,8 @@ impl PoolsCheckpointHandler {
         }
     }
 
-    /// Fetches state/ticks for missing pools and moves them from `missing_pools` to `pools`
+    /// Fetches state/ticks for missing pools and moves them from
+    /// `missing_pools` to `pools`
     async fn update_missing_pools(&self) -> Result<()> {
         let (missing_pools, block_number) = {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
@@ -242,7 +249,8 @@ impl PoolsCheckpointHandler {
 pub struct UniswapV3PoolFetcher {
     /// Pools state on a specific block number in history considered reorg safe
     checkpoint: PoolsCheckpointHandler,
-    /// Recent events used on top of pools_checkpoint to get the `latest_block` pools state.
+    /// Recent events used on top of pools_checkpoint to get the `latest_block`
+    /// pools state.
     events: tokio::sync::Mutex<EventHandler<UniswapV3PoolEventFetcher, RecentEventsCache>>,
 }
 
@@ -342,15 +350,17 @@ impl PoolFetching for UniswapV3PoolFetcher {
                 block_number,
                 last_handled_block
             );
-            // we call run_maintenance() here because that is the only way to update the event storage
-            // with the events from the block range last_handled_block..=block_number which are missing
+            // we call run_maintenance() here because that is the only way to update the
+            // event storage with the events from the block range
+            // last_handled_block..=block_number which are missing
             if let Err(err) = self.events.run_maintenance().await {
                 tracing::debug!("failed to update events on fetch because {}", err);
                 return Ok(Default::default());
             }
         }
 
-        // this is the only place where this function uses checkpoint - no data racing between maintenance
+        // this is the only place where this function uses checkpoint - no data racing
+        // between maintenance
         let (mut checkpoint, checkpoint_block_number) = self.checkpoint.get(token_pairs);
 
         if block_number > checkpoint_block_number {
@@ -452,8 +462,9 @@ impl Maintaining for UniswapV3PoolFetcher {
             self.checkpoint.update_missing_pools()
         );
         result1?;
-        // since failure in updating the missing pools is not critical for UniswapV3PoolFetcher maintenance
-        // and future liquidity fetch calls, then there is no need to return error
+        // since failure in updating the missing pools is not critical for
+        // UniswapV3PoolFetcher maintenance and future liquidity fetch calls,
+        // then there is no need to return error
         if let Err(err) = result2 {
             tracing::warn!(
                 "UniswapV3PoolFetcher failed to update missing pools: {}",
@@ -470,12 +481,14 @@ impl Maintaining for UniswapV3PoolFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc;
-    use contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap};
-    use ethcontract::EventMetadata;
-    use serde_json::json;
-    use std::{ops::Sub, str::FromStr};
+    use {
+        super::*,
+        crate::ethrpc,
+        contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap},
+        ethcontract::EventMetadata,
+        serde_json::json,
+        std::{ops::Sub, str::FromStr},
+    };
 
     #[test]
     fn encode_decode_pool_info() {

@@ -1,10 +1,12 @@
-use ethcontract::Bytes;
-use model::{
-    order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-    signature::{Signature, SigningScheme},
+use {
+    ethcontract::Bytes,
+    model::{
+        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        signature::{Signature, SigningScheme},
+    },
+    primitive_types::{H160, U256},
+    shared::interaction::EncodedInteraction,
 };
-use primitive_types::{H160, U256};
-use shared::interaction::EncodedInteraction;
 
 pub type EncodedTrade = (
     U256,            // sellTokenIndex
@@ -84,10 +86,7 @@ pub struct EncodedSettlement {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::H256;
-    use hex_literal::hex;
-    use model::signature::EcdsaSignature;
+    use {super::*, ethcontract::H256, hex_literal::hex, model::signature::EcdsaSignature};
 
     #[test]
     fn order_flag_permutations() {

@@ -3,31 +3,35 @@ pub mod instance_cache;
 pub mod instance_creation;
 pub mod settlement;
 
-use self::{
-    instance_cache::SharedInstanceCreator, instance_creation::Instances,
-    settlement::ConversionError,
-};
-use super::{Auction, AuctionResult, Solver};
-use crate::{
-    interactions::allowances::AllowanceManaging,
-    liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
-    settlement::Settlement,
-};
-use anyhow::{Context, Result};
-use ethcontract::Account;
-use model::{auction::AuctionId, DomainSeparator};
-use primitive_types::H160;
-use shared::{
-    http_solver::{
-        model::{InteractionData, SettledBatchAuctionModel, SolverRejectionReason},
-        DefaultHttpSolverApi, HttpSolverApi,
+use {
+    self::{
+        instance_cache::SharedInstanceCreator,
+        instance_creation::Instances,
+        settlement::ConversionError,
     },
-    token_list::AutoUpdatingTokenList,
-};
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::Arc,
-    time::Instant,
+    super::{Auction, AuctionResult, Solver},
+    crate::{
+        interactions::allowances::AllowanceManaging,
+        liquidity::{order_converter::OrderConverter, slippage::SlippageCalculator},
+        settlement::Settlement,
+    },
+    anyhow::{Context, Result},
+    ethcontract::Account,
+    model::{auction::AuctionId, DomainSeparator},
+    primitive_types::H160,
+    shared::{
+        http_solver::{
+            model::{InteractionData, SettledBatchAuctionModel, SolverRejectionReason},
+            DefaultHttpSolverApi,
+            HttpSolverApi,
+        },
+        token_list::AutoUpdatingTokenList,
+    },
+    std::{
+        collections::{BTreeSet, HashSet},
+        sync::Arc,
+        time::Instant,
+    },
 };
 
 #[derive(Copy, Clone)]
@@ -111,14 +115,16 @@ impl Solver for HttpSolver {
             return Ok(vec![]);
         }
 
-        // verify internal custom interactions return only bufferable tokens to settlement contract
+        // verify internal custom interactions return only bufferable tokens to
+        // settlement contract
         let non_bufferable_tokens = non_bufferable_tokens_used(
             &settled.interaction_data,
             &self.market_makable_token_list.addresses(),
         );
         if !non_bufferable_tokens.is_empty() {
             tracing::warn!(
-                "Solution filtered out for using non bufferable output tokens for solver {}, tokens: {:?}",
+                "Solution filtered out for using non bufferable output tokens for solver {}, \
+                 tokens: {:?}",
                 self.solver.name,
                 non_bufferable_tokens
             );
@@ -199,29 +205,37 @@ impl HttpSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::MockAllowanceManaging,
-        liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder, Liquidity,
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::MockAllowanceManaging,
+            liquidity::{
+                tests::CapturingSettlementHandler,
+                ConstantProductOrder,
+                LimitOrder,
+                Liquidity,
+            },
+            solver::http_solver::{
+                buffers::MockBufferRetrieving,
+                instance_creation::InstanceCreator,
+            },
         },
-        solver::http_solver::{buffers::MockBufferRetrieving, instance_creation::InstanceCreator},
-    };
-    use ::model::TokenPair;
-    use ethcontract::Address;
-    use maplit::hashmap;
-    use model::order::OrderKind;
-    use num::rational::Ratio;
-    use primitive_types::U256;
-    use reqwest::Client;
-    use shared::{
-        http_solver::{
-            model::{ExecutionPlan, TokenAmount},
-            SolverConfig,
+        ::model::TokenPair,
+        ethcontract::Address,
+        maplit::hashmap,
+        model::order::OrderKind,
+        num::rational::Ratio,
+        primitive_types::U256,
+        reqwest::Client,
+        shared::{
+            http_solver::{
+                model::{ExecutionPlan, TokenAmount},
+                SolverConfig,
+            },
+            token_info::{MockTokenInfoFetching, TokenInfo},
         },
-        token_info::{MockTokenInfoFetching, TokenInfo},
+        std::{sync::Arc, time::Duration},
     };
-    use std::{sync::Arc, time::Duration};
 
     // cargo test real_solver -- --ignored --nocapture
     // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer

@@ -1,7 +1,9 @@
-use prometheus::Encoder;
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
-use tokio::task::{self, JoinHandle};
-use warp::{Filter, Rejection, Reply};
+use {
+    prometheus::Encoder,
+    std::{convert::Infallible, net::SocketAddr, sync::Arc},
+    tokio::task::{self, JoinHandle},
+    warp::{Filter, Rejection, Reply},
+};
 
 pub const DEFAULT_METRICS_PORT: u16 = 9586;
 

@@ -1,17 +1,21 @@
 mod multi_order_solver;
 
-use crate::{
-    liquidity::{
-        slippage::{SlippageCalculator, SlippageContext},
-        ConstantProductOrder, LimitOrder, Liquidity,
+use {
+    crate::{
+        liquidity::{
+            slippage::{SlippageCalculator, SlippageContext},
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
+        },
+        settlement::Settlement,
+        solver::{Auction, Solver},
     },
-    settlement::Settlement,
-    solver::{Auction, Solver},
+    anyhow::Result,
+    ethcontract::Account,
+    model::TokenPair,
+    std::collections::HashMap,
 };
-use anyhow::Result;
-use ethcontract::Account;
-use model::TokenPair;
-use std::collections::HashMap;
 
 pub struct NaiveSolver {
     account: Account,
@@ -57,8 +61,9 @@ fn settle(
     orders: Vec<LimitOrder>,
     uniswaps: HashMap<TokenPair, ConstantProductOrder>,
 ) -> Vec<Settlement> {
-    // The multi order solver matches as many orders as possible together with one uniswap pool.
-    // Settlements between different token pairs are thus independent.
+    // The multi order solver matches as many orders as possible together with one
+    // uniswap pool. Settlements between different token pairs are thus
+    // independent.
     organize_orders_by_token_pair(orders)
         .into_iter()
         .filter_map(|(pair, orders)| settle_pair(&slippage, pair, orders, &uniswaps))
@@ -120,19 +125,29 @@ fn extract_deepest_amm_liquidity(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::liquidity::{
-        order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
-        LiquidityOrderId,
+    use {
+        super::*,
+        crate::liquidity::{
+            order_converter::OrderConverter,
+            tests::CapturingSettlementHandler,
+            LimitOrderId,
+            LiquidityOrderId,
+        },
+        ethcontract::{H160, U256},
+        maplit::hashmap,
+        model::order::{
+            LimitOrderClass,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
+            BUY_ETH_ADDRESS,
+        },
+        num::rational::Ratio,
+        shared::addr,
     };
-    use ethcontract::{H160, U256};
-    use maplit::hashmap;
-    use model::order::{
-        LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
-        BUY_ETH_ADDRESS,
-    };
-    use num::rational::Ratio;
-    use shared::addr;
 
     #[test]
     fn test_extract_deepest_amm_liquidity() {

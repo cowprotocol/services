@@ -1,17 +1,23 @@
-use crate::{
-    bad_token::{BadTokenDetecting, TokenQuality},
-    price_estimation::{
-        gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+use {
+    crate::{
+        bad_token::{BadTokenDetecting, TokenQuality},
+        price_estimation::{
+            gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
+            Query,
+        },
     },
-};
-use anyhow::anyhow;
-use futures::StreamExt;
-use model::order::BUY_ETH_ADDRESS;
-use primitive_types::H160;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+    anyhow::anyhow,
+    futures::StreamExt,
+    model::order::BUY_ETH_ADDRESS,
+    primitive_types::H160,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 /// Verifies that buy and sell tokens are supported and handles
@@ -202,14 +208,16 @@ impl PriceEstimating for SanitizedPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        bad_token::{MockBadTokenDetecting, TokenQuality},
-        price_estimation::{vec_estimates, MockPriceEstimating},
+    use {
+        super::*,
+        crate::{
+            bad_token::{MockBadTokenDetecting, TokenQuality},
+            price_estimation::{vec_estimates, MockPriceEstimating},
+        },
+        futures::StreamExt,
+        model::order::OrderKind,
+        primitive_types::{H160, U256},
     };
-    use futures::StreamExt;
-    use model::order::OrderKind;
-    use primitive_types::{H160, U256};
 
     const BAD_TOKEN: H160 = H160([0x12; 20]);
 
@@ -266,7 +274,8 @@ mod tests {
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
-            // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are identical.
+            // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
+            // identical.
             Query {
                 from: None,
                 sell_token: H160::from_low_u64_le(1),

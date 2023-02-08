@@ -1,13 +1,21 @@
-use crate::{ethrpc::Web3, http_client::HttpClientFactory};
-use anyhow::{ensure, Context, Result};
-use gas_estimation::{
-    blocknative::BlockNative, nativegasestimator::NativeGasEstimator, EthGasStation,
-    GasNowGasStation, GasPrice1559, GasPriceEstimating, GnosisSafeGasStation,
-    PriorityGasPriceEstimating, Transport,
+use {
+    crate::{ethrpc::Web3, http_client::HttpClientFactory},
+    anyhow::{ensure, Context, Result},
+    gas_estimation::{
+        blocknative::BlockNative,
+        nativegasestimator::NativeGasEstimator,
+        EthGasStation,
+        GasNowGasStation,
+        GasPrice1559,
+        GasPriceEstimating,
+        GnosisSafeGasStation,
+        PriorityGasPriceEstimating,
+        Transport,
+    },
+    reqwest::header::{self, HeaderMap, HeaderValue},
+    serde::de::DeserializeOwned,
+    std::sync::{Arc, Mutex},
 };
-use reqwest::header::{self, HeaderMap, HeaderValue};
-use serde::de::DeserializeOwned;
-use std::sync::{Arc, Mutex};
 
 #[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]

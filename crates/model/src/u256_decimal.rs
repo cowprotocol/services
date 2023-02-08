@@ -1,7 +1,9 @@
-use primitive_types::U256;
-use serde::{de, Deserializer, Serializer};
-use serde_with::{DeserializeAs, SerializeAs};
-use std::fmt;
+use {
+    primitive_types::U256,
+    serde::{de, Deserializer, Serializer},
+    serde_with::{DeserializeAs, SerializeAs},
+    std::fmt,
+};
 
 pub struct DecimalU256;
 

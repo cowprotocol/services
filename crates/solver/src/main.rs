@@ -1,55 +1,70 @@
-use clap::Parser;
-use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
-use futures::future;
-use model::DomainSeparator;
-use num::rational::Ratio;
-use shared::{
-    baseline_solver::BaseTokens,
-    code_fetching::CachedCodeFetcher,
-    ethrpc::{self, Web3},
-    gelato_api::GelatoClient,
-    http_client::HttpClientFactory,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::serve_metrics,
-    network::network_name,
-    recent_block_cache::CacheConfig,
-    sources::{
-        self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::{AutoUpdatingTokenList, TokenListConfiguration},
-    zeroex_api::DefaultZeroExApi,
-};
-use solver::{
-    arguments::TransactionStrategyArg,
-    driver::Driver,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
-    },
-    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::Metrics,
-    orderbook::OrderBookApi,
-    s3_instance_upload::S3InstanceUploader,
-    settlement_post_processing::PostProcessingPipeline,
-    settlement_submission::{
-        gelato::GelatoSubmitter,
-        submitter::{
-            eden_api::EdenApi,
-            flashbots_api::FlashbotsApi,
-            public_mempool_api::{
-                validate_submission_node, PublicMempoolApi, SubmissionNode, SubmissionNodeKind,
+use {
+    clap::Parser,
+    contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    futures::future,
+    model::DomainSeparator,
+    num::rational::Ratio,
+    shared::{
+        baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
+        ethrpc::{self, Web3},
+        gelato_api::GelatoClient,
+        http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
+        metrics::serve_metrics,
+        network::network_name,
+        recent_block_cache::CacheConfig,
+        sources::{
+            self,
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
-            Strategy,
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        token_list::{AutoUpdatingTokenList, TokenListConfiguration},
+        zeroex_api::DefaultZeroExApi,
     },
+    solver::{
+        arguments::TransactionStrategyArg,
+        driver::Driver,
+        liquidity::{
+            balancer_v2::BalancerV2Liquidity,
+            order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity,
+            uniswap_v3::UniswapV3Liquidity,
+            zeroex::ZeroExLiquidity,
+        },
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::Metrics,
+        orderbook::OrderBookApi,
+        s3_instance_upload::S3InstanceUploader,
+        settlement_post_processing::PostProcessingPipeline,
+        settlement_submission::{
+            gelato::GelatoSubmitter,
+            submitter::{
+                eden_api::EdenApi,
+                flashbots_api::FlashbotsApi,
+                public_mempool_api::{
+                    validate_submission_node,
+                    PublicMempoolApi,
+                    SubmissionNode,
+                    SubmissionNodeKind,
+                },
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+            TransactionStrategy,
+        },
+    },
+    std::{collections::HashMap, sync::Arc},
 };
-use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
 async fn main() -> ! {
@@ -391,7 +406,8 @@ async fn main() -> ! {
             TransactionStrategyArg::PublicMempool => {
                 assert!(
                     submission_nodes.iter().any(|node| node.can_broadcast()),
-                    "At least one submission node that can broadcast transactions must be available"
+                    "At least one submission node that can broadcast transactions must be \
+                     available"
                 );
                 transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(

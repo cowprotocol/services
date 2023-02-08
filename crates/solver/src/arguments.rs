@@ -1,16 +1,18 @@
-use crate::{
-    liquidity::slippage,
-    s3_instance_upload_arguments::S3UploadArguments,
-    settlement_access_list::AccessListEstimatorType,
-    solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
+use {
+    crate::{
+        liquidity::slippage,
+        s3_instance_upload_arguments::S3UploadArguments,
+        settlement_access_list::AccessListEstimatorType,
+        solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
+    },
+    primitive_types::H160,
+    reqwest::Url,
+    shared::{
+        arguments::{display_list, display_option, display_secret_option},
+        http_client,
+    },
+    std::time::Duration,
 };
-use primitive_types::H160;
-use reqwest::Url;
-use shared::{
-    arguments::{display_list, display_option, display_secret_option},
-    http_client,
-};
-use std::time::Duration;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -48,7 +50,8 @@ pub struct Arguments {
     #[clap(long, env, hide_env_values = true)]
     pub solver_account: Option<SolverAccountArg>,
 
-    /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
+    /// The target confirmation time in seconds for settlement transactions used
+    /// to estimate gas price.
     #[clap(
         long,
         env,
@@ -97,9 +100,9 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub external_solvers: Option<Vec<ExternalSolverArg>>,
 
-    /// A settlement must contain at least one order older than this duration in seconds for it
-    /// to be applied.  Larger values delay individual settlements more but have a higher
-    /// coincidence of wants chance.
+    /// A settlement must contain at least one order older than this duration in
+    /// seconds for it to be applied.  Larger values delay individual
+    /// settlements more but have a higher coincidence of wants chance.
     #[clap(
         long,
         env,
@@ -125,8 +128,8 @@ pub struct Arguments {
     )]
     pub solver_time_limit: Duration,
 
-    /// The list of tokens our settlement contract is willing to buy when settling trades
-    /// without external liquidity
+    /// The list of tokens our settlement contract is willing to buy when
+    /// settling trades without external liquidity
     #[clap(long, env, default_value = "https://files.cow.fi/token_list.json")]
     pub market_makable_token_list: String,
 
@@ -139,7 +142,8 @@ pub struct Arguments {
     )]
     pub market_makable_token_list_update_interval: Duration,
 
-    /// The maximum gas price in Gwei the solver is willing to pay in a settlement.
+    /// The maximum gas price in Gwei the solver is willing to pay in a
+    /// settlement.
     #[clap(
         long,
         env,
@@ -151,7 +155,8 @@ pub struct Arguments {
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
-    /// 2. One or more values equal to any combination of enum variants except TransactionStrategyArg::DryRun
+    /// 2. One or more values equal to any combination of enum variants except
+    /// TransactionStrategyArg::DryRun
     #[clap(
         long,
         env,
@@ -176,9 +181,9 @@ pub struct Arguments {
     )]
     pub gelato_submission_poll_interval: Duration,
 
-    /// Which access list estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators might support different networks.
-    /// `Tenderly`: supports every network.
+    /// Which access list estimators to use. Multiple estimators are used in
+    /// sequence if a previous one fails. Individual estimators might
+    /// support different networks. `Tenderly`: supports every network.
     /// `Web3`: supports every network.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
@@ -188,7 +193,8 @@ pub struct Arguments {
     pub eden_api_url: Url,
 
     /// The API endpoint of the Flashbots network for transaction submission.
-    /// Multiple values could be defined for different Flashbots endpoints (Flashbots Protect and Flashbots fast).
+    /// Multiple values could be defined for different Flashbots endpoints
+    /// (Flashbots Protect and Flashbots fast).
     #[clap(
         long,
         env,
@@ -197,7 +203,8 @@ pub struct Arguments {
     )]
     pub flashbots_api_url: Vec<Url>,
 
-    /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to eden above
+    /// regular gas price estimation
     #[clap(
         long,
         env,
@@ -206,8 +213,8 @@ pub struct Arguments {
     )]
     pub max_additional_eden_tip: f64,
 
-    /// The maximum time in seconds we spend trying to settle a transaction through the ethereum
-    /// network before going to back to solving.
+    /// The maximum time in seconds we spend trying to settle a transaction
+    /// through the ethereum network before going to back to solving.
     #[clap(
         long,
         env,
@@ -216,7 +223,8 @@ pub struct Arguments {
     )]
     pub max_submission_seconds: Duration,
 
-    /// Maximum additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to flashbots
+    /// above regular gas price estimation
     #[clap(
         long,
         env,
@@ -225,7 +233,8 @@ pub struct Arguments {
     )]
     pub max_additional_flashbot_tip: f64,
 
-    /// Amount of time to wait before retrying to submit the tx to the ethereum network
+    /// Amount of time to wait before retrying to submit the tx to the ethereum
+    /// network
     #[clap(
         long,
         env,
@@ -234,7 +243,8 @@ pub struct Arguments {
     )]
     pub submission_retry_interval_seconds: Duration,
 
-    /// Additional tip in percentage of max_fee_per_gas we are willing to give to miners above regular gas price estimation
+    /// Additional tip in percentage of max_fee_per_gas we are willing to give
+    /// to miners above regular gas price estimation
     #[clap(
         long,
         env,
@@ -243,20 +253,22 @@ pub struct Arguments {
     )]
     pub additional_tip_percentage: f64,
 
-    /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
+    /// The RPC endpoints to use for submitting transaction to a custom set of
+    /// nodes.
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
-    /// Additional RPC endpoints that we notify when we submit a transaction to the network.
-    /// These endpoints are usually third parties that seek to be timely informed of a submission.
-    /// These URLs are expected to respond to valid RPC requests. however they are not expected to
-    /// be available nor we expect that transaction will eventually be mined.   
+    /// Additional RPC endpoints that we notify when we submit a transaction to
+    /// the network. These endpoints are usually third parties that seek to
+    /// be timely informed of a submission. These URLs are expected to
+    /// respond to valid RPC requests. however they are not expected to
+    /// be available nor we expect that transaction will eventually be mined.
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_notification_nodes: Vec<Url>,
 
-    /// Don't submit high revert risk (i.e. transactions that interact with on-chain
-    /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
-    /// transaction submission strategies are available.
+    /// Don't submit high revert risk (i.e. transactions that interact with
+    /// on-chain AMMs) to the public mempool. This can be enabled to avoid
+    /// MEV when private transaction submission strategies are available.
     #[clap(long, env)]
     pub disable_high_risk_public_mempool_transactions: bool,
 
@@ -271,36 +283,40 @@ pub struct Arguments {
     #[clap(long, env, default_value = "20")]
     pub max_settlements_per_solver: usize,
 
-    /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is not big enough to
-    /// settle ETH buy orders.
-    /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
-    /// of unwraps per settled batch.
+    /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is
+    /// not big enough to settle ETH buy orders.
+    /// Unwrapping a bigger amount will cause fewer unwraps to happen and
+    /// thereby reduce the cost of unwraps per settled batch.
     /// Only values in the range [0.0, 1.0] make sense.
     #[clap(long, env, default_value = "0.6", value_parser = shared::arguments::parse_percentage_factor)]
     pub weth_unwrap_factor: f64,
 
-    /// Gas limit for simulations. This parameter is important to set correctly, such that
-    /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
-    /// but at the same time we don't restrict solutions sizes too much
+    /// Gas limit for simulations. This parameter is important to set correctly,
+    /// such that there are no simulation errors due to: err: insufficient
+    /// funds for gas * price + value, but at the same time we don't
+    /// restrict solutions sizes too much
     #[clap(long, env, default_value = "15000000")]
     pub simulation_gas_limit: u128,
 
-    /// In order to protect against malicious solvers, the driver will check that settlements prices do not
-    /// exceed a max price deviation compared to the external prices of the driver, if this optional value is set.
-    /// The max deviation value should be provided as a float percentage value. E.g. for a max price deviation
-    /// of 3%, one should set it to 0.03f64
+    /// In order to protect against malicious solvers, the driver will check
+    /// that settlements prices do not exceed a max price deviation compared
+    /// to the external prices of the driver, if this optional value is set.
+    /// The max deviation value should be provided as a float percentage value.
+    /// E.g. for a max price deviation of 3%, one should set it to 0.03f64
     #[clap(long, env)]
     pub max_settlement_price_deviation: Option<f64>,
 
-    /// This variable allows to restrict the set of tokens for which a price deviation check of settlement
-    /// prices and external prices is executed. If the value is not set, then all tokens included
+    /// This variable allows to restrict the set of tokens for which a price
+    /// deviation check of settlement prices and external prices is
+    /// executed. If the value is not set, then all tokens included
     /// in the settlement are checked for price deviation.
     #[clap(long, env, use_value_delimiter = true)]
     pub token_list_restriction_for_price_checks: Option<Vec<H160>>,
 
-    /// When comparing the objective value of different solutions, ignore the N least significant digits in base 10.
-    /// Note, that objective values are computed in wei. A value of 15 would consider solutions with with objective
-    /// value 0.0012 ETH and 0.0016 ETH equivalent.
+    /// When comparing the objective value of different solutions, ignore the N
+    /// least significant digits in base 10. Note, that objective values are
+    /// computed in wei. A value of 15 would consider solutions with with
+    /// objective value 0.0012 ETH and 0.0016 ETH equivalent.
     #[clap(long, env, default_value = "0")]
     pub solution_comparison_decimal_cutoff: u16,
 

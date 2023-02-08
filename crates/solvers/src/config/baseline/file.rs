@@ -1,7 +1,4 @@
-use crate::domain::eth;
-use serde::Deserialize;
-use std::path::Path;
-use tokio::fs;
+use {crate::domain::eth, serde::Deserialize, std::path::Path, tokio::fs};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]

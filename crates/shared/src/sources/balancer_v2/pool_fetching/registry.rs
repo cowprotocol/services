@@ -1,24 +1,31 @@
 //! A pool registry for a single pool factory that is generic on its type of
 //! pool.
 
-use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
-use crate::{
-    current_block::{BlockNumberHash, BlockRetrieving},
-    ethcontract_error::EthcontractErrorType,
-    ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
-    event_handling::EventHandler,
-    impl_event_retrieving,
-    maintenance::Maintaining,
-    recent_block_cache::Block,
-    sources::balancer_v2::pools::{common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus},
+use {
+    super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
+    crate::{
+        current_block::{BlockNumberHash, BlockRetrieving},
+        ethcontract_error::EthcontractErrorType,
+        ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
+        event_handling::EventHandler,
+        impl_event_retrieving,
+        maintenance::Maintaining,
+        recent_block_cache::Block,
+        sources::balancer_v2::pools::{
+            common::PoolInfoFetching,
+            FactoryIndexing,
+            Pool,
+            PoolStatus,
+        },
+    },
+    anyhow::Result,
+    contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
+    ethcontract::{errors::MethodError, BlockId, Instance, H256},
+    futures::future,
+    model::TokenPair,
+    std::{collections::HashSet, sync::Arc},
+    tokio::sync::Mutex,
 };
-use anyhow::Result;
-use contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory};
-use ethcontract::{errors::MethodError, BlockId, Instance, H256};
-use futures::future;
-use model::TokenPair;
-use std::{collections::HashSet, sync::Arc};
-use tokio::sync::Mutex;
 
 impl_event_retrieving! {
     pub BasePoolFactoryContract for balancer_v2_base_pool_factory
@@ -27,11 +34,12 @@ impl_event_retrieving! {
 /// Type alias for the internal event updater type.
 type PoolUpdater<Factory> = Mutex<EventHandler<BasePoolFactoryContract, PoolStorage<Factory>>>;
 
-/// The Pool Registry maintains an event handler for each of the Balancer Pool Factory contracts
-/// and maintains a `PoolStorage` for each.
-/// Pools are read from this registry, via the public method `pool_ids_for_token_pairs`
-/// which takes a collection of `TokenPair`, gets the relevant pools from each `PoolStorage`
-/// and returns a merged de-duplicated version of the results.
+/// The Pool Registry maintains an event handler for each of the Balancer Pool
+/// Factory contracts and maintains a `PoolStorage` for each.
+/// Pools are read from this registry, via the public method
+/// `pool_ids_for_token_pairs` which takes a collection of `TokenPair`, gets the
+/// relevant pools from each `PoolStorage` and returns a merged de-duplicated
+/// version of the results.
 pub struct Registry<Factory>
 where
     Factory: FactoryIndexing,
@@ -141,12 +149,14 @@ fn is_contract_error(err: &anyhow::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        ethcontract_error,
-        sources::balancer_v2::{
-            pools::{weighted, PoolKind},
-            swap::fixed_point::Bfp,
+    use {
+        super::*,
+        crate::{
+            ethcontract_error,
+            sources::balancer_v2::{
+                pools::{weighted, PoolKind},
+                swap::fixed_point::Bfp,
+            },
         },
     };
 

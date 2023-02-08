@@ -1,38 +1,53 @@
-use crate::{
-    onchain_components::{
-        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
-    },
-    services::{
-        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
-        API_HOST,
-    },
-};
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use model::{
-    order::{OrderBuilder, OrderKind, SellTokenSource},
-    signature::EcdsaSigningScheme,
-};
-use secp256k1::SecretKey;
-use shared::{
-    code_fetching::MockCodeFetching, ethrpc::Web3, http_client::HttpClientFactory,
-    sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{
-            public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-            Strategy,
+use {
+    crate::{
+        onchain_components::{
+            deploy_token_with_weth_uniswap_pool,
+            to_wei,
+            uniswap_pair_provider,
+            WethPoolConfig,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
+        services::{
+            create_order_converter,
+            create_orderbook_api,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
     },
+    contracts::IUniswapLikeRouter,
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
+    },
+    model::{
+        order::{OrderBuilder, OrderKind, SellTokenSource},
+        signature::EcdsaSigningScheme,
+    },
+    secp256k1::SecretKey,
+    shared::{
+        code_fetching::MockCodeFetching,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        sources::uniswap_v2::pool_fetching::PoolFetcher,
+    },
+    solver::{
+        liquidity::uniswap_v2::UniswapLikeLiquidity,
+        liquidity_collector::LiquidityCollector,
+        metrics::NoopMetrics,
+        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        settlement_submission::{
+            submitter::{
+                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+        },
+    },
+    std::{sync::Arc, time::Duration},
+    web3::signing::SecretKeyRef,
 };
-use std::{sync::Arc, time::Duration};
-use web3::signing::SecretKeyRef;
 
 const TRADER: [u8; 32] = [1; 32];
 
@@ -52,6 +67,12 @@ async fn vault_balances(web3: Web3) {
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & mint tokens to trade, pools for fee connections
     let token = deploy_token_with_weth_uniswap_pool(

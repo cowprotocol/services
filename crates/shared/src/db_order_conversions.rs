@@ -1,24 +1,40 @@
-use anyhow::{Context, Result};
-use database::{
-    onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
-    orders::{
-        BuyTokenDestination as DbBuyTokenDestination, FullOrder as FullOrderDb,
-        OrderClass as DbOrderClass, OrderKind as DbOrderKind, SellTokenSource as DbSellTokenSource,
-        SigningScheme as DbSigningScheme,
+use {
+    anyhow::{Context, Result},
+    database::{
+        onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination,
+            FullOrder as FullOrderDb,
+            OrderClass as DbOrderClass,
+            OrderKind as DbOrderKind,
+            SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
+        },
     },
-};
-use ethcontract::{H160, H256};
-use model::{
-    app_id::AppId,
-    interaction::InteractionData,
-    order::{
-        BuyTokenDestination, EthflowData, Interactions, LimitOrderClass, OnchainOrderData,
-        OnchainOrderPlacementError, Order, OrderClass, OrderData, OrderKind, OrderMetadata,
-        OrderStatus, OrderUid, SellTokenSource,
+    ethcontract::{H160, H256},
+    model::{
+        app_id::AppId,
+        interaction::InteractionData,
+        order::{
+            BuyTokenDestination,
+            EthflowData,
+            Interactions,
+            LimitOrderClass,
+            OnchainOrderData,
+            OnchainOrderPlacementError,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderStatus,
+            OrderUid,
+            SellTokenSource,
+        },
+        signature::{Signature, SigningScheme},
     },
-    signature::{Signature, SigningScheme},
+    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
-use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256};
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;

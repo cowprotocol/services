@@ -1,44 +1,65 @@
-use crate::{
-    deploy::Contracts,
-    local_node::{AccountAssigner, TestNodeApi},
-    onchain_components::{
-        deploy_token_with_weth_uniswap_pool, to_wei, MintableToken, WethPoolConfig,
+use {
+    crate::{
+        deploy::Contracts,
+        local_node::{AccountAssigner, TestNodeApi},
+        onchain_components::{
+            deploy_token_with_weth_uniswap_pool,
+            to_wei,
+            MintableToken,
+            WethPoolConfig,
+        },
+        services::{
+            create_orderbook_api,
+            setup_naive_solver_uniswapv2_driver,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
     },
-    services::{
-        create_orderbook_api, setup_naive_solver_uniswapv2_driver, wait_for_solvable_orders,
-        OrderbookServices, API_HOST,
+    anyhow::bail,
+    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+    chrono::{DateTime, NaiveDateTime, Utc},
+    contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
+    hex_literal::hex,
+    model::{
+        app_id::AppId,
+        auction::AuctionWithId,
+        order::{
+            BuyTokenDestination,
+            EthflowData,
+            OnchainOrderData,
+            Order,
+            OrderBuilder,
+            OrderClass,
+            OrderKind,
+            OrderUid,
+            SellTokenSource,
+        },
+        quote::{
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            PriceQuality,
+            QuoteSigningScheme,
+            Validity,
+        },
+        signature::{hashed_eip712_message, Signature},
+        trade::Trade,
+        DomainSeparator,
     },
-};
-use anyhow::bail;
-use autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR;
-use chrono::{DateTime, NaiveDateTime, Utc};
-use contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9};
-use ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256};
-use hex_literal::hex;
-use model::{
-    app_id::AppId,
-    auction::AuctionWithId,
-    order::{
-        BuyTokenDestination, EthflowData, OnchainOrderData, Order, OrderBuilder, OrderClass,
-        OrderKind, OrderUid, SellTokenSource,
+    refunder::{
+        ethflow_order::EthflowOrder,
+        refund_service::{INVALIDATED_OWNER, NO_OWNER},
     },
-    quote::{
-        OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
-        Validity,
+    reqwest::Client,
+    shared::{
+        current_block::timestamp_of_current_block_in_seconds,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        maintenance::Maintaining,
+        signature_validator::check_erc1271_result,
     },
-    signature::{hashed_eip712_message, Signature},
-    trade::Trade,
-    DomainSeparator,
-};
-use refunder::{
-    ethflow_order::EthflowOrder,
-    refund_service::{INVALIDATED_OWNER, NO_OWNER},
-};
-use reqwest::Client;
-use shared::{
-    current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3,
-    http_client::HttpClientFactory, maintenance::Maintaining,
-    signature_validator::check_erc1271_result,
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
@@ -171,8 +192,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let http_factory = HttpClientFactory::default();
     let client = http_factory.create();
 
-    // Create an order that only exists to be refunded, which triggers an event in the eth-flow contract that is not
-    // included in the ABI of `CoWSwapOnchainOrders`.
+    // Create an order that only exists to be refunded, which triggers an event in
+    // the eth-flow contract that is not included in the ABI of
+    // `CoWSwapOnchainOrders`.
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &submit_quote(
@@ -251,8 +273,8 @@ async fn submit_quote(quote: &OrderQuoteRequest, client: &reqwest::Client) -> Or
     let response = quoting.json::<OrderQuoteResponse>().await.unwrap();
 
     assert!(response.id.is_some());
-    // Ideally the fee would be nonzero, but this is not the case in the test environment
-    //assert_ne!(response.quote.fee_amount, 0.into());
+    // Ideally the fee would be nonzero, but this is not the case in the test
+    // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
     let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
     assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
@@ -297,7 +319,8 @@ async fn test_order_availability_in_api(
 ) {
     test_orders_query(client, order, owner, contracts).await;
 
-    // Api returns eth flow orders for both eth-flow contract address and actual owner
+    // Api returns eth flow orders for both eth-flow contract address and actual
+    // owner
     for address in [owner, &contracts.ethflow.address()] {
         test_account_query(address, client, order, owner, contracts).await;
     }
@@ -320,7 +343,8 @@ async fn test_trade_availability_in_api(
     )
     .await;
 
-    // Api returns eth flow orders for both eth-flow contract address and actual owner
+    // Api returns eth flow orders for both eth-flow contract address and actual
+    // owner
     for address in [owner, &contracts.ethflow.address()] {
         test_trade_query(&TradeQuery::ByOwner(*address), client, contracts).await;
     }

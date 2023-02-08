@@ -1,35 +1,49 @@
-use crate::{
-    account_balances::{BalanceFetching, TransferSimulationError},
-    bad_token::BadTokenDetecting,
-    code_fetching::CodeFetching,
-    order_quoting::{
-        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
-        QuoteSearchParameters,
+use {
+    crate::{
+        account_balances::{BalanceFetching, TransferSimulationError},
+        bad_token::BadTokenDetecting,
+        code_fetching::CodeFetching,
+        order_quoting::{
+            CalculateQuoteError,
+            FindQuoteError,
+            OrderQuoting,
+            Quote,
+            QuoteParameters,
+            QuoteSearchParameters,
+        },
+        price_estimation::PriceEstimationError,
+        signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     },
-    price_estimation::PriceEstimationError,
-    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-};
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
-use contracts::WETH9;
-use database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind};
-use ethcontract::{H160, U256};
-use model::{
-    order::{
-        BuyTokenDestination, LimitOrderClass, Order, OrderClass, OrderCreation, OrderData,
-        OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
+    anyhow::{anyhow, Result},
+    async_trait::async_trait,
+    contracts::WETH9,
+    database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind},
+    ethcontract::{H160, U256},
+    model::{
+        order::{
+            BuyTokenDestination,
+            LimitOrderClass,
+            Order,
+            OrderClass,
+            OrderCreation,
+            OrderData,
+            OrderKind,
+            SellTokenSource,
+            BUY_ETH_ADDRESS,
+        },
+        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
+        time,
+        DomainSeparator,
     },
-    quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-    signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
-    time, DomainSeparator,
+    std::{collections::HashSet, sync::Arc, time::Duration},
 };
-use std::{collections::HashSet, sync::Arc, time::Duration};
 
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
-    /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
-    /// fee & quote phase (i.e. before the order is signed).
+    /// Partial (aka Pre-) Validation is aimed at catching malformed order data
+    /// during the fee & quote phase (i.e. before the order is signed).
     /// Thus, partial validation *doesn't* verify:
     ///     - signatures
     ///     - user sell balances or fee sufficiency.
@@ -44,15 +58,16 @@ pub trait OrderValidating: Send + Sync {
     ///     - buy & sell tokens passed "bad token" detection,
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
-    /// This is the full order validation performed at the time of order placement
-    /// (i.e. once all the required fields on an Order are provided). Specifically, verifying that
+    /// This is the full order validation performed at the time of order
+    /// placement (i.e. once all the required fields on an Order are
+    /// provided). Specifically, verifying that
     ///     - buy & sell amounts are non-zero,
     ///     - order's signature recovers correctly
     ///     - fee is sufficient,
     ///     - user has sufficient (transferable) funds to execute the order.
     ///
-    /// Furthermore, full order validation also calls partial_validate to ensure that
-    /// other aspects of the order are not malformed.
+    /// Furthermore, full order validation also calls partial_validate to ensure
+    /// that other aspects of the order are not malformed.
     async fn validate_and_construct_order(
         &self,
         order: OrderCreation,
@@ -770,26 +785,30 @@ pub fn convert_signing_scheme_into_quote_kind(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        account_balances::MockBalanceFetching,
-        bad_token::{MockBadTokenDetecting, TokenQuality},
-        code_fetching::MockCodeFetching,
-        dummy_contract,
-        order_quoting::MockOrderQuoting,
-        rate_limiter::RateLimiterError,
-        signature_validator::MockSignatureValidating,
+    use {
+        super::*,
+        crate::{
+            account_balances::MockBalanceFetching,
+            bad_token::{MockBadTokenDetecting, TokenQuality},
+            code_fetching::MockCodeFetching,
+            dummy_contract,
+            order_quoting::MockOrderQuoting,
+            rate_limiter::RateLimiterError,
+            signature_validator::MockSignatureValidating,
+        },
+        anyhow::anyhow,
+        chrono::Utc,
+        ethcontract::web3::signing::SecretKeyRef,
+        maplit::hashset,
+        mockall::predicate::{always, eq},
+        model::{
+            app_id::AppId,
+            order::OrderBuilder,
+            quote::default_verification_gas_limit,
+            signature::EcdsaSigningScheme,
+        },
+        secp256k1::ONE_KEY,
     };
-    use anyhow::anyhow;
-    use chrono::Utc;
-    use ethcontract::web3::signing::SecretKeyRef;
-    use maplit::hashset;
-    use mockall::predicate::{always, eq};
-    use model::{
-        app_id::AppId, order::OrderBuilder, quote::default_verification_gas_limit,
-        signature::EcdsaSigningScheme,
-    };
-    use secp256k1::ONE_KEY;
 
     #[test]
     fn minimum_balance_() {

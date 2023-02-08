@@ -10,12 +10,9 @@ mod domain;
 mod tests;
 mod util;
 
-use crate::domain::baseline;
-use clap::Parser;
-use std::net::SocketAddr;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
-use tokio::sync::oneshot;
+use {crate::domain::baseline, clap::Parser, std::net::SocketAddr, tokio::sync::oneshot};
 
 #[tokio::main]
 async fn main() {
@@ -30,7 +27,8 @@ async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sender<So
     boundary::initialize_tracing(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
-    // TODO In the future, should use different load methods based on the command being executed
+    // TODO In the future, should use different load methods based on the command
+    // being executed
     let cli::Command::Baseline = args.command;
     let baseline = config::baseline::file::load(&args.config).await;
     api::Api {

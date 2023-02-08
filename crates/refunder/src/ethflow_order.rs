@@ -1,6 +1,8 @@
-use database::{ethflow_orders::EthOrderData, orders::Order};
-use ethcontract::{Bytes, H160, U256};
-use number_conversions::big_decimal_to_u256;
+use {
+    database::{ethflow_orders::EthOrderData, orders::Order},
+    ethcontract::{Bytes, H160, U256},
+    number_conversions::big_decimal_to_u256,
+};
 // Data structure reflecting the contract ethflow order
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/libraries/EthFlowOrder.sol#L19
 pub struct EthflowOrder {
@@ -60,9 +62,7 @@ pub fn order_to_ethflow_data(order: Order, ethflow_order_placement: EthOrderData
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use database::byte_array::ByteArray;
-    use number_conversions::u256_to_big_decimal;
+    use {super::*, database::byte_array::ByteArray, number_conversions::u256_to_big_decimal};
 
     #[test]
     fn test_order_to_ethflow_data() {

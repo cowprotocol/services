@@ -1,19 +1,22 @@
-use futures::{
-    future::{BoxFuture, Shared, WeakShared},
-    FutureExt,
+use {
+    futures::{
+        future::{BoxFuture, Shared, WeakShared},
+        FutureExt,
+    },
+    std::{future::Future, sync::Mutex},
 };
-use std::{future::Future, sync::Mutex};
 
-// The design of this module is intentionally simple. Every time a shared future is requested we
-// loop through all futures to collect garbage. Because of this there is no advantage from using
-// a hash map.
+// The design of this module is intentionally simple. Every time a shared future
+// is requested we loop through all futures to collect garbage. Because of this
+// there is no advantage from using a hash map.
 //
-// Alternatively we could collect garbage in a background task or return a wrapper future that
-// collects garbage on drop. In that case we would use a hash map. This alternative approach is more
-// complex and unnecessary because we do not expect there to be a large number of futures in flight.
+// Alternatively we could collect garbage in a background task or return a
+// wrapper future that collects garbage on drop. In that case we would use a
+// hash map. This alternative approach is more complex and unnecessary because
+// we do not expect there to be a large number of futures in flight.
 
-/// Share an expensive to compute response with multiple requests that occur while one of them is
-/// already in flight.
+/// Share an expensive to compute response with multiple requests that occur
+/// while one of them is already in flight.
 pub struct RequestSharing<Request, Fut: Future> {
     in_flight: Mutex<Vec<(Request, WeakShared<Fut>)>>,
 }
@@ -39,23 +42,25 @@ where
     Fut: Future,
     Fut::Output: Clone,
 {
-    // Intentionally returns Shared<Fut> instead of an opaque `impl Future` (or being an async fn)
-    // because this has some useful properties to the caller like being unpin and fused.
+    // Intentionally returns Shared<Fut> instead of an opaque `impl Future` (or
+    // being an async fn) because this has some useful properties to the caller
+    // like being unpin and fused.
 
-    /// Returns an existing in flight future for this request or uses the passed in future as a new
-    /// in flight future.
+    /// Returns an existing in flight future for this request or uses the passed
+    /// in future as a new in flight future.
     ///
-    /// Note that futures do nothing util polled so merely creating the response future is not
-    /// expensive.
+    /// Note that futures do nothing util polled so merely creating the response
+    /// future is not expensive.
     pub fn shared(&self, request: Request, future: Fut) -> Shared<Fut> {
         self.shared_or_else(request, move |_| future)
     }
 
-    /// Returns an existing in flight future or creates and uses a new future from the specified
-    /// closure.
+    /// Returns an existing in flight future or creates and uses a new future
+    /// from the specified closure.
     ///
-    /// This is similar to [`RequestSharing::shared`] but lazily creates the future. This can be
-    /// helpful when creating futures is non trivial (such as cloning a large vector).
+    /// This is similar to [`RequestSharing::shared`] but lazily creates the
+    /// future. This can be helpful when creating futures is non trivial
+    /// (such as cloning a large vector).
     pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
     where
         F: FnOnce(&Request) -> Fut,
@@ -85,8 +90,8 @@ where
         }
 
         let shared = future(&request).shared();
-        // unwrap because downgrade only returns None if the Shared has already completed which
-        // cannot be the case because we haven't polled it yet.
+        // unwrap because downgrade only returns None if the Shared has already
+        // completed which cannot be the case because we haven't polled it yet.
         in_flight.push((request, shared.downgrade().unwrap()));
         shared
     }

@@ -1,13 +1,18 @@
-use super::{
-    trade_finder::{TradeEstimator, TradeVerifier},
-    PriceEstimateResult, PriceEstimating, Query,
+use {
+    super::{
+        trade_finder::{TradeEstimator, TradeVerifier},
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
+    },
+    crate::{
+        oneinch_api::OneInchClient,
+        rate_limiter::RateLimiter,
+        trade_finding::oneinch::OneInchTradeFinder,
+    },
+    primitive_types::H160,
+    std::sync::Arc,
 };
-use crate::{
-    oneinch_api::OneInchClient, rate_limiter::RateLimiter,
-    trade_finding::oneinch::OneInchTradeFinder,
-};
-use primitive_types::H160;
-use std::sync::Arc;
 
 pub struct OneInchPriceEstimator(TradeEstimator);
 
@@ -46,14 +51,16 @@ impl PriceEstimating for OneInchPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
-        price_estimation::{single_estimate, PriceEstimationError},
+    use {
+        super::*,
+        crate::{
+            oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
+            price_estimation::{single_estimate, PriceEstimationError},
+        },
+        futures::FutureExt as _,
+        model::order::OrderKind,
+        reqwest::Client,
     };
-    use futures::FutureExt as _;
-    use model::order::OrderKind;
-    use reqwest::Client;
 
     impl OneInchPriceEstimator {
         fn test(api: impl OneInchClient) -> Self {

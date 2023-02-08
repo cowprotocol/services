@@ -1,10 +1,12 @@
-use super::TokenOwnerProposing;
-use anyhow::{bail, Result};
-use ethcontract::H160;
-use prometheus::IntCounterVec;
-use prometheus_metric_storage::MetricStorage;
-use reqwest::{Client, Url};
-use serde::Deserialize;
+use {
+    super::TokenOwnerProposing,
+    anyhow::{bail, Result},
+    ethcontract::H160,
+    prometheus::IntCounterVec,
+    prometheus_metric_storage::MetricStorage,
+    reqwest::{Client, Url},
+    serde::Deserialize,
+};
 
 const BASE: &str = "https://blockscout.com/";
 
@@ -51,7 +53,8 @@ impl BlockscoutTokenOwnerFinder {
         status_result?;
         let parsed = serde_json::from_str::<Response>(&body)?;
 
-        // We technically only need one candidate, returning the top 2 in case there is a race condition and tokens have just been transferred out
+        // We technically only need one candidate, returning the top 2 in case there is
+        // a race condition and tokens have just been transferred out
         Ok(parsed
             .result
             .into_iter()
@@ -102,8 +105,7 @@ impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
+    use {super::*, hex_literal::hex};
 
     #[tokio::test]
     #[ignore]

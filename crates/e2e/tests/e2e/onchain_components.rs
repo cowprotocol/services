@@ -1,11 +1,13 @@
-use crate::deploy::Contracts;
-use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler};
-use ethcontract::{Account, Bytes, H160, H256, U256};
-use shared::{
-    ethrpc::Web3,
-    sources::uniswap_v2::{self, pair_provider::PairProvider},
+use {
+    crate::deploy::Contracts,
+    contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler},
+    ethcontract::{Account, Bytes, H160, H256, U256},
+    shared::{
+        ethrpc::Web3,
+        sources::uniswap_v2::{self, pair_provider::PairProvider},
+    },
+    web3::signing::{Key as _, SecretKeyRef},
 };
-use web3::signing::{Key as _, SecretKeyRef};
 
 #[macro_export]
 macro_rules! tx_value {
@@ -14,7 +16,6 @@ macro_rules! tx_value {
         $call
             .from($acc.clone())
             .value($value)
-            .gas_price(0.0.into())
             .send()
             .await
             .expect(&format!("{} failed", NAME))

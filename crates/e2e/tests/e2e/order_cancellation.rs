@@ -1,21 +1,33 @@
-use crate::{
-    onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-    services::{create_orderbook_api, OrderbookServices, API_HOST},
-    tx, tx_value,
-};
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use model::{
-    app_id::AppId,
-    order::{
-        CancellationPayload, Order, OrderBuilder, OrderCancellation, OrderCancellations,
-        OrderStatus, OrderUid, SignedOrderCancellations,
+use {
+    crate::{
+        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+        services::{create_orderbook_api, OrderbookServices, API_HOST},
+        tx,
+        tx_value,
     },
-    quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount},
-    signature::{EcdsaSignature, EcdsaSigningScheme},
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
+    },
+    model::{
+        app_id::AppId,
+        order::{
+            CancellationPayload,
+            Order,
+            OrderBuilder,
+            OrderCancellation,
+            OrderCancellations,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
+        },
+        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount},
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+    },
+    secp256k1::SecretKey,
+    shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining},
+    web3::signing::SecretKeyRef,
 };
-use secp256k1::SecretKey;
-use shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining};
-use web3::signing::SecretKeyRef;
 
 const TRADER_PK: [u8; 32] = [1; 32];
 
@@ -37,6 +49,12 @@ async fn order_cancellation(web3: Web3) {
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & mint tokens to trade, pools for fee connections
     let token = deploy_token_with_weth_uniswap_pool(

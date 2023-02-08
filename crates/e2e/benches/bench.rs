@@ -1,11 +1,12 @@
-use std::time::Duration;
-
-use criterion::{criterion_group, criterion_main, Criterion};
-use ethcontract::U256;
-use rand::seq::SliceRandom as _;
-use reqwest::Client;
-use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
-use tokio::runtime::Runtime;
+use {
+    criterion::{criterion_group, criterion_main, Criterion},
+    ethcontract::U256,
+    rand::seq::SliceRandom as _,
+    reqwest::Client,
+    shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration},
+    std::time::Duration,
+    tokio::runtime::Runtime,
+};
 
 const TOKEN_LIST: &str = "https://gateway.ipfs.io/ipns/tokens.uniswap.org";
 const BASE_URL: &str = "http://localhost:8080/api/v1";

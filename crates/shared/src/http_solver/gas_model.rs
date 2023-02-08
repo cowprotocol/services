@@ -1,6 +1,8 @@
-use super::model::TokenAmount;
-use crate::price_estimation::gas::*;
-use primitive_types::{H160, U256};
+use {
+    super::model::TokenAmount,
+    crate::price_estimation::gas::*,
+    primitive_types::{H160, U256},
+};
 
 pub struct GasModel {
     pub native_token: H160,
