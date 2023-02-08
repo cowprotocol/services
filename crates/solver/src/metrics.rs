@@ -122,7 +122,7 @@ pub trait SolverMetrics: Send + Sync {
     fn report_order_surplus(&self, surplus_diff: f64);
     fn runloop_completed(&self);
     fn complete_runloop_until_transaction(&self, duration: Duration);
-    fn transaction_submission(&self, duration: Duration);
+    fn transaction_submission(&self, duration: Duration, strategy: &str);
     fn transaction_gas_price(&self, gas_price: U256);
 }
 
@@ -143,7 +143,7 @@ pub struct Metrics {
     last_runloop_completed: Mutex<Instant>,
     order_surplus_report: Histogram,
     complete_runloop_until_transaction: Histogram,
-    transaction_submission: Histogram,
+    transaction_submission: HistogramVec,
     transaction_gas_price_gwei: Gauge,
 }
 
@@ -253,14 +253,14 @@ impl Metrics {
         })?;
         registry.register(Box::new(complete_runloop_until_transaction.clone()))?;
 
-        let opts = prometheus::opts!(
-            "transaction_submission_seconds",
-            "Time it takes to submit a settlement transaction."
-        );
-        let transaction_submission = Histogram::with_opts(HistogramOpts {
-            common_opts: opts,
-            buckets: vec![f64::INFINITY],
-        })?;
+        let transaction_submission = HistogramVec::new(
+            HistogramOpts::new(
+                "transaction_submission_seconds",
+                "Time it takes to submit a settlement transaction.",
+            )
+            .buckets(vec![f64::INFINITY]),
+            &["strategy"],
+        )?;
         registry.register(Box::new(transaction_submission.clone()))?;
 
         let opts = Opts::new(
@@ -431,8 +431,10 @@ impl SolverMetrics for Metrics {
             .observe(duration.as_secs_f64());
     }
 
-    fn transaction_submission(&self, duration: Duration) {
-        self.transaction_submission.observe(duration.as_secs_f64());
+    fn transaction_submission(&self, duration: Duration, strategy: &str) {
+        self.transaction_submission
+            .with_label_values(&[strategy])
+            .observe(duration.as_secs_f64());
     }
 
     fn transaction_gas_price(&self, gas_price: U256) {
@@ -495,7 +497,7 @@ impl SolverMetrics for NoopMetrics {
 
     fn complete_runloop_until_transaction(&self, _: Duration) {}
 
-    fn transaction_submission(&self, _: Duration) {}
+    fn transaction_submission(&self, _: Duration, _: &str) {}
 
     fn transaction_gas_price(&self, _: U256) {}
 

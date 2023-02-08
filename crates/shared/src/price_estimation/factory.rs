@@ -504,7 +504,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 base,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
-                    use_internal_buffers: Some(factory.shared_args.quasimodo_uses_internal_buffers),
+                    use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
                     objective: Some(Objective::SurplusFeesCosts),
                     ..Default::default()
                 },

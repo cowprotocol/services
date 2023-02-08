@@ -109,6 +109,18 @@ impl SubTxPoolRef {
     }
 }
 
+pub struct SubmissionReceipt {
+    pub tx: TransactionReceipt,
+    /// Strategy used for the mined transaction. Needed for metric purposes.
+    pub strategy: &'static str,
+}
+
+impl From<SubmissionReceipt> for TransactionReceipt {
+    fn from(value: SubmissionReceipt) -> Self {
+        value.tx
+    }
+}
+
 pub struct SolutionSubmitter {
     pub web3: Web3,
     pub contract: GPv2Settlement,
@@ -147,6 +159,16 @@ impl TransactionStrategy {
             TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
         }
     }
+
+    pub fn label(&self) -> &'static str {
+        match &self {
+            TransactionStrategy::Eden(_) => "Eden",
+            TransactionStrategy::Flashbots(_) => "Flashbots",
+            TransactionStrategy::PublicMempool(_) => "Mempool",
+            TransactionStrategy::Gelato(_) => "Gelato",
+            TransactionStrategy::DryRun => "DryRun",
+        }
+    }
 }
 
 impl SolutionSubmitter {
@@ -161,7 +183,7 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         account: Account,
         nonce: U256,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         // Other transaction strategies than the ones below, depend on an
         // account signing a raw transaction for a nonce, and waiting until that
         // nonce increases to detect that it actually mined. However, the
@@ -172,7 +194,13 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return Ok(dry_run::log_settlement(account, &self.contract, settlement).await?);
+                    return dry_run::log_settlement(account, &self.contract, settlement)
+                        .await
+                        .map(|tx| SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        })
+                        .map_err(Into::into);
                 }
                 TransactionStrategy::Gelato(gelato) => {
                     return tokio::time::timeout(
@@ -180,6 +208,12 @@ impl SolutionSubmitter {
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
+                    .map(|tx| {
+                        tx.map(|tx| SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        })
+                    })
                     .map_err(|_| SubmissionError::Timeout)?;
                 }
                 _ => {}
@@ -255,7 +289,7 @@ impl SolutionSubmitter {
         network_id: String,
         settlement: Settlement,
         index: usize,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
                 if !matches!(account, Account::Offline(..)) {
@@ -304,6 +338,10 @@ impl SolutionSubmitter {
                 i = index
             ))
             .await
+            .map(|tx| SubmissionReceipt {
+                tx,
+                strategy: strategy.label(),
+            })
     }
 }
 

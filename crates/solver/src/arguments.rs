@@ -32,11 +32,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8080")]
     pub orderbook_url: Url,
 
-    /// The API endpoint to call the mip solver
-    #[clap(long, env, default_value = "http://localhost:8000")]
-    pub mip_solver_url: Url,
-
-    /// The API endpoint to call the mip v2 solver
+    /// The API endpoint to call the Quasimodo solver
     #[clap(long, env, default_value = "http://localhost:8000")]
     pub quasimodo_solver_url: Url,
 
@@ -335,7 +331,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.order_prioritization)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
-        writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
         writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
         writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
