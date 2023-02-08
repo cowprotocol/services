@@ -5,7 +5,10 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::prelude::{Account, Address, PrivateKey, U256},
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
+    },
     model::{
         app_id::AppId,
         order::{
@@ -46,6 +49,12 @@ async fn order_cancellation(web3: Web3) {
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & mint tokens to trade, pools for fee connections
     let token = deploy_token_with_weth_uniswap_pool(
