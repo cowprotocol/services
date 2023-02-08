@@ -1,9 +1,11 @@
-use clap::Parser;
-use ethcontract::H160;
-use shared::{ethrpc, http_client, logging_args_with_default_filter};
-use std::time::Duration;
-use tracing::level_filters::LevelFilter;
-use url::Url;
+use {
+    clap::Parser,
+    ethcontract::H160,
+    shared::{ethrpc, http_client, logging_args_with_default_filter},
+    std::time::Duration,
+    tracing::level_filters::LevelFilter,
+    url::Url,
+};
 
 logging_args_with_default_filter!(LoggingArguments, "warn,refunder=debug,shared=debug");
 
@@ -35,7 +37,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "190")]
     pub min_slippage_bps: u64,
 
-    /// Url of the Postgres database. By default connects to locally running postgres.
+    /// Url of the Postgres database. By default connects to locally running
+    /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 

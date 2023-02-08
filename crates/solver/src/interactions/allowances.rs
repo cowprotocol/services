@@ -2,21 +2,23 @@
 //! and interactions to query allowances to various contracts as well as keep
 //! generate interactions for them.
 
-use crate::interactions::Erc20ApproveInteraction;
-use anyhow::{anyhow, bail, ensure, Context as _, Result};
-use contracts::ERC20;
-use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
-use maplit::hashmap;
-use shared::{
-    dummy_contract,
-    ethrpc::Web3,
-    interaction::{EncodedInteraction, Interaction},
+use {
+    crate::interactions::Erc20ApproveInteraction,
+    anyhow::{anyhow, bail, ensure, Context as _, Result},
+    contracts::ERC20,
+    ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256},
+    maplit::hashmap,
+    shared::{
+        dummy_contract,
+        ethrpc::Web3,
+        interaction::{EncodedInteraction, Interaction},
+    },
+    std::{
+        collections::{HashMap, HashSet},
+        slice,
+    },
+    web3::error::TransportError,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    slice,
-};
-use web3::error::TransportError;
 
 const MAX_BATCH_SIZE: usize = 100;
 #[cfg_attr(test, mockall::automock)]
@@ -236,15 +238,17 @@ fn is_batch_error(err: &ExecutionError) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::{
-        common::abi::{self, Token},
-        web3::types::CallRequest,
-        Bytes,
+    use {
+        super::*,
+        ethcontract::{
+            common::abi::{self, Token},
+            web3::types::CallRequest,
+            Bytes,
+        },
+        maplit::{hashmap, hashset},
+        serde_json::{json, Value},
+        shared::{addr, ethrpc::mock},
     };
-    use maplit::{hashmap, hashset};
-    use serde_json::{json, Value};
-    use shared::{addr, ethrpc::mock};
 
     #[test]
     fn approval_when_allowance_is_sufficient() {
@@ -396,7 +400,7 @@ mod tests {
                             addr!("2222222222222222222222222222222222222222") => {
                                 Err(web3::Error::Decoder("test error".to_string()))
                             }
-                            token => panic!("call to unexpected token {:?}", token),
+                            token => panic!("call to unexpected token {token:?}"),
                         }
                     })
                     .collect())

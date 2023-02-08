@@ -1,14 +1,16 @@
-use serde::{de, Deserializer, Serializer};
-use serde_with::serde::{Deserialize, Serialize};
-use std::{
-    borrow::Cow,
-    fmt::{self, Debug, Formatter},
-    str::FromStr,
+use {
+    serde::{de, Deserializer, Serializer},
+    serde_with::serde::{Deserialize, Serialize},
+    std::{
+        borrow::Cow,
+        fmt::{self, Debug, Formatter},
+        str::FromStr,
+    },
 };
 
-/// This allows arbitrary user data to be associated with an order. This type holds the
-/// hash of the data, while the data itself is uploaded to IPFS. The hash is signed along with the
-/// order.
+/// This allows arbitrary user data to be associated with an order. This type
+/// holds the hash of the data, while the data itself is uploaded to IPFS. The
+/// hash is signed along with the order.
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
 pub struct AppId(pub [u8; 32]);
 
@@ -20,6 +22,7 @@ impl Debug for AppId {
 
 impl FromStr for AppId {
     type Err = hex::FromHexError;
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut bytes = [0u8; 32];
         hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
@@ -50,8 +53,7 @@ impl<'de> Deserialize<'de> for AppId {
         let s = Cow::<str>::deserialize(deserializer)?;
         let value = s.parse().map_err(|err| {
             de::Error::custom(format!(
-                "failed to decode {:?} as hex appdata 32 bytes: {}",
-                s, err
+                "failed to decode {s:?} as hex appdata 32 bytes: {err}"
             ))
         })?;
         Ok(value)
@@ -66,8 +68,7 @@ impl PartialEq<[u8; 32]> for AppId {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use {super::*, serde_json::json};
 
     #[test]
     fn works_on_32_byte_string_with_or_without_0x() {

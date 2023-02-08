@@ -1,24 +1,28 @@
-use super::Postgres;
-use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
-use database::orders::{OrderFeeSpecifier, Quote};
-use ethcontract::U256;
-use futures::{StreamExt, TryStreamExt};
-use model::time::now_in_epoch_seconds;
-use number_conversions::u256_to_big_decimal;
-use shared::fee_subsidy::FeeParameters;
+use {
+    super::Postgres,
+    anyhow::{Context, Result},
+    chrono::{DateTime, Duration, Utc},
+    database::orders::{OrderFeeSpecifier, OrderQuotingData, Quote},
+    ethcontract::U256,
+    futures::{StreamExt, TryStreamExt},
+    model::time::now_in_epoch_seconds,
+    number_conversions::u256_to_big_decimal,
+    shared::fee_subsidy::FeeParameters,
+};
 
 /// New fee data to update a limit order with.
 ///
-/// Both success and failure to calculate the new fee are recorded in the database.
+/// Both success and failure to calculate the new fee are recorded in the
+/// database.
 pub enum FeeUpdate {
     Success {
         timestamp: DateTime<Utc>,
         /// The actual fee amount to charge the order from its surplus.
         surplus_fee: U256,
-        /// The full unsubsidized fee amount that settling the order is expected to
-        /// actually cost. This is used for objective value computation so that fee
-        /// subsidies do not change the objective value.
+        /// The full unsubsidized fee amount that settling the order is expected
+        /// to actually cost. This is used for objective value
+        /// computation so that fee subsidies do not change the
+        /// objective value.
         full_fee_amount: U256,
         quote: LimitOrderQuote,
     },
@@ -32,41 +36,33 @@ pub struct LimitOrderQuote {
     /// Everything required to compute the fee amount in sell token
     pub fee_parameters: FeeParameters,
 
-    /// The `sell_amount` of the quote associated with the `surplus_fee` estimation.
+    /// The `sell_amount` of the quote associated with the `surplus_fee`
+    /// estimation.
     pub sell_amount: U256,
 
-    /// The `buy_amount` of the quote associated with the `surplus_fee` estimation.
+    /// The `buy_amount` of the quote associated with the `surplus_fee`
+    /// estimation.
     pub buy_amount: U256,
 }
 
 impl Postgres {
-    pub async fn order_specs_with_outdated_fees(
-        &self,
-        age: Duration,
-        limit: usize,
-    ) -> Result<Vec<OrderFeeSpecifier>> {
-        let limit: i64 = limit.try_into().context("convert limit")?;
-
+    /// Returns all limit orders that are waiting to be filled.
+    pub async fn open_limit_orders(&self, age: Duration) -> Result<Vec<OrderQuotingData>> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["limit_orders_with_outdated_fees"])
+            .with_label_values(&["open_limit_orders"])
             .start_timer();
 
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        database::orders::order_parameters_with_most_outdated_fees(
-            &mut ex,
-            timestamp,
-            now_in_epoch_seconds().into(),
-            limit,
-        )
-        .map(|result| result.map_err(anyhow::Error::from))
-        .try_collect()
-        .await
+        database::orders::open_limit_orders(&mut ex, timestamp, now_in_epoch_seconds().into())
+            .map(|result| result.map_err(anyhow::Error::from))
+            .try_collect()
+            .await
     }
 
-    /// Updates the `surplus_fee` of all limit orders matching the [`OrderFeeSpecifier`]
-    /// and stores a quote for each one.
+    /// Updates the `surplus_fee` of all limit orders matching the
+    /// [`OrderFeeSpecifier`] and stores a quote for each one.
     pub async fn update_limit_order_fees(
         &self,
         order_spec: &OrderFeeSpecifier,

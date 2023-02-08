@@ -2,9 +2,11 @@
 //! smart contract. The original contract code can be found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol
 
-use super::{error::Error, fixed_point::Bfp};
-use ethcontract::U256;
-use lazy_static::lazy_static;
+use {
+    super::{error::Error, fixed_point::Bfp},
+    ethcontract::U256,
+    lazy_static::lazy_static,
+};
 
 // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L36-L37
 lazy_static! {
@@ -15,9 +17,9 @@ lazy_static! {
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L69-L100
-/// It is not possible for the following addition balance_in.add(amount_in) to fail since
-/// (1) Largest balance_in can be without overflowing check_mul (above):
-///     balance_in = U256::MAX / (3 * 10^17)
+/// It is not possible for the following addition balance_in.add(amount_in) to
+/// fail since (1) Largest balance_in can be without overflowing check_mul
+/// (above):     balance_in = U256::MAX / (3 * 10^17)
 /// (2) Largest amount_in can be while satisfying above inequality is:
 ///     amount_in = balance_in.mul_down(MAX_IN_RATIO)
 /// So that
@@ -61,9 +63,10 @@ pub fn calc_in_given_out(
         return Err(Error::MaxOutRatio);
     }
 
-    let denominator = balance_out
-        .sub(amount_out)
-        .expect("if amount_out > balance_out >= balance_out.mul_down(*MAX_OUT_RATIO) contradicting above inequality");
+    let denominator = balance_out.sub(amount_out).expect(
+        "if amount_out > balance_out >= balance_out.mul_down(*MAX_OUT_RATIO) contradicting above \
+         inequality",
+    );
     let base = balance_out.div_up(denominator)?;
     let exponent = weight_out.div_up(weight_in)?;
     let power = base.pow_up(exponent)?;
@@ -104,7 +107,9 @@ mod tests {
                 Bfp::from_wei(10_000_000_000_000_000_u128.into()),
             )
             .unwrap(),
-            // (await weightedMath["_calcOutGivenIn"]("100000000000000000000000", "300000000000000", "10000000000000000000", "700000000000000", "10000000000000000")).toString()
+            // (await weightedMath["_calcOutGivenIn"]("100000000000000000000000",
+            // "300000000000000", "10000000000000000000", "700000000000000",
+            // "10000000000000000")).toString()
             Bfp::from_wei(428_571_297_950_u128.into()),
         );
     }
@@ -120,7 +125,9 @@ mod tests {
                 Bfp::from_wei(10_000_000_000_000_000_u128.into()),
             )
             .unwrap(),
-            // (await weightedMath["_calcInGivenOut"]("100000000000000000000000", "300000000000000", "10000000000000000000", "700000000000000", "10000000000000000")).toString()
+            // (await weightedMath["_calcInGivenOut"]("100000000000000000000000",
+            // "300000000000000", "10000000000000000000", "700000000000000",
+            // "10000000000000000")).toString()
             Bfp::from_wei(233_722_784_701_541_000_000_u128.into()),
         );
     }
@@ -258,7 +265,9 @@ mod tests {
             };
         }
         // Test case output generating function:
-        // > const calc_with_default_pool = async (fn_name, amount) => (await weightedMath[fn_name]("20000000000000000000000", "500000000000000", "10000000000000000000000", "500000000000000", amount)).toString()
+        // > const calc_with_default_pool = async (fn_name, amount) => (await
+        // > weightedMath[fn_name]("20000000000000000000000", "500000000000000",
+        // > "10000000000000000000000", "500000000000000", amount)).toString()
 
         let largest_amount_in = deposit_in * 3 / 10;
         assert_eq!(

@@ -1,23 +1,25 @@
 //! Module containing Tenderly API implementation.
 
-use crate::{
-    arguments::{display_option, display_secret_option},
-    http_client::HttpClientFactory,
+use {
+    crate::{
+        arguments::{display_option, display_secret_option},
+        http_client::HttpClientFactory,
+    },
+    anyhow::Result,
+    clap::Parser,
+    model::bytes_hex::BytesHex,
+    reqwest::{
+        header::{HeaderMap, HeaderValue},
+        Url,
+    },
+    serde::{Deserialize, Serialize},
+    std::{
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+    },
+    web3::types::{Bytes, H160, H256, U256},
 };
-use anyhow::Result;
-use clap::Parser;
-use model::bytes_hex::BytesHex;
-use reqwest::{
-    header::{HeaderMap, HeaderValue},
-    Url,
-};
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fmt::{self, Display, Formatter},
-    sync::Arc,
-};
-use web3::types::{Bytes, H160, H256, U256};
 
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
@@ -176,8 +178,9 @@ pub struct CallTrace {
     pub error: Option<String>,
 }
 
-// Had to introduce copy of the web3 AccessList because tenderly responds with snake_case fields
-// and tenderly storage_keys field does not exist if empty (it should be empty Vec instead)
+// Had to introduce copy of the web3 AccessList because tenderly responds with
+// snake_case fields and tenderly storage_keys field does not exist if empty (it
+// should be empty Vec instead)
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccessListItem {
     /// Accessed address
@@ -208,7 +211,8 @@ pub struct Arguments {
     #[clap(long, env)]
     pub tenderly_project: Option<String>,
 
-    /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
+    /// Tenderly requires api key to work. Optional since Tenderly could be
+    /// skipped in access lists estimators.
     #[clap(long, env)]
     pub tenderly_api_key: Option<String>,
 }
@@ -246,9 +250,7 @@ impl Display for Arguments {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use serde_json::json;
+    use {super::*, hex_literal::hex, serde_json::json};
 
     #[test]
     fn serialize_deserialize_simulation_request() {

@@ -1,8 +1,10 @@
-use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
-use anyhow::Result;
-use ethcontract::H160;
-use model::app_id::AppId;
-use std::collections::{HashMap, HashSet};
+use {
+    super::{FeeSubsidizing, Subsidy, SubsidyParameters},
+    anyhow::Result,
+    ethcontract::H160,
+    model::app_id::AppId,
+    std::collections::{HashMap, HashSet},
+};
 
 /// The global configured fee subsidy to use for orders.
 ///

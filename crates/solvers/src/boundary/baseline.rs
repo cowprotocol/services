@@ -1,13 +1,15 @@
 //! Boundary wrappers around the [`shared`] Baseline solving logic.
 
-use crate::{
-    boundary,
-    domain::{baseline, eth, liquidity, order},
+use {
+    crate::{
+        boundary,
+        domain::{baseline, eth, liquidity, order},
+    },
+    ethereum_types::{H160, U256},
+    model::TokenPair,
+    shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
+    std::collections::{HashMap, HashSet},
 };
-use ethereum_types::{H160, U256};
-use model::TokenPair;
-use shared::baseline_solver::{self, BaseTokens, BaselineSolvable};
-use std::collections::{HashMap, HashSet};
 
 pub struct Solver<'a> {
     base_tokens: BaseTokens,

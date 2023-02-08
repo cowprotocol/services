@@ -1,45 +1,50 @@
-use super::{
-    balancer_sor::BalancerSor,
-    baseline::BaselinePriceEstimator,
-    competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
-    http::HttpPriceEstimator,
-    instrumented::InstrumentedPriceEstimator,
-    native::{self, NativePriceEstimator},
-    native_price_cache::CachingNativePriceEstimator,
-    oneinch::OneInchPriceEstimator,
-    paraswap::ParaswapPriceEstimator,
-    sanitized::SanitizedPriceEstimator,
-    trade_finder::TradeVerifier,
-    zeroex::ZeroExPriceEstimator,
-    Arguments, PriceEstimating, PriceEstimatorType, TradeValidatorKind,
-};
-use crate::{
-    arguments::{self, Driver},
-    bad_token::BadTokenDetecting,
-    balancer_sor_api::DefaultBalancerSorApi,
-    baseline_solver::BaseTokens,
-    code_fetching::CachedCodeFetcher,
-    code_simulation::{CodeSimulating, TenderlyCodeSimulator},
-    ethrpc::Web3,
-    http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
-    oneinch_api::OneInchClient,
-    paraswap_api::DefaultParaswapApi,
-    rate_limiter::RateLimiter,
-    sources::{
-        balancer_v2::BalancerPoolFetching,
-        uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
-        uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
+use {
+    super::{
+        balancer_sor::BalancerSor,
+        baseline::BaselinePriceEstimator,
+        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        http::HttpPriceEstimator,
+        instrumented::InstrumentedPriceEstimator,
+        native::{self, NativePriceEstimator},
+        native_price_cache::CachingNativePriceEstimator,
+        oneinch::OneInchPriceEstimator,
+        paraswap::ParaswapPriceEstimator,
+        sanitized::SanitizedPriceEstimator,
+        trade_finder::TradeVerifier,
+        zeroex::ZeroExPriceEstimator,
+        Arguments,
+        PriceEstimating,
+        PriceEstimatorType,
+        TradeValidatorKind,
     },
-    token_info::TokenInfoFetching,
-    trade_finding::external::ExternalTradeFinder,
-    zeroex_api::ZeroExApi,
+    crate::{
+        arguments::{self, Driver},
+        bad_token::BadTokenDetecting,
+        balancer_sor_api::DefaultBalancerSorApi,
+        baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
+        code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
+        oneinch_api::OneInchClient,
+        paraswap_api::DefaultParaswapApi,
+        rate_limiter::RateLimiter,
+        sources::{
+            balancer_v2::BalancerPoolFetching,
+            uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
+            uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
+        },
+        token_info::TokenInfoFetching,
+        trade_finding::external::ExternalTradeFinder,
+        zeroex_api::ZeroExApi,
+    },
+    anyhow::{Context as _, Result},
+    ethcontract::{H160, U256},
+    gas_estimation::GasPriceEstimating,
+    reqwest::Url,
+    std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
-use anyhow::{Context as _, Result};
-use ethcontract::{H160, U256};
-use gas_estimation::GasPriceEstimating;
-use reqwest::Url;
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
@@ -322,6 +327,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
+        anyhow::ensure!(
+            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            "price cache prefetch time needs to be less than price cache max age"
+        );
         let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
@@ -333,7 +342,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_max_age_secs,
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
-            None,
+            self.args.native_price_prefetch_time_secs,
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)

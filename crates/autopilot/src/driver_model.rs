@@ -1,9 +1,12 @@
-//! Types for communicating with drivers as defined in `crates/driver/openapi.yml`.
+//! Types for communicating with drivers as defined in
+//! `crates/driver/openapi.yml`.
 
 pub mod quote {
-    use model::u256_decimal;
-    use primitive_types::{H160, U256};
-    use serde::{Deserialize, Serialize};
+    use {
+        model::u256_decimal,
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+    };
 
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -40,12 +43,13 @@ pub mod quote {
 }
 
 pub mod solve {
-    use bigdecimal::num_bigint::BigUint;
-    use chrono::{DateTime, Utc};
-    use primitive_types::H160;
-    use serde::{Deserialize, Serialize};
-    use serde_with::{serde_as, DisplayFromStr};
-    use std::collections::BTreeMap;
+    use {
+        chrono::{DateTime, Utc},
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+        serde_with::{serde_as, DisplayFromStr},
+        std::collections::BTreeMap,
+    };
 
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
     pub struct Request {
@@ -56,11 +60,11 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
     pub struct Auction {
-        pub id: u64,
+        pub id: i64,
         pub block: u64,
         pub orders: Vec<Order>,
         #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub prices: BTreeMap<H160, BigUint>,
+        pub prices: BTreeMap<H160, U256>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -76,16 +80,23 @@ pub mod solve {
 }
 
 pub mod execute {
-    use model::{bytes_hex, order::OrderUid, u256_decimal};
-    use primitive_types::{H160, U256};
-    use serde::{Deserialize, Serialize};
-    use serde_with::{serde_as, DisplayFromStr};
-    use std::collections::BTreeMap;
+    use {
+        derivative::Derivative,
+        model::{bytes_hex, order::OrderUid, u256_decimal},
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+        serde_with::{serde_as, DisplayFromStr},
+        std::collections::BTreeMap,
+    };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Derivative, Default, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
+    #[derivative(Debug)]
     pub struct Request {
-        pub auction_id: u64,
+        pub auction_id: i64,
+        #[serde(with = "bytes_hex")]
+        #[derivative(Debug(format_with = "shared::debug_bytes"))]
+        pub transaction_identifier: Vec<u8>,
     }
 
     #[serde_as]

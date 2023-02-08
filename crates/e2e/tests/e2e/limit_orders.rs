@@ -1,39 +1,57 @@
-use std::sync::Arc;
-
-use crate::{
-    onchain_components::{
-        deploy_mintable_token, deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider,
-        WethPoolConfig,
+use {
+    crate::{
+        onchain_components::{
+            deploy_mintable_token,
+            deploy_token_with_weth_uniswap_pool,
+            to_wei,
+            uniswap_pair_provider,
+            WethPoolConfig,
+        },
+        services::{
+            create_order_converter,
+            create_orderbook_api,
+            wait_for_condition,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
     },
-    services::{
-        create_order_converter, create_orderbook_api, wait_for_condition, wait_for_solvable_orders,
-        OrderbookServices, API_HOST,
+    contracts::IUniswapLikeRouter,
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
     },
-};
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use hex_literal::hex;
-use model::{
-    order::{Order, OrderBuilder, OrderClass, OrderKind},
-    signature::EcdsaSigningScheme,
-};
-use secp256k1::SecretKey;
-use shared::{
-    code_fetching::MockCodeFetching, ethrpc::Web3, http_client::HttpClientFactory,
-    maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
+    hex_literal::hex,
+    model::{
+        order::{Order, OrderBuilder, OrderClass, OrderKind},
+        signature::EcdsaSigningScheme,
     },
+    secp256k1::SecretKey,
+    shared::{
+        code_fetching::MockCodeFetching,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        maintenance::Maintaining,
+        sources::uniswap_v2::pool_fetching::PoolFetcher,
+    },
+    solver::{
+        liquidity::uniswap_v2::UniswapLikeLiquidity,
+        liquidity_collector::LiquidityCollector,
+        metrics::NoopMetrics,
+        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        settlement_submission::{
+            submitter::{
+                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+        },
+    },
+    std::{sync::Arc, time::Duration},
+    web3::signing::SecretKeyRef,
 };
-use std::time::Duration;
-use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
     hex!("0000000000000000000000000000000000000000000000000000000000000001");
@@ -67,7 +85,7 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 async fn single_limit_order_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -75,6 +93,14 @@ async fn single_limit_order_test(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
+    for trader in [&trader_a, &trader_b] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(trader.address())
+            .send()
+            .await
+            .unwrap();
+    }
 
     // Create & mint tokens to trade, pools for fee connections
     let token_a = deploy_token_with_weth_uniswap_pool(
@@ -230,7 +256,13 @@ async fn single_limit_order_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -287,7 +319,7 @@ async fn single_limit_order_test(web3: Web3) {
 }
 
 async fn two_limit_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -295,6 +327,14 @@ async fn two_limit_orders_test(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
+    for trader in [&trader_a, &trader_b] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(trader.address())
+            .send()
+            .await
+            .unwrap();
+    }
 
     // Create & mint tokens to trade, pools for fee connections
     let token_a = deploy_token_with_weth_uniswap_pool(
@@ -475,7 +515,13 @@ async fn two_limit_orders_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -532,7 +578,7 @@ async fn two_limit_orders_test(web3: Web3) {
 }
 
 async fn mixed_limit_and_market_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
@@ -540,6 +586,14 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
+    for trader in [&trader_a, &trader_b] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(trader.address())
+            .send()
+            .await
+            .unwrap();
+    }
 
     // Create & mint tokens to trade, pools for fee connections
     let token_a = deploy_token_with_weth_uniswap_pool(
@@ -729,7 +783,13 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -785,13 +845,19 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader_account.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & Mint tokens to trade
     let token_a = deploy_mintable_token(&web3).await;
@@ -841,8 +907,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .unwrap();
     assert_eq!(placement.status(), 201);
 
-    // Attempt to place another order, but the orderbook is configured to allow only one limit
-    // order per user.
+    // Attempt to place another order, but the orderbook is configured to allow only
+    // one limit order per user.
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
         .with_sell_amount(to_wei(100))

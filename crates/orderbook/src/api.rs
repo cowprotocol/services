@@ -13,17 +13,20 @@ mod post_solver_competition;
 mod replace_order;
 mod version;
 
-use crate::{
-    database::trades::TradeRetrieving, orderbook::Orderbook,
-    solver_competition::SolverCompetitionStoring,
+use {
+    crate::{
+        database::trades::TradeRetrieving,
+        orderbook::Orderbook,
+        solver_competition::SolverCompetitionStoring,
+    },
+    shared::{
+        api::{error, finalize_router, ApiReply},
+        order_quoting::QuoteHandler,
+        price_estimation::native::NativePriceEstimating,
+    },
+    std::sync::Arc,
+    warp::{Filter, Rejection, Reply},
 };
-use shared::{
-    api::{error, finalize_router, ApiReply},
-    order_quoting::QuoteHandler,
-    price_estimation::native::NativePriceEstimating,
-};
-use std::sync::Arc;
-use warp::{Filter, Rejection, Reply};
 
 pub fn handle_all_routes(
     database: Arc<dyn TradeRetrieving>,

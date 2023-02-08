@@ -1,6 +1,8 @@
-use anyhow::Context;
-use database::{auction_transaction::SettlementEvent, byte_array::ByteArray};
-use primitive_types::H160;
+use {
+    anyhow::Context,
+    database::{auction_transaction::SettlementEvent, byte_array::ByteArray},
+    primitive_types::H160,
+};
 
 impl super::Postgres {
     pub async fn update_settlement_tx_info(

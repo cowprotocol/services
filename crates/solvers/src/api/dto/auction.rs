@@ -1,14 +1,16 @@
-use crate::{
-    api::dto::Error,
-    domain::{auction, eth, liquidity, order},
-    util::{conv, serialize},
+use {
+    crate::{
+        api::dto::Error,
+        domain::{auction, eth, liquidity, order},
+        util::{conv, serialize},
+    },
+    bigdecimal::BigDecimal,
+    ethereum_types::{H160, U256},
+    itertools::Itertools as _,
+    serde::Deserialize,
+    serde_with::{serde_as, DisplayFromStr},
+    std::collections::HashMap,
 };
-use bigdecimal::BigDecimal;
-use ethereum_types::{H160, U256};
-use itertools::Itertools as _;
-use serde::Deserialize;
-use serde_with::{serde_as, DisplayFromStr};
-use std::collections::HashMap;
 
 impl Auction {
     /// Converts a data transfer object into its domain object representation.

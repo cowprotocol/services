@@ -1,11 +1,13 @@
 //! Bindings for an instance of https://github.com/cowprotocol/univ3-api .
 
-use anyhow::{Context, Result};
-use model::u256_decimal;
-use primitive_types::{H160, U256};
-use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use {
+    anyhow::{Context, Result},
+    model::u256_decimal,
+    primitive_types::{H160, U256},
+    reqwest::{Client, Url},
+    serde::{Deserialize, Serialize},
+    serde_with::{serde_as, DisplayFromStr},
+};
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub enum Type {
@@ -113,6 +115,6 @@ mod tests {
             recipient: addr!("0000000000000000000000000000000000000000"),
         };
         let response = api.request(&request).await.unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
     }
 }

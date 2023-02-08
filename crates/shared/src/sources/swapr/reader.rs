@@ -1,18 +1,20 @@
 //! A pool state reading implementation specific to Swapr.
 
-use crate::{
-    ethrpc::{Web3, Web3CallBatch},
-    sources::uniswap_v2::{
-        pair_provider::PairProvider,
-        pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
+use {
+    crate::{
+        ethrpc::{Web3, Web3CallBatch},
+        sources::uniswap_v2::{
+            pair_provider::PairProvider,
+            pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
+        },
     },
+    anyhow::Result,
+    contracts::ISwaprPair,
+    ethcontract::{errors::MethodError, BlockId},
+    futures::{future::BoxFuture, FutureExt as _},
+    model::TokenPair,
+    num::rational::Ratio,
 };
-use anyhow::Result;
-use contracts::ISwaprPair;
-use ethcontract::{errors::MethodError, BlockId};
-use futures::{future::BoxFuture, FutureExt as _};
-use model::TokenPair;
-use num::rational::Ratio;
 
 /// A specialized Uniswap-like pool reader for DXdao Swapr pools.
 ///
@@ -59,15 +61,17 @@ fn handle_results(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        ethcontract_error,
-        ethrpc::{create_env_test_transport, Web3},
-        recent_block_cache::Block,
-        sources::swapr,
+    use {
+        super::*,
+        crate::{
+            ethcontract_error,
+            ethrpc::{create_env_test_transport, Web3},
+            recent_block_cache::Block,
+            sources::swapr,
+        },
+        ethcontract::H160,
+        maplit::hashset,
     };
-    use ethcontract::H160;
-    use maplit::hashset;
 
     #[test]
     fn sets_fee() {
@@ -130,6 +134,6 @@ mod tests {
             .next()
             .unwrap();
 
-        println!("WETH <> wxDAI pool: {:#?}", pool);
+        println!("WETH <> wxDAI pool: {pool:#?}");
     }
 }

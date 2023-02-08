@@ -1,39 +1,56 @@
-use crate::{
-    baseline_solver::BaseTokens,
-    http_solver::{
-        gas_model::GasModel,
-        model::{
-            AmmModel, AmmParameters, BatchAuctionModel, ConcentratedPoolParameters,
-            ConstantProductPoolParameters, MetadataModel, OrderModel, SettledBatchAuctionModel,
-            StablePoolParameters, TokenAmount, TokenInfoModel, WeightedPoolTokenData,
-            WeightedProductPoolParameters,
+use {
+    crate::{
+        baseline_solver::BaseTokens,
+        http_solver::{
+            gas_model::GasModel,
+            model::{
+                AmmModel,
+                AmmParameters,
+                BatchAuctionModel,
+                ConcentratedPoolParameters,
+                ConstantProductPoolParameters,
+                MetadataModel,
+                OrderModel,
+                SettledBatchAuctionModel,
+                StablePoolParameters,
+                TokenAmount,
+                TokenInfoModel,
+                WeightedPoolTokenData,
+                WeightedProductPoolParameters,
+            },
+            Error as ApiError,
+            HttpSolverApi,
         },
-        Error as ApiError, HttpSolverApi,
+        price_estimation::{
+            gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
+            rate_limited,
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
+            Query,
+        },
+        rate_limiter::RateLimiter,
+        recent_block_cache::Block,
+        request_sharing::RequestSharing,
+        sources::{
+            balancer_v2::{pools::common::compute_scaling_rate, BalancerPoolFetching},
+            uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
+            uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
+        },
+        token_info::TokenInfoFetching,
     },
-    price_estimation::{
-        gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
-        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+    anyhow::{Context, Result},
+    ethcontract::{H160, U256},
+    futures::{future::BoxFuture, FutureExt, StreamExt},
+    gas_estimation::GasPriceEstimating,
+    model::{order::OrderKind, TokenPair},
+    num::{BigInt, BigRational},
+    std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+        time::Duration,
     },
-    rate_limiter::RateLimiter,
-    recent_block_cache::Block,
-    request_sharing::RequestSharing,
-    sources::{
-        balancer_v2::{pools::common::compute_scaling_rate, BalancerPoolFetching},
-        uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
-        uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
-    },
-    token_info::TokenInfoFetching,
-};
-use anyhow::{Context, Result};
-use ethcontract::{H160, U256};
-use futures::{future::BoxFuture, FutureExt, StreamExt};
-use gas_estimation::GasPriceEstimating;
-use model::{order::OrderKind, TokenPair};
-use num::{BigInt, BigRational};
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-    time::Duration,
 };
 
 pub struct HttpPriceEstimator {
@@ -295,9 +312,11 @@ impl HttpPriceEstimator {
                 .context("balancer_pools")?,
             None => return Ok(Vec::new()),
         };
-        // There is some code duplication between here and crates/solver/src/solver/http_solver.rs  fn amm_models .
-        // To avoid that we would need to make both components work on the same input balancer
-        // types. Currently solver uses a liquidity type that is specific to the solver crate.
+        // There is some code duplication between here and
+        // crates/solver/src/solver/http_solver.rs  fn amm_models .
+        // To avoid that we would need to make both components work on the same input
+        // balancer types. Currently solver uses a liquidity type that is
+        // specific to the solver crate.
         let weighted = pools.weighted_pools.into_iter().map(|pool| AmmModel {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
                 reserves: pool
@@ -386,36 +405,45 @@ impl PriceEstimating for HttpPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        current_block::current_block_stream,
-        ethrpc::{http::HttpTransport, Web3},
-        gas_price_estimation::FakeGasPriceEstimator,
-        http_solver::{
-            model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
-            DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig,
-        },
-        price_estimation::Query,
-        recent_block_cache::CacheConfig,
-        sources::{
-            balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+    use {
+        super::*,
+        crate::{
+            current_block::current_block_stream,
+            ethrpc::{http::HttpTransport, Web3},
+            gas_price_estimation::FakeGasPriceEstimator,
+            http_solver::{
+                model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
+                DefaultHttpSolverApi,
+                MockHttpSolverApi,
+                SolverConfig,
             },
-            uniswap_v2,
-            uniswap_v2::{pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher},
-            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            price_estimation::Query,
+            recent_block_cache::CacheConfig,
+            sources::{
+                balancer_v2::{
+                    pool_fetching::BalancerContracts,
+                    BalancerFactoryKind,
+                    BalancerPoolFetcher,
+                },
+                uniswap_v2::{
+                    self,
+                    pool_cache::PoolCache,
+                    pool_fetching::test_util::FakePoolFetcher,
+                },
+                uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            },
+            token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
-        token_info::{MockTokenInfoFetching, TokenInfoFetcher},
+        anyhow::anyhow,
+        clap::ValueEnum,
+        ethcontract::dyns::DynTransport,
+        gas_estimation::GasPrice1559,
+        maplit::hashmap,
+        model::order::OrderKind,
+        reqwest::Client,
+        std::collections::HashMap,
+        url::Url,
     };
-    use anyhow::anyhow;
-    use clap::ValueEnum;
-    use ethcontract::dyns::DynTransport;
-    use gas_estimation::GasPrice1559;
-    use maplit::hashmap;
-    use model::order::OrderKind;
-    use reqwest::Client;
-    use std::collections::HashMap;
-    use url::Url;
 
     #[tokio::test]
     async fn test_estimate() {
@@ -653,7 +681,8 @@ mod tests {
         };
         let result = estimator.estimate(&query).await.unwrap();
 
-        // 94391 base cost + 100k order cost + 200k AMM cost (x2) + 300k interaction cost
+        // 94391 base cost + 100k order cost + 200k AMM cost (x2) + 300k interaction
+        // cost
         assert_eq!(result.gas, 894391);
     }
 

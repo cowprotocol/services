@@ -1,8 +1,10 @@
-use super::TokenOwnerSolverApi;
-use anyhow::{Context, Result};
-use ethcontract::H160;
-use reqwest::{Client, Url};
-use std::collections::HashMap;
+use {
+    super::TokenOwnerSolverApi,
+    anyhow::{Context, Result},
+    ethcontract::H160,
+    reqwest::{Client, Url},
+    std::collections::HashMap,
+};
 
 type Token = H160;
 type Owner = H160;
@@ -23,6 +25,6 @@ impl TokenOwnerSolverApi for SolverConfiguration {
             .await?
             .text()
             .await?;
-        serde_json::from_str(&response).context(format!("bad query response: {:?}", response))
+        serde_json::from_str(&response).context(format!("bad query response: {response:?}"))
     }
 }

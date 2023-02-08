@@ -1,9 +1,11 @@
 //! Conversion utilities.
 
-use crate::domain::eth;
-use bigdecimal::BigDecimal;
-use ethereum_types::U256;
-use num::{rational::Ratio, BigUint};
+use {
+    crate::domain::eth,
+    bigdecimal::BigDecimal,
+    ethereum_types::U256,
+    num::{rational::Ratio, BigUint},
+};
 
 /// Converts a `BigDecimal` value to a `eth::Rational` value. Returns `None` if
 /// the specified decimal value cannot be represented as a rational of `U256`

@@ -5,68 +5,86 @@ pub mod event_updater;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
 
+pub mod driver_api;
 pub mod driver_model;
 pub mod limit_orders;
+pub mod run_loop;
 
-use crate::{
-    database::{
-        ethflow_events::event_retriever::EthFlowRefundRetriever,
-        onchain_order_events::{
-            ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
-            event_retriever::CoWSwapOnchainOrdersContract,
-            OnchainOrderParser,
+use {
+    crate::{
+        database::{
+            ethflow_events::event_retriever::EthFlowRefundRetriever,
+            onchain_order_events::{
+                ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
+                event_retriever::CoWSwapOnchainOrdersContract,
+                OnchainOrderParser,
+            },
+            Postgres,
         },
-        Postgres,
+        event_updater::{EventUpdater, GPv2SettlementContract},
+        limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
+        solvable_orders::SolvableOrdersCache,
     },
-    event_updater::{EventUpdater, GPv2SettlementContract},
-    limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
-    solvable_orders::SolvableOrdersCache,
+    contracts::{
+        BalancerV2Vault,
+        CowProtocolToken,
+        CowProtocolVirtualToken,
+        IUniswapV3Factory,
+        WETH9,
+    },
+    ethcontract::{errors::DeployError, BlockNumber},
+    model::DomainSeparator,
+    shared::{
+        account_balances::Web3BalanceFetcher,
+        bad_token::{
+            cache::CachingDetector,
+            instrumented::InstrumentedBadTokenDetectorExt,
+            list_based::{ListBasedDetector, UnknownTokenStrategy},
+            token_owner_finder,
+            trace_call::TraceCallDetector,
+        },
+        baseline_solver::BaseTokens,
+        caching_balance_fetcher::CachingBalanceFetcher,
+        current_block::block_number_to_block_number_hash,
+        fee_subsidy::{
+            config::FeeSubsidyConfiguration,
+            cow_token::CowSubsidy,
+            FeeSubsidies,
+            FeeSubsidizing,
+        },
+        gas_price::InstrumentedGasEstimator,
+        http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
+        metrics::LivenessChecking,
+        oneinch_api::OneInchClientImpl,
+        order_quoting::OrderQuoter,
+        price_estimation::factory::{self, PriceEstimatorFactory},
+        recent_block_cache::CacheConfig,
+        signature_validator::Web3SignatureValidator,
+        sources::{
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
+            PoolAggregator,
+        },
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        zeroex_api::DefaultZeroExApi,
+    },
+    std::{collections::HashSet, sync::Arc, time::Duration},
+    tracing::Instrument,
 };
-use contracts::{
-    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
-};
-use ethcontract::{errors::DeployError, BlockNumber};
-use model::DomainSeparator;
-use shared::{
-    account_balances::Web3BalanceFetcher,
-    bad_token::{
-        cache::CachingDetector,
-        instrumented::InstrumentedBadTokenDetectorExt,
-        list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder,
-        trace_call::TraceCallDetector,
-    },
-    baseline_solver::BaseTokens,
-    current_block::block_number_to_block_number_hash,
-    fee_subsidy::{
-        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
-    },
-    gas_price::InstrumentedGasEstimator,
-    http_client::HttpClientFactory,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::LivenessChecking,
-    oneinch_api::OneInchClientImpl,
-    order_quoting::OrderQuoter,
-    price_estimation::factory::{self, PriceEstimatorFactory},
-    recent_block_cache::CacheConfig,
-    signature_validator::Web3SignatureValidator,
-    sources::{
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource, PoolAggregator,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    zeroex_api::DefaultZeroExApi,
-};
-use std::{collections::HashSet, sync::Arc, time::Duration};
-use tracing::Instrument;
 
-/// To never get to the state where a limit order can not be considered usable because the
-/// `surplus_fee` is too old the `surplus_fee` is valid for longer than its update interval.
-/// This factor controls how much longer it's considered valid.
-/// If the `surplus_fee` gets updated every 5 minutes and the factor is 2 we consider limit orders
-/// valid where the `surplus_fee` was computed up to 10 minutes ago.
+/// To never get to the state where a limit order can not be considered usable
+/// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
+/// than its update interval. This factor controls how much longer it's
+/// considered valid. If the `surplus_fee` gets updated every 5 minutes and the
+/// factor is 2 we consider limit orders valid where the `surplus_fee` was
+/// computed up to 10 minutes ago.
 const SURPLUS_FEE_EXPIRATION_FACTOR: u8 = 2;
 
 struct Liveness {
@@ -122,7 +140,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             tracing::warn!("balancer contracts are not deployed on this network");
             None
         }
-        Err(err) => panic!("failed to get balancer vault contract: {}", err),
+        Err(err) => panic!("failed to get balancer vault contract: {err}"),
     };
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
@@ -141,6 +159,10 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
+    let _network_time_between_blocks = args
+        .network_block_interval
+        .or_else(|| shared::network::block_interval(&network, chain_id))
+        .expect("unknown network block interval");
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
@@ -150,6 +172,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         vault_relayer,
         settlement_contract.address(),
     ));
+    let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
+    balance_fetcher.spawn_background_task(current_block_stream.clone());
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -545,6 +569,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
+        true,
     );
     solvable_orders_cache
         .update(block)
@@ -568,15 +593,15 @@ pub async fn main(args: arguments::Arguments) -> ! {
     );
 
     if args.enable_limit_orders {
-        let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,
             quoter,
             database: db.clone(),
-            signature_validator,
-            domain_separator,
             parallelism: args.limit_order_quoter_parallelism,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: args.quoting_strategies,
+            batch_size: args.limit_order_quoter_batch_size,
         }
         .spawn();
         LimitOrderMetrics {
@@ -588,5 +613,5 @@ pub async fn main(args: arguments::Arguments) -> ! {
     }
 
     let result = serve_metrics.await;
-    panic!("serve_metrics exited {:?}", result);
+    panic!("serve_metrics exited {result:?}");
 }

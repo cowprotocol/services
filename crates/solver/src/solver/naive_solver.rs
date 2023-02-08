@@ -1,17 +1,21 @@
 mod multi_order_solver;
 
-use crate::{
-    liquidity::{
-        slippage::{SlippageCalculator, SlippageContext},
-        ConstantProductOrder, LimitOrder, Liquidity,
+use {
+    crate::{
+        liquidity::{
+            slippage::{SlippageCalculator, SlippageContext},
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
+        },
+        settlement::Settlement,
+        solver::{Auction, Solver},
     },
-    settlement::Settlement,
-    solver::{Auction, Solver},
+    anyhow::Result,
+    ethcontract::Account,
+    model::TokenPair,
+    std::collections::HashMap,
 };
-use anyhow::Result;
-use ethcontract::Account;
-use model::TokenPair;
-use std::collections::HashMap;
 
 pub struct NaiveSolver {
     account: Account,
@@ -57,8 +61,9 @@ fn settle(
     orders: Vec<LimitOrder>,
     uniswaps: HashMap<TokenPair, ConstantProductOrder>,
 ) -> Vec<Settlement> {
-    // The multi order solver matches as many orders as possible together with one uniswap pool.
-    // Settlements between different token pairs are thus independent.
+    // The multi order solver matches as many orders as possible together with one
+    // uniswap pool. Settlements between different token pairs are thus
+    // independent.
     organize_orders_by_token_pair(orders)
         .into_iter()
         .filter_map(|(pair, orders)| settle_pair(&slippage, pair, orders, &uniswaps))
@@ -120,19 +125,29 @@ fn extract_deepest_amm_liquidity(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::liquidity::{
-        order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
-        LiquidityOrderId,
+    use {
+        super::*,
+        crate::liquidity::{
+            order_converter::OrderConverter,
+            tests::CapturingSettlementHandler,
+            LimitOrderId,
+            LiquidityOrderId,
+        },
+        ethcontract::{H160, U256},
+        maplit::hashmap,
+        model::order::{
+            LimitOrderClass,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
+            BUY_ETH_ADDRESS,
+        },
+        num::rational::Ratio,
+        shared::addr,
     };
-    use ethcontract::H160;
-    use maplit::hashmap;
-    use model::order::{
-        LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
-        BUY_ETH_ADDRESS,
-    };
-    use num::rational::Ratio;
-    use shared::addr;
 
     #[test]
     fn test_extract_deepest_amm_liquidity() {
@@ -379,5 +394,65 @@ mod tests {
         };
 
         assert!(settle(SlippageContext::default(), orders, liquidity).is_empty());
+    }
+
+    #[test]
+    fn does_not_swap_more_than_reserves() {
+        let usdc = addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+        let crv = addr!("D533a949740bb3306d119CC777fa900bA034cd52");
+
+        let orders = vec![
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: crv,
+                    buy_token: usdc,
+                    sell_amount: 2161740107040163317224_u128.into(),
+                    buy_amount: 2146544862_u128.into(),
+                    fee_amount: 6177386651128093696_u128.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Liquidity,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: usdc,
+                    buy_token: crv,
+                    sell_amount: 500000000_u128.into(),
+                    buy_amount: 1428571428571428571428_u128.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Limit(LimitOrderClass {
+                        surplus_fee: Some(4834012_u128.into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        ];
+
+        let amm_handler = CapturingSettlementHandler::arc();
+        let tokens = TokenPair::new(usdc, crv).unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                address: addr!("210a97ba874a8e279c95b350ae8ba143a143c159"),
+                tokens,
+                reserves: (32275540, 33308141034569852391),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: amm_handler.clone(),
+            },
+        };
+
+        settle(SlippageContext::default(), orders, liquidity);
+        let (out_token, out_amount) = amm_handler.calls.lock().unwrap()[0].output;
+        assert_eq!(out_token, usdc);
+        assert!(out_amount < U256::from(32275540_u128));
     }
 }

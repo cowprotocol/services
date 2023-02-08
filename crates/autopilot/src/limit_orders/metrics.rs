@@ -1,14 +1,10 @@
-use std::time::Duration;
-use tracing::Instrument;
-
-use prometheus::IntGauge;
-
-use crate::database::Postgres;
+use {crate::database::Postgres, prometheus::IntGauge, std::time::Duration, tracing::Instrument};
 
 pub struct LimitOrderMetrics {
     /// At that age the [`LimitOrderQuoter`] would update the `surplus_fee`.
     pub quoting_age: chrono::Duration,
-    /// At that age the [`SolvableOrdersCache`] would consider a `surplus_fee` too old.
+    /// At that age the [`SolvableOrdersCache`] would consider a `surplus_fee`
+    /// too old.
     pub validity_age: chrono::Duration,
     pub database: Postgres,
 }

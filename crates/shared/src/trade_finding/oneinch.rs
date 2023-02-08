@@ -1,21 +1,29 @@
 //! A 1Inch-based trade finder.
 
-use super::{Interaction, Query, Quote, Trade, TradeError, TradeFinding};
-use crate::{
-    oneinch_api::{
-        OneInchClient, OneInchError, ProtocolCache, SellOrderQuoteQuery, Slippage, Swap, SwapQuery,
+use {
+    super::{Interaction, Query, Quote, Trade, TradeError, TradeFinding},
+    crate::{
+        oneinch_api::{
+            OneInchClient,
+            OneInchError,
+            ProtocolCache,
+            SellOrderQuoteQuery,
+            Slippage,
+            Swap,
+            SwapQuery,
+        },
+        price_estimation::gas,
+        request_sharing::{BoxRequestSharing, BoxShared},
     },
-    price_estimation::gas,
-    request_sharing::{BoxRequestSharing, BoxShared},
+    futures::FutureExt as _,
+    model::order::OrderKind,
+    primitive_types::H160,
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    tokio::sync::Mutex,
 };
-use futures::FutureExt as _;
-use model::order::OrderKind;
-use primitive_types::H160;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tokio::sync::Mutex;
 
 pub struct OneInchTradeFinder {
     inner: Arc<Inner>,
@@ -107,7 +115,7 @@ impl Inner {
         referrer_address: Option<H160>,
         spender_max_age: Duration,
     ) -> Self {
-        let outdated_timestamp = Instant::now() - spender_max_age;
+        let outdated_timestamp = Instant::now().checked_sub(spender_max_age).unwrap();
         let outdated_cache_entry = (H160::default(), outdated_timestamp);
 
         Self {
@@ -154,10 +162,11 @@ impl Inner {
         })
     }
 
-    /// Returns the current 1Inch smart contract as the `spender`. Caches that value for 60 seconds
-    /// to avoid unnecessary requests.
+    /// Returns the current 1Inch smart contract as the `spender`. Caches that
+    /// value for 60 seconds to avoid unnecessary requests.
     async fn spender(&self) -> Result<H160, TradeError> {
-        // Hold lock for entire function call to only ever issue a single request to `/spender` at once.
+        // Hold lock for entire function call to only ever issue a single request to
+        // `/spender` at once.
         let mut cache_lock = self.spender_cache.lock().await;
         let (spender, updated_at) = *cache_lock;
         if Instant::now().duration_since(updated_at) < self.spender_max_age {
@@ -210,14 +219,21 @@ impl TradeFinding for OneInchTradeFinder {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use super::*;
-    use crate::oneinch_api::{
-        MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Spender, Swap, Token,
-        Transaction,
+    use {
+        super::*,
+        crate::oneinch_api::{
+            MockOneInchClient,
+            OneInchClientImpl,
+            RestError,
+            SellOrderQuote,
+            Spender,
+            Swap,
+            Token,
+            Transaction,
+        },
+        reqwest::Client,
+        std::time::Duration,
     };
-    use reqwest::Client;
 
     fn create_trade_finder<T: OneInchClient>(api: T) -> OneInchTradeFinder {
         OneInchTradeFinder::new(Arc::new(api), Vec::default(), None)
@@ -526,11 +542,13 @@ mod tests {
         let result = inner.spender().await.unwrap();
         assert_eq!(result, spender(1).address);
 
-        // Use a different mock instance to allow returning a new value from the `spender()` function.
+        // Use a different mock instance to allow returning a new value from the
+        // `spender()` function.
         inner.api = Arc::new(mock_api(2));
 
-        // After `SPENDER_MAX_AGE` calling `Inner::spender()` again will result in another
-        // call to `OneInchClient::spender()` because the cached value expired.
+        // After `SPENDER_MAX_AGE` calling `Inner::spender()` again will result in
+        // another call to `OneInchClient::spender()` because the cached value
+        // expired.
         tokio::time::sleep(SPENDER_MAX_AGE).await;
         let result = inner.spender().await.unwrap();
         assert_eq!(result, spender(2).address);

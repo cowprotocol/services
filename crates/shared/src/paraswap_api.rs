@@ -1,21 +1,25 @@
-use crate::{
-    debug_bytes,
-    interaction::Interaction,
-    rate_limiter::{back_off, RateLimiter, RateLimiterError},
-    trade_finding::EncodedInteraction,
+use {
+    crate::{
+        debug_bytes,
+        interaction::Interaction,
+        rate_limiter::{back_off, RateLimiter, RateLimiterError},
+        trade_finding::EncodedInteraction,
+    },
+    anyhow::Result,
+    derivative::Derivative,
+    ethcontract::{Bytes, H160, U256},
+    model::u256_decimal,
+    reqwest::{Client, RequestBuilder, Url},
+    serde::{
+        de::{DeserializeOwned, Error},
+        Deserialize,
+        Deserializer,
+        Serialize,
+    },
+    serde_json::Value,
+    serde_with::{serde_as, DisplayFromStr},
+    thiserror::Error,
 };
-use anyhow::Result;
-use derivative::Derivative;
-use ethcontract::{Bytes, H160, U256};
-use model::u256_decimal;
-use reqwest::{Client, RequestBuilder, Url};
-use serde::{
-    de::{DeserializeOwned, Error},
-    Deserialize, Deserializer, Serialize,
-};
-use serde_json::Value;
-use serde_with::{serde_as, DisplayFromStr};
-use thiserror::Error;
 
 const BASE_URL: &str = "https://apiv5.paraswap.io";
 
@@ -74,8 +78,9 @@ impl ParaswapApi for DefaultParaswapApi {
 #[derive(Deserialize)]
 #[serde(untagged)]
 // Some Paraswap errors may contain both an error and an Ok response.
-// In those cases we should treat the response as an error which is why the error variant
-// is declared first (serde will encodes a mixed response as the first matching variant).
+// In those cases we should treat the response as an error which is why the
+// error variant is declared first (serde will encodes a mixed response as the
+// first matching variant).
 pub enum RawResponse<Ok> {
     ResponseErr { error: String },
     ResponseOk(Ok),
@@ -156,7 +161,8 @@ pub struct PriceQuery {
     pub src_decimals: u8,
     /// decimals of to token (according to API needed to trade any token)
     pub dest_decimals: u8,
-    /// amount of source token (in the smallest denomination, e.g. for ETH - 10**18)
+    /// amount of source token (in the smallest denomination, e.g. for ETH -
+    /// 10**18)
     pub amount: U256,
     /// Type of order
     pub side: Side,
@@ -198,11 +204,14 @@ impl PriceQuery {
 /// A Paraswap API price response.
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct PriceResponse {
-    /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
+    /// Opaque type, which the API expects to get echoed back in the exact form
+    /// when requesting settlement transaction data
     pub price_route_raw: Value,
-    /// The estimated in amount (part of price_route but extracted for type safety & convenience)
+    /// The estimated in amount (part of price_route but extracted for type
+    /// safety & convenience)
     pub src_amount: U256,
-    /// The estimated out amount (part of price_route but extracted for type safety & convenience)
+    /// The estimated out amount (part of price_route but extracted for type
+    /// safety & convenience)
     pub dest_amount: U256,
     /// The token transfer proxy address to set an allowance for.
     pub token_transfer_proxy: H160,
@@ -308,8 +317,8 @@ pub enum TradeAmount {
     },
 }
 
-/// A helper struct to wrap a `TransactionBuilderQuery` that we get as input from
-/// the `ParaswapApi` trait.
+/// A helper struct to wrap a `TransactionBuilderQuery` that we get as input
+/// from the `ParaswapApi` trait.
 ///
 /// This is done because the `partner` is longer specified in the headersd but
 /// instead in the POST body, but we want the API to stay mostly compatible and
@@ -367,9 +376,7 @@ impl Interaction for TransactionBuilderResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use reqwest::StatusCode;
-    use serde_json::json;
+    use {super::*, reqwest::StatusCode, serde_json::json};
 
     #[tokio::test]
     #[ignore]
@@ -724,7 +731,7 @@ mod tests {
             "Too much slippage on quote, please try again",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{}\"}}", liquidity_error)),
+                parse(&format!("{{\"error\": \"{liquidity_error}\"}}")),
                 Err(ParaswapResponseError::InsufficientLiquidity(message)) if &message == liquidity_error,
             ));
         }
@@ -737,7 +744,7 @@ mod tests {
             "It seems like the rate has changed, please re-query the latest Price",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{}\"}}", retryable_error)),
+                parse(&format!("{{\"error\": \"{retryable_error}\"}}")),
                 Err(ParaswapResponseError::Retryable(message)) if &message == retryable_error,
             ));
         }

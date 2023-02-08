@@ -1,65 +1,82 @@
-use crate::{deploy::Contracts, onchain_components::uniswap_pair_provider};
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
-use autopilot::{
-    database::{
-        ethflow_events::event_retriever::EthFlowRefundRetriever,
-        onchain_order_events::{
-            ethflow_events::EthFlowOnchainOrderParser,
-            event_retriever::CoWSwapOnchainOrdersContract, OnchainOrderParser,
+use {
+    crate::{deploy::Contracts, onchain_components::uniswap_pair_provider},
+    anyhow::{anyhow, Result},
+    async_trait::async_trait,
+    autopilot::{
+        database::{
+            ethflow_events::event_retriever::EthFlowRefundRetriever,
+            onchain_order_events::{
+                ethflow_events::EthFlowOnchainOrderParser,
+                event_retriever::CoWSwapOnchainOrdersContract,
+                OnchainOrderParser,
+            },
+        },
+        event_updater::GPv2SettlementContract,
+        limit_orders::{LimitOrderQuoter, QuotingStrategy},
+        solvable_orders::SolvableOrdersCache,
+    },
+    contracts::{IUniswapLikeRouter, WETH9},
+    database::quotes::QuoteId,
+    ethcontract::{Account, H160, U256},
+    model::{quote::QuoteSigningScheme, DomainSeparator},
+    orderbook::{database::Postgres, orderbook::Orderbook},
+    reqwest::{Client, StatusCode},
+    shared::{
+        account_balances::Web3BalanceFetcher,
+        bad_token::list_based::ListBasedDetector,
+        baseline_solver::BaseTokens,
+        caching_balance_fetcher::CachingBalanceFetcher,
+        code_fetching::{CachedCodeFetcher, MockCodeFetching},
+        current_block::{current_block_stream, CurrentBlockStream},
+        ethrpc::Web3,
+        fee_subsidy::Subsidy,
+        maintenance::{Maintaining, ServiceMaintenance},
+        order_quoting::{
+            CalculateQuoteError,
+            FindQuoteError,
+            OrderQuoter,
+            OrderQuoting,
+            Quote,
+            QuoteHandler,
+            QuoteParameters,
+            QuoteSearchParameters,
+        },
+        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
+        price_estimation::{
+            baseline::BaselinePriceEstimator,
+            native::NativePriceEstimator,
+            native_price_cache::CachingNativePriceEstimator,
+            sanitized::SanitizedPriceEstimator,
+        },
+        rate_limiter::RateLimiter,
+        recent_block_cache::CacheConfig,
+        signature_validator::Web3SignatureValidator,
+        sources::uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
+    },
+    solver::{
+        liquidity::{order_converter::OrderConverter, uniswap_v2::UniswapLikeLiquidity},
+        liquidity_collector::LiquidityCollector,
+        metrics::NoopMetrics,
+        orderbook::OrderBookApi,
+        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        settlement_submission::{
+            submitter::{
+                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
         },
     },
-    event_updater::GPv2SettlementContract,
-    limit_orders::LimitOrderQuoter,
-    solvable_orders::SolvableOrdersCache,
-};
-use contracts::{IUniswapLikeRouter, WETH9};
-use database::quotes::QuoteId;
-use ethcontract::{Account, H160, U256};
-use model::{quote::QuoteSigningScheme, DomainSeparator};
-use orderbook::{database::Postgres, orderbook::Orderbook};
-use reqwest::{Client, StatusCode};
-use shared::{
-    account_balances::Web3BalanceFetcher,
-    bad_token::list_based::ListBasedDetector,
-    baseline_solver::BaseTokens,
-    code_fetching::{CachedCodeFetcher, MockCodeFetching},
-    current_block::{current_block_stream, CurrentBlockStream},
-    ethrpc::Web3,
-    fee_subsidy::Subsidy,
-    maintenance::{Maintaining, ServiceMaintenance},
-    order_quoting::{
-        CalculateQuoteError, FindQuoteError, OrderQuoter, OrderQuoting, Quote, QuoteHandler,
-        QuoteParameters, QuoteSearchParameters,
+    std::{
+        collections::HashSet,
+        future::{pending, Future},
+        num::{NonZeroU64, NonZeroUsize},
+        str::FromStr,
+        sync::Arc,
+        time::Duration,
     },
-    order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
-    price_estimation::{
-        baseline::BaselinePriceEstimator, native::NativePriceEstimator,
-        native_price_cache::CachingNativePriceEstimator, sanitized::SanitizedPriceEstimator,
-    },
-    rate_limiter::RateLimiter,
-    recent_block_cache::CacheConfig,
-    signature_validator::Web3SignatureValidator,
-    sources::uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
-};
-use solver::{
-    liquidity::{order_converter::OrderConverter, uniswap_v2::UniswapLikeLiquidity},
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    orderbook::OrderBookApi,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
-    },
-};
-use std::{
-    collections::HashSet,
-    future::{pending, Future},
-    num::{NonZeroU64, NonZeroUsize},
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -146,7 +163,7 @@ impl OrderbookServices {
             Duration::from_secs(10),
             Duration::from_secs(10),
             None,
-            None,
+            Duration::from_secs(2),
             1,
         ));
         let quoter = Arc::new(OrderQuoter::new(
@@ -167,6 +184,8 @@ impl OrderbookServices {
             contracts.allowance,
             contracts.gp_settlement.address(),
         ));
+        let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
+        balance_fetcher.spawn_background_task(current_block_stream.clone());
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
@@ -182,6 +201,7 @@ impl OrderbookServices {
             Some(contracts.ethflow.address()),
             Duration::from_secs(5),
             Default::default(),
+            true,
         );
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
@@ -190,9 +210,10 @@ impl OrderbookServices {
                 fee: 1_000.into(),
             }),
             database: autopilot_db.clone(),
-            signature_validator: signature_validator.clone(),
-            domain_separator: contracts.domain_separator,
             parallelism: 2,
+            balance_fetcher: balance_fetcher.clone(),
+            strategies: vec![QuotingStrategy::SkipUnfunded],
+            batch_size: 10,
         }
         .spawn();
         let mut code_fetcher = MockCodeFetching::new();
@@ -319,7 +340,13 @@ pub async fn setup_naive_solver_uniswapv2_driver(
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
@@ -343,11 +370,12 @@ pub async fn setup_naive_solver_uniswapv2_driver(
     )
 }
 
-/// Returns error if communicating with the api fails or if a timeout is reached.
+/// Returns error if communicating with the api fails or if a timeout is
+/// reached.
 pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
     let condition = || async {
         let response = client
-            .get(format!("{}/api/v1/auction", API_HOST))
+            .get(format!("{API_HOST}/api/v1/auction"))
             .send()
             .await
             .unwrap();
@@ -357,14 +385,15 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
                 auction.auction.orders.len() >= minimum
             }
             StatusCode::NOT_FOUND => false,
-            other => panic!("unexpected status code {}", other),
+            other => panic!("unexpected status code {other}"),
         }
     };
     wait_for_condition(Duration::from_secs(30), condition).await
 }
 
-/// Repeatedly evaluate condition until it returns true or the timeout is reached. If condition
-/// evaluates to true, Ok(()) is returned. If the timeout is reached Err is returned.
+/// Repeatedly evaluate condition until it returns true or the timeout is
+/// reached. If condition evaluates to true, Ok(()) is returned. If the timeout
+/// is reached Err is returned.
 pub async fn wait_for_condition<Fut>(
     timeout: Duration,
     mut condition: impl FnMut() -> Fut,
@@ -382,7 +411,8 @@ where
     Ok(())
 }
 
-/// Same as [`OrderQuoter`], but forces the fee to be exactly the specified amount.
+/// Same as [`OrderQuoter`], but forces the fee to be exactly the specified
+/// amount.
 struct FixedFeeQuoter {
     quoter: Arc<OrderQuoter>,
     fee: U256,
@@ -390,7 +420,8 @@ struct FixedFeeQuoter {
 
 #[async_trait]
 impl OrderQuoting for FixedFeeQuoter {
-    /// Computes a quote for the specified order parameters. Doesn't store the quote.
+    /// Computes a quote for the specified order parameters. Doesn't store the
+    /// quote.
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,

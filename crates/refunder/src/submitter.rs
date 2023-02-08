@@ -8,19 +8,22 @@
 // a higher gas price, in order to avoid: ErrReplaceUnderpriced erros
 // In the re-newed attempt for submission the same nonce is used as before.
 
-use super::ethflow_order::EncodedEthflowOrder;
-use anyhow::{anyhow, Result};
-use contracts::CoWSwapEthFlow;
-use database::OrderUid;
-use ethcontract::{
-    transaction::{confirm::ConfirmParams, ResolveCondition},
-    Account, U256,
-};
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use shared::{
-    conversions::into_gas_price,
-    ethrpc::Web3,
-    submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
+use {
+    super::ethflow_order::EncodedEthflowOrder,
+    anyhow::{anyhow, Result},
+    contracts::CoWSwapEthFlow,
+    database::OrderUid,
+    ethcontract::{
+        transaction::{confirm::ConfirmParams, ResolveCondition},
+        Account,
+        U256,
+    },
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    shared::{
+        conversions::into_gas_price,
+        ethrpc::Web3,
+        submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
+    },
 };
 
 // Max gas price used for submitting transactions
@@ -55,7 +58,7 @@ impl Submitter {
             .eth()
             .transaction_count(self.account.address(), None)
             .await
-            .map_err(|err| anyhow!("Could not get latest nonce due to err: {:}", err))
+            .map_err(|err| anyhow!("Could not get latest nonce due to err: {err}"))
     }
 
     pub async fn submit(
@@ -150,8 +153,8 @@ fn calculate_submission_gas_price(
 
     if new_gas_price.max_fee_per_gas > MAX_GAS_PRICE as f64 {
         tracing::warn!(
-            "Refunding txs are likely not mined in time, as the current gas price {:?} \
-                            is higher than MAX_GAS_PRICE specified {:?}",
+            "Refunding txs are likely not mined in time, as the current gas price {:?} is higher \
+             than MAX_GAS_PRICE specified {:?}",
             new_gas_price.max_fee_per_gas,
             MAX_GAS_PRICE
         );

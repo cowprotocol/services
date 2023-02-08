@@ -1,52 +1,59 @@
 pub mod ethflow_events;
 pub mod event_retriever;
 
-use super::{
-    events::{bytes_to_order_uid, meta_to_event_index},
-    Metrics as DatabaseMetrics, Postgres,
-};
-use anyhow::{anyhow, bail, Context, Result};
-use chrono::{TimeZone, Utc};
-use contracts::cowswap_onchain_orders::{
-    event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
-    Event as ContractEvent,
-};
-use database::{
-    byte_array::ByteArray,
-    events::EventIndex,
-    onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
-    orders::{insert_quotes, Order, OrderClass},
-    PgTransaction,
-};
-use ethcontract::{Event as EthContractEvent, H160};
-use futures::{stream, StreamExt};
-use itertools::multiunzip;
-use model::{
-    app_id::AppId,
-    order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
-    signature::SigningScheme,
-    DomainSeparator,
-};
-use number_conversions::u256_to_big_decimal;
-use shared::{
-    current_block::{timestamp_of_block_in_seconds, RangeInclusive},
-    db_order_conversions::{
-        buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
+use {
+    super::{
+        events::{bytes_to_order_uid, meta_to_event_index},
+        Metrics as DatabaseMetrics,
+        Postgres,
     },
-    ethrpc::Web3,
-    event_handling::EventStoring,
-    order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
-    order_validation::{
-        convert_signing_scheme_into_quote_signing_scheme, get_quote_and_check_fee,
-        is_order_outside_market_price, onchain_order_placement_error_from,
+    anyhow::{anyhow, bail, Context, Result},
+    chrono::{TimeZone, Utc},
+    contracts::cowswap_onchain_orders::{
+        event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
+        Event as ContractEvent,
     },
+    database::{
+        byte_array::ByteArray,
+        events::EventIndex,
+        onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
+        orders::{insert_quotes, Order, OrderClass},
+        PgTransaction,
+    },
+    ethcontract::{Event as EthContractEvent, H160},
+    futures::{stream, StreamExt},
+    itertools::multiunzip,
+    model::{
+        app_id::AppId,
+        order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
+        signature::SigningScheme,
+        DomainSeparator,
+    },
+    number_conversions::u256_to_big_decimal,
+    shared::{
+        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
+        db_order_conversions::{
+            buy_token_destination_into,
+            order_kind_into,
+            sell_token_source_into,
+            signing_scheme_into,
+        },
+        ethrpc::Web3,
+        event_handling::EventStoring,
+        order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
+        order_validation::{
+            convert_signing_scheme_into_quote_signing_scheme,
+            get_quote_and_check_fee,
+            is_order_outside_market_price,
+            onchain_order_placement_error_from,
+        },
+    },
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
+    web3::types::U64,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
-
-use web3::types::U64;
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
     web3: Web3,
@@ -473,6 +480,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
                 owner,
                 settlement_contract,
                 liquidity_order_owners,
+                metrics,
             );
             let quote = match quote_result {
                 Ok(quote) => Some(database::orders::Quote {
@@ -486,9 +494,8 @@ async fn parse_general_onchain_order_placement_data<'a>(
                 Err(err) => {
                     let err_label = err.to_metrics_label();
                     tracing::debug!(
-                        "Could not retrieve a quote for order {:?}: {}",
+                        "Could not retrieve a quote for order {:?}: {err_label}",
                         order_data.1.uid,
-                        err_label
                     );
                     metrics.inc_onchain_order_errors(err_label);
                     None
@@ -508,7 +515,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
         .into_iter()
         .filter_map(|data| match data {
             Err(err) => {
-                tracing::debug!("Error while parsing onchain orders: {:}", err);
+                tracing::debug!("Error while parsing onchain orders: {err:?}");
                 None
             }
             Ok(data) => Some(data),
@@ -567,6 +574,7 @@ fn convert_onchain_order_placement(
     owner: H160,
     settlement_contract: H160,
     liquidity_order_owners: &HashSet<H160>,
+    metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
     let full_fee_amount = if let Ok(ref quote) = quote {
         quote.data.fee_parameters.unsubsidized()
@@ -578,6 +586,7 @@ fn convert_onchain_order_placement(
     let is_outside_market_price = if let Ok(ref quote) = quote {
         if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
+            metrics.inc_onchain_order_errors("outside_market_price");
             true
         } else {
             false
@@ -699,30 +708,34 @@ impl Metrics {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement;
-    use database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement};
-    use ethcontract::{Bytes, EventMetadata, H160, U256};
-    use maplit::hashset;
-    use mockall::predicate::{always, eq};
-    use model::{
-        app_id::AppId,
-        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-        quote::QuoteSigningScheme,
-        signature::SigningScheme,
-        DomainSeparator,
-    };
-    use number_conversions::u256_to_big_decimal;
-    use shared::{
-        db_order_conversions::{
-            buy_token_destination_into, order_kind_into, sell_token_source_into,
-            signing_scheme_into,
+    use {
+        super::*,
+        contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
+        database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
+        ethcontract::{Bytes, EventMetadata, H160, U256},
+        maplit::hashset,
+        mockall::predicate::{always, eq},
+        model::{
+            app_id::AppId,
+            order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+            quote::QuoteSigningScheme,
+            signature::SigningScheme,
+            DomainSeparator,
         },
-        ethrpc::create_env_test_transport,
-        fee_subsidy::FeeParameters,
-        order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
+        number_conversions::u256_to_big_decimal,
+        shared::{
+            db_order_conversions::{
+                buy_token_destination_into,
+                order_kind_into,
+                sell_token_source_into,
+                signing_scheme_into,
+            },
+            ethrpc::create_env_test_transport,
+            fee_subsidy::FeeParameters,
+            order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
+        },
+        sqlx::PgPool,
     };
-    use sqlx::PgPool;
 
     #[test]
     fn test_extract_order_data_from_onchain_order_placement_event() {
@@ -887,6 +900,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
@@ -910,7 +924,8 @@ mod test {
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
             owner: ByteArray(owner.0),
-            creation_timestamp: order.creation_timestamp, // Using the actual result to keep test simple
+            creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
+                                                           * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0),
             buy_token: ByteArray(expected_order_data.buy_token.0),
             receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
@@ -999,6 +1014,7 @@ mod test {
             owner,
             settlement_contract,
             &hashset! {owner},
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
@@ -1110,6 +1126,7 @@ mod test {
             owner,
             settlement_contract,
             &Default::default(),
+            Metrics::get(),
         );
         let expected_order_data = OrderData {
             sell_token,
@@ -1133,7 +1150,8 @@ mod test {
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
             owner: ByteArray(owner.0),
-            creation_timestamp: order.creation_timestamp, // Using the actual result to keep test simple
+            creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
+                                                           * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0),
             buy_token: ByteArray(expected_order_data.buy_token.0),
             receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
@@ -1292,8 +1310,8 @@ mod test {
             }),
         };
         let mut order_placement_2 = order_placement.clone();
-        // With the following operation, we will create an invalid event data, and hence the whole
-        // event parsing process will produce an error for this event.
+        // With the following operation, we will create an invalid event data, and hence
+        // the whole event parsing process will produce an error for this event.
         order_placement_2.data = Bytes(Vec::new());
         let event_data_2 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement_2),

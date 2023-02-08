@@ -5,6 +5,15 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
 
+[lib]
+name = "driver"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "driver"
+path = "src/main.rs"
+
 [dependencies]
 axum = "0.6"
 num = "0.4"
@@ -28,7 +37,7 @@ ethabi = "18.0"
 bigdecimal = "0.3"
 rand = "0.8"
 web3 = "0.18"
-toml = "0.5"
+toml = "0.7"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.

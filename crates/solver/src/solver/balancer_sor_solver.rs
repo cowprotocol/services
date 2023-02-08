@@ -1,27 +1,32 @@
 //! Solver using the Balancer SOR.
 
-use super::{
-    single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+use {
+    super::{
+        single_order_solver::{
+            execution_respects_order,
+            SettlementError,
+            SingleOrderSettlement,
+            SingleOrderSolving,
+        },
+        Auction,
     },
-    Auction,
-};
-use crate::{
-    interactions::{
-        allowances::{AllowanceManaging, ApprovalRequest},
-        balancer_v2::{self, SwapKind},
+    crate::{
+        interactions::{
+            allowances::{AllowanceManaging, ApprovalRequest},
+            balancer_v2::{self, SwapKind},
+        },
+        liquidity::{slippage::SlippageCalculator, LimitOrder},
     },
-    liquidity::{slippage::SlippageCalculator, LimitOrder},
+    anyhow::Result,
+    contracts::{BalancerV2Vault, GPv2Settlement},
+    ethcontract::{Account, Bytes, I256, U256},
+    model::order::OrderKind,
+    shared::{
+        balancer_sor_api::{BalancerSorApi, Query, Quote},
+        interaction::{EncodedInteraction, Interaction},
+    },
+    std::sync::Arc,
 };
-use anyhow::Result;
-use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{Account, Bytes, I256, U256};
-use model::order::OrderKind;
-use shared::{
-    balancer_sor_api::{BalancerSorApi, Query, Quote},
-    interaction::{EncodedInteraction, Interaction},
-};
-use std::sync::Arc;
 
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
 pub struct BalancerSorSolver {
@@ -228,19 +233,21 @@ impl Interaction for BatchSwap {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::interactions::allowances::{AllowanceManager, MockAllowanceManaging};
-    use ethcontract::{H160, H256};
-    use mockall::predicate::*;
-    use model::order::{Order, OrderData};
-    use reqwest::Client;
-    use shared::{
-        addr,
-        balancer_sor_api::{DefaultBalancerSorApi, MockBalancerSorApi, Swap},
-        dummy_contract,
-        ethrpc::{create_env_test_transport, Web3},
+    use {
+        super::*,
+        crate::interactions::allowances::{AllowanceManager, MockAllowanceManaging},
+        ethcontract::{H160, H256},
+        mockall::predicate::*,
+        model::order::{Order, OrderData},
+        reqwest::Client,
+        shared::{
+            addr,
+            balancer_sor_api::{DefaultBalancerSorApi, MockBalancerSorApi, Swap},
+            dummy_contract,
+            ethrpc::{create_env_test_transport, Web3},
+        },
+        std::env,
     };
-    use std::env;
 
     #[test]
     fn computed_swap_sets_sign() {
@@ -572,7 +579,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        println!("Found settlement for sell order: {:#?}", sell_settlement);
+        println!("Found settlement for sell order: {sell_settlement:#?}");
 
         let buy_settlement = solver
             .try_settle_order(
@@ -596,6 +603,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        println!("Found settlement for buy order: {:#?}", buy_settlement);
+        println!("Found settlement for buy order: {buy_settlement:#?}");
     }
 }

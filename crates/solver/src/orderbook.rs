@@ -1,6 +1,8 @@
-use anyhow::{Context, Result};
-use model::auction::AuctionWithId;
-use reqwest::{Client, Url};
+use {
+    anyhow::{Context, Result},
+    model::auction::AuctionWithId,
+    reqwest::{Client, Url},
+};
 
 pub struct OrderBookApi {
     base: Url,
@@ -23,7 +25,7 @@ impl OrderBookApi {
         let response = self.client.get(url).send().await?;
         if let Err(err) = response.error_for_status_ref() {
             let body = response.text().await;
-            return Err(anyhow::Error::new(err).context(format!("body: {:?}", body)));
+            return Err(anyhow::Error::new(err).context(format!("body: {body:?}")));
         }
         let auction = response.json().await?;
         Ok(auction)
@@ -46,7 +48,7 @@ impl OrderBookApi {
         let response = request.json(&body).send().await.context("send")?;
         if let Err(err) = response.error_for_status_ref() {
             let body = response.text().await;
-            return Err(anyhow::Error::new(err).context(format!("body: {:?}", body)));
+            return Err(anyhow::Error::new(err).context(format!("body: {body:?}")));
         }
         Ok(())
     }
@@ -66,7 +68,7 @@ pub mod test_util {
             None,
         );
         let auction = api.get_auction().await.unwrap();
-        println!("{:#?}", auction);
+        println!("{auction:#?}");
     }
 
     // cargo test real_orderbook -- --ignored --nocapture
@@ -79,6 +81,6 @@ pub mod test_util {
             None,
         );
         let auction = api.get_auction().await.unwrap();
-        println!("{:#?}", auction);
+        println!("{auction:#?}");
     }
 }

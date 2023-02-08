@@ -48,8 +48,8 @@ services:
       dockerfile: docker/Dockerfile.dev-geth
     restart: on-failure
     ports:
-      - 8546:8545
       - 8547:8547
+      - 18545-19545:18545-19545
 
 volumes:
   postgres:

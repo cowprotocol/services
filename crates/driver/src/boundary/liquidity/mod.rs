@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{competition::order, eth, liquidity},
+        domain::{eth, liquidity},
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
@@ -18,6 +18,7 @@ use {
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     },
     std::{
+        collections::HashSet,
         num::{NonZeroU64, NonZeroUsize},
         sync::Arc,
         time::Duration,
@@ -84,14 +85,15 @@ impl Fetcher {
     }
 
     /// Fetches liquidity for the specified auction.
-    pub async fn fetch(&self, orders: &[order::Order]) -> Result<Vec<liquidity::Liquidity>> {
-        let pairs = orders
+    pub async fn fetch(
+        &self,
+        pairs: &HashSet<liquidity::TokenPair>,
+    ) -> Result<Vec<liquidity::Liquidity>> {
+        let pairs = pairs
             .iter()
-            .filter_map(|order| match order.kind {
-                order::Kind::Market | order::Kind::Limit { .. } => {
-                    TokenPair::new(order.sell.token.into(), order.buy.token.into())
-                }
-                order::Kind::Liquidity => None,
+            .map(|pair| {
+                let (a, b) = pair.get();
+                TokenPair::new(a.into(), b.into()).expect("a != b")
             })
             .collect();
         let block_number = self.blocks.borrow().number;

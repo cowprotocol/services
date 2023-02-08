@@ -1,7 +1,9 @@
-use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{Bytes, H160, H256};
-use primitive_types::U256;
-use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    contracts::{BalancerV2Vault, GPv2Settlement},
+    ethcontract::{Bytes, H160, H256},
+    primitive_types::U256,
+    shared::interaction::{EncodedInteraction, Interaction},
+};
 
 #[derive(Clone, Debug)]
 pub struct BalancerSwapGivenOutInteraction {
@@ -55,8 +57,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::dummy_contract;
+    use {super::*, shared::dummy_contract};
 
     #[test]
     fn encode_unwrap_weth() {

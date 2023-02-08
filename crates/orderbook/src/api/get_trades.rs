@@ -1,11 +1,13 @@
-use crate::database::trades::{TradeFilter, TradeRetrieving};
-use anyhow::{Context, Result};
-use model::order::OrderUid;
-use primitive_types::H160;
-use serde::Deserialize;
-use shared::api::{error, ApiReply};
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+use {
+    crate::database::trades::{TradeFilter, TradeRetrieving},
+    anyhow::{Context, Result},
+    model::order::OrderUid,
+    primitive_types::H160,
+    serde::Deserialize,
+    shared::api::{error, ApiReply},
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,10 +75,12 @@ pub fn get_trades(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use primitive_types::H160;
-    use warp::test::{request, RequestBuilder};
+    use {
+        super::*,
+        hex_literal::hex,
+        primitive_types::H160,
+        warp::test::{request, RequestBuilder},
+    };
 
     #[tokio::test]
     async fn get_trades_request_ok() {
@@ -86,7 +90,7 @@ mod tests {
         };
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
-        let owner_path = format!("/v1/trades?owner=0x{:x}", owner);
+        let owner_path = format!("/v1/trades?owner=0x{owner:x}");
         let result = trade_filter(request().path(owner_path.as_str()))
             .await
             .unwrap()
@@ -95,7 +99,7 @@ mod tests {
         assert_eq!(result.order_uid, None);
 
         let uid = OrderUid([1u8; 56]);
-        let order_uid_path = format!("/v1/trades?orderUid={:}", uid);
+        let order_uid_path = format!("/v1/trades?orderUid={uid}");
         let result = trade_filter(request().path(order_uid_path.as_str()))
             .await
             .unwrap()
@@ -113,7 +117,7 @@ mod tests {
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
         let uid = OrderUid([1u8; 56]);
-        let path = format!("/v1/trades?owner=0x{:x}&orderUid={:}", owner, uid);
+        let path = format!("/v1/trades?owner=0x{owner:x}&orderUid={uid}");
 
         let result = trade_filter(request().path(path.as_str())).await.unwrap();
         assert!(result.is_err());

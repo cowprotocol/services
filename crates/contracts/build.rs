@@ -1,9 +1,11 @@
-use ethcontract::{
-    common::{contract::Network, DeploymentInformation},
-    Address,
+use {
+    ethcontract::{
+        common::{contract::Network, DeploymentInformation},
+        Address,
+    },
+    ethcontract_generate::{loaders::TruffleLoader, ContractBuilder},
+    std::{env, path::Path},
 };
-use ethcontract_generate::{loaders::TruffleLoader, ContractBuilder};
-use std::{env, path::Path};
 
 #[path = "src/paths.rs"]
 mod paths;
@@ -160,8 +162,9 @@ fn main() {
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
         builder.add_method_alias(
-            "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),uint256[],uint256,uint256)",
-            "on_swap_with_balances"
+            "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),\
+             uint256[],uint256,uint256)",
+            "on_swap_with_balances",
         )
     });
     generate_contract("BalancerV2LiquidityBootstrappingPool");
@@ -271,22 +274,25 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_method_alias(
-                "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,address))",
+                "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,\
+                 address))",
                 "_transform_erc_20",
             )
             .add_method_alias(
-                "_fillRfqOrder((address,address,uint128,uint128,address,address,address,bytes32,uint64,uint256),\
-                    (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
-                "_fill_rfq_order"
+                "_fillRfqOrder((address,address,uint128,uint128,address,address,address,bytes32,\
+                 uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
+                "_fill_rfq_order",
             )
             .add_method_alias(
-                "_fillLimitOrder((address,address,uint128,uint128,uint128,address,address,address,address,bytes32,\
-                    uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,address)",
-                "_fill_limit_order"
+                "_fillLimitOrder((address,address,uint128,uint128,uint128,address,address,address,\
+                 address,bytes32,uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,\
+                 address)",
+                "_fill_limit_order",
             )
-            .add_method_alias("_fillOtcOrder((address,address,uint128,uint128,address,address,address,uint256),\
-                    (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
-                "_fill_otc_order"
+            .add_method_alias(
+                "_fillOtcOrder((address,address,uint128,uint128,address,address,address,uint256),\
+                 (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
+                "_fill_otc_order",
             )
     });
     generate_contract_with_config("CowProtocolToken", |builder| {
@@ -339,7 +345,7 @@ fn generate_contract_with_config(
     config(ContractBuilder::new().visibility_modifier("pub"))
         .generate(&contract)
         .unwrap()
-        .write_to_file(Path::new(&dest).join(format!("{}.rs", name)))
+        .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
         .unwrap();
 }
 

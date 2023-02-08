@@ -3,31 +3,41 @@
 //! This simple solver will simply use the 1Inch API to get a quote for a
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
-use super::{
-    single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+use {
+    super::{
+        single_order_solver::{
+            execution_respects_order,
+            SettlementError,
+            SingleOrderSettlement,
+            SingleOrderSolving,
+        },
+        Auction,
     },
-    Auction,
-};
-use crate::{
-    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::{slippage::SlippageCalculator, LimitOrder},
-};
-use anyhow::Result;
-use contracts::GPv2Settlement;
-use derivative::Derivative;
-use ethcontract::Account;
-use model::order::OrderKind;
-use primitive_types::H160;
-use reqwest::{Client, Url};
-use shared::{
-    ethrpc::Web3,
-    interaction::Interaction,
-    oneinch_api::{
-        OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, SwapQuery,
+    crate::{
+        interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+        liquidity::{slippage::SlippageCalculator, LimitOrder},
     },
+    anyhow::Result,
+    contracts::GPv2Settlement,
+    derivative::Derivative,
+    ethcontract::Account,
+    model::order::OrderKind,
+    primitive_types::H160,
+    reqwest::{Client, Url},
+    shared::{
+        ethrpc::Web3,
+        interaction::Interaction,
+        oneinch_api::{
+            OneInchClient,
+            OneInchClientImpl,
+            OneInchError,
+            ProtocolCache,
+            Slippage,
+            SwapQuery,
+        },
+    },
+    std::fmt::{self, Display, Formatter},
 };
-use std::fmt::{self, Display, Formatter};
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
 #[derive(Derivative)]
@@ -74,8 +84,8 @@ impl OneInchSolver {
 }
 
 impl OneInchSolver {
-    /// Settles a single sell order against a 1Inch swap using the specified protocols and
-    /// slippage.
+    /// Settles a single sell order against a 1Inch swap using the specified
+    /// protocols and slippage.
     async fn settle_order_with_protocols_and_slippage(
         &self,
         order: LimitOrder,
@@ -91,7 +101,8 @@ impl OneInchSolver {
         let mut interactions: Vec<Box<dyn Interaction>> = Vec::new();
 
         let spender = self.client.get_spender().await?;
-        // Fetching allowance before making the SwapQuery so that the Swap info is as recent as possible
+        // Fetching allowance before making the SwapQuery so that the Swap info is as
+        // recent as possible
         if let Some(approval) = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
@@ -118,7 +129,8 @@ impl OneInchSolver {
         let swap = match self.client.get_swap(query).await {
             Ok(swap) => swap,
             Err(error) if error.is_insuffucient_liquidity() => {
-                // This means the order cannot get matched which shouldn't be treated as an error.
+                // This means the order cannot get matched which shouldn't be treated as an
+                // error.
                 return Ok(None);
             }
             Err(error) => return Err(error.into()),
@@ -190,24 +202,26 @@ impl From<OneInchError> for SettlementError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        liquidity::LimitOrder,
-        solver::ExternalPrices,
-        test::account,
-    };
-    use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::{Web3, H160, U256};
-    use futures::FutureExt as _;
-    use maplit::hashmap;
-    use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind};
-    use shared::{
-        conversions::U256Ext,
-        dummy_contract,
-        ethrpc::create_env_test_transport,
-        oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::{Approval, MockAllowanceManaging},
+            liquidity::LimitOrder,
+            solver::ExternalPrices,
+            test::account,
+        },
+        contracts::{GPv2Settlement, WETH9},
+        ethcontract::{Web3, H160, U256},
+        futures::FutureExt as _,
+        maplit::hashmap,
+        mockall::{predicate::*, Sequence},
+        model::order::{Order, OrderData, OrderKind},
+        shared::{
+            conversions::U256Ext,
+            dummy_contract,
+            ethrpc::create_env_test_transport,
+            oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
+        },
     };
 
     fn dummy_solver(
@@ -516,6 +530,6 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 }

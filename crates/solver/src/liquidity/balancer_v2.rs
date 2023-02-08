@@ -1,25 +1,32 @@
 //! Module for providing Balancer V2 pool liquidity to the solvers.
 
-use crate::{
-    interactions::{
-        allowances::{AllowanceManager, AllowanceManaging, Allowances},
-        BalancerSwapGivenOutInteraction,
+use {
+    crate::{
+        interactions::{
+            allowances::{AllowanceManager, AllowanceManaging, Allowances},
+            BalancerSwapGivenOutInteraction,
+        },
+        liquidity::{
+            AmmOrderExecution,
+            Liquidity,
+            SettlementHandling,
+            StablePoolOrder,
+            WeightedProductOrder,
+        },
+        liquidity_collector::LiquidityCollecting,
+        settlement::SettlementEncoder,
     },
-    liquidity::{
-        AmmOrderExecution, Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder,
+    anyhow::Result,
+    contracts::{BalancerV2Vault, GPv2Settlement},
+    ethcontract::H256,
+    model::TokenPair,
+    shared::{
+        ethrpc::Web3,
+        recent_block_cache::Block,
+        sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
-    liquidity_collector::LiquidityCollecting,
-    settlement::SettlementEncoder,
+    std::{collections::HashSet, sync::Arc},
 };
-use anyhow::Result;
-use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::H256;
-use model::TokenPair;
-use shared::{
-    ethrpc::Web3, recent_block_cache::Block,
-    sources::balancer_v2::pool_fetching::BalancerPoolFetching,
-};
-use std::{collections::HashSet, sync::Arc};
 
 /// A liquidity provider for Balancer V2 weighted pools.
 pub struct BalancerV2Liquidity {
@@ -193,21 +200,29 @@ impl SettlementHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use maplit::{hashmap, hashset};
-    use mockall::predicate::*;
-    use model::TokenPair;
-    use num::BigRational;
-    use primitive_types::H160;
-    use shared::{
-        baseline_solver::BaseTokens,
-        dummy_contract,
-        http_solver::model::InternalizationStrategy,
-        interaction::Interaction,
-        sources::balancer_v2::pool_fetching::{
-            AmplificationParameter, CommonPoolState, FetchedBalancerPools,
-            MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,
+    use {
+        super::*,
+        crate::interactions::allowances::{Approval, MockAllowanceManaging},
+        maplit::{hashmap, hashset},
+        mockall::predicate::*,
+        model::TokenPair,
+        num::BigRational,
+        primitive_types::H160,
+        shared::{
+            baseline_solver::BaseTokens,
+            dummy_contract,
+            http_solver::model::InternalizationStrategy,
+            interaction::Interaction,
+            sources::balancer_v2::pool_fetching::{
+                AmplificationParameter,
+                CommonPoolState,
+                FetchedBalancerPools,
+                MockBalancerPoolFetching,
+                StablePool,
+                TokenState,
+                WeightedPool,
+                WeightedTokenState,
+            },
         },
     };
 

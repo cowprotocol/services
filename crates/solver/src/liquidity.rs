@@ -5,29 +5,31 @@ pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod zeroex;
 
-use crate::settlement::SettlementEncoder;
-use anyhow::Result;
 #[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
-use model::{
-    order::{OrderKind, OrderUid},
-    TokenPair,
-};
-use num::{rational::Ratio, BigRational};
-use primitive_types::{H160, U256};
 #[cfg(test)]
 use shared::sources::uniswap_v2::pool_fetching::Pool;
-use shared::sources::{
-    balancer_v2::{
-        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-        swap::fixed_point::Bfp,
+use {
+    crate::settlement::SettlementEncoder,
+    anyhow::Result,
+    model::{
+        order::{OrderKind, OrderUid},
+        TokenPair,
     },
-    uniswap_v3::pool_fetching::PoolInfo,
+    num::{rational::Ratio, BigRational},
+    primitive_types::{H160, U256},
+    shared::sources::{
+        balancer_v2::{
+            pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+            swap::fixed_point::Bfp,
+        },
+        uniswap_v3::pool_fetching::PoolInfo,
+    },
+    std::{collections::HashMap, sync::Arc},
+    strum::{EnumVariantNames, IntoStaticStr},
 };
-use std::{collections::HashMap, sync::Arc};
-use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
@@ -101,8 +103,9 @@ pub enum Exchange {
     ZeroEx,
 }
 
-/// Used to differentiate between different types of orders that can be sent to solvers.
-/// User orders (market + limit) containing OrderUid are the orders from the orderbook.
+/// Used to differentiate between different types of orders that can be sent to
+/// solvers. User orders (market + limit) containing OrderUid are the orders
+/// from the orderbook.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -115,17 +118,20 @@ pub enum LimitOrderId {
 /// Three different types of liquidity orders exist:
 /// 1. Protocol - liquidity orders from the auction model of solvable orders
 /// 2. ZeroEx  - liquidity orders from the zeroex api liquidity collector
-/// 3. Foreign - liquidity orders received as part of the solution from searchers
+/// 3. Foreign - liquidity orders received as part of the solution from
+/// searchers
 ///
-/// (1) and (2) are gathered when the auction is cut and they are sent to searchers
-/// (3) are received from searchers as part of the solution.
+/// (1) and (2) are gathered when the auction is cut and they are sent to
+/// searchers (3) are received from searchers as part of the solution.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub enum LiquidityOrderId {
-    /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
-    /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
-    /// Contains protocol and foreign liquidity orders
+    /// TODO: Split into different variants once we have a DTO of order model
+    /// for `driver` in driver solver colocation TODO: The only reason why
+    /// is together now is because function `normalize_limit_order` can't
+    /// diferentiate between these two Contains protocol and foreign
+    /// liquidity orders
     Protocol(OrderUid),
     ZeroEx(String),
 }
@@ -178,7 +184,8 @@ pub struct LimitOrder {
     /// factor to make matching orders more valuable from an objective value
     /// perspective.
     pub scaled_unsubsidized_fee: U256,
-    /// Indicator if the order is mature at the creation of the Auction. Relevant to user orders.
+    /// Indicator if the order is mature at the creation of the Auction.
+    /// Relevant to user orders.
     pub is_mature: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
@@ -248,7 +255,8 @@ impl Default for LimitOrder {
     }
 }
 
-/// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
+/// 2 sided constant product automated market maker with equal reserve value and
+/// a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -280,7 +288,8 @@ impl From<Pool> for ConstantProductOrder {
     }
 }
 
-/// 2 sided weighted product automated market maker with weighted reserves and a trading fee (e.g. BalancerV2)
+/// 2 sided weighted product automated market maker with weighted reserves and a
+/// trading fee (e.g. BalancerV2)
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -435,9 +444,7 @@ impl Default for StablePoolOrder {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use maplit::hashmap;
-    use std::sync::Mutex;
+    use {super::*, maplit::hashmap, std::sync::Mutex};
 
     pub struct CapturingSettlementHandler<L>
     where

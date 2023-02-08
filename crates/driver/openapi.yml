@@ -126,7 +126,7 @@ components:
         prices:
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/BigUint"
+            $ref: "#/components/schemas/TokenAmount"
           description: |
             The reference prices for all traded tokens in the auction as a mapping from token
             addresses to a price denominated in native token (i.e. 1e18 represents a token that
@@ -223,16 +223,18 @@ components:
         auctionId:
           description: Id of the auction that should be executed.
           type: integer
+        transactionIdentifier:
+          description: |
+            Extra calldata that is appended to the settlement contract invocation by the Solver to
+            identify the transaction.
+
+            Hex encoded bytes. No fixed length.
+          type: string
+          example: "0x00112233"
     ExecuteResponse:
       description: Response of the execute endpoint.
       type: object
       properties:
-        account:
-          description: The address that executes the transaction.
-          $ref: "#/components/schemas/Address"
-        nonce:
-          description: The nonce of the transaction.
-          type: integer
         clearingPrices:
           description: |
             Mapping of hex token address to price.

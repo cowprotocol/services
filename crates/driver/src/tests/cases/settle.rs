@@ -1,12 +1,13 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition,
-        infra::{self, config::cli},
+        domain::competition::{self, auction},
+        infra,
         tests::{self, hex_address, setup},
     },
     itertools::Itertools,
     serde_json::json,
+    web3::types::TransactionId,
 };
 
 /// Test that the /settle endpoint behaves as expected.
@@ -28,6 +29,8 @@ async fn test() {
         admin_secret_key,
         interactions,
         solver_address,
+        geth,
+        solver_secret_key,
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -73,6 +76,7 @@ async fn test() {
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
         address: hex_address(solver_address),
+        private_key: format!("0x{}", solver_secret_key.display_secret()),
         solve: vec![setup::solver::Solve {
             req: json!({
                 "id": "1",
@@ -108,7 +112,7 @@ async fn test() {
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline - competition::SolverTimeout::solving_time_buffer(),
+                "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
@@ -131,11 +135,14 @@ async fn test() {
     // Set up the driver.
     let client = setup::driver::setup(setup::driver::Config {
         now,
-        contracts: cli::ContractAddresses {
-            gp_v2_settlement: Some(settlement.address()),
-            weth: Some(weth.address()),
+        file: setup::driver::ConfigFile::Create {
+            solvers: vec![solver],
+            contracts: infra::config::file::ContractsConfig {
+                gp_v2_settlement: Some(settlement.address()),
+                weth: Some(weth.address()),
+            },
         },
-        file: setup::driver::ConfigFile::Create(vec![solver]),
+        geth: &geth,
     })
     .await;
 
@@ -186,30 +193,32 @@ async fn test() {
         .await;
 
     let solution_id = solution.get("id").unwrap().as_str().unwrap();
-    let old_tx_count = web3
-        .eth()
-        .transaction_count(solver_address, None)
-        .await
-        .unwrap();
+    let block_number = web3.eth().block_number().await.unwrap();
     let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
 
-    client.settle(SOLVER_NAME, solution_id).await;
+    setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
 
     // Assert.
-    let new_tx_count = web3
-        .eth()
-        .transaction_count(solver_address, None)
-        .await
-        .unwrap();
     let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let new_token_a = token_a.balance_of(admin).call().await.unwrap();
     let new_token_b = token_b.balance_of(admin).call().await.unwrap();
-    assert_eq!(new_tx_count, old_tx_count + 1);
     // ETH balance is lower due to transaction fees.
     assert!(new_balance < old_balance);
     // The balance of the trader changes according to the swap.
     assert_eq!(new_token_a, old_token_a - token_a_in_amount - user_fee);
     assert_eq!(new_token_b, old_token_b + token_b_out_amount);
+
+    // Check that the solution ID is included in the settlement.
+    let tx = web3
+        .eth()
+        .transaction(TransactionId::Block((block_number + 1).into(), 0.into()))
+        .await
+        .unwrap()
+        .unwrap();
+    let input = tx.input.0;
+    let len = input.len();
+    let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
+    assert_eq!(tx_solution_id.to_string(), solution_id);
 }

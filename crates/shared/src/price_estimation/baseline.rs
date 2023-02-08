@@ -1,21 +1,28 @@
-use crate::{
-    baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
-    conversions::U256Ext,
-    price_estimation::{
-        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
-        Query,
+use {
+    crate::{
+        baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
+        conversions::U256Ext,
+        price_estimation::{
+            gas,
+            rate_limited,
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
+            Query,
+        },
+        rate_limiter::RateLimiter,
+        recent_block_cache::Block,
+        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
-    rate_limiter::RateLimiter,
-    recent_block_cache::Block,
-    sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+    anyhow::Result,
+    ethcontract::{H160, U256},
+    futures::stream::StreamExt,
+    gas_estimation::GasPriceEstimating,
+    model::{order::OrderKind, TokenPair},
+    num::BigRational,
+    std::{collections::HashMap, sync::Arc},
 };
-use anyhow::Result;
-use ethcontract::{H160, U256};
-use futures::stream::StreamExt;
-use gas_estimation::GasPriceEstimating;
-use model::{order::OrderKind, TokenPair};
-use num::BigRational;
-use std::{collections::HashMap, sync::Arc};
 
 pub struct BaselinePriceEstimator {
     pool_fetcher: Arc<dyn PoolFetching>,
@@ -194,8 +201,8 @@ impl BaselinePriceEstimator {
     }
 
     /// Returns path and out (buy) amount.
-    /// If buy_token_price_in_native_token is set then it will be used to take gas cost into
-    /// account.
+    /// If buy_token_price_in_native_token is set then it will be used to take
+    /// gas cost into account.
     fn best_execution_sell_order(
         &self,
         sell_token: H160,
@@ -235,8 +242,8 @@ impl BaselinePriceEstimator {
     }
 
     /// Returns path and out (sell) amount.
-    /// If sell_token_price_in_native_token is set then it will be used to take gas cost into
-    /// account.
+    /// If sell_token_price_in_native_token is set then it will be used to take
+    /// gas cost into account.
     fn best_execution_buy_order(
         &self,
         sell_token: H160,
@@ -322,16 +329,18 @@ fn estimate_gas(path_len: usize) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        baseline_solver::BaselineSolvable,
-        gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::single_estimate,
-        rate_limiter::RateLimiter,
-        sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
+    use {
+        super::*,
+        crate::{
+            baseline_solver::BaselineSolvable,
+            gas_price_estimation::FakeGasPriceEstimator,
+            price_estimation::single_estimate,
+            rate_limiter::RateLimiter,
+            sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
+        },
+        gas_estimation::gas_price::GasPrice1559,
+        std::sync::Mutex,
     };
-    use gas_estimation::gas_price::GasPrice1559;
-    use std::sync::Mutex;
 
     fn default_rate_limiter() -> Arc<RateLimiter> {
         Arc::new(RateLimiter::from_strategy(

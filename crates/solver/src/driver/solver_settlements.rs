@@ -1,9 +1,11 @@
-use crate::{settlement::Settlement, solver::Solver};
-use model::auction::AuctionId;
-use num::BigRational;
-use primitive_types::U256;
-use shared::http_solver::model::{AuctionResult, SolverRejectionReason};
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use {
+    crate::{settlement::Settlement, solver::Solver},
+    model::auction::AuctionId,
+    num::BigRational,
+    primitive_types::U256,
+    shared::http_solver::model::{AuctionResult, SolverRejectionReason},
+    std::{collections::HashSet, sync::Arc, time::Duration},
+};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement.user_trades().next().is_some()
@@ -23,13 +25,14 @@ pub struct RatedSettlement {
     pub objective_value: BigRational,
 }
 
-/// Filters out all settlements without any user order which is mature by age or mature by association.
-/// Any user order older than `min_order_age` is considered to be mature by age.
-/// Any younger user order in a settlement containing a user order mature by age or mature by association
-/// is considered to be mature by association.
-/// Old liquidity orders can not contribute to the maturity of a settlement.
-/// Because maturity by association is defined recursively it can "spread" across settlements,
-/// resulting in settlements being allowed where it's not immediately obvious by which association
+/// Filters out all settlements without any user order which is mature by age or
+/// mature by association. Any user order older than `min_order_age` is
+/// considered to be mature by age. Any younger user order in a settlement
+/// containing a user order mature by age or mature by association is considered
+/// to be mature by association. Old liquidity orders can not contribute to the
+/// maturity of a settlement. Because maturity by association is defined
+/// recursively it can "spread" across settlements, resulting in settlements
+/// being allowed where it's not immediately obvious by which association
 /// any user order of a settlement has matured.
 pub fn retain_mature_settlements(
     min_order_age: Duration,
@@ -102,13 +105,13 @@ pub fn retain_mature_settlements(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{settlement::Trade, solver::dummy_arc_solver};
-    use chrono::{offset::Utc, DateTime, Duration, Local};
-
-    use model::order::{LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata, OrderUid};
-
-    use std::ops::Sub;
+    use {
+        super::*,
+        crate::{settlement::Trade, solver::dummy_arc_solver},
+        chrono::{offset::Utc, DateTime, Duration, Local},
+        model::order::{LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata, OrderUid},
+        std::ops::Sub,
+    };
 
     fn trade(created_at: DateTime<Utc>, uid: u8, class: OrderClass) -> Trade {
         Trade {
@@ -243,8 +246,8 @@ mod tests {
             trade(recent, 3, OrderClass::Market),
             trade(old, 4, OrderClass::Market),
         ]);
-        // this will not be included because it only contains recent orders which are not
-        // referenced in any other valid settlements
+        // this will not be included because it only contains recent orders which are
+        // not referenced in any other valid settlements
         let s4 = Settlement::with_default_prices(vec![
             trade(recent, 5, OrderClass::Market),
             trade(recent, 6, OrderClass::Market),

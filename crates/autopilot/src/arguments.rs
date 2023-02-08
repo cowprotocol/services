@@ -1,9 +1,15 @@
-use primitive_types::H160;
-use shared::{
-    arguments::display_option, bad_token::token_owner_finder, http_client, price_estimation,
+use {
+    crate::limit_orders::QuotingStrategy,
+    primitive_types::H160,
+    shared::{
+        arguments::display_option,
+        bad_token::token_owner_finder,
+        http_client,
+        price_estimation,
+    },
+    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    url::Url,
 };
-use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
-use url::Url;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -22,13 +28,14 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// Address of the ethflow contract. If not specified, eth-flow orders are disabled.
+    /// Address of the ethflow contract. If not specified, eth-flow orders are
+    /// disabled.
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
 
     /// Timestamp at which we should start indexing eth-flow contract events.
-    /// If there are already events in the database for a date later than this, then this date is
-    /// ignored and can be omitted.
+    /// If there are already events in the database for a date later than this,
+    /// then this date is ignored and can be omitted.
     #[clap(long, env)]
     pub ethflow_indexing_start: Option<u64>,
 
@@ -40,7 +47,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
-    /// Url of the Postgres database. By default connects to locally running postgres.
+    /// Url of the Postgres database. By default connects to locally running
+    /// postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 
@@ -48,8 +56,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub skip_event_sync: bool,
 
-    /// List of token addresses that should be allowed regardless of whether the bad token detector
-    /// thinks they are bad. Base tokens are automatically allowed.
+    /// List of token addresses that should be allowed regardless of whether the
+    /// bad token detector thinks they are bad. Base tokens are
+    /// automatically allowed.
     #[clap(long, env, use_value_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
 
@@ -57,7 +66,8 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    /// The amount of time in seconds a classification of a token into good or bad is valid for.
+    /// The amount of time in seconds a classification of a token into good or
+    /// bad is valid for.
     #[clap(
         long,
         env,
@@ -70,7 +80,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
 
-    /// Which estimators to use to estimate token prices in terms of the chain's native token.
+    /// Which estimators to use to estimate token prices in terms of the chain's
+    /// native token.
     #[clap(
         long,
         env,
@@ -93,8 +104,8 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
 
-    /// If the auction hasn't been updated in this amount of time the pod fails the liveness check.
-    /// Expects a value in seconds.
+    /// If the auction hasn't been updated in this amount of time the pod fails
+    /// the liveness check. Expects a value in seconds.
     #[clap(
         long,
         env,
@@ -103,8 +114,8 @@ pub struct Arguments {
     )]
     pub max_auction_age: Duration,
 
-    /// If a limit order surplus fee is older than this, it will get refreshed. Expects a value in
-    /// seconds.
+    /// If a limit order surplus fee is older than this, it will get refreshed.
+    /// Expects a value in seconds.
     #[clap(
         long,
         env,
@@ -132,7 +143,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    // Enable background quoting for limit orders.
+    /// Enable background quoting for limit orders.
     #[clap(long, env)]
     pub enable_limit_orders: bool,
 
@@ -140,9 +151,22 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub limit_order_quoter_parallelism: usize,
 
+    /// How many quotes the limit order quoter updates per update cycle.
+    #[clap(long, env, default_value = "25")]
+    pub limit_order_quoter_batch_size: usize,
+
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
+
+    /// The time in seconds between new blocks on the network.
+    #[clap(long, env, value_parser = shared::arguments::duration_from_seconds)]
+    pub network_block_interval: Option<Duration>,
+
+    /// Defines which strategies to apply when updating the `surplus_fee` of
+    /// limit orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub quoting_strategies: Vec<QuotingStrategy>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -200,6 +224,19 @@ impl std::fmt::Display for Arguments {
             "limit_order_quoter_parallelism: {:?}",
             self.limit_order_quoter_parallelism
         )?;
+        writeln!(
+            f,
+            "limit_order_quoter_batch_size: {:?}",
+            self.limit_order_quoter_batch_size,
+        )?;
+        display_option(
+            f,
+            "network_block_interval",
+            &self
+                .network_block_interval
+                .map(|duration| duration.as_secs_f32()),
+        )?;
+        writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
         Ok(())
     }
 }

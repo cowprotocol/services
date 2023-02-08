@@ -3,16 +3,18 @@
 //! found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/FixedPoint.sol
 
-use super::error::Error;
-use anyhow::{bail, ensure, Context, Result};
-use ethcontract::U256;
-use lazy_static::lazy_static;
-use num::{BigInt, BigRational};
-use number_conversions::{big_int_to_u256, u256_to_big_int};
-use std::{
-    convert::TryFrom,
-    fmt::{self, Debug, Formatter},
-    str::FromStr,
+use {
+    super::error::Error,
+    anyhow::{bail, ensure, Context, Result},
+    ethcontract::U256,
+    lazy_static::lazy_static,
+    num::{BigInt, BigRational},
+    number_conversions::{big_int_to_u256, u256_to_big_int},
+    std::{
+        convert::TryFrom,
+        fmt::{self, Debug, Formatter},
+        str::FromStr,
+    },
 };
 
 mod logexpmath;
@@ -71,7 +73,7 @@ impl FromStr for Bfp {
         if units.is_empty() || decimals.is_empty() || decimals.len() > 18 {
             bail!("Invalid decimal representation");
         }
-        Ok(Bfp(U256::from_dec_str(&format!("{:0<18}", decimals))?
+        Ok(Bfp(U256::from_dec_str(&format!("{decimals:0<18}"))?
             .checked_add(
                 U256::from_dec_str(units)?
                     .checked_mul(*ONE_18)
@@ -185,8 +187,10 @@ impl Bfp {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use num::{BigInt, One, Zero};
+    use {
+        super::*,
+        num::{BigInt, One, Zero},
+    };
 
     #[test]
     fn parsing() {
@@ -260,7 +264,8 @@ mod tests {
         assert_eq!(EPSILON.mul_down(one_half).unwrap(), Bfp::zero());
         assert_eq!(EPSILON.mul_up(one_half).unwrap(), *EPSILON);
 
-        // values used in proof: shared/src/sources/balancer/swap/weighted_math.rs#L28-L33
+        // values used in proof:
+        // shared/src/sources/balancer/swap/weighted_math.rs#L28-L33
         let max_in_ratio = Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
         let balance_in = Bfp::from_wei(U256::MAX / (U256::exp10(17) * U256::from(3)));
         assert!(balance_in.mul_down(max_in_ratio).is_ok());

@@ -1,18 +1,23 @@
-use crate::{
-    domain::{
-        competition::{self, order, solution},
-        eth,
+use {
+    crate::{
+        boundary,
+        domain::{
+            competition::{self, order, solution},
+            eth,
+            liquidity,
+        },
+        infra::{
+            self,
+            blockchain::Ethereum,
+            solver::{self, Solver},
+            time,
+        },
+        util::{self, conv},
     },
-    infra::solver::{self, Solver},
-    util::{self, conv},
+    std::{collections::HashSet, iter},
 };
 
 pub const FAKE_AUCTION_REWARD: f64 = 35.;
-
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub timeout: solution::SolverTimeout,
-}
 
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
@@ -20,19 +25,19 @@ pub struct Quote {
     /// The amount that can be bought if this was a sell order, or sold if this
     /// was a buy order.
     pub amount: eth::U256,
-    pub interactions: Vec<competition::solution::Interaction>,
+    pub interactions: Vec<eth::Interaction>,
 }
 
 impl Quote {
-    fn new(order: &Order, solution: competition::Solution) -> Result<Self, Error> {
+    fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .prices
-            .get(&order.sell_token)
+            .get(&order.tokens.sell)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let buy_price = solution
             .prices
-            .get(&order.buy_token)
+            .get(&order.tokens.buy)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let amount = match order.side {
@@ -49,7 +54,7 @@ impl Quote {
         };
         Ok(Self {
             amount,
-            interactions: solution.interactions,
+            interactions: boundary::quote::encode_interactions(eth, &solution.interactions)?,
         })
     }
 }
@@ -57,11 +62,11 @@ impl Quote {
 /// An order which needs to be quoted.
 #[derive(Debug)]
 pub struct Order {
-    pub sell_token: eth::TokenAddress,
-    pub buy_token: eth::TokenAddress,
+    pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub gas_price: eth::EffectiveGasPrice,
+    pub deadline: Deadline,
 }
 
 impl Order {
@@ -69,9 +74,19 @@ impl Order {
     /// a "fake" auction which contains a single order, and then determines
     /// the quote for the order based on the solution that the solver
     /// returns.
-    pub async fn quote(&self, solver: &Solver, config: &Config) -> Result<Quote, Error> {
-        let solution = solver.solve(&self.fake_auction(), config.timeout).await?;
-        Quote::new(self, solution)
+    pub async fn quote(
+        &self,
+        eth: &Ethereum,
+        solver: &Solver,
+        liquidity: &infra::liquidity::Fetcher,
+        now: time::Now,
+    ) -> Result<Quote, Error> {
+        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
+        let timeout = self.deadline.timeout(now)?;
+        let solution = solver
+            .solve(&self.fake_auction(), &liquidity, timeout)
+            .await?;
+        Quote::new(self, eth, solution)
     }
 
     fn fake_auction(&self) -> competition::Auction {
@@ -99,7 +114,6 @@ impl Order {
                 },
                 reward: FAKE_AUCTION_REWARD,
             }],
-            liquidity: Default::default(),
             gas_price: self.gas_price,
             deadline: Default::default(),
         }
@@ -111,11 +125,11 @@ impl Order {
         match self.side {
             order::Side::Sell => eth::Asset {
                 amount: eth::U256::one(),
-                token: self.buy_token,
+                token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
                 amount: self.amount.into(),
-                token: self.buy_token,
+                token: self.tokens.buy,
             },
         }
     }
@@ -126,13 +140,74 @@ impl Order {
         match self.side {
             order::Side::Sell => eth::Asset {
                 amount: self.amount.into(),
-                token: self.sell_token,
+                token: self.tokens.sell,
             },
             order::Side::Buy => eth::Asset {
                 amount: eth::U256::max_value(),
-                token: self.sell_token,
+                token: self.tokens.sell,
             },
         }
+    }
+
+    /// Returns the token pairs to fetch liquidity for.
+    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
+        let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
+            .expect("sell != buy by construction");
+        iter::once(pair).into_iter().collect()
+    }
+}
+
+/// The deadline for computing a quote for an order.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Deadline(chrono::DateTime<chrono::Utc>);
+
+impl Deadline {
+    /// Computes the timeout for solving an auction.
+    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    }
+
+    pub fn time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Deadline {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Deadline> for chrono::DateTime<chrono::Utc> {
+    fn from(value: Deadline) -> Self {
+        value.0
+    }
+}
+
+/// The sell and buy tokens to quote for. This type maintains the invariant that
+/// the sell and buy tokens are distinct.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Tokens {
+    sell: eth::TokenAddress,
+    buy: eth::TokenAddress,
+}
+
+impl Tokens {
+    /// Creates a new instance of [`Tokens`], verifying that the input buy and
+    /// sell tokens are distinct.
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
+        if sell == buy {
+            return Err(SameTokens);
+        }
+        Ok(Self { sell, buy })
+    }
+
+    pub fn sell(&self) -> eth::TokenAddress {
+        self.sell
+    }
+
+    pub fn buy(&self) -> eth::TokenAddress {
+        self.buy
     }
 }
 
@@ -142,6 +217,18 @@ pub enum Error {
     /// which the user is trying to trade.
     #[error("solver was unable to generate a quote for this order")]
     QuotingFailed,
+    #[error("{0:?}")]
+    DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("boundary error: {0:?}")]
+    Boundary(#[from] boundary::Error),
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("the quoting deadline has been exceeded")]
+pub struct DeadlineExceeded;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the quoted tokens are the same")]
+pub struct SameTokens;

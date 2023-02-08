@@ -5,13 +5,15 @@
 //! to the native asset and assumes the invariant that the exchange rate of the
 //! native asset and native wrapped token exist with a value of 1.
 
-use anyhow::{bail, Result};
-use ethcontract::{H160, U256};
-use lazy_static::lazy_static;
-use model::order::BUY_ETH_ADDRESS;
-use num::{BigInt, BigRational, One as _, ToPrimitive as _};
-use shared::conversions::U256Ext as _;
-use std::collections::{BTreeMap, HashMap};
+use {
+    anyhow::{bail, Result},
+    ethcontract::{H160, U256},
+    lazy_static::lazy_static,
+    model::order::BUY_ETH_ADDRESS,
+    num::{BigInt, BigRational, One as _, ToPrimitive as _},
+    shared::conversions::U256Ext as _,
+    std::collections::{BTreeMap, HashMap},
+};
 
 /// A collection of external prices used for converting token amounts to native
 /// assets.
@@ -136,8 +138,10 @@ pub(crate) use externalprices;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use maplit::{btreemap, hashmap};
+    use {
+        super::*,
+        maplit::{btreemap, hashmap},
+    };
 
     #[test]
     fn converts_prices_to_exchange_rates() {

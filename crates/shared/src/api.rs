@@ -1,25 +1,30 @@
-use crate::price_estimation::PriceEstimationError;
-use anyhow::Result;
-use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    convert::Infallible,
-    fmt::Debug,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
+use {
+    crate::price_estimation::PriceEstimationError,
+    anyhow::Result,
+    serde::{de::DeserializeOwned, Serialize},
+    std::{
+        convert::Infallible,
+        fmt::Debug,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Instant,
     },
-    time::Instant,
-};
-use warp::{
-    filters::BoxedFilter,
-    hyper::StatusCode,
-    reply::{json, with_status, Json, WithStatus},
-    Filter, Rejection, Reply,
+    warp::{
+        filters::BoxedFilter,
+        hyper::StatusCode,
+        reply::{json, with_status, Json, WithStatus},
+        Filter,
+        Rejection,
+        Reply,
+    },
 };
 
 pub type ApiReply = WithStatus<Json>;
 
-// We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
+// We turn Rejection into Reply to workaround warp not setting CORS headers on
+// rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let response = err.default_response();
 
@@ -242,7 +247,7 @@ impl IntoWarpReply for PriceEstimationError {
     fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
             Self::UnsupportedToken(token) => with_status(
-                error("UnsupportedToken", format!("Token address {:?}", token)),
+                error("UnsupportedToken", format!("Token address {token:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             Self::NoLiquidity => with_status(
@@ -268,9 +273,7 @@ impl IntoWarpReply for PriceEstimationError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde::ser;
-    use serde_json::json;
+    use {super::*, serde::ser, serde_json::json};
 
     #[test]
     fn rich_errors_skip_unset_data_field() {

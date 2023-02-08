@@ -3,13 +3,15 @@
 //! For more information how the SOR solver works, check out
 //! https://dev.balancer.fi/resources/smart-order-router
 
-use anyhow::{ensure, Result};
-use ethcontract::{H160, H256, U256};
-use model::{order::OrderKind, u256_decimal};
-use num::BigInt;
-use reqwest::{Client, IntoUrl, Url};
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use {
+    anyhow::{ensure, Result},
+    ethcontract::{H160, H256, U256},
+    model::{order::OrderKind, u256_decimal},
+    num::BigInt,
+    reqwest::{Client, IntoUrl, Url},
+    serde::{Deserialize, Serialize},
+    serde_with::{serde_as, DisplayFromStr},
+};
 
 /// Trait for mockable Balancer SOR API.
 #[mockall::automock]
@@ -164,9 +166,11 @@ impl Quote {
 /// `<Option<H160>>::None` just use `H160::default()` in those cases to simplify
 /// using resulting `Quote`s.
 mod address_default_when_empty {
-    use ethcontract::H160;
-    use serde::{de, Deserialize as _, Deserializer};
-    use std::borrow::Cow;
+    use {
+        ethcontract::H160,
+        serde::{de, Deserialize as _, Deserializer},
+        std::borrow::Cow,
+    };
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<H160, D::Error>
     where
@@ -182,10 +186,7 @@ mod address_default_when_empty {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use serde_json::json;
-    use std::env;
+    use {super::*, hex_literal::hex, serde_json::json, std::env};
 
     #[test]
     fn serialize_query() {
@@ -326,7 +327,7 @@ mod tests {
 
         fn base(atoms: U256) -> String {
             let base = atoms.to_f64_lossy() / 1e18;
-            format!("{:.6}", base)
+            format!("{base:.6}")
         }
 
         let sell_quote = api

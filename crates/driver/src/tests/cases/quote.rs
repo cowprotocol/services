@@ -1,8 +1,8 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition,
-        infra::{self, config::cli},
+        domain::quote,
+        infra,
         tests::{hex_address, setup},
     },
     itertools::Itertools,
@@ -19,11 +19,13 @@ async fn test() {
         settlement,
         token_a,
         token_b,
-        admin,
         token_a_in_amount,
         token_b_out_amount,
         weth,
         interactions: uniswap_interactions,
+        geth,
+        solver_address,
+        solver_secret_key,
         ..
     } = setup::blockchain::uniswap::setup().await;
 
@@ -34,8 +36,7 @@ async fn test() {
     let buy_amount = token_b_out_amount;
     let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
-    let deadline = now.now()
-        + chrono::Duration::milliseconds(setup::driver::QUOTE_TIMEOUT_MS.try_into().unwrap());
+    let deadline = now.now() + chrono::Duration::seconds(2);
     let interactions = uniswap_interactions
         .iter()
         .map(|(address, interaction)| {
@@ -57,7 +58,8 @@ async fn test() {
         name: SOLVER_NAME.to_owned(),
         absolute_slippage: "0".to_owned(),
         relative_slippage: "0.0".to_owned(),
-        address: hex_address(admin),
+        address: hex_address(solver_address),
+        private_key: format!("0x{}", solver_secret_key.display_secret()),
         solve: vec![setup::solver::Solve {
             req: json!({
                 "id": null,
@@ -73,12 +75,12 @@ async fn test() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": competition::quote::FAKE_AUCTION_REWARD,
+                        "reward": quote::FAKE_AUCTION_REWARD,
                     }
                 ],
                 "liquidity": [],
                 "effectiveGasPrice": gas_price,
-                "deadline": deadline,
+                "deadline": deadline - quote::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
@@ -101,11 +103,14 @@ async fn test() {
     // Set up the driver.
     let client = setup::driver::setup(setup::driver::Config {
         now,
-        contracts: cli::ContractAddresses {
-            gp_v2_settlement: Some(settlement.address()),
-            weth: Some(weth.address()),
+        file: setup::driver::ConfigFile::Create {
+            solvers: vec![solver],
+            contracts: infra::config::file::ContractsConfig {
+                gp_v2_settlement: Some(settlement.address()),
+                weth: Some(weth.address()),
+            },
         },
-        file: setup::driver::ConfigFile::Create(vec![solver]),
+        geth: &geth,
     })
     .await;
 
@@ -119,6 +124,7 @@ async fn test() {
                 "amount": sell_amount.to_string(),
                 "kind": "sell",
                 "effectiveGasPrice": gas_price,
+                "deadline": deadline,
             }),
         )
         .await;

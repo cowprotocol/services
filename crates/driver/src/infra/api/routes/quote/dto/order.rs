@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, quote},
         util::serialize,
     },
     serde::Deserialize,
@@ -8,17 +8,18 @@ use {
 };
 
 impl Order {
-    pub fn into_domain(self) -> competition::quote::Order {
-        competition::quote::Order {
-            sell_token: self.sell_token.into(),
-            buy_token: self.buy_token.into(),
+    pub fn into_domain(self) -> Result<quote::Order, Error> {
+        Ok(quote::Order {
+            tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into())
+                .map_err(|quote::SameTokens| Error::SameTokens)?,
             amount: self.amount.into(),
             side: match self.kind {
                 Kind::Sell => competition::order::Side::Sell,
                 Kind::Buy => competition::order::Side::Buy,
             },
             gas_price: self.effective_gas_price.into(),
-        }
+            deadline: self.deadline.into(),
+        })
     }
 }
 
@@ -33,6 +34,7 @@ pub struct Order {
     kind: Kind,
     #[serde_as(as = "serialize::U256")]
     effective_gas_price: eth::U256,
+    deadline: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,4 +42,10 @@ pub struct Order {
 enum Kind {
     Sell,
     Buy,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("received an order with identical buy and sell tokens")]
+    SameTokens,
 }

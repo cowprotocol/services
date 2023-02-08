@@ -2,15 +2,17 @@
 //! generation with `ethcontract`. This is done instead of fetching contracts
 //! at build time to reduce the risk of failure.
 
-use anyhow::Result;
-use contracts::paths;
-use ethcontract_generate::Source;
-use serde_json::{Map, Value};
-use std::{
-    fs,
-    path::{Path, PathBuf},
+use {
+    anyhow::Result,
+    contracts::paths,
+    ethcontract_generate::Source,
+    serde_json::{Map, Value},
+    std::{
+        fs,
+        path::{Path, PathBuf},
+    },
+    tracing_subscriber::EnvFilter,
 };
-use tracing_subscriber::EnvFilter;
 
 fn main() {
     tracing_subscriber::fmt::fmt()
@@ -34,34 +36,34 @@ fn run() -> Result<()> {
         .full()
         .github(
             "BalancerV2Authorizer",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
-             pkg/deployments/deployed/mainnet/Authorizer.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
+             deployments/deployed/mainnet/Authorizer.json",
         )?
         .github(
             "BalancerV2Vault",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
-             pkg/deployments/deployed/mainnet/Vault.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
+             deployments/deployed/mainnet/Vault.json",
         )?
         .github(
             "BalancerV2WeightedPoolFactory",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
-             pkg/deployments/deployed/mainnet/WeightedPoolFactory.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
+             deployments/deployed/mainnet/WeightedPoolFactory.json",
         )?
         .github(
             "BalancerV2WeightedPool2TokensFactory",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
-             pkg/deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
+             deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
         )?
         .github(
             "BalancerV2StablePoolFactory",
-            "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/\
-             pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
+            "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/\
+             deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
         )?
         .github(
             "CoWSwapEthFlow",
             &format!(
-                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
-                 hardhat-artifacts/src/CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/hardhat-artifacts/src/\
+                 CoWSwapEthFlow.sol/CoWSwapEthFlow.json"
             ),
         )?
         .npm(
@@ -72,8 +74,8 @@ fn run() -> Result<()> {
             "GPv2AllowListAuthentication",
             // We use `_Implementation` because the use of a proxy contract makes
             // deploying  for the e2e tests more cumbersome.
-            "@cowprotocol/contracts@1.1.2/\
-             deployments/mainnet/GPv2AllowListAuthentication_Implementation.json",
+            "@cowprotocol/contracts@1.1.2/deployments/mainnet/\
+             GPv2AllowListAuthentication_Implementation.json",
         )?
         .npm(
             "GPv2Settlement",
@@ -81,18 +83,18 @@ fn run() -> Result<()> {
         )?
         .npm(
             "GnosisSafe",
-            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
-             GnosisSafe.sol/GnosisSafe.json",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/GnosisSafe.sol/GnosisSafe.\
+             json",
         )?
         .npm(
             "GnosisSafeCompatibilityFallbackHandler",
-            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
-             handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/handler/\
+             CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
         )?
         .npm(
             "GnosisSafeProxy",
-            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
-             proxies/GnosisSafeProxy.sol/GnosisSafeProxy.json",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/proxies/GnosisSafeProxy.\
+             sol/GnosisSafeProxy.json",
         )?
         .npm(
             "UniswapV2Factory",
@@ -108,35 +110,37 @@ fn run() -> Result<()> {
         .abi_only()
         .github(
             "BalancerV2LiquidityBootstrappingPool",
-            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/\
-             pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPool.json",
+            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/pkg/\
+             deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/\
+             LiquidityBootstrappingPool.json",
         )?
         .github(
             "BalancerV2LiquidityBootstrappingPoolFactory",
-            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/\
-             pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPoolFactory.json",
+            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/pkg/\
+             deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/\
+             LiquidityBootstrappingPoolFactory.json",
         )?
         .github(
             "BalancerV2WeightedPool",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
-             pkg/deployments/extra-abis/WeightedPool.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
+             deployments/extra-abis/WeightedPool.json",
         )?
         .github(
             "BalancerV2StablePool",
-            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
-             abis/StablePool.json",
+            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/abis/\
+             StablePool.json",
         )?
         .github(
             "BalancerV2StablePoolFactoryV2",
-            "balancer-labs/balancer-v2-monorepo/903d34e491a5e9c5d59dabf512c7addf1ccf9bbd/\
-            pkg/deployments/tasks/20220609-stable-pool-v2/abi/StablePoolFactory.json",
+            "balancer-labs/balancer-v2-monorepo/903d34e491a5e9c5d59dabf512c7addf1ccf9bbd/pkg/\
+             deployments/tasks/20220609-stable-pool-v2/abi/StablePoolFactory.json",
         )?
         .github(
             "CoWSwapOnchainOrders",
             &format!(
-                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/\
-                 hardhat-artifacts/src/mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
-            )
+                "cowprotocol/ethflowcontract/{ETHFLOW_VERSION}-artifacts/hardhat-artifacts/src/\
+                 mixins/CoWSwapOnchainOrders.sol/CoWSwapOnchainOrders.json"
+            ),
         )?
         .npm(
             "ERC20",
@@ -168,25 +172,27 @@ fn run() -> Result<()> {
         )
         .npm(
             "IUniswapV3Factory",
-            "@uniswap/v3-core@1.0.0/artifacts/contracts/interfaces/IUniswapV3Factory.sol/IUniswapV3Factory.json",
+            "@uniswap/v3-core@1.0.0/artifacts/contracts/interfaces/IUniswapV3Factory.sol/\
+             IUniswapV3Factory.json",
         )?
         .github(
             "IZeroEx",
-            "0xProject/protocol/c1177416f50c2465ee030dacc14ff996eebd4e74/\
-             packages/contract-artifacts/artifacts/IZeroEx.json",
+            "0xProject/protocol/c1177416f50c2465ee030dacc14ff996eebd4e74/packages/\
+             contract-artifacts/artifacts/IZeroEx.json",
         )?
         .github(
             "ISwaprPair",
-            "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/\
-             build/IDXswapPair.json",
+            "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
         )?
         .npm(
             "CowProtocolToken",
-            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/CowProtocolToken.json",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
+             CowProtocolToken.json",
         )?
         .npm(
             "CowProtocolVirtualToken",
-            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolVirtualToken.sol/CowProtocolVirtualToken.json",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolVirtualToken.sol/\
+             CowProtocolVirtualToken.json",
         )?;
 
     Ok(())
@@ -248,7 +254,7 @@ impl VendorContext<'_> {
     fn github(&self, name: &str, path: &str) -> Result<&Self> {
         self.vendor_source(
             name,
-            Source::http(&format!("https://raw.githubusercontent.com/{}", path))?,
+            Source::http(&format!("https://raw.githubusercontent.com/{path}"))?,
         )
     }
 
