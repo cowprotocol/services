@@ -1,25 +1,27 @@
 -- Populated before settlement occurs on chain
 -- (after the submissions have been ranked)
 CREATE TABLE settlement_scores (
-  settlement_id bytea NOT NULL,
+  transaction_id bytea NOT NULL,
   winning_score numeric(78,0) NOT NULL,
   reference_score numeric(78,0) NOT NULL
 );
 
 -- Populated after block finalization via transactionReceipt.
 CREATE TABLE settlement_observations (
-  -- the appended settlement ID read from the call data
-  settlement_id bytea NOT NULL,
-  -- the transaction hash and log index to be able to `JOIN` on the `settlement`
+  -- the appended transaction identifier read from the call data
+  transaction_id bytea NOT NULL,
+  -- block number and log index to uniquely `JOIN` on the `settlements`
   -- table, read from the transaction receipt
-  tx_hash bytea NOT NULL,
+  block_number bigint NOT NULL,
   log_index bigint NOT NULL,
   gas_used numeric(78,0) NOT NULL,
   effective_gas_price numeric(78,0) NOT NULL,
   -- the surplus observed from the transaction call data,
   -- and converted to ETH with the auction external prices.
   surplus numeric(78,0) NOT NULL,
-  fee numeric(78,0) NOT NULL
+  fee numeric(78,0) NOT NULL,
+
+  PRIMARY KEY (block_number, log_index)
 );
 
 CREATE TABLE auction_prices (
