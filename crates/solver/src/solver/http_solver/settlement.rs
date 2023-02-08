@@ -13,7 +13,7 @@ use {
     },
     anyhow::{anyhow, ensure, Context as _, Result},
     model::{
-        order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
+        order::{Order, OrderClass, OrderKind, OrderMetadata},
         DomainSeparator,
     },
     primitive_types::{H160, U256},
@@ -302,7 +302,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
-                interactions: Interactions::default(),
+                interactions: liquidity.order.interactions,
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -563,6 +563,7 @@ mod tests {
                     ..Default::default()
                 },
                 signature: Signature::PreSign,
+                interactions: Default::default(),
             },
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),
