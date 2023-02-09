@@ -1,51 +1,70 @@
-use anyhow::Context;
-use clap::Parser;
-use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
-use model::DomainSeparator;
-use num::rational::Ratio;
-use shared::{
-    baseline_solver::BaseTokens,
-    code_fetching::CachedCodeFetcher,
-    ethrpc::{self, Web3},
-    gelato_api::GelatoClient,
-    http_client::HttpClientFactory,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::serve_metrics,
-    network::network_name,
-    recent_block_cache::CacheConfig,
-    sources::{
-        self,
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-        BaselineSource,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::{AutoUpdatingTokenList, TokenListConfiguration},
-    zeroex_api::DefaultZeroExApi,
-};
-use solver::{
-    arguments::TransactionStrategyArg,
-    driver::Driver,
-    liquidity::{
-        balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
-    },
-    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::Metrics,
-    orderbook::OrderBookApi,
-    s3_instance_upload::S3InstanceUploader,
-    settlement_post_processing::PostProcessingPipeline,
-    settlement_submission::{
-        gelato::GelatoSubmitter,
-        submitter::{
-            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
-            Strategy,
+use {
+    clap::Parser,
+    contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    futures::future,
+    model::DomainSeparator,
+    num::rational::Ratio,
+    shared::{
+        baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
+        ethrpc::{self, Web3},
+        gelato_api::GelatoClient,
+        http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
+        metrics::serve_metrics,
+        network::network_name,
+        recent_block_cache::CacheConfig,
+        sources::{
+            self,
+            balancer_v2::{
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
+            },
+            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+            BaselineSource,
         },
-        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        token_list::{AutoUpdatingTokenList, TokenListConfiguration},
+        zeroex_api::DefaultZeroExApi,
     },
+    solver::{
+        arguments::TransactionStrategyArg,
+        driver::Driver,
+        liquidity::{
+            balancer_v2::BalancerV2Liquidity,
+            order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity,
+            uniswap_v3::UniswapV3Liquidity,
+            zeroex::ZeroExLiquidity,
+        },
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::Metrics,
+        orderbook::OrderBookApi,
+        s3_instance_upload::S3InstanceUploader,
+        settlement_post_processing::PostProcessingPipeline,
+        settlement_submission::{
+            gelato::GelatoSubmitter,
+            submitter::{
+                eden_api::EdenApi,
+                flashbots_api::FlashbotsApi,
+                public_mempool_api::{
+                    validate_submission_node,
+                    PublicMempoolApi,
+                    SubmissionNode,
+                    SubmissionNodeKind,
+                },
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+            TransactionStrategy,
+        },
+    },
+    std::{collections::HashMap, sync::Arc},
 };
-use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
 async fn main() -> ! {
@@ -250,7 +269,6 @@ async fn main() -> ! {
         solvers,
         base_tokens.clone(),
         native_token_contract.address(),
-        args.mip_solver_url,
         args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         args.balancer_sor_url,
@@ -267,8 +285,7 @@ async fn main() -> ! {
         metrics.clone(),
         zeroex_api.clone(),
         args.shared.disabled_zeroex_sources,
-        args.shared.quasimodo_uses_internal_buffers,
-        args.shared.mip_uses_internal_buffers,
+        args.shared.use_internal_buffers,
         args.shared.one_inch_url,
         args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
@@ -330,37 +347,36 @@ async fn main() -> ! {
         liquidity_sources,
         base_tokens,
     };
-    let submission_nodes_with_url = args
-        .transaction_submission_nodes
-        .into_iter()
-        .enumerate()
-        .map(|(index, url)| {
-            (
-                ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, index),
-                url,
-            )
-        })
-        .collect::<Vec<_>>();
-    for (node, url) in &submission_nodes_with_url {
-        let node_network_id = node
-            .net()
-            .version()
-            .await
-            .with_context(|| {
-                format!(
-                    "Unable to retrieve network id on startup using the submission node at {url}"
-                )
+    let submission_nodes = future::join_all(
+        args.transaction_submission_nodes
+            .into_iter()
+            .enumerate()
+            .map(|(index, url)| {
+                let name = format!("broadcast {index}");
+                (name, url, SubmissionNodeKind::Broadcast)
             })
-            .unwrap();
-        assert_eq!(
-            node_network_id, network_id,
-            "network id of submission node doesn't match main node"
-        );
-    }
-    let submission_nodes = submission_nodes_with_url
-        .into_iter()
-        .map(|(node, _)| node)
-        .collect::<Vec<_>>();
+            .chain(
+                args.transaction_notification_nodes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, url)| {
+                        let name = format!("notify {index}");
+                        (name, url, SubmissionNodeKind::Notification)
+                    }),
+            )
+            .map(|(name, url, kind)| {
+                let web3 = ethrpc::web3(&args.shared.ethrpc, &http_factory, &url, name);
+                let expected_network_id = &network_id;
+                async move {
+                    if let Err(err) = validate_submission_node(&web3, expected_network_id).await {
+                        tracing::error!("Error validating {kind:?} submission node {url}: {err}");
+                        assert!(kind == SubmissionNodeKind::Notification);
+                    }
+                    SubmissionNode::new(kind, web3)
+                }
+            }),
+    )
+    .await;
     let submitted_transactions = GlobalTxPool::default();
     let mut transaction_strategies = vec![];
     for strategy in args.transaction_strategy {
@@ -389,8 +405,9 @@ async fn main() -> ! {
             }
             TransactionStrategyArg::PublicMempool => {
                 assert!(
-                    !submission_nodes.is_empty(),
-                    "missing transaction submission nodes"
+                    submission_nodes.iter().any(|node| node.can_broadcast()),
+                    "At least one submission node that can broadcast transactions must be \
+                     available"
                 );
                 transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(PublicMempoolApi::new(

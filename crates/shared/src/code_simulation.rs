@@ -1,18 +1,20 @@
 //! Abstraction for simulating calls with overrides.
 
-use crate::{
-    ethcontract_error::EthcontractErrorType,
-    ethrpc::{
-        extensions::{EthExt as _, StateOverride, StateOverrides},
-        Web3,
+use {
+    crate::{
+        ethcontract_error::EthcontractErrorType,
+        ethrpc::{
+            extensions::{EthExt as _, StateOverride, StateOverrides},
+            Web3,
+        },
+        tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     },
-    tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
+    anyhow::{ensure, Context as _, Result},
+    ethcontract::{errors::ExecutionError, H256},
+    std::sync::Arc,
+    thiserror::Error,
+    web3::types::{BlockNumber, CallRequest},
 };
-use anyhow::{ensure, Context as _, Result};
-use ethcontract::{errors::ExecutionError, H256};
-use std::sync::Arc;
-use thiserror::Error;
-use web3::types::{BlockNumber, CallRequest};
 
 /// Simulate a call with state overrides.
 #[mockall::automock]
@@ -178,10 +180,12 @@ impl TryFrom<StateOverride> for StateObject {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi};
-    use hex_literal::hex;
-    use maplit::hashmap;
+    use {
+        super::*,
+        crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
+        hex_literal::hex,
+        maplit::hashmap,
+    };
 
     #[ignore]
     #[tokio::test]

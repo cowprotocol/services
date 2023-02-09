@@ -128,10 +128,10 @@ impl Processes {
             .children
             .remove(&port)
             .expect("no process running at given port");
+        process.kill().await.unwrap();
         tokio::fs::remove_dir_all(format!("/{}", port.0))
             .await
             .expect("failed to delete the datadir");
-        process.kill().await.unwrap();
     }
 
     fn next_port(&self) -> Port {

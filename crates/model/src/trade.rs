@@ -1,10 +1,13 @@
-//! Contains the Trade type as described by the specification with serialization as described by the openapi documentation.
+//! Contains the Trade type as described by the specification with serialization
+//! as described by the openapi documentation.
 
-use crate::order::OrderUid;
-use num::BigUint;
-use primitive_types::{H160, H256};
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use {
+    crate::order::OrderUid,
+    num::BigUint,
+    primitive_types::{H160, H256},
+    serde::{Deserialize, Serialize},
+    serde_with::{serde_as, DisplayFromStr},
+};
 
 #[serde_as]
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
@@ -29,8 +32,7 @@ pub struct Trade {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use {super::*, serde_json::json};
 
     #[test]
     fn deserialization_and_back() {

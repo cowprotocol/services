@@ -3,16 +3,18 @@
 //!
 //! This allows us to turn cache a pool registry.
 
-use super::internal::InternalPoolFetching;
-use crate::{
-    current_block::CurrentBlockStream,
-    maintenance::Maintaining,
-    recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
-    sources::balancer_v2::pools::Pool,
+use {
+    super::internal::InternalPoolFetching,
+    crate::{
+        current_block::CurrentBlockStream,
+        maintenance::Maintaining,
+        recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
+        sources::balancer_v2::pools::Pool,
+    },
+    anyhow::Result,
+    ethcontract::H256,
+    std::{collections::HashSet, sync::Arc},
 };
-use anyhow::Result;
-use ethcontract::H256;
-use std::{collections::HashSet, sync::Arc};
 
 /// Internal type alias used for inner recent block cache.
 type PoolCache<Inner> = RecentBlockCache<H256, Pool, CacheFetcher<Inner>>;

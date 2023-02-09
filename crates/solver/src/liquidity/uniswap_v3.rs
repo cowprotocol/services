@@ -1,24 +1,29 @@
-use super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling};
-use crate::{
-    interactions::{
-        allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
-        ExactOutputSingleParams, UniswapV3Interaction,
+use {
+    super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
+    crate::{
+        interactions::{
+            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
+            ExactOutputSingleParams,
+            UniswapV3Interaction,
+        },
+        liquidity::Liquidity,
+        liquidity_collector::LiquidityCollecting,
+        settlement::SettlementEncoder,
     },
-    liquidity::Liquidity,
-    liquidity_collector::LiquidityCollecting,
-    settlement::SettlementEncoder,
-};
-use anyhow::{ensure, Context, Result};
-use contracts::{GPv2Settlement, UniswapV3SwapRouter};
-use model::TokenPair;
-use num::{rational::Ratio, CheckedMul};
-use primitive_types::{H160, U256};
-use shared::{
-    ethrpc::Web3, recent_block_cache::Block, sources::uniswap_v3::pool_fetching::PoolFetching,
-};
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
+    anyhow::{ensure, Context, Result},
+    contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    model::TokenPair,
+    num::{rational::Ratio, CheckedMul},
+    primitive_types::{H160, U256},
+    shared::{
+        ethrpc::Web3,
+        recent_block_cache::Block,
+        sources::uniswap_v3::pool_fetching::PoolFetching,
+    },
+    std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    },
 };
 
 // 1h timeout for Uniswap V3 interactions
@@ -32,7 +37,8 @@ pub struct UniswapV3Liquidity {
 pub struct Inner {
     router: UniswapV3SwapRouter,
     gpv2_settlement: GPv2Settlement,
-    // Mapping of how much allowance the router has per token to spend on behalf of the settlement contract
+    // Mapping of how much allowance the router has per token to spend on behalf of the settlement
+    // contract
     allowances: Mutex<Allowances>,
 }
 
@@ -94,7 +100,8 @@ impl UniswapV3Liquidity {
 
 #[async_trait::async_trait]
 impl LiquidityCollecting for UniswapV3Liquidity {
-    /// Given a list of offchain orders returns the list of AMM liquidity to be considered
+    /// Given a list of offchain orders returns the list of AMM liquidity to be
+    /// considered
     async fn get_liquidity(
         &self,
         pairs: HashSet<TokenPair>,
@@ -169,8 +176,8 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
         self
     }
 
-    // Creates the required interaction to convert the given input into output. Assumes slippage is
-    // already applied to the `input_max` field.
+    // Creates the required interaction to convert the given input into output.
+    // Assumes slippage is already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(
             execution.input_max,
@@ -187,10 +194,7 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use num::rational::Ratio;
-    use shared::dummy_contract;
-    use std::collections::HashMap;
+    use {super::*, num::rational::Ratio, shared::dummy_contract, std::collections::HashMap};
 
     impl UniswapV3SettlementHandler {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {

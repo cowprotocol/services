@@ -1,25 +1,32 @@
-use crate::{
-    interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
-    liquidity::{
-        order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        LimitOrderId, Liquidity,
+use {
+    crate::{
+        interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
+        liquidity::{
+            order_converter::OrderConverter,
+            slippage::SlippageContext,
+            AmmOrderExecution,
+            LimitOrder,
+            LimitOrderId,
+            Liquidity,
+        },
+        settlement::Settlement,
     },
-    settlement::Settlement,
-};
-use anyhow::{anyhow, ensure, Context as _, Result};
-use model::{
-    order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
-    DomainSeparator,
-};
-use primitive_types::{H160, U256};
-use shared::http_solver::model::*;
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
+    anyhow::{anyhow, ensure, Context as _, Result},
+    model::{
+        order::{Order, OrderClass, OrderKind, OrderMetadata},
+        DomainSeparator,
+    },
+    primitive_types::{H160, U256},
+    shared::http_solver::model::*,
+    std::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
-// To send an instance to the solver we need to identify tokens and orders through strings. This
-// struct combines the created model and a mapping of those identifiers to their original value.
+// To send an instance to the solver we need to identify tokens and orders
+// through strings. This struct combines the created model and a mapping of
+// those identifiers to their original value.
 #[derive(Clone, Debug)]
 pub struct SettlementContext {
     pub orders: Vec<LimitOrder>,
@@ -113,8 +120,9 @@ impl Execution {
     }
 }
 
-// An intermediate representation between SettledBatchAuctionModel and Settlement useful for doing
-// the error checking up front and then working with a more convenient representation.
+// An intermediate representation between SettledBatchAuctionModel and
+// Settlement useful for doing the error checking up front and then working with
+// a more convenient representation.
 struct IntermediateSettlement<'a> {
     approvals: Vec<Approval>,
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
@@ -123,7 +131,8 @@ struct IntermediateSettlement<'a> {
     submitter: SubmissionPreference,
 }
 
-// Conversion error happens during building a settlement from a solution received from searcher
+// Conversion error happens during building a settlement from a solution
+// received from searcher
 #[derive(Debug)]
 pub enum ConversionError {
     InvalidExecutionPlans(anyhow::Error),
@@ -293,7 +302,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
-                interactions: Interactions::default(),
+                interactions: liquidity.order.interactions,
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -429,26 +438,31 @@ fn duplicate_coordinates(executions: &[Execution]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::MockAllowanceManaging,
-        liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
-            StablePoolOrder, WeightedProductOrder,
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::MockAllowanceManaging,
+            liquidity::{
+                tests::CapturingSettlementHandler,
+                ConstantProductOrder,
+                LiquidityOrderId,
+                StablePoolOrder,
+                WeightedProductOrder,
+            },
+            settlement::{PricedTrade, Trade},
         },
-        settlement::{PricedTrade, Trade},
-    };
-    use hex_literal::hex;
-    use maplit::hashmap;
-    use model::{
-        order::{OrderData, OrderUid},
-        signature::Signature,
-        TokenPair,
-    };
-    use num::{rational::Ratio, BigRational};
-    use shared::sources::balancer_v2::{
-        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-        swap::fixed_point::Bfp,
+        hex_literal::hex,
+        maplit::hashmap,
+        model::{
+            order::{OrderData, OrderUid},
+            signature::Signature,
+            TokenPair,
+        },
+        num::{rational::Ratio, BigRational},
+        shared::sources::balancer_v2::{
+            pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+            swap::fixed_point::Bfp,
+        },
     };
 
     #[tokio::test]
@@ -549,6 +563,7 @@ mod tests {
                     ..Default::default()
                 },
                 signature: Signature::PreSign,
+                interactions: Default::default(),
             },
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),

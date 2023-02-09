@@ -1,22 +1,23 @@
-use derivative::Derivative;
-use ethcontract::{Bytes, H160};
-use model::{
-    auction::AuctionId,
-    order::{OrderData, OrderUid},
-    ratio_as_decimal,
-    signature::Signature,
-    u256_decimal::{self, DecimalU256},
-};
-use num::BigRational;
-use primitive_types::U256;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use web3::types::AccessList;
-
-use crate::{
-    interaction::{EncodedInteraction, Interaction},
-    sources::uniswap_v3::pool_fetching::PoolInfo,
+use {
+    crate::{
+        interaction::{EncodedInteraction, Interaction},
+        sources::uniswap_v3::pool_fetching::PoolInfo,
+    },
+    derivative::Derivative,
+    ethcontract::{Bytes, H160},
+    model::{
+        auction::AuctionId,
+        order::{Interactions, OrderData, OrderUid},
+        ratio_as_decimal,
+        signature::Signature,
+        u256_decimal::{self, DecimalU256},
+    },
+    num::BigRational,
+    primitive_types::U256,
+    serde::{Deserialize, Serialize},
+    serde_with::serde_as,
+    std::collections::{BTreeMap, BTreeSet, HashMap},
+    web3::types::AccessList,
 };
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -45,10 +46,12 @@ pub struct OrderModel {
     pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
-    /// Signals if the order will be executed as an atomic unit. In that case the order's
-    /// preconditions have to be met for it to be executed successfully. This is different from the
-    /// usual user provided orders because those can be batched together and it's only relevant if
-    /// the pre- and post conditions are met after the complete batch got executed.
+    /// Signals if the order will be executed as an atomic unit. In that case
+    /// the order's preconditions have to be met for it to be executed
+    /// successfully. This is different from the usual user provided orders
+    /// because those can be batched together and it's only relevant if
+    /// the pre- and post conditions are met after the complete batch got
+    /// executed.
     pub has_atomic_execution: bool,
     /// CIP-14 risk adjusted solver reward
     pub reward: f64,
@@ -197,7 +200,8 @@ impl SettledBatchAuctionModel {
         for (index, interaction) in self.interaction_data.iter_mut().enumerate() {
             if interaction.exec_plan.is_none() {
                 // if no exec plan is provided, convert to the default exec plan by setting the
-                // position coordinate to the position of the exec plan in the interactions vector
+                // position coordinate to the position of the exec plan in the interactions
+                // vector
                 interaction.exec_plan = Some(ExecutionPlan {
                     coordinates: ExecutionPlanCoordinatesModel {
                         sequence: u32::MAX,
@@ -233,7 +237,8 @@ pub struct ExecutedOrderModel {
     pub exec_buy_amount: U256,
     pub cost: Option<TokenAmount>,
     pub fee: Option<TokenAmount>,
-    // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
+    // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit
+    // orders)
     pub exec_plan: Option<ExecutionPlan>,
 }
 
@@ -253,6 +258,8 @@ pub struct NativeLiquidityOrder {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
+    #[serde(default)]
+    pub interactions: Interactions,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -322,17 +329,21 @@ pub enum SolverRejectionReason {
     /// The solution candidate didn't include any mature user orders
     NoMatureOrders,
 
-    /// The solution violated a price constraint (ie. max deviation to external price vector)
+    /// The solution violated a price constraint (ie. max deviation to external
+    /// price vector)
     PriceViolation,
 
-    /// The solution contains custom interation/s using the token/s not contained in the allowed bufferable list
-    /// Returns the list of not allowed tokens
+    /// The solution contains custom interation/s using the token/s not
+    /// contained in the allowed bufferable list Returns the list of not
+    /// allowed tokens
     NonBufferableTokensUsed(BTreeSet<H160>),
 
-    /// The solution contains non unique execution plans (duplicated coordinates)
+    /// The solution contains non unique execution plans (duplicated
+    /// coordinates)
     InvalidExecutionPlans,
 
-    /// The solution didn't pass simulation. Includes all data needed to re-create simulation locally
+    /// The solution didn't pass simulation. Includes all data needed to
+    /// re-create simulation locally
     SimulationFailure(TransactionWithError),
 }
 
@@ -359,12 +370,13 @@ pub struct TransactionWithError {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
-    /// The simulation was done on top of all transactions from the given block number
+    /// The simulation was done on top of all transactions from the given block
+    /// number
     pub block_number: u64,
     /// Is transaction simulated with internalized interactions or without
     pub internalization: InternalizationStrategy,
-    /// Which storage the settlement tries to access. Contains `None` if some error happened while
-    /// estimating the access list.
+    /// Which storage the settlement tries to access. Contains `None` if some
+    /// error happened while estimating the access list.
     pub access_list: Option<AccessList>,
     /// Solver address
     pub from: H160,
@@ -402,19 +414,19 @@ pub enum SubmissionPreference {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use crate::sources::uniswap_v3::graph_api::Token;
-
-    use super::*;
-    use ethcontract::H256;
-    use maplit::btreemap;
-    use model::{
-        app_id::AppId,
-        order::{OrderKind, SellTokenSource},
+    use {
+        super::*,
+        crate::sources::uniswap_v3::graph_api::Token,
+        ethcontract::H256,
+        maplit::btreemap,
+        model::{
+            app_id::AppId,
+            order::{OrderKind, SellTokenSource},
+        },
+        serde_json::json,
+        std::str::FromStr,
+        web3::types::AccessListItem,
     };
-    use serde_json::json;
-    use web3::types::AccessListItem;
 
     #[test]
     fn updated_amm_model_is_non_trivial() {
@@ -967,6 +979,7 @@ mod tests {
                         ..Default::default()
                     },
                     signature: Signature::Eip1271(vec![1, 2, 3, 4]),
+                    interactions: Default::default(),
                 },
                 exec_sell_amount: 50.into(),
                 exec_buy_amount: 51.into(),

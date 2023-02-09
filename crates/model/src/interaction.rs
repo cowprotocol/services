@@ -1,5 +1,7 @@
-use primitive_types::{H160, U256};
-use serde::{Deserialize, Serialize};
+use {
+    primitive_types::{H160, U256},
+    serde::{Deserialize, Serialize},
+};
 
 #[derive(Eq, PartialEq, Clone, Debug, Hash, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

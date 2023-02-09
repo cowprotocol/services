@@ -1,27 +1,34 @@
-//! Module containing basic path-finding logic to get quotes/routes for the best onchain liquidity.
+//! Module containing basic path-finding logic to get quotes/routes for the best
+//! onchain liquidity.
 
-use ethcontract::{H160, U256};
-use model::TokenPair;
-use std::collections::{HashMap, HashSet};
+use {
+    ethcontract::{H160, U256},
+    model::TokenPair,
+    std::collections::{HashMap, HashSet},
+};
 
 /// The maximum number of hops to use when trading with AMMs along a path.
 const DEFAULT_MAX_HOPS: usize = 2;
 
 type PathCandidate = Vec<H160>;
 
-/// Note that get_amount_out and get_amount_in are not always symmetrical. That is for some AMMs it
-/// is possible that get_amount_out returns an amount for which get_amount_in returns None when
-/// trying to go the reverse direction. Or that the resulting amount is different from the original.
-/// This situation is rare and resulting amounts should usually be identical or very close but it
+/// Note that get_amount_out and get_amount_in are not always symmetrical. That
+/// is for some AMMs it is possible that get_amount_out returns an amount for
+/// which get_amount_in returns None when trying to go the reverse direction. Or
+/// that the resulting amount is different from the original. This situation is
+/// rare and resulting amounts should usually be identical or very close but it
 /// can occur.
 pub trait BaselineSolvable {
-    // Given the desired output token, the amount and token input, return the expected amount of output token.
+    // Given the desired output token, the amount and token input, return the
+    // expected amount of output token.
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256>;
 
-    // Given the input token, the amount and token we want output, return the required amount of input token that needs to be provided.
+    // Given the input token, the amount and token we want output, return the
+    // required amount of input token that needs to be provided.
     fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256>;
 
-    // Returns the approximate amount of gas that using this piece of liquidity would incur
+    // Returns the approximate amount of gas that using this piece of liquidity
+    // would incur
     fn gas_cost(&self) -> usize;
 }
 
@@ -34,16 +41,18 @@ pub struct Estimate<'a, V, L> {
 
 impl<'a, V, L: BaselineSolvable> Estimate<'a, V, L> {
     pub fn gas_cost(&self) -> usize {
-        // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
-        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
+        // This could be more accurate by actually simulating the settlement (since
+        // different tokens might have more or less expensive transfer costs)
+        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k
+        // for a 1 hop trade, 230k for a 2 hop trade.
         let cost_of_hops: usize = self.path.iter().map(|item| item.gas_cost()).sum();
         50_000 + cost_of_hops
     }
 }
 
-// Given a path and sell amount (first token of the path) estimates the buy amount (last token of the path) and
-// the path of liquidity that yields this result
-// Returns None if the path is invalid or pool information doesn't exist.
+// Given a path and sell amount (first token of the path) estimates the buy
+// amount (last token of the path) and the path of liquidity that yields this
+// result Returns None if the path is invalid or pool information doesn't exist.
 pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
     sell_amount: U256,
     path: &[H160],
@@ -76,9 +85,9 @@ pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
         })
 }
 
-// Given a path and buy amount (last token of the path) estimates the sell amount (first token of the path) and
-// the path of liquidity that yields this result
-// Returns None if the path is invalid or pool information doesn't exist.
+// Given a path and buy amount (last token of the path) estimates the sell
+// amount (first token of the path) and the path of liquidity that yields this
+// result Returns None if the path is invalid or pool information doesn't exist.
 pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
     buy_amount: U256,
     path: &[H160],
@@ -118,7 +127,8 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
 }
 
 pub struct BaseTokens {
-    /// The base tokens used to determine potential paths in the baseline solver.
+    /// The base tokens used to determine potential paths in the baseline
+    /// solver.
     ///
     /// Always includes the native token.
     tokens: HashSet<H160>,
@@ -143,7 +153,8 @@ impl BaseTokens {
         &self.tokens
     }
 
-    /// All pool token pairs that could be used along a path candidate for these token pairs.
+    /// All pool token pairs that could be used along a path candidate for these
+    /// token pairs.
     pub fn relevant_pairs(&self, pairs: impl Iterator<Item = TokenPair>) -> HashSet<TokenPair> {
         let mut result = HashSet::new();
         for pair in pairs {
@@ -156,17 +167,18 @@ impl BaseTokens {
                 );
             }
         }
-        // Could be empty if the input pairs are empty. Just like path_candidates we return empty
-        // set in this case.
+        // Could be empty if the input pairs are empty. Just like path_candidates we
+        // return empty set in this case.
         if !result.is_empty() {
             result.extend(self.pairs.iter().copied());
         }
         result
     }
 
-    // Returns possible paths from sell_token to buy token, given a list of potential intermediate base tokens
-    // and a maximum number of intermediate steps.
-    // Can contain token pairs between base tokens or a base token and the sell or buy token.
+    // Returns possible paths from sell_token to buy token, given a list of
+    // potential intermediate base tokens and a maximum number of intermediate
+    // steps. Can contain token pairs between base tokens or a base token and
+    // the sell or buy token.
     pub fn path_candidates(&self, sell_token: H160, buy_token: H160) -> HashSet<PathCandidate> {
         self.path_candidates_with_hops(sell_token, buy_token, DEFAULT_MAX_HOPS)
     }
@@ -195,7 +207,8 @@ fn path_candidates(
 
     let mut candidates = HashSet::new();
 
-    // Start with just the sell token (yields the direct pair candidate in the 0th iteration)
+    // Start with just the sell token (yields the direct pair candidate in the 0th
+    // iteration)
     let mut path_prefixes = vec![vec![sell_token]];
     for _ in 0..(max_hops + 1) {
         let mut next_round_path_prefixes = vec![];
@@ -205,7 +218,8 @@ fn path_candidates(
             full_path.push(buy_token);
             candidates.insert(full_path);
 
-            // For the next round, amend current prefix with all base tokens that are not yet on the path
+            // For the next round, amend current prefix with all base tokens that are not
+            // yet on the path
             for base_token in base_tokens {
                 if base_token != &buy_token && !path_prefix.contains(base_token) {
                     let mut next_round_path_prefix = path_prefix.clone();
@@ -236,11 +250,13 @@ fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::uniswap_v2::pool_fetching::Pool;
-    use ethcontract::H160;
-    use maplit::{hashmap, hashset};
-    use model::TokenPair;
+    use {
+        super::*,
+        crate::sources::uniswap_v2::pool_fetching::Pool,
+        ethcontract::H160,
+        maplit::{hashmap, hashset},
+        model::TokenPair,
+    };
 
     #[test]
     fn path_candidates_empty_when_same_token() {
@@ -440,7 +456,8 @@ mod tests {
             [&first_hop_low_price, &second_hop_low_slippage]
         );
 
-        // For the reverse path we now expect to use the higher price for the first hop, but still low slippage for the second
+        // For the reverse path we now expect to use the higher price for the first hop,
+        // but still low slippage for the second
         path.reverse();
         let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
         assert_eq!(

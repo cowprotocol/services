@@ -1,5 +1,7 @@
 mod metrics;
 mod quoter;
 
-pub use metrics::LimitOrderMetrics;
-pub use quoter::LimitOrderQuoter;
+pub use {
+    metrics::LimitOrderMetrics,
+    quoter::{LimitOrderQuoter, QuotingStrategy},
+};

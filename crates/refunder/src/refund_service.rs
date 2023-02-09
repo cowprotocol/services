@@ -1,21 +1,21 @@
-use super::ethflow_order::order_to_ethflow_data;
-use anyhow::{anyhow, Context, Result};
-use contracts::CoWSwapEthFlow;
-use database::{
-    ethflow_orders::{read_order, refundable_orders, EthOrderPlacement},
-    orders::read_order as read_db_order,
-    OrderUid,
+use {
+    super::ethflow_order::{order_to_ethflow_data, EncodedEthflowOrder, EthflowOrder},
+    crate::submitter::Submitter,
+    anyhow::{anyhow, Context, Result},
+    contracts::CoWSwapEthFlow,
+    database::{
+        ethflow_orders::{read_order, refundable_orders, EthOrderPlacement},
+        orders::read_order as read_db_order,
+        OrderUid,
+    },
+    ethcontract::{Account, H160},
+    futures::{stream, StreamExt},
+    shared::{
+        current_block::timestamp_of_current_block_in_seconds,
+        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+    },
+    sqlx::PgPool,
 };
-use ethcontract::{Account, H160};
-use futures::{stream, StreamExt};
-use shared::{
-    current_block::timestamp_of_current_block_in_seconds,
-    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
-};
-use sqlx::PgPool;
-
-use super::ethflow_order::{EncodedEthflowOrder, EthflowOrder};
-use crate::submitter::Submitter;
 
 pub const NO_OWNER: H160 = H160([0u8; 20]);
 pub const INVALIDATED_OWNER: H160 = H160([255u8; 20]);
@@ -62,6 +62,7 @@ impl RefundService {
             },
         }
     }
+
     pub async fn try_to_refund_all_eligble_orders(&mut self) -> Result<()> {
         let refundable_order_uids = self.get_refundable_ethflow_orders_from_db().await?;
 
@@ -112,8 +113,8 @@ impl RefundService {
                         Ok(order) => Some(order.0),
                         Err(err) => {
                             tracing::error!(
-                                "Error while getting the current\
-                                            onchain status of orderhash {:?}, {:?}",
+                                "Error while getting the currentonchain status of orderhash {:?}, \
+                                 {:?}",
                                 order_hash,
                                 err
                             );
@@ -144,10 +145,11 @@ impl RefundService {
             }
         }
         if !invalid_uids.is_empty() {
-            // In exceptional cases, e.g. if the refunder tries to refund orders from a previous contract,
-            // the order_owners could be zero
+            // In exceptional cases, e.g. if the refunder tries to refund orders from a
+            // previous contract, the order_owners could be zero
             tracing::warn!(
-                "Trying to invalidate orders that weren't created in the current contract. Uids: {:?}",
+                "Trying to invalidate orders that weren't created in the current contract. Uids: \
+                 {:?}",
                 invalid_uids
             );
         }
@@ -171,7 +173,8 @@ impl RefundService {
         if uids.is_empty() {
             return Ok(());
         }
-        // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit into gas limit
+        // only try to refund MAX_NUMBER_OF_UIDS_PER_REFUND_TX uids, in order to fit
+        // into gas limit
         let uids: Vec<OrderUid> = uids
             .into_iter()
             .take(MAX_NUMBER_OF_UIDS_PER_REFUND_TX)

@@ -3,7 +3,6 @@ use {
     crate::infra::{liquidity, mempool, simulator, solver},
 };
 
-pub mod cli;
 pub mod file;
 
 /// Configuration of infrastructural components.

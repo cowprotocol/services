@@ -1,45 +1,50 @@
-use super::{
-    balancer_sor::BalancerSor,
-    baseline::BaselinePriceEstimator,
-    competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
-    http::HttpPriceEstimator,
-    instrumented::InstrumentedPriceEstimator,
-    native::{self, NativePriceEstimator},
-    native_price_cache::CachingNativePriceEstimator,
-    oneinch::OneInchPriceEstimator,
-    paraswap::ParaswapPriceEstimator,
-    sanitized::SanitizedPriceEstimator,
-    trade_finder::TradeVerifier,
-    zeroex::ZeroExPriceEstimator,
-    Arguments, PriceEstimating, PriceEstimatorType, TradeValidatorKind,
-};
-use crate::{
-    arguments::{self, Driver},
-    bad_token::BadTokenDetecting,
-    balancer_sor_api::DefaultBalancerSorApi,
-    baseline_solver::BaseTokens,
-    code_fetching::CachedCodeFetcher,
-    code_simulation::{CodeSimulating, TenderlyCodeSimulator},
-    ethrpc::Web3,
-    http_client::HttpClientFactory,
-    http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
-    oneinch_api::OneInchClient,
-    paraswap_api::DefaultParaswapApi,
-    rate_limiter::RateLimiter,
-    sources::{
-        balancer_v2::BalancerPoolFetching,
-        uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
-        uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
+use {
+    super::{
+        balancer_sor::BalancerSor,
+        baseline::BaselinePriceEstimator,
+        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        http::HttpPriceEstimator,
+        instrumented::InstrumentedPriceEstimator,
+        native::{self, NativePriceEstimator},
+        native_price_cache::CachingNativePriceEstimator,
+        oneinch::OneInchPriceEstimator,
+        paraswap::ParaswapPriceEstimator,
+        sanitized::SanitizedPriceEstimator,
+        trade_finder::TradeVerifier,
+        zeroex::ZeroExPriceEstimator,
+        Arguments,
+        PriceEstimating,
+        PriceEstimatorType,
+        TradeValidatorKind,
     },
-    token_info::TokenInfoFetching,
-    trade_finding::external::ExternalTradeFinder,
-    zeroex_api::ZeroExApi,
+    crate::{
+        arguments::{self, Driver},
+        bad_token::BadTokenDetecting,
+        balancer_sor_api::DefaultBalancerSorApi,
+        baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
+        code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
+        oneinch_api::OneInchClient,
+        paraswap_api::DefaultParaswapApi,
+        rate_limiter::RateLimiter,
+        sources::{
+            balancer_v2::BalancerPoolFetching,
+            uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
+            uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
+        },
+        token_info::TokenInfoFetching,
+        trade_finding::external::ExternalTradeFinder,
+        zeroex_api::ZeroExApi,
+    },
+    anyhow::{Context as _, Result},
+    ethcontract::{H160, U256},
+    gas_estimation::GasPriceEstimating,
+    reqwest::Url,
+    std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
-use anyhow::{Context as _, Result};
-use ethcontract::{H160, U256};
-use gas_estimation::GasPriceEstimating;
-use reqwest::Url;
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
@@ -499,7 +504,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 base,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
-                    use_internal_buffers: Some(factory.shared_args.quasimodo_uses_internal_buffers),
+                    use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
                     objective: Some(Objective::SurplusFeesCosts),
                     ..Default::default()
                 },

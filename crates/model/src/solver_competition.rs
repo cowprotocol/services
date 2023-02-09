@@ -1,18 +1,21 @@
-use crate::{
-    auction::AuctionId,
-    bytes_hex::BytesHex,
-    order::OrderUid,
-    u256_decimal::{self, DecimalU256},
+use {
+    crate::{
+        auction::AuctionId,
+        bytes_hex::BytesHex,
+        order::OrderUid,
+        u256_decimal::{self, DecimalU256},
+    },
+    primitive_types::{H160, H256, U256},
+    serde::{Deserialize, Serialize},
+    serde_with::serde_as,
+    std::collections::BTreeMap,
 };
-use primitive_types::{H160, H256, U256};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use std::collections::BTreeMap;
 
-/// As a temporary measure the driver informs the api about per competition data that should be
-/// stored in the database. This goes to the api through an unlisted and authenticated http endpoint
-/// because we do not want the driver to have a database connection.
-/// Once autopilot is handling the competition this will no longer be needed.
+/// As a temporary measure the driver informs the api about per competition data
+/// that should be stored in the database. This goes to the api through an
+/// unlisted and authenticated http endpoint because we do not want the driver
+/// to have a database connection. Once autopilot is handling the competition
+/// this will no longer be needed.
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
@@ -105,8 +108,7 @@ pub struct Order {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use maplit::btreemap;
+    use {super::*, maplit::btreemap};
 
     #[test]
     fn serialize() {

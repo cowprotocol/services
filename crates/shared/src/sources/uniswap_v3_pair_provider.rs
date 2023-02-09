@@ -1,7 +1,4 @@
-use ethcontract::H160;
-use hex_literal::hex;
-use model::TokenPair;
-use web3::signing::keccak256;
+use {ethcontract::H160, hex_literal::hex, model::TokenPair, web3::signing::keccak256};
 
 /// Calculates deterministic Uniswapv3 pool address.
 /// https://github.com/Uniswap/v3-periphery/blob/main/contracts/libraries/PoolAddress.sol

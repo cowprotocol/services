@@ -1,22 +1,26 @@
-use crate::settlement::{Revertable, Settlement};
-
-use super::{
-    super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
+use {
+    super::{
+        super::submitter::{TransactionHandle, TransactionSubmitting},
+        AdditionalTip,
+        DisabledReason,
+        Strategy,
+        SubmissionLoopStatus,
+    },
+    crate::settlement::{Revertable, Settlement},
+    anyhow::{ensure, Context, Result},
+    ethcontract::transaction::{Transaction, TransactionBuilder},
+    futures::FutureExt,
+    shared::ethrpc::{Web3, Web3Transport},
 };
-use anyhow::Result;
-use ethcontract::transaction::{Transaction, TransactionBuilder};
-use futures::FutureExt;
-use shared::ethrpc::{Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct PublicMempoolApi {
-    nodes: Vec<Web3>,
+    nodes: Vec<SubmissionNode>,
     high_risk_disabled: bool,
 }
 
 impl PublicMempoolApi {
-    pub fn new(nodes: Vec<Web3>, high_risk_disabled: bool) -> Self {
+    pub fn new(nodes: Vec<SubmissionNode>, high_risk_disabled: bool) -> Self {
         Self {
             nodes,
             high_risk_disabled,
@@ -40,14 +44,20 @@ impl TransactionSubmitting for PublicMempoolApi {
             .iter()
             .enumerate()
             .map(|(i, node)| {
-                let label = format!("public_mempool_{i}");
+                let label = format!(
+                    "public_mempool_{i}_{}",
+                    match node.kind {
+                        SubmissionNodeKind::Broadcast => "broadcast",
+                        SubmissionNodeKind::Notification => "notification",
+                    }
+                );
                 let transaction_request = transaction_request.clone();
                 async move {
                     tracing::debug!(%label, "sending transaction...");
                     let result = match transaction_request {
-                        Transaction::Request(tx) => node.eth().send_transaction(tx).await,
+                        Transaction::Request(tx) => node.web3.eth().send_transaction(tx).await,
                         Transaction::Raw { bytes, .. } => {
-                            node.eth().send_raw_transaction(bytes.0.into()).await
+                            node.web3.eth().send_raw_transaction(bytes.0.into()).await
                         }
                     };
 
@@ -106,7 +116,8 @@ impl TransactionSubmitting for PublicMempoolApi {
     }
 
     fn submission_status(&self, settlement: &Settlement, _: &str) -> SubmissionLoopStatus {
-        // disable strategy if there is a slightest possibility for a transaction to be reverted (check done only for mainnet)
+        // disable strategy if there is a slightest possibility for a transaction to be
+        // reverted (check done only for mainnet)
         if self.high_risk_disabled && settlement.revertable() == Revertable::HighRisk {
             return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
         }
@@ -119,10 +130,53 @@ impl TransactionSubmitting for PublicMempoolApi {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubmissionNodeKind {
+    /// Transactions that are sent to this nodes are expected to be broadcast to
+    /// the mempool and eventually be included in a block.
+    Broadcast,
+    /// A notification node is an endpoint that is not expected to submit
+    /// transactions to the mempool once a transaction has been received.
+    /// Its purpose is notifying the node owner that a transaction has been
+    /// submitted. In general, there are lower expectations on the
+    /// availability of this node variant.
+    Notification,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionNode {
+    kind: SubmissionNodeKind,
+    web3: Web3,
+}
+
+impl SubmissionNode {
+    pub fn new(kind: SubmissionNodeKind, web3: Web3) -> Self {
+        Self { kind, web3 }
+    }
+
+    pub fn can_broadcast(&self) -> bool {
+        match self.kind {
+            SubmissionNodeKind::Broadcast => true,
+            SubmissionNodeKind::Notification => false,
+        }
+    }
+}
+
+pub async fn validate_submission_node(node: &Web3, expected_network_id: &String) -> Result<()> {
+    let node_network_id = node
+        .net()
+        .version()
+        .await
+        .context("Unable to retrieve network id on startup")?;
+    ensure!(
+        &node_network_id == expected_network_id,
+        "Network id doesn't match expected network id"
+    );
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::NoopInteraction;
+    use {super::*, crate::settlement::NoopInteraction};
 
     #[test]
     fn submission_status_configuration() {

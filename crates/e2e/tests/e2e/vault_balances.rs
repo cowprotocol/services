@@ -1,35 +1,53 @@
-use crate::{
-    onchain_components::{
-        deploy_token_with_weth_uniswap_pool, to_wei, uniswap_pair_provider, WethPoolConfig,
+use {
+    crate::{
+        onchain_components::{
+            deploy_token_with_weth_uniswap_pool,
+            to_wei,
+            uniswap_pair_provider,
+            WethPoolConfig,
+        },
+        services::{
+            create_order_converter,
+            create_orderbook_api,
+            wait_for_solvable_orders,
+            OrderbookServices,
+            API_HOST,
+        },
     },
-    services::{
-        create_order_converter, create_orderbook_api, wait_for_solvable_orders, OrderbookServices,
-        API_HOST,
+    contracts::IUniswapLikeRouter,
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
     },
-};
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use model::{
-    order::{OrderBuilder, OrderKind, SellTokenSource},
-    signature::EcdsaSigningScheme,
-};
-use secp256k1::SecretKey;
-use shared::{
-    code_fetching::MockCodeFetching, ethrpc::Web3, http_client::HttpClientFactory,
-    sources::uniswap_v2::pool_fetching::PoolFetcher,
-};
-use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
-    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-    settlement_submission::{
-        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
-        GlobalTxPool, SolutionSubmitter, StrategyArgs,
+    model::{
+        order::{OrderBuilder, OrderKind, SellTokenSource},
+        signature::EcdsaSigningScheme,
     },
+    secp256k1::SecretKey,
+    shared::{
+        code_fetching::MockCodeFetching,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        sources::uniswap_v2::pool_fetching::PoolFetcher,
+    },
+    solver::{
+        liquidity::uniswap_v2::UniswapLikeLiquidity,
+        liquidity_collector::LiquidityCollector,
+        metrics::NoopMetrics,
+        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
+        settlement_submission::{
+            submitter::{
+                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
+                Strategy,
+            },
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+        },
+    },
+    std::{sync::Arc, time::Duration},
+    web3::signing::SecretKeyRef,
 };
-use std::{sync::Arc, time::Duration};
-use web3::signing::SecretKeyRef;
 
 const TRADER: [u8; 32] = [1; 32];
 
@@ -42,13 +60,19 @@ async fn local_node_vault_balances() {
 }
 
 async fn vault_balances(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
     shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & mint tokens to trade, pools for fee connections
     let token = deploy_token_with_weth_uniswap_pool(
@@ -149,7 +173,13 @@ async fn vault_balances(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(
+                        vec![SubmissionNode::new(
+                            SubmissionNodeKind::Broadcast,
+                            web3.clone(),
+                        )],
+                        false,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),

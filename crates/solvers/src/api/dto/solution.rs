@@ -1,8 +1,10 @@
-use crate::{domain::solution, util::serialize};
-use ethereum_types::{H160, U256};
-use serde::Serialize;
-use serde_with::serde_as;
-use std::collections::HashMap;
+use {
+    crate::{domain::solution, util::serialize},
+    ethereum_types::{H160, U256},
+    serde::Serialize,
+    serde_with::serde_as,
+    std::collections::HashMap,
+};
 
 impl Solution {
     /// Returns the trivial solution.

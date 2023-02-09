@@ -6,39 +6,46 @@
 //! Please be aware of the following subtlety for buy orders:
 //! 0x's API is adding the defined slippage on the sellAmount of a buy order
 //! and then returns the surplus in the buy amount to the user.
-//! I.e. if the user defines a 5% slippage, they will sell 5% more, and receive 5%
-//! more buy-tokens than ordered. Here is on example tx:
+//! I.e. if the user defines a 5% slippage, they will sell 5% more, and receive
+//! 5% more buy-tokens than ordered. Here is on example tx:
 //! https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block=12735030&blockIndex=0&from=0xa6ddbd0de6b310819b49f680f65871bee85f517e&gas=8000000&gasPrice=0&value=0&contractAddress=0x3328f5f2cecaf00a2443082b657cedeaf70bfaef&rawFunctionInput=0x13d79a0b000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000003600000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000029143e200000000000000000000000000000000000000000000000000470de4df820000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000036416d81e590ff67370e4523b9cd3257aa0a853c000000000000000000000000000000000000000000000000000000000291f64800000000000000000000000000000000000000000000000000470de4df8200000000000000000000000000000000000000000000000000000000000060dc5839000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000003dc140000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000029143e2000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000410a7f27a6638cc9cdaba8266a15acef4cf7e1e1c9b9b2059391b7230b67bdfeb21f1d3aa45852f527a5040d3d7a190b92764a2c854f334b7eed579b390b85fd3f1b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000003800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000120000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000128d9627aa400000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000002b220e100000000000000000000000000000000000000000000000000470de4df82000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2869584cd000000000000000000000000100000000000000000000000000000000000001100000000000000000000000000000000000000000000003239e38b8a60dc53b70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000&network=1
-//! This behavior has the following risks: The additional sell tokens from the slippage
-//! are not provided by the user, hence the additional tokens might be not available in
-//! the settlement contract. For smaller amounts this is unlikely, as we always charge the
-//! fees also in the sell token, though, the fee's might not always be sufficient.
-//! This risk should be covered in a future PR.
+//! This behavior has the following risks: The additional sell tokens from the
+//! slippage are not provided by the user, hence the additional tokens might be
+//! not available in the settlement contract. For smaller amounts this is
+//! unlikely, as we always charge the fees also in the sell token, though, the
+//! fee's might not always be sufficient. This risk should be covered in a
+//! future PR.
 //!
-//! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
+//! Sell orders are unproblematic, especially, since the positive slippage is
+//! handed back from 0x
 
-use super::{
-    single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+use {
+    super::{
+        single_order_solver::{
+            execution_respects_order,
+            SettlementError,
+            SingleOrderSettlement,
+            SingleOrderSolving,
+        },
+        Auction,
     },
-    Auction,
-};
-use crate::{
-    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
-};
-use anyhow::{anyhow, ensure, Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::Account;
-use model::order::OrderKind;
-use num::{BigRational, ToPrimitive, Zero};
-use shared::{
-    ethrpc::Web3,
-    zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
-};
-use std::{
-    fmt::{self, Display, Formatter},
-    sync::Arc,
+    crate::{
+        interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+        liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
+    },
+    anyhow::{anyhow, ensure, Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::Account,
+    model::order::OrderKind,
+    num::{BigRational, ToPrimitive, Zero},
+    shared::{
+        ethrpc::Web3,
+        zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
+    },
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+    },
 };
 
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
@@ -199,20 +206,22 @@ impl Display for ZeroExSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        liquidity::LimitOrder,
-        settlement::external_prices::ExternalPrices,
-        test::account,
-    };
-    use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::{futures::FutureExt as _, Web3, H160, U256};
-    use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
-    use shared::{
-        ethrpc::{create_env_test_transport, create_test_transport},
-        zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::{Approval, MockAllowanceManaging},
+            liquidity::LimitOrder,
+            settlement::external_prices::ExternalPrices,
+            test::account,
+        },
+        contracts::{GPv2Settlement, WETH9},
+        ethcontract::{futures::FutureExt as _, Web3, H160, U256},
+        mockall::{predicate::*, Sequence},
+        model::order::{Order, OrderData, OrderKind, OrderMetadata},
+        shared::{
+            ethrpc::{create_env_test_transport, create_test_transport},
+            zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+        },
     };
 
     #[tokio::test]

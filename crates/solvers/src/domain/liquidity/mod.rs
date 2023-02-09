@@ -6,9 +6,11 @@ pub mod limit_order;
 pub mod stable;
 pub mod weighted_product;
 
-use crate::domain::eth;
-use ethereum_types::{H160, U256};
-use std::cmp::Ordering;
+use {
+    crate::domain::eth,
+    ethereum_types::{H160, U256},
+    std::cmp::Ordering,
+};
 
 /// A source of liquidity which can be used by the solver.
 #[derive(Clone, Debug)]

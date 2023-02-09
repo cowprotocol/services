@@ -1,19 +1,26 @@
-use super::{Query, Quote, TradeError, TradeFinding};
-use crate::{
-    paraswap_api::{
-        ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side, TradeAmount,
-        TransactionBuilderQuery,
+use {
+    super::{Query, Quote, TradeError, TradeFinding},
+    crate::{
+        paraswap_api::{
+            ParaswapApi,
+            ParaswapResponseError,
+            PriceQuery,
+            PriceResponse,
+            Side,
+            TradeAmount,
+            TransactionBuilderQuery,
+        },
+        price_estimation::gas,
+        request_sharing::{BoxRequestSharing, BoxShared},
+        token_info::{TokenInfo, TokenInfoFetching},
+        trade_finding::{Interaction, Trade},
     },
-    price_estimation::gas,
-    request_sharing::{BoxRequestSharing, BoxShared},
-    token_info::{TokenInfo, TokenInfoFetching},
-    trade_finding::{Interaction, Trade},
+    anyhow::{Context, Result},
+    futures::FutureExt as _,
+    model::order::OrderKind,
+    primitive_types::H160,
+    std::{collections::HashMap, sync::Arc},
 };
-use anyhow::{Context, Result};
-use futures::FutureExt as _;
-use model::order::OrderKind;
-use primitive_types::H160;
-use std::{collections::HashMap, sync::Arc};
 
 pub struct ParaswapTradeFinder {
     inner: Inner,
@@ -65,6 +72,12 @@ impl ParaswapTradeFinder {
 }
 
 impl Inner {
+    // Default to 1% slippage - same as the ParaSwap UI.
+    const DEFAULT_SLIPPAGE: u32 = 100;
+    // Use a default non-zero user address, otherwise the API will return an
+    // error.
+    const DEFAULT_USER: H160 = addr!("BEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef");
+
     async fn quote(&self, query: &Query) -> Result<InternalQuote, TradeError> {
         let tokens = self
             .tokens
@@ -99,12 +112,6 @@ impl Inner {
             price,
         })
     }
-
-    // Default to 1% slippage - same as the ParaSwap UI.
-    const DEFAULT_SLIPPAGE: u32 = 100;
-    // Use a default non-zero user address, otherwise the API will return an
-    // error.
-    const DEFAULT_USER: H160 = addr!("BEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef");
 
     async fn trade(&self, query: &Query, mut quote: InternalQuote) -> Result<Trade, TradeError> {
         let tx_query = TransactionBuilderQuery {
@@ -171,15 +178,17 @@ fn decimals(tokens: &HashMap<H160, TokenInfo>, token: &H160) -> Result<u8, Trade
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        ethrpc::{create_env_test_transport, Web3},
-        paraswap_api::{DefaultParaswapApi, MockParaswapApi},
-        token_info::{MockTokenInfoFetching, TokenInfoFetcher},
+    use {
+        super::*,
+        crate::{
+            ethrpc::{create_env_test_transport, Web3},
+            paraswap_api::{DefaultParaswapApi, MockParaswapApi},
+            token_info::{MockTokenInfoFetching, TokenInfoFetcher},
+        },
+        maplit::hashmap,
+        reqwest::Client,
+        std::time::Duration,
     };
-    use maplit::hashmap;
-    use reqwest::Client;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn shares_prices_api_request() {

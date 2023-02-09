@@ -13,10 +13,10 @@ use {
 ///
 /// This method panics if the config is invalid or on I/O errors.
 pub async fn load(path: &Path) -> infra::Config {
-    let data = fs::read(path)
+    let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config: file::Config = toml::de::from_slice(&data)
+    let config: file::Config = toml::de::from_str(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
     infra::Config {
         solvers: config
@@ -29,7 +29,6 @@ pub async fn load(path: &Path) -> infra::Config {
                     relative: config.relative_slippage,
                     absolute: config.absolute_slippage.map(Into::into),
                 },
-                address: config.address.into(),
                 private_key: eth::PrivateKey::from_raw(config.private_key.0).unwrap(),
             })
             .collect(),

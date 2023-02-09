@@ -1,11 +1,13 @@
-use super::TokenOwnerProposing;
-use crate::rate_limiter::{back_off, RateLimiter, RateLimitingStrategy};
-use anyhow::{ensure, Result};
-use ethcontract::H160;
-use prometheus::IntCounterVec;
-use prometheus_metric_storage::MetricStorage;
-use reqwest::{Client, StatusCode, Url};
-use serde::Deserialize;
+use {
+    super::TokenOwnerProposing,
+    crate::rate_limiter::{back_off, RateLimiter, RateLimitingStrategy},
+    anyhow::{ensure, Result},
+    ethcontract::H160,
+    prometheus::IntCounterVec,
+    prometheus_metric_storage::MetricStorage,
+    reqwest::{Client, StatusCode, Url},
+    serde::Deserialize,
+};
 
 const BASE: &str = "https://api.ethplorer.io/getTopTokenHolders/";
 const FREE_API_KEY: &str = "freekey";
@@ -15,8 +17,8 @@ pub struct EthplorerTokenOwnerFinder {
     base: Url,
     api_key: String,
 
-    /// The low tiers for Ethplorer have very aggressive rate limiting, so be sure to setup a rate
-    /// limiter for Ethplorer requests.
+    /// The low tiers for Ethplorer have very aggressive rate limiting, so be
+    /// sure to setup a rate limiter for Ethplorer requests.
     rate_limiter: Option<RateLimiter>,
 
     metrics: &'static Metrics,
@@ -140,8 +142,7 @@ impl TokenOwnerProposing for EthplorerTokenOwnerFinder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
+    use {super::*, hex_literal::hex};
 
     #[tokio::test]
     #[ignore]

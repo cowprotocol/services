@@ -1,27 +1,29 @@
-use crate::database::events::meta_to_event_index;
-use anyhow::{anyhow, Context, Result};
-use contracts::cowswap_onchain_orders::{
-    event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
+use {
+    super::{OnchainOrderCustomData, OnchainOrderParsing},
+    crate::database::events::meta_to_event_index,
+    anyhow::{anyhow, Context, Result},
+    contracts::cowswap_onchain_orders::{
+        event_data::OrderPlacement as ContractOrderPlacement,
+        Event as ContractEvent,
+    },
+    database::{
+        byte_array::ByteArray,
+        ethflow_orders::EthOrderPlacement,
+        events::EventIndex,
+        onchain_broadcasted_orders::OnchainOrderPlacement,
+        orders::{Interaction, Order},
+        PgTransaction,
+    },
+    ethcontract::Event as EthContractEvent,
+    hex_literal::hex,
+    shared::{
+        contracts::settlement_deployment_block_number_hash,
+        current_block::{block_number_to_block_number_hash, BlockNumberHash},
+        ethrpc::Web3,
+    },
+    sqlx::types::BigDecimal,
+    std::{collections::HashMap, convert::TryInto},
 };
-use database::{
-    byte_array::ByteArray,
-    ethflow_orders::EthOrderPlacement,
-    events::EventIndex,
-    onchain_broadcasted_orders::OnchainOrderPlacement,
-    orders::{Interaction, Order},
-    PgTransaction,
-};
-use ethcontract::Event as EthContractEvent;
-use hex_literal::hex;
-use shared::{
-    contracts::settlement_deployment_block_number_hash,
-    current_block::{block_number_to_block_number_hash, BlockNumberHash},
-    ethrpc::Web3,
-};
-use sqlx::types::BigDecimal;
-use std::{collections::HashMap, convert::TryInto};
-
-use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
 // 4c84c1c8 is the identifier of the following function:
 // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
@@ -141,10 +143,11 @@ fn convert_to_quote_id_and_user_valid_to(
 
 #[cfg(test)]
 mod test {
-    use ethcontract::{Bytes, EventMetadata, H160, U256};
-    use model::order::{OrderData, OrderKind};
-
-    use super::*;
+    use {
+        super::*,
+        ethcontract::{Bytes, EventMetadata, H160, U256},
+        model::order::{OrderData, OrderKind},
+    };
 
     #[test]
     pub fn test_convert_to_quote_id_and_user_valid_to() {
@@ -225,9 +228,9 @@ mod test {
     }
 }
 
-/// The block from which to start indexing eth-flow events. Note that this function is expected to
-/// be used at the start of the services and will panic if it cannot retrieve the information it
-/// needs.
+/// The block from which to start indexing eth-flow events. Note that this
+/// function is expected to be used at the start of the services and will panic
+/// if it cannot retrieve the information it needs.
 pub async fn determine_ethflow_indexing_start(
     skip_event_sync_start: &Option<BlockNumberHash>,
     ethflow_indexing_start: Option<u64>,

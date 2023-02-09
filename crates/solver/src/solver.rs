@@ -1,60 +1,66 @@
-use self::{
-    baseline_solver::BaselineSolver,
-    http_solver::HttpSolver,
-    naive_solver::NaiveSolver,
-    oneinch_solver::OneInchSolver,
-    optimizing_solver::OptimizingSolver,
-    paraswap_solver::ParaswapSolver,
-    single_order_solver::{SingleOrderSolver, SingleOrderSolving},
-    zeroex_solver::ZeroExSolver,
-};
-use crate::{
-    interactions::allowances::AllowanceManager,
-    liquidity::{
-        order_converter::OrderConverter,
-        slippage::{self, SlippageCalculator},
-        LimitOrder, Liquidity,
+use {
+    self::{
+        baseline_solver::BaselineSolver,
+        http_solver::HttpSolver,
+        naive_solver::NaiveSolver,
+        oneinch_solver::OneInchSolver,
+        optimizing_solver::OptimizingSolver,
+        paraswap_solver::ParaswapSolver,
+        single_order_solver::{SingleOrderSolver, SingleOrderSolving},
+        zeroex_solver::ZeroExSolver,
     },
-    metrics::SolverMetrics,
-    s3_instance_upload::S3InstanceUploader,
-    settlement::{external_prices::ExternalPrices, Settlement},
-    settlement_post_processing::PostProcessing,
-    solver::{
-        balancer_sor_solver::BalancerSorSolver,
-        http_solver::{
-            buffers::BufferRetriever, instance_cache::SharedInstanceCreator,
-            instance_creation::InstanceCreator, InstanceType,
+    crate::{
+        interactions::allowances::AllowanceManager,
+        liquidity::{
+            order_converter::OrderConverter,
+            slippage::{self, SlippageCalculator},
+            LimitOrder,
+            Liquidity,
+        },
+        metrics::SolverMetrics,
+        s3_instance_upload::S3InstanceUploader,
+        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement_post_processing::PostProcessing,
+        solver::{
+            balancer_sor_solver::BalancerSorSolver,
+            http_solver::{
+                buffers::BufferRetriever,
+                instance_cache::SharedInstanceCreator,
+                instance_creation::InstanceCreator,
+                InstanceType,
+            },
         },
     },
-};
-use anyhow::{anyhow, Context, Result};
-use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256};
-use model::{auction::AuctionId, DomainSeparator};
-use num::BigRational;
-use reqwest::Url;
-use shared::{
-    balancer_sor_api::DefaultBalancerSorApi,
-    baseline_solver::BaseTokens,
-    conversions::U256Ext,
-    ethrpc::Web3,
-    http_client::HttpClientFactory,
-    http_solver::{
-        model::{AuctionResult, SimulatedTransaction},
-        DefaultHttpSolverApi, SolverConfig,
+    anyhow::{anyhow, Context, Result},
+    contracts::{BalancerV2Vault, GPv2Settlement},
+    ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
+    model::{auction::AuctionId, DomainSeparator},
+    num::BigRational,
+    reqwest::Url,
+    shared::{
+        balancer_sor_api::DefaultBalancerSorApi,
+        baseline_solver::BaseTokens,
+        conversions::U256Ext,
+        ethrpc::Web3,
+        http_client::HttpClientFactory,
+        http_solver::{
+            model::{AuctionResult, SimulatedTransaction},
+            DefaultHttpSolverApi,
+            SolverConfig,
+        },
+        rate_limiter::{RateLimiter, RateLimitingStrategy},
+        token_info::TokenInfoFetching,
+        token_list::AutoUpdatingTokenList,
+        zeroex_api::ZeroExApi,
     },
-    rate_limiter::{RateLimiter, RateLimitingStrategy},
-    token_info::TokenInfoFetching,
-    token_list::AutoUpdatingTokenList,
-    zeroex_api::ZeroExApi,
+    std::{
+        fmt::{self, Debug, Formatter},
+        str::FromStr,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    web3::types::AccessList,
 };
-use std::{
-    fmt::{self, Debug, Formatter},
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use web3::types::AccessList;
 
 pub mod balancer_sor_solver;
 mod baseline_solver;
@@ -68,22 +74,25 @@ mod zeroex_solver;
 
 /// Interface that all solvers must implement.
 ///
-/// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
-/// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
-/// would like to process, including their own private sources.
+/// A `solve` method transforming a collection of `Liquidity` (sources) into a
+/// list of independent `Settlements`. Solvers are free to choose which types
+/// `Liquidity` they would like to process, including their own private sources.
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait Solver: Send + Sync + 'static {
     /// Runs the solver.
     ///
-    /// The returned settlements should be independent (for example not reusing the same user
-    /// order) so that they can be merged by the driver at its leisure.
+    /// The returned settlements should be independent (for example not reusing
+    /// the same user order) so that they can be merged by the driver at its
+    /// leisure.
     ///
-    /// id identifies this instance of solving by the driver in which it invokes all solvers.
+    /// id identifies this instance of solving by the driver in which it invokes
+    /// all solvers.
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>>;
 
-    /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
-    /// Has to be non-blocking to not delay settling the actual solution
+    /// Callback to notify the solver how it performed in the given auction (if
+    /// it won or failed for some reason) Has to be non-blocking to not
+    /// delay settling the actual solution
     fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
 
     /// Returns solver's account that should be used to submit settlements.
@@ -181,7 +190,6 @@ pub struct SimulationWithError {
 pub enum SolverType {
     Naive,
     Baseline,
-    Mip,
     CowDexAg,
     OneInch,
     Paraswap,
@@ -225,7 +233,10 @@ impl FromStr for SolverAccountArg {
                     |addr_err| {
                         anyhow!("could not parse as private key: {}", pk_err)
                             .context(anyhow!("could not parse as address: {}", addr_err))
-                            .context("invalid solver account, it is neither a private key or an Ethereum address")
+                            .context(
+                                "invalid solver account, it is neither a private key or an \
+                                 Ethereum address",
+                            )
                     },
                 )?))
             })
@@ -261,7 +272,6 @@ pub fn create(
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
-    mip_solver_url: Url,
     cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
     balancer_sor_url: Url,
@@ -278,8 +288,7 @@ pub fn create(
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     disabled_zeroex_sources: Vec<String>,
-    quasimodo_uses_internal_buffers: bool,
-    mip_uses_internal_buffers: bool,
+    use_internal_buffers: bool,
     one_inch_url: Url,
     one_inch_referrer_address: Option<H160>,
     external_solvers: Vec<ExternalSolverArg>,
@@ -373,17 +382,6 @@ pub fn create(
                     base_tokens.clone(),
                     slippage_calculator,
                 )),
-                SolverType::Mip => shared(create_http_solver(
-                    account,
-                    mip_solver_url.clone(),
-                    "Mip".to_string(),
-                    SolverConfig {
-                        use_internal_buffers: Some(mip_uses_internal_buffers),
-                        ..Default::default()
-                    },
-                    InstanceType::Filtered,
-                    slippage_calculator,
-                )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
@@ -397,7 +395,7 @@ pub fn create(
                     quasimodo_solver_url.clone(),
                     "Quasimodo".to_string(),
                     SolverConfig {
-                        use_internal_buffers: Some(quasimodo_uses_internal_buffers),
+                        use_internal_buffers: Some(use_internal_buffers),
                         ..Default::default()
                     },
                     InstanceType::Filtered,
@@ -474,7 +472,7 @@ pub fn create(
             solver.url,
             solver.name,
             SolverConfig {
-                use_internal_buffers: Some(mip_uses_internal_buffers),
+                use_internal_buffers: Some(use_internal_buffers),
                 ..Default::default()
             },
             InstanceType::Plain,
@@ -567,10 +565,13 @@ impl Solver for DummySolver {
     async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
         todo!()
     }
+
     fn account(&self) -> &ethcontract::Account {
         todo!()
     }
+
     fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
+
     fn name(&self) -> &'static str {
         "DummySolver"
     }
@@ -582,10 +583,12 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{liquidity::LimitOrder, settlement::external_prices::externalprices};
-    use model::order::OrderKind;
-    use num::One as _;
+    use {
+        super::*,
+        crate::{liquidity::LimitOrder, settlement::external_prices::externalprices},
+        model::order::OrderKind,
+        num::One as _,
+    };
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();

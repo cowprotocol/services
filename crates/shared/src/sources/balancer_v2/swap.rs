@@ -1,14 +1,16 @@
-use crate::{
-    baseline_solver::BaselineSolvable,
-    sources::balancer_v2::{
-        pool_fetching::{StablePool, TokenState, WeightedPool, WeightedTokenState},
-        swap::math::BalU256,
+use {
+    crate::{
+        baseline_solver::BaselineSolvable,
+        sources::balancer_v2::{
+            pool_fetching::{StablePool, TokenState, WeightedPool, WeightedTokenState},
+            swap::math::BalU256,
+        },
     },
+    error::Error,
+    ethcontract::{H160, U256},
+    fixed_point::Bfp,
+    std::collections::HashMap,
 };
-use error::Error;
-use ethcontract::{H160, U256};
-use fixed_point::Bfp;
-use std::collections::HashMap;
 
 mod error;
 pub mod fixed_point;
@@ -64,8 +66,8 @@ impl TokenState {
         amount.as_uint256().bdiv_up(scaling_factor)
     }
 
-    /// Similar to downscale up above, but rounded down, this is just checked div.
-    /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/c18ff2686c61a8cbad72cdcfc65e9b11476fdbc3/pkg/pool-utils/contracts/BasePool.sol#L542-L544
+    /// Similar to downscale up above, but rounded down, this is just checked
+    /// div. https://github.com/balancer-labs/balancer-v2-monorepo/blob/c18ff2686c61a8cbad72cdcfc65e9b11476fdbc3/pkg/pool-utils/contracts/BasePool.sol#L542-L544
     fn downscale_down(&self, amount: Bfp) -> Option<U256> {
         amount
             .as_uint256()
@@ -73,7 +75,8 @@ impl TokenState {
     }
 }
 
-/// Weighted pool data as a reference used for computing input and output amounts.
+/// Weighted pool data as a reference used for computing input and output
+/// amounts.
 pub struct WeightedPoolRef<'a> {
     pub reserves: &'a HashMap<H160, WeightedTokenState>,
     pub swap_fee: Bfp,
@@ -140,14 +143,14 @@ struct BalancesWithIndices {
 
 impl StablePoolRef<'_> {
     // TODO - https://github.com/gnosis/gp-v2-services/pull/1225#discussion_r739033527
-    // Based on this discussion, it remains to verify that the non-deterministic ordering
-    // of the Balance array returned by this method cannot give rise to any undesired
-    // rounding/precision errors in the functions which operate on this. Specifically,
-    // the internal methods
+    // Based on this discussion, it remains to verify that the non-deterministic
+    // ordering of the Balance array returned by this method cannot give rise to
+    // any undesired rounding/precision errors in the functions which operate on
+    // this. Specifically, the internal methods
     // - calculate_invariant and
     // - get_token_balance_given_invariant_and_all_other_balances
-    // which perform balancer-arithmetic on the balances array from inside calc_X_given_Y
-    // See issue for this task here: https://github.com/cowprotocol/services/issues/100
+    // which perform balancer-arithmetic on the balances array from inside
+    // calc_X_given_Y See issue for this task here: https://github.com/cowprotocol/services/issues/100
     fn upscale_balances_with_token_indices(
         &self,
         in_token: &H160,
@@ -173,8 +176,8 @@ impl StablePoolRef<'_> {
 }
 
 impl BaselineSolvable for StablePoolRef<'_> {
-    /// Stable pools use the BaseGeneralPool.sol for these methods, called from within `onSwap`
-    /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L31-L44
+    /// Stable pools use the BaseGeneralPool.sol for these methods, called from
+    /// within `onSwap` https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L31-L44
 
     /// This comes from `swapGivenIn`
     /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L46-L63
@@ -274,9 +277,11 @@ impl BaselineSolvable for StablePool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::pool_fetching::{AmplificationParameter, CommonPoolState};
-    use std::collections::HashMap;
+    use {
+        super::*,
+        crate::sources::balancer_v2::pool_fetching::{AmplificationParameter, CommonPoolState},
+        std::collections::HashMap,
+    };
 
     fn create_weighted_pool_with(
         tokens: Vec<H160>,

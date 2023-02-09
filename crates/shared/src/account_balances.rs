@@ -1,12 +1,14 @@
-use crate::ethrpc::{Web3, Web3Transport};
-use anyhow::{anyhow, Context, Result};
-use contracts::{BalancerV2Vault, ERC20};
-use ethcontract::{batch::CallBatch, Account};
-use futures::{FutureExt, StreamExt};
-use model::order::{Order, SellTokenSource};
-use primitive_types::{H160, U256};
-use std::future::Future;
-use web3::types::{BlockId, BlockNumber, CallRequest};
+use {
+    crate::ethrpc::{Web3, Web3Transport},
+    anyhow::{anyhow, Context, Result},
+    contracts::{BalancerV2Vault, ERC20},
+    ethcontract::{batch::CallBatch, Account},
+    futures::{FutureExt, StreamExt},
+    model::order::{Order, SellTokenSource},
+    primitive_types::{H160, U256},
+    std::future::Future,
+    web3::types::{BlockId, BlockNumber, CallRequest},
+};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
@@ -42,14 +44,16 @@ impl From<anyhow::Error> for TransferSimulationError {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
-    // Returns the balance available to the allowance manager for the given owner and token taking both balance as well as "allowance" into account.
+    // Returns the balance available to the allowance manager for the given owner
+    // and token taking both balance as well as "allowance" into account.
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>>;
 
-    // Check that the settlement contract can make use of this user's token balance. This check
-    // could fail if the user does not have enough balance, has not given the allowance to the
-    // allowance manager or if the token does not allow freely transferring amounts around for
-    // for example if it is paused or takes a fee on transfer.
-    // If the node supports the trace_callMany we can perform more extensive tests.
+    // Check that the settlement contract can make use of this user's token balance.
+    // This check could fail if the user does not have enough balance, has not
+    // given the allowance to the allowance manager or if the token does not
+    // allow freely transferring amounts around for for example if it is paused
+    // or takes a fee on transfer. If the node supports the trace_callMany we
+    // can perform more extensive tests.
     async fn can_transfer(
         &self,
         token: H160,
@@ -223,7 +227,8 @@ impl BalanceFetching for Web3BalanceFetcher {
         match (source, &self.vault) {
             (SellTokenSource::Erc20, _) => {
                 // In the very likely case that we can transfer we only do one RPC call.
-                // Only do more calls in case we need to closer assess why the transfer is failing
+                // Only do more calls in case we need to closer assess why the transfer is
+                // failing
                 if self.can_transfer_call(token, from, amount).await {
                     return Ok(());
                 }
@@ -284,10 +289,12 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::create_env_test_transport;
-    use contracts::{vault, BalancerV2Authorizer, ERC20Mintable};
-    use hex_literal::hex;
+    use {
+        super::*,
+        crate::ethrpc::create_env_test_transport,
+        contracts::{vault, BalancerV2Authorizer, ERC20Mintable},
+        hex_literal::hex,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -320,8 +327,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_cannot_transfer() {
-        // TODO: For this test to work we need to find a new address that has approved the contract
-        // for a token that takes a fee on transfer and still has balance nio that token.
+        // TODO: For this test to work we need to find a new address that has approved
+        // the contract for a token that takes a fee on transfer and still has
+        // balance nio that token.
 
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
@@ -347,7 +355,8 @@ mod tests {
         assert!(result >= U256::from(811));
 
         let call_result = fetcher.can_transfer_call(token, owner, 811.into()).await;
-        // The non trace method is less accurate and thinks the transfer is ok even though it isn't.
+        // The non trace method is less accurate and thinks the transfer is ok even
+        // though it isn't.
         assert!(call_result);
     }
 

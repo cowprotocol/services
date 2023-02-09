@@ -1,22 +1,23 @@
 //! Implementation of CIP-14 risk adjusted solver rewards as described in https://forum.cow.fi/t/cip-14-risk-adjusted-solver-rewards/1132 .
 //!
-//! Note slight differences in the formulas due conversion of units (gas, gas price, COW to ETH)
-//! that are glossed over in the CIP.
+//! Note slight differences in the formulas due conversion of units (gas, gas
+//! price, COW to ETH) that are glossed over in the CIP.
 //!
-//! This module uses argument structs in order to better document and differentiate many arguments
-//! of the type f64 where it would be easy to mix them up when calling the function.
+//! This module uses argument structs in order to better document and
+//! differentiate many arguments of the type f64 where it would be easy to mix
+//! them up when calling the function.
 
-use std::sync::Arc;
-
-use anyhow::{ensure, Context, Result};
-use database::orders::Quote;
-use futures::StreamExt;
-use gas_estimation::GasPriceEstimating;
-use model::order::{Order, OrderClass, OrderUid};
-use primitive_types::H160;
-use shared::price_estimation::native::NativePriceEstimating;
-
-use crate::database::Postgres;
+use {
+    crate::database::Postgres,
+    anyhow::{ensure, Context, Result},
+    database::orders::Quote,
+    futures::StreamExt,
+    gas_estimation::GasPriceEstimating,
+    model::order::{Order, OrderClass, OrderUid},
+    primitive_types::H160,
+    shared::price_estimation::native::NativePriceEstimating,
+    std::sync::Arc,
+};
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Configuration {
@@ -44,10 +45,11 @@ impl Calculator {
     ///
     /// An outer error indicates that no reward calculations were performed.
     ///
-    /// An inner error indicates that the reward for this order could not be calculated.
+    /// An inner error indicates that the reward for this order could not be
+    /// calculated.
     ///
-    /// The Ok-Vec has the same number of elements as the input orders-slice. Each element
-    /// corresponds to the order at the same index.
+    /// The Ok-Vec has the same number of elements as the input orders-slice.
+    /// Each element corresponds to the order at the same index.
     pub async fn calculate_many(&self, orders: &[Order]) -> Result<Vec<Result<f64>>> {
         if orders.is_empty() {
             return Ok(Vec::new());
@@ -172,7 +174,8 @@ fn uncapped_reward_eth_atoms(
 ) -> f64 {
     let cost = gas * gas_price;
     // The way https://github.com/cowprotocol/risk_adjusted_rewards calculates the parameters gas is
-    // expressed in thousandth and gas price in gwei so we need to adjust our atom based values.
+    // expressed in thousandth and gas price in gwei so we need to adjust our atom
+    // based values.
     let exponent = -beta - alpha1 * (gas / 1e3) - alpha2 * (gas_price / 1e9);
     let revert_probability = 1. / (1. + exponent.exp());
     (profit + cost) / (1. - revert_probability) - cost
@@ -180,9 +183,7 @@ fn uncapped_reward_eth_atoms(
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_relative_eq;
-
-    use super::*;
+    use {super::*, approx::assert_relative_eq};
 
     // realistic values
     const CONFIG: Configuration = Configuration {
@@ -208,8 +209,8 @@ mod tests {
         };
         assert_eq!(uncapped_reward_eth_atoms(args), 4.);
 
-        // Now we want on average 1 profit. Reward is only paid out on success so has to be doubled
-        // to account for 0.5 prob.
+        // Now we want on average 1 profit. Reward is only paid out on success so has to
+        // be doubled to account for 0.5 prob.
         let args = UncappedEthArgs {
             beta: 0.,
             alpha1: 0.,
@@ -238,14 +239,14 @@ mod tests {
         let reward = uncapped_reward_eth_atoms(args);
         assert_relative_eq!(reward, 3.66e14, max_relative = 0.01);
 
-        // Include the target COW reward. This is significantly more than the revert cost so the
-        // reward goes to ~0.00284 ETH.
+        // Include the target COW reward. This is significantly more than the revert
+        // cost so the reward goes to ~0.00284 ETH.
         args.profit = CONFIG.profit * COW_BASE * COW_PRICE_IN_ETH;
         let reward_eth = uncapped_reward_eth_atoms(args);
         assert_relative_eq!(reward_eth, 2.84e15, max_relative = 0.01);
 
-        // Same parameters but with conversion to COW. The equivalent COW amount to the previous ETH
-        // is 44.
+        // Same parameters but with conversion to COW. The equivalent COW amount to the
+        // previous ETH is 44.
         let args = CappedCowArgs {
             gas: args.gas,
             gas_price: args.gas_price,
@@ -279,8 +280,8 @@ mod tests {
             cow_price: 1e-12,
         };
         let r0 = capped_reward_cow(CONFIG, args).unwrap();
-        // Despite gas being below cap we hit the maximum reward and increasing gas doesn't increase
-        // reward.
+        // Despite gas being below cap we hit the maximum reward and increasing gas
+        // doesn't increase reward.
         assert!(args.gas < CONFIG.gas_cap);
         assert_eq!(r0, CONFIG.reward_cap);
         args.gas *= 100.;
@@ -291,7 +292,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        shared::tracing::initialize_for_tests("autopilot=trace");
+        shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new(&std::env::var("DB_URL").unwrap())
             .await
             .unwrap();

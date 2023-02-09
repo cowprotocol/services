@@ -1,11 +1,13 @@
-use crate::settlement::{Settlement, TradeExecution};
-use itertools::Itertools;
-use model::{
-    auction::Auction,
-    order::{Order, OrderKind, OrderUid},
+use {
+    crate::settlement::{Settlement, TradeExecution},
+    itertools::Itertools,
+    model::{
+        auction::Auction,
+        order::{Order, OrderKind, OrderUid},
+    },
+    number_conversions::u256_to_big_uint,
+    std::collections::{BTreeMap, HashMap, HashSet},
 };
-use number_conversions::u256_to_big_uint;
-use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 struct PartiallyFilledOrder {
@@ -29,22 +31,24 @@ impl PartiallyFilledOrder {
     }
 }
 
-/// After a settlement transaction we need to keep track of in flight orders until the api has
-/// seen the tx. Otherwise we would attempt to solve already matched orders again leading to
-/// failures.
+/// After a settlement transaction we need to keep track of in flight orders
+/// until the api has seen the tx. Otherwise we would attempt to solve already
+/// matched orders again leading to failures.
 #[derive(Default)]
 pub struct InFlightOrders {
     /// Maps block to orders settled in that block.
     in_flight: BTreeMap<u64, Vec<OrderUid>>,
-    /// Tracks in flight trades which use liquidity from partially fillable orders.
+    /// Tracks in flight trades which use liquidity from partially fillable
+    /// orders.
     in_flight_trades: HashMap<OrderUid, PartiallyFilledOrder>,
 }
 
 impl InFlightOrders {
-    /// Takes note of the new set of solvable orders and returns the ones that aren't in flight and
-    /// scales down partially fillable orders if there are currently orders in-flight tapping into
-    /// their executable amounts.
-    /// Returns the set of order uids that are considered in flight.
+    /// Takes note of the new set of solvable orders and returns the ones that
+    /// aren't in flight and scales down partially fillable orders if there
+    /// are currently orders in-flight tapping into their executable
+    /// amounts. Returns the set of order uids that are considered in
+    /// flight.
     pub fn update_and_filter(&mut self, auction: &mut Auction) -> HashSet<OrderUid> {
         // If api has seen block X then trades starting at X + 1 are still in flight.
         self.in_flight = self
@@ -69,8 +73,9 @@ impl InFlightOrders {
                     *order = trades.order_with_remaining_amounts();
                 }
             } else if in_flight.contains(uid) {
-                // fill-or-kill orders can only be used once and there is already a trade in flight
-                // for this one => Modify it such that it gets filtered out in the next step.
+                // fill-or-kill orders can only be used once and there is already a trade in
+                // flight for this one => Modify it such that it gets filtered
+                // out in the next step.
                 order.metadata.executed_buy_amount = u256_to_big_uint(&order.data.buy_amount);
                 order.metadata.executed_sell_amount_before_fees = order.data.sell_amount;
             }
@@ -87,8 +92,8 @@ impl InFlightOrders {
         in_flight
     }
 
-    /// Tracks all in_flight orders and how much of the executable amount of partially fillable
-    /// orders is currently used in in-flight trades.
+    /// Tracks all in_flight orders and how much of the executable amount of
+    /// partially fillable orders is currently used in in-flight trades.
     pub fn mark_settled_orders(&mut self, block: u64, settlement: &Settlement) {
         let uids = settlement.traded_orders().map(|order| order.metadata.uid);
         self.in_flight.entry(block).or_default().extend(uids);
@@ -112,11 +117,13 @@ impl InFlightOrders {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::{SettlementEncoder, Trade};
-    use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
-    use primitive_types::H160;
+    use {
+        super::*,
+        crate::settlement::{SettlementEncoder, Trade},
+        maplit::hashmap,
+        model::order::{Order, OrderData, OrderKind, OrderMetadata},
+        primitive_types::H160,
+    };
 
     #[test]
     fn test() {
@@ -209,8 +216,9 @@ mod tests {
         assert_eq!(filtered.len(), 2);
         // keep order 0 because there are no trades for it in flight
         assert_eq!(filtered[0].metadata.uid, OrderUid::from_integer(0));
-        // drop order 1 because it's fill-or-kill and there is already one trade in flight
-        // keep order 2 and reduce remaning executable amount by trade amounts currently in flight
+        // drop order 1 because it's fill-or-kill and there is already one trade in
+        // flight keep order 2 and reduce remaning executable amount by trade
+        // amounts currently in flight
         assert_eq!(filtered[1].metadata.uid, OrderUid::from_integer(3));
         assert_eq!(filtered[1].metadata.executed_buy_amount, 50u8.into());
         assert_eq!(filtered[1].metadata.executed_sell_amount, 50u8.into());
@@ -234,8 +242,9 @@ mod tests {
 
         auction.latest_settlement_block = 1;
         let filtered = update_and_get_filtered_orders(&auction);
-        // Because we drop all in-flight trades from blocks older than the settlement block there
-        // is nothing left to filter solvable orders by => keep all orders unaltered
+        // Because we drop all in-flight trades from blocks older than the settlement
+        // block there is nothing left to filter solvable orders by => keep all
+        // orders unaltered
         assert_eq!(filtered.len(), 4);
     }
 

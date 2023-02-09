@@ -1,13 +1,17 @@
-use crate::http_client::response_body_with_size_limit;
-use ::model::auction::AuctionId;
-use anyhow::{anyhow, Context};
-use reqwest::{
-    header::{self, HeaderValue},
-    Client, StatusCode, Url,
+use {
+    crate::http_client::response_body_with_size_limit,
+    ::model::auction::AuctionId,
+    anyhow::{anyhow, Context},
+    reqwest::{
+        header::{self, HeaderValue},
+        Client,
+        StatusCode,
+        Url,
+    },
+    serde_json::json,
+    std::time::Duration,
+    tracing::Instrument,
 };
-use serde_json::json;
-use std::time::Duration;
-use tracing::Instrument;
 
 pub mod gas_model;
 pub mod model;
@@ -33,7 +37,8 @@ pub trait HttpSolverApi: Send + Sync {
         timeout: Duration,
     ) -> Result<model::SettledBatchAuctionModel, Error>;
 
-    /// Callback to notify the solver how it performed in the given auction (if it won or failed for some reason)
+    /// Callback to notify the solver how it performed in the given auction (if
+    /// it won or failed for some reason)
     fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult);
 }
 
@@ -57,7 +62,8 @@ pub struct DefaultHttpSolverApi {
     /// Base solver url.
     pub base: Url,
 
-    /// An async HTTP client instance that will be used to interact with the solver.
+    /// An async HTTP client instance that will be used to interact with the
+    /// solver.
     pub client: Client,
 
     /// Other solver parameters.
@@ -106,7 +112,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     ) -> Result<model::SettledBatchAuctionModel, Error> {
         // The timeout we give to the solver is one second less than
         // the deadline to make up for overhead from the network.
-        // We use one second because the old MIP solver uses integer timeouts.
+        // We use one second because a now-deleted solver used integer timeouts.
         let solver_timeout = timeout
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
@@ -119,9 +125,9 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
-            // Use integer remaining seconds for the time limit as the MIP solver
-            // does not support fractional values here. Note that this means that
-            // we don't have much granularity with the time limit.
+            // We use integer remaining seconds for legacy reasons. Note that
+            // this means that we don't have much granularity with the time
+            // limit.
             .append_pair("time_limit", &solver_timeout.as_secs().to_string())
             .append_pair(
                 "max_nr_exec_orders",
@@ -240,9 +246,11 @@ impl DefaultHttpSolverApi {
 
 #[cfg(test)]
 mod tests {
-    use super::{model::SettledBatchAuctionModel, *};
-    use flate2::write::GzEncoder;
-    use tokio::{io::AsyncWriteExt, net::TcpListener};
+    use {
+        super::{model::SettledBatchAuctionModel, *},
+        flate2::write::GzEncoder,
+        tokio::{io::AsyncWriteExt, net::TcpListener},
+    };
 
     #[tokio::test]
     async fn supports_gzip() {
@@ -254,11 +262,7 @@ mod tests {
                 serde_json::to_writer(&mut encoder, &SettledBatchAuctionModel::default()).unwrap();
                 let body = encoder.finish().unwrap();
                 let response = "\
-HTTP/1.1 200 OK\r\n\
-Content-Type: application/json\r\n\
-Content-Encoding: gzip\r\n\
-\r\n\
-                ";
+HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\r\n";
                 stream.write_all(response.as_bytes()).await.unwrap();
                 stream.write_all(&body).await.unwrap();
                 stream.shutdown().await.unwrap();
@@ -274,7 +278,8 @@ Content-Encoding: gzip\r\n\
             client: Default::default(),
             config: Default::default(),
         };
-        // The default reqwest::Client supports gzip responses if the corresponding crate feature is enabled.
+        // The default reqwest::Client supports gzip responses if the corresponding
+        // crate feature is enabled.
         api.solve(&Default::default(), Duration::from_secs(1))
             .await
             .unwrap();

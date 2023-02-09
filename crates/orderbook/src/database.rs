@@ -4,12 +4,11 @@ pub mod quotes;
 pub mod solver_competition;
 pub mod trades;
 
-use anyhow::Result;
-use sqlx::PgPool;
+use {anyhow::Result, sqlx::PgPool};
 
-// TODO: There is remaining optimization potential by implementing sqlx encoding and decoding for
-// U256 directly instead of going through BigDecimal. This is not very important as this is fast
-// enough anyway.
+// TODO: There is remaining optimization potential by implementing sqlx encoding
+// and decoding for U256 directly instead of going through BigDecimal. This is
+// not very important as this is fast enough anyway.
 
 // The pool uses an Arc internally.
 #[derive(Clone)]
@@ -17,7 +16,8 @@ pub struct Postgres {
     pub pool: PgPool,
 }
 
-// The implementation is split up into several modules which contain more public methods.
+// The implementation is split up into several modules which contain more public
+// methods.
 
 impl Postgres {
     pub fn new(uri: &str) -> Result<Self> {

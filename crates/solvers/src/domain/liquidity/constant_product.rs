@@ -1,7 +1,6 @@
 //! Constant product pool.
 
-use crate::domain::eth;
-use std::cmp::Ordering;
+use {crate::domain::eth, std::cmp::Ordering};
 
 /// Uniswap-v2 like pool state.
 #[derive(Clone, Debug)]
