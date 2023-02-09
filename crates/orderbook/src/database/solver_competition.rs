@@ -120,6 +120,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "asdf".to_string(),
+                    solver_address: H160([1; 20]),
                     objective: Default::default(),
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![Default::default()],
