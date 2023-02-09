@@ -28,7 +28,7 @@ impl SolverEngine {
                 "/test/solvers/path".to_owned(),
                 "--addr".to_owned(),
                 "0.0.0.0:0".to_owned(),
-                "--config".to_owned(),
+                "--config-path".to_owned(),
                 config,
                 command,
             ]

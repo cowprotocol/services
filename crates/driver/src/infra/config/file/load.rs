@@ -12,12 +12,21 @@ use {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> infra::Config {
+pub async fn load_path(path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config: file::Config = toml::de::from_str(&data)
-        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+    load_string(&data)
+}
+
+/// Load the driver configuration from a string
+///
+/// # Panics
+///
+/// This method panics if the config is invalid.
+pub fn load_string(string: &str) -> infra::Config {
+    let config: file::Config =
+        toml::de::from_str(string).unwrap_or_else(|e| panic!("TOML syntax error: {e:?}"));
     infra::Config {
         solvers: config
             .solvers

@@ -24,6 +24,11 @@ pub struct Args {
     /// Path to the driver configuration file. This file should be in TOML
     /// format. For an example see
     /// https://github.com/cowprotocol/services/blob/main/crates/driver/example.toml.
-    #[clap(long, env)]
-    pub config: PathBuf,
+    #[clap(long, env, conflicts_with = "config_string")]
+    pub config_path: Option<PathBuf>,
+
+    /// Like `config` but reads the configuration directly from the argument
+    /// instead of a file.
+    #[clap(long, env, conflicts_with = "config_path")]
+    pub config_string: Option<String>,
 }

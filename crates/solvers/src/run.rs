@@ -18,7 +18,12 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
     // TODO In the future, should use different load methods based on the command
     // being executed
     let cli::Command::Baseline = args.command;
-    let baseline = config::baseline::file::load(&args.config).await;
+    let baseline = match (&args.config_string, &args.config_path) {
+        (Some(string), None) => config::baseline::file::load_string(string),
+        (None, Some(path)) => config::baseline::file::load_path(path).await,
+        (None, None) => panic!("specify --config-string or --config-path"),
+        (Some(_), Some(_)) => unreachable!(),
+    };
     let contracts = contracts::Contracts::new(
         baseline.chain_id,
         contracts::Addresses {

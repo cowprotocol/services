@@ -7,7 +7,7 @@ use {
 
 mod load;
 
-pub use load::load;
+pub use load::{load_path, load_string};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

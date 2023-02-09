@@ -132,7 +132,7 @@ pub async fn setup(config: Config<'_>) -> Client {
         "0.0.0.0:0".to_owned(),
         "--ethrpc".to_owned(),
         config.geth.url(),
-        "--config".to_owned(),
+        "--config-path".to_owned(),
         config_file.0.clone(),
         "--log".to_owned(),
         "error,web3=warn,hyper=warn,driver::infra::solver=error".to_owned(),

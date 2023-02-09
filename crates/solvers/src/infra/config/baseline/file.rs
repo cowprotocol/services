@@ -32,12 +32,21 @@ struct Config {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> super::BaselineConfig {
+pub async fn load_path(path: &Path) -> super::BaselineConfig {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config: Config = toml::de::from_str(&data)
-        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+    load_string(&data)
+}
+
+/// Load the driver configuration from a TOML string.
+///
+/// # Panics
+///
+/// This method panics if the config is invalid.
+pub fn load_string(string: &str) -> super::BaselineConfig {
+    let config: Config =
+        toml::de::from_str(string).unwrap_or_else(|e| panic!("TOML syntax error in config: {e:?}"));
     super::BaselineConfig {
         chain_id: config.chain_id,
         weth: config.weth.map(eth::WethAddress),

@@ -37,7 +37,12 @@ pub async fn run(
 ) {
     let args = cli::Args::parse_from(args);
     boundary::initialize_tracing(&args.log);
-    let config = config::file::load(&args.config).await;
+    let config = match (&args.config_string, &args.config_path) {
+        (Some(string), None) => config::file::load_string(string),
+        (None, Some(path)) => config::file::load_path(path).await,
+        (None, None) => panic!("specify --config-string or --config-path"),
+        (Some(_), Some(_)) => unreachable!(),
+    };
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, &args).await;
