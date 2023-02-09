@@ -10,7 +10,7 @@ mod load;
 pub use load::load;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
@@ -36,7 +36,7 @@ struct Config {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation. Expects a floating point
@@ -142,7 +142,7 @@ struct SolverConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
     pub gp_v2_settlement: Option<eth::H160>,
@@ -152,7 +152,7 @@ pub struct ContractsConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct TenderlyConfig {
     /// Optionally override the Tenderly API URL.
     url: Option<Url>,
@@ -175,7 +175,7 @@ struct TenderlyConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
@@ -196,7 +196,7 @@ struct LiquidityConfig {
 // preset = "sushiswap"
 // ```
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct UniswapV2Config {
     /// The address of the Uniswap V2 compatible router contract.
     router: eth::H160,

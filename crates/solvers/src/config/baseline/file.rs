@@ -1,7 +1,7 @@
 use {crate::domain::eth, serde::Deserialize, std::path::Path, tokio::fs};
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The address of the WETH contract.
     pub weth: eth::H160,
