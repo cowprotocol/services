@@ -6,23 +6,25 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     serde_with::serde_as,
-    std::{collections::HashMap, str::FromStr},
+    std::collections::HashMap,
 };
 
 impl Auction {
     pub fn into_domain(self) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
-            id: Some(FromStr::from_str(&self.id).map_err(|_| Error::InvalidAuctionId)?),
+            id: Some((self.id as u64).into()),
             tokens: self
-                .tokens
+                .prices
                 .into_iter()
-                .map(|(address, token)| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
-                    address: address.into(),
-                    price: token.reference_price.map(Into::into),
-                    available_balance: token.available_balance,
-                    trusted: token.trusted,
+                // TODO: Populate currently hardcoded fields.
+                .map(|(key, value)| competition::auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: key.into(),
+                    price: Some(value.into()),
+                    available_balance: 0.into(),
+                    // TODO: Does autopilot communicate this to drivers?
+                    trusted: false,
                 })
                 .collect(),
             orders: self
@@ -68,7 +70,7 @@ impl Auction {
                             competition::order::Partial::No
                         },
                         interactions: order
-                            .interactions
+                            .pre_interactions
                             .into_iter()
                             .map(|interaction| eth::Interaction {
                                 target: interaction.target.into(),
@@ -113,7 +115,8 @@ impl Auction {
                     })
                 })
                 .try_collect()?,
-            gas_price: self.effective_gas_price.into(),
+            // TODO: Populate hardcoded value.
+            gas_price: eth::U256::from(0).into(),
             deadline: self.deadline.into(),
         })
     }
@@ -131,11 +134,9 @@ pub enum Error {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    id: String,
-    tokens: HashMap<eth::H160, Token>,
+    id: i64,
+    prices: HashMap<eth::H160, eth::U256>,
     orders: Vec<Order>,
-    #[serde_as(as = "serialize::U256")]
-    effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
@@ -163,7 +164,7 @@ struct Order {
     /// Always zero if the order is not partially fillable.
     #[serde_as(as = "serialize::U256")]
     executed: eth::U256,
-    interactions: Vec<Interaction>,
+    pre_interactions: Vec<Interaction>,
     #[serde(default)]
     sell_token_balance: SellTokenBalance,
     #[serde(default)]
@@ -229,17 +230,4 @@ enum Class {
     Market,
     Limit,
     Liquidity,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Token {
-    decimals: Option<u8>,
-    symbol: Option<String>,
-    #[serde_as(as = "Option<serialize::U256>")]
-    reference_price: Option<eth::U256>,
-    #[serde_as(as = "serialize::U256")]
-    available_balance: eth::U256,
-    trusted: bool,
 }
