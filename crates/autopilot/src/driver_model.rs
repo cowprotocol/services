@@ -8,7 +8,7 @@ pub mod quote {
         serde::{Deserialize, Serialize},
     };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         pub sell_token: H160,
@@ -18,7 +18,7 @@ pub mod quote {
         pub amount: U256,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Kind {
         #[default]
@@ -26,8 +26,8 @@ pub mod quote {
         Sell,
     }
 
-    #[derive(Clone, Debug, Deserialize, Serialize)]
-    #[serde(untagged, rename_all = "camelCase")]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
     pub enum Response {
         Successful {
             #[serde(with = "u256_decimal")]
@@ -51,14 +51,14 @@ pub mod solve {
         std::collections::BTreeMap,
     };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     pub struct Request {
         pub auction: Auction,
         pub deadline: DateTime<Utc>,
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     pub struct Auction {
         pub id: i64,
         pub block: u64,
@@ -67,12 +67,13 @@ pub mod solve {
         pub prices: BTreeMap<H160, U256>,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     pub struct Order {
         // TODO: what fields? Needs to be documented in openapi too.
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub struct Response {
         pub objective: f64,
         pub signature: String,
@@ -89,7 +90,7 @@ pub mod execute {
         std::collections::BTreeMap,
     };
 
-    #[derive(Clone, Derivative, Default, Deserialize, Serialize)]
+    #[derive(Clone, Derivative, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     #[derivative(Debug)]
     pub struct Request {
@@ -100,8 +101,8 @@ pub mod execute {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "camelCase")]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub account: H160,
         pub nonce: u64,
@@ -114,8 +115,8 @@ pub mod execute {
         pub signature: String,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "camelCase")]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Trade {
         pub uid: OrderUid,
         #[serde(with = "u256_decimal")]
@@ -123,7 +124,8 @@ pub mod execute {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct InternalizedInteraction {
         #[serde(with = "bytes_hex")]
         pub calldata: Vec<u8>,

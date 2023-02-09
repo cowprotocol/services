@@ -55,6 +55,7 @@ impl Solution {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<H160, U256>,
@@ -81,6 +82,7 @@ struct Fulfillment {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JitTrade {
     order: JitOrder,
     #[serde_as(as = "serialize::U256")]
@@ -89,6 +91,7 @@ struct JitTrade {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JitOrder {
     sell_token: H160,
     buy_token: H160,
@@ -156,6 +159,7 @@ struct CustomInteraction {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Asset {
     token: H160,
     #[serde_as(as = "serialize::U256")]
@@ -164,6 +168,7 @@ struct Asset {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Allowance {
     token: H160,
     spender: H160,
