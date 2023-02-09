@@ -136,9 +136,6 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
-    /// The address of this solver. Expects a 20-byte hex encoded string.
-    address: eth::H160,
-
     /// The private key used to sign transactions. Expects a 32-byte hex encoded
     /// string.
     private_key: eth::H256,
