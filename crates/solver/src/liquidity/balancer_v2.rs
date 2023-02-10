@@ -416,7 +416,7 @@ mod tests {
             &handler,
             AmmOrderExecution {
                 input_max: TokenAmount::new(H160([0x70; 20]), 10),
-                output: TokenAmount::new(H160([0x71; 20]), 1),
+                output: TokenAmount::new(H160([0x71; 20]), 11),
                 internalizable: false,
             },
             &mut encoder,
