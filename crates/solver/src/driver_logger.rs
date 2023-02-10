@@ -16,7 +16,7 @@ use {
     gas_estimation::GasPrice1559,
     itertools::Itertools,
     model::order::{Order, OrderKind},
-    num::{BigRational, ToPrimitive},
+    num::ToPrimitive,
     primitive_types::H256,
     shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
     std::sync::Arc,
@@ -215,7 +215,6 @@ impl DriverLogger {
 
     pub fn print_settlements(
         rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-        fee_objective_scaling_factor: &BigRational,
     ) {
         let mut text = String::new();
         for (solver, settlement, access_list) in rated_settlements {
@@ -223,7 +222,7 @@ impl DriverLogger {
             write!(
                 text,
                 "\nid={} solver={} objective={:.2e} surplus={:.2e} gas_estimate={:.2e} \
-                 gas_price={:.2e} unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
+                 gas_price={:.2e} scaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
                  access_list_addreses={}",
                 settlement.id,
                 solver.name(),
@@ -231,7 +230,8 @@ impl DriverLogger {
                 settlement.surplus.to_f64().unwrap_or(f64::NAN),
                 settlement.gas_estimate.to_f64_lossy(),
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
+                &settlement
+                    .scaled_unsubsidized_fee
                     .to_f64()
                     .unwrap_or(f64::NAN),
                 settlement
@@ -271,7 +271,7 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::solver::dummy_arc_solver};
+    use {super::*, crate::solver::dummy_arc_solver, num::BigRational};
 
     #[test]
     #[ignore]
@@ -308,6 +308,6 @@ mod tests {
         ];
 
         shared::tracing::initialize_reentrant("INFO");
-        DriverLogger::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
+        DriverLogger::print_settlements(&a);
     }
 }

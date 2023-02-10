@@ -276,13 +276,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub disable_high_risk_public_mempool_transactions: bool,
 
-    /// Fee scaling factor for objective value. This controls the constant
-    /// factor by which order fees are multiplied with. Setting this to a value
-    /// greater than 1.0 makes settlements with negative objective values less
-    /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
-    pub fee_objective_scaling_factor: f64,
-
     /// The maximum number of settlements the driver considers per solver.
     #[clap(long, env, default_value = "20")]
     pub max_settlements_per_solver: usize,
@@ -422,11 +415,6 @@ impl std::fmt::Display for Arguments {
             f,
             "disable_high_risk_public_mempool_transactions: {}",
             self.disable_high_risk_public_mempool_transactions,
-        )?;
-        writeln!(
-            f,
-            "fee_objective_scaling_factor: {}",
-            self.fee_objective_scaling_factor
         )?;
         writeln!(
             f,

@@ -233,7 +233,6 @@ async fn main() -> ! {
 
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token_contract.clone(),
-        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
         min_order_age: args.min_order_age,
     });
 
@@ -488,7 +487,6 @@ async fn main() -> ! {
         api,
         order_converter,
         args.simulation_gas_limit,
-        args.fee_objective_scaling_factor,
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),

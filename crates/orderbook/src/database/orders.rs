@@ -398,6 +398,8 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .context("full_fee_amount is not U256")?,
+        scaled_unsubsidized_fee: big_decimal_to_u256(&order.full_fee_amount)
+            .context("full_fee_amount is not U256")?,
         ethflow_data,
         onchain_user,
         onchain_order_data,

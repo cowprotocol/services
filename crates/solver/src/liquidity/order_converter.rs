@@ -10,7 +10,6 @@ use {
 
 pub struct OrderConverter {
     pub native_token: WETH9,
-    pub fee_objective_scaling_factor: f64,
     pub min_order_age: Duration,
 }
 
@@ -21,7 +20,6 @@ impl OrderConverter {
     pub fn test(native_token: ethcontract::H160) -> Self {
         Self {
             native_token: shared::dummy_contract!(WETH9, native_token),
-            fee_objective_scaling_factor: 1.,
             min_order_age: Duration::from_secs(30),
         }
     }
@@ -39,21 +37,16 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let scaled_fee_amount = U256::from_f64_lossy(
-            remaining
-                .remaining(order.metadata.full_fee_amount)?
-                .to_f64_lossy()
-                * self.fee_objective_scaling_factor,
-        );
+        let scaled_fee_amount = remaining.remaining(order.metadata.scaled_unsubsidized_fee)?;
         let is_mature = order.metadata.creation_date
             + chrono::Duration::from_std(self.min_order_age).unwrap()
             <= chrono::offset::Utc::now();
 
-        let (sell_amount, fee_amount) = match &order.metadata.class {
+        let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) => {
                 compute_synthetic_order_amounts_for_limit_order(&order, limit)?
             }
-            _ => (order.data.sell_amount, order.data.fee_amount),
+            _ => order.data.sell_amount,
         };
 
         let id = match order.metadata.class {
@@ -71,7 +64,6 @@ impl OrderConverter {
             buy_amount: remaining.remaining(order.data.buy_amount)?,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            unscaled_subsidized_fee: remaining.remaining(fee_amount)?,
             scaled_unsubsidized_fee: scaled_fee_amount,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
@@ -92,12 +84,11 @@ struct OrderSettlementHandler {
     scaled_unsubsidized_fee_amount: U256,
 }
 
-/// Returns (`sell_amount`, `fee_amount`) for the given order and adjusts the
-/// values accordingly for limit orders.
+/// Returns the `sell_amount` adjusted for limit orders.
 fn compute_synthetic_order_amounts_for_limit_order(
     order: &Order,
     limit: &LimitOrderClass,
-) -> Result<(U256, U256)> {
+) -> Result<U256> {
     anyhow::ensure!(
         order.metadata.class.is_limit(),
         "this function should only be called for limit orders"
@@ -107,14 +98,14 @@ fn compute_synthetic_order_amounts_for_limit_order(
     let surplus_fee = limit
         .surplus_fee
         .context("solvable order without surplus fee")?;
-    let sell_amount = order
+
+    order
         .data
         .sell_amount
         .checked_add(order.data.fee_amount)
         .context("surplus_fee adjustment would overflow sell_amount")?
         .checked_sub(surplus_fee)
-        .context("surplus_fee adjustment would underflow sell_amount")?;
-    Ok((sell_amount, surplus_fee))
+        .context("surplus_fee adjustment would underflow sell_amount")
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -189,50 +180,6 @@ pub mod tests {
         assert_eq!(
             converter.normalize_limit_order(order).unwrap().buy_token,
             buy_token
-        );
-    }
-
-    #[test]
-    fn applies_objective_scaling_factor() {
-        let converter = OrderConverter {
-            fee_objective_scaling_factor: 1.5,
-            ..OrderConverter::test(H160::default())
-        };
-
-        assert_eq!(
-            converter
-                .normalize_limit_order(Order {
-                    data: OrderData {
-                        fee_amount: 10.into(),
-                        ..Default::default()
-                    },
-                    metadata: OrderMetadata {
-                        full_fee_amount: 20.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .unwrap()
-                .scaled_unsubsidized_fee,
-            30.into(),
-        );
-
-        assert_eq!(
-            converter
-                .normalize_limit_order(Order {
-                    data: OrderData {
-                        fee_amount: 10.into(),
-                        ..Default::default()
-                    },
-                    metadata: OrderMetadata {
-                        full_fee_amount: 50.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .unwrap()
-                .scaled_unsubsidized_fee,
-            75.into(),
         );
     }
 
@@ -388,10 +335,7 @@ pub mod tests {
 
     #[test]
     fn scales_limit_order_amounts_for_partially_filled_orders() {
-        let converter = OrderConverter {
-            fee_objective_scaling_factor: 1.5,
-            ..OrderConverter::test(H160::default())
-        };
+        let converter = OrderConverter::test(H160::default());
         let order = converter
             .normalize_limit_order(Order {
                 data: OrderData {
@@ -404,7 +348,7 @@ pub mod tests {
                 },
                 metadata: OrderMetadata {
                     executed_sell_amount_before_fees: 5.into(),
-                    full_fee_amount: 40.into(),
+                    scaled_unsubsidized_fee: 200.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -413,8 +357,7 @@ pub mod tests {
 
         assert_eq!(order.sell_amount, 5.into());
         assert_eq!(order.buy_amount, 10.into());
-        assert_eq!(order.unscaled_subsidized_fee, 15.into());
-        assert_eq!(order.scaled_unsubsidized_fee, 30.into());
+        assert_eq!(order.scaled_unsubsidized_fee, 100.into());
     }
 
     #[test]
@@ -425,12 +368,14 @@ pub mod tests {
             .with_sell_amount(1_000.into())
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())
+            .with_scaled_unsubsidized_fee(200.into())
             .build();
         let solver_order = converter.normalize_limit_order(order).unwrap();
 
         // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
         assert_eq!(solver_order.sell_amount, 1_100.into());
-        // simply the `surplus_fee`
-        assert_eq!(solver_order.unscaled_subsidized_fee, 100.into());
+        // it's the `autopilot`'s responsibility to prepare this value for us so we
+        // don't touch it
+        assert_eq!(solver_order.scaled_unsubsidized_fee, 200.into());
     }
 }

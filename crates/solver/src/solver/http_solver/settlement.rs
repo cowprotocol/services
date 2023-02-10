@@ -294,10 +294,8 @@ fn convert_foreign_liquidity_orders(
                     class: OrderClass::Liquidity,
                     // Not needed for encoding but nice to have for logs and competition info.
                     uid: liquidity.order.data.uid(domain, &liquidity.order.from),
-                    // These fields do not seem to be used at all for order
+                    // These remaining fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
-                    settlement_contract: Default::default(),
-                    // For other metdata fields, the default value is correct.
                     ..Default::default()
                 },
                 data: liquidity.order.data,
@@ -692,7 +690,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    scaled_unsubsidized_fee: 42.into(),
+                    scaled_unsubsidized_fee: 0.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),

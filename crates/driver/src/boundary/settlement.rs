@@ -56,8 +56,6 @@ impl Settlement {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
-            // Fee is already scaled by the autopilot, so this can be set to exactly 1.
-            fee_objective_scaling_factor: 1.,
             min_order_age: Default::default(),
         };
 
@@ -220,7 +218,8 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             },
         },
         metadata: OrderMetadata {
-            full_fee_amount: order.fee.solver.into(),
+            full_fee_amount: Default::default(),
+            scaled_unsubsidized_fee: order.fee.solver.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,

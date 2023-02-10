@@ -10,7 +10,8 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number_conversions::u256_to_big_decimal,
+    num::{BigRational, FromPrimitive},
+    number_conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntGauge, IntGaugeVec},
     shared::{
@@ -76,6 +77,7 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
+    fee_objective_scaling_factor: BigRational,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -111,6 +113,7 @@ impl SolvableOrdersCache {
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
+        fee_objective_scaling_factor: f64,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -136,6 +139,8 @@ impl SolvableOrdersCache {
             surplus_fee_age,
             limit_order_price_factor,
             store_in_db,
+            fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
+                .unwrap(),
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -226,6 +231,9 @@ impl SolvableOrdersCache {
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         counter.checkpoint("out_of_market", &orders);
 
+        let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
+        counter.checkpoint("fee_scaling_overflow", &orders);
+
         let rewards = if let Some(calculator) = &self.reward_calculator {
             let rewards = calculator
                 .calculate_many(&orders)
@@ -281,6 +289,27 @@ impl SolvableOrdersCache {
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
     }
+}
+
+/// Applies fee objective scaling and discard all orders where an overflow
+/// occurred.
+fn apply_fee_objective_scaling_factor(
+    mut orders: Vec<Order>,
+    scaling_factor: &BigRational,
+) -> Vec<Order> {
+    orders.retain_mut(|order| {
+        let fee = u256_to_big_rational(&order.metadata.scaled_unsubsidized_fee);
+        let scaled_fee = fee * scaling_factor;
+        let scaled_fee = match big_rational_to_u256(&scaled_fee) {
+            Ok(fee) => fee,
+            Err(_) => return false,
+        };
+
+        order.metadata.scaled_unsubsidized_fee = scaled_fee;
+        true
+    });
+
+    orders
 }
 
 /// Filters all orders whose owners are in the set of "banned" users.
@@ -1253,6 +1282,27 @@ mod tests {
         assert_eq!(
             filter_mispriced_limit_orders(orders, &prices, &price_factor),
             valid_orders,
+        );
+    }
+
+    #[test]
+    fn applies_fee_scaling() {
+        let order = |scaled_unsubsidized_fee: U256| Order {
+            metadata: OrderMetadata {
+                scaled_unsubsidized_fee,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let orders = vec![order(100.into()), order(U256::MAX)];
+        let scaling_factor = BigRational::from_f64(2.).unwrap();
+        let updated_orders = apply_fee_objective_scaling_factor(orders, &scaling_factor);
+        // Second order gets filtered out because the scaled fee would overflow `U256`.
+        assert_eq!(updated_orders.len(), 1);
+        assert_eq!(
+            updated_orders[0].metadata.scaled_unsubsidized_fee,
+            200.into()
         );
     }
 }

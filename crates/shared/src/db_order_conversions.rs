@@ -54,6 +54,14 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
+    let full_fee_amount =
+        big_decimal_to_u256(&order.full_fee_amount).context("full_fee_amount is not U256")?;
+    let scaled_unsubsidized_fee = match &class {
+        OrderClass::Limit(limit) => limit.surplus_fee.context("missing surplus_fee")?,
+        OrderClass::Market => full_fee_amount,
+        OrderClass::Liquidity => full_fee_amount,
+    };
+
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -77,8 +85,8 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .context("full_fee_amount is not U256")?,
+        full_fee_amount,
+        scaled_unsubsidized_fee,
         ethflow_data,
         onchain_user,
         onchain_order_data,

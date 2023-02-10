@@ -565,7 +565,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    full_fee_amount: fee,
+                    scaled_unsubsidized_fee: fee,
                     ..Default::default()
                 },
                 ..Default::default()

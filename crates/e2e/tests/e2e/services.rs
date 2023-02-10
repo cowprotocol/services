@@ -92,7 +92,6 @@ pub fn create_orderbook_api() -> OrderBookApi {
 pub fn create_order_converter(web3: &Web3, weth_address: H160) -> Arc<OrderConverter> {
     Arc::new(OrderConverter {
         native_token: WETH9::at(web3, weth_address),
-        fee_objective_scaling_factor: 1.,
         min_order_age: Duration::from_secs(0),
     })
 }
@@ -202,6 +201,7 @@ impl OrderbookServices {
             Duration::from_secs(5),
             Default::default(),
             true,
+            1.0,
         );
         LimitOrderQuoter {
             limit_order_age: chrono::Duration::seconds(15),
@@ -361,7 +361,6 @@ pub async fn setup_naive_solver_uniswapv2_driver(
         create_orderbook_api(),
         create_order_converter(web3, contracts.weth.address()),
         15000000u128,
-        1.0,
         None,
         None.into(),
         None,

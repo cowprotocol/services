@@ -34,7 +34,7 @@ use {
         },
         TokenPair,
     },
-    num::{rational::Ratio, BigInt, BigRational, ToPrimitive},
+    num::{rational::Ratio, BigInt, ToPrimitive},
     primitive_types::{H160, U256},
     shared::{
         code_fetching::CodeFetching,
@@ -67,7 +67,6 @@ pub struct Driver {
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
     web3: Web3,
@@ -92,7 +91,6 @@ impl Driver {
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
         simulation_gas_limit: u128,
-        fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
@@ -138,8 +136,6 @@ impl Driver {
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
-                .unwrap(),
             settlement_ranker,
             logger,
             web3,
@@ -330,7 +326,7 @@ impl Driver {
         // blocks but this is a good approximation.
         let block_during_simulation = self.block_stream.borrow().number;
 
-        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements);
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetitionDB {

@@ -172,17 +172,13 @@ pub struct LimitOrder {
     pub id: LimitOrderId,
     pub sell_token: H160,
     pub buy_token: H160,
+    /// The amount that can be sold to acquire the required `buy_token`.
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub unscaled_subsidized_fee: U256,
-    /// The scaled fee amount that the protocol pretends it is receiving.
-    ///
-    /// This is different than the actual signed fee in that it
-    /// does not have any subsidies applied and may be scaled by a constant
-    /// factor to make matching orders more valuable from an objective value
-    /// perspective.
+    /// The fee that should be used for objective value computations.
+    /// Takes partiall fill into account.
     pub scaled_unsubsidized_fee: U256,
     /// Indicator if the order is mature at the creation of the Auction.
     /// Relevant to user orders.
@@ -244,7 +240,6 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            unscaled_subsidized_fee: Default::default(),
             scaled_unsubsidized_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_mature: false,
