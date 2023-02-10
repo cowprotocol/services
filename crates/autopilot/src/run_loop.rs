@@ -15,7 +15,7 @@ use {
         ethrpc::Web3,
         event_handling::MAX_REORG_BLOCK_COUNT,
     },
-    std::{collections::HashSet, time::Duration},
+    std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
     web3::types::Transaction,
 };
@@ -23,12 +23,12 @@ use {
 const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
 
 pub struct RunLoop {
-    solvable_orders_cache: SolvableOrdersCache,
-    database: Postgres,
-    drivers: Vec<Driver>,
-    current_block: CurrentBlockStream,
-    web3: Web3,
-    network_block_interval: Duration,
+    pub solvable_orders_cache: Arc<SolvableOrdersCache>,
+    pub database: Postgres,
+    pub drivers: Vec<Driver>,
+    pub current_block: CurrentBlockStream,
+    pub web3: Web3,
+    pub network_block_interval: Duration,
 }
 
 impl RunLoop {
