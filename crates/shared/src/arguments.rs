@@ -438,9 +438,13 @@ impl Display for Arguments {
         display_option(
             f,
             "settlement_contract_address",
-            &self.settlement_contract_address,
+            &self.settlement_contract_address.map(|a| format!("{a:?}")),
         )?;
-        display_option(f, "native_token_address", &self.native_token_address)?;
+        display_option(
+            f,
+            "native_token_address",
+            &self.native_token_address.map(|a| format!("{a:?}")),
+        )?;
 
         Ok(())
     }
