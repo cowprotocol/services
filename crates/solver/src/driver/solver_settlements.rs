@@ -17,11 +17,11 @@ pub struct RatedSettlement {
     // Identifies a settlement during a run loop.
     pub id: usize,
     pub settlement: Settlement,
-    pub surplus: BigRational,                 // In wei.
-    pub unscaled_subsidized_fee: BigRational, // In wei.
-    pub scaled_unsubsidized_fee: BigRational, // In wei.
-    pub gas_estimate: U256,                   // In gas units.
-    pub gas_price: BigRational,               // In wei per gas unit.
+    pub surplus: BigRational,     // In wei.
+    pub earned_fees: BigRational, // In wei.
+    pub solver_fees: BigRational, // In wei.
+    pub gas_estimate: U256,       // In gas units.
+    pub gas_price: BigRational,   // In wei per gas unit.
     pub objective_value: BigRational,
 }
 

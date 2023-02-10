@@ -56,7 +56,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     });
     let full_fee_amount =
         big_decimal_to_u256(&order.full_fee_amount).context("full_fee_amount is not U256")?;
-    let scaled_unsubsidized_fee = match &class {
+    let solver_fee = match &class {
         OrderClass::Limit(limit) => limit.surplus_fee.context("missing surplus_fee")?,
         OrderClass::Market => full_fee_amount,
         OrderClass::Liquidity => full_fee_amount,
@@ -86,7 +86,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount,
-        scaled_unsubsidized_fee,
+        solver_fee,
         ethflow_data,
         onchain_user,
         onchain_order_data,

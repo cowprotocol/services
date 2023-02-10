@@ -37,7 +37,7 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let scaled_fee_amount = remaining.remaining(order.metadata.scaled_unsubsidized_fee)?;
+        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
         let is_mature = order.metadata.creation_date
             + chrono::Duration::from_std(self.min_order_age).unwrap()
             <= chrono::offset::Utc::now();
@@ -64,11 +64,11 @@ impl OrderConverter {
             buy_amount: remaining.remaining(order.data.buy_amount)?,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            scaled_unsubsidized_fee: scaled_fee_amount,
+            solver_fee,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token,
-                scaled_unsubsidized_fee_amount: scaled_fee_amount,
+                solver_fee,
             }),
             exchange: Exchange::GnosisProtocol,
             // TODO: It would be nicer to set this here too but we need #529 first.
@@ -81,7 +81,7 @@ impl OrderConverter {
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
-    scaled_unsubsidized_fee_amount: U256,
+    solver_fee: U256,
 }
 
 /// Returns the `sell_amount` adjusted for limit orders.
@@ -119,11 +119,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = encoder.add_trade(
-            self.order.clone(),
-            executed_amount,
-            self.scaled_unsubsidized_fee_amount,
-        )?;
+        let trade = encoder.add_trade(self.order.clone(), executed_amount, self.solver_fee)?;
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {
@@ -191,7 +187,7 @@ pub mod tests {
 
         let executed_amount = U256::from(1337);
         let executed_buy_amount = U256::from(2 * 1337);
-        let scaled_fee_amount = U256::from(1234);
+        let solver_fee = U256::from(1234);
 
         let prices = hashmap! {
             native_token.address() => U256::from(100),
@@ -212,7 +208,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token: native_token.clone(),
-            scaled_unsubsidized_fee_amount: scaled_fee_amount,
+            solver_fee,
         };
 
         assert_settlement_encoded_with(
@@ -228,7 +224,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, executed_amount, scaled_fee_amount)
+                    .add_trade(order, executed_amount, solver_fee)
                     .is_ok());
             },
         );
@@ -272,7 +268,7 @@ pub mod tests {
             let order_settlement_handler = OrderSettlementHandler {
                 order: order.clone(),
                 native_token: native_token.clone(),
-                scaled_unsubsidized_fee_amount: 0.into(),
+                solver_fee: 0.into(),
             };
 
             assert_settlement_encoded_with(
@@ -320,7 +316,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token,
-            scaled_unsubsidized_fee_amount: 0.into(),
+            solver_fee: 0.into(),
         };
 
         assert_settlement_encoded_with(
@@ -348,7 +344,7 @@ pub mod tests {
                 },
                 metadata: OrderMetadata {
                     executed_sell_amount_before_fees: 5.into(),
-                    scaled_unsubsidized_fee: 200.into(),
+                    solver_fee: 200.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -357,7 +353,7 @@ pub mod tests {
 
         assert_eq!(order.sell_amount, 5.into());
         assert_eq!(order.buy_amount, 10.into());
-        assert_eq!(order.scaled_unsubsidized_fee, 100.into());
+        assert_eq!(order.solver_fee, 100.into());
     }
 
     #[test]
@@ -368,7 +364,7 @@ pub mod tests {
             .with_sell_amount(1_000.into())
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())
-            .with_scaled_unsubsidized_fee(200.into())
+            .with_solver_fee(200.into())
             .build();
         let solver_order = converter.normalize_limit_order(order).unwrap();
 
@@ -376,6 +372,6 @@ pub mod tests {
         assert_eq!(solver_order.sell_amount, 1_100.into());
         // it's the `autopilot`'s responsibility to prepare this value for us so we
         // don't touch it
-        assert_eq!(solver_order.scaled_unsubsidized_fee, 200.into());
+        assert_eq!(solver_order.solver_fee, 200.into());
     }
 }

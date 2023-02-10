@@ -66,7 +66,7 @@ impl ZeroExLiquidity {
             buy_amount: record.metadata.remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
             partially_fillable: true,
-            scaled_unsubsidized_fee: U256::zero(),
+            solver_fee: U256::zero(),
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order: record.order,
                 zeroex: self.zeroex.clone(),

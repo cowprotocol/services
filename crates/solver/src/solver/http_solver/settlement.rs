@@ -690,7 +690,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    scaled_unsubsidized_fee: 0.into(),
+                    solver_fee: 0.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),

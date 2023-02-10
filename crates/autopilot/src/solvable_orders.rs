@@ -298,14 +298,14 @@ fn apply_fee_objective_scaling_factor(
     scaling_factor: &BigRational,
 ) -> Vec<Order> {
     orders.retain_mut(|order| {
-        let fee = u256_to_big_rational(&order.metadata.scaled_unsubsidized_fee);
+        let fee = u256_to_big_rational(&order.metadata.solver_fee);
         let scaled_fee = fee * scaling_factor;
         let scaled_fee = match big_rational_to_u256(&scaled_fee) {
             Ok(fee) => fee,
             Err(_) => return false,
         };
 
-        order.metadata.scaled_unsubsidized_fee = scaled_fee;
+        order.metadata.solver_fee = scaled_fee;
         true
     });
 
@@ -1287,9 +1287,9 @@ mod tests {
 
     #[test]
     fn applies_fee_scaling() {
-        let order = |scaled_unsubsidized_fee: U256| Order {
+        let order = |solver_fee: U256| Order {
             metadata: OrderMetadata {
-                scaled_unsubsidized_fee,
+                solver_fee,
                 ..Default::default()
             },
             ..Default::default()
@@ -1300,9 +1300,6 @@ mod tests {
         let updated_orders = apply_fee_objective_scaling_factor(orders, &scaling_factor);
         // Second order gets filtered out because the scaled fee would overflow `U256`.
         assert_eq!(updated_orders.len(), 1);
-        assert_eq!(
-            updated_orders[0].metadata.scaled_unsubsidized_fee,
-            200.into()
-        );
+        assert_eq!(updated_orders[0].metadata.solver_fee, 200.into());
     }
 }

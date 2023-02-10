@@ -179,7 +179,7 @@ pub struct LimitOrder {
     pub partially_fillable: bool,
     /// The fee that should be used for objective value computations.
     /// Takes partiall fill into account.
-    pub scaled_unsubsidized_fee: U256,
+    pub solver_fee: U256,
     /// Indicator if the order is mature at the creation of the Auction.
     /// Relevant to user orders.
     pub is_mature: bool,
@@ -240,7 +240,7 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            scaled_unsubsidized_fee: Default::default(),
+            solver_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_mature: false,
             id: Default::default(),

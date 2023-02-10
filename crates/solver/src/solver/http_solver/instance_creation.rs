@@ -248,7 +248,7 @@ fn order_models(
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
                     fee: TokenAmount {
-                        amount: order.scaled_unsubsidized_fee,
+                        amount: order.solver_fee,
                         token: order.sell_token,
                     },
                     cost,
