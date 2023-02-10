@@ -1,7 +1,7 @@
 -- Populated before settlement occurs on chain
 -- (after the submissions have been ranked)
 CREATE TABLE settlement_scores (
-  transaction_id bytea NOT NULL,
+  auction_id bigint PRIMARY KEY,
   winning_score numeric(78,0) NOT NULL,
   reference_score numeric(78,0) NOT NULL
 );
@@ -26,4 +26,11 @@ CREATE TABLE auction_prices (
   auction_id bigint NOT NULL,
   token bytea NOT NULL,
   price numeric(78,0) NOT NULL
+);
+
+CREATE TABLE auction_participants (
+ -- This refers to the auction_id (from `auctions`)
+ id bigint PRIMARY KEY,
+ -- All solvers who submitted a valid solution to the auction.
+ participants bytea[]
 );
