@@ -29,8 +29,8 @@ CREATE TABLE auction_prices (
 );
 
 CREATE TABLE auction_participants (
- -- This refers to the auction_id (from `auctions`)
- id bigint PRIMARY KEY,
+ -- This links to the `auctions` table
+ auction_id bigint PRIMARY KEY,
  -- All solvers who submitted a valid solution to the auction.
  participants bytea[]
 );
