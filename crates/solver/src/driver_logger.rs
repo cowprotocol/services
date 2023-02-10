@@ -222,8 +222,7 @@ impl DriverLogger {
             write!(
                 text,
                 "\nid={} solver={} objective={:.2e} surplus={:.2e} gas_estimate={:.2e} \
-                 gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} \
-                 access_list_addreses={}",
+                 gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} access_list_addresses={}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
@@ -231,10 +230,7 @@ impl DriverLogger {
                 settlement.gas_estimate.to_f64_lossy(),
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                 &settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
-                settlement
-                    .earned_fees
-                    .to_f64()
-                    .unwrap_or(f64::NAN),
+                settlement.earned_fees.to_f64().unwrap_or(f64::NAN),
                 access_list.clone().unwrap_or_default().len()
             )
             .unwrap();

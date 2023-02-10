@@ -258,8 +258,11 @@ pub struct OrderData {
     pub buy_amount: U256,
     pub valid_to: u32,
     pub app_data: AppId,
-    /// Fees that will be taken in terms of `sell_token`. This is 0 for limit
-    /// and liquidity orders or `OrderMetadata::full_fee_amount` modulo possible
+    /// Fees that will be taken in terms of `sell_token`.
+    /// This is 0 for liquidity orders as they should only ever be used to
+    /// improve the price of a regular order and should not be settled on
+    /// their own. This is 0 for limit orders as their fee gets taken from
+    /// the surplus. This `OrderMetadata::full_fee_amount` modulo possible
     /// subsidies for market orders.
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
@@ -593,10 +596,11 @@ pub struct OrderMetadata {
     #[serde(flatten)]
     pub class: OrderClass,
     pub settlement_contract: H160,
-    /// This is 0 for liquidity orders or for market/limit orders it's the
-    /// gas used of the best trade execution we could find while quoting
-    /// converted to an equivalent `sell_token` amount.
-    /// Does not take partial fill into account.
+    /// This is 0 for liquidity orders as they should only ever be used to
+    /// improve the price for a regular order.
+    /// For market/limit orders it's the gas used of the best trade execution we
+    /// could find while quoting converted to an equivalent `sell_token`
+    /// amount. Does not take partial fill into account.
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
     /// The fee amount that should be used for objective value computations.
