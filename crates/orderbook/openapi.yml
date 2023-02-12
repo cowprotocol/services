@@ -718,9 +718,6 @@ components:
         EIP-712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
       type: object
       properties:
-        from:
-          description: "Owner address"
-          $ref: "#/components/schemas/Address"
         signature:
           description: "OrderCancellation signed by owner"
           $ref: "#/components/schemas/EcdsaSignature"
