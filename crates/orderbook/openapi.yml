@@ -437,9 +437,14 @@ components:
            Note that for ethflow orders, the valid_to encoded in the smart
            contract is max(uint)
           type: integer
+        isRefunded:
+          description: |
+           Is ETH refunded
+          type: boolean
       required:
         - refundTxHash
         - userValidTo
+        - isRefunded
     FeeInformation:
       description: |
         Provides the information to calculate the fees.
@@ -626,6 +631,10 @@ components:
             For ethflow orders - order that are placed onchain with native eth -, this field
             contains a struct with two variables user_valid_to and is_refunded
           $ref: "#/components/schemas/EthflowData"
+        onchainUser:
+          description: |
+            TODO: smth related to ETH flow
+          $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
             There is some data only available for orders that are placed onchain. This data
