@@ -379,6 +379,7 @@ components:
   schemas:
     TransactionHash:
       description: 32 byte digest encoded as a hex with `0x` prefix.
+      type: string
       example: "0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5"
     Address:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
@@ -386,6 +387,7 @@ components:
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
     AppData:
       description: 32 bytes encoded as hex with `0x` prefix.
+      type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
     BigUint:
       description: A big unsigned integer encoded in decimal.
@@ -459,6 +461,10 @@ components:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
+    OrderClass:
+      description: Order class
+      type: string
+      enum: [ market, limit, liquidity ]
     SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
@@ -569,13 +575,15 @@ components:
         but not provided by users when creating orders.
       type: object
       properties:
-        creationTime:
+        creationDate:
           description: Creation time of the order. Encoded as ISO 8601 UTC.
           type: string
           example: "2020-12-03T18:35:18.814523Z"
+        class:
+          $ref: "#/components/schemas/OrderClass"
         owner:
           $ref: "#/components/schemas/Address"
-        UID:
+        uid:
           $ref: "#/components/schemas/UID"
         availableBalance:
           description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance or if the order status isn't Open."
@@ -627,14 +635,16 @@ components:
           $ref: "#/components/schemas/BigUint"
           nullable: true
       required:
-        - creationTime
+        - creationDate
+        - class
         - owner
-        - UID
+        - uid
         - executedSellAmount
         - executedSellAmountBeforeFees
         - executedBuyAmount
         - executedFeeAmount
         - invalidated
+        - status
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
@@ -1047,6 +1057,7 @@ components:
           type: integer
           description: The id of the auction the competition info is for.
         transactionHash:
+          type: string
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
