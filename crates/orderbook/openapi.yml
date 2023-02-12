@@ -513,6 +513,7 @@ components:
             Arbitrary application specific data that can be added to an order. This can
             also be used to ensure uniqueness between two orders with otherwise the
             exact same parameters.
+          type: string
           $ref: "#/components/schemas/AppData"
         feeAmount:
           description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
