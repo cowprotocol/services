@@ -197,6 +197,7 @@ dependencies = [
  "maplit",
  "mockall",
  "model",
+ "num",
  "number-conversions",
  "primitive-types 0.10.1",
  "prometheus",

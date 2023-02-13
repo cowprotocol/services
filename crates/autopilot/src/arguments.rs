@@ -168,6 +168,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub quoting_strategies: Vec<QuotingStrategy>,
 
+    /// Fee scaling factor for objective value. This controls the constant
+    /// factor by which order fees are multiplied with. Setting this to a value
+    /// greater than 1.0 makes settlements with negative objective values less
+    /// likely, promoting more aggressive merging of single order settlements.
+    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
+    pub fee_objective_scaling_factor: f64,
+
     /// Enable the colocation run loop.
     #[clap(long, env)]
     pub enable_colocation: bool,
@@ -245,6 +252,11 @@ impl std::fmt::Display for Arguments {
                 .map(|duration| duration.as_secs_f32()),
         )?;
         writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
+        writeln!(
+            f,
+            "fee_objective_scaling_factor: {}",
+            self.fee_objective_scaling_factor
+        )?;
         writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
         display_list(f, "drivers", self.drivers.iter())?;
         Ok(())
