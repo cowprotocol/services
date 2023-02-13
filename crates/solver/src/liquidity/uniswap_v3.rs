@@ -17,6 +17,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
     },
@@ -137,8 +138,8 @@ impl LiquidityCollecting for UniswapV3Liquidity {
 impl UniswapV3SettlementHandler {
     fn settle(
         &self,
-        (token_in, amount_in_max): (H160, U256),
-        (token_out, amount_out): (H160, U256),
+        token_amount_in_max: TokenAmount,
+        token_amount_out: TokenAmount,
         fee: u32,
     ) -> (Option<Approval>, UniswapV3Interaction) {
         let approval = self
@@ -146,15 +147,15 @@ impl UniswapV3SettlementHandler {
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_in, amount_in_max);
+            .approve_token_or_default(token_amount_in_max.clone());
 
         (
             approval,
             UniswapV3Interaction {
                 router: self.inner.router.clone(),
                 params: ExactOutputSingleParams {
-                    token_in,
-                    token_out,
+                    token_amount_in_max,
+                    token_amount_out,
                     fee,
                     recipient: self.inner.gpv2_settlement.address(),
                     deadline: {
@@ -162,8 +163,6 @@ impl UniswapV3SettlementHandler {
                             .saturating_add(TIMEOUT)
                             .into()
                     },
-                    amount_out,
-                    amount_in_max,
                     sqrt_price_limit_x96: U256::zero(),
                 },
             },
@@ -221,27 +220,69 @@ mod tests {
         let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances);
 
         // Token A below, equal, above
-        let (approval, _) =
-            settlement_handler.settle((token_a, 50.into()), (token_b, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_a,
+                amount: 50.into(),
+            },
+            TokenAmount {
+                token: token_b,
+                amount: 100.into(),
+            },
+            10,
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) =
-            settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_a,
+                amount: 99.into(),
+            },
+            TokenAmount {
+                token: token_b,
+                amount: 100.into(),
+            },
+            10,
+        );
         assert_eq!(approval, None);
 
         // Token B below, equal, above
-        let (approval, _) =
-            settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_b,
+                amount: 150.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
+            10,
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) =
-            settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_b,
+                amount: 199.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
+            10,
+        );
         assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) = settlement_handler.settle(
-            (H160::from_low_u64_be(3), 1.into()),
-            (token_a, 100.into()),
+            TokenAmount {
+                token: H160::from_low_u64_be(3),
+                amount: 1.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
             10,
         );
         assert_ne!(approval, None);
@@ -251,8 +292,14 @@ mod tests {
     fn test_encode() {
         let settlement_handler = UniswapV3SettlementHandler::new_dummy(Default::default());
         let execution = AmmOrderExecution {
-            input_max: (H160::default(), U256::zero()),
-            output: (H160::default(), U256::zero()),
+            input_max: TokenAmount {
+                token: H160::default(),
+                amount: U256::zero(),
+            },
+            output: TokenAmount {
+                token: H160::default(),
+                amount: U256::zero(),
+            },
             internalizable: false,
         };
         let mut encoder = SettlementEncoder::new(Default::default());
