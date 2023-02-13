@@ -27,7 +27,7 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    shared::http_solver::model::InternalizationStrategy,
+    shared::http_solver::model::{InternalizationStrategy, TokenAmount},
     solver::{
         interactions::Erc20ApproveInteraction,
         liquidity::{
@@ -342,18 +342,24 @@ pub fn to_boundary_interaction(
         competition::solution::Interaction::Liquidity(liquidity) => {
             let boundary_execution =
                 slippage_context.apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (liquidity.input.token.into(), liquidity.input.amount),
-                    output: (liquidity.output.token.into(), liquidity.output.amount),
+                    input_max: TokenAmount::new(
+                        liquidity.input.token.into(),
+                        liquidity.input.amount,
+                    ),
+                    output: TokenAmount::new(
+                        liquidity.output.token.into(),
+                        liquidity.output.amount,
+                    ),
                     internalizable: interaction.internalize(),
                 })?;
 
             let input = liquidity::MaxInput(eth::Asset {
-                token: boundary_execution.input_max.0.into(),
-                amount: boundary_execution.input_max.1,
+                token: boundary_execution.input_max.token.into(),
+                amount: boundary_execution.input_max.amount,
             });
             let output = liquidity::ExactOutput(eth::Asset {
-                token: boundary_execution.output.0.into(),
-                amount: boundary_execution.output.1,
+                token: boundary_execution.output.token.into(),
+                amount: boundary_execution.output.amount,
             });
 
             let interaction = match &liquidity.liquidity.kind {

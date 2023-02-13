@@ -146,7 +146,7 @@ mod tests {
             BUY_ETH_ADDRESS,
         },
         num::rational::Ratio,
-        shared::addr,
+        shared::{addr, http_solver::model::TokenAmount},
     };
 
     #[test]
@@ -451,7 +451,10 @@ mod tests {
         };
 
         settle(SlippageContext::default(), orders, liquidity);
-        let (out_token, out_amount) = amm_handler.calls.lock().unwrap()[0].output;
+        let TokenAmount {
+            token: out_token,
+            amount: out_amount,
+        } = amm_handler.calls.lock().unwrap()[0].output;
         assert_eq!(out_token, usdc);
         assert!(out_amount < U256::from(32275540_u128));
     }

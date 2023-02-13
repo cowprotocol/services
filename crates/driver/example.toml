@@ -10,7 +10,6 @@ private-key = "0xaa1de59084f3b7e501f2d48cafb2ee04cd06a79ea126fd27ddf3d1b8903bb85
 name = "othersolver"
 endpoint = "http://localhost:1235"
 relative-slippage = "0.1"
-address = "0x1bDf4b007819cB9C26b980e34A2a226ad980441a"
 private-key = "0xfe1cbe78dbf9511c37be9716b9b347bcefaaaf8ee5e86dd40cfc3d763ac9a7b6"
 
 [contracts] # Optionally override the contract addresses, necessary on less popular blockchains
