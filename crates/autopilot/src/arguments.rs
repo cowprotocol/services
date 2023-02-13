@@ -2,7 +2,7 @@ use {
     crate::limit_orders::QuotingStrategy,
     primitive_types::H160,
     shared::{
-        arguments::display_option,
+        arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation,
@@ -167,6 +167,14 @@ pub struct Arguments {
     /// limit orders.
     #[clap(long, env, use_value_delimiter = true)]
     pub quoting_strategies: Vec<QuotingStrategy>,
+
+    /// Enable the colocation run loop.
+    #[clap(long, env)]
+    pub enable_colocation: bool,
+
+    /// Driver base URLs.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub drivers: Vec<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -237,6 +245,8 @@ impl std::fmt::Display for Arguments {
                 .map(|duration| duration.as_secs_f32()),
         )?;
         writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
+        writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
+        display_list(f, "drivers", self.drivers.iter())?;
         Ok(())
     }
 }

@@ -575,7 +575,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        true,
+        !args.enable_colocation,
     );
     solvable_orders_cache
         .update(block)
@@ -583,14 +583,14 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .expect("failed to perform initial solvable orders update");
     let liveness = Liveness {
         max_auction_age: args.max_auction_age,
-        solvable_orders_cache,
+        solvable_orders_cache: solvable_orders_cache.clone(),
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
-        web3,
+        web3: web3.clone(),
         db: db.clone(),
-        current_block: current_block_stream,
+        current_block: current_block_stream.clone(),
     };
     tokio::task::spawn(
         auction_transaction_updater
@@ -613,11 +613,31 @@ pub async fn main(args: arguments::Arguments) -> ! {
         LimitOrderMetrics {
             quoting_age: limit_order_age,
             validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-            database: db,
+            database: db.clone(),
         }
         .spawn();
     }
 
-    let result = serve_metrics.await;
-    panic!("serve_metrics exited {result:?}");
+    if args.enable_colocation {
+        if args.drivers.is_empty() {
+            panic!("colocation is enabled but no drivers are configured");
+        }
+        let run = run_loop::RunLoop {
+            solvable_orders_cache,
+            database: db,
+            drivers: args
+                .drivers
+                .into_iter()
+                .map(driver_api::Driver::new)
+                .collect(),
+            current_block: current_block_stream,
+            web3,
+            network_block_interval: _network_time_between_blocks,
+        };
+        run.run_forever().await;
+        unreachable!("run loop exited");
+    } else {
+        let result = serve_metrics.await;
+        unreachable!("serve_metrics exited {result:?}");
+    }
 }
