@@ -199,25 +199,7 @@ impl SettlementRanker {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         if cfg!(feature = "auction-rewards") {
-            // Filter out settlements that have negative score or NaN score.
-            rated_settlements.retain(|(solver, settlement, _)| {
-                if settlement.score.score().is_nan() || settlement.score.score() < 0.0 {
-                    tracing::debug!(
-                        solver_name = %solver.name(),
-                        "settlement(s) filtered for having negative or NaN score",
-                    );
-                    solver.notify_auction_result(
-                        auction_id,
-                        AuctionResult::Rejected(SolverRejectionReason::NegativeScore(
-                            settlement.score.score(),
-                        )),
-                    );
-                    return false;
-                }
-                true
-            });
-
-            rated_settlements.sort_by(|a, b| a.1.score.score().total_cmp(&b.1.score.score()));
+            rated_settlements.sort_by(|a, b| a.1.score.score().cmp(&b.1.score.score()));
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
                 |(i, (solver, settlement, _))| {
@@ -264,9 +246,7 @@ impl SettlementRanker {
 // id to ranking
 fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
     let mut settlements = settlements;
-    settlements
-        .retain(|settlement| !settlement.score.score().is_nan() && settlement.score.score() >= 0.0);
-    settlements.sort_by(|a, b| a.score.score().total_cmp(&b.score.score()));
+    settlements.sort_by(|a, b| a.score.score().cmp(&b.score.score()));
     settlements
         .iter()
         .rev()

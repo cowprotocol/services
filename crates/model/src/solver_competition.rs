@@ -104,25 +104,28 @@ pub struct Objective {
 pub enum Score {
     /// The score is provided by the solver.
     #[serde(rename = "score")]
-    Solver(f64),
+    #[serde(with = "u256_decimal")]
+    Solver(U256),
     /// The score is calculated by the protocol (and equal to the objective
     /// function).
     #[serde(rename = "scoreProtocol")]
-    Protocol(f64),
+    #[serde(with = "u256_decimal")]
+    Protocol(U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
     #[serde(rename = "scoreDiscounted")]
-    Discounted(f64),
+    #[serde(with = "u256_decimal")]
+    Discounted(U256),
 }
 
 impl Default for Score {
     fn default() -> Self {
-        Self::Protocol(0.0)
+        Self::Protocol(Default::default())
     }
 }
 
 impl Score {
-    pub fn score(&self) -> f64 {
+    pub fn score(&self) -> U256 {
         match self {
             Self::Solver(score) => *score,
             Self::Protocol(score) => *score,
@@ -180,7 +183,7 @@ mod tests {
                         "cost": 6.0f64,
                         "gas": 7u64,
                     },
-                    "score": 1.0f64,
+                    "score": "1",
                     "ranking": 1,
                     "clearingPrices": {
                         "0x2222222222222222222222222222222222222222": "8",
@@ -228,7 +231,7 @@ mod tests {
                         cost: 6.,
                         gas: 7,
                     },
-                    score: Score::Solver(1.),
+                    score: Score::Solver(1.into()),
                     ranking: 1,
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),

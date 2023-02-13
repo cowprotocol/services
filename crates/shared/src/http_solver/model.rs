@@ -177,7 +177,8 @@ impl Interaction for InteractionData {
 #[serde(rename_all = "camelCase")]
 pub enum Score {
     /// The score used for ranking.
-    Score(f64),
+    #[serde(with = "u256_decimal")]
+    Score(U256),
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol.
     /// To have more flexibility, the protocol score can be tweaked by the
@@ -359,9 +360,6 @@ pub enum SolverRejectionReason {
     /// The solution didn't pass simulation. Includes all data needed to
     /// re-create simulation locally
     SimulationFailure(TransactionWithError),
-
-    /// The solution score is negative. Includes the score.
-    NegativeScore(f64),
 }
 
 #[derive(Debug, Serialize)]
@@ -827,14 +825,17 @@ mod tests {
             {
                 "tokens": {},
                 "orders": {},
-                "score": 13.37,
+                "score": "20000000000000000",
                 "metadata": {},
                 "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                 "prices": {}
             }
         "#;
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(deserialized.score, Some(Score::Score(13.37)));
+        assert_eq!(
+            deserialized.score,
+            Some(Score::Score(20_000_000_000_000_000u128.into()))
+        );
     }
 
     #[test]
