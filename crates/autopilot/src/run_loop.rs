@@ -2,12 +2,18 @@ use {
     crate::{
         database::Postgres,
         driver_api::Driver,
-        driver_model::{execute, solve},
+        driver_model::{
+            execute,
+            solve::{self, Class},
+        },
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::{anyhow, Context, Result},
     chrono::Utc,
-    model::auction::{Auction, AuctionId},
+    model::{
+        auction::{Auction, AuctionId},
+        order::{LimitOrderClass, OrderClass},
+    },
     primitive_types::H256,
     rand::seq::SliceRandom,
     shared::{
@@ -65,7 +71,7 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by(|left, right| left.1.objective.total_cmp(&right.1.objective));
+        solutions.sort_unstable_by(|left, right| left.1.score.total_cmp(&right.1.score));
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
@@ -90,14 +96,59 @@ impl RunLoop {
 
     /// Returns the successful /solve responses and the index of the solver.
     async fn solve(&self, auction: &Auction, id: AuctionId) -> Vec<(usize, solve::Response)> {
-        let auction = solve::Auction {
+        if auction
+            .orders
+            .iter()
+            .all(|order| match order.metadata.class {
+                OrderClass::Market => false,
+                OrderClass::Liquidity => true,
+                OrderClass::Limit(_) => false,
+            })
+        {
+            return Default::default();
+        }
+
+        let request = &solve::Request {
             id,
-            block: self.current_block.borrow().number,
-            orders: auction.orders.iter().map(|_| solve::Order {}).collect(),
+            orders: auction
+                .orders
+                .iter()
+                .map(|order| {
+                    let (class, surplus_fee) = match order.metadata.class {
+                        OrderClass::Market => (Class::Market, None),
+                        OrderClass::Liquidity => (Class::Liquidity, None),
+                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                            (Class::Limit, surplus_fee)
+                        }
+                    };
+                    solve::Order {
+                        uid: order.metadata.uid,
+                        sell_token: order.data.sell_token,
+                        buy_token: order.data.buy_token,
+                        sell_amount: order.data.sell_amount,
+                        buy_amount: order.data.buy_amount,
+                        solver_fee: order.metadata.full_fee_amount,
+                        user_fee: order.data.fee_amount,
+                        valid_to: order.data.valid_to,
+                        kind: order.data.kind,
+                        receiver: order.data.receiver,
+                        owner: order.metadata.owner,
+                        partially_fillable: order.data.partially_fillable,
+                        executed: Default::default(),
+                        pre_interactions: Default::default(),
+                        sell_token_balance: order.data.sell_token_balance,
+                        buy_token_balance: order.data.buy_token_balance,
+                        class,
+                        surplus_fee,
+                        app_data: order.data.app_data,
+                        reward: Default::default(),
+                        signature: order.signature.clone(),
+                    }
+                })
+                .collect(),
             prices: auction.prices.clone(),
+            deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
-        let deadline = Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap();
-        let request = &solve::Request { auction, deadline };
         let futures = self
             .drivers
             .iter()
@@ -117,7 +168,7 @@ impl RunLoop {
             .filter_map(|(index, result)| match result {
                 Ok(result) => Some((index, result)),
                 Err(err) => {
-                    tracing::warn!(?err, "driver {} solve error", err);
+                    tracing::warn!(?err, "driver solve error");
                     None
                 }
             })
@@ -131,13 +182,16 @@ impl RunLoop {
         _auction: &Auction,
         id: AuctionId,
         driver: &Driver,
-        _solution: &solve::Response,
+        solution: &solve::Response,
     ) -> Result<()> {
         let request = execute::Request {
             auction_id: id,
             transaction_identifier: id.to_be_bytes().into(),
         };
-        let _response = driver.execute(&request).await.context("execute")?;
+        let _response = driver
+            .execute(&solution.id, &request)
+            .await
+            .context("execute")?;
         // TODO: React to deadline expiring.
         let transaction = self
             .wait_for_settlement_transaction(&request.transaction_identifier)
