@@ -712,15 +712,20 @@ mod tests {
         );
         let web3 = Web3::new(DynTransport::new(transport));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let version = web3.net().version().await.unwrap();
 
         let pools = Arc::new(
             PoolCache::new(
                 CacheConfig::default(),
-                uniswap_v2::uniswap_like_liquidity_source(BaselineSource::UniswapV2, &web3)
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .1,
+                uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+                    BaselineSource::UniswapV2,
+                    &version,
+                )
+                .unwrap()
+                .into_source(&web3)
+                .await
+                .unwrap()
+                .pool_fetching,
                 current_block_stream(Arc::new(web3.clone()), Duration::from_secs(1))
                     .await
                     .unwrap(),

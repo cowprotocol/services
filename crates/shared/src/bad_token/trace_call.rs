@@ -413,6 +413,7 @@ mod tests {
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
+        let version = web3.net().version().await.unwrap();
 
         let base_tokens = &[
             testlib::tokens::WETH,
@@ -590,25 +591,27 @@ mod tests {
             web3: web3.clone(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: uniswap_v2::uniswap_like_liquidity_source(
+                    inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
                         BaselineSource::UniswapV2,
-                        &web3,
+                        &version,
                     )
+                    .unwrap()
+                    .into_source(&web3)
                     .await
                     .unwrap()
-                    .unwrap()
-                    .0,
+                    .pair_provider,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: uniswap_v2::uniswap_like_liquidity_source(
+                    inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
                         BaselineSource::SushiSwap,
-                        &web3,
+                        &version,
                     )
+                    .unwrap()
+                    .into_source(&web3)
                     .await
                     .unwrap()
-                    .unwrap()
-                    .0,
+                    .pair_provider,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(

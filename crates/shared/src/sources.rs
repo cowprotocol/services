@@ -7,22 +7,17 @@ pub mod uniswap_v3;
 pub mod uniswap_v3_pair_provider;
 
 use {
-    self::uniswap_v2::{
-        pair_provider::PairProvider,
-        pool_fetching::{Pool, PoolFetching},
-    },
-    crate::{ethrpc::Web3, recent_block_cache::Block},
+    self::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+    crate::recent_block_cache::Block,
     anyhow::{bail, Result},
     model::TokenPair,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashSet, sync::Arc},
 };
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum BaselineSource {
+    None,
     UniswapV2,
     Honeyswap,
     SushiSwap,
@@ -61,21 +56,6 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
         ],
         _ => bail!("unsupported chain {:#x}", chain_id),
     })
-}
-
-/// Returns a mapping of UniswapV2-like baseline sources to their respective
-/// pair providers and pool fetchers.
-pub async fn uniswap_like_liquidity_sources(
-    web3: &Web3,
-    sources: &[BaselineSource],
-) -> Result<HashMap<BaselineSource, (PairProvider, Arc<dyn PoolFetching>)>> {
-    let mut liquidity_sources = HashMap::new();
-    for source in sources {
-        if let Some(inner) = uniswap_v2::uniswap_like_liquidity_source(*source, web3).await? {
-            liquidity_sources.insert(*source, inner);
-        }
-    }
-    Ok(liquidity_sources)
 }
 
 pub struct PoolAggregator {
