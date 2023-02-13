@@ -228,12 +228,7 @@ impl SettlementRanker {
                         .get(&settlement.id)
                         .copied()
                         .unwrap_or(0);
-                    // notify solvers about their real ranking and simulated auction based ranking
                     solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
-                    solver.notify_auction_result(
-                        auction_id,
-                        AuctionResult::Ranked(settlement.ranking),
-                    );
                 },
             );
         }
