@@ -1,31 +1,23 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
-pub mod baoswap;
-pub mod honeyswap;
-pub mod sushiswap;
 pub mod swapr;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod uniswap_v3_pair_provider;
 
 use {
-    self::uniswap_v2::{
-        pair_provider::PairProvider,
-        pool_fetching::{Pool, PoolFetching},
-    },
-    crate::{ethrpc::Web3, recent_block_cache::Block},
+    self::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+    crate::recent_block_cache::Block,
     anyhow::{bail, Result},
     model::TokenPair,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashSet, sync::Arc},
 };
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum BaselineSource {
+    None,
     UniswapV2,
     Honeyswap,
     SushiSwap,
@@ -64,30 +56,6 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
         ],
         _ => bail!("unsupported chain {:#x}", chain_id),
     })
-}
-
-/// Returns a mapping of UniswapV2-like baseline sources to their respective
-/// pair providers and pool fetchers.
-pub async fn uniswap_like_liquidity_sources(
-    web3: &Web3,
-    sources: &[BaselineSource],
-) -> Result<HashMap<BaselineSource, (PairProvider, Arc<dyn PoolFetching>)>> {
-    let mut liquidity_sources = HashMap::new();
-    for source in sources {
-        let liquidity_source = match source {
-            BaselineSource::UniswapV2 => uniswap_v2::get_liquidity_source(web3).await?,
-            BaselineSource::SushiSwap => sushiswap::get_liquidity_source(web3).await?,
-            BaselineSource::Honeyswap => honeyswap::get_liquidity_source(web3).await?,
-            BaselineSource::Baoswap => baoswap::get_liquidity_source(web3).await?,
-            BaselineSource::Swapr => swapr::get_liquidity_source(web3).await?,
-            BaselineSource::BalancerV2 => continue,
-            BaselineSource::ZeroEx => continue,
-            BaselineSource::UniswapV3 => continue,
-        };
-
-        liquidity_sources.insert(*source, liquidity_source);
-    }
-    Ok(liquidity_sources)
 }
 
 pub struct PoolAggregator {

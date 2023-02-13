@@ -1,14 +1,13 @@
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
-pub mod event_updater;
-pub mod risk_adjusted_rewards;
-pub mod solvable_orders;
-
 pub mod driver_api;
 pub mod driver_model;
+pub mod event_updater;
 pub mod limit_orders;
+pub mod risk_adjusted_rewards;
 pub mod run_loop;
+pub mod solvable_orders;
 
 use {
     crate::{
@@ -33,6 +32,7 @@ use {
         WETH9,
     },
     ethcontract::{errors::DeployError, BlockNumber},
+    futures::StreamExt,
     model::DomainSeparator,
     shared::{
         account_balances::Web3BalanceFetcher,
@@ -67,7 +67,7 @@ use {
                 BalancerFactoryKind,
                 BalancerPoolFetcher,
             },
-            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,
@@ -197,13 +197,22 @@ pub async fn main(args: arguments::Arguments) -> ! {
             .expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
-        shared::sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
-            .await
-            .expect("failed to load baseline source pair providers")
-            .values()
-            .cloned()
-            .unzip();
+    let univ2_sources = baseline_sources
+        .iter()
+        .filter_map(|source: &BaselineSource| {
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+        })
+        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
+    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
+        .then(|source: UniV2BaselineSourceParameters| {
+            let web3 = &web3;
+            async move {
+                let source = source.into_source(web3).await.unwrap();
+                (source.pair_provider, source.pool_fetching)
+            }
+        })
+        .unzip()
+        .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
         native_token.address(),

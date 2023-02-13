@@ -1,6 +1,6 @@
 use {ethcontract::H160, model::TokenPair, web3::signing::keccak256};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PairProvider {
     pub factory: H160,
     pub init_code_digest: [u8; 32],
