@@ -262,7 +262,7 @@ pub struct OrderData {
     /// This is 0 for liquidity orders as they should only ever be used to
     /// improve the price of a regular order and should not be settled on
     /// their own. This is 0 for limit orders as their fee gets taken from
-    /// the surplus. This `OrderMetadata::full_fee_amount` modulo possible
+    /// the surplus. This is `OrderMetadata::full_fee_amount` modulo possible
     /// subsidies for market orders.
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
