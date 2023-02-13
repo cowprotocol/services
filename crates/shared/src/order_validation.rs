@@ -487,7 +487,9 @@ impl OrderValidating for OrderValidator {
         let full_fee_amount = quote
             .as_ref()
             .map(|quote| quote.full_fee_amount)
-            .unwrap_or_default();
+            // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
+            // subsidies). This only makes a difference for liquidity orders.
+            .unwrap_or(order.data.fee_amount);
 
         let min_balance =
             minimum_balance(&order.data).ok_or(ValidationError::SellAmountOverflow)?;
