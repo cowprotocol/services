@@ -3614,7 +3614,6 @@ dependencies = [
  "chrono",
  "clap 4.0.8",
  "contracts",
- "ethcontract",
  "ethereum-types 0.12.1",
  "hex",
  "hyper",
