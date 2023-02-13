@@ -25,7 +25,7 @@ impl Order {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Order {
     sell_token: eth::H160,
     buy_token: eth::H160,
@@ -38,7 +38,7 @@ pub struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,

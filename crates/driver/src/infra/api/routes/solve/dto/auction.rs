@@ -132,7 +132,7 @@ pub enum Error {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
     id: i64,
     prices: HashMap<eth::H160, eth::U256>,
@@ -142,7 +142,7 @@ pub struct Auction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; 56],
@@ -181,7 +181,7 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
@@ -189,7 +189,7 @@ enum Kind {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Interaction {
     target: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -199,7 +199,7 @@ struct Interaction {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -208,7 +208,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -216,7 +216,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -225,7 +225,7 @@ enum SigningScheme {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Class {
     Market,
     Limit,

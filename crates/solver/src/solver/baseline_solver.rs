@@ -23,6 +23,7 @@ use {
             BaseTokens,
             BaselineSolvable,
         },
+        http_solver::model::TokenAmount,
         sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
     },
     std::{collections::HashMap, sync::Arc},
@@ -290,8 +291,8 @@ impl Solution {
                 .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculable");
             let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
-                input_max: (sell_token, sell_amount),
-                output: (buy_token, buy_amount),
+                input_max: TokenAmount::new(sell_token, sell_amount),
+                output: TokenAmount::new(buy_token, buy_amount),
                 internalizable: false,
             })?;
             match &amm.order {
@@ -441,8 +442,8 @@ mod tests {
             amm_handler[1].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (sell_token, 100_000.into()),
-                    output: (native_token, 98_715.into()),
+                    input_max: TokenAmount::new(sell_token, 100_000),
+                    output: TokenAmount::new(native_token, 98_715),
                     internalizable: false
                 })
                 .unwrap(),
@@ -451,8 +452,8 @@ mod tests {
             amm_handler[2].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (native_token, 98_715.into()),
-                    output: (buy_token, 97_459.into()),
+                    input_max: TokenAmount::new(native_token, 98_715),
+                    output: TokenAmount::new(buy_token, 97_459),
                     internalizable: false
                 })
                 .unwrap(),
@@ -554,8 +555,8 @@ mod tests {
             amm_handler[1].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (sell_token, 102_660.into()),
-                    output: (native_token, 101_315.into()),
+                    input_max: TokenAmount::new(sell_token, 102_660),
+                    output: TokenAmount::new(native_token, 101_315),
                     internalizable: false
                 })
                 .unwrap(),
@@ -564,8 +565,8 @@ mod tests {
             amm_handler[2].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (native_token, 101_315.into()),
-                    output: (buy_token, 100_000.into()),
+                    input_max: TokenAmount::new(native_token, 101_315),
+                    output: TokenAmount::new(buy_token, 100_000),
                     internalizable: false
                 })
                 .unwrap(),
