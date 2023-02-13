@@ -308,7 +308,11 @@ fn apply_fee_objective_scaling_factor(
         let scaled_fee = fee * scaling_factor;
         let scaled_fee = match big_rational_to_u256(&scaled_fee) {
             Ok(fee) => fee,
-            Err(_) => return false,
+            Err(_) => {
+                let scaling_factor = scaling_factor.to_string();
+                tracing::error!(?order, scaling_factor, "fee scaling overflows U256");
+                return false;
+            }
         };
 
         order.metadata.solver_fee = scaled_fee;
