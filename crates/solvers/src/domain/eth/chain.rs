@@ -9,10 +9,10 @@ pub enum ChainId {
 }
 
 impl ChainId {
-    /// Creates a new chain ID returning an error if it is unsupported.
     pub fn new(value: U256) -> Result<Self, UnsupportedChain> {
         // Check to avoid panics for large `U256` values, as there is no checked
-        // conversion API available.
+        // conversion API available and we don't support chains with IDs greater
+        // than `u64::MAX` anyway.
         if value > U256::from(u64::MAX) {
             return Err(UnsupportedChain);
         }

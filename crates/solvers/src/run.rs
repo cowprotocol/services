@@ -20,7 +20,7 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
     let cli::Command::Baseline = args.command;
     let baseline = config::baseline::file::load(&args.config).await;
     let contracts = contracts::Contracts::new(
-        args.chain_id,
+        baseline.chain_id,
         contracts::Addresses {
             weth: baseline.weth,
         },

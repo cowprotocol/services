@@ -1,8 +1,19 @@
-use {crate::domain::eth, serde::Deserialize, std::path::Path, tokio::fs};
+use {
+    crate::{domain::eth, util::serialize},
+    serde::Deserialize,
+    serde_with::serde_as,
+    std::path::Path,
+    tokio::fs,
+};
 
+#[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
+    /// The chain ID the solver is configured for.
+    #[serde_as(as = "serialize::ChainId")]
+    pub chain_id: eth::ChainId,
+
     /// The address of the WETH contract.
     pub weth: Option<eth::H160>,
 
@@ -28,6 +39,7 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
     let config: Config = toml::de::from_str(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
     super::BaselineConfig {
+        chain_id: config.chain_id,
         weth: config.weth.map(eth::WethAddress),
         base_tokens: config
             .base_tokens
