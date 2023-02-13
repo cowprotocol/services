@@ -6,7 +6,7 @@
 //! over separate paths.
 
 use {
-    super::solution::Interaction,
+    super::solution::{Interaction, LiquidityInteraction},
     crate::{
         boundary,
         domain::{auction, eth, liquidity, order, solution},
@@ -53,10 +53,12 @@ impl Baseline {
                     interactions: route
                         .segments
                         .iter()
-                        .map(|segment| Interaction {
-                            liquidity: segment.liquidity.clone(),
-                            input: segment.input,
-                            output: segment.output,
+                        .map(|segment| {
+                            Interaction::Liquidity(LiquidityInteraction {
+                                liquidity: segment.liquidity.clone(),
+                                input: segment.input,
+                                output: segment.output,
+                            })
                         })
                         .collect(),
                 })

@@ -1,6 +1,6 @@
 //! The domain object representing a CoW Protocol order.
 
-use crate::domain::eth;
+use {crate::domain::eth, ethereum_types::U256};
 
 /// A CoW Protocol order in the auction.
 #[derive(Debug, Clone)]
@@ -8,13 +8,30 @@ pub struct Order {
     pub uid: Uid,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
+    pub fee: Fee,
     pub side: Side,
     pub class: Class,
+    pub partially_fillable: bool,
+    pub reward: Reward,
+}
+
+impl Order {
+    /// Returns the order's fee amount as an asset.
+    pub fn fee(&self) -> eth::Asset {
+        eth::Asset {
+            token: self.sell.token,
+            amount: self.fee.0,
+        }
+    }
 }
 
 /// UID of an order.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Uid(pub [u8; 56]);
+
+/// An order fee amount, denominated in its sell token.
+#[derive(Clone, Copy, Debug)]
+pub struct Fee(U256);
 
 /// The trading side of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,3 +90,7 @@ impl<'a> NonLiquidity<'a> {
         self.0
     }
 }
+
+/// A COW reward amount, in base units.
+#[derive(Clone, Copy, Debug)]
+pub struct Reward(pub f64);

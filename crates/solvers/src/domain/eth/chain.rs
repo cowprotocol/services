@@ -33,6 +33,11 @@ impl ChainId {
             ChainId::Gnosis => "100",
         }
     }
+
+    /// Returns the chain ID as a numeric value.
+    pub fn value(self) -> U256 {
+        U256::from(self as u64)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

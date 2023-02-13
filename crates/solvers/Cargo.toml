@@ -34,6 +34,7 @@ toml = "0.7"
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.
+anyhow = { workspace = true }
 contracts = { path = "../contracts" }
 model = { path = "../model" }
 shared = { path = "../shared" }

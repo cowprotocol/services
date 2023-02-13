@@ -27,6 +27,10 @@ pub struct Asset {
     pub token: TokenAddress,
 }
 
+/// An Ether amount in wei.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ether(pub U256);
+
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
