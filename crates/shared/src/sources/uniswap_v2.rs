@@ -155,7 +155,7 @@ impl FromStr for UniV2BaselineSourceParameters {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, model::TokenPair};
 
     #[test]
     fn parse_address_init() {
@@ -178,5 +178,84 @@ mod tests {
         let arg = "0x0000000000000000000000000000000000000000|0x0000000000000000000000000000000000000000000000000000000000000000|Swapr";
         let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
         assert!(matches!(parsed.pool_reading, PoolReadingStyle::Swapr));
+    }
+
+    async fn test_baseline_source(
+        web3: &Web3,
+        version: &str,
+        source: BaselineSource,
+        token0: H160,
+        token1: H160,
+        expected_pool_address: H160,
+    ) {
+        let version_ = web3.net().version().await.unwrap();
+        assert_eq!(version_, version, "wrong node for test");
+        let source = UniV2BaselineSourceParameters::from_baseline_source(source, version)
+            .unwrap()
+            .into_source(web3)
+            .await
+            .unwrap();
+        let pair = TokenPair::new(token0, token1).unwrap();
+        let pool = source.pair_provider.pair_address(&pair);
+        assert_eq!(pool, expected_pool_address);
+    }
+
+    #[tokio::test]
+    async fn baseline_mainnet() {
+        let http = crate::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(http);
+        let version = web3.net().version().await.unwrap();
+        assert_eq!(version, "1", "test must be run with mainnet node");
+        let test = |source, token0, token1, expected| {
+            test_baseline_source(&web3, "1", source, token0, token1, expected)
+        };
+
+        test(
+            BaselineSource::UniswapV2,
+            testlib::tokens::GNO,
+            testlib::tokens::WETH,
+            addr!("3e8468f66d30fc99f745481d4b383f89861702c6"),
+        )
+        .await;
+        test(
+            BaselineSource::SushiSwap,
+            testlib::tokens::GNO,
+            testlib::tokens::WETH,
+            addr!("41328fdba556c8c969418ccccb077b7b8d932aa5"),
+        )
+        .await;
+        test(
+            BaselineSource::Swapr,
+            addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
+            testlib::tokens::WETH,
+            addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn baseline_xdai() {
+        let http = crate::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(http);
+        let version = web3.net().version().await.unwrap();
+        assert_eq!(version, "100", "test must be run with xdai node");
+        let test = |source, token0, token1, expected| {
+            test_baseline_source(&web3, "100", source, token0, token1, expected)
+        };
+
+        test(
+            BaselineSource::Baoswap,
+            addr!("7f7440c5098462f833e123b44b8a03e1d9785bab"),
+            addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),
+            addr!("8746355882e10aae144d3709889dfaa39ff2a692"),
+        )
+        .await;
+        test(
+            BaselineSource::Honeyswap,
+            addr!("71850b7e9ee3f13ab46d67167341e4bdc905eef9"),
+            addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+            addr!("4505b262dc053998c10685dc5f9098af8ae5c8ad"),
+        )
+        .await;
     }
 }
