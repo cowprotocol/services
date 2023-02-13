@@ -108,12 +108,16 @@ mod tests {
     async fn fetch_swapr_pool() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-
-        let (_, pool_fetcher) =
-            uniswap_v2::uniswap_like_liquidity_source(BaselineSource::Swapr, &web3)
-                .await
-                .unwrap()
-                .unwrap();
+        let version = web3.net().version().await.unwrap();
+        let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+            BaselineSource::Swapr,
+            &version,
+        )
+        .unwrap()
+        .into_source(&web3)
+        .await
+        .unwrap()
+        .pool_fetching;
         let pool = pool_fetcher
             .fetch(
                 hashset! {
