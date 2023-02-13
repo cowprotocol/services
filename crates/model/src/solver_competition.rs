@@ -79,7 +79,10 @@ pub struct SolverSettlement {
     pub objective: Objective,
     #[serde(flatten)]
     pub score: Score, // auction based score
-    pub ranking: usize, // auction based ranking
+    // auction based ranking
+    // this is temporarily needed as the scored settlements are ordered by objective value ATM
+    // and this represents how they would be ranked after switching to the auction based scoring
+    pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
