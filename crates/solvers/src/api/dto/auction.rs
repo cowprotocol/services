@@ -59,7 +59,7 @@ impl Auction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
     id: Option<String>,
     tokens: HashMap<H160, Token>,
@@ -72,7 +72,7 @@ pub struct Auction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; 56],
@@ -107,7 +107,7 @@ enum Class {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Token {
     decimals: Option<u8>,
     symbol: Option<String>,
@@ -119,7 +119,7 @@ struct Token {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
@@ -130,7 +130,7 @@ enum Liquidity {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConstantProductPool {
     id: String,
     address: H160,
@@ -142,6 +142,7 @@ struct ConstantProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConstantProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
@@ -177,7 +178,7 @@ impl ConstantProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WeightedProductPool {
     id: String,
     address: H160,
@@ -189,6 +190,7 @@ struct WeightedProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
@@ -234,7 +236,7 @@ impl WeightedProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StablePool {
     id: String,
     address: H160,
@@ -247,7 +249,7 @@ struct StablePool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StableReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
@@ -291,7 +293,7 @@ impl StablePool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConcentratedLiquidityPool {
     id: String,
     address: H160,
@@ -350,7 +352,7 @@ impl ConcentratedLiquidityPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ForeignLimitOrder {
     id: String,
     address: H160,
