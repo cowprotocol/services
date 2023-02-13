@@ -12,6 +12,7 @@ use {
     model::order::OrderKind,
     num::{BigInt, BigRational, Integer as _, ToPrimitive as _},
     once_cell::sync::OnceCell,
+    shared::http_solver::model::TokenAmount,
     std::{
         borrow::Cow,
         cmp,
@@ -198,10 +199,10 @@ impl<'a> SlippageContext<'a> {
         &self,
         mut execution: AmmOrderExecution,
     ) -> Result<AmmOrderExecution> {
-        let relative_ratio = |(token, amount): &(H160, U256)| -> Result<Cow<BigRational>> {
+        let relative_ratio = |token_amount: &TokenAmount| -> Result<Cow<BigRational>> {
             let (relative, _) = self.calculator.compute(
-                self.prices.price(token),
-                number_conversions::u256_to_big_int(amount),
+                self.prices.price(&token_amount.token),
+                number_conversions::u256_to_big_int(&token_amount.amount),
             )?;
             Ok(relative)
         };
@@ -214,20 +215,20 @@ impl<'a> SlippageContext<'a> {
         // 3. Fall back to using the default relative slippage without capping
         let relative = if let Ok(relative) = relative_ratio(&execution.input_max) {
             tracing::debug!(
-                input_token = ?execution.input_max.0,
+                input_token = ?execution.input_max.token,
                 "using AMM input token for capped surplus",
             );
             relative
         } else if let Ok(relative) = relative_ratio(&execution.output) {
             tracing::debug!(
-                output_token = ?execution.output.0,
+                output_token = ?execution.output.token,
                 "using AMM output token for capped surplus",
             );
             relative
         } else {
             tracing::warn!(
-                input_token = ?execution.input_max.0,
-                output_token = ?execution.output.0,
+                input_token = ?execution.input_max.token,
+                output_token = ?execution.output.token,
                 "unable to compute capped slippage; falling back to relative slippage",
             );
             Cow::Borrowed(&self.calculator.relative)
@@ -235,21 +236,21 @@ impl<'a> SlippageContext<'a> {
 
         let absolute = absolute_slippage_amount(
             &relative,
-            &number_conversions::u256_to_big_int(&execution.input_max.1),
+            &number_conversions::u256_to_big_int(&execution.input_max.amount),
         );
         let slippage = SlippageAmount::from_num(&relative, &absolute)?;
 
         if *relative < self.calculator.relative {
             tracing::debug!(
-                input_token = ?execution.input_max.0,
-                input_amount = ?execution.input_max.1,
+                input_token = ?execution.input_max.token,
+                input_amount = ?execution.input_max.token,
                 relative = ?slippage.relative,
                 absolute = %slippage.absolute,
                 "capping AMM slippage to respect maximum absolute amount",
             );
         }
 
-        execution.input_max.1 = slippage.add_to_amount(execution.input_max.1);
+        execution.input_max.amount = slippage.add_to_amount(execution.input_max.amount);
         Ok(execution)
     }
 
@@ -499,34 +500,36 @@ mod tests {
         let prices = externalprices! { native_token: WETH };
 
         let slippage = calculator.context(&prices);
-        for (execution, expected) in [
+        let cases = [
             (
                 AmmOrderExecution {
-                    input_max: (WETH, 1_000_000_000_000_000_000_u128.into()),
-                    output: (GNO, 10_000_000_000_000_000_000_u128.into()),
+                    input_max: TokenAmount::new(WETH, 1_000_000_000_000_000_000_u128),
+                    output: TokenAmount::new(GNO, 10_000_000_000_000_000_000_u128),
                     internalizable: false,
                 },
                 1_010_000_000_000_000_000_u128.into(),
             ),
             (
                 AmmOrderExecution {
-                    input_max: (GNO, 10_000_000_000_000_000_000_000_u128.into()),
-                    output: (WETH, 1_000_000_000_000_000_000_000_u128.into()),
+                    input_max: TokenAmount::new(GNO, 10_000_000_000_000_000_000_000_u128),
+                    output: TokenAmount::new(WETH, 1_000_000_000_000_000_000_000_u128),
                     internalizable: false,
                 },
                 10_010_000_000_000_000_000_000_u128.into(),
             ),
             (
                 AmmOrderExecution {
-                    input_max: (USDC, 200_000_000_u128.into()),
-                    output: (GNO, 2_000_000_000_000_000_000_u128.into()),
+                    input_max: TokenAmount::new(USDC, 200_000_000_u128),
+                    output: TokenAmount::new(GNO, 2_000_000_000_000_000_000_u128),
                     internalizable: false,
                 },
                 202_000_000_u128.into(),
             ),
-        ] {
+        ];
+
+        for (execution, expected) in cases {
             let execution = slippage.apply_to_amm_execution(execution).unwrap();
-            assert_eq!(execution.input_max.1, expected);
+            assert_eq!(execution.input_max.amount, expected);
         }
     }
 }
