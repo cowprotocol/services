@@ -3,9 +3,8 @@
 
 mod api;
 pub mod boundary;
-mod cli;
-mod config;
 mod domain;
+mod infra;
 pub mod run;
 #[cfg(test)]
 mod tests;
