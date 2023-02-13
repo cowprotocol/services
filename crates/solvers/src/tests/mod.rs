@@ -23,7 +23,7 @@ impl SolverEngine {
     pub async fn new(command: String, config: String) -> Self {
         let (bind, bind_receiver) = oneshot::channel();
 
-        let handle = tokio::spawn(crate::run(
+        let handle = tokio::spawn(crate::run::run(
             vec![
                 "/test/solvers/path".to_owned(),
                 "--addr".to_owned(),

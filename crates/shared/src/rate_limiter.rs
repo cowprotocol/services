@@ -97,14 +97,10 @@ impl RateLimitingStrategy {
             .back_off_growth_factor
             .powf(self.times_rate_limited as f64);
         let back_off_secs = self.min_back_off.as_secs_f64() * factor;
-        if !back_off_secs.is_normal() || back_off_secs < 0. || back_off_secs > u64::MAX as f64 {
-            // This would cause a panic in `Duration::from_secs_f64()`
-            // TODO refactor this when `Duration::try_from_secs_f64()` gets stabilized:
-            // https://doc.rust-lang.org/stable/std/time/struct.Duration.html#method.try_from_secs_f64
-            return self.max_back_off;
-        }
-        let current_back_off = Duration::from_secs_f64(back_off_secs);
-        std::cmp::min(self.max_back_off, current_back_off)
+        std::cmp::min(
+            Duration::try_from_secs_f64(back_off_secs).unwrap_or(self.max_back_off),
+            self.max_back_off,
+        )
     }
 
     /// Returns updated back off if no other thread increased it in the mean

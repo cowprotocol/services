@@ -343,6 +343,7 @@ impl Driver {
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
                     solver: solver.name().to_string(),
+                    solver_address: solver.account().address(),
                     objective: Objective {
                         total: rated_settlement
                             .objective_value

@@ -134,6 +134,15 @@ pub struct TokenAmount {
     pub token: H160,
 }
 
+impl TokenAmount {
+    pub fn new<T: Into<U256>>(token: H160, amount: T) -> Self {
+        Self {
+            amount: amount.into(),
+            token,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApprovalModel {
     pub token: H160,

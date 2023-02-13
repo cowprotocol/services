@@ -11,6 +11,7 @@ use {
     shared::{
         dummy_contract,
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
     },
     std::{
@@ -67,16 +68,16 @@ impl Allowances {
     }
 
     /// Gets the approval interaction for the specified token and amount.
-    pub fn approve_token(&self, token: H160, amount: U256) -> Result<Option<Approval>> {
+    pub fn approve_token(&self, token_amount: TokenAmount) -> Result<Option<Approval>> {
         let allowance = self
             .allowances
-            .get(&token)
+            .get(&token_amount.token)
             .copied()
-            .ok_or_else(|| anyhow!("missing allowance for token {:?}", token))?;
+            .ok_or_else(|| anyhow!("missing allowance for token {:?}", token_amount.token))?;
 
-        Ok(if allowance < amount {
+        Ok(if allowance < token_amount.amount {
             Some(Approval {
-                token,
+                token: token_amount.token,
                 spender: self.spender,
             })
         } else {
@@ -86,8 +87,10 @@ impl Allowances {
 
     /// Gets the token approval, unconditionally approving in case the token
     /// allowance is missing.
-    pub fn approve_token_or_default(&self, token: H160, amount: U256) -> Option<Approval> {
-        self.approve_token(token, amount).unwrap_or(Some(Approval {
+    pub fn approve_token_or_default(&self, token_amount: TokenAmount) -> Option<Approval> {
+        let token = token_amount.token;
+
+        self.approve_token(token_amount).unwrap_or(Some(Approval {
             token,
             spender: self.spender,
         }))
@@ -170,7 +173,7 @@ impl AllowanceManaging for AllowanceManager {
             let allowance = allowances
                 .get(&request.spender)
                 .with_context(|| format!("no allowances found for spender {}", request.spender))?
-                .approve_token(request.token, request.amount)?;
+                .approve_token(TokenAmount::new(request.token, request.amount))?;
             result.extend(allowance);
         }
         Ok(result)
@@ -260,8 +263,18 @@ mod tests {
             },
         );
 
-        assert_eq!(allowances.approve_token(token, 42.into()).unwrap(), None);
-        assert_eq!(allowances.approve_token(token, 100.into()).unwrap(), None);
+        assert_eq!(
+            allowances
+                .approve_token(TokenAmount::new(token, 42))
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            allowances
+                .approve_token(TokenAmount::new(token, 100))
+                .unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -276,7 +289,9 @@ mod tests {
         );
 
         assert_eq!(
-            allowances.approve_token(token, 1337.into()).unwrap(),
+            allowances
+                .approve_token(TokenAmount::new(token, 1337))
+                .unwrap(),
             Some(Approval { token, spender })
         );
     }
@@ -291,7 +306,7 @@ mod tests {
         );
 
         assert!(allowances
-            .approve_token(H160([0x03; 20]), 0.into())
+            .approve_token(TokenAmount::new(H160([0x03; 20]), 0))
             .is_err());
     }
 
@@ -302,7 +317,7 @@ mod tests {
         let allowances = Allowances::new(spender, hashmap! {});
 
         assert_eq!(
-            allowances.approve_token_or_default(token, 1337.into()),
+            allowances.approve_token_or_default(TokenAmount::new(token, 1337)),
             Some(Approval { token, spender })
         );
     }

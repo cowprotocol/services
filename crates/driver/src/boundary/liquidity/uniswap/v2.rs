@@ -10,6 +10,7 @@ use {
     futures::StreamExt,
     shared::{
         current_block::{self, CurrentBlockStream},
+        http_solver::model::TokenAmount,
         maintenance::Maintaining,
         price_estimation,
         sources::uniswap_v2::{
@@ -76,8 +77,8 @@ pub fn to_interaction(
     );
 
     let (_, interaction) = handler.settle(
-        (input.0.token.into(), input.0.amount),
-        (output.0.token.into(), output.0.amount),
+        TokenAmount::new(input.0.token.into(), input.0.amount),
+        TokenAmount::new(output.0.token.into(), output.0.amount),
     );
 
     let (target, value, call_data) = interaction.encode_swap();

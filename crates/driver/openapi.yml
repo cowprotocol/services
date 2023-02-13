@@ -96,42 +96,77 @@ components:
       description: Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
+    Interaction:
+      type: object
+      properties:
+        target:
+          $ref: "#/components/schemas/Address"
+        value:
+          $ref: "#/components/schemas/TokenAmount"
+        calldata:
+          description: Hex encoded bytes with `0x` prefix.
+          type: string
     Order:
       description: |
         Order information like what is returned by the Orderbook apis.
 
         TODO: document all fields
       type: object
-    Auction:
-      description: |
-        Auction information.
-
-        Contains `id`, `orders`, `prices`, 'block' from the order book api's auction endpoint.
-      type: object
       properties:
-        id:
+        uid:
+          type: string
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        solverFee:
+          $ref: "#/components/schemas/TokenAmount"
+        userFee:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
           type: integer
-          description: |
-            The unique identifier of the auction.
-        block:
-          type: integer
-          description: |
-            The block number at which the auction was created.
-        orders:
+        kind:
+          type: string
+          enum: ["buy", "sell"]
+        receiver:
+          $ref: "#/components/schemas/Address"
+        owner:
+          $ref: "#/components/schemas/Address"
+        partiallyFillable:
+          type: boolean
+        executed:
+          $ref: "#/components/schemas/TokenAmount"
+        preInteractions:
           type: array
           items:
-            $ref: "#/components/schemas/Order"
-          description: |
-            The solvable orders included in the auction.
-        prices:
-          type: object
-          additionalProperties:
-            $ref: "#/components/schemas/TokenAmount"
-          description: |
-            The reference prices for all traded tokens in the auction as a mapping from token
-            addresses to a price denominated in native token (i.e. 1e18 represents a token that
-            trades one to one with the native token). These prices are used for solution competition
-            for computing surplus and converting fees to native token.
+            $ref: '#/components/schemas/Interaction'
+        sellTokenBalance:
+          type: string
+          enum: ["erc20", "internal", "external"]
+        buyTokenBalance:
+          type: string
+          enum: ["erc20", "internal"]
+        class:
+          type: string
+          enum: ["market", "limit", "liquidity"]
+        surplusFee:
+          $ref: "#/components/schemas/TokenAmount"
+          nullable: true
+        appData:
+          description: 32 bytes encoded as hex with `0x` prefix.
+          type: string
+        reward:
+          type: number
+        signingScheme:
+          type: string
+          enum: ["eip712", "ethsign", "presign", "eip1271"]
+        signature:
+          description: Hex encoded bytes with `0x` prefix.
+          type: string
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
@@ -190,8 +225,29 @@ components:
       description: Request to the solve endpoint.
       type: object
       properties:
-        auction:
-          $ref: "#/components/schemas/Auction"
+        id:
+          type: integer
+          description: |
+            The unique identifier of the auction.
+        block:
+          type: integer
+          description: |
+            The block number at which the auction was created.
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+          description: |
+            The solvable orders included in the auction.
+        prices:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+          description: |
+            The reference prices for all traded tokens in the auction as a mapping from token
+            addresses to a price denominated in native token (i.e. 1e18 represents a token that
+            trades one to one with the native token). These prices are used for solution competition
+            for computing surplus and converting fees to native token.
         deadline:
           description: |
             The time until which the caller expects a response.

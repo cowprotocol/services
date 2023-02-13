@@ -70,7 +70,9 @@ impl ParaswapApi for DefaultParaswapApi {
             Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
             _ => request.await?,
         };
+        let status = response.status();
         let response_text = response.text().await?;
+        tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
         parse_paraswap_response_text(&response_text)
     }
 }
