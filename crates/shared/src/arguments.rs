@@ -243,13 +243,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
-    /// If quasimodo should use internal buffers to improve solution quality.
+    /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env)]
-    pub quasimodo_uses_internal_buffers: bool,
-
-    /// If mipsolver should use internal buffers to improve solution quality.
-    #[clap(long, env)]
-    pub mip_uses_internal_buffers: bool,
+    pub use_internal_buffers: bool,
 
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
@@ -296,6 +292,14 @@ pub struct Arguments {
     /// The number of pools to initially populate the UniswapV3 cache
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: u64,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub settlement_contract_address: Option<H160>,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub native_token_address: Option<H160>,
 }
 
 pub fn display_secret_option<T>(
@@ -411,16 +415,7 @@ impl Display for Arguments {
         display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
-        writeln!(
-            f,
-            "quasimodo_uses_internal_buffers: {}",
-            self.quasimodo_uses_internal_buffers
-        )?;
-        writeln!(
-            f,
-            "mip_uses_internal_buffers: {}",
-            self.mip_uses_internal_buffers
-        )?;
+        writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         display_list(
             f,
@@ -440,6 +435,16 @@ impl Display for Arguments {
             self.balancer_pool_deny_list
         )?;
         display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_option(
+            f,
+            "settlement_contract_address",
+            &self.settlement_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "native_token_address",
+            &self.native_token_address.map(|a| format!("{a:?}")),
+        )?;
 
         Ok(())
     }

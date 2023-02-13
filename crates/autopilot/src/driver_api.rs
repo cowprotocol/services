@@ -3,10 +3,12 @@ use {
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     shared::http_client::response_body_with_size_limit,
+    std::time::Duration,
     url::Url,
 };
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
+const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
 pub struct Driver {
     pub url: Url,
@@ -14,6 +16,16 @@ pub struct Driver {
 }
 
 impl Driver {
+    pub fn new(url: Url) -> Self {
+        Self {
+            url,
+            client: Client::builder()
+                .timeout(RESPONSE_TIME_LIMIT)
+                .build()
+                .unwrap(),
+        }
+    }
+
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
         self.request_response("solve", request).await
     }

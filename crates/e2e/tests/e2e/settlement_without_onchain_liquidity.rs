@@ -15,7 +15,10 @@ use {
         },
     },
     contracts::IUniswapLikeRouter,
-    ethcontract::prelude::{Account, Address, PrivateKey, U256},
+    ethcontract::{
+        prelude::{Account, Address, PrivateKey, U256},
+        transaction::TransactionBuilder,
+    },
     hex_literal::hex,
     model::{
         order::{OrderBuilder, OrderKind},
@@ -70,6 +73,12 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
     let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(trader_account.address())
+        .send()
+        .await
+        .unwrap();
 
     // Create & mint tokens to trade, pools for fee connections
     let token_a = deploy_token_with_weth_uniswap_pool(

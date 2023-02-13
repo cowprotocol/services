@@ -20,12 +20,15 @@ use {
     },
     num::{rational::Ratio, BigRational},
     primitive_types::{H160, U256},
-    shared::sources::{
-        balancer_v2::{
-            pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-            swap::fixed_point::Bfp,
+    shared::{
+        http_solver::model::TokenAmount,
+        sources::{
+            balancer_v2::{
+                pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+                swap::fixed_point::Bfp,
+            },
+            uniswap_v3::pool_fetching::PoolInfo,
         },
-        uniswap_v3::pool_fetching::PoolInfo,
     },
     std::{collections::HashMap, sync::Arc},
     strum::{EnumVariantNames, IntoStaticStr},
@@ -339,8 +342,8 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AmmOrderExecution {
-    pub input_max: (H160, U256),
-    pub output: (H160, U256),
+    pub input_max: TokenAmount,
+    pub output: TokenAmount,
     pub internalizable: bool,
 }
 

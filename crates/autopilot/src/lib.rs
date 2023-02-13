@@ -123,17 +123,23 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .unwrap();
 
-    let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
-        .await
-        .expect("Couldn't load deployed settlement");
+    let settlement_contract = match args.shared.settlement_contract_address {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => contracts::GPv2Settlement::deployed(&web3)
+            .await
+            .expect("load settlement contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
+    let native_token = match args.shared.native_token_address {
+        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
+        None => WETH9::deployed(&web3)
+            .await
+            .expect("load native token contract"),
+    };
     let vault = match BalancerV2Vault::deployed(&web3).await {
         Ok(contract) => Some(contract),
         Err(DeployError::NotFound(_)) => {
@@ -569,7 +575,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        true,
+        !args.enable_colocation,
         args.fee_objective_scaling_factor,
     );
     solvable_orders_cache
@@ -578,14 +584,14 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .expect("failed to perform initial solvable orders update");
     let liveness = Liveness {
         max_auction_age: args.max_auction_age,
-        solvable_orders_cache,
+        solvable_orders_cache: solvable_orders_cache.clone(),
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
-        web3,
+        web3: web3.clone(),
         db: db.clone(),
-        current_block: current_block_stream,
+        current_block: current_block_stream.clone(),
     };
     tokio::task::spawn(
         auction_transaction_updater
@@ -608,11 +614,31 @@ pub async fn main(args: arguments::Arguments) -> ! {
         LimitOrderMetrics {
             quoting_age: limit_order_age,
             validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-            database: db,
+            database: db.clone(),
         }
         .spawn();
     }
 
-    let result = serve_metrics.await;
-    panic!("serve_metrics exited {result:?}");
+    if args.enable_colocation {
+        if args.drivers.is_empty() {
+            panic!("colocation is enabled but no drivers are configured");
+        }
+        let run = run_loop::RunLoop {
+            solvable_orders_cache,
+            database: db,
+            drivers: args
+                .drivers
+                .into_iter()
+                .map(driver_api::Driver::new)
+                .collect(),
+            current_block: current_block_stream,
+            web3,
+            network_block_interval: _network_time_between_blocks,
+        };
+        run.run_forever().await;
+        unreachable!("run loop exited");
+    } else {
+        let result = serve_metrics.await;
+        unreachable!("serve_metrics exited {result:?}");
+    }
 }

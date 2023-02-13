@@ -15,6 +15,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
     },
@@ -194,7 +195,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         }
         if let Some(approval) = self
             .allowances
-            .approve_token(self.order.taker_token, executed_amount)?
+            .approve_token(TokenAmount::new(self.order.taker_token, executed_amount))?
         {
             encoder.append_to_execution_plan(approval);
         }

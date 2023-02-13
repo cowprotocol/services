@@ -8,7 +8,7 @@ use {
             simulate_and_error_with_tenderly_link,
             simulate_before_after_access_list,
         },
-        settlement_submission::SubmissionError,
+        settlement_submission::{SubmissionError, SubmissionReceipt},
         solver::{Simulation, SimulationWithError, Solver},
     },
     anyhow::{Context, Result},
@@ -19,9 +19,9 @@ use {
     num::ToPrimitive,
     primitive_types::H256,
     shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
     tracing::{Instrument as _, Span},
-    web3::types::{AccessList, TransactionReceipt},
+    web3::types::AccessList,
 };
 
 pub struct DriverLogger {
@@ -80,18 +80,26 @@ impl DriverLogger {
 
     pub async fn log_submission_info(
         &self,
-        submission: &Result<TransactionReceipt, SubmissionError>,
+        submission: &Result<SubmissionReceipt, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
         solver_name: &str,
+        elapsed_time: Duration,
     ) {
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
+        self.metrics.transaction_submission(
+            elapsed_time,
+            submission
+                .as_ref()
+                .map(|x| x.strategy)
+                .unwrap_or("all_failed"),
+        );
         match submission {
             Ok(receipt) => {
                 tracing::info!(
                     settlement_id,
-                    transaction_hash =? receipt.transaction_hash,
+                    transaction_hash =? receipt.tx.transaction_hash,
                     "Successfully submitted settlement",
                 );
                 Self::get_traded_orders(settlement)
@@ -102,12 +110,12 @@ impl DriverLogger {
                     solver_name,
                 );
                 if let Err(err) = self
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
+                    .metric_access_list_gas_saved(receipt.tx.transaction_hash)
                     .await
                 {
                     tracing::debug!(?err, "access list metric not saved");
                 }
-                match receipt.effective_gas_price {
+                match receipt.tx.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
                     }

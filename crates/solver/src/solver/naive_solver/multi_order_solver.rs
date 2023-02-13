@@ -9,7 +9,10 @@ use {
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv},
     number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int},
     primitive_types::U256,
-    shared::conversions::{RatioExt, U256Ext},
+    shared::{
+        conversions::{RatioExt, U256Ext},
+        http_solver::model::TokenAmount,
+    },
     std::collections::HashMap,
     web3::types::Address,
 };
@@ -196,8 +199,8 @@ fn solve_with_uniswap(
             pool,
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (uniswap_in_token, uniswap_in),
-                    output: (uniswap_out_token, uniswap_out_with_rounding),
+                    input_max: TokenAmount::new(uniswap_in_token, uniswap_in),
+                    output: TokenAmount::new(uniswap_out_token, uniswap_out_with_rounding),
                     internalizable: false,
                 })
                 .ok()?,
@@ -396,12 +399,12 @@ mod tests {
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input_max.0, token_b);
-        assert_eq!(interaction.output.0, token_a);
+        assert_eq!(interaction.input_max.token, token_b);
+        assert_eq!(interaction.output.token, token_a);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy min_buy amounts
-        assert!(orders[0].sell_amount + interaction.output.1 >= orders[1].buy_amount);
-        assert!(orders[1].sell_amount - interaction.input_max.1 > orders[0].buy_amount);
+        assert!(orders[0].sell_amount + interaction.output.amount >= orders[1].buy_amount);
+        assert!(orders[1].sell_amount - interaction.input_max.amount > orders[0].buy_amount);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy expected buy
         // amounts given clearing price
@@ -412,10 +415,10 @@ mod tests {
         // priceB gives us value in buy token We should have at least as much to
         // give (sell amount +/- uniswap) as is expected by the buyer
         let expected_buy = (orders[0].sell_amount * price_a).ceil_div(&price_b);
-        assert!(orders[1].sell_amount - interaction.input_max.1 >= expected_buy);
+        assert!(orders[1].sell_amount - interaction.input_max.amount >= expected_buy);
 
         let expected_buy = (orders[1].sell_amount * price_b).ceil_div(&price_a);
-        assert!(orders[0].sell_amount + interaction.input_max.1 >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.input_max.amount >= expected_buy);
     }
 
     #[test]
@@ -455,13 +458,13 @@ mod tests {
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input_max.0, token_a);
-        assert_eq!(interaction.output.0, token_b);
+        assert_eq!(interaction.input_max.token, token_a);
+        assert_eq!(interaction.output.token, token_b);
 
         // Make sure the sell amounts cover the uniswap in, and min buy amounts are
         // covered by uniswap out
-        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input_max.1);
-        assert!(interaction.output.1 >= orders[0].buy_amount + orders[1].buy_amount);
+        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input_max.amount);
+        assert!(interaction.output.amount >= orders[0].buy_amount + orders[1].buy_amount);
 
         // Make sure expected buy amounts (given prices) are also covered by uniswap out
         // amounts
@@ -470,7 +473,7 @@ mod tests {
 
         let first_expected_buy = orders[0].sell_amount * price_a / price_b;
         let second_expected_buy = orders[1].sell_amount * price_a / price_b;
-        assert!(interaction.output.1 >= first_expected_buy + second_expected_buy);
+        assert!(interaction.output.amount >= first_expected_buy + second_expected_buy);
     }
 
     #[test]
@@ -510,12 +513,12 @@ mod tests {
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input_max.0, token_b);
-        assert_eq!(interaction.output.0, token_a);
+        assert_eq!(interaction.input_max.token, token_b);
+        assert_eq!(interaction.output.token, token_a);
 
         // Make sure the buy amounts +/- uniswap interaction satisfy max_sell amounts
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
-        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input_max.1);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.amount);
+        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input_max.amount);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell
         // amounts given clearing price
@@ -526,10 +529,10 @@ mod tests {
         // priceA gives us value in sell token The seller should expect to sell
         // at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input_max.amount <= expected_sell);
 
         let expected_sell = orders[1].buy_amount * price_a / price_b;
-        assert!(orders[0].buy_amount + interaction.output.1 <= expected_sell);
+        assert!(orders[0].buy_amount + interaction.output.amount <= expected_sell);
     }
 
     #[test]
@@ -569,16 +572,16 @@ mod tests {
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0].clone();
-        assert_eq!(interaction.input_max.0, token_b);
-        assert_eq!(interaction.output.0, token_a);
+        assert_eq!(interaction.input_max.token, token_b);
+        assert_eq!(interaction.output.token, token_a);
 
         // Make sure the buy order's sell amount - uniswap interaction satisfies sell
         // order's limit
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.amount);
 
         // Make sure the sell order's buy amount + uniswap interaction satisfies buy
         // order's limit
-        assert!(orders[1].buy_amount + interaction.input_max.1 >= orders[0].sell_amount);
+        assert!(orders[1].buy_amount + interaction.input_max.amount >= orders[0].sell_amount);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell
         // amounts given clearing price
@@ -589,13 +592,13 @@ mod tests {
         // priceA gives us value in sell token The seller should expect to sell
         // at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.input_max.1 <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input_max.amount <= expected_sell);
 
         // Multiplying sell_amount with priceA, gives us sell value in "$", divided by
         // priceB gives us value in buy token We should have at least as much to
         // give (sell amount + uniswap out) as is expected by the buyer
         let expected_buy = orders[1].sell_amount * price_b / price_a;
-        assert!(orders[0].sell_amount + interaction.output.1 >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.output.amount >= expected_buy);
     }
 
     #[test]
@@ -1042,8 +1045,8 @@ mod tests {
             amm_handler.calls(),
             vec![slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (token_a, to_wei(40)),
-                    output: (
+                    input_max: TokenAmount::new(token_a, to_wei(40)),
+                    output: TokenAmount::new(
                         token_b,
                         pool.get_amount_out(token_b, (to_wei(40), token_a)).unwrap()
                     ),

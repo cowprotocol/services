@@ -21,7 +21,16 @@ use {
         GnosisSafeProxy,
         IUniswapLikeRouter,
     },
-    ethcontract::{Account, Address, Bytes, PrivateKey, H160, H256, U256},
+    ethcontract::{
+        transaction::TransactionBuilder,
+        Account,
+        Address,
+        Bytes,
+        PrivateKey,
+        H160,
+        H256,
+        U256,
+    },
     model::{
         order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid},
         signature::hashed_eip712_message,
@@ -72,6 +81,12 @@ async fn smart_contract_orders(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
 
     let user = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
+    TransactionBuilder::new(web3.clone())
+        .value(to_wei(1))
+        .to(user.address())
+        .send()
+        .await
+        .unwrap();
 
     // Deploy and setup a Gnosis Safe.
     let safe_singleton = GnosisSafe::builder(&web3).deploy().await.unwrap();

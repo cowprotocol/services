@@ -2,7 +2,7 @@ use {
     crate::limit_orders::QuotingStrategy,
     primitive_types::H160,
     shared::{
-        arguments::display_option,
+        arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation,
@@ -174,6 +174,14 @@ pub struct Arguments {
     /// likely, promoting more aggressive merging of single order settlements.
     #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
+
+    /// Enable the colocation run loop.
+    #[clap(long, env)]
+    pub enable_colocation: bool,
+
+    /// Driver base URLs.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub drivers: Vec<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -249,6 +257,8 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor
         )?;
+        writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
+        display_list(f, "drivers", self.drivers.iter())?;
         Ok(())
     }
 }

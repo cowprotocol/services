@@ -3,6 +3,15 @@ name = "solvers"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "solvers"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "solvers"
+path = "src/main.rs"
+
 [dependencies]
 axum = "0.6"
 bigdecimal = { version = "0.3", features = ["serde"] }

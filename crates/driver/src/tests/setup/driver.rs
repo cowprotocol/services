@@ -128,7 +128,7 @@ pub async fn setup(config: Config<'_>) -> Client {
     };
     let args = vec![
         "/test/driver/path".to_owned(),
-        "--bind-addr".to_owned(),
+        "--addr".to_owned(),
         "0.0.0.0:0".to_owned(),
         "--ethrpc".to_owned(),
         config.geth.url(),

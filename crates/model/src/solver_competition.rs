@@ -76,6 +76,7 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    pub solver_address: H160,
     pub objective: Objective,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
@@ -139,6 +140,7 @@ mod tests {
             "solutions": [
                 {
                     "solver": "2",
+                    "solverAddress": "0x2222222222222222222222222222222222222222",
                     "objective": {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
@@ -185,6 +187,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
+                    solver_address: H160([0x22; 20]),
                     objective: Objective {
                         total: 3.,
                         surplus: 4.,
