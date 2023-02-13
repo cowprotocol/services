@@ -298,6 +298,12 @@ fn apply_fee_objective_scaling_factor(
     scaling_factor: &BigRational,
 ) -> Vec<Order> {
     orders.retain_mut(|order| {
+        if order.metadata.class == OrderClass::Liquidity {
+            // A liquidity order should only be used if it can increase a settlement's total
+            // surplus more than it costs to execute it.
+            // That's why we don't want to promote it artificially by scaling its fee.
+            return true;
+        }
         let fee = u256_to_big_rational(&order.metadata.solver_fee);
         let scaled_fee = fee * scaling_factor;
         let scaled_fee = match big_rational_to_u256(&scaled_fee) {
@@ -1287,19 +1293,29 @@ mod tests {
 
     #[test]
     fn applies_fee_scaling() {
-        let order = |solver_fee: U256| Order {
+        let order = |solver_fee: U256, is_liquidity_order: bool| Order {
             metadata: OrderMetadata {
                 solver_fee,
+                class: match is_liquidity_order {
+                    true => OrderClass::Liquidity,
+                    false => OrderClass::Market,
+                },
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let orders = vec![order(100.into()), order(U256::MAX)];
+        let orders = vec![
+            order(100.into(), false),
+            // Will get filtered out because the scaled fee would overflow a `U256`.
+            order(U256::MAX, false),
+            // We don't scale the fee for liquidity orders.
+            order(100.into(), true),
+        ];
         let scaling_factor = BigRational::from_f64(2.).unwrap();
         let updated_orders = apply_fee_objective_scaling_factor(orders, &scaling_factor);
-        // Second order gets filtered out because the scaled fee would overflow `U256`.
-        assert_eq!(updated_orders.len(), 1);
+        assert_eq!(updated_orders.len(), 2);
         assert_eq!(updated_orders[0].metadata.solver_fee, 200.into());
+        assert_eq!(updated_orders[1].metadata.solver_fee, 100.into());
     }
 }
