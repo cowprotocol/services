@@ -3,7 +3,7 @@ use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
         domain::baseline,
-        infra::{cli, config, contracts},
+        infra::{cli, config},
     },
     clap::Parser,
     std::net::SocketAddr,
@@ -19,16 +19,10 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
     // being executed
     let cli::Command::Baseline = args.command;
     let baseline = config::baseline::file::load(&args.config).await;
-    let contracts = contracts::Contracts::new(
-        baseline.chain_id,
-        contracts::Addresses {
-            weth: baseline.weth,
-        },
-    );
     crate::api::Api {
         addr: args.addr,
         solver: baseline::Baseline {
-            weth: *contracts.weth(),
+            weth: baseline.weth,
             base_tokens: baseline.base_tokens.into_iter().collect(),
             max_hops: baseline.max_hops,
         },

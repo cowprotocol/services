@@ -1,5 +1,6 @@
 use {
-    crate::{domain::eth, util::serialize},
+    crate::{domain::eth, infra::contracts, util::serialize},
+    ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
@@ -10,21 +11,24 @@ use {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
-    /// The chain ID the solver is configured for.
-    #[serde_as(as = "serialize::ChainId")]
-    pub chain_id: eth::ChainId,
+    /// Optional chain ID. This is used to automatically determine the address
+    /// of the WETH contract.
+    #[serde_as(as = "Option<serialize::ChainId>")]
+    chain_id: Option<eth::ChainId>,
 
-    /// The address of the WETH contract.
-    pub weth: Option<eth::H160>,
+    /// Optional WETH contract address. This can be used to specify a manual
+    /// value **instead** of using the canonical WETH contract for the
+    /// configured chain.
+    weth: Option<H160>,
 
     /// List of base tokens to use when path finding. This defines the tokens
     /// that can appear as intermediate "hops" within a trading route. Note that
     /// WETH is always considered as a base token.
-    pub base_tokens: Vec<eth::H160>,
+    base_tokens: Vec<eth::H160>,
 
     /// The maximum number of hops to consider when finding the optimal trading
     /// path.
-    pub max_hops: usize,
+    max_hops: usize,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -36,11 +40,24 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config: Config = toml::de::from_str(&data)
+    let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+    let contracts = match (config.chain_id, config.weth) {
+        (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id),
+        (None, Some(weth)) => contracts::Contracts {
+            weth: eth::WethAddress(weth),
+        },
+        (Some(_), Some(_)) => panic!(
+            "invalid configuration: cannot specify both `chain-id` and `weth` configuration \
+             options",
+        ),
+        (None, None) => panic!(
+            "invalid configuration: must specify either `chain-id` or `weth` configuration options",
+        ),
+    };
+
     super::BaselineConfig {
-        chain_id: config.chain_id,
-        weth: config.weth.map(eth::WethAddress),
+        weth: contracts.weth,
         base_tokens: config
             .base_tokens
             .into_iter()
