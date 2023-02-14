@@ -462,7 +462,7 @@ components:
       required:
         - expiration
         - amount
-    OrderType:
+    OrderKind:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
@@ -525,7 +525,7 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         kind:
           description: "The kind is either a buy or sell order"
-          $ref: "#/components/schemas/OrderType"
+          $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
