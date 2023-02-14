@@ -1,21 +1,17 @@
 use {
-    crate::{domain::eth, util::serialize},
+    crate::{domain::eth, infra::contracts, util::serialize},
+    ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
     tokio::fs,
 };
 
-#[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
-    /// The chain ID the solver is configured for.
-    #[serde_as(as = "serialize::ChainId")]
-    pub chain_id: eth::ChainId,
-
-    /// The address of the WETH contract.
-    pub weth: Option<eth::H160>,
+    #[serde(flatten)]
+    pub contracts: ContractsConfig,
 
     /// List of base tokens to use when path finding. This defines the tokens
     /// that can appear as intermediate "hops" within a trading route. Note that
@@ -27,6 +23,14 @@ struct Config {
     pub max_hops: usize,
 }
 
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ContractsConfig {
+    ChainId(#[serde_as(as = "serialize::ChainId")] eth::ChainId),
+    Weth(H160),
+}
+
 /// Load the driver configuration from a TOML file.
 ///
 /// # Panics
@@ -36,11 +40,17 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config: Config = toml::de::from_str(&data)
+    let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+    let contracts = match config.contracts {
+        ContractsConfig::ChainId(chain_id) => contracts::Contracts::for_chain(chain_id),
+        ContractsConfig::Weth(weth) => contracts::Contracts {
+            weth: eth::WethAddress(weth),
+        },
+    };
+
     super::BaselineConfig {
-        chain_id: config.chain_id,
-        weth: config.weth.map(eth::WethAddress),
+        weth: contracts.weth,
         base_tokens: config
             .base_tokens
             .into_iter()
