@@ -769,7 +769,7 @@ components:
         buyAmount:
           description: "Total amount of buyToken received in this trade."
           $ref: "#/components/schemas/TokenAmount"
-        transactionHash:
+        txHash:
           description: "Hash of the corresponding settlement transaction containing the trade (if available)."
           $ref: "#/components/schemas/TransactionHash"
           nullable: true
@@ -783,7 +783,7 @@ components:
         - sellAmount
         - sellAmountBeforeFees
         - buyAmount
-        - transactionHash
+        - txHash
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
