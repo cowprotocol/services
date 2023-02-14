@@ -54,7 +54,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
-        parse_paraswap_response_text(status, &text)
+        parse_paraswap_response(status, &text)
     }
 
     async fn transaction(
@@ -73,7 +73,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
-        parse_paraswap_response_text(status, &response_text)
+        parse_paraswap_response(status, &response_text)
     }
 }
 
@@ -122,7 +122,7 @@ impl ParaswapResponseError {
     }
 }
 
-fn parse_paraswap_response_text<T>(
+fn parse_paraswap_response<T>(
     status: StatusCode,
     response_text: &str,
 ) -> Result<T, ParaswapResponseError>
@@ -132,7 +132,9 @@ where
     if status == StatusCode::TOO_MANY_REQUESTS {
         // This custom treatment is required as the text field is empty for these
         // responses
-        Err(ParaswapResponseError::RateLimited(RateLimiter::RateLimited))
+        return Err(ParaswapResponseError::RateLimited(
+            RateLimiterError::RateLimited,
+        ));
     }
     match serde_json::from_str::<RawResponse<T>>(response_text)? {
         RawResponse::ResponseOk(response) => Ok(response),
@@ -724,7 +726,7 @@ mod tests {
 
     #[test]
     fn paraswap_response_handling() {
-        let parse = |status: StatusCode, s: &str| parse_paraswap_response_text::<bool>(status, s);
+        let parse = |status: StatusCode, s: &str| parse_paraswap_response::<bool>(status, s);
         assert!(matches!(
             parse(StatusCode::Err, "invalid JSON"),
             Err(ParaswapResponseError::Json(_))
@@ -759,10 +761,12 @@ mod tests {
             ));
         }
 
-        // assert!(matches!(
-        //     parse(StatusCode::TOO_MANY_REQUESTS, ""),
-        //     Err(ParaswapResponseError::RateLimited(RateLimiter::RateLimited))
-        // ));
+        assert!(matches!(
+            parse(StatusCode::TOO_MANY_REQUESTS, ""),
+            Err(ParaswapResponseError::RateLimited(
+                RateLimiterError::RateLimited
+            ))
+        ));
     }
 
     #[tokio::test]
