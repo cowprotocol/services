@@ -277,6 +277,7 @@ async fn single_limit_order_test(web3: Web3) {
         None,
         0,
         Arc::new(MockCodeFetching::new()),
+        false,
     );
     driver.single_run().await.unwrap();
 
@@ -528,6 +529,7 @@ async fn two_limit_orders_test(web3: Web3) {
         None,
         0,
         Arc::new(MockCodeFetching::new()),
+        false,
     );
     driver.single_run().await.unwrap();
 
@@ -788,6 +790,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         None,
         0,
         Arc::new(MockCodeFetching::new()),
+        false,
     );
     driver.single_run().await.unwrap();
 
