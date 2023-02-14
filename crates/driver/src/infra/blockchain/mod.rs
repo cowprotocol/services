@@ -124,6 +124,15 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
+    pub async fn gas_price(&self) -> Result<eth::EffectiveGasPrice, Error> {
+        self.web3
+            .eth()
+            .gas_price()
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
     fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {
         web3::types::TransactionRequest {
             from: tx.from.into(),

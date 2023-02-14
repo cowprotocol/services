@@ -58,8 +58,10 @@ shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
+tap = "1.0.1"
 
 [dev-dependencies]
+approx = "0.5"
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
