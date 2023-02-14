@@ -135,6 +135,7 @@ pub enum Error {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
     id: i64,
+    #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<eth::H160, eth::U256>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,

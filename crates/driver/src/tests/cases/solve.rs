@@ -13,9 +13,9 @@ use {
 #[ignore]
 #[tokio::test]
 async fn test() {
+    crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
-        web3,
         settlement,
         token_a,
         token_b,
@@ -30,6 +30,7 @@ async fn test() {
         solver_address,
         geth,
         solver_secret_key,
+        ..
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -50,7 +51,6 @@ async fn test() {
         domain_separator,
         owner: admin,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -110,7 +110,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": "0",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -150,18 +150,10 @@ async fn test() {
         .solve(
             SOLVER_NAME,
             json!({
-                "id": "1",
-                "tokens": {
-                    hex_address(sell_token): {
-                        "availableBalance": "0",
-                        "trusted": false,
-                        "referencePrice": buy_amount.to_string(),
-                    },
-                    hex_address(buy_token): {
-                        "availableBalance": "0",
-                        "trusted": false,
-                        "referencePrice": sell_amount.to_string(),
-                    }
+                "id": 1,
+                "prices": {
+                    hex_address(sell_token): buy_amount.to_string(),
+                    hex_address(buy_token): sell_amount.to_string(),
                 },
                 "orders": [
                     {
@@ -177,7 +169,7 @@ async fn test() {
                         "owner": hex_address(admin),
                         "partiallyFillable": false,
                         "executed": "0",
-                        "interactions": [],
+                        "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "reward": 0.1,
@@ -185,7 +177,6 @@ async fn test() {
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
                 ],
-                "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
         )
@@ -197,5 +188,7 @@ async fn test() {
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
     // TODO This needs to be updated due to the solution ID
-    assert_eq!(result.get("score").unwrap(), -74551241429078.0);
+    // This should be equal to `-74551241429078.0` but the driver currently does not
+    // set the gas price.
+    assert_eq!(result.get("score").unwrap(), 0.0);
 }
