@@ -728,12 +728,15 @@ mod tests {
     fn paraswap_response_handling() {
         let parse = |status: StatusCode, s: &str| parse_paraswap_response::<bool>(status, s);
         assert!(matches!(
-            parse(StatusCode::Err, "invalid JSON"),
+            parse(StatusCode::NOT_FOUND, "invalid JSON"),
             Err(ParaswapResponseError::Json(_))
         ));
 
         assert!(matches!(
-            parse(StatusCode::Err, "{\"error\": \"Never seen this before\"}"),
+            parse(
+                StatusCode::NOT_FOUND,
+                "{\"error\": \"Never seen this before\"}"
+            ),
             Err(ParaswapResponseError::Other(_))
         ));
 
@@ -743,7 +746,7 @@ mod tests {
             "Too much slippage on quote, please try again",
         ] {
             assert!(matches!(
-                parse(StatusCode::Err,&format!("{{\"error\": \"{liquidity_error}\"}}")),
+                parse(StatusCode::NOT_FOUND,&format!("{{\"error\": \"{liquidity_error}\"}}")),
                 Err(ParaswapResponseError::InsufficientLiquidity(message)) if &message == liquidity_error,
             ));
         }
@@ -756,7 +759,7 @@ mod tests {
             "It seems like the rate has changed, please re-query the latest Price",
         ] {
             assert!(matches!(
-                parse(StatusCode::Err,&format!("{{\"error\": \"{retryable_error}\"}}")),
+                parse(StatusCode::NOT_FOUND,&format!("{{\"error\": \"{retryable_error}\"}}")),
                 Err(ParaswapResponseError::Retryable(message)) if &message == retryable_error,
             ));
         }
