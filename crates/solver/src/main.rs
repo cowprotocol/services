@@ -495,6 +495,7 @@ async fn main() -> ! {
         tenderly_api,
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
+        args.enable_auction_rewards,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);
