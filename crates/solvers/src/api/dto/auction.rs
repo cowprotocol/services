@@ -59,6 +59,9 @@ impl Auction {
                             Class::Limit => order::Class::Limit,
                             Class::Liquidity => order::Class::Liquidity,
                         },
+                        fee: order::Fee(order.fee_amount),
+                        partially_fillable: order.partially_fillable,
+                        reward: order::Reward(order.reward),
                     }
                 })
                 .collect(),

@@ -1,15 +1,3 @@
-use shared::{
-    http_solver::model::{
-        AmmModel, AmmParameters, ConcentratedPoolParameters, ConstantProductPoolParameters,
-        SettledBatchAuctionModel, StablePoolParameters, WeightedPoolTokenData,
-        WeightedProductPoolParameters,
-    },
-    sources::uniswap_v3::{
-        graph_api::Token,
-        pool_fetching::{PoolInfo, PoolState, PoolStats},
-    },
-};
-
 use {
     crate::{
         boundary,
@@ -17,12 +5,33 @@ use {
     },
     anyhow::Context as _,
     ethereum_types::{H160, U256},
-    model::order::OrderUid,
+    model::order::{OrderKind, OrderUid},
     reqwest::Url,
-    shared::http_solver::{
-        gas_model::GasModel,
-        model::{BatchAuctionModel, MetadataModel, OrderModel, TokenAmount, TokenInfoModel},
-        DefaultHttpSolverApi, SolverConfig,
+    shared::{
+        http_solver::{
+            gas_model::GasModel,
+            model::{
+                AmmModel,
+                AmmParameters,
+                BatchAuctionModel,
+                ConcentratedPoolParameters,
+                ConstantProductPoolParameters,
+                MetadataModel,
+                OrderModel,
+                SettledBatchAuctionModel,
+                StablePoolParameters,
+                TokenAmount,
+                TokenInfoModel,
+                WeightedPoolTokenData,
+                WeightedProductPoolParameters,
+            },
+            DefaultHttpSolverApi,
+            SolverConfig,
+        },
+        sources::uniswap_v3::{
+            graph_api::Token,
+            pool_fetching::{PoolInfo, PoolState, PoolStats},
+        },
     },
     std::collections::BTreeMap,
 };
@@ -300,25 +309,65 @@ fn to_domain_solution(
     let mut trades = Vec::new();
     let mut interactions = Vec::new();
 
+    for jit in &model.foreign_liquidity_orders {
+        trades.push(solution::Trade::Jit(solution::JitTrade {
+            order: order::JitOrder {
+                // TODO more fields
+                owner: jit.order.from,
+                pre_interactions: jit
+                    .order
+                    .interactions
+                    .pre
+                    .iter()
+                    .map(|i| order::CustomInteraction {
+                        target: i.target,
+                        value: eth::Ether(i.value),
+                        calldata: i.call_data.clone(),
+                    })
+                    .collect(),
+                signature: jit.order.signature,
+                sell: eth::Asset {
+                    token: eth::TokenAddress(jit.order.data.sell_token),
+                    amount: jit.order.data.sell_amount,
+                },
+                buy: eth::Asset {
+                    token: eth::TokenAddress(jit.order.data.buy_token),
+                    amount: jit.order.data.buy_amount,
+                },
+                fee: order::Fee(jit.order.data.fee_amount),
+                side: match jit.order.data.kind {
+                    OrderKind::Buy => order::Side::Buy,
+                    OrderKind::Sell => order::Side::Sell,
+                },
+                class: order::Class::Liquidity,
+                partially_fillable: jit.order.data.partially_fillable,
+            },
+            executed: match jit.order.data.kind {
+                model::order::OrderKind::Buy => jit.exec_buy_amount,
+                model::order::OrderKind::Sell => jit.exec_sell_amount,
+            },
+        }));
+    }
+
     for (id, execution) in &model.orders {
         match mapping
             .orders
             .get(*id)
             .context("solution contains order not part of auction")?
         {
-            Order::Protocol(&order) => trades.push(
-                solution::Trade::new(
-                    order.clone(),
+            Order::Protocol(order) => trades.push(solution::Trade::Fulfillment(
+                solution::Fulfillment::new(
+                    (*order).clone(),
                     match order.side {
                         order::Side::Buy => execution.exec_buy_amount,
                         order::Side::Sell => execution.exec_sell_amount,
                     },
                 )
                 .context("invalid trade execution")?,
-            ),
-            Order::Liquidity(&liquidity, &state) => interactions.push(
+            )),
+            Order::Liquidity(liquidity, state) => interactions.push(
                 solution::Interaction::Liquidity(solution::LiquidityInteraction {
-                    liquidity: liquidity.clone(),
+                    liquidity: (*liquidity).clone(),
                     input: eth::Asset {
                         token: state.taker.token,
                         amount: execution.exec_buy_amount,
@@ -332,10 +381,52 @@ fn to_domain_solution(
         }
     }
 
-    for jit in &model.foreign_liquidity_orders {
-        todo!()
-    }
+    let interactions = Vec::new();
+    for (address, amm) in &model.amms {
+        let liquidity = mapping
+            .amms
+            .get(address)
+            .context("uses unknown liquidity")?;
 
+        for interaction in &amm.execution {
+            interactions.push(solution::Interaction::Liquidity(
+                solution::LiquidityInteraction {
+                    liquidity: (*liquidity).clone(),
+                    input: eth::Asset {
+                        token: eth::TokenAddress(interaction.sell_token),
+                        amount: interaction.exec_sell_amount,
+                    },
+                    output: eth::Asset {
+                        token: eth::TokenAddress(interaction.buy_token),
+                        amount: interaction.exec_buy_amount,
+                    },
+                },
+            ));
+        }
+    }
+    for interaction in &model.interaction_data {
+        interactions.push(solution::Interaction::Custom(solution::CustomInteraction {
+            target: interaction.target,
+            value: eth::Ether(interaction.value),
+            calldata: interaction.call_data.clone(),
+            inputs: interaction
+                .inputs
+                .iter()
+                .map(|i| eth::Asset {
+                    token: eth::TokenAddress(i.token),
+                    amount: i.amount,
+                })
+                .collect(),
+            outputs: interaction
+                .outputs
+                .iter()
+                .map(|i| eth::Asset {
+                    token: eth::TokenAddress(i.token),
+                    amount: i.amount,
+                })
+                .collect(),
+        }));
+    }
     // TODO: order `model.amms` and `model.interaction_data` by execution plan
     // and append to the `solution.liquidity`. We also need to squeeze in the
     // `model.approvals` in the first encountered non-internalized interaciton,

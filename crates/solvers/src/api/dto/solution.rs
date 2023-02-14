@@ -28,25 +28,77 @@ impl Solution {
             trades: solution
                 .trades
                 .iter()
-                .map(|trade| {
-                    Trade::Fulfillment(Fulfillment {
+                .map(|trade| match trade {
+                    solution::Trade::Fulfillment(trade) => Trade::Fulfillment(Fulfillment {
                         order: trade.order().uid.0,
                         executed_amount: trade.executed().amount,
-                    })
+                    }),
+                    solution::Trade::Jit(trade) => Trade::Jit(JitTrade {
+                        order: JitOrder {
+                            sell_token: trade.order.sell.token.0,
+                            sell_amount: trade.order.sell.amount,
+                            buy_token: trade.order.buy.token.0,
+                            buy_amount: trade.order.buy.amount,
+                            receiver: Default::default(),
+                            valid_to: Default::default(),
+                            app_data: Default::default(),
+                            fee_amount: trade.order.fee.0,
+                            kind: match trade.order.side {
+                                crate::domain::order::Side::Buy => Kind::Buy,
+                                crate::domain::order::Side::Sell => Kind::Sell,
+                            },
+                            partially_fillable: trade.order.partially_fillable,
+                            sell_token_balance: (), // Default?
+                            buy_token_balance: (),  // Default?
+                            signing_scheme: (),
+                            signature: trade.order.signature,
+                        },
+                        executed_amount: trade.executed,
+                    }),
                 })
                 .collect(),
             interactions: solution
                 .interactions
                 .iter()
                 .map(|interaction| {
-                    Interaction::Liquidity(LiquidityInteraction {
-                        internalize: false,
-                        id: interaction.liquidity.id.0.clone(),
-                        input_token: interaction.input.token.0,
-                        output_token: interaction.output.token.0,
-                        input_amount: interaction.input.amount,
-                        output_amount: interaction.output.amount,
-                    })
+                    match interaction {
+                        solution::Interaction::Liquidity(interaction) => {
+                            Interaction::Liquidity(LiquidityInteraction {
+                                id: Default::default(),
+                                input_token: interaction.input.token.0,
+                                input_amount: interaction.input.amount,
+                                output_token: interaction.output.token.0,
+                                output_amount: interaction.output.amount,
+                                internalize: interaction.internalize,
+                            })
+                        }
+                        solution::Interaction::Custom(interaction) => {
+                            Interaction::Custom(CustomInteraction {
+                                target: interaction.target,
+                                value: interaction.value.0,
+                                call_data: interaction.calldata.clone(),
+                                internalize: interaction.internalize,
+                                // TODO attach allowances somehow
+                                allowances: Default::default(),
+                                inputs: interaction
+                                    .inputs
+                                    .iter()
+                                    .map(|i| Asset {
+                                        token: i.token.0,
+                                        amount: i.amount,
+                                    })
+                                    .collect(),
+                                outputs: interaction
+                                    .outputs
+                                    .iter()
+                                    .map(|o| Asset {
+                                        token: o.token.0,
+                                        amount: o.amount,
+                                    })
+                                    .collect(),
+                            })
+                        }
+                    }
                 })
                 .collect(),
         }
@@ -132,7 +184,6 @@ enum Interaction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LiquidityInteraction {
-    internalize: bool,
     id: String,
     input_token: H160,
     output_token: H160,
@@ -140,13 +191,13 @@ struct LiquidityInteraction {
     input_amount: U256,
     #[serde_as(as = "serialize::U256")]
     output_amount: U256,
+    internalize: bool,
 }
 
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CustomInteraction {
-    internalize: bool,
     target: H160,
     #[serde_as(as = "serialize::U256")]
     value: U256,
@@ -155,6 +206,7 @@ struct CustomInteraction {
     allowances: Vec<Allowance>,
     inputs: Vec<Asset>,
     outputs: Vec<Asset>,
+    internalize: bool,
 }
 
 #[serde_as]

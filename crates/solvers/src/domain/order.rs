@@ -1,6 +1,9 @@
 //! The domain object representing a CoW Protocol order.
 
-use {crate::domain::eth, ethereum_types::U256};
+use {
+    crate::domain::eth,
+    ethereum_types::{Address, U256},
+};
 
 /// A CoW Protocol order in the auction.
 #[derive(Debug, Clone)]
@@ -31,7 +34,7 @@ pub struct Uid(pub [u8; 56]);
 
 /// An order fee amount, denominated in its sell token.
 #[derive(Clone, Copy, Debug)]
-pub struct Fee(U256);
+pub struct Fee(pub U256);
 
 /// The trading side of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,3 +97,25 @@ impl<'a> NonLiquidity<'a> {
 /// A COW reward amount, in base units.
 #[derive(Clone, Copy, Debug)]
 pub struct Reward(pub f64);
+
+// TODO where to move this?
+/// A custom interaction
+#[derive(Debug, Clone)]
+pub struct CustomInteraction {
+    pub target: Address,
+    pub value: eth::Ether,
+    pub calldata: Vec<u8>,
+}
+
+pub struct JitOrder {
+    pub owner: Address,
+    pub signature: (), // TODO
+    pub uid: Uid,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub fee: Fee,
+    pub side: Side,
+    pub class: Class,
+    pub partially_fillable: bool,
+    pub pre_interactions: Vec<CustomInteraction>,
+}

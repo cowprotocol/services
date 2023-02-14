@@ -11,6 +11,11 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
 }
 
+pub enum Trade {
+    Fulfillment(Fulfillment),
+    Jit(JitTrade),
+}
+
 /// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
@@ -23,15 +28,15 @@ impl ClearingPrices {
 }
 
 /// A traded order within a solution.
-pub struct Trade {
+pub struct Fulfillment {
     order: order::Order,
     executed: U256,
 }
 
-impl Trade {
+impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
-    pub fn new(order: order::Order, executed: U256) -> Option<Trade> {
+    pub fn new(order: order::Order, executed: U256) -> Option<Self> {
         let fill = match order.side {
             order::Side::Buy => order.buy.amount,
             order::Side::Sell => order.sell.amount,
@@ -43,11 +48,11 @@ impl Trade {
             return None;
         }
 
-        Some(Trade { order, executed })
+        Some(Self { order, executed })
     }
 
     /// Creates a new trade for a fully executed order.
-    pub fn fill(order: order::Order) -> Trade {
+    pub fn fill(order: order::Order) -> Self {
         let executed = match order.side {
             order::Side::Buy => order.buy.amount,
             order::Side::Sell => order.sell.amount,
@@ -74,6 +79,11 @@ impl Trade {
     }
 }
 
+pub struct JitTrade {
+    pub order: order::JitOrder,
+    pub executed: U256,
+}
+
 /// A interaction included within an solution.
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
@@ -84,10 +94,18 @@ pub enum Interaction {
 /// the driver.
 pub struct LiquidityInteraction {
     pub liquidity: liquidity::Liquidity,
-    // TODO: Currently there is not type-level guarantee that `input` and
-    // output` are valid for the specified liquidity.
     pub input: eth::Asset,
     pub output: eth::Asset,
+    pub internalize: bool,
+}
+
+impl LiquidityInteraction {
+    // just pass in liquidity and amounts and let the function find the tokens?
+    pub fn new() -> Option<Self> {
+        // TODO: Currently there is not type-level guarantee that `input` and
+        // output` are valid for the specified liquidity.
+        todo!()
+    }
 }
 
 /// A custom interaction
@@ -95,4 +113,8 @@ pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
     pub calldata: Vec<u8>,
+    pub inputs: Vec<eth::Asset>,
+    pub outputs: Vec<eth::Asset>,
+    pub internalize: bool,
+    // TODO: do we need gas used?
 }
