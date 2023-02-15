@@ -92,12 +92,20 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load native token contract"),
     };
+
     let chain_id = web3
         .eth()
         .chain_id()
         .await
         .expect("Could not get chainId")
         .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
     let network = web3
         .net()
         .version()
