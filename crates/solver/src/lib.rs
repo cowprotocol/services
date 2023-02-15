@@ -11,6 +11,7 @@ pub mod liquidity_collector;
 pub mod metrics;
 pub mod objective_value;
 pub mod orderbook;
+pub mod run;
 pub mod s3_instance_upload;
 pub mod s3_instance_upload_arguments;
 pub mod settlement;
