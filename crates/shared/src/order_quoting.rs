@@ -355,6 +355,9 @@ pub enum FindQuoteError {
     #[error("quote expired")]
     Expired(DateTime<Utc>),
 
+    #[error("subsidy calcuation failed")]
+    UnavailableSubsidy(anyhow::Error),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -631,7 +634,7 @@ impl OrderQuoting for OrderQuoter {
             quote,
             self.fee_subsidy
                 .subsidy(subsidy)
-                .map_err(FindQuoteError::from)
+                .map_err(FindQuoteError::UnavailableSubsidy)
         )?;
 
         let quote = quote.with_subsidy_and_signing_scheme(&subsidy, signing_scheme);

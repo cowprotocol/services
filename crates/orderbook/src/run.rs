@@ -26,6 +26,7 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
+        caching_balance_fetcher::CachingBalanceFetcher,
         code_fetching::CachedCodeFetcher,
         fee_subsidy::{
             config::FeeSubsidyConfiguration,
@@ -129,6 +130,7 @@ pub async fn run(args: Arguments) {
         vault_relayer,
         settlement_contract.address(),
     ));
+    let caching_balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher.clone()));
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -378,6 +380,7 @@ pub async fn run(args: Arguments) {
             token,
             vtoken,
             args.order_quoting.cow_fee_factors.unwrap_or_default(),
+            caching_balance_fetcher,
         )
     });
 

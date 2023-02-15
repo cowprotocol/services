@@ -1,14 +1,12 @@
 use {
     super::{FeeSubsidizing, Subsidy, SubsidyParameters},
+    crate::account_balances::{BalanceFetching, Query},
     anyhow::{Context, Result},
-    cached::{Cached, TimedSizedCache},
     contracts::{CowProtocolToken, CowProtocolVirtualToken},
+    model::order::SellTokenSource,
     primitive_types::{H160, U256},
-    std::{collections::BTreeMap, sync::Mutex, time::Duration},
+    std::{collections::BTreeMap, sync::Arc},
 };
-
-const CACHE_SIZE: usize = 10_000;
-const CACHE_LIFESPAN: Duration = Duration::from_secs(60 * 60);
 
 /// Maps how many base units of COW someone must own at least in order to
 /// qualify for a given fee subsidy factor.
@@ -55,7 +53,7 @@ pub struct CowSubsidy {
     token: CowProtocolToken,
     vtoken: CowProtocolVirtualToken,
     subsidy_tiers: SubsidyTiers,
-    cache: Mutex<TimedSizedCache<H160, f64>>,
+    balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
 impl CowSubsidy {
@@ -63,44 +61,43 @@ impl CowSubsidy {
         token: CowProtocolToken,
         vtoken: CowProtocolVirtualToken,
         subsidy_tiers: SubsidyTiers,
+        balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
-        // NOTE: A long caching time might bite us should we ever start advertising that
-        // people can buy COW to reduce their fees. `CACHE_LIFESPAN` would have
-        // to pass after buying COW to qualify for the subsidy.
-        let cache = TimedSizedCache::with_size_and_lifespan_and_refresh(
-            CACHE_SIZE,
-            CACHE_LIFESPAN.as_secs(),
-            false,
-        );
-
         Self {
             token,
             vtoken,
             subsidy_tiers,
-            cache: Mutex::new(cache),
+            balance_fetcher,
         }
-    }
-
-    async fn subsidy_factor_uncached(&self, user: H160) -> Result<f64> {
-        let (balance, vbalance) = futures::future::try_join(
-            self.token.balance_of(user).call(),
-            self.vtoken.balance_of(user).call(),
-        )
-        .await?;
-        let combined = balance.saturating_add(vbalance);
-        let tier = self.subsidy_tiers.0.range(..=combined).rev().next();
-        let factor = tier.map(|tier| *tier.1).unwrap_or(1.0);
-        tracing::debug!(?user, ?balance, ?vbalance, ?combined, ?factor);
-        Ok(factor)
     }
 
     async fn cow_subsidy_factor(&self, user: H160) -> Result<f64> {
-        if let Some(subsidy_factor) = self.cache.lock().unwrap().cache_get(&user).copied() {
-            return Ok(subsidy_factor);
-        }
-        let subsidy_factor = self.subsidy_factor_uncached(user).await?;
-        self.cache.lock().unwrap().cache_set(user, subsidy_factor);
-        Ok(subsidy_factor)
+        let queries = vec![
+            Query {
+                owner: user,
+                token: self.token.address(),
+                source: SellTokenSource::Erc20,
+            },
+            Query {
+                owner: user,
+                token: self.vtoken.address(),
+                source: SellTokenSource::Erc20,
+            },
+        ];
+        let balances = self
+            .balance_fetcher
+            .get_balances(&queries)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<U256>>>()?;
+        let cow_balance = balances[0];
+        let vcow_balance = balances[1];
+
+        let combined = cow_balance.saturating_add(vcow_balance);
+        let tier = self.subsidy_tiers.0.range(..=combined).rev().next();
+        let factor = tier.map(|tier| *tier.1).unwrap_or(1.0);
+        tracing::debug!(?user, ?cow_balance, ?vcow_balance, ?combined, ?factor);
+        Ok(factor)
     }
 }
 
@@ -116,7 +113,11 @@ impl FeeSubsidizing for CowSubsidy {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::ethrpc::Web3, hex_literal::hex};
+    use {
+        super::*,
+        crate::{account_balances::Web3BalanceFetcher, ethrpc::Web3},
+        hex_literal::hex,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -126,10 +127,19 @@ mod tests {
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
         let vtoken = CowProtocolVirtualToken::deployed(&web3).await.unwrap();
+        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let vault_relayer = settlement.vault_relayer().call().await.unwrap();
+        let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+            web3.clone(),
+            None,
+            vault_relayer,
+            settlement.address(),
+        ));
         let subsidy = CowSubsidy::new(
             token,
             vtoken,
             SubsidyTiers([(U256::from_f64_lossy(1e18), 0.5)].into_iter().collect()),
+            balance_fetcher,
         );
         //
         for user in [

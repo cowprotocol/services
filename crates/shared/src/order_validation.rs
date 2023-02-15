@@ -121,6 +121,7 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
+    UnavailableSubsidy(anyhow::Error),
     Other(anyhow::Error),
 }
 
@@ -130,6 +131,7 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
         ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
+        ValidationError::UnavailableSubsidy(_) => OnchainOrderPlacementError::UnavailableSubsidy,
         _ => OnchainOrderPlacementError::Other,
     }
 }
@@ -149,6 +151,7 @@ impl From<FindQuoteError> for ValidationError {
         match err {
             FindQuoteError::NotFound(_) => Self::QuoteNotFound,
             FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
+            FindQuoteError::UnavailableSubsidy(err) => Self::UnavailableSubsidy(err),
             FindQuoteError::Other(err) => Self::Other(err),
         }
     }

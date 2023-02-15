@@ -342,7 +342,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             &self.liquidity_order_owners,
             self.metrics,
         )
-        .await;
+        .await?;
 
         let data_tuple = onchain_order_data.into_iter().map(
             |(event_index, quote, onchain_order_placement, order)| {
@@ -430,12 +430,19 @@ fn extract_invalidated_order_uids(
         .collect()
 }
 
+#[derive(Debug)]
+enum OnchainOrderParsingError {
+    Temporary(OnchainOrderPlacementError),
+    Permanent(anyhow::Error),
+}
+
 type GeneralOnchainOrderPlacementData = (
     EventIndex,
     Option<database::orders::Quote>,
     OnchainOrderPlacement,
     Order,
 );
+
 async fn parse_general_onchain_order_placement_data<'a>(
     quoter: &'a dyn OrderQuoting,
     order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
@@ -443,14 +450,16 @@ async fn parse_general_onchain_order_placement_data<'a>(
     settlement_contract: H160,
     liquidity_order_owners: &'a HashSet<H160>,
     metrics: &'static Metrics,
-) -> Vec<GeneralOnchainOrderPlacementData> {
+) -> Result<Vec<GeneralOnchainOrderPlacementData>> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
             let meta = match meta {
                 Some(meta) => meta,
                 None => {
                     metrics.inc_onchain_order_errors("no_metadata");
-                    return Err(anyhow!("event without metadata"));
+                    return Err(OnchainOrderParsingError::Permanent(anyhow!(
+                        "event without metadata"
+                    )));
                 }
             };
             let event = match data {
@@ -466,7 +475,8 @@ async fn parse_general_onchain_order_placement_data<'a>(
             if detailed_order_data.is_err() {
                 metrics.inc_onchain_order_errors("bad_parsing");
             }
-            let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
+            let (order_data, owner, signing_scheme, order_uid) =
+                detailed_order_data.map_err(OnchainOrderParsingError::Permanent)?;
 
             let quote_result =
                 get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
@@ -498,6 +508,11 @@ async fn parse_general_onchain_order_placement_data<'a>(
                         order_data.1.uid,
                     );
                     metrics.inc_onchain_order_errors(err_label);
+                    if err == OnchainOrderPlacementError::UnavailableSubsidy {
+                        // In this case, we want to abort the onchain order creation and try it one
+                        // more time in a next loop
+                        return Err(OnchainOrderParsingError::Temporary(err));
+                    }
                     None
                 }
             };
@@ -509,16 +524,22 @@ async fn parse_general_onchain_order_placement_data<'a>(
             ))
         },
     );
-    let onchain_order_placement_data: Vec<Result<GeneralOnchainOrderPlacementData>> =
-        stream::iter(futures).buffer_unordered(10).collect().await;
+    let onchain_order_placement_data: Vec<
+        Result<GeneralOnchainOrderPlacementData, OnchainOrderParsingError>,
+    > = stream::iter(futures).buffer_unordered(10).collect().await;
     onchain_order_placement_data
         .into_iter()
         .filter_map(|data| match data {
-            Err(err) => {
+            Err(OnchainOrderParsingError::Temporary(err)) => {
+                return Some(Err(anyhow!(
+                    "temporary error while parsing onchain orders: {err:?}"
+                )))
+            }
+            Err(OnchainOrderParsingError::Permanent(err)) => {
                 tracing::debug!("Error while parsing onchain orders: {err:?}");
                 None
             }
-            Ok(data) => Some(data),
+            Ok(data) => Some(Ok(data)),
         })
         .collect()
 }
@@ -1256,7 +1277,8 @@ mod test {
             &Default::default(),
             Metrics::get(),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(result_vec.len(), 2);
         let first_element = result_vec.get(1).unwrap();
         assert_eq!(first_element.1, None);

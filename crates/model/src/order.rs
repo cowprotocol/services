@@ -555,6 +555,7 @@ pub enum OnchainOrderPlacementError {
     // together
     InvalidQuote,
     InsufficientFee,
+    UnavailableSubsidy,
     // In case order data is invalid - e.g. signature type EIP-712 for
     // onchain orders - this error is returned
     InvalidOrderData,

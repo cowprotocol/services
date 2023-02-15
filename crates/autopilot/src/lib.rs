@@ -473,6 +473,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             token,
             vtoken,
             args.order_quoting.cow_fee_factors.unwrap_or_default(),
+            balance_fetcher.clone(),
         )
     });
     let liquidity_order_owners: HashSet<_> = args

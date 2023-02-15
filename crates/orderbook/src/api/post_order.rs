@@ -176,6 +176,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("TooManyLimitOrders", "Too many limit orders"),
                 StatusCode::BAD_REQUEST,
             ),
+            ValidationError::UnavailableSubsidy(err) => {
+                tracing::error!(?err, "Subsidy could not be calculated");
+                shared::api::internal_error_reply()
+            }
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");
                 shared::api::internal_error_reply()
