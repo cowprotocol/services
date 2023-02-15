@@ -88,15 +88,21 @@ pub async fn run(args: Arguments) {
         .await
         .expect("failed to get network id");
     let network_name = network_name(&network_id, chain_id);
-    let settlement_contract = crate::get_settlement_contract(&web3)
-        .await
-        .expect("couldn't load deployed settlement");
+    let settlement_contract = match args.shared.settlement_contract_address {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => contracts::GPv2Settlement::deployed(&web3)
+            .await
+            .expect("load settlement contract"),
+    };
     let vault_contract = BalancerV2Vault::deployed(&web3).await.ok();
-    let native_token_contract = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
+    let native_token = match args.shared.native_token_address {
+        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
+        None => WETH9::deployed(&web3)
+            .await
+            .expect("load native token contract"),
+    };
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token_contract.address(),
+        native_token.address(),
         &args.shared.base_tokens,
     ));
 
@@ -244,7 +250,7 @@ pub async fn run(args: Arguments) {
     );
 
     let order_converter = Arc::new(OrderConverter {
-        native_token: native_token_contract.clone(),
+        native_token: native_token.clone(),
         min_order_age: args.min_order_age,
     });
 
@@ -259,7 +265,7 @@ pub async fn run(args: Arguments) {
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
-        native_token_contract.address(),
+        native_token.address(),
         web3.clone(),
         args.weth_unwrap_factor,
         settlement_contract.clone(),
@@ -279,7 +285,7 @@ pub async fn run(args: Arguments) {
         web3.clone(),
         solvers,
         base_tokens.clone(),
-        native_token_contract.address(),
+        native_token.address(),
         args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         args.balancer_sor_url,
@@ -486,7 +492,7 @@ pub async fn run(args: Arguments) {
         solver,
         gas_price_estimator,
         args.settle_interval,
-        native_token_contract.address(),
+        native_token.address(),
         args.min_order_age,
         metrics.clone(),
         web3,
