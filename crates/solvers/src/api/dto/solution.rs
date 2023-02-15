@@ -78,44 +78,49 @@ impl Solution {
             interactions: solution
                 .interactions
                 .iter()
-                .map(|interaction| {
-                    match interaction {
-                        solution::Interaction::Liquidity(interaction) => {
-                            Interaction::Liquidity(LiquidityInteraction {
-                                id: Default::default(),
-                                input_token: interaction.input.token.0,
-                                input_amount: interaction.input.amount,
-                                output_token: interaction.output.token.0,
-                                output_amount: interaction.output.amount,
-                                internalize: interaction.internalize,
-                            })
-                        }
-                        solution::Interaction::Custom(interaction) => {
-                            Interaction::Custom(CustomInteraction {
-                                target: interaction.target,
-                                value: interaction.value.0,
-                                call_data: interaction.calldata.clone(),
-                                internalize: interaction.internalize,
-                                // TODO attach allowances somehow
-                                allowances: Default::default(),
-                                inputs: interaction
-                                    .inputs
-                                    .iter()
-                                    .map(|i| Asset {
-                                        token: i.token.0,
-                                        amount: i.amount,
-                                    })
-                                    .collect(),
-                                outputs: interaction
-                                    .outputs
-                                    .iter()
-                                    .map(|o| Asset {
-                                        token: o.token.0,
-                                        amount: o.amount,
-                                    })
-                                    .collect(),
-                            })
-                        }
+                .map(|interaction| match interaction {
+                    solution::Interaction::Liquidity(interaction) => {
+                        Interaction::Liquidity(LiquidityInteraction {
+                            id: interaction.liquidity.id.0.clone(),
+                            input_token: interaction.input.token.0,
+                            input_amount: interaction.input.amount,
+                            output_token: interaction.output.token.0,
+                            output_amount: interaction.output.amount,
+                            internalize: interaction.internalize,
+                        })
+                    }
+                    solution::Interaction::Custom(interaction) => {
+                        Interaction::Custom(CustomInteraction {
+                            target: interaction.target,
+                            value: interaction.value.0,
+                            call_data: interaction.calldata.clone(),
+                            internalize: interaction.internalize,
+                            allowances: interaction
+                                .allowances
+                                .iter()
+                                .map(|allowance| Allowance {
+                                    token: allowance.asset.token.0,
+                                    amount: allowance.asset.amount,
+                                    spender: allowance.spender,
+                                })
+                                .collect(),
+                            inputs: interaction
+                                .inputs
+                                .iter()
+                                .map(|i| Asset {
+                                    token: i.token.0,
+                                    amount: i.amount,
+                                })
+                                .collect(),
+                            outputs: interaction
+                                .outputs
+                                .iter()
+                                .map(|o| Asset {
+                                    token: o.token.0,
+                                    amount: o.amount,
+                                })
+                                .collect(),
+                        })
                     }
                 })
                 .collect(),

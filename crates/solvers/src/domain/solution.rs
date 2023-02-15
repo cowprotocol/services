@@ -116,5 +116,11 @@ pub struct CustomInteraction {
     pub inputs: Vec<eth::Asset>,
     pub outputs: Vec<eth::Asset>,
     pub internalize: bool,
-    // TODO: do we need gas used?
+    pub allowances: Vec<Allowance>,
+}
+
+/// Approval required to make some custom interaction possible.
+pub struct Allowance {
+    pub spender: Address,
+    pub asset: eth::Asset,
 }

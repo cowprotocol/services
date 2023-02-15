@@ -5,10 +5,7 @@ use {
     },
     anyhow::Context as _,
     ethereum_types::{H160, U256},
-    model::{
-        order::{OrderKind, OrderUid},
-        signature::Signature,
-    },
+    model::order::{OrderKind, OrderUid},
     reqwest::Url,
     shared::{
         http_solver::{
@@ -442,18 +439,39 @@ fn to_domain_solution(
                 .as_ref()
                 .map(|e| e.internal)
                 .unwrap_or_default(),
+            // allowances get added later
+            allowances: Default::default(),
         });
         interactions.push((interaction, coordinate));
     }
 
-    // TODO: order `model.amms` and `model.interaction_data` by execution plan
-    // and append to the `solution.liquidity`. We also need to squeeze in the
-    // `model.approvals` in the first encountered non-internalized interaciton,
-    // otherwise, we insert an empty interaction (to address 0 with 0 bytes and
-    // calldata) with approvals to make sure they get included.
-
     // sort Vec<(interaction, Option<coordinate>)> by coordinates (optionals first)
     interactions.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+    let allowances: Vec<_> = model
+        .approvals
+        .iter()
+        .map(|approval| solution::Allowance {
+            spender: approval.spender,
+            asset: eth::Asset {
+                token: eth::TokenAddress(approval.token),
+                amount: approval.amount,
+            },
+        })
+        .collect();
+
+    // Add all allowances to first non-internalized interaction. This is a work
+    // around because the legacy solvers didn't associate approvals with
+    // specific interactions so we have to come up with some association.
+    for (interaction, _) in &mut interactions {
+        match interaction {
+            solution::Interaction::Custom(custom) if !custom.internalize => {
+                custom.allowances = allowances;
+                break;
+            }
+            _ => (),
+        };
+    }
 
     Ok(solution::Solution {
         prices: solution::ClearingPrices(
