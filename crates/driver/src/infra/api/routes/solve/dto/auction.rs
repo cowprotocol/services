@@ -1,6 +1,7 @@
 use {
     crate::{
         domain::{competition, eth},
+        infra::Ethereum,
         util::serialize,
     },
     itertools::Itertools,
@@ -10,7 +11,7 @@ use {
 };
 
 impl Auction {
-    pub fn into_domain(self) -> Result<competition::Auction, Error> {
+    pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
             id: Some((self.id as u64).into()),
             tokens: self
@@ -114,9 +115,8 @@ impl Auction {
                         reward: order.reward,
                     })
                 })
-                .try_collect()?,
-            // TODO: Populate hardcoded value.
-            gas_price: eth::U256::from(0).into(),
+                .try_collect::<_, _, Error>()?,
+            gas_price: eth.gas_price().await.map_err(Error::GasPrice)?,
             deadline: self.deadline.into(),
         })
     }
@@ -128,6 +128,8 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
+    #[error("error getting gas price")]
+    GasPrice(#[source] crate::infra::blockchain::Error),
 }
 
 #[serde_as]

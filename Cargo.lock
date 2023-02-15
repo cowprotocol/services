@@ -1197,6 +1197,7 @@ name = "driver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "approx",
  "async-trait",
  "axum",
  "bigdecimal",
@@ -1226,6 +1227,7 @@ dependencies = [
  "serde_with 2.0.1",
  "shared",
  "solver",
+ "tap",
  "thiserror",
  "tokio",
  "toml 0.7.0",
