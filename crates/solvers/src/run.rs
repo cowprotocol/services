@@ -1,12 +1,13 @@
+use shared::http_solver::DefaultHttpSolverApi;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::baseline,
+        domain::{Solver, baseline, legacy},
         infra::{cli, config},
     },
     clap::Parser,
-    std::net::SocketAddr,
+    std::{sync::Arc, net::SocketAddr},
     tokio::sync::oneshot,
 };
 
@@ -17,15 +18,34 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
 
     // TODO In the future, should use different load methods based on the command
     // being executed
-    let cli::Command::Baseline = args.command;
-    let baseline = config::baseline::file::load(&args.config).await;
+    let solver: Arc<dyn Solver> = match args.command {
+        cli::Command::Baseline => {
+            let baseline = config::baseline::file::load(&args.config).await;
+            Arc::new(baseline::Baseline {
+                weth: baseline.weth,
+                base_tokens: baseline.base_tokens.into_iter().collect(),
+                max_hops: baseline.max_hops,
+            })
+        },
+        cli::Command::Legacy => {
+            // TODO read values from config
+            let baseline = config::baseline::file::load(&args.config).await;
+            Arc::new(legacy::Legacy {
+                weth: baseline.weth,
+                solver: DefaultHttpSolverApi {
+                    name: "cowdexag".to_owned(),
+                    network_name: "mainnet".to_owned(),
+                    chain_id: 1,
+                    base: reqwest::Url::parse("http://localhost:8000").unwrap(),
+                    client: Default::default(),
+                    config: Default::default(),
+                }
+            })
+        }
+    };
     crate::api::Api {
         addr: args.addr,
-        solver: baseline::Baseline {
-            weth: baseline.weth,
-            base_tokens: baseline.base_tokens.into_iter().collect(),
-            max_hops: baseline.max_hops,
-        },
+        solver,
     }
     .serve(bind, shutdown_signal())
     .await

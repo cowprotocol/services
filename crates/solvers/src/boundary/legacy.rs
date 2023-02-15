@@ -1,3 +1,5 @@
+use crate::domain::Solver;
+
 use {
     crate::{
         boundary,
@@ -34,12 +36,13 @@ use {
             pool_fetching::{PoolInfo, PoolState, PoolStats},
         },
     },
+    futures::future::{BoxFuture, FutureExt},
     std::collections::BTreeMap,
 };
 
 pub struct Legacy {
-    solver: DefaultHttpSolverApi,
-    weth: eth::WethAddress,
+    pub solver: DefaultHttpSolverApi,
+    pub weth: eth::WethAddress,
 }
 
 impl Legacy {
@@ -66,11 +69,25 @@ impl Legacy {
         }
     }
 
-    pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution> {
-        let (mapping, auction_model) = to_boundary_auction(auction, self.weth);
+    async fn solve_(&self, auction: auction::Auction) -> Result<solution::Solution> {
+        let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
         let solving_time = (chrono::Utc::now() - auction.deadline).to_std()?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
+    }
+}
+
+impl Solver for Legacy {
+    fn solve(&self, auction: auction::Auction) -> BoxFuture<Vec<solution::Solution>> {
+        async move {
+            match self.solve_(auction).await {
+                Ok(solution) => vec![solution],
+                Err(err) => {
+                    tracing::warn!(?err, "failed to solve auction");
+                    vec![]
+                }
+            }
+        }.boxed()
     }
 }
 
@@ -92,10 +109,10 @@ enum Order<'a> {
     ),
 }
 
-fn to_boundary_auction<'a>(
-    auction: &'a auction::Auction,
+fn to_boundary_auction(
+    auction: &auction::Auction,
     weth: eth::WethAddress,
-) -> (Mapping<'a>, BatchAuctionModel) {
+) -> (Mapping, BatchAuctionModel) {
     let gas = GasModel {
         native_token: weth.0,
         gas_price: auction.gas_price.0 .0.to_f64_lossy(),

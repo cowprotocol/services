@@ -3624,6 +3624,7 @@ dependencies = [
  "clap 4.0.8",
  "contracts",
  "ethereum-types 0.12.1",
+ "futures",
  "hex",
  "hyper",
  "itertools",

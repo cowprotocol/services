@@ -4,9 +4,5 @@
 //! new HTTP API, we provide a solver "wrapper" that just marshals the API
 //! request types to and from the legacy format.
 
-use crate::domain::eth;
-
-pub struct Legacy {
-    pub chain: eth::ChainId,
-    pub weth: eth::WethAddress,
-}
+// TODO I guess we can simply move the actual code here?
+pub use crate::boundary::legacy::Legacy;

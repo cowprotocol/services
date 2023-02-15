@@ -6,11 +6,15 @@
 //! over separate paths.
 
 use {
-    super::solution::{Interaction, LiquidityInteraction},
+    super::{
+        solution::{Interaction, LiquidityInteraction},
+        Solver,
+    },
     crate::{
         boundary,
         domain::{auction, eth, liquidity, order, solution},
     },
+    futures::future::{BoxFuture, FutureExt},
     std::collections::HashSet,
 };
 
@@ -30,14 +34,14 @@ pub struct Baseline {
     pub max_hops: usize,
 }
 
-impl Baseline {
+impl Solver for Baseline {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
-    pub fn solve(&self, auction: &auction::Auction) -> Vec<solution::Solution> {
+    fn solve(&self, auction: auction::Auction) -> BoxFuture<Vec<solution::Solution>> {
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
-        auction
+        let solutions = auction
             .orders
             .iter()
             .filter_map(|order| {
@@ -67,7 +71,9 @@ impl Baseline {
                         .collect(),
                 })
             })
-            .collect()
+            .collect();
+
+        async move { solutions }.boxed()
     }
 }
 

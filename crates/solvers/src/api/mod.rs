@@ -1,7 +1,7 @@
 //! Serve a solver engine API.
 
 use {
-    crate::domain::baseline,
+    crate::domain::Solver,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -10,7 +10,7 @@ pub mod dto;
 
 pub struct Api {
     pub addr: SocketAddr,
-    pub solver: baseline::Baseline,
+    pub solver: Arc<dyn Solver>,
 }
 
 impl Api {
@@ -24,7 +24,7 @@ impl Api {
             .layer(
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
-            .with_state(Arc::new(self.solver));
+            .with_state(self.solver);
 
         let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
         if let Some(bind) = bind {
@@ -36,7 +36,7 @@ impl Api {
 }
 
 async fn solve(
-    state: axum::extract::State<Arc<baseline::Baseline>>,
+    state: axum::extract::State<Arc<dyn Solver>>,
     auction: axum::extract::Json<dto::Auction>,
 ) -> (
     axum::http::StatusCode,
@@ -54,7 +54,8 @@ async fn solve(
     };
 
     let solution = state
-        .solve(&auction)
+        .solve(auction)
+        .await
         .first()
         .map(dto::Solution::from_domain)
         .unwrap_or_else(dto::Solution::trivial);
