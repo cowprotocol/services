@@ -77,6 +77,7 @@ impl Auction {
                 })
                 .try_collect()?,
             gas_price: auction::GasPrice(eth::Ether(self.effective_gas_price)),
+            deadline: self.deadline,
         })
     }
 }

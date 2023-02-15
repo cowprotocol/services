@@ -12,6 +12,7 @@ pub struct Auction {
     pub orders: Vec<order::Order>,
     pub liquidity: Vec<liquidity::Liquidity>,
     pub gas_price: GasPrice,
+    pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
 /// The ID of an auction.

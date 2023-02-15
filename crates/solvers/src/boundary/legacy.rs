@@ -3,7 +3,7 @@ use {
         boundary,
         domain::{auction, eth, liquidity, order, solution},
     },
-    anyhow::Context as _,
+    anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
     model::order::{OrderKind, OrderUid},
     reqwest::Url,
@@ -26,6 +26,7 @@ use {
                 WeightedProductPoolParameters,
             },
             DefaultHttpSolverApi,
+            HttpSolverApi,
             SolverConfig,
         },
         sources::uniswap_v3::{
@@ -53,7 +54,7 @@ impl Legacy {
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
                     // because the auction that we are solving for already
-                    // contains which tokens can and can't be internalized are,
+                    // contains which tokens can and can't be internalized,
                     // and we don't need to duplicate this setting here. Ergo,
                     // in order to disable internalization, the driver would be
                     // configured to have 0 trusted tokens.
@@ -65,8 +66,11 @@ impl Legacy {
         }
     }
 
-    pub fn solve(&self, auction: &auction::Auction) -> solution::Solution {
-        todo!()
+    pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution> {
+        let (mapping, auction_model) = to_boundary_auction(auction, self.weth);
+        let solving_time = (chrono::Utc::now() - auction.deadline).to_std()?;
+        let solution = self.solver.solve(&auction_model, solving_time).await?;
+        to_domain_solution(&solution, mapping)
     }
 }
 
