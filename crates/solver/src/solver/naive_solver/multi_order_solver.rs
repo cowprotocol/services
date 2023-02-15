@@ -357,7 +357,8 @@ mod tests {
     use {
         super::*,
         crate::{
-            liquidity::slippage::SlippageCalculator, settlement::external_prices::ExternalPrices,
+            liquidity::slippage::SlippageCalculator,
+            settlement::external_prices::ExternalPrices,
         },
         ethcontract::H160,
         liquidity::tests::CapturingSettlementHandler,
