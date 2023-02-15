@@ -4,9 +4,7 @@ use {
     crate::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
-            ConstantProductOrder,
-            LimitOrder,
-            Liquidity,
+            ConstantProductOrder, LimitOrder, Liquidity,
         },
         settlement::Settlement,
         solver::{Auction, Solver},
@@ -128,21 +126,13 @@ mod tests {
     use {
         super::*,
         crate::liquidity::{
-            order_converter::OrderConverter,
-            tests::CapturingSettlementHandler,
-            LimitOrderId,
+            order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
             LiquidityOrderId,
         },
         ethcontract::{H160, U256},
         maplit::hashmap,
         model::order::{
-            LimitOrderClass,
-            Order,
-            OrderClass,
-            OrderData,
-            OrderKind,
-            OrderMetadata,
-            OrderUid,
+            LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
             BUY_ETH_ADDRESS,
         },
         num::rational::Ratio,
@@ -227,6 +217,10 @@ mod tests {
                         sell_amount: 2469904889_u128.into(),
                         buy_amount: 995952859647034749952_u128.into(),
                         kind: OrderKind::Buy,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        class: OrderClass::Liquidity,
                         ..Default::default()
                     },
                     ..Default::default()
