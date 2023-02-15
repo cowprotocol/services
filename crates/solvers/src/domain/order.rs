@@ -2,7 +2,7 @@
 
 use {
     crate::domain::eth,
-    ethereum_types::{Address, U256},
+    ethereum_types::{Address, H256, U256},
 };
 
 /// A CoW Protocol order in the auction.
@@ -109,8 +109,7 @@ pub struct CustomInteraction {
 
 pub struct JitOrder {
     pub owner: Address,
-    pub signature: (), // TODO
-    pub uid: Uid,
+    pub signature: Signature,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub fee: Fee,
@@ -118,4 +117,60 @@ pub struct JitOrder {
     pub class: Class,
     pub partially_fillable: bool,
     pub pre_interactions: Vec<CustomInteraction>,
+}
+
+/// Signature over the order data.
+/// All variants rely on the EIP-712 hash of the order data, referred to as the
+/// order hash.
+#[derive(Clone)]
+pub enum Signature {
+    /// The order struct is signed according to EIP-712.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-712
+    Eip712(EcdsaSignature),
+    /// The order hash is signed according to EIP-191's personal_sign signature
+    /// format.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-191
+    EthSign(EcdsaSignature),
+    /// Signature verified according to EIP-1271, which facilitates a way for
+    /// contracts to verify signatures using an arbitrary method. This
+    /// allows smart contracts to sign and place orders. The order hash is
+    /// passed to the verification method, along with this signature.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-1271
+    Eip1271(Vec<u8>),
+    /// For these signatures, the user broadcasts a transaction onchain. This
+    /// transaction contains a signature of the order hash. Because this
+    /// onchain transaction is also signed, it proves that the user indeed
+    /// signed the order.
+    PreSign,
+}
+
+impl Signature {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
+            Self::Eip1271(signature) => signature.clone(),
+            Self::PreSign => Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EcdsaSignature {
+    pub r: H256,
+    pub s: H256,
+    pub v: u8,
+}
+
+impl EcdsaSignature {
+    pub fn to_bytes(self) -> [u8; 65] {
+        let mut bytes = [0u8; 65];
+        bytes[..32].copy_from_slice(self.r.as_bytes());
+        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[64] = self.v;
+        bytes
+    }
 }

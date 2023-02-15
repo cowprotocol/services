@@ -1,5 +1,8 @@
 use {
-    crate::{domain::solution, util::serialize},
+    crate::{
+        domain::{order, solution},
+        util::serialize,
+    },
     ethereum_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
@@ -33,28 +36,43 @@ impl Solution {
                         order: trade.order().uid.0,
                         executed_amount: trade.executed().amount,
                     }),
-                    solution::Trade::Jit(trade) => Trade::Jit(JitTrade {
-                        order: JitOrder {
-                            sell_token: trade.order.sell.token.0,
-                            sell_amount: trade.order.sell.amount,
-                            buy_token: trade.order.buy.token.0,
-                            buy_amount: trade.order.buy.amount,
-                            receiver: Default::default(),
-                            valid_to: Default::default(),
-                            app_data: Default::default(),
-                            fee_amount: trade.order.fee.0,
-                            kind: match trade.order.side {
-                                crate::domain::order::Side::Buy => Kind::Buy,
-                                crate::domain::order::Side::Sell => Kind::Sell,
+                    solution::Trade::Jit(trade) => {
+                        let (signing_scheme, signature) = match &trade.order.signature {
+                            order::Signature::Eip712(signature) => {
+                                (SigningScheme::Eip712, signature.to_bytes().to_vec())
+                            }
+                            order::Signature::EthSign(signature) => {
+                                (SigningScheme::EthSign, signature.to_bytes().to_vec())
+                            }
+                            order::Signature::Eip1271(bytes) => {
+                                (SigningScheme::Eip1271, bytes.clone())
+                            }
+                            order::Signature::PreSign => (SigningScheme::PreSign, vec![]),
+                        };
+
+                        Trade::Jit(JitTrade {
+                            order: JitOrder {
+                                sell_token: trade.order.sell.token.0,
+                                sell_amount: trade.order.sell.amount,
+                                buy_token: trade.order.buy.token.0,
+                                buy_amount: trade.order.buy.amount,
+                                receiver: Default::default(),
+                                valid_to: Default::default(),
+                                app_data: Default::default(),
+                                fee_amount: trade.order.fee.0,
+                                kind: match trade.order.side {
+                                    crate::domain::order::Side::Buy => Kind::Buy,
+                                    crate::domain::order::Side::Sell => Kind::Sell,
+                                },
+                                partially_fillable: trade.order.partially_fillable,
+                                sell_token_balance: SellTokenBalance::Erc20,
+                                buy_token_balance: BuyTokenBalance::Erc20,
+                                signing_scheme,
+                                signature,
                             },
-                            partially_fillable: trade.order.partially_fillable,
-                            sell_token_balance: (), // Default?
-                            buy_token_balance: (),  // Default?
-                            signing_scheme: (),
-                            signature: trade.order.signature,
-                        },
-                        executed_amount: trade.executed,
-                    }),
+                            executed_amount: trade.executed,
+                        })
+                    }
                 })
                 .collect(),
             interactions: solution

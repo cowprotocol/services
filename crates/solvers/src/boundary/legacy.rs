@@ -5,7 +5,10 @@ use {
     },
     anyhow::Context as _,
     ethereum_types::{H160, U256},
-    model::order::{OrderKind, OrderUid},
+    model::{
+        order::{OrderKind, OrderUid},
+        signature::Signature,
+    },
     reqwest::Url,
     shared::{
         http_solver::{
@@ -312,7 +315,6 @@ fn to_domain_solution(
     for jit in &model.foreign_liquidity_orders {
         trades.push(solution::Trade::Jit(solution::JitTrade {
             order: order::JitOrder {
-                // TODO more fields
                 owner: jit.order.from,
                 pre_interactions: jit
                     .order
@@ -325,7 +327,7 @@ fn to_domain_solution(
                         calldata: i.call_data.clone(),
                     })
                     .collect(),
-                signature: jit.order.signature,
+                signature: jit.order.signature.clone().into(),
                 sell: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.sell_token),
                     amount: jit.order.data.sell_amount,
@@ -365,23 +367,30 @@ fn to_domain_solution(
                 )
                 .context("invalid trade execution")?,
             )),
-            Order::Liquidity(liquidity, state) => interactions.push(
-                solution::Interaction::Liquidity(solution::LiquidityInteraction {
-                    liquidity: (*liquidity).clone(),
-                    input: eth::Asset {
-                        token: state.taker.token,
-                        amount: execution.exec_buy_amount,
-                    },
-                    output: eth::Asset {
-                        token: state.maker.token,
-                        amount: execution.exec_sell_amount,
-                    },
-                }),
-            ),
+            Order::Liquidity(liquidity, state) => {
+                let coordinate = execution.exec_plan.as_ref().map(|e| &e.coordinates);
+                let interaction =
+                    solution::Interaction::Liquidity(solution::LiquidityInteraction {
+                        liquidity: (*liquidity).clone(),
+                        input: eth::Asset {
+                            token: state.taker.token,
+                            amount: execution.exec_buy_amount,
+                        },
+                        output: eth::Asset {
+                            token: state.maker.token,
+                            amount: execution.exec_sell_amount,
+                        },
+                        internalize: execution
+                            .exec_plan
+                            .as_ref()
+                            .map(|e| e.internal)
+                            .unwrap_or_default(),
+                    });
+                interactions.push((interaction, coordinate));
+            }
         }
     }
 
-    let interactions = Vec::new();
     for (address, amm) in &model.amms {
         let liquidity = mapping
             .amms
@@ -389,23 +398,26 @@ fn to_domain_solution(
             .context("uses unknown liquidity")?;
 
         for interaction in &amm.execution {
-            interactions.push(solution::Interaction::Liquidity(
-                solution::LiquidityInteraction {
-                    liquidity: (*liquidity).clone(),
-                    input: eth::Asset {
-                        token: eth::TokenAddress(interaction.sell_token),
-                        amount: interaction.exec_sell_amount,
-                    },
-                    output: eth::Asset {
-                        token: eth::TokenAddress(interaction.buy_token),
-                        amount: interaction.exec_buy_amount,
-                    },
+            let coordinate = Some(&interaction.exec_plan.coordinates);
+            let interaction = solution::Interaction::Liquidity(solution::LiquidityInteraction {
+                liquidity: (*liquidity).clone(),
+                input: eth::Asset {
+                    token: eth::TokenAddress(interaction.sell_token),
+                    amount: interaction.exec_sell_amount,
                 },
-            ));
+                output: eth::Asset {
+                    token: eth::TokenAddress(interaction.buy_token),
+                    amount: interaction.exec_buy_amount,
+                },
+                internalize: interaction.exec_plan.internal,
+            });
+            interactions.push((interaction, coordinate));
         }
     }
+
     for interaction in &model.interaction_data {
-        interactions.push(solution::Interaction::Custom(solution::CustomInteraction {
+        let coordinate = interaction.exec_plan.as_ref().map(|e| &e.coordinates);
+        let interaction = solution::Interaction::Custom(solution::CustomInteraction {
             target: interaction.target,
             value: eth::Ether(interaction.value),
             calldata: interaction.call_data.clone(),
@@ -425,13 +437,23 @@ fn to_domain_solution(
                     amount: i.amount,
                 })
                 .collect(),
-        }));
+            internalize: interaction
+                .exec_plan
+                .as_ref()
+                .map(|e| e.internal)
+                .unwrap_or_default(),
+        });
+        interactions.push((interaction, coordinate));
     }
+
     // TODO: order `model.amms` and `model.interaction_data` by execution plan
     // and append to the `solution.liquidity`. We also need to squeeze in the
     // `model.approvals` in the first encountered non-internalized interaciton,
     // otherwise, we insert an empty interaction (to address 0 with 0 bytes and
     // calldata) with approvals to make sure they get included.
+
+    // sort Vec<(interaction, Option<coordinate>)> by coordinates (optionals first)
+    interactions.sort_by(|(_, a), (_, b)| a.cmp(b));
 
     Ok(solution::Solution {
         prices: solution::ClearingPrices(
@@ -442,7 +464,10 @@ fn to_domain_solution(
                 .collect(),
         ),
         trades,
-        interactions,
+        interactions: interactions
+            .into_iter()
+            .map(|(interaction, _)| interaction)
+            .collect(),
     })
 }
 
@@ -454,4 +479,27 @@ fn to_big_int(i: &U256) -> num::BigInt {
     let mut bytes = [0; 32];
     i.to_big_endian(&mut bytes);
     num::BigInt::from_bytes_be(num::bigint::Sign::Plus, &bytes)
+}
+
+impl From<model::signature::EcdsaSignature> for order::EcdsaSignature {
+    fn from(signature: model::signature::EcdsaSignature) -> Self {
+        Self {
+            r: signature.r,
+            s: signature.s,
+            v: signature.v,
+        }
+    }
+}
+
+impl From<model::signature::Signature> for order::Signature {
+    fn from(signature: model::signature::Signature) -> Self {
+        use model::signature::Signature::*;
+
+        match signature {
+            Eip712(signature) => order::Signature::Eip712(signature.into()),
+            EthSign(signature) => order::Signature::EthSign(signature.into()),
+            Eip1271(data) => order::Signature::Eip1271(data),
+            PreSign => order::Signature::PreSign,
+        }
+    }
 }

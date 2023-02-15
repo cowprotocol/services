@@ -49,7 +49,9 @@ impl Baseline {
                         (order.sell.token, route.output().amount),
                         (order.buy.token, route.input().amount),
                     ]),
-                    trades: vec![solution::Trade::fill(order.clone())],
+                    trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::fill(
+                        order.clone(),
+                    ))],
                     interactions: route
                         .segments
                         .iter()
@@ -58,6 +60,8 @@ impl Baseline {
                                 liquidity: segment.liquidity.clone(),
                                 input: segment.input,
                                 output: segment.output,
+                                // TODO does the baseline solver know about this optimization?
+                                internalize: false,
                             })
                         })
                         .collect(),
