@@ -18,6 +18,7 @@ use {
 pub struct Contracts {
     pub balancer_vault: BalancerV2Vault,
     pub gp_settlement: GPv2Settlement,
+    pub gp_authenticator: GPv2AllowListAuthentication,
     pub uniswap_factory: UniswapV2Factory,
     pub uniswap_router: UniswapV2Router02,
     pub weth: WETH9,
@@ -61,18 +62,18 @@ pub async fn deploy(web3: &Web3) -> Result<Contracts> {
     let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
     let uniswap_router = deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
 
-    let gp_authentication = deploy!(GPv2AllowListAuthentication);
-    gp_authentication
+    let gp_authenticator = deploy!(GPv2AllowListAuthentication);
+    gp_authenticator
         .initialize_manager(admin)
         .send()
         .await
         .context("failed to initialize manager")?;
     let gp_settlement = deploy!(GPv2Settlement(
-        gp_authentication.address(),
+        gp_authenticator.address(),
         balancer_vault.address(),
     ));
 
-    gp_authentication
+    gp_authenticator
         .add_solver(admin)
         .send()
         .await
@@ -109,6 +110,7 @@ pub async fn deploy(web3: &Web3) -> Result<Contracts> {
     Ok(Contracts {
         balancer_vault,
         gp_settlement,
+        gp_authenticator,
         uniswap_factory,
         uniswap_router,
         weth,

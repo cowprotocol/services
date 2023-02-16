@@ -45,7 +45,9 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
+        tracing::trace!("fetching liquidity");
         let liquidity = self.liquidity.fetch(&Self::liquidity_pairs(auction)).await;
+        tracing::trace!("solving");
         let solution = self
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
@@ -53,9 +55,11 @@ impl Competition {
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
+        tracing::trace!("simulating");
         let settlement = solution
             .simulate(&self.eth, &self.simulator, auction)
             .await?;
+        tracing::trace!("scoring");
         let score = settlement.score(&self.eth, auction).await?;
         let id = settlement.id();
         *self.settlement.lock().unwrap() = Some((id, settlement));
@@ -76,6 +80,7 @@ impl Competition {
                 return Err(Error::SolutionNotFound);
             }
         };
+        tracing::trace!(?solution_id, "settling");
         mempool::send(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)

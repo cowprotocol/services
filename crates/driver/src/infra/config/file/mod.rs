@@ -97,7 +97,7 @@ fn default_additional_tip_percentage() -> f64 {
 }
 
 fn default_gas_price_cap() -> f64 {
-    1500.0
+    1e9
 }
 
 fn default_target_confirm_time_secs() -> u64 {

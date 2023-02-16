@@ -745,6 +745,7 @@ pub enum OrderKind {
     Eq,
     PartialEq,
     Clone,
+    Copy,
     Debug,
     Default,
     Deserialize,
@@ -783,7 +784,7 @@ impl OrderClass {
 }
 
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
     #[serde_as(as = "Option<DecimalU256>")]
