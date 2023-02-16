@@ -4,7 +4,9 @@ use {
     crate::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
-            ConstantProductOrder, LimitOrder, Liquidity,
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
         },
         settlement::Settlement,
         solver::{Auction, Solver},
@@ -127,7 +129,9 @@ mod tests {
         super::*,
         crate::{
             liquidity::{
-                order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
                 LiquidityOrderId,
             },
             settlement::external_prices::ExternalPrices,
@@ -135,7 +139,13 @@ mod tests {
         ethcontract::{H160, U256},
         maplit::hashmap,
         model::order::{
-            LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
+            LimitOrderClass,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
             BUY_ETH_ADDRESS,
         },
         num::{rational::Ratio, BigRational, FromPrimitive},

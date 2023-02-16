@@ -331,15 +331,12 @@ fn is_valid_solution(solution: &Settlement) -> bool {
 
         // Check individual order's execution price satisfies uniform clearing price
         // E.g. liquidity orders may have a different executed price.
+        let clearing_prices = solution.encoder.clearing_prices();
         match (
-            solution
-                .encoder
-                .clearing_prices()
+            clearing_prices
                 .get(&order.buy_token)
                 .map(|clearing_sell_price| clearing_sell_price.checked_mul(sell_token_price)),
-            solution
-                .encoder
-                .clearing_prices()
+            clearing_prices
                 .get(&order.sell_token)
                 .map(|clearing_buy_price| clearing_buy_price.checked_mul(buy_token_price)),
         ) {
