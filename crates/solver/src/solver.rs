@@ -342,6 +342,7 @@ pub fn create(
                 network_name: network_id.clone(),
                 chain_id,
                 base: url,
+                custom_solve_path: None,
                 client: http_factory.create(),
                 config,
             },

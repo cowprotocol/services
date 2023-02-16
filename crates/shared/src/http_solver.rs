@@ -62,6 +62,9 @@ pub struct DefaultHttpSolverApi {
     /// Base solver url.
     pub base: Url,
 
+    /// The custom URL path used for the solve request.
+    pub custom_solve_path: Option<String>,
+
     /// An async HTTP client instance that will be used to interact with the
     /// solver.
     pub client: Client,
@@ -117,7 +120,8 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
 
-        let mut url = self.base.join("solve").context("join base")?;
+        let path = self.custom_solve_path.as_deref().unwrap_or("solve");
+        let mut url = self.base.join(path).context("join base")?;
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
@@ -275,6 +279,7 @@ HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\
             network_name: Default::default(),
             chain_id: Default::default(),
             base: "http://localhost:1234".parse().unwrap(),
+            custom_solve_path: None,
             client: Default::default(),
             config: Default::default(),
         };
