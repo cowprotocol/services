@@ -1,13 +1,12 @@
-use crate::domain::Solver;
-
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, order, solution},
+        domain::{auction, eth, liquidity, order, solution, Solver},
         infra::config::legacy::LegacyConfig,
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
+    futures::future::{BoxFuture, FutureExt},
     model::order::{OrderKind, OrderUid},
     shared::{
         http_solver::{
@@ -36,7 +35,6 @@ use {
             pool_fetching::{PoolInfo, PoolState, PoolStats},
         },
     },
-    futures::future::{BoxFuture, FutureExt},
     std::collections::BTreeMap,
 };
 
@@ -88,7 +86,8 @@ impl Solver for Legacy {
                     vec![]
                 }
             }
-        }.boxed()
+        }
+        .boxed()
     }
 }
 

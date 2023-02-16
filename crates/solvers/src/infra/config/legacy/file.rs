@@ -1,9 +1,9 @@
 use {
     crate::{domain::eth, infra::contracts, util::serialize},
+    reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
-    reqwest::Url,
     tokio::fs,
 };
 

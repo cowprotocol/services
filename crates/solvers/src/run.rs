@@ -2,11 +2,11 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::{Solver, baseline, legacy},
+        domain::{baseline, legacy, Solver},
         infra::{cli, config},
     },
     clap::Parser,
-    std::{sync::Arc, net::SocketAddr},
+    std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
@@ -23,7 +23,7 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
                 base_tokens: baseline.base_tokens.into_iter().collect(),
                 max_hops: baseline.max_hops,
             })
-        },
+        }
         cli::Command::Legacy => {
             let config = config::legacy::file::load(&args.config).await;
             Arc::new(legacy::Legacy::new(config))
