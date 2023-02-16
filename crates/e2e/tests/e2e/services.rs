@@ -92,7 +92,6 @@ pub fn create_orderbook_api() -> OrderBookApi {
 pub fn create_order_converter(web3: &Web3, weth_address: H160) -> Arc<OrderConverter> {
     Arc::new(OrderConverter {
         native_token: WETH9::at(web3, weth_address),
-        min_order_age: Duration::from_secs(0),
     })
 }
 
@@ -324,7 +323,6 @@ pub async fn setup_naive_solver_uniswapv2_driver(
         Arc::new(web3.clone()),
         Duration::from_secs(30),
         contracts.weth.address(),
-        Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
         network_id.clone(),

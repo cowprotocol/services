@@ -10,6 +10,7 @@ mod local_node;
 mod services;
 
 // Each of the following modules contains tests.
+mod colocation_univ2;
 mod eth_flow;
 mod eth_integration;
 mod limit_orders;

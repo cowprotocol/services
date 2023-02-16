@@ -97,7 +97,10 @@ pub fn web3(
 /// Convenience method to create a transport from a URL.
 pub fn create_test_transport(url: &str) -> Web3Transport {
     Web3Transport::new(HttpTransport::new(
-        Client::new(),
+        Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
         url.try_into().unwrap(),
         "".to_string(),
     ))

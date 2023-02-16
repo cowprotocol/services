@@ -101,7 +101,7 @@ impl LivenessChecking for Liveness {
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) -> ! {
+pub async fn main(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
         crate::database::database_metrics(db.clone())
@@ -115,6 +115,19 @@ pub async fn main(args: arguments::Arguments) -> ! {
         &args.shared.node_url,
         "base",
     );
+
+    let chain_id = web3
+        .eth()
+        .chain_id()
+        .await
+        .expect("Could not get chainId")
+        .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
 
     let current_block_stream = args
         .shared
@@ -153,19 +166,13 @@ pub async fn main(args: arguments::Arguments) -> ! {
         other => Some(other.unwrap()),
     };
 
-    let chain_id = web3
-        .eth()
-        .chain_id()
-        .await
-        .expect("Could not get chainId")
-        .as_u64();
     let network = web3
         .net()
         .version()
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let _network_time_between_blocks = args
+    let network_time_between_blocks = args
         .network_block_interval
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
@@ -642,7 +649,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
                 .collect(),
             current_block: current_block_stream,
             web3,
-            network_block_interval: _network_time_between_blocks,
+            network_block_interval: network_time_between_blocks,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

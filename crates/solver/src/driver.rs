@@ -81,7 +81,6 @@ impl Driver {
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
         native_token: H160,
-        min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
         network_id: String,
@@ -108,7 +107,6 @@ impl Driver {
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
-            min_order_age,
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
         };
@@ -278,9 +276,7 @@ impl Driver {
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders)
-            || !auction_preprocessing::has_at_least_one_mature_order(&orders)
-        {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
             return Ok(false);
         }
 
@@ -346,10 +342,7 @@ impl Driver {
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement
-                            .solver_fees
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
+                        fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),

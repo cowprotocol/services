@@ -11,12 +11,16 @@ harness = false
 
 [dev-dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
 criterion = "0.4"
 database = { path = "../database" }
+driver = { path = "../driver" }
 ethcontract = { workspace = true }
+hex = { workspace = true }
 hex-literal = { workspace = true }
 lazy_static = { workspace = true }
 maplit = { workspace = true }
@@ -24,14 +28,15 @@ model = { path = "../model" }
 orderbook = { path = "../orderbook" }
 prometheus = { workspace = true }
 rand = { workspace = true }
+refunder = { path = "../refunder" }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
-refunder = { path = "../refunder" }
+solvers = { path = "../solvers" }
+sqlx = { workspace = true }
+tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
-async-trait = { workspace = true }
-sqlx = { workspace = true }

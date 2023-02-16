@@ -11,6 +11,7 @@ pub mod liquidity_collector;
 pub mod metrics;
 pub mod objective_value;
 pub mod orderbook;
+pub mod run;
 pub mod s3_instance_upload;
 pub mod s3_instance_upload_arguments;
 pub mod settlement;
@@ -23,9 +24,3 @@ pub mod settlement_submission;
 pub mod solver;
 #[cfg(test)]
 mod test;
-
-use {anyhow::Result, shared::ethrpc::Web3};
-
-pub async fn get_settlement_contract(web3: &Web3) -> Result<contracts::GPv2Settlement> {
-    Ok(contracts::GPv2Settlement::deployed(web3).await?)
-}
