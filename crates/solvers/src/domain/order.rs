@@ -115,6 +115,9 @@ pub struct JitOrder {
     pub class: Class,
     pub partially_fillable: bool,
     pub pre_interactions: Vec<CustomInteraction>,
+    pub valid_to: u32,
+    pub app_data: AppData,
+    pub receiver: Address,
 }
 
 /// Signature over the order data.
@@ -172,3 +175,5 @@ impl EcdsaSignature {
         bytes
     }
 }
+
+pub struct AppData(pub [u8; 32]);

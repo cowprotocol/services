@@ -56,9 +56,9 @@ impl Solution {
                                 sell_amount: trade.order.sell.amount,
                                 buy_token: trade.order.buy.token.0,
                                 buy_amount: trade.order.buy.amount,
-                                receiver: Default::default(),
-                                valid_to: Default::default(),
-                                app_data: Default::default(),
+                                receiver: trade.order.receiver,
+                                valid_to: trade.order.valid_to,
+                                app_data: trade.order.app_data.0,
                                 fee_amount: trade.order.fee.0,
                                 kind: match trade.order.side {
                                     crate::domain::order::Side::Buy => Kind::Buy,

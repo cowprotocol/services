@@ -364,6 +364,9 @@ fn to_domain_solution(
                 },
                 class: order::Class::Liquidity,
                 partially_fillable: jit.order.data.partially_fillable,
+                receiver: jit.order.data.receiver.unwrap_or_default(),
+                app_data: order::AppData(jit.order.data.app_data.0),
+                valid_to: jit.order.data.valid_to,
             },
             executed: match jit.order.data.kind {
                 model::order::OrderKind::Buy => jit.exec_buy_amount,
