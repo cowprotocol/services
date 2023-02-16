@@ -7,5 +7,4 @@ pub struct LegacyConfig {
     pub solver_name: String,
     pub chain_id: eth::ChainId,
     pub base_url: Url,
-    pub max_nr_exec_orders: u32,
 }

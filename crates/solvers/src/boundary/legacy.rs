@@ -60,7 +60,6 @@ impl Legacy {
                     // in order to disable internalization, the driver would be
                     // configured to have 0 trusted tokens.
                     use_internal_buffers: Some(true),
-                    max_nr_exec_orders: config.max_nr_exec_orders,
                     ..Default::default()
                 },
             },

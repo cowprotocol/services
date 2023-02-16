@@ -21,10 +21,6 @@ struct Config {
 
     /// The URL of the solver.
     pub base_url: String,
-
-    /// Controls value of the `max_nr_exec_orders` parameter.
-    /// Uses 100 as the default value.
-    pub max_nr_exec_orders: Option<u32>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -45,6 +41,5 @@ pub async fn load(path: &Path) -> super::LegacyConfig {
         solver_name: config.solver_name,
         chain_id: config.chain_id,
         base_url: Url::parse(&config.base_url).unwrap(),
-        max_nr_exec_orders: config.max_nr_exec_orders.unwrap_or(100),
     }
 }
