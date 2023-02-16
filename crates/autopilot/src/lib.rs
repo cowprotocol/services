@@ -116,6 +116,19 @@ pub async fn main(args: arguments::Arguments) {
         "base",
     );
 
+    let chain_id = web3
+        .eth()
+        .chain_id()
+        .await
+        .expect("Could not get chainId")
+        .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
     let current_block_stream = args
         .shared
         .current_block
@@ -152,19 +165,6 @@ pub async fn main(args: arguments::Arguments) {
         Err(DeployError::NotFound(_)) => None,
         other => Some(other.unwrap()),
     };
-
-    let chain_id = web3
-        .eth()
-        .chain_id()
-        .await
-        .expect("Could not get chainId")
-        .as_u64();
-    if let Some(expected_chain_id) = args.shared.chain_id {
-        assert_eq!(
-            chain_id, expected_chain_id,
-            "connected to node with incorrect chain ID",
-        );
-    }
 
     let network = web3
         .net()
