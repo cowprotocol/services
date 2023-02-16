@@ -2,8 +2,9 @@ use {
     crate::{
         boundary,
         domain::{auction, eth, liquidity, order, solution},
+        infra::config::legacy::LegacyConfig,
     },
-    anyhow::Context as _,
+    anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
     model::order::{OrderKind, OrderUid},
     shared::{
@@ -24,6 +25,9 @@ use {
                 WeightedPoolTokenData,
                 WeightedProductPoolParameters,
             },
+            DefaultHttpSolverApi,
+            HttpSolverApi,
+            SolverConfig,
         },
         sources::uniswap_v3::{
             graph_api::Token,
@@ -33,12 +37,49 @@ use {
     std::collections::BTreeMap,
 };
 
+pub struct Legacy {
+    solver: DefaultHttpSolverApi,
+    weth: eth::WethAddress,
+}
+
+impl Legacy {
+    pub fn new(config: LegacyConfig) -> Self {
+        Self {
+            solver: DefaultHttpSolverApi {
+                name: config.solver_name,
+                network_name: format!("{:?}", config.chain_id),
+                chain_id: config.chain_id.value().as_u64(),
+                base: config.base_url,
+                client: reqwest::Client::new(),
+                config: SolverConfig {
+                    // Note that we unconditionally set this to "true". This is
+                    // because the auction that we are solving for already
+                    // contains which tokens can and can't be internalized,
+                    // and we don't need to duplicate this setting here. Ergo,
+                    // in order to disable internalization, the driver would be
+                    // configured to have 0 trusted tokens.
+                    use_internal_buffers: Some(true),
+                    ..Default::default()
+                },
+            },
+            weth: config.weth,
+        }
+    }
+
+    pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
+        let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
+        let solving_time = (auction.deadline - chrono::Utc::now()).to_std()?;
+        let solution = self.solver.solve(&auction_model, solving_time).await?;
+        to_domain_solution(&solution, mapping)
+    }
+}
+
 /// Mapping state used for marshalling domain auctions and solutions to and from
 /// their legacy HTTP solver DTO representations. This is needed becuase the
 /// legacy HTTP solver API uses arbirtary indices for identifying orders and
 /// AMMs that need to be back-referenced to auction domain values.
 #[derive(Default)]
-pub struct Mapping<'a> {
+struct Mapping<'a> {
     orders: Vec<Order<'a>>,
     amms: BTreeMap<H160, &'a liquidity::Liquidity>,
 }
@@ -51,7 +92,7 @@ enum Order<'a> {
     ),
 }
 
-pub fn to_boundary_auction(
+fn to_boundary_auction(
     auction: &auction::Auction,
     weth: eth::WethAddress,
 ) -> (Mapping, BatchAuctionModel) {
@@ -267,7 +308,7 @@ pub fn to_boundary_auction(
     (mapping, model)
 }
 
-pub fn to_domain_solution(
+fn to_domain_solution(
     model: &SettledBatchAuctionModel,
     mapping: Mapping,
 ) -> boundary::Result<solution::Solution> {
