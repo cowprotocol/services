@@ -1,0 +1,50 @@
+use {
+    crate::{domain::eth, infra::contracts, util::serialize},
+    serde::Deserialize,
+    serde_with::serde_as,
+    std::path::Path,
+    reqwest::Url,
+    tokio::fs,
+};
+
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Config {
+    /// Chain id used to automatically determine the address
+    /// of the WETH contract and for metrics.
+    #[serde_as(as = "serialize::ChainId")]
+    chain_id: eth::ChainId,
+
+    /// The solver name used in metrics.
+    pub solver_name: String,
+
+    /// The URL of the solver.
+    pub base_url: String,
+
+    /// Controls value of the `max_nr_exec_orders` parameter.
+    /// Uses 100 as the default value.
+    pub max_nr_exec_orders: Option<u32>,
+}
+
+/// Load the driver configuration from a TOML file.
+///
+/// # Panics
+///
+/// This method panics if the config is invalid or on I/O errors.
+pub async fn load(path: &Path) -> super::LegacyConfig {
+    let data = fs::read_to_string(path)
+        .await
+        .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
+    let config = toml::de::from_str::<Config>(&data)
+        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+    let contracts = contracts::Contracts::for_chain(config.chain_id);
+
+    super::LegacyConfig {
+        weth: contracts.weth,
+        solver_name: config.solver_name,
+        chain_id: config.chain_id,
+        base_url: Url::parse(&config.base_url).unwrap(),
+        max_nr_exec_orders: config.max_nr_exec_orders.unwrap_or(100),
+    }
+}

@@ -4,11 +4,11 @@ use {
     crate::{
         boundary,
         domain::{auction, eth, liquidity, order, solution},
+        infra::config::legacy::LegacyConfig,
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
     model::order::{OrderKind, OrderUid},
-    reqwest::Url,
     shared::{
         http_solver::{
             gas_model::GasModel,
@@ -46,13 +46,13 @@ pub struct Legacy {
 }
 
 impl Legacy {
-    pub fn new(name: String, url: Url, chain: eth::ChainId, weth: eth::WethAddress) -> Self {
+    pub fn new(config: LegacyConfig) -> Self {
         Self {
             solver: DefaultHttpSolverApi {
-                name,
-                network_name: format!("{chain:?}"),
-                chain_id: chain.value().as_u64(),
-                base: url,
+                name: config.solver_name,
+                network_name: format!("{:?}", config.chain_id),
+                chain_id: config.chain_id.value().as_u64(),
+                base: config.base_url,
                 client: reqwest::Client::new(),
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
@@ -62,10 +62,11 @@ impl Legacy {
                     // in order to disable internalization, the driver would be
                     // configured to have 0 trusted tokens.
                     use_internal_buffers: Some(true),
+                    max_nr_exec_orders: config.max_nr_exec_orders,
                     ..Default::default()
                 },
             },
-            weth,
+            weth: config.weth,
         }
     }
 

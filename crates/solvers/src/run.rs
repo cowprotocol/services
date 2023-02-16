@@ -1,4 +1,3 @@
-use shared::http_solver::DefaultHttpSolverApi;
 #[cfg(unix)]
 use tokio::signal::unix::{self, SignalKind};
 use {
@@ -28,19 +27,8 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
             })
         },
         cli::Command::Legacy => {
-            // TODO read values from config
-            let baseline = config::baseline::file::load(&args.config).await;
-            Arc::new(legacy::Legacy {
-                weth: baseline.weth,
-                solver: DefaultHttpSolverApi {
-                    name: "cowdexag".to_owned(),
-                    network_name: "mainnet".to_owned(),
-                    chain_id: 1,
-                    base: reqwest::Url::parse("http://localhost:8000").unwrap(),
-                    client: Default::default(),
-                    config: Default::default(),
-                }
-            })
+            let config = config::legacy::file::load(&args.config).await;
+            Arc::new(legacy::Legacy::new(config))
         }
     };
     crate::api::Api {
