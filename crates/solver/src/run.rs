@@ -259,7 +259,6 @@ pub async fn run(args: Arguments) {
 
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token.clone(),
-        min_order_age: args.min_order_age,
     });
 
     let market_makable_token_list_configuration = TokenListConfiguration {
@@ -501,7 +500,6 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         args.settle_interval,
         native_token.address(),
-        args.min_order_age,
         metrics.clone(),
         web3,
         network_id,

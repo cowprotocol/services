@@ -5,12 +5,11 @@ use {
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
-    std::{sync::Arc, time::Duration},
+    std::sync::Arc,
 };
 
 pub struct OrderConverter {
     pub native_token: WETH9,
-    pub min_order_age: Duration,
 }
 
 impl OrderConverter {
@@ -20,7 +19,6 @@ impl OrderConverter {
     pub fn test(native_token: ethcontract::H160) -> Self {
         Self {
             native_token: shared::dummy_contract!(WETH9, native_token),
-            min_order_age: Duration::from_secs(30),
         }
     }
 
@@ -38,9 +36,6 @@ impl OrderConverter {
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
         let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
-        let is_mature = order.metadata.creation_date
-            + chrono::Duration::from_std(self.min_order_age).unwrap()
-            <= chrono::offset::Utc::now();
 
         let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) => {
@@ -73,7 +68,6 @@ impl OrderConverter {
             exchange: Exchange::GnosisProtocol,
             // TODO: It would be nicer to set this here too but we need #529 first.
             reward: 0.,
-            is_mature,
         })
     }
 }
