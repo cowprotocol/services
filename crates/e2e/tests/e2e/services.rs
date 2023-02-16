@@ -1,391 +1,126 @@
 use {
-    crate::{deploy::Contracts, onchain_components::uniswap_pair_provider},
-    anyhow::{anyhow, Result},
-    async_trait::async_trait,
-    autopilot::{
-        database::{
-            ethflow_events::event_retriever::EthFlowRefundRetriever,
-            onchain_order_events::{
-                ethflow_events::EthFlowOnchainOrderParser,
-                event_retriever::CoWSwapOnchainOrdersContract,
-                OnchainOrderParser,
-            },
-        },
-        event_updater::GPv2SettlementContract,
-        limit_orders::{LimitOrderQuoter, QuotingStrategy},
-        solvable_orders::SolvableOrdersCache,
-    },
-    contracts::{IUniswapLikeRouter, WETH9},
-    database::quotes::QuoteId,
-    ethcontract::{Account, H160, U256},
-    model::{quote::QuoteSigningScheme, DomainSeparator},
-    orderbook::{database::Postgres, orderbook::Orderbook},
-    reqwest::{Client, StatusCode},
-    shared::{
-        account_balances::Web3BalanceFetcher,
-        bad_token::list_based::ListBasedDetector,
-        baseline_solver::BaseTokens,
-        caching_balance_fetcher::CachingBalanceFetcher,
-        code_fetching::{CachedCodeFetcher, MockCodeFetching},
-        current_block::{current_block_stream, CurrentBlockStream},
-        ethrpc::Web3,
-        fee_subsidy::Subsidy,
-        maintenance::{Maintaining, ServiceMaintenance},
-        order_quoting::{
-            CalculateQuoteError,
-            FindQuoteError,
-            OrderQuoter,
-            OrderQuoting,
-            Quote,
-            QuoteHandler,
-            QuoteParameters,
-            QuoteSearchParameters,
-        },
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
-        price_estimation::{
-            baseline::BaselinePriceEstimator,
-            native::NativePriceEstimator,
-            native_price_cache::CachingNativePriceEstimator,
-            sanitized::SanitizedPriceEstimator,
-        },
-        rate_limiter::RateLimiter,
-        recent_block_cache::CacheConfig,
-        signature_validator::Web3SignatureValidator,
-        sources::uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
-    },
-    solver::{
-        liquidity::{order_converter::OrderConverter, uniswap_v2::UniswapLikeLiquidity},
-        liquidity_collector::LiquidityCollector,
-        metrics::NoopMetrics,
-        orderbook::OrderBookApi,
-        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-        settlement_submission::{
-            submitter::{
-                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-                Strategy,
-            },
-            GlobalTxPool,
-            SolutionSubmitter,
-            StrategyArgs,
-        },
-    },
-    std::{
-        collections::HashSet,
-        future::{pending, Future},
-        num::{NonZeroU64, NonZeroUsize},
-        str::FromStr,
-        sync::Arc,
-        time::Duration,
-    },
+    crate::deploy::Contracts,
+    anyhow::{anyhow, Context, Result},
+    clap::Parser,
+    ethcontract::H256,
+    model::auction::AuctionWithId,
+    reqwest::StatusCode,
+    sqlx::Connection,
+    std::{future::Future, time::Duration},
+    tokio::task::JoinHandle,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
-pub fn create_orderbook_api() -> OrderBookApi {
-    OrderBookApi::new(
-        reqwest::Url::from_str(API_HOST).unwrap(),
-        Client::new(),
-        Some("".to_string()),
-    )
+pub async fn clear_database() {
+    tracing::info!("Clearing database.");
+    let mut db = sqlx::PgConnection::connect("postgresql://").await.unwrap();
+    let mut db = db.begin().await.unwrap();
+    database::clear_DANGER_(&mut db).await.unwrap();
+    db.commit().await.unwrap();
 }
 
-pub fn create_order_converter(web3: &Web3, weth_address: H160) -> Arc<OrderConverter> {
-    Arc::new(OrderConverter {
-        native_token: WETH9::at(web3, weth_address),
-    })
+pub fn start_autopilot(contracts: &Contracts, extra_arguments: &[String]) -> JoinHandle<()> {
+    let args = [
+        "autopilot".to_string(),
+        "--network-block-interval=10".to_string(),
+        "--auction-update-interval=1".to_string(),
+        format!("--ethflow-contract={:?}", contracts.ethflow.address()),
+        "--skip-event-sync".to_string(),
+        "--enable-limit-orders".to_string(),
+    ]
+    .into_iter()
+    .chain(api_autopilot_solver_arguments(contracts))
+    .chain(api_autopilot_arguments())
+    .chain(extra_arguments.iter().cloned());
+    let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
+    tokio::task::spawn(autopilot::main(args))
 }
 
-pub struct OrderbookServices {
-    pub price_estimator: Arc<SanitizedPriceEstimator>,
-    pub maintenance: ServiceMaintenance,
-    pub block_stream: CurrentBlockStream,
-    pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub base_tokens: Arc<BaseTokens>,
+pub fn start_api(contracts: &Contracts, extra_arguments: &[String]) -> JoinHandle<()> {
+    let args = [
+        "orderbook".to_string(),
+        "--enable-presign-orders".to_string(),
+        "--enable-eip1271-orders".to_string(),
+        "--enable-limit-orders".to_string(),
+    ]
+    .into_iter()
+    .chain(api_autopilot_solver_arguments(contracts))
+    .chain(api_autopilot_arguments())
+    .chain(extra_arguments.iter().cloned());
+    let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
+    tokio::task::spawn(orderbook::run::run(args))
 }
 
-impl OrderbookServices {
-    pub async fn new(web3: &Web3, contracts: &Contracts, enable_limit_orders: bool) -> Self {
-        let api_db = Arc::new(Postgres::new("postgresql://").unwrap());
-        let autopilot_db = autopilot::database::Postgres::new("postgresql://")
+pub async fn wait_for_api_to_come_up() {
+    let is_up = || async {
+        reqwest::get(format!("{API_HOST}/api/v1/version"))
             .await
-            .unwrap();
-        database::clear_DANGER(&api_db.pool).await.unwrap();
-        let block_retriever = Arc::new(web3.clone());
-        let gpv2_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            GPv2SettlementContract::new(contracts.gp_settlement.clone()),
-            autopilot_db.clone(),
-            block_retriever.clone(),
-            None,
-        ));
-        let pair_provider = uniswap_pair_provider(contracts);
-        let current_block_stream =
-            current_block_stream(Arc::new(web3.clone()), Duration::from_secs(5))
-                .await
-                .unwrap();
-        let pool_fetcher = PoolCache::new(
-            CacheConfig {
-                number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
-                number_of_entries_to_auto_update: NonZeroUsize::new(20).unwrap(),
-                maximum_recent_block_age: 4,
-                ..Default::default()
-            },
-            Arc::new(PoolFetcher::uniswap(pair_provider, web3.clone())),
-            current_block_stream.clone(),
-        )
+            .is_ok()
+    };
+    tracing::info!("Waiting for API to come up.");
+    wait_for_condition(Duration::from_secs(10), is_up)
+        .await
         .unwrap();
-        let gas_estimator = Arc::new(web3.clone());
-        let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
-        let base_tokens = Arc::new(BaseTokens::new(contracts.weth.address(), &[]));
-        let price_estimator = Arc::new(SanitizedPriceEstimator::new(
-            Box::new(BaselinePriceEstimator::new(
-                Arc::new(pool_fetcher),
-                gas_estimator.clone(),
-                base_tokens.clone(),
-                contracts.weth.address(),
-                1_000_000_000_000_000_000_u128.into(),
-                Arc::new(RateLimiter::from_strategy(
-                    Default::default(),
-                    "baseline_estimator".into(),
-                )),
-            )),
-            contracts.weth.address(),
-            bad_token_detector.clone(),
-        ));
-        let native_price_estimator = Box::new(NativePriceEstimator::new(
-            price_estimator.clone(),
-            contracts.weth.address(),
-            1_000_000_000_000_000_000_u128.into(),
-        ));
-        let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
-            native_price_estimator,
-            Duration::from_secs(10),
-            Duration::from_secs(10),
-            None,
-            Duration::from_secs(2),
-            1,
-        ));
-        let quoter = Arc::new(OrderQuoter::new(
-            price_estimator.clone(),
-            native_price_estimator.clone(),
-            gas_estimator,
-            Arc::new(Subsidy {
-                factor: 0.,
-                ..Default::default()
-            }),
-            api_db.clone(),
-            chrono::Duration::seconds(60i64),
-            chrono::Duration::seconds(60i64),
-        ));
-        let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
-            web3.clone(),
-            Some(contracts.balancer_vault.clone()),
-            contracts.allowance,
-            contracts.gp_settlement.address(),
-        ));
-        let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
-        balance_fetcher.spawn_background_task(current_block_stream.clone());
-        let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
-        let solvable_orders_cache = SolvableOrdersCache::new(
-            Duration::from_secs(120),
-            autopilot_db.clone(),
-            Default::default(),
-            balance_fetcher.clone(),
-            bad_token_detector.clone(),
-            current_block_stream.clone(),
-            native_price_estimator.clone(),
-            signature_validator.clone(),
-            Duration::from_secs(1),
-            None,
-            Some(contracts.ethflow.address()),
-            Duration::from_secs(5),
-            Default::default(),
-            true,
-            1.0,
-        );
-        LimitOrderQuoter {
-            limit_order_age: chrono::Duration::seconds(15),
-            quoter: Arc::new(FixedFeeQuoter {
-                quoter: quoter.clone(),
-                fee: 1_000.into(),
-            }),
-            database: autopilot_db.clone(),
-            parallelism: 2,
-            balance_fetcher: balance_fetcher.clone(),
-            strategies: vec![QuotingStrategy::SkipUnfunded],
-            batch_size: 10,
-        }
-        .spawn();
-        let mut code_fetcher = MockCodeFetching::new();
-        code_fetcher.expect_code_size().returning(|_| Ok(0));
-        let order_validator = Arc::new(
-            OrderValidator::new(
-                contracts.weth.clone(),
-                HashSet::default(),
-                HashSet::default(),
-                OrderValidPeriodConfiguration::any(),
-                SignatureConfiguration::all(),
-                bad_token_detector,
-                quoter.clone(),
-                balance_fetcher,
-                signature_validator,
-                api_db.clone(),
-                1,
-                Arc::new(code_fetcher),
-            )
-            .with_limit_orders(enable_limit_orders),
-        );
-        let refund_event_handler: Arc<dyn Maintaining> =
-            Arc::new(autopilot::event_updater::EventUpdater::new(
-                EthFlowRefundRetriever::new(web3.clone(), contracts.ethflow.address()),
-                autopilot_db.clone(),
-                block_retriever.clone(),
-                None,
-            ));
-        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
-        let chain_id = web3.eth().chain_id().await.unwrap();
-        let onchain_order_event_parser = OnchainOrderParser::new(
-            autopilot_db.clone(),
-            web3.clone(),
-            quoter.clone(),
-            Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id.as_u64(), contracts.gp_settlement.address()),
-            contracts.gp_settlement.address(),
-            HashSet::new(),
-        );
-        let ethflow_event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            CoWSwapOnchainOrdersContract::new(web3.clone(), contracts.ethflow.address()),
-            onchain_order_event_parser,
-            block_retriever,
-            None,
-        ));
-
-        let orderbook = Arc::new(Orderbook::new(
-            contracts.domain_separator,
-            contracts.gp_settlement.address(),
-            api_db.as_ref().clone(),
-            order_validator.clone(),
-        ));
-        let maintenance = ServiceMaintenance::new(vec![
-            Arc::new(autopilot_db.clone()),
-            ethflow_event_updater,
-            gpv2_event_updater,
-            refund_event_handler,
-        ]);
-        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter.clone()));
-        orderbook::serve_api(
-            api_db.clone(),
-            orderbook,
-            quotes,
-            API_HOST[7..].parse().expect("Couldn't parse API address"),
-            pending(),
-            api_db.clone(),
-            None,
-            native_price_estimator,
-        );
-
-        Self {
-            price_estimator,
-            maintenance,
-            block_stream: current_block_stream,
-            solvable_orders_cache,
-            base_tokens,
-        }
-    }
 }
 
-pub async fn setup_naive_solver_uniswapv2_driver(
-    web3: &Web3,
+pub fn start_old_driver(
     contracts: &Contracts,
-    base_tokens: Arc<BaseTokens>,
-    block_stream: CurrentBlockStream,
-    solver_account: Account,
-) -> solver::driver::Driver {
-    let uniswap_pair_provider = uniswap_pair_provider(contracts);
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(web3, contracts.uniswap_router.address()),
-        contracts.gp_settlement.clone(),
-        web3.clone(),
-        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
-    );
-    let solver = solver::solver::naive_solver(solver_account);
-    let liquidity_collector = LiquidityCollector {
-        liquidity_sources: vec![Box::new(uniswap_liquidity)],
-        base_tokens,
-    };
-    let network_id = web3.net().version().await.unwrap();
-    let submitted_transactions = GlobalTxPool::default();
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
-    solver::driver::Driver::new(
-        contracts.gp_settlement.clone(),
-        liquidity_collector,
-        vec![solver],
-        Arc::new(web3.clone()),
-        Duration::from_secs(30),
-        contracts.weth.address(),
-        Arc::new(NoopMetrics::default()),
-        web3.clone(),
-        network_id.clone(),
-        Duration::from_secs(30),
-        block_stream,
-        SolutionSubmitter {
-            web3: web3.clone(),
-            contract: contracts.gp_settlement.clone(),
-            gas_price_estimator: Arc::new(web3.clone()),
-            target_confirm_time: Duration::from_secs(1),
-            gas_price_cap: f64::MAX,
-            max_confirm_time: Duration::from_secs(120),
-            retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::new(
-                            SubmissionNodeKind::Broadcast,
-                            web3.clone(),
-                        )],
-                        false,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
-                }),
-            ],
-            access_list_estimator: Arc::new(
-                create_priority_estimator(web3, &[AccessListEstimatorType::Web3], None, network_id)
-                    .unwrap(),
-            ),
-            code_fetcher: code_fetcher.clone(),
-        },
-        create_orderbook_api(),
-        create_order_converter(web3, contracts.weth.address()),
-        15000000u128,
-        None,
-        None.into(),
-        None,
-        0,
-        code_fetcher,
-    )
+    private_key: &[u8; 32],
+    extra_args: &[String],
+) -> JoinHandle<()> {
+    let args = [
+        "solver".to_string(),
+        format!("--solver-account={}", hex::encode(private_key)),
+        "--settle-interval=1".to_string(),
+    ]
+    .into_iter()
+    .chain(api_autopilot_solver_arguments(contracts).chain(extra_args.iter().cloned()));
+    let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
+    tokio::task::spawn(solver::run::run(args))
 }
 
-/// Returns error if communicating with the api fails or if a timeout is
-/// reached.
-pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result<()> {
-    let condition = || async {
-        let response = client
-            .get(format!("{API_HOST}/api/v1/auction"))
-            .send()
-            .await
-            .unwrap();
-        match response.status() {
-            StatusCode::OK => {
-                let auction: model::auction::AuctionWithId = response.json().await.unwrap();
-                auction.auction.orders.len() >= minimum
-            }
-            StatusCode::NOT_FOUND => false,
-            other => panic!("unexpected status code {other}"),
-        }
-    };
-    wait_for_condition(Duration::from_secs(30), condition).await
+fn api_autopilot_arguments() -> impl Iterator<Item = String> {
+    [
+        "--price-estimators=Baseline".to_string(),
+        "--native-price-estimators=Baseline".to_string(),
+        "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
+        "--block-stream-poll-interval-seconds=1".to_string(),
+    ]
+    .into_iter()
+}
+
+fn api_autopilot_solver_arguments(contracts: &Contracts) -> impl Iterator<Item = String> {
+    [
+        "--baseline-sources=None".to_string(),
+        format!(
+            "--custom-univ2-baseline-sources={:?}|{:?}",
+            contracts.uniswap_router.address(),
+            H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+        ),
+        format!(
+            "--settlement-contract-address={:?}",
+            contracts.gp_settlement.address()
+        ),
+        format!("--native-token-address={:?}", contracts.weth.address()),
+        format!(
+            "--balancer-v2-vault-address={:?}",
+            contracts.balancer_vault.address()
+        ),
+    ]
+    .into_iter()
+}
+
+pub async fn get_auction() -> Result<AuctionWithId> {
+    let response = reqwest::get(format!("{API_HOST}/api/v1/auction")).await?;
+    let status = response.status();
+    let body = response.text().await?;
+    anyhow::ensure!(status == StatusCode::OK, "{body}");
+    serde_json::from_str(&body).with_context(|| body.to_string())
+}
+
+pub async fn solvable_orders() -> Result<usize> {
+    Ok(get_auction().await?.auction.orders.len())
 }
 
 /// Repeatedly evaluate condition until it returns true or the timeout is
@@ -406,44 +141,4 @@ where
         }
     }
     Ok(())
-}
-
-/// Same as [`OrderQuoter`], but forces the fee to be exactly the specified
-/// amount.
-struct FixedFeeQuoter {
-    quoter: Arc<OrderQuoter>,
-    fee: U256,
-}
-
-#[async_trait]
-impl OrderQuoting for FixedFeeQuoter {
-    /// Computes a quote for the specified order parameters. Doesn't store the
-    /// quote.
-    async fn calculate_quote(
-        &self,
-        parameters: QuoteParameters,
-    ) -> Result<Quote, CalculateQuoteError> {
-        self.quoter
-            .calculate_quote(parameters)
-            .await
-            .map(|q| Quote {
-                fee_amount: self.fee,
-                ..q
-            })
-    }
-
-    /// Stores a quote.
-    async fn store_quote(&self, quote: Quote) -> Result<Quote> {
-        self.quoter.store_quote(quote).await
-    }
-
-    /// Finds an existing quote.
-    async fn find_quote(
-        &self,
-        id: Option<QuoteId>,
-        parameters: QuoteSearchParameters,
-        signing_scheme: &QuoteSigningScheme,
-    ) -> Result<Quote, FindQuoteError> {
-        self.quoter.find_quote(id, parameters, signing_scheme).await
-    }
 }

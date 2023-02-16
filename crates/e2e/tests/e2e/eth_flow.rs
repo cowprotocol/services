@@ -1,26 +1,28 @@
 use {
     crate::{
         deploy::Contracts,
-        local_node::{AccountAssigner, TestNodeApi},
+        local_node::TestNodeApi,
         onchain_components::{
             deploy_token_with_weth_uniswap_pool,
             to_wei,
             MintableToken,
             WethPoolConfig,
         },
-        services::{
-            create_orderbook_api,
-            setup_naive_solver_uniswapv2_driver,
-            wait_for_solvable_orders,
-            OrderbookServices,
-            API_HOST,
-        },
+        services::{get_auction, solvable_orders, wait_for_condition, API_HOST},
     },
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     chrono::{DateTime, NaiveDateTime, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
-    ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
+    ethcontract::{
+        transaction::{TransactionBuilder, TransactionResult},
+        Account,
+        Bytes,
+        PrivateKey,
+        H160,
+        H256,
+        U256,
+    },
     hex_literal::hex,
     model::{
         app_id::AppId,
@@ -56,10 +58,9 @@ use {
     shared::{
         current_block::timestamp_of_current_block_in_seconds,
         ethrpc::Web3,
-        http_client::HttpClientFactory,
-        maintenance::Maintaining,
         signature_validator::check_erc1271_result,
     },
+    std::time::Duration,
 };
 const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 const AUCTION_ENDPOINT: &str = "/api/v1/auction";
@@ -83,14 +84,34 @@ async fn local_node_eth_flow_indexing_after_refund() {
 
 async fn eth_flow_tx(web3: Web3) {
     shared::tracing::initialize_reentrant(
-        "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
     );
     shared::exit_process_on_panic::set_panic_hook();
+
+    crate::services::clear_database().await;
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let mut accounts = AccountAssigner::new(&web3).await;
-    let trader = accounts.assign_free_account();
-    let solver = accounts.default_deployer; // is a solver by default
+    const SOLVER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000001");
+    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
+    contracts
+        .gp_authenticator
+        .add_solver(solver.address())
+        .send()
+        .await
+        .unwrap();
+    const TRADER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000002");
+    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
+    for account in [&solver, &trader] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(2))
+            .to(account.address())
+            .send()
+            .await
+            .unwrap();
+    }
 
     // Create token with Uniswap pool for price estimation
     let MintableToken { contract: dai, .. } = deploy_token_with_weth_uniswap_pool(
@@ -104,16 +125,6 @@ async fn eth_flow_tx(web3: Web3) {
     )
     .await;
 
-    let OrderbookServices {
-        maintenance,
-        block_stream,
-        solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
-
     // Get a quote from the services
     let buy_token = dai.address();
     let receiver = H160([0x42; 20]);
@@ -123,6 +134,12 @@ async fn eth_flow_tx(web3: Web3) {
         buy_token,
         receiver,
     };
+
+    let client = reqwest::Client::default();
+
+    crate::services::start_api(&contracts, &[]);
+    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
 
     let quote: OrderQuoteResponse = submit_quote(
         &intent.to_quote_request(&contracts.ethflow, &contracts.weth),
@@ -138,20 +155,15 @@ async fn eth_flow_tx(web3: Web3) {
 
     sumbit_order(&ethflow_order, &trader, &contracts).await;
 
-    // Automatically pick up onchain order without any API request
-    maintenance.run_maintenance().await.unwrap();
-
     test_order_availability_in_api(&client, &ethflow_order, &trader.address(), &contracts).await;
 
-    let mut driver =
-        setup_naive_solver_uniswapv2_driver(&web3, &contracts, base_tokens, block_stream, solver)
-            .await;
-    driver.single_run().await.unwrap();
-
-    // Update orderbook status
-    maintenance.run_maintenance().await.unwrap();
-    solvable_orders_cache.update(0).await.unwrap();
-
+    tracing::info!("waiting for trade");
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 1
+    })
+    .await
+    .unwrap();
+    crate::services::start_old_driver(&contracts, &SOLVER_PK, &[]);
     test_order_was_settled(&ethflow_order, &web3).await;
 
     test_trade_availability_in_api(&client, &ethflow_order, &trader.address(), &contracts).await;
@@ -159,16 +171,41 @@ async fn eth_flow_tx(web3: Web3) {
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
     shared::tracing::initialize_reentrant(
-        "warn,orderbook=debug,orderbook=debug,solver=debug,autopilot=debug",
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
     );
     shared::exit_process_on_panic::set_panic_hook();
+
+    crate::services::clear_database().await;
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let mut accounts = AccountAssigner::new(&web3).await;
-    let trader = accounts.assign_free_account();
-    let dummy_trader = accounts.assign_free_account();
-    let refunder = accounts.assign_free_account();
-    let solver = accounts.default_deployer; // is a solver by default
+    const SOLVER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000001");
+    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
+    contracts
+        .gp_authenticator
+        .add_solver(solver.address())
+        .send()
+        .await
+        .unwrap();
+
+    const REFUNDER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000002");
+    let refunder = Account::Offline(PrivateKey::from_raw(REFUNDER_PK).unwrap(), None);
+    const TRADER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000003");
+    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
+    const DUMMY_TRADER_PK: [u8; 32] =
+        hex!("0000000000000000000000000000000000000000000000000000000000000004");
+    let dummy_trader = Account::Offline(PrivateKey::from_raw(DUMMY_TRADER_PK).unwrap(), None);
+    for account in [&solver, &refunder, &trader, &dummy_trader] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(2))
+            .to(account.address())
+            .send()
+            .await
+            .unwrap();
+    }
 
     // Create token with Uniswap pool for price estimation
     let MintableToken { contract: dai, .. } = deploy_token_with_weth_uniswap_pool(
@@ -182,15 +219,11 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     )
     .await;
 
-    let OrderbookServices {
-        maintenance,
-        block_stream,
-        solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
+    crate::services::start_api(&contracts, &[]);
+    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
+
+    let client = reqwest::Client::default();
 
     // Create an order that only exists to be refunded, which triggers an event in
     // the eth-flow contract that is not included in the ABI of
@@ -245,20 +278,13 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .include_slippage_bps(300);
     sumbit_order(&ethflow_order, &trader, &contracts).await;
 
-    // Automatically pick up onchain order without any API request
-    maintenance.run_maintenance().await.unwrap();
-
-    wait_for_solvable_orders(&client, 1).await.unwrap();
-
-    let mut driver =
-        setup_naive_solver_uniswapv2_driver(&web3, &contracts, base_tokens, block_stream, solver)
-            .await;
-    driver.single_run().await.unwrap();
-
-    // Update orderbook status
-    maintenance.run_maintenance().await.unwrap();
-    solvable_orders_cache.update(0).await.unwrap();
-
+    tracing::info!("waiting for trade");
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 1
+    })
+    .await
+    .unwrap();
+    crate::services::start_old_driver(&contracts, &SOLVER_PK, &[]);
     test_order_was_settled(&ethflow_order, &web3).await;
 }
 
@@ -269,8 +295,10 @@ async fn submit_quote(quote: &OrderQuoteRequest, client: &reqwest::Client) -> Or
         .send()
         .await
         .unwrap();
-    assert_eq!(quoting.status(), 200);
-    let response = quoting.json::<OrderQuoteResponse>().await.unwrap();
+    let status = quoting.status();
+    let body = quoting.text().await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    let response = serde_json::from_str::<OrderQuoteResponse>(&body).unwrap();
 
     assert!(response.id.is_some());
     // Ideally the fee would be nonzero, but this is not the case in the test
@@ -317,6 +345,23 @@ async fn test_order_availability_in_api(
     owner: &H160,
     contracts: &Contracts,
 ) {
+    tracing::info!("Waiting for order to show up in API.");
+    let is_available = || async {
+        client
+            .get(&format!(
+                "{API_HOST}{ORDERS_ENDPOINT}/{}",
+                order.uid(contracts).await
+            ))
+            .send()
+            .await
+            .unwrap()
+            .status()
+            == 200
+    };
+    crate::services::wait_for_condition(Duration::from_secs(10), is_available)
+        .await
+        .unwrap();
+
     test_orders_query(client, order, owner, contracts).await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
@@ -325,7 +370,11 @@ async fn test_order_availability_in_api(
         test_account_query(address, client, order, owner, contracts).await;
     }
 
-    wait_for_solvable_orders(client, 1).await.unwrap();
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 1
+    })
+    .await
+    .unwrap();
 
     test_auction_query(client, order, owner, contracts).await;
 }
@@ -351,8 +400,10 @@ async fn test_trade_availability_in_api(
 }
 
 async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, web3: &Web3) {
-    let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.auction.orders.is_empty());
+    let auction_is_empty = || async { get_auction().await.unwrap().auction.orders.is_empty() };
+    crate::services::wait_for_condition(Duration::from_secs(10), auction_is_empty)
+        .await
+        .unwrap();
 
     let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
     let receiver_buy_token_balance = buy_token
@@ -377,8 +428,10 @@ async fn test_orders_query(
         .send()
         .await
         .unwrap();
-    assert_eq!(query.status(), 200);
-    let response = query.json::<Order>().await.unwrap();
+    let status = query.status();
+    let body = query.text().await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    let response = serde_json::from_str::<Order>(&body).unwrap();
     test_order_parameters(&response, order, owner, contracts).await;
 }
 
@@ -658,7 +711,7 @@ impl EthFlowTradeIntent {
             sell_token: weth.address(),
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
-            validity: Validity::For(u32::MAX),
+            validity: Validity::For(3600),
             app_data: AppId([0x42; 32]),
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,

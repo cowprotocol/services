@@ -248,7 +248,12 @@ pub struct Arguments {
 
     /// The RPC endpoints to use for submitting transaction to a custom set of
     /// nodes.
-    #[clap(long, env, use_value_delimiter = true)]
+    #[clap(
+        long,
+        env,
+        use_value_delimiter = true,
+        default_value = "http://localhost:8545"
+    )]
     pub transaction_submission_nodes: Vec<Url>,
 
     /// Additional RPC endpoints that we notify when we submit a transaction to
