@@ -722,7 +722,7 @@ mod tests {
             .transaction_count(account.address(), None)
             .await
             .unwrap();
-        let contract = crate::get_settlement_contract(&web3).await.unwrap();
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let flashbots_api = FlashbotsApi::new(Client::new(), "https://rpc.flashbots.net").unwrap();
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(

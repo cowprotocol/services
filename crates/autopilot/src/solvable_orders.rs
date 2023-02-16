@@ -683,7 +683,7 @@ impl OrderFilterCounter {
             metrics,
             orders: orders
                 .iter()
-                .map(|order| (order.metadata.uid, order.metadata.class.clone()))
+                .map(|order| (order.metadata.uid, order.metadata.class))
                 .collect(),
             counts: HashMap::new(),
         }

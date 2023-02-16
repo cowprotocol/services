@@ -76,6 +76,7 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    #[serde(default)]
     pub solver_address: H160,
     pub objective: Objective,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]

@@ -13,6 +13,7 @@ use {
 #[ignore]
 #[tokio::test]
 async fn test() {
+    crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
         web3,

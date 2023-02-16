@@ -8,5 +8,6 @@ use {
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
+    #[serde(with = "crate::bytes_hex")]
     pub call_data: Vec<u8>,
 }
