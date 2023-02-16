@@ -10,6 +10,10 @@ pub async fn send(
     solver: &Solver,
     settlement: settlement::Simulated,
 ) -> Result<(), Error> {
+    if mempools.is_empty() {
+        // handle this case specificially because `select_ok` panics otherwise.
+        return Err(Error::AllMempoolsFailed);
+    }
     select_ok(mempools.iter().map(|mempool| {
         let settlement = settlement.clone();
         async move {
