@@ -183,9 +183,6 @@ pub struct LimitOrder {
     /// The fee that should be used for objective value computations.
     /// Takes partiall fill into account.
     pub solver_fee: U256,
-    /// Indicator if the order is mature at the creation of the Auction.
-    /// Relevant to user orders.
-    pub is_mature: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
@@ -245,7 +242,6 @@ impl Default for LimitOrder {
             partially_fillable: Default::default(),
             solver_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
-            is_mature: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),
