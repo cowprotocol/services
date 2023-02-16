@@ -9,7 +9,7 @@ use {
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
     model::u256_decimal,
-    reqwest::{Client, RequestBuilder, Url},
+    reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
         Deserialize,
@@ -54,7 +54,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
-        parse_paraswap_response_text(&text)
+        parse_paraswap_response(status, &text)
     }
 
     async fn transaction(
@@ -73,7 +73,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
-        parse_paraswap_response_text(&response_text)
+        parse_paraswap_response(status, &response_text)
     }
 }
 
@@ -122,10 +122,20 @@ impl ParaswapResponseError {
     }
 }
 
-fn parse_paraswap_response_text<T>(response_text: &str) -> Result<T, ParaswapResponseError>
+fn parse_paraswap_response<T>(
+    status: StatusCode,
+    response_text: &str,
+) -> Result<T, ParaswapResponseError>
 where
     T: DeserializeOwned,
 {
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        // This custom treatment is required as the text field is empty for these
+        // responses
+        return Err(ParaswapResponseError::RateLimited(
+            RateLimiterError::RateLimited,
+        ));
+    }
     match serde_json::from_str::<RawResponse<T>>(response_text)? {
         RawResponse::ResponseOk(response) => Ok(response),
         RawResponse::ResponseErr { error: message } => match message.as_str() {
@@ -716,14 +726,17 @@ mod tests {
 
     #[test]
     fn paraswap_response_handling() {
-        let parse = |s: &str| parse_paraswap_response_text::<bool>(s);
+        let parse = |status: StatusCode, s: &str| parse_paraswap_response::<bool>(status, s);
         assert!(matches!(
-            parse("invalid JSON"),
+            parse(StatusCode::NOT_FOUND, "invalid JSON"),
             Err(ParaswapResponseError::Json(_))
         ));
 
         assert!(matches!(
-            parse("{\"error\": \"Never seen this before\"}"),
+            parse(
+                StatusCode::NOT_FOUND,
+                "{\"error\": \"Never seen this before\"}"
+            ),
             Err(ParaswapResponseError::Other(_))
         ));
 
@@ -733,7 +746,7 @@ mod tests {
             "Too much slippage on quote, please try again",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{liquidity_error}\"}}")),
+                parse(StatusCode::NOT_FOUND,&format!("{{\"error\": \"{liquidity_error}\"}}")),
                 Err(ParaswapResponseError::InsufficientLiquidity(message)) if &message == liquidity_error,
             ));
         }
@@ -746,10 +759,17 @@ mod tests {
             "It seems like the rate has changed, please re-query the latest Price",
         ] {
             assert!(matches!(
-                parse(&format!("{{\"error\": \"{retryable_error}\"}}")),
+                parse(StatusCode::NOT_FOUND,&format!("{{\"error\": \"{retryable_error}\"}}")),
                 Err(ParaswapResponseError::Retryable(message)) if &message == retryable_error,
             ));
         }
+
+        assert!(matches!(
+            parse(StatusCode::TOO_MANY_REQUESTS, ""),
+            Err(ParaswapResponseError::RateLimited(
+                RateLimiterError::RateLimited
+            ))
+        ));
     }
 
     #[tokio::test]
