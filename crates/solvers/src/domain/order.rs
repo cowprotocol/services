@@ -98,8 +98,6 @@ impl<'a> NonLiquidity<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct Reward(pub f64);
 
-// TODO where to move this?
-/// A custom interaction
 #[derive(Debug, Clone)]
 pub struct CustomInteraction {
     pub target: Address,

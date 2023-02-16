@@ -207,6 +207,7 @@ enum Interaction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LiquidityInteraction {
+    internalize: bool,
     id: String,
     input_token: H160,
     output_token: H160,
@@ -214,13 +215,13 @@ struct LiquidityInteraction {
     input_amount: U256,
     #[serde_as(as = "serialize::U256")]
     output_amount: U256,
-    internalize: bool,
 }
 
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CustomInteraction {
+    internalize: bool,
     target: H160,
     #[serde_as(as = "serialize::U256")]
     value: U256,
@@ -229,7 +230,6 @@ struct CustomInteraction {
     allowances: Vec<Allowance>,
     inputs: Vec<Asset>,
     outputs: Vec<Asset>,
-    internalize: bool,
 }
 
 #[serde_as]

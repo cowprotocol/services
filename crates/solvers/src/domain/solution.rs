@@ -94,18 +94,11 @@ pub enum Interaction {
 /// the driver.
 pub struct LiquidityInteraction {
     pub liquidity: liquidity::Liquidity,
+    // TODO: Currently there is not type-level guarantee that `input` and
+    // output` are valid for the specified liquidity.
     pub input: eth::Asset,
     pub output: eth::Asset,
     pub internalize: bool,
-}
-
-impl LiquidityInteraction {
-    // just pass in liquidity and amounts and let the function find the tokens?
-    pub fn new() -> Option<Self> {
-        // TODO: Currently there is not type-level guarantee that `input` and
-        // output` are valid for the specified liquidity.
-        todo!()
-    }
 }
 
 /// A custom interaction
