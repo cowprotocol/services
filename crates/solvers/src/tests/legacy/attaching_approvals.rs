@@ -8,8 +8,6 @@ use {
 
 #[tokio::test]
 async fn test() {
-    shared::tracing::initialize_reentrant("debug");
-
     let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
         req: json!({
             "amms": {},

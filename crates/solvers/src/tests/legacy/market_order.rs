@@ -8,8 +8,6 @@ use {
 /// Tests that orders get marked as "mandatory" in `/quote` requests.
 #[tokio::test]
 async fn test_quoting() {
-    shared::tracing::initialize_reentrant("debug");
-
     let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
         req: json!({
             "amms": {
