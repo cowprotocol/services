@@ -80,5 +80,22 @@ mod tests {
                 log_index: 1,
             })
         );
+
+        // test update existing row
+        upsert(&mut db, &event, 5.into(), 6.into(), 7.into(), 8.into())
+            .await
+            .unwrap();
+        let result = fetch(&mut db, &event).await.unwrap();
+        assert_eq!(
+            result,
+            Some(Observation {
+                gas_used: 5.into(),
+                effective_gas_price: 6.into(),
+                surplus: 7.into(),
+                fee: 8.into(),
+                block_number: 1,
+                log_index: 1,
+            })
+        );
     }
 }
