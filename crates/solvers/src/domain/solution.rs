@@ -85,6 +85,7 @@ pub struct JitTrade {
 }
 
 /// A interaction included within an solution.
+#[derive(Debug)]
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -92,6 +93,7 @@ pub enum Interaction {
 
 /// An interaction using input liquidity. This interaction will be encoded by
 /// the driver.
+#[derive(Debug)]
 pub struct LiquidityInteraction {
     pub liquidity: liquidity::Liquidity,
     // TODO: Currently there is not type-level guarantee that `input` and
@@ -102,6 +104,7 @@ pub struct LiquidityInteraction {
 }
 
 /// A custom interaction
+#[derive(Debug)]
 pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
@@ -113,6 +116,7 @@ pub struct CustomInteraction {
 }
 
 /// Approval required to make some custom interaction possible.
+#[derive(Debug)]
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,

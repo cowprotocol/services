@@ -1,3 +1,4 @@
+mod attaching_approvals;
 mod market_order;
 
 use std::{
