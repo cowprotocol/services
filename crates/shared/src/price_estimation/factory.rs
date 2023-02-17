@@ -221,7 +221,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .yearn_solver_url
                         .clone()
                         .context("yearn solver url not specified")?,
-                    "quote".to_owned(),
+                    self.args.yearn_solver_path.clone(),
                 ),
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
