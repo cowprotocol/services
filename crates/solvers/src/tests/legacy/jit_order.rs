@@ -105,6 +105,16 @@ async fn test() {
                             0101010101010101010101010101010101010101010101010101010101010101\
                             0202020202020202020202020202020202020202020202020202020202020202\
                             03",
+                        "preInteractions": [
+                            {
+                                "target": "0x2222222222222222222222222222222222222222",
+                                // U256::from_str() expects a hex encoded number whereas
+                                // U256::to_string() produces a base 10 encoded number. That's why
+                                // the original `200` gets converted to `512` here.
+                                "value": "512",
+                                "callData": "0xabcd",
+                            }
+                        ]
                     },
                     "executedAmount": "100",
                     // TODO add the pre_interactions somewhere
