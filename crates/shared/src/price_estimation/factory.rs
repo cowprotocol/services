@@ -208,7 +208,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .quasimodo_solver_url
                         .clone()
                         .context("quasimodo solver url not specified")?,
-                    None,
+                    "solve".to_owned(),
                 ),
             ),
             PriceEstimatorType::OneInch => {
@@ -221,7 +221,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .yearn_solver_url
                         .clone()
                         .context("yearn solver url not specified")?,
-                    Some("quote".to_owned()),
+                    "quote".to_owned(),
                 ),
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
@@ -495,12 +495,12 @@ impl PriceEstimatorCreating for BalancerSor {
 }
 
 impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = (Url, Option<String>);
+    type Params = (Url, String);
 
     fn init(
         factory: &PriceEstimatorFactory,
         kind: PriceEstimatorType,
-        (base, custom_solve_path): Self::Params,
+        (base, solve_path): Self::Params,
     ) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
             Arc::new(DefaultHttpSolverApi {
@@ -508,7 +508,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 network_name: factory.network.name.clone(),
                 chain_id: factory.network.chain_id,
                 base,
-                custom_solve_path,
+                solve_path,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
                     use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
