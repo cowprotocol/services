@@ -222,7 +222,8 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference, // todo - extract submitter and score into a separate struct
+    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
+                                          * struct */
     pub score: Option<BigRational>,
 }
 
