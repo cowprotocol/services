@@ -17,11 +17,6 @@ pub struct Args {
     #[arg(long, env, default_value = "127.0.0.1:7872")]
     pub addr: SocketAddr,
 
-    /// Path to the driver configuration file. This file should be in TOML
-    /// format.
-    #[clap(long, env)]
-    pub config: PathBuf,
-
     #[command(subcommand)]
     pub command: Command,
 }
@@ -30,7 +25,19 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Baseline solver.
-    Baseline,
+    Baseline {
+        /// Path to the solver configuration file. This file should be in TOML
+        /// format.
+        #[clap(long, env)]
+        config: PathBuf,
+    },
+    /// Naive solver.
+    Naive,
     /// Wrapper for solvers implementing the legacy HTTP interface.
-    Legacy,
+    Legacy {
+        /// Path to the solver configuration file. This file should be in TOML
+        /// format.
+        #[clap(long, env)]
+        config: PathBuf,
+    },
 }

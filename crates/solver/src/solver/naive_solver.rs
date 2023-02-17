@@ -1,4 +1,4 @@
-mod multi_order_solver;
+pub mod multi_order_solver;
 
 use {
     crate::{

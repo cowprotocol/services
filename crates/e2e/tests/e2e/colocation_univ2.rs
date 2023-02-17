@@ -157,8 +157,8 @@ max-hops = 0
     let file = file.into_temp_path();
     let args = vec![
         "solvers".to_string(),
-        format!("--config={}", file.to_str().unwrap()),
         "baseline".to_string(),
+        format!("--config={}", file.to_str().unwrap()),
     ];
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
     let task = async move {

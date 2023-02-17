@@ -84,8 +84,7 @@ async fn test() {
     .await;
     let config = legacy::create_temp_config_file(&legacy_solver);
 
-    let engine =
-        tests::SolverEngine::new("legacy".to_owned(), config.to_str().unwrap().to_owned()).await;
+    let engine = tests::SolverEngine::new("legacy", Some(config.to_str().unwrap())).await;
 
     let solution = engine
         .solve(json!({
