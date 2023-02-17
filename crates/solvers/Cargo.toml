@@ -40,3 +40,6 @@ contracts = { path = "../contracts" }
 model = { path = "../model" }
 shared = { path = "../shared" }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.3"

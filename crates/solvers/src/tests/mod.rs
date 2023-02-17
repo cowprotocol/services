@@ -5,6 +5,7 @@
 //! each file in `tests/`, which makes `cargo test` slower.
 
 mod baseline;
+mod legacy;
 
 use {
     reqwest::Url,
