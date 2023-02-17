@@ -21,6 +21,7 @@ use {
     ethcontract::Account,
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
+    itertools::Itertools,
     model::{
         auction::{AuctionId, AuctionWithId},
         order::{LimitOrderClass, OrderClass, OrderUid},
@@ -391,6 +392,14 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
+        // In transition period last settlement is not necessarily the one with the
+        // highest score. So we need to get the scores of all settlements and
+        // sort them.
+        let mut scores = rated_settlements
+            .iter()
+            .map(|(_, rated_settlement, _)| rated_settlement.score.score())
+            .sorted()
+            .collect::<Vec<_>>();
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -434,6 +443,10 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
+            let scores = model::solver_competition::Scores {
+                winning_score: scores.pop().expect("no score"), // guaranteed to exist
+                reference_score: scores.last().copied().unwrap_or(0.into()),
+            };
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -441,6 +454,7 @@ impl Driver {
                 transaction,
                 competition: solver_competition,
                 executions,
+                scores,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.

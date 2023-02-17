@@ -23,6 +23,7 @@ pub struct Request {
     pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
     pub executions: Vec<(OrderUid, Execution)>,
+    pub scores: Scores,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -37,6 +38,14 @@ pub struct Execution {
     pub reward: f64,
     #[serde_as(as = "Option<DecimalU256>")]
     pub surplus_fee: Option<U256>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Scores {
+    #[serde(with = "u256_decimal")]
+    pub winning_score: U256,
+    #[serde(with = "u256_decimal")]
+    pub reference_score: U256,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

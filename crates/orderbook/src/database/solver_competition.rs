@@ -47,6 +47,15 @@ impl SolverCompetitionStoring for Postgres {
             .context("order_rewards::save")?;
         }
 
+        database::settlement_scores::insert(
+            &mut ex,
+            request.auction,
+            u256_to_big_decimal(&request.scores.winning_score),
+            u256_to_big_decimal(&request.scores.reference_score),
+        )
+        .await
+        .context("settlement_scores::insert")?;
+
         ex.commit().await.context("commit")
     }
 
@@ -93,7 +102,7 @@ impl SolverCompetitionStoring for Postgres {
 mod tests {
     use {
         super::*,
-        model::solver_competition::{CompetitionAuction, SolverSettlement},
+        model::solver_competition::{CompetitionAuction, Scores, SolverSettlement},
         primitive_types::H160,
     };
 
@@ -130,6 +139,10 @@ mod tests {
                 }],
             },
             executions: Default::default(),
+            scores: Scores {
+                winning_score: 100.into(),
+                reference_score: 99.into(),
+            },
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
