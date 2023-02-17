@@ -271,7 +271,7 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::solver::dummy_arc_solver};
+    use {super::*, crate::solver::dummy_arc_solver, model::solver_competition::Score};
 
     #[test]
     #[ignore]
@@ -288,7 +288,8 @@ mod tests {
                     gas_estimate: 4.into(),
                     gas_price: BigRational::new(5u8.into(), 1u8.into()),
                     objective_value: BigRational::new(6u8.into(), 1u8.into()),
-                    score: BigRational::new(6u8.into(), 1u8.into()),
+                    score: Score::Solver(6.into()),
+                    ranking: 1,
                 },
                 None,
             ),
@@ -303,7 +304,8 @@ mod tests {
                     gas_estimate: 10.into(),
                     gas_price: BigRational::new(11u8.into(), 1u8.into()),
                     objective_value: BigRational::new(12u8.into(), 1u8.into()),
-                    score: BigRational::new(12u8.into(), 1u8.into()),
+                    score: Score::Solver(12.into()),
+                    ranking: 2,
                 },
                 None,
             ),

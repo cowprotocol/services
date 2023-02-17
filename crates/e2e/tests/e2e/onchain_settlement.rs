@@ -264,6 +264,7 @@ async fn onchain_settlement(web3: Web3) {
         None,
         0,
         Arc::new(MockCodeFetching::new()),
+        false,
     );
     driver.single_run().await.unwrap();
 

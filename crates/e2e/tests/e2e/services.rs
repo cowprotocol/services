@@ -367,6 +367,7 @@ pub async fn setup_naive_solver_uniswapv2_driver(
         None,
         0,
         code_fetcher,
+        false,
     )
 }
 
