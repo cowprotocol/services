@@ -16,7 +16,8 @@ use {
     futures::future::join_all,
     gas_estimation::GasPrice1559,
     itertools::{Either, Itertools},
-    num::BigRational,
+    model::solver_competition::Score,
+    num::{BigRational, CheckedMul, Signed, ToPrimitive},
     primitive_types::U256,
     shared::{
         code_fetching::CodeFetching,
@@ -204,10 +205,17 @@ impl SettlementRating for SettlementRater {
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
-            let score = settlement
-                .score
-                .clone()
-                .unwrap_or_else(|| objective_value.clone());
+            let score = match &settlement.score {
+                Some(score) => match score {
+                    shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
+                    shared::http_solver::model::Score::MulFactor(factor) => Score::Discounted(
+                        discounted_score(&objective_value, factor).unwrap_or_default(),
+                    ),
+                },
+                None => {
+                    Score::Protocol(discounted_score(&objective_value, &1.0).unwrap_or_default())
+                }
+            };
             RatedSettlement {
                 id,
                 settlement,
@@ -218,6 +226,7 @@ impl SettlementRating for SettlementRater {
                 gas_price: gas_price.clone(),
                 objective_value,
                 score,
+                ranking: Default::default(),
             }
         };
 
@@ -243,5 +252,38 @@ impl SettlementRating for SettlementRater {
                 }
             },
         ))
+    }
+}
+
+fn discounted_score(objective_value: &BigRational, discount_factor: &f64) -> Option<U256> {
+    discount_factor.is_positive().then_some(())?;
+    let discount_factor = BigRational::from_float(*discount_factor)?;
+    let discounted_score = objective_value.checked_mul(&discount_factor)?;
+    discounted_score.to_u128().map(|score| score.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, num::BigInt};
+
+    #[test]
+    fn test_discounted_score_negative_discount() {
+        assert_eq!(
+            discounted_score(&BigRational::from_integer(1.into()), &-1.0),
+            None
+        );
+    }
+
+    #[test]
+    fn test_discounted_score_real() {
+        let objective_value = BigRational::new(
+            BigInt::from(100_000_000_000_000_000_000_000_000_000_000u128),
+            BigInt::from(20_000_000_000_000_000u128),
+        );
+        let discount_factor = 0.5;
+        assert_eq!(
+            discounted_score(&objective_value, &discount_factor),
+            Some(2_500_000_000_000_000u128.into())
+        );
     }
 }

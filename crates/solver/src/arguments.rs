@@ -326,6 +326,10 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub s3_upload: S3UploadArguments,
+
+    /// Enable ranking of settlements by score
+    #[clap(long, env, default_value = "false")]
+    pub enable_auction_rewards: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -446,6 +450,7 @@ impl std::fmt::Display for Arguments {
             self.token_list_restriction_for_price_checks
         )?;
         writeln!(f, "{}", self.s3_upload)?;
+        writeln!(f, "enable_auction_rewards: {}", self.enable_auction_rewards)?;
         Ok(())
     }
 }

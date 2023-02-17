@@ -98,6 +98,7 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
+        enable_auction_rewards: bool,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
@@ -113,6 +114,7 @@ impl Driver {
             min_order_age,
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
+            enable_auction_rewards,
         };
 
         let logger = DriverLogger {
@@ -357,6 +359,8 @@ impl Driver {
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
+                    score: rated_settlement.score,
+                    ranking: rated_settlement.ranking,
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()

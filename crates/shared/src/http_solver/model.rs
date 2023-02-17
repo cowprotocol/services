@@ -8,7 +8,7 @@ use {
     model::{
         auction::AuctionId,
         order::{OrderData, OrderUid},
-        ratio_as_decimal::{self, DecimalBigRational},
+        ratio_as_decimal,
         signature::Signature,
         u256_decimal::{self, DecimalU256},
     },
@@ -173,6 +173,20 @@ impl Interaction for InteractionData {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Score {
+    /// The score used for ranking.
+    #[serde(with = "u256_decimal")]
+    Score(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol.
+    /// To have more flexibility, the protocol score can be tweaked by the
+    /// solver by providing a multiplication factor. Expected value: [0,
+    /// inf], 0 being 100% discount, 1 being the same as protocol score
+    MulFactor(f64),
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
@@ -191,8 +205,8 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub submitter: SubmissionPreference,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DecimalBigRational>")]
-    pub score: Option<BigRational>,
+    #[serde(flatten)]
+    pub score: Option<Score>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -793,7 +807,6 @@ mod tests {
                     }
                 },
                 "orders": {},
-                "score": "13.37",
                 "metadata": {},
                 "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                 "prices": {
@@ -803,6 +816,41 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(empty_solution).is_ok());
+    }
+
+    #[test]
+    fn decode_score() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "score": "20000000000000000",
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(
+            deserialized.score,
+            Some(Score::Score(20_000_000_000_000_000u128.into()))
+        );
+    }
+
+    #[test]
+    fn decode_multiplication_factor() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "mulFactor": 13.37,
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(deserialized.score, Some(Score::MulFactor(13.37)));
     }
 
     #[test]

@@ -265,6 +265,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         None,
         0,
         Arc::new(MockCodeFetching::new()),
+        false,
     );
     driver.single_run().await.unwrap();
 
