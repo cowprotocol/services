@@ -203,20 +203,26 @@ impl<'a> PriceEstimatorFactory<'a> {
             }
             PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                self.args
-                    .quasimodo_solver_url
-                    .clone()
-                    .context("quasimodo solver url not specified")?,
+                (
+                    self.args
+                        .quasimodo_solver_url
+                        .clone()
+                        .context("quasimodo solver url not specified")?,
+                    "solve".to_owned(),
+                ),
             ),
             PriceEstimatorType::OneInch => {
                 self.create_estimator_entry::<OneInchPriceEstimator>(kind, ())
             }
             PriceEstimatorType::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                self.args
-                    .yearn_solver_url
-                    .clone()
-                    .context("yearn solver url not specified")?,
+                (
+                    self.args
+                        .yearn_solver_url
+                        .clone()
+                        .context("yearn solver url not specified")?,
+                    self.args.yearn_solver_path.clone(),
+                ),
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
         }
@@ -489,12 +495,12 @@ impl PriceEstimatorCreating for BalancerSor {
 }
 
 impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = Url;
+    type Params = (Url, String);
 
     fn init(
         factory: &PriceEstimatorFactory,
         kind: PriceEstimatorType,
-        base: Self::Params,
+        (base, solve_path): Self::Params,
     ) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
             Arc::new(DefaultHttpSolverApi {
@@ -502,6 +508,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 network_name: factory.network.name.clone(),
                 chain_id: factory.network.chain_id,
                 base,
+                solve_path,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
                     use_internal_buffers: Some(factory.shared_args.use_internal_buffers),

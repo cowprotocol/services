@@ -133,6 +133,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub yearn_solver_url: Option<Url>,
 
+    /// The API path to use for solving.
+    #[clap(long, env, default_value = "solve")]
+    pub yearn_solver_path: String,
+
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
@@ -190,6 +194,7 @@ impl Display for Arguments {
         )?;
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
+        writeln!(f, "yearn_solver_path: {}", self.yearn_solver_path)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,

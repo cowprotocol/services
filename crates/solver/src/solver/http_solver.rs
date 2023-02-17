@@ -279,6 +279,7 @@ mod tests {
                 network_name: "mock_network_id".to_string(),
                 chain_id: 0,
                 base: url.parse().unwrap(),
+                solve_path: "solve".to_owned(),
                 client: Client::new(),
                 config: SolverConfig::default(),
             },
