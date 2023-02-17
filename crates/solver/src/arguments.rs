@@ -328,6 +328,7 @@ pub struct Arguments {
     pub s3_upload: S3UploadArguments,
 
     /// Enable ranking of settlements by score
+    /// CIP20 TODO - remove after transition period is over
     #[clap(long, env, default_value = "false")]
     pub enable_auction_rewards: bool,
 }

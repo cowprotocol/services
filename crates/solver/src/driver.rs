@@ -346,6 +346,7 @@ impl Driver {
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
                     solver: solver.name().to_string(),
+                    solver_address: solver.account().address(),
                     objective: Objective {
                         total: rated_settlement
                             .objective_value
@@ -395,6 +396,7 @@ impl Driver {
         // In transition period last settlement is not necessarily the one with the
         // highest score. So we need to get the scores of all settlements and
         // sort them.
+        // CIP20 TODO - add to if statement below, once the transition period is over.
         let mut scores = rated_settlements
             .iter()
             .map(|(_, rated_settlement, _)| rated_settlement.score.score())
@@ -447,6 +449,11 @@ impl Driver {
                 winning_score: scores.pop().expect("no score"), // guaranteed to exist
                 reference_score: scores.last().copied().unwrap_or(0.into()),
             };
+            let participants = solver_competition
+                .solutions
+                .iter()
+                .map(|solution| solution.solver_address)
+                .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -455,6 +462,7 @@ impl Driver {
                 competition: solver_competition,
                 executions,
                 scores,
+                participants,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.

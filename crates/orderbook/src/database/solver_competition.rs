@@ -56,6 +56,18 @@ impl SolverCompetitionStoring for Postgres {
         .await
         .context("settlement_scores::insert")?;
 
+        database::auction_participants::insert(
+            &mut ex,
+            request.auction,
+            request
+                .participants
+                .into_iter()
+                .map(|p| ByteArray(p.0))
+                .collect(),
+        )
+        .await
+        .context("auction_participants::insert")?;
+
         ex.commit().await.context("commit")
     }
 
@@ -129,6 +141,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "asdf".to_string(),
+                    solver_address: H160([1; 20]),
                     objective: Default::default(),
                     score: Default::default(),
                     ranking: 1,
@@ -143,6 +156,7 @@ mod tests {
                 winning_score: 100.into(),
                 reference_score: 99.into(),
             },
+            participants: vec![H160([1; 20])],
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
