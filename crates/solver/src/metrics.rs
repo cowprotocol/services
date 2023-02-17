@@ -6,16 +6,7 @@ use {
     anyhow::Result,
     ethcontract::U256,
     model::order::{Order, OrderClass},
-    prometheus::{
-        Gauge,
-        Histogram,
-        HistogramOpts,
-        HistogramVec,
-        IntCounter,
-        IntCounterVec,
-        IntGaugeVec,
-        Opts,
-    },
+    prometheus::{Gauge, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec},
     shared::metrics::LivenessChecking,
     std::{
         convert::TryInto,
@@ -128,165 +119,68 @@ pub trait SolverMetrics: Send + Sync {
 
 // TODO add labeled interaction counter once we support more than one
 // interaction
-pub struct Metrics {
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Storage {
+    /// Number of trades settled
+    #[metric(name = "trade_counter_seconds", labels("solver_type", "trade_type"))]
     trade_counter: IntCounterVec,
+    /// Counter for the number of seconds between creation and settlement of an
+    /// order
+    #[metric(name = "order_settlement_time_seconds", labels("order_type"))]
     order_settlement_time: IntCounterVec,
+    /// Ms each solver takes to compute their solution
+    #[metric(name = "computation_time_ms", labels("solver_type", "solution_type"))]
     solver_computation_time: IntCounterVec,
+    /// Amount of orders labeled by liquidity type currently available to the
+    /// solvers
+    #[metric(name = "liquidity_gauge", labels("liquidity_type"))]
     liquidity: IntGaugeVec,
+    /// Settlement simulation counts
+    #[metric(labels("result", "solver_type"))]
     settlement_simulations: IntCounterVec,
+    /// Settlement submission counts
+    #[metric(labels("result", "solver_type"))]
     settlement_submissions: IntCounterVec,
+    /// Settlement revertable status counts
+    #[metric(labels("result", "solver_type"))]
     settlement_revertable_status: IntCounterVec,
+    /// Saved gas by using access list for transaction submission
+    #[metric(labels("sign"))]
     settlement_access_list_saved_gas: HistogramVec,
+    /// Success/Failure counts
+    #[metric(name = "solver_run", labels("result", "solver_type"))]
     solver_runs: IntCounterVec,
+    /// Success/Failure counts
+    #[metric(name = "single_order_solver", labels("result", "solver_type"))]
     single_order_solver_runs: IntCounterVec,
+    /// Counter for the number of orders for which at least one solver computed
+    /// an execution which was not chosen in this run-loop
+    #[metric(name = "orders_matched_not_settled")]
     matched_but_unsettled_orders: IntCounter,
-    last_runloop_completed: Mutex<Instant>,
+    /// Surplus ratio differences between winning and best settlement per order
+    #[metric(name = "settlement_surplus_report", buckets(-1.0, -0.1, -0.01, -0.005, 0., 0.005, 0.01, 0.1, 1.0))]
     order_surplus_report: Histogram,
+    /// Time a runloop that wants to submit a solution takes until the
+    /// transaction submission starts.
+    #[metric(name = "complete_runloop_until_transaction_seconds", buckets())]
     complete_runloop_until_transaction: Histogram,
+    /// "Time it takes to submit a settlement transaction.
+    #[metric(name = "transaction_submission_seconds", labels("strategy"), buckets())]
     transaction_submission: HistogramVec,
+    /// Actual gas price used by settlement transaction.
     transaction_gas_price_gwei: Gauge,
+}
+
+pub struct Metrics {
+    last_runloop_completed: Mutex<Instant>,
+    metrics: &'static Storage,
 }
 
 impl Metrics {
     pub fn new() -> Result<Self> {
-        let registry = global_metrics::get_metrics_registry();
-
-        let trade_counter = IntCounterVec::new(
-            Opts::new("trade_counter", "Number of trades settled"),
-            &["solver_type", "trade_type"],
-        )?;
-        registry.register(Box::new(trade_counter.clone()))?;
-
-        let order_settlement_time = IntCounterVec::new(
-            Opts::new(
-                "order_settlement_time_seconds",
-                "Counter for the number of seconds between creation and settlement of an order",
-            ),
-            &["order_type"],
-        )?;
-        registry.register(Box::new(order_settlement_time.clone()))?;
-
-        let solver_computation_time = IntCounterVec::new(
-            Opts::new(
-                "computation_time_ms",
-                "Ms each solver takes to compute their solution",
-            ),
-            &["solver_type", "solution_type"],
-        )?;
-        registry.register(Box::new(solver_computation_time.clone()))?;
-
-        let liquidity = IntGaugeVec::new(
-            Opts::new(
-                "liquidity_gauge",
-                "Amount of orders labeled by liquidity type currently available to the solvers",
-            ),
-            &["liquidity_type"],
-        )?;
-        registry.register(Box::new(liquidity.clone()))?;
-
-        let settlement_simulations = IntCounterVec::new(
-            Opts::new("settlement_simulations", "Settlement simulation counts"),
-            &["result", "solver_type"],
-        )?;
-        registry.register(Box::new(settlement_simulations.clone()))?;
-
-        let settlement_submissions = IntCounterVec::new(
-            Opts::new("settlement_submissions", "Settlement submission counts"),
-            &["result", "solver_type"],
-        )?;
-        registry.register(Box::new(settlement_submissions.clone()))?;
-
-        let settlement_revertable_status = IntCounterVec::new(
-            Opts::new(
-                "settlement_revertable_status",
-                "Settlement revertable status counts",
-            ),
-            &["result", "solver_type"],
-        )?;
-        registry.register(Box::new(settlement_revertable_status.clone()))?;
-
-        let settlement_access_list_saved_gas = HistogramVec::new(
-            HistogramOpts::new(
-                "settlement_access_list_saved_gas",
-                "Saved gas by using access list for transaction submission",
-            ),
-            &["sign"],
-        )?;
-        registry.register(Box::new(settlement_access_list_saved_gas.clone()))?;
-
-        let solver_runs = IntCounterVec::new(
-            Opts::new("solver_run", "Success/Failure counts"),
-            &["result", "solver_type"],
-        )?;
-        registry.register(Box::new(solver_runs.clone()))?;
-
-        let single_order_solver_runs = IntCounterVec::new(
-            Opts::new("single_order_solver", "Success/Failure counts"),
-            &["result", "solver_type"],
-        )?;
-        registry.register(Box::new(single_order_solver_runs.clone()))?;
-
-        let matched_but_unsettled_orders = IntCounter::new(
-            "orders_matched_not_settled",
-            "Counter for the number of orders for which at least one solver computed an execution \
-             which was not chosen in this run-loop",
-        )?;
-        registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
-
-        let order_surplus_report = Histogram::with_opts(
-            HistogramOpts::new(
-                "settlement_surplus_report",
-                "Surplus ratio differences between winning and best settlement per order",
-            )
-            .buckets(vec![-1.0, -0.1, -0.01, -0.005, 0., 0.005, 0.01, 0.1, 1.0]),
-        )?;
-        registry.register(Box::new(order_surplus_report.clone()))?;
-
-        let opts = prometheus::opts!(
-            "complete_runloop_until_transaction_seconds",
-            "Time a runloop that wants to submit a solution takes until the transaction \
-             submission starts."
-        );
-        let complete_runloop_until_transaction = Histogram::with_opts(HistogramOpts {
-            common_opts: opts,
-            buckets: vec![f64::INFINITY],
-        })?;
-        registry.register(Box::new(complete_runloop_until_transaction.clone()))?;
-
-        let transaction_submission = HistogramVec::new(
-            HistogramOpts::new(
-                "transaction_submission_seconds",
-                "Time it takes to submit a settlement transaction.",
-            )
-            .buckets(vec![f64::INFINITY]),
-            &["strategy"],
-        )?;
-        registry.register(Box::new(transaction_submission.clone()))?;
-
-        let opts = Opts::new(
-            "transaction_gas_price_gwei",
-            "Actual gas price used by settlement transaction.",
-        );
-        let transaction_gas_price_gwei = Gauge::with_opts(opts).unwrap();
-        registry.register(Box::new(transaction_gas_price_gwei.clone()))?;
-
         Ok(Self {
-            trade_counter,
-            order_settlement_time,
-            solver_computation_time,
-            liquidity,
-            settlement_simulations,
-            settlement_submissions,
-            settlement_revertable_status,
-            solver_runs,
-            single_order_solver_runs,
-            matched_but_unsettled_orders,
+            metrics: Storage::instance(global_metrics::get_metric_storage_registry()).unwrap(),
             last_runloop_completed: Mutex::new(Instant::now()),
-            order_surplus_report,
-            complete_runloop_until_transaction,
-            transaction_submission,
-            transaction_gas_price_gwei,
-            settlement_access_list_saved_gas,
         })
     }
 
@@ -297,17 +191,20 @@ impl Metrics {
     pub fn initialize_solver_metrics(&self, solver_names: &[&str]) {
         for solver in solver_names {
             for outcome in SolverSimulationOutcome::iter() {
-                self.settlement_simulations
+                self.metrics
+                    .settlement_simulations
                     .with_label_values(&[outcome.label(), solver])
                     .reset();
             }
             for outcome in SettlementSubmissionOutcome::iter() {
-                self.settlement_submissions
+                self.metrics
+                    .settlement_submissions
                     .with_label_values(&[outcome.label(), solver])
                     .reset();
             }
             for outcome in SolverRunOutcome::iter() {
-                self.solver_runs
+                self.metrics
+                    .solver_runs
                     .with_label_values(&[outcome.label(), solver])
                     .reset();
             }
@@ -323,10 +220,12 @@ impl SolverMetrics for Metrics {
             .count();
         let liquidity_orders = orders.len() - user_orders;
 
-        self.liquidity
+        self.metrics
+            .liquidity
             .with_label_values(&["UserOrder"])
             .set(user_orders as _);
-        self.liquidity
+        self.metrics
+            .liquidity
             .with_label_values(&["LiquidityOrder"])
             .set(liquidity_orders as _);
     }
@@ -334,16 +233,17 @@ impl SolverMetrics for Metrics {
     fn liquidity_fetched(&self, liquidity: &[Liquidity]) {
         // Reset all gauges and start from scratch
         Liquidity::VARIANTS.iter().for_each(|label| {
-            self.liquidity.with_label_values(&[label]).set(0);
+            self.metrics.liquidity.with_label_values(&[label]).set(0);
         });
         liquidity.iter().for_each(|liquidity| {
             let label: &str = liquidity.into();
-            self.liquidity.with_label_values(&[label]).inc();
+            self.metrics.liquidity.with_label_values(&[label]).inc();
         })
     }
 
     fn settlement_computed(&self, solver_type: &str, response: &str, start: Instant) {
-        self.solver_computation_time
+        self.metrics
+            .solver_computation_time
             .with_label_values(&[solver_type, response])
             .inc_by(
                 Instant::now()
@@ -362,10 +262,12 @@ impl SolverMetrics for Metrics {
             OrderClass::Liquidity => "liquidity_order",
             OrderClass::Limit(_) => "limit_order",
         };
-        self.trade_counter
+        self.metrics
+            .trade_counter
             .with_label_values(&[solver, order_type])
             .inc();
-        self.order_settlement_time
+        self.metrics
+            .order_settlement_time
             .with_label_values(&[order_type])
             .inc_by(
                 time_to_settlement
@@ -376,47 +278,55 @@ impl SolverMetrics for Metrics {
     }
 
     fn settlement_simulation(&self, solver: &str, outcome: SolverSimulationOutcome) {
-        self.settlement_simulations
+        self.metrics
+            .settlement_simulations
             .with_label_values(&[outcome.label(), solver])
             .inc()
     }
 
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str) {
-        self.solver_runs
+        self.metrics
+            .solver_runs
             .with_label_values(&[outcome.label(), solver])
             .inc()
     }
 
     fn single_order_solver_succeeded(&self, solver: &str) {
-        self.single_order_solver_runs
+        self.metrics
+            .single_order_solver_runs
             .with_label_values(&["success", solver])
             .inc()
     }
 
     fn single_order_solver_failed(&self, solver: &str) {
-        self.single_order_solver_runs
+        self.metrics
+            .single_order_solver_runs
             .with_label_values(&["failure", solver])
             .inc()
     }
 
     fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str) {
-        self.settlement_submissions
+        self.metrics
+            .settlement_submissions
             .with_label_values(&[outcome.label(), solver])
             .inc()
     }
 
     fn settlement_access_list_saved_gas(&self, gas_saved: f64, label: &str) {
-        self.settlement_access_list_saved_gas
+        self.metrics
+            .settlement_access_list_saved_gas
             .with_label_values(&[label])
             .observe(gas_saved);
     }
 
     fn orders_matched_but_not_settled(&self, count: usize) {
-        self.matched_but_unsettled_orders.inc_by(count as u64);
+        self.metrics
+            .matched_but_unsettled_orders
+            .inc_by(count as u64);
     }
 
     fn report_order_surplus(&self, surplus_diff: f64) {
-        self.order_surplus_report.observe(surplus_diff)
+        self.metrics.order_surplus_report.observe(surplus_diff)
     }
 
     fn runloop_completed(&self) {
@@ -427,18 +337,21 @@ impl SolverMetrics for Metrics {
     }
 
     fn complete_runloop_until_transaction(&self, duration: Duration) {
-        self.complete_runloop_until_transaction
+        self.metrics
+            .complete_runloop_until_transaction
             .observe(duration.as_secs_f64());
     }
 
     fn transaction_submission(&self, duration: Duration, strategy: &str) {
-        self.transaction_submission
+        self.metrics
+            .transaction_submission
             .with_label_values(&[strategy])
             .observe(duration.as_secs_f64());
     }
 
     fn transaction_gas_price(&self, gas_price: U256) {
-        self.transaction_gas_price_gwei
+        self.metrics
+            .transaction_gas_price_gwei
             .set(gas_price.to_f64_lossy() / 1e9)
     }
 
@@ -447,7 +360,8 @@ impl SolverMetrics for Metrics {
             Revertable::NoRisk => "no_risk",
             Revertable::HighRisk => "high_risk",
         };
-        self.settlement_revertable_status
+        self.metrics
+            .settlement_revertable_status
             .with_label_values(&[result, solver])
             .inc()
     }
