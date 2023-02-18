@@ -99,7 +99,7 @@ impl<'a> NonLiquidity<'a> {
 pub struct Reward(pub f64);
 
 #[derive(Debug, Clone)]
-pub struct CustomInteraction {
+pub struct Interaction {
     pub target: Address,
     pub value: eth::Ether,
     pub calldata: Vec<u8>,
@@ -114,7 +114,7 @@ pub struct JitOrder {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
-    pub pre_interactions: Vec<CustomInteraction>,
+    pub pre_interactions: Vec<Interaction>,
     pub valid_to: u32,
     pub app_data: AppData,
     pub receiver: Address,
