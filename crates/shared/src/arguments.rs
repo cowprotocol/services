@@ -174,6 +174,12 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
+    /// The expected chain ID that the services are expected to run against.
+    /// This can be optionally specified in order to check at startup whether
+    /// the connected nodes match to detect misconfigurations.
+    #[clap(long, env)]
+    pub chain_id: Option<u64>,
+
     /// Which gas estimators to use. Multiple estimators are used in sequence if
     /// a previous one fails. Individual estimators support different
     /// networks. `EthGasStation`: supports mainnet.
@@ -399,6 +405,7 @@ impl Display for Arguments {
             self.logging.log_stderr_threshold
         )?;
         writeln!(f, "node_url: {}", self.node_url)?;
+        display_option(f, "chain_id", &self.chain_id)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;

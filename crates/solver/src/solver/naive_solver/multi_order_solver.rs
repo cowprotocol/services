@@ -316,14 +316,32 @@ fn is_valid_solution(solution: &Settlement) -> bool {
         data,
         sell_token_price,
         buy_token_price,
-    } in solution.encoder.user_trades()
+    } in solution.encoder.all_trades()
     {
         let order = &data.order.data;
+
+        // Check execution respects individual order's limit price
         match (
             order.sell_amount.checked_mul(sell_token_price),
             order.buy_amount.checked_mul(buy_token_price),
         ) {
             (Some(sell_volume), Some(buy_volume)) if sell_volume >= buy_volume => (),
+            _ => return false,
+        }
+
+        // Check individual order's execution price satisfies uniform clearing price
+        // E.g. liquidity orders may have a different executed price.
+        let clearing_prices = solution.encoder.clearing_prices();
+        match (
+            clearing_prices
+                .get(&order.buy_token)
+                .map(|clearing_sell_price| clearing_sell_price.checked_mul(sell_token_price)),
+            clearing_prices
+                .get(&order.sell_token)
+                .map(|clearing_buy_price| clearing_buy_price.checked_mul(buy_token_price)),
+        ) {
+            (Some(execution_sell_value), Some(clearing_buy_value))
+                if execution_sell_value <= clearing_buy_value => {}
             _ => return false,
         }
     }

@@ -127,11 +127,14 @@ fn extract_deepest_amm_liquidity(
 mod tests {
     use {
         super::*,
-        crate::liquidity::{
-            order_converter::OrderConverter,
-            tests::CapturingSettlementHandler,
-            LimitOrderId,
-            LiquidityOrderId,
+        crate::{
+            liquidity::{
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
+                LiquidityOrderId,
+            },
+            settlement::external_prices::ExternalPrices,
         },
         ethcontract::{H160, U256},
         maplit::hashmap,
@@ -145,7 +148,7 @@ mod tests {
             OrderUid,
             BUY_ETH_ADDRESS,
         },
-        num::rational::Ratio,
+        num::{rational::Ratio, BigRational, FromPrimitive},
         shared::{addr, http_solver::model::TokenAmount},
     };
 
@@ -227,6 +230,10 @@ mod tests {
                         sell_amount: 2469904889_u128.into(),
                         buy_amount: 995952859647034749952_u128.into(),
                         kind: OrderKind::Buy,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        class: OrderClass::Liquidity,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -457,5 +464,78 @@ mod tests {
         } = amm_handler.calls.lock().unwrap()[0].output;
         assert_eq!(out_token, usdc);
         assert!(out_amount < U256::from(32275540_u128));
+    }
+
+    #[test]
+    fn cow_from_limit_and_user_order_with_clearing_at_exact_limit_after_fees() {
+        let usdc = addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+        let crv = addr!("D533a949740bb3306d119CC777fa900bA034cd52");
+
+        let orders = vec![
+            // After fee both sells 1.5 for 1.5
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: crv,
+                    buy_token: usdc,
+                    sell_amount: 2_000_000_000.into(),
+                    buy_amount: 1_500_000_000.into(),
+                    fee_amount: 0.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Limit(LimitOrderClass {
+                        surplus_fee: Some(500_000_000.into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: usdc,
+                    buy_token: crv,
+                    sell_amount: 1_500_000_000.into(),
+                    buy_amount: 1_500_000_000.into(),
+                    fee_amount: 100_000_000.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        ];
+
+        let amm_handler = CapturingSettlementHandler::arc();
+        let tokens = TokenPair::new(usdc, crv).unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                address: addr!("210a97ba874a8e279c95b350ae8ba143a143c159"),
+                tokens,
+                reserves: (1_000_000_000_000, 1_000_000_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: amm_handler,
+            },
+        };
+
+        let settlement = &settle(SlippageContext::default(), orders, liquidity)[0];
+        assert_eq!(
+            settlement.clearing_price(usdc),
+            settlement.clearing_price(crv)
+        );
+        assert_eq!(settlement.trades().count(), 2);
+        assert_eq!(
+            settlement.total_surplus(
+                &ExternalPrices::new(
+                    usdc,
+                    hashmap! {
+                        usdc => BigRational::from_u32(1).unwrap(),
+                        crv => BigRational::from_u32(1).unwrap()
+                    }
+                )
+                .unwrap()
+            ),
+            BigRational::from_u32(0).unwrap()
+        )
     }
 }

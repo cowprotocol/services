@@ -56,7 +56,6 @@ impl Settlement {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
-            min_order_age: Default::default(),
         };
 
         let settlement_contract = eth.contracts().settlement();

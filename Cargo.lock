@@ -1370,9 +1370,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.23.1"
+version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7236691dcb4b9b3672808fa072a413c67d025fd113681f1550e3379c299dd810"
+checksum = "c8556dce50fbb89c2f3a8e5e7c5199ada9d8390c1177b30960bce6b6350586f7"
 dependencies = [
  "arrayvec",
  "ethcontract-common",

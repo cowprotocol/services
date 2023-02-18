@@ -40,7 +40,7 @@ use {
     shared::{
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        ethrpc::{self},
+        ethrpc,
         gelato_api::GelatoClient,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -76,12 +76,20 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
+
     let chain_id = web3
         .eth()
         .chain_id()
         .await
         .expect("Could not get chainId")
         .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
     let network_id = web3
         .net()
         .version()
@@ -251,7 +259,6 @@ pub async fn run(args: Arguments) {
 
     let order_converter = Arc::new(OrderConverter {
         native_token: native_token.clone(),
-        min_order_age: args.min_order_age,
     });
 
     let market_makable_token_list_configuration = TokenListConfiguration {
@@ -493,7 +500,6 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         args.settle_interval,
         native_token.address(),
-        args.min_order_age,
         metrics.clone(),
         web3,
         network_id,
