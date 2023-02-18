@@ -201,8 +201,6 @@ async fn test_quoting() {
 
 #[tokio::test]
 async fn test_solving() {
-    shared::tracing::initialize_reentrant("debug");
-
     let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
         req: json!({
             "amms": {
