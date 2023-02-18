@@ -50,11 +50,11 @@ struct State(Arc<Mutex<Vec<Expectation>>>);
 
 /// Creates a temporary file containing the config of the given solver.
 pub fn create_temp_config_file(solver_addr: &SocketAddr) -> tempfile::TempPath {
-    let base_url = format!("http://{solver_addr}");
+    let base_url = format!("http://{solver_addr}/solve");
     let config = format!(
         r"
 solver-name = 'legacy_solver'
-base-url = '{}'
+solve-endpoint = '{}'
 chain-id = '1'
 ",
         base_url
