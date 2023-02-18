@@ -23,7 +23,6 @@ pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
             axum::routing::post(
                 |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                    tracing::error!(req = req.to_string(), "request in legacy solver");
                     let mut state = state.0.lock().unwrap();
                     assert!(
                         !state.is_empty(),
