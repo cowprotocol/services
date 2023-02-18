@@ -98,13 +98,11 @@ impl<'a> NonLiquidity<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct Reward(pub f64);
 
-/// Interaction that can be executed as part of an order's pre- or
-/// post-interactions.
 #[derive(Debug, Clone)]
-pub struct OrderInteraction {
+pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
-    pub call_data: Vec<u8>,
+    pub calldata: Vec<u8>,
 }
 
 pub struct JitOrder {
@@ -116,7 +114,7 @@ pub struct JitOrder {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
-    pub pre_interactions: Vec<OrderInteraction>,
+    pub pre_interactions: Vec<CustomInteraction>,
     pub valid_to: u32,
     pub app_data: AppData,
     pub receiver: Address,

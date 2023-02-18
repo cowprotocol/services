@@ -76,7 +76,7 @@ impl Solution {
                                     .map(|i| OrderInteraction {
                                         target: i.target,
                                         value: i.value.0,
-                                        call_data: i.call_data.clone(),
+                                        call_data: i.calldata.clone(),
                                     })
                                     .collect(),
                             },

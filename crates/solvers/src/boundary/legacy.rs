@@ -329,10 +329,10 @@ fn to_domain_solution(
                     .interactions
                     .pre
                     .iter()
-                    .map(|i| order::OrderInteraction {
+                    .map(|i| order::CustomInteraction {
                         target: i.target,
                         value: eth::Ether(i.value),
-                        call_data: i.call_data.clone(),
+                        calldata: i.call_data.clone(),
                     })
                     .collect(),
                 signature: jit.order.signature.clone().into(),

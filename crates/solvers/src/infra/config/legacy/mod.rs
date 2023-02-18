@@ -2,7 +2,6 @@ use {crate::domain::eth, reqwest::Url};
 
 pub mod file;
 
-#[derive(Debug)]
 pub struct LegacyConfig {
     pub weth: eth::WethAddress,
     pub solver_name: String,
