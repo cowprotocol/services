@@ -75,7 +75,7 @@ jobs:
         working-directory: ${{ env.HARDHAT_PATH_ }}
         run: |
           cp ${{ github.workspace }}/docker/hardhat/hardhat.config.js hardhat.config.js
-          node_modules/.bin/hardhat node &
+          node_modules/.bin/hardhat node --hostname 127.0.0.1 &
       - name: Setup Database
         run: |
           sudo systemctl start postgresql.service
