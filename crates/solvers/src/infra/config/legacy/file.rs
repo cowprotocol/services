@@ -19,8 +19,8 @@ struct Config {
     /// The solver name used in metrics.
     pub solver_name: String,
 
-    /// The URL of the solver.
-    pub base_url: String,
+    /// The URL of the endpoint that responds to solve requests.
+    pub solve_endpoint: String,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -40,6 +40,6 @@ pub async fn load(path: &Path) -> super::LegacyConfig {
         weth: contracts.weth,
         solver_name: config.solver_name,
         chain_id: config.chain_id,
-        base_url: Url::parse(&config.base_url).unwrap(),
+        solve_endpoint: Url::parse(&config.solve_endpoint).unwrap(),
     }
 }

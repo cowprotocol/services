@@ -44,13 +44,18 @@ pub struct Legacy {
 
 impl Legacy {
     pub fn new(config: LegacyConfig) -> Self {
+        let solve_path = config.solve_endpoint.path().to_owned();
+        let mut base = config.solve_endpoint;
+        base.set_path("");
+
         Self {
             solver: DefaultHttpSolverApi {
                 name: config.solver_name,
                 network_name: format!("{:?}", config.chain_id),
                 chain_id: config.chain_id.value().as_u64(),
-                base: config.base_url,
+                base,
                 client: reqwest::Client::new(),
+                solve_path,
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
                     // because the auction that we are solving for already
