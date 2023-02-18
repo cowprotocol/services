@@ -104,10 +104,7 @@ async fn test() {
                         "preInteractions": [
                             {
                                 "target": "0x2222222222222222222222222222222222222222",
-                                // U256::from_str() expects a hex encoded number whereas
-                                // U256::to_string() produces a base 10 encoded number. That's why
-                                // the original `200` gets converted to `512` here.
-                                "value": "512",
+                                "value": "200",
                                 "callData": "0xabcd",
                             }
                         ]
