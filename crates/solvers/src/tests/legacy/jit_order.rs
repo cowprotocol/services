@@ -105,12 +105,11 @@ async fn test() {
                             {
                                 "target": "0x2222222222222222222222222222222222222222",
                                 "value": "200",
-                                "callData": "0xabcd",
+                                "calldata": "0xabcd",
                             }
                         ]
                     },
                     "executedAmount": "100",
-                    // TODO add the pre_interactions somewhere
                 }
             ],
             "interactions": [],

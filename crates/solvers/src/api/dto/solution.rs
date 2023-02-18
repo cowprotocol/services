@@ -76,7 +76,7 @@ impl Solution {
                                     .map(|i| OrderInteraction {
                                         target: i.target,
                                         value: i.value.0,
-                                        call_data: i.calldata.clone(),
+                                        calldata: i.calldata.clone(),
                                     })
                                     .collect(),
                             },
@@ -103,7 +103,7 @@ impl Solution {
                         Interaction::Custom(CustomInteraction {
                             target: interaction.target,
                             value: interaction.value.0,
-                            call_data: interaction.calldata.clone(),
+                            calldata: interaction.calldata.clone(),
                             internalize: interaction.internalize,
                             allowances: interaction
                                 .allowances
@@ -237,7 +237,7 @@ struct CustomInteraction {
     #[serde_as(as = "serialize::U256")]
     value: U256,
     #[serde_as(as = "serialize::Hex")]
-    call_data: Vec<u8>,
+    calldata: Vec<u8>,
     allowances: Vec<Allowance>,
     inputs: Vec<Asset>,
     outputs: Vec<Asset>,
@@ -253,7 +253,7 @@ struct OrderInteraction {
     #[serde_as(as = "serialize::U256")]
     value: U256,
     #[serde_as(as = "serialize::Hex")]
-    call_data: Vec<u8>,
+    calldata: Vec<u8>,
 }
 
 #[serde_as]
