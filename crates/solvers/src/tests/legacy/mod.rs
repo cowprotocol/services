@@ -57,7 +57,7 @@ pub fn create_temp_config_file(solver_addr: &SocketAddr) -> tempfile::TempPath {
 solver-name = 'legacy_solver'
 base-url = '{}'
 chain-id = '1'
-    ",
+",
         base_url
     );
     let mut file = tempfile::NamedTempFile::new().unwrap();
