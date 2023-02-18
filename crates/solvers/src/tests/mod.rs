@@ -6,6 +6,7 @@
 
 mod baseline;
 mod legacy;
+mod naive;
 
 use {
     reqwest::Url,
@@ -21,17 +22,17 @@ pub struct SolverEngine {
 impl SolverEngine {
     /// Creates a new solver engine handle for the specified command
     /// configuration.
-    pub async fn new(command: impl Into<String>, config: Option<impl Into<String>>) -> Self {
+    pub async fn new(command: &str, config: Option<&str>) -> Self {
         let (bind, bind_receiver) = oneshot::channel();
 
         let mut args = vec![
             "/test/solvers/path".to_owned(),
-            "--addr".to_owned(),
-            "0.0.0.0:0".to_owned(),
-            command.into(),
+            "--addr=0.0.0.0:0".to_owned(),
+            "--log=off".to_owned(),
+            command.to_owned(),
         ];
         if let Some(config) = config {
-            args.extend(["--config".to_owned(), config.into()]);
+            args.push(format!("--config={config}"));
         }
 
         let handle = tokio::spawn(crate::run::run(args, Some(bind)));
