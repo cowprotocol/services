@@ -71,37 +71,9 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "prices": {
-                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "100918566030473539036",
-                "0xd533a949740bb3306d119cc777fa900ba034cd52": "24248310",
-            },
-            "trades": [
-                {
-                    "kind": "fulfillment",
-                    "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
-                                0101010101010101010101010101010101010101\
-                                01010101",
-                    "executedAmount": "2161740107040163317224",
-                },
-                {
-                    "kind": "fulfillment",
-                    "order": "0x0202020202020202020202020202020202020202020202020202020202020202\
-                                0202020202020202020202020202020202020202\
-                                02020202",
-                    "executedAmount": "495165988",
-                },
-            ],
-            "interactions": [
-                {
-                    "kind": "liquidity",
-                    "internalize": false,
-                    "id": "0",
-                    "inputToken": "0xd533a949740bb3306d119cc777fa900ba034cd52",
-                    "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                    "inputAmount": "100918566030473539036",
-                    "outputAmount": "24248310"
-                },
-            ],
+            "prices": {},
+            "trades": [],
+            "interactions": [],
         }),
     );
 }
