@@ -3410,6 +3410,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "ethcontract",
  "ethereum-types 0.12.1",
  "futures",
  "hex",
