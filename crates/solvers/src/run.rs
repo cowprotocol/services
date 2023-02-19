@@ -2,8 +2,8 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::{baseline, legacy, naive, Solver},
-        infra::{cli, config},
+        domain::solver::{self, Solver},
+        infra::{cli, config, dex},
     },
     clap::Parser,
     std::net::SocketAddr,
@@ -21,16 +21,23 @@ pub async fn run(
     let solver = match args.command {
         cli::Command::Baseline { config } => {
             let baseline = config::baseline::file::load(&config).await;
-            Solver::Baseline(baseline::Baseline {
+            Solver::Baseline(solver::Baseline {
                 weth: baseline.weth,
                 base_tokens: baseline.base_tokens.into_iter().collect(),
                 max_hops: baseline.max_hops,
             })
         }
-        cli::Command::Naive => Solver::Naive(naive::Naive),
+        cli::Command::Naive => Solver::Naive(solver::Naive),
         cli::Command::Legacy { config } => {
             let config = config::legacy::load(&config).await;
-            Solver::Legacy(legacy::Legacy::new(config))
+            Solver::Legacy(solver::Legacy::new(config))
+        }
+        cli::Command::Balancer { config } => {
+            let config = config::balancer::file::load(&config).await;
+            Solver::Balancer(solver::Balancer {
+                sor: dex::balancer::Sor::new(config.sor),
+                slippage: config.slippage,
+            })
         }
     };
 
