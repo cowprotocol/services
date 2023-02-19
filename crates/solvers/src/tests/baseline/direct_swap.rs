@@ -5,7 +5,11 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new("baseline", Some("example.baseline.toml")).await;
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::File("example.baseline.toml".into()),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({

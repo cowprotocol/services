@@ -106,9 +106,8 @@ async fn test_quoting() {
             }
         }),
     }]).await;
-    let config = legacy::create_temp_config_file(&legacy_solver);
 
-    let engine = tests::SolverEngine::new("legacy", Some(config.to_str().unwrap())).await;
+    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver)).await;
 
     let solution = engine
         .solve(json!({
@@ -296,9 +295,8 @@ async fn test_solving() {
             }
         }),
     }]).await;
-    let config = legacy::create_temp_config_file(&legacy_solver);
 
-    let engine = tests::SolverEngine::new("legacy", Some(config.to_str().unwrap())).await;
+    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver)).await;
 
     let solution = engine
         .solve(json!({

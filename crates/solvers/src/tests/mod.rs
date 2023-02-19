@@ -4,25 +4,36 @@
 //! directory. This is done intentionally as Cargo builds separate binaries for
 //! each file in `tests/`, which makes `cargo test` slower.
 
-mod baseline;
-mod legacy;
-mod naive;
-
 use {
     reqwest::Url,
+    std::{io::Write, path::PathBuf},
     tokio::{sync::oneshot, task::JoinHandle},
 };
+
+mod balancer;
+mod baseline;
+mod dex;
+mod legacy;
+mod naive;
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {
     url: Url,
+    tempfile: Option<tempfile::TempPath>,
     handle: JoinHandle<()>,
+}
+
+/// Solver configuration.
+pub enum Config {
+    None,
+    File(PathBuf),
+    String(String),
 }
 
 impl SolverEngine {
     /// Creates a new solver engine handle for the specified command
     /// configuration.
-    pub async fn new(command: &str, config: Option<&str>) -> Self {
+    pub async fn new(command: &str, config: Config) -> Self {
         let (bind, bind_receiver) = oneshot::channel();
 
         let mut args = vec![
@@ -31,16 +42,31 @@ impl SolverEngine {
             "--log=off".to_owned(),
             command.to_owned(),
         ];
-        if let Some(config) = config {
-            args.push(format!("--config={config}"));
-        }
+        let tempfile = match config {
+            Config::None => None,
+            Config::File(path) => {
+                args.push(format!("--config={}", path.display()));
+                None
+            }
+            Config::String(config) => {
+                let mut file = tempfile::NamedTempFile::new().unwrap();
+                file.write_all(config.as_bytes()).unwrap();
+                let path = file.into_temp_path();
+                args.push(format!("--config={}", path.display()));
+                Some(path)
+            }
+        };
 
         let handle = tokio::spawn(crate::run::run(args, Some(bind)));
 
         let addr = bind_receiver.await.unwrap();
         let url = format!("http://{addr}/").parse().unwrap();
 
-        Self { url, handle }
+        Self {
+            url,
+            tempfile,
+            handle,
+        }
     }
 
     /// Solves a raw JSON auction.
