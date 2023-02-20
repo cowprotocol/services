@@ -65,7 +65,7 @@ use {
 pub mod balancer_sor_solver;
 mod baseline_solver;
 pub mod http_solver;
-mod naive_solver;
+pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;

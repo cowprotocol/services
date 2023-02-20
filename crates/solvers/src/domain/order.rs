@@ -29,7 +29,7 @@ impl Order {
 }
 
 /// UID of an order.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Uid(pub [u8; 56]);
 
 /// An order fee amount, denominated in its sell token.

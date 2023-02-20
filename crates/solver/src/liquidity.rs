@@ -9,8 +9,6 @@ pub mod zeroex;
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
-#[cfg(test)]
-use shared::sources::uniswap_v2::pool_fetching::Pool;
 use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
@@ -27,6 +25,7 @@ use {
                 pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
                 swap::fixed_point::Bfp,
             },
+            uniswap_v2::pool_fetching::Pool,
             uniswap_v3::pool_fetching::PoolInfo,
         },
     },
@@ -263,6 +262,20 @@ pub struct ConstantProductOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
+impl ConstantProductOrder {
+    /// Creates a new constant product order from a Uniswap V2 pool and a
+    /// settlement handler implementation.
+    pub fn for_pool(pool: Pool, settlement_handling: Arc<dyn SettlementHandling<Self>>) -> Self {
+        Self {
+            address: pool.address,
+            tokens: pool.tokens,
+            reserves: pool.reserves,
+            fee: pool.fee,
+            settlement_handling,
+        }
+    }
+}
+
 impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Constant Product AMM {:?}", self.tokens)
@@ -272,13 +285,7 @@ impl std::fmt::Debug for ConstantProductOrder {
 #[cfg(test)]
 impl From<Pool> for ConstantProductOrder {
     fn from(pool: Pool) -> Self {
-        Self {
-            address: pool.address,
-            tokens: pool.tokens,
-            reserves: pool.reserves,
-            fee: pool.fee,
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
+        Self::for_pool(pool, tests::CapturingSettlementHandler::arc())
     }
 }
 

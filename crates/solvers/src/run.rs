@@ -2,7 +2,7 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::{baseline, legacy, Solver},
+        domain::{baseline, legacy, naive, Solver},
         infra::{cli, config},
     },
     clap::Parser,
@@ -10,25 +10,30 @@ use {
     tokio::sync::oneshot,
 };
 
-pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sender<SocketAddr>>) {
+pub async fn run(
+    args: impl IntoIterator<Item = String>,
+    bind: Option<oneshot::Sender<SocketAddr>>,
+) {
     let args = cli::Args::parse_from(args);
     crate::boundary::initialize_tracing(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
     let solver = match args.command {
-        cli::Command::Baseline => {
-            let baseline = config::baseline::file::load(&args.config).await;
+        cli::Command::Baseline { config } => {
+            let baseline = config::baseline::file::load(&config).await;
             Solver::Baseline(baseline::Baseline {
                 weth: baseline.weth,
                 base_tokens: baseline.base_tokens.into_iter().collect(),
                 max_hops: baseline.max_hops,
             })
         }
-        cli::Command::Legacy => {
-            let config = config::legacy::load(&args.config).await;
+        cli::Command::Naive => Solver::Naive(naive::Naive),
+        cli::Command::Legacy { config } => {
+            let config = config::legacy::load(&config).await;
             Solver::Legacy(legacy::Legacy::new(config))
         }
     };
+
     crate::api::Api {
         addr: args.addr,
         solver,

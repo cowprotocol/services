@@ -3422,6 +3422,7 @@ dependencies = [
  "serde_json",
  "serde_with 2.0.1",
  "shared",
+ "solver",
  "tempfile",
  "thiserror",
  "tokio",
