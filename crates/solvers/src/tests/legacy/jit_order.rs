@@ -1,4 +1,4 @@
-//! Tests that orders that provide just-in-time liquidity get correctly
+//! Tests that solutions that use just-in-time liquidity orders get correctly
 //! serialized.
 
 use {

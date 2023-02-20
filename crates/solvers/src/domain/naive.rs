@@ -1,7 +1,9 @@
 //! "Naive" solver implementation.
 //!
 //! The naive solver is a solver that collects all orders over a single token
-//! pair, and matches the excess over a Uniswap V2 pool.
+//! pair, computing how many leftover tokens can't be matched peer-to-peer, and
+//! matching that excess over a Uniswap V2 pool. This allows for naive
+//! coincidence of wants over a single Uniswap V2 pools.
 
 use {
     crate::{
@@ -35,7 +37,9 @@ struct Group<'a> {
 type Groups<'a> = HashMap<liquidity::TokenPair, Group<'a>>;
 
 /// Groups an auction by token pairs, where each group contains all orders over
-/// the token pair as well as the **deepest** constant product pool.
+/// the token pair as well as the **deepest** constant product pool (i.e. most
+/// liquidity, which translates to a higher `K` value for Uniswap V2 style
+/// constant product pools).
 fn group_by_token_pair(auction: &auction::Auction) -> Groups {
     let mut groups = Groups::new();
 

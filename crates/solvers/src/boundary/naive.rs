@@ -43,11 +43,12 @@ pub fn solve(
 
     // Note that the `order::Order` -> `boundary::LimitOrder` mapping here is
     // not exact. Among other things, the signature and various signed order
-    // fields are missing from the `order::Order` data that have access to in
-    // the solver engines. This means that the naive solver in the `solver`
-    // crate will encode "incorrect" settlements. This is fine, since we give
-    // it just enough data to compute the swapped orders and the swap amounts.
-    // The `driver` is then responsible for encoding the solution into a valid
+    // fields are missing from the `order::Order` data that the solver engines
+    // have access to. This means that the naive solver in the `solver` crate
+    // will encode "incorrect" settlements. This is fine, since we give it just
+    // enough data to compute the correct swapped orders and the swap amounts
+    // which is what the naive solver in the `solvers` crate cares about. The
+    // `driver` is then responsible for encoding the solution into a valid
     // settlement transaction anyway.
     let boundary_orders = orders
         .iter()
@@ -155,14 +156,14 @@ pub fn solve(
 //
 // Joking aside, the existing naive solver implementation is tightly coupled
 // with the `Settlement` and `SettlementEncoder` types in the `solver` crate.
-// This meeans that there is no convinient way to say: "please compute a
-// solution given this list of orders and constant product pool" without it
-// creating a full settlement for encoding. In order to adapt that API into
-// something that is useful in this boundary module, we create a fake slippage
-// context that applies 0 slippage (so that we can recover the exact executed
-// amounts from the constant product pool) and we create capturing settlement
-// handler implementations that record the swap that gets added to each
-// settlement so that it can be recovered later to build a solution.
+// This means that there is no convenient way to say: "please compute a solution
+// given this list of orders and constant product pool" without it creating a
+// full settlement for encoding. In order to adapt that API into something that
+// is useful in this boundary module, we create a fake slippage context that
+// applies 0 slippage (so that we can recover the exact executed amounts from
+// the constant product pool) and we create capturing settlement handler
+// implementations that record the swap that gets added to each settlement so
+// that it can be recovered later to build a solution.
 
 struct Slippage {
     calculator: SlippageCalculator,
