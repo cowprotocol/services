@@ -41,7 +41,6 @@ pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
     let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
     let addr = server.local_addr();
     tokio::spawn(async move { server.await.unwrap() });
-    tokio::time::sleep(tokio::time::Duration::from_millis(1_000)).await;
     addr
 }
 
