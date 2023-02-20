@@ -2,6 +2,7 @@
 
 pub mod auction;
 pub mod baseline;
+pub mod dex;
 pub mod eth;
 pub mod legacy;
 pub mod liquidity;
