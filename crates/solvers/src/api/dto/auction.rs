@@ -16,6 +16,26 @@ impl Auction {
     /// Converts a data transfer object into its domain object representation.
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
+            id: self.id.clone().map(auction::Id),
+            tokens: self
+                .tokens
+                .iter()
+                .map(|(address, token)| {
+                    (
+                        eth::TokenAddress(*address),
+                        auction::Token {
+                            decimals: token.decimals,
+                            symbol: token.symbol.clone(),
+                            reference_price: token
+                                .reference_price
+                                .map(eth::Ether)
+                                .map(auction::Price),
+                            available_balance: token.available_balance,
+                            trusted: token.trusted,
+                        },
+                    )
+                })
+                .collect(),
             orders: self
                 .orders
                 .iter()
@@ -39,6 +59,9 @@ impl Auction {
                             Class::Limit => order::Class::Limit,
                             Class::Liquidity => order::Class::Liquidity,
                         },
+                        fee: order::Fee(order.fee_amount),
+                        partially_fillable: order.partially_fillable,
+                        reward: order::Reward(order.reward),
                     }
                 })
                 .collect(),
@@ -53,6 +76,8 @@ impl Auction {
                     Liquidity::LimitOrder(liquidity) => Ok(liquidity.to_domain()),
                 })
                 .try_collect()?,
+            gas_price: auction::GasPrice(eth::Ether(self.effective_gas_price)),
+            deadline: self.deadline,
         })
     }
 }

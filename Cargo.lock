@@ -3404,12 +3404,14 @@ dependencies = [
 name = "solvers"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "bigdecimal",
  "chrono",
  "clap",
  "contracts",
  "ethereum-types 0.12.1",
+ "futures",
  "hex",
  "hyper",
  "itertools",

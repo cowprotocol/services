@@ -2,7 +2,7 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        domain::baseline,
+        domain::{baseline, legacy, Solver},
         infra::{cli, config},
     },
     clap::Parser,
@@ -15,17 +15,23 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
     crate::boundary::initialize_tracing(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
-    // TODO In the future, should use different load methods based on the command
-    // being executed
-    let cli::Command::Baseline = args.command;
-    let baseline = config::baseline::file::load(&args.config).await;
+    let solver = match args.command {
+        cli::Command::Baseline => {
+            let baseline = config::baseline::file::load(&args.config).await;
+            Solver::Baseline(baseline::Baseline {
+                weth: baseline.weth,
+                base_tokens: baseline.base_tokens.into_iter().collect(),
+                max_hops: baseline.max_hops,
+            })
+        }
+        cli::Command::Legacy => {
+            let config = config::legacy::load(&args.config).await;
+            Solver::Legacy(legacy::Legacy::new(config))
+        }
+    };
     crate::api::Api {
         addr: args.addr,
-        solver: baseline::Baseline {
-            weth: baseline.weth,
-            base_tokens: baseline.base_tokens.into_iter().collect(),
-            max_hops: baseline.max_hops,
-        },
+        solver,
     }
     .serve(bind, shutdown_signal())
     .await

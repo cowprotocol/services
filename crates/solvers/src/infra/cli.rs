@@ -31,4 +31,6 @@ pub struct Args {
 pub enum Command {
     /// Baseline solver.
     Baseline,
+    /// Wrapper for solvers implementing the legacy HTTP interface.
+    Legacy,
 }

@@ -10,6 +10,9 @@ pub async fn send(
     solver: &Solver,
     settlement: settlement::Simulated,
 ) -> Result<(), Error> {
+    if mempools.is_empty() {
+        return Err(Error::AllMempoolsFailed);
+    }
     select_ok(mempools.iter().map(|mempool| {
         let settlement = settlement.clone();
         async move {

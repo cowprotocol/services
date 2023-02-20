@@ -1,6 +1,9 @@
 //! The domain object representing a CoW Protocol order.
 
-use crate::domain::eth;
+use {
+    crate::domain::eth,
+    ethereum_types::{Address, H256, U256},
+};
 
 /// A CoW Protocol order in the auction.
 #[derive(Debug, Clone)]
@@ -8,13 +11,30 @@ pub struct Order {
     pub uid: Uid,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
+    pub fee: Fee,
     pub side: Side,
     pub class: Class,
+    pub partially_fillable: bool,
+    pub reward: Reward,
+}
+
+impl Order {
+    /// Returns the order's fee amount as an asset.
+    pub fn fee(&self) -> eth::Asset {
+        eth::Asset {
+            token: self.sell.token,
+            amount: self.fee.0,
+        }
+    }
 }
 
 /// UID of an order.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Uid(pub [u8; 56]);
+
+/// An order fee amount, denominated in its sell token.
+#[derive(Clone, Copy, Debug)]
+pub struct Fee(pub U256);
 
 /// The trading side of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,3 +93,97 @@ impl<'a> NonLiquidity<'a> {
         self.0
     }
 }
+
+/// A COW reward amount, in base units.
+#[derive(Clone, Copy, Debug)]
+pub struct Reward(pub f64);
+
+/// An arbitrary ethereum interaction that is required for the settlement
+/// execution.
+#[derive(Debug, Clone)]
+pub struct CustomInteraction {
+    pub target: Address,
+    pub value: eth::Ether,
+    pub calldata: Vec<u8>,
+}
+
+/// An order that can be used to provide just-in-time liquidity in form of a CoW
+/// Protocol order. This is how solvers integrate private market makers into
+/// their solutions.
+pub struct JitOrder {
+    pub owner: Address,
+    pub signature: Signature,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub fee: Fee,
+    pub side: Side,
+    pub class: Class,
+    pub partially_fillable: bool,
+    /// Interactions that get executed before tokens get transfer from users
+    /// into the settlement contract.
+    pub pre_interactions: Vec<CustomInteraction>,
+    pub valid_to: u32,
+    pub app_data: AppData,
+    pub receiver: Address,
+}
+
+/// Signature over the order data.
+/// All variants rely on the EIP-712 hash of the order data, referred to as the
+/// order hash.
+#[derive(Clone)]
+pub enum Signature {
+    /// The order struct is signed according to EIP-712.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-712
+    Eip712(EcdsaSignature),
+    /// The order hash is signed according to EIP-191's personal_sign signature
+    /// format.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-191
+    EthSign(EcdsaSignature),
+    /// Signature verified according to EIP-1271, which facilitates a way for
+    /// contracts to verify signatures using an arbitrary method. This
+    /// allows smart contracts to sign and place orders. The order hash is
+    /// passed to the verification method, along with this signature.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-1271
+    Eip1271(Vec<u8>),
+    /// For these signatures, the user broadcasts a transaction onchain. This
+    /// transaction contains a signature of the order hash. Because this
+    /// onchain transaction is also signed, it proves that the user indeed
+    /// signed the order.
+    PreSign,
+}
+
+impl Signature {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
+            Self::Eip1271(signature) => signature.clone(),
+            Self::PreSign => Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EcdsaSignature {
+    pub r: H256,
+    pub s: H256,
+    pub v: u8,
+}
+
+impl EcdsaSignature {
+    pub fn to_bytes(self) -> [u8; 65] {
+        let mut bytes = [0u8; 65];
+        bytes[..32].copy_from_slice(self.r.as_bytes());
+        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[64] = self.v;
+        bytes
+    }
+}
+
+/// This is a hash allowing arbitrary user data to be associated with an order.
+/// While this type holds the hash, the data itself is uploaded to IPFS. This
+/// hash is signed along with the order.
+pub struct AppData(pub [u8; 32]);
