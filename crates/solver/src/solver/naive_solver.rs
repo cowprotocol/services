@@ -136,7 +136,7 @@ mod tests {
             },
             settlement::external_prices::ExternalPrices,
         },
-        ethcontract::{H160, U256},
+        ethcontract::H160,
         maplit::hashmap,
         model::order::{
             LimitOrderClass,
@@ -149,7 +149,7 @@ mod tests {
             BUY_ETH_ADDRESS,
         },
         num::{rational::Ratio, BigRational, FromPrimitive},
-        shared::{addr, http_solver::model::TokenAmount},
+        shared::addr,
     };
 
     #[test]
@@ -445,7 +445,6 @@ mod tests {
             }),
         ];
 
-        let amm_handler = CapturingSettlementHandler::arc();
         let tokens = TokenPair::new(usdc, crv).unwrap();
         let liquidity = hashmap! {
             tokens => ConstantProductOrder {
@@ -453,17 +452,12 @@ mod tests {
                 tokens,
                 reserves: (32275540, 33308141034569852391),
                 fee: Ratio::new(3, 1000),
-                settlement_handling: amm_handler.clone(),
+                settlement_handling: CapturingSettlementHandler::arc(),
             },
         };
 
-        settle(SlippageContext::default(), orders, liquidity);
-        let TokenAmount {
-            token: out_token,
-            amount: out_amount,
-        } = amm_handler.calls.lock().unwrap()[0].output;
-        assert_eq!(out_token, usdc);
-        assert!(out_amount < U256::from(32275540_u128));
+        let settlements = settle(SlippageContext::default(), orders, liquidity);
+        assert!(settlements.is_empty());
     }
 
     #[test]
