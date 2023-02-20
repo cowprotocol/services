@@ -13,6 +13,8 @@ use {
 
 pub mod slippage;
 
+pub use self::slippage::Slippage;
+
 /// An order for quoting with an external DEX or DEX aggregator. This is a
 /// simplified representation of a CoW Protocol order.
 #[derive(Debug)]

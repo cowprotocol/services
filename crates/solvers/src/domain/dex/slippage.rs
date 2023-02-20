@@ -7,21 +7,30 @@ use {
     },
     bigdecimal::BigDecimal,
     ethereum_types::U256,
-    num::{BigUint, Integer},
+    num::{BigUint, Integer, One, Zero},
     std::{cmp, collections::HashMap},
 };
 
-/// DEX swap slippage configuration.
+/// DEX swap slippage limits. The actual slippage used for a swap is bounded by
+/// a relative amount, and an absolute Ether value. These limits are used to
+/// determine the actual relative slippage to use for a particular asset (i.e.
+/// token and amount).
 #[derive(Clone, Debug)]
-pub struct Slippage {
-    pub relative: BigDecimal,
-    pub absolute: Option<eth::Ether>,
+pub struct Limits {
+    relative: BigDecimal,
+    absolute: Option<eth::Ether>,
 }
 
-impl Slippage {
-    /// Computes the slippate tolerance for a DEX order using the specified
-    /// reference prices.
-    pub fn tolerance(&self, asset: &eth::Asset, prices: &Prices) -> Tolerance {
+impl Limits {
+    /// Creates a new [`Limits`] instance. Returns `None` if the `relative`
+    /// slippage limit outside the valid range of [0, 1].
+    pub fn new(relative: BigDecimal, absolute: Option<eth::Ether>) -> Option<Self> {
+        (relative >= Zero::zero() && relative <= One::one()).then_some(Self { relative, absolute })
+    }
+
+    /// Computes the actual slippage tolerance to use for an asset using the
+    /// specified reference prices.
+    pub fn relative(&self, asset: &eth::Asset, prices: &Prices) -> Slippage {
         if let (Some(absolute), Some(price)) = (&self.absolute, prices.0.get(&asset.token)) {
             let absolute = conv::ether_to_decimal(absolute);
             let amount = conv::ether_to_decimal(&eth::Ether(asset.amount)) * price;
@@ -29,22 +38,22 @@ impl Slippage {
             let max_relative = absolute / amount;
             let tolerance = cmp::min(max_relative, self.relative.clone());
 
-            Tolerance(tolerance)
+            Slippage(tolerance)
         } else {
-            Tolerance(self.relative.clone())
+            Slippage(self.relative.clone())
         }
     }
 }
 
-/// A slippage tolerance factor that can be applied to a swap.
+/// A relative slippage tolerance.
 ///
-/// Slippage has saturating semantics. I.e. if adding slippage tolerance to a
+/// Relative slippage has saturating semantics. I.e. if adding slippage to a
 /// token amount would overflow a `U256`, then `U256::max_value()` is returned
 /// instead.
 #[derive(Debug, Eq, PartialEq)]
-pub struct Tolerance(BigDecimal);
+pub struct Slippage(BigDecimal);
 
-impl Tolerance {
+impl Slippage {
     /// Adds slippage to the specified token amount. This can be used to account
     /// for negative slippage in a sell amount.
     pub fn add(&self, amount: U256) -> U256 {
@@ -124,12 +133,12 @@ mod tests {
                 price("0.000057"),
             ),
         ]);
-        let slippage = Slippage {
+        let slippage = Limits {
             relative: "0.01".parse().unwrap(), // 1%
             absolute: Some(ether("0.02")),
         };
 
-        for (asset, tolerance, min, max) in [
+        for (asset, relative, min, max) in [
             // tolerance defined by relative slippage
             (
                 eth::Asset {
@@ -193,13 +202,13 @@ mod tests {
                 1_000_350_877_192_982_456_140_351,
             ),
         ] {
-            let tolerance = Tolerance(tolerance.parse().unwrap());
+            let relative = Slippage(relative.parse().unwrap());
             let min = U256::from(min);
             let max = U256::from(max);
 
-            let computed = slippage.tolerance(&asset, &prices);
+            let computed = slippage.relative(&asset, &prices);
 
-            assert_eq!(round(&computed.0, 9), tolerance.0);
+            assert_eq!(round(&computed.0, 9), relative.0);
             assert_eq!(computed.sub(asset.amount), min);
             assert_eq!(computed.add(asset.amount), max);
         }

@@ -69,11 +69,12 @@ pub async fn load(path: &Path) -> super::BalancerConfig {
                 .map(eth::ContractAddress)
                 .unwrap_or(contracts.settlement),
         },
-        slippage: slippage::Slippage {
-            relative: config.relative_slippage,
-            absolute: config.absolute_slippage.map(|value| {
+        slippage: slippage::Limits::new(
+            config.relative_slippage,
+            config.absolute_slippage.map(|value| {
                 conv::decimal_to_ether(&value).expect("invalid absolute slippage Ether value")
             }),
-        },
+        )
+        .expect("invalid slippage limits"),
     }
 }

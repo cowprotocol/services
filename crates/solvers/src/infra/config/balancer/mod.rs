@@ -4,5 +4,5 @@ pub mod file;
 
 pub struct BalancerConfig {
     pub sor: dex::balancer::Config,
-    pub slippage: slippage::Slippage,
+    pub slippage: slippage::Limits,
 }

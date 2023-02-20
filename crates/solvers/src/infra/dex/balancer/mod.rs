@@ -60,7 +60,7 @@ impl Sor {
     pub async fn swap(
         &self,
         order: &dex::Order,
-        slippage: &dex::slippage::Tolerance,
+        slippage: &dex::Slippage,
         gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let query = dto::Query::from_domain(order, gas_price);

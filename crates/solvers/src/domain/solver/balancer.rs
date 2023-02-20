@@ -15,7 +15,7 @@ pub struct Balancer {
     pub sor: infra::dex::balancer::Sor,
 
     /// The slippage configuration to use for the solver.
-    pub slippage: slippage::Slippage,
+    pub slippage: slippage::Limits,
 }
 
 impl Balancer {
@@ -27,7 +27,7 @@ impl Balancer {
         for order in auction.orders {
             let query = dex::Order::new(&order);
 
-            let slippage = self.slippage.tolerance(&query.amount(), &prices);
+            let slippage = self.slippage.relative(&query.amount(), &prices);
             let swap = match self.sor.swap(&query, &slippage, auction.gas_price).await {
                 Ok(value) => value,
                 Err(infra::dex::balancer::Error::NotFound) => continue,
