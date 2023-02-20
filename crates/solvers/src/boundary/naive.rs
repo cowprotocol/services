@@ -41,6 +41,14 @@ pub fn solve(
         _ => return None,
     };
 
+    // Note that the `order::Order` -> `boundary::LimitOrder` mapping here is
+    // not exact. Among other things, the signature and various signed order
+    // fields are missing from the `order::Order` data that have access to in
+    // the solver engines. This means that the naive solver in the `solver`
+    // crate will encode "incorrect" settlements. This is fine, since we give
+    // it just enough data to compute the swapped orders and the swap amounts.
+    // The `driver` is then responsible for encoding the solution into a valid
+    // settlement transaction anyway.
     let boundary_orders = orders
         .iter()
         .map(|order| LimitOrder {
@@ -107,7 +115,7 @@ pub fn solve(
     let boundary_solution =
         multi_order_solver::solve(&slippage.context(), boundary_orders, &boundary_pool)?;
 
-    let mut swap = pool_handler.swap.lock().unwrap();
+    let swap = pool_handler.swap.lock().unwrap().take();
     Some(solution::Solution {
         prices: solution::ClearingPrices::new(
             boundary_solution
@@ -129,7 +137,6 @@ pub fn solve(
             })
             .collect(),
         interactions: swap
-            .take()
             .into_iter()
             .map(|(input, output)| {
                 solution::Interaction::Liquidity(solution::LiquidityInteraction {
@@ -223,8 +230,7 @@ impl SettlementHandling<ConstantProductOrder> for PoolHandler {
         execution: AmmOrderExecution,
         _: &mut SettlementEncoder,
     ) -> anyhow::Result<()> {
-        let mut swap = self.swap.lock().unwrap();
-        *swap = Some((
+        *self.swap.lock().unwrap() = Some((
             eth::Asset {
                 token: eth::TokenAddress(execution.input_max.token),
                 amount: execution.input_max.amount,
