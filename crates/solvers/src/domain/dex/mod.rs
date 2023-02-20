@@ -126,9 +126,14 @@ impl Swap {
             order::Side::Sell => (self.input.amount, order.sell.amount),
         };
 
-        (order.sell.token, order.buy.token) == (self.input.token, self.output.token)
-            && (order.partially_fillable && swap_amount <= order_amount
-                || !order.partially_fillable && swap_amount == order_amount)
+        let correct_tokens =
+            (order.sell.token, order.buy.token) == (self.input.token, self.output.token);
+        let correct_amount = match order.partially_fillable {
+            true => swap_amount <= order_amount,
+            false => swap_amount == order_amount,
+        };
+
+        correct_tokens && correct_amount
     }
 
     fn respects_price(&self, order: &order::Order) -> bool {
