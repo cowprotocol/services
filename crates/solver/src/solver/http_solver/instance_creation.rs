@@ -65,7 +65,7 @@ impl InstanceCreator {
                 });
         orders.extend(limit_orders);
 
-        let market_makable_token_list = self.market_makable_token_list.addresses();
+        let market_makable_token_list = self.market_makable_token_list.all();
 
         let tokens = map_tokens_for_solver(&orders, &amms, &market_makable_token_list);
         let (token_infos, buffers_result) = futures::join!(

@@ -117,10 +117,14 @@ pub struct Arguments {
     )]
     pub solver_time_limit: Duration,
 
-    /// The list of tokens our settlement contract is willing to buy when
-    /// settling trades without external liquidity
-    #[clap(long, env, default_value = "https://files.cow.fi/token_list.json")]
-    pub market_makable_token_list: String,
+    /// The URL of a list of tokens our settlement contract is willing to buy
+    /// when settling trades without external liquidity
+    #[clap(long, env)]
+    pub market_makable_token_list: Option<Url>,
+
+    /// Like `market_makable_token_list` but hardcoded list of tokens.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub market_makable_tokens: Option<Vec<H160>>,
 
     /// Time interval after which market makable list needs to be updated
     #[clap(
@@ -339,10 +343,18 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
         writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
-        writeln!(
+        display_option(
             f,
-            "market_makable_token_list: {}",
-            self.market_makable_token_list
+            "market_makable_token_list",
+            &self.market_makable_token_list,
+        )?;
+        display_option(
+            f,
+            "market_makable_tokens",
+            &self
+                .market_makable_tokens
+                .as_ref()
+                .map(|list| format!("{list:?}")),
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
