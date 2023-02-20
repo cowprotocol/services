@@ -139,13 +139,9 @@ impl Swap {
     fn respects_price(&self, order: &order::Order) -> bool {
         // Note the use of checked multiplication - this is constitant with the
         // on-chain limit price check.
-        let Some(sell) = order.sell.amount.checked_mul(self.output.amount) else {
-            return false;
-        };
-        let Some(buy) = order.buy.amount.checked_mul(self.input.amount) else {
-            return false;
-        };
-        sell >= buy
+        let sell = order.sell.amount.checked_mul(self.output.amount);
+        let buy = order.buy.amount.checked_mul(self.input.amount);
+        matches!((sell, buy), (Some(sell), Some(buy)) if sell >= buy)
     }
 }
 
