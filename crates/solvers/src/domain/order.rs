@@ -101,7 +101,7 @@ pub struct Reward(pub f64);
 /// An arbitrary ethereum interaction that is required for the settlement
 /// execution.
 #[derive(Debug, Clone)]
-pub struct CustomInteraction {
+pub struct Interaction {
     pub target: Address,
     pub value: eth::Ether,
     pub calldata: Vec<u8>,
@@ -121,7 +121,7 @@ pub struct JitOrder {
     pub partially_fillable: bool,
     /// Interactions that get executed before tokens get transfer from users
     /// into the settlement contract.
-    pub pre_interactions: Vec<CustomInteraction>,
+    pub pre_interactions: Vec<Interaction>,
     pub valid_to: u32,
     pub app_data: AppData,
     pub receiver: Address,

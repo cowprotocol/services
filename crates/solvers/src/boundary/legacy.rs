@@ -328,7 +328,7 @@ fn to_domain_solution(
                     .interactions
                     .pre
                     .iter()
-                    .map(|i| order::CustomInteraction {
+                    .map(|i| order::Interaction {
                         target: i.target,
                         value: eth::Ether(i.value),
                         calldata: i.call_data.clone(),

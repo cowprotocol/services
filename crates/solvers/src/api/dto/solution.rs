@@ -69,6 +69,16 @@ impl Solution {
                                 buy_token_balance: BuyTokenBalance::Erc20,
                                 signing_scheme,
                                 signature,
+                                pre_interactions: trade
+                                    .order
+                                    .pre_interactions
+                                    .iter()
+                                    .map(|i| OrderInteraction {
+                                        target: i.target,
+                                        value: i.value.0,
+                                        calldata: i.calldata.clone(),
+                                    })
+                                    .collect(),
                             },
                             executed_amount: trade.executed,
                         })
@@ -93,7 +103,7 @@ impl Solution {
                         Interaction::Custom(CustomInteraction {
                             target: interaction.target,
                             value: interaction.value.0,
-                            call_data: interaction.calldata.clone(),
+                            calldata: interaction.calldata.clone(),
                             internalize: interaction.internalize,
                             allowances: interaction
                                 .allowances
@@ -187,6 +197,7 @@ struct JitOrder {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    pre_interactions: Vec<OrderInteraction>,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,10 +237,23 @@ struct CustomInteraction {
     #[serde_as(as = "serialize::U256")]
     value: U256,
     #[serde_as(as = "serialize::Hex")]
-    call_data: Vec<u8>,
+    calldata: Vec<u8>,
     allowances: Vec<Allowance>,
     inputs: Vec<Asset>,
     outputs: Vec<Asset>,
+}
+
+/// An interaction that can be executed as part of an order's pre- or
+/// post-interactions.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OrderInteraction {
+    target: H160,
+    #[serde_as(as = "serialize::U256")]
+    value: U256,
+    #[serde_as(as = "serialize::Hex")]
+    calldata: Vec<u8>,
 }
 
 #[serde_as]
