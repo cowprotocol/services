@@ -34,7 +34,7 @@ fn is_only_selling_trusted_tokens(
     settlement: &Settlement,
     market_makable_token_list: &AutoUpdatingTokenList,
 ) -> bool {
-    let market_makable_token_list = market_makable_token_list.addresses();
+    let market_makable_token_list = market_makable_token_list.all();
     !settlement
         .traded_orders()
         .any(|order| !market_makable_token_list.contains(&order.data.sell_token))
@@ -45,10 +45,8 @@ mod tests {
     use {
         super::*,
         crate::settlement::Trade,
-        maplit::hashmap,
         model::order::{Order, OrderData},
         primitive_types::H160,
-        shared::token_list::Token,
     };
 
     #[test]
@@ -57,20 +55,8 @@ mod tests {
         let another_good_token = H160::from_low_u64_be(2);
         let bad_token = H160::from_low_u64_be(3);
 
-        let token_list = AutoUpdatingTokenList::new(hashmap! {
-            good_token => Token {
-                address: good_token,
-                symbol: "Foo".into(),
-                name: "FooCoin".into(),
-                decimals: 18,
-            },
-            another_good_token => Token {
-                address: another_good_token,
-                symbol: "Bar".into(),
-                name: "BarCoin".into(),
-                decimals: 18,
-            }
-        });
+        let token_list =
+            AutoUpdatingTokenList::new([good_token, another_good_token].into_iter().collect());
 
         let trade = |token| Trade {
             order: Order {
