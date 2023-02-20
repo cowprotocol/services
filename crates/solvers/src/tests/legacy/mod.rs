@@ -1,12 +1,14 @@
+use {
+    crate::tests,
+    std::{
+        net::SocketAddr,
+        sync::{Arc, Mutex},
+    },
+};
+
 mod attaching_approvals;
 mod jit_order;
 mod market_order;
-
-use std::{
-    io::Write,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
 
 #[derive(Debug, Clone)]
 pub struct Expectation {
@@ -47,18 +49,13 @@ pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
 #[derive(Debug, Clone)]
 struct State(Arc<Mutex<Vec<Expectation>>>);
 
-/// Creates a temporary file containing the config of the given solver.
-pub fn create_temp_config_file(solver_addr: &SocketAddr) -> tempfile::TempPath {
-    let base_url = format!("http://{solver_addr}/solve");
-    let config = format!(
+/// Creates a legacy solver configuration for the specified host.
+pub fn config(solver_addr: &SocketAddr) -> tests::Config {
+    tests::Config::String(format!(
         r"
 solver-name = 'legacy_solver'
-endpoint = '{}'
+endpoint = 'http://{solver_addr}/solve'
 chain-id = '1'
-",
-        base_url
-    );
-    let mut file = tempfile::NamedTempFile::new().unwrap();
-    file.write_all(config.as_bytes()).unwrap();
-    file.into_temp_path()
+        ",
+    ))
 }

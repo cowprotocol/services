@@ -12,7 +12,7 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new("naive", None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({

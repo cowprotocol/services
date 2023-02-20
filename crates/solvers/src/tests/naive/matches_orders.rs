@@ -5,7 +5,7 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn sell_orders_on_both_sides() {
-    let engine = tests::SolverEngine::new("naive", None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({
@@ -103,7 +103,7 @@ async fn sell_orders_on_both_sides() {
 
 #[tokio::test]
 async fn sell_orders_on_one_side() {
-    let engine = tests::SolverEngine::new("naive", None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({
@@ -201,7 +201,7 @@ async fn sell_orders_on_one_side() {
 
 #[tokio::test]
 async fn buy_orders_on_both_sides() {
-    let engine = tests::SolverEngine::new("naive", None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({
@@ -299,7 +299,7 @@ async fn buy_orders_on_both_sides() {
 
 #[tokio::test]
 async fn buy_and_sell_orders() {
-    let engine = tests::SolverEngine::new("naive", None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({
