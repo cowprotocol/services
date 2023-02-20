@@ -1,3 +1,6 @@
+//! Tests that orders that provide just-in-time liquidity get correctly
+//! serialized.
+
 use {
     crate::tests::{self, legacy},
     serde_json::json,
