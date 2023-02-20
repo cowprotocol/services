@@ -1,5 +1,3 @@
-//! Bindings to the Balancer Smart Order Router (SOR) API.
-
 use {
     crate::{
         boundary,
@@ -7,10 +5,12 @@ use {
     },
     ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
+    tracing::Instrument,
 };
 
 mod dto;
 
+/// Bindings to the Balancer Smart Order Router (SOR) API.
 pub struct Sor {
     client: reqwest::Client,
     endpoint: reqwest::Url,
@@ -30,6 +30,25 @@ pub struct Config {
 }
 
 impl Sor {
+    async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
+        let request = serde_json::to_string(&query)?;
+        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
+        let response = self
+            .client
+            .post(self.endpoint.clone())
+            .header("content-type", "application/json")
+            .body(request)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        tracing::trace!(%response, "quoted");
+        let quote = serde_json::from_str(&response)?;
+
+        Ok(quote)
+    }
+
     pub async fn swap(
         &self,
         order: &dex::Order,
@@ -43,23 +62,9 @@ impl Sor {
             // of a headache.
             static ID: AtomicU64 = AtomicU64::new(0);
             let id = ID.fetch_add(1, atomic::Ordering::Relaxed);
-            let span = tracing::trace_span!("swap", id = %id);
-            let _enter = span.enter();
-
-            let request = serde_json::to_string(&query)?;
-            tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
-            let response = self
-                .client
-                .post(self.endpoint.clone())
-                .header("content-type", "application/json")
-                .body(request)
-                .send()
+            self.quote(&query)
+                .instrument(tracing::trace_span!("quote", id = %id))
                 .await?
-                .error_for_status()?
-                .text()
-                .await?;
-            tracing::trace!(%response, "quoted");
-            serde_json::from_str::<dto::Quote>(&response)?
         };
 
         if quote.is_empty() {
