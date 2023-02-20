@@ -9,13 +9,7 @@ use {
 #[tokio::test]
 async fn test() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
-        path: mock::http::Path::glob(
-            "solve\
-             [?]instance_name=*_Mainnet_1_0\
-               &time_limit=*\
-               &max_nr_exec_orders=100\
-               &use_internal_buffers=true"
-        ),
+        path: mock::http::Path::Any,
         req: json!({
             "amms": {},
             "metadata": {

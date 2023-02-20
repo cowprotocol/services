@@ -5,9 +5,10 @@ use {
     serde_json::json,
 };
 
-/// Tests that orders get marked as "mandatory" in `/quote` requests.
+/// Tests that orders get marked as "mandatory" in `/quote` requests and that
+/// the HTTP query does not contain the `auction_id` parameter.
 #[tokio::test]
-async fn test_quoting() {
+async fn quote() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::glob(
             "solve\
@@ -205,7 +206,7 @@ async fn test_quoting() {
 }
 
 #[tokio::test]
-async fn test_solving() {
+async fn solve() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::glob(
             "solve\

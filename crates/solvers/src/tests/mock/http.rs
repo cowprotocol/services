@@ -6,6 +6,7 @@ use std::{
 
 #[derive(Clone)]
 pub enum Path {
+    Any,
     Exact(String),
     Glob(glob::Pattern),
 }
@@ -23,6 +24,7 @@ impl Path {
 impl PartialEq<Path> for String {
     fn eq(&self, path: &Path) -> bool {
         match path {
+            Path::Any => true,
             Path::Exact(exact) => exact == self,
             Path::Glob(glob) => glob.matches(self),
         }
@@ -32,6 +34,7 @@ impl PartialEq<Path> for String {
 impl Debug for Path {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
+            Path::Any => f.debug_tuple("Any").finish(),
             Path::Exact(exact) => f
                 .debug_tuple("Exact")
                 .field(&format_args!("{exact}"))

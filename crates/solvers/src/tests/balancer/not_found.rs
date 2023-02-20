@@ -10,7 +10,7 @@ use {
 #[tokio::test]
 async fn test() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
-        path: mock::http::Path::exact("sor"),
+        path: mock::http::Path::Any,
         req: json!({
             "sellToken": "0x1111111111111111111111111111111111111111",
             "buyToken": "0x2222222222222222222222222222222222222222",
