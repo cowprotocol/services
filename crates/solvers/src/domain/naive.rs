@@ -61,7 +61,7 @@ fn group_by_token_pair(auction: &auction::Auction) -> Groups {
     }
 
     for order in &auction.orders {
-        // the naive solver algorithm is sensitive to 0-amount orders (i.e. they
+        // The naive solver algorithm is sensitive to 0-amount orders (i.e. they
         // cause panics). Make sure we don't consider them.
         if order.sell.amount.is_zero() || order.buy.amount.is_zero() {
             continue;
