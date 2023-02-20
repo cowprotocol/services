@@ -5,11 +5,13 @@ pub mod baseline;
 pub mod legacy;
 pub mod naive;
 
+pub use self::{balancer::Balancer, baseline::Baseline, legacy::Legacy, naive::Naive};
+
 pub enum Solver {
-    Baseline(baseline::Baseline),
-    Naive(naive::Naive),
-    Legacy(legacy::Legacy),
-    Balancer(balancer::Balancer),
+    Baseline(Baseline),
+    Naive(Naive),
+    Legacy(Legacy),
+    Balancer(Balancer),
 }
 
 impl Solver {
