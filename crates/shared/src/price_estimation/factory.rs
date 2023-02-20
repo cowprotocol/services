@@ -105,7 +105,10 @@ impl<'a> PriceEstimatorFactory<'a> {
                     TradeValidatorKind::Tenderly => {
                         let tenderly_api = shared_args
                             .tenderly
-                            .get_api_instance(&components.http_factory)?
+                            .get_api_instance(
+                                &components.http_factory,
+                                "price_estimation".to_owned(),
+                            )?
                             .context("missing Tenderly configuration")?;
                         let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id)
                             .save(false, args.tenderly_save_failed_trade_simulations);
