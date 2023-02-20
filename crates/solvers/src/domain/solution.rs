@@ -5,6 +5,7 @@ use {
 };
 
 /// A solution to an auction.
+#[derive(Default)]
 pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
@@ -18,6 +19,7 @@ pub enum Trade {
 
 /// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
+#[derive(Default)]
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 
 impl ClearingPrices {
