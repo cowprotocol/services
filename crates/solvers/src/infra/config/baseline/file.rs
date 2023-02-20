@@ -42,11 +42,9 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
-    let contracts = match (config.chain_id, config.weth) {
-        (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id),
-        (None, Some(weth)) => contracts::Contracts {
-            weth: eth::WethAddress(weth),
-        },
+    let weth = match (config.chain_id, config.weth) {
+        (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id).weth,
+        (None, Some(weth)) => eth::WethAddress(weth),
         (Some(_), Some(_)) => panic!(
             "invalid configuration: cannot specify both `chain-id` and `weth` configuration \
              options",
@@ -57,7 +55,7 @@ pub async fn load(path: &Path) -> super::BaselineConfig {
     };
 
     super::BaselineConfig {
-        weth: contracts.weth,
+        weth,
         base_tokens: config
             .base_tokens
             .into_iter()

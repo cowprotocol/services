@@ -42,7 +42,7 @@ pub struct Legacy {
 }
 
 impl Legacy {
-    pub fn new(config: crate::domain::legacy::Config) -> Self {
+    pub fn new(config: crate::domain::solver::legacy::Config) -> Self {
         let solve_path = config.endpoint.path().to_owned();
         let mut base = config.endpoint;
         base.set_path("");

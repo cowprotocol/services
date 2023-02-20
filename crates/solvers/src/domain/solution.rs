@@ -12,12 +12,6 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
 }
 
-/// A trade which executes an order as part of this solution.
-pub enum Trade {
-    Fulfillment(Fulfillment),
-    Jit(JitTrade),
-}
-
 /// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
 #[derive(Default)]
@@ -28,6 +22,12 @@ impl ClearingPrices {
     pub fn new(prices: impl IntoIterator<Item = (eth::TokenAddress, U256)>) -> Self {
         Self(prices.into_iter().collect())
     }
+}
+
+/// A trade which executes an order as part of this solution.
+pub enum Trade {
+    Fulfillment(Fulfillment),
+    Jit(JitTrade),
 }
 
 /// A traded order within a solution.

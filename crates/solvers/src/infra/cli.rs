@@ -40,4 +40,11 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
+    /// Balancer SOR solver.
+    Balancer {
+        /// Path to the solver configuration file. This file should be in TOML
+        /// format.
+        #[clap(long, env)]
+        config: PathBuf,
+    },
 }

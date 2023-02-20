@@ -11,6 +11,10 @@ use {
     std::fmt::{Debug, Formatter},
 };
 
+pub mod slippage;
+
+pub use self::slippage::Slippage;
+
 /// An order for quoting with an external DEX or DEX aggregator. This is a
 /// simplified representation of a CoW Protocol order.
 #[derive(Debug)]
@@ -22,6 +26,18 @@ pub struct Order {
 }
 
 impl Order {
+    pub fn new(order: &order::Order) -> Self {
+        Self {
+            sell: order.sell.token,
+            buy: order.buy.token,
+            side: order.side,
+            amount: Amount(match order.side {
+                order::Side::Buy => order.buy.amount,
+                order::Side::Sell => order.sell.amount,
+            }),
+        }
+    }
+
     /// Returns the order swapped amount as an asset. The token associated with
     /// the asset is dependent on the side of the DEX order.
     pub fn amount(&self) -> eth::Asset {
@@ -32,46 +48,6 @@ impl Order {
             },
             amount: self.amount.0,
         }
-    }
-}
-
-impl From<order::Order> for Order {
-    fn from(value: order::Order) -> Self {
-        Self {
-            sell: value.sell.token,
-            buy: value.buy.token,
-            side: value.side,
-            amount: Amount(match value.side {
-                order::Side::Buy => value.buy.amount,
-                order::Side::Sell => value.buy.amount,
-            }),
-        }
-    }
-}
-
-/// A slippage tolerance (as a factor) that can be applied to token amounts.
-#[derive(Clone, Copy, Debug)]
-pub struct Slippage(f64);
-
-impl Slippage {
-    /// Creates a new slippage value. The value represents the slippage
-    /// tolerance as a factor (so 0.05 means that up to 5% slippage tolerance is
-    /// accepted, i.e. a swap can return 5% less than promised). Returns `None`
-    /// if an invalid value outside of the range [0.0, 1.0] is specified.
-    pub fn new(value: f64) -> Option<Self> {
-        (0.0..=1.0).contains(&value).then_some(Self(value))
-    }
-
-    /// Adds slippage to the specified token amount. This can be used to account
-    /// for negative slippage in a sell amount.
-    pub fn add(&self, amount: U256) -> U256 {
-        U256::from_f64_lossy((1.0 + self.0) * amount.to_f64_lossy())
-    }
-
-    /// Subtracts slippage to the specified token amount. This can be used to
-    /// account for negative slippage in a buy amount.
-    pub fn sub(&self, amount: U256) -> U256 {
-        U256::from_f64_lossy((1.0 - self.0) * amount.to_f64_lossy())
     }
 }
 
@@ -116,6 +92,58 @@ impl Swap {
                 amount: self.allowance.amount.0,
             },
         }
+    }
+
+    /// Constructs a single order `solution::Solution` for this swap. Returns
+    /// `None` if the swap is not valid for the specified order.
+    pub fn into_solution(self, order: order::Order) -> Option<solution::Solution> {
+        if !self.matches_order(&order) || !self.respects_price(&order) {
+            return None;
+        }
+
+        let allowance = self.allowance();
+        Some(solution::Solution {
+            prices: solution::ClearingPrices::new([
+                (self.input.token, self.output.amount),
+                (self.output.token, self.input.amount),
+            ]),
+            trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::fill(
+                order,
+            ))],
+            interactions: vec![solution::Interaction::Custom(solution::CustomInteraction {
+                target: self.call.to.0,
+                value: eth::Ether::default(),
+                calldata: self.call.calldata,
+                inputs: vec![self.input],
+                outputs: vec![self.output],
+                internalize: false,
+                allowances: vec![allowance],
+            })],
+        })
+    }
+
+    fn matches_order(&self, order: &order::Order) -> bool {
+        let (swap_amount, order_amount) = match order.side {
+            order::Side::Buy => (self.output.amount, order.buy.amount),
+            order::Side::Sell => (self.input.amount, order.sell.amount),
+        };
+
+        let correct_tokens =
+            (order.sell.token, order.buy.token) == (self.input.token, self.output.token);
+        let correct_amount = match order.partially_fillable {
+            true => swap_amount <= order_amount,
+            false => swap_amount == order_amount,
+        };
+
+        correct_tokens && correct_amount
+    }
+
+    fn respects_price(&self, order: &order::Order) -> bool {
+        // Note the use of checked multiplication - this is consistent with the
+        // on-chain limit price check.
+        let sell = order.sell.amount.checked_mul(self.output.amount);
+        let buy = order.buy.amount.checked_mul(self.input.amount);
+        matches!((sell, buy), (Some(sell), Some(buy)) if sell >= buy)
     }
 }
 

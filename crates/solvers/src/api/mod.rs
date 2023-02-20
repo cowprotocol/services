@@ -1,7 +1,7 @@
 //! Serve a solver engine API.
 
 use {
-    crate::domain::Solver,
+    crate::domain::solver::Solver,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };

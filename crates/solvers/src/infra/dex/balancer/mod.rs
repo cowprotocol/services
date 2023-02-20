@@ -22,13 +22,22 @@ pub struct Config {
     pub endpoint: reqwest::Url,
 
     /// The address of the Balancer Vault contract.
-    pub vault: Option<eth::ContractAddress>,
+    pub vault: eth::ContractAddress,
 
     /// The address of the Settlement contract.
-    pub settlement: Option<eth::ContractAddress>,
+    pub settlement: eth::ContractAddress,
 }
 
 impl Sor {
+    pub fn new(config: Config) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            endpoint: config.endpoint,
+            vault: vault::Vault::new(config.vault),
+            settlement: config.settlement,
+        }
+    }
+
     async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
         let request = serde_json::to_string(&query)?;
         tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
@@ -51,7 +60,7 @@ impl Sor {
     pub async fn swap(
         &self,
         order: &dex::Order,
-        slippage: dex::Slippage,
+        slippage: &dex::Slippage,
         gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let query = dto::Query::from_domain(order, gas_price);
@@ -110,9 +119,12 @@ impl Sor {
                     if *token == quote.token_in {
                         // Use positive swap limit for sell amounts (that is, maximum
                         // amount that can be transferred in)
-                        max_input.try_into().unwrap_or_default()
+                        I256::try_from(max_input).unwrap_or_default()
                     } else if *token == quote.token_out {
-                        min_output.try_into().unwrap_or_default()
+                        I256::try_from(min_output)
+                            .unwrap_or_default()
+                            .checked_neg()
+                            .expect("positive integer can't overflow negation")
                     } else {
                         I256::zero()
                     }
