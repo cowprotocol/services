@@ -55,7 +55,7 @@ pub struct Slippage(f64);
 
 impl Slippage {
     /// Creates a new slippage value. The value represents the slippage
-    /// tolerance as a factor (so 0.05 means that up to 5% slippage tolerace is
+    /// tolerance as a factor (so 0.05 means that up to 5% slippage tolerance is
     /// accepted, i.e. a swap can return 5% less than promised). Returns `None`
     /// if an invalid value outside of the range [0.0, 1.0] is specified.
     pub fn new(value: f64) -> Option<Self> {
