@@ -83,7 +83,7 @@ impl Prices {
         )
     }
 
-    /// Computes the set of references prices for the specified auction.
+    /// Computes the set of reference prices for the specified auction.
     pub fn for_auction(auction: &auction::Auction) -> Self {
         Self::new(
             auction
