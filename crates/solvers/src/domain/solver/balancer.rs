@@ -1,5 +1,5 @@
 //! A simple DEX solver that matches orders directly with swaps from the
-//! Balancer SOR API
+//! Balancer SOR API.
 
 use {
     crate::{
