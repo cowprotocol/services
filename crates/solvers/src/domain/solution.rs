@@ -12,6 +12,7 @@ pub struct Solution {
     pub interactions: Vec<Interaction>,
 }
 
+/// A trade which executes an order as part of this solution.
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -81,12 +82,15 @@ impl Fulfillment {
     }
 }
 
+/// A trade of an order that was created specifically for this solution
+/// providing just-in-time liquidity for other regular orders.
 pub struct JitTrade {
     pub order: order::JitOrder,
     pub executed: U256,
 }
 
-/// A interaction included within an solution.
+/// An interaction that is required to execute a solution by acquiring liquidity
+/// or running some custom logic.
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -103,18 +107,27 @@ pub struct LiquidityInteraction {
     pub internalize: bool,
 }
 
-/// A custom interaction
+/// An arbitrary interaction returned by the solver, which needs to be executed
+/// to fulfill the trade.
 pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
     pub calldata: Vec<u8>,
-    pub inputs: Vec<eth::Asset>,
-    pub outputs: Vec<eth::Asset>,
+    /// Indicated whether the interaction should be internalized (skips its
+    /// execution as an optimization). This is only allowed under certain
+    /// conditions.
     pub internalize: bool,
+    /// Documents inputs of the interaction to determine whether internalization
+    /// is actually legal.
+    pub inputs: Vec<eth::Asset>,
+    /// Documents outputs of the interaction to determine whether
+    /// internalization is actually legal.
+    pub outputs: Vec<eth::Asset>,
+    /// Allowances required to successfully execute the interaction.
     pub allowances: Vec<Allowance>,
 }
 
-/// Approval required to make some custom interaction possible.
+/// Approval required to make some `[CustomInteraction]` possible.
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
