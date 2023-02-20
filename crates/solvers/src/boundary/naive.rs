@@ -153,7 +153,7 @@ pub fn solve(
 // Beyond this point is... well... nameless and boundless chaos. The
 // unfathomable horrors that follow are not for the faint of heart!
 //
-// Joking asside, the existing naive solver implementation is tightly coupled
+// Joking aside, the existing naive solver implementation is tightly coupled
 // with the `Settlement` and `SettlementEncoder` types in the `solver` crate.
 // This meeans that there is no convinient way to say: "please compute a
 // solution given this list of orders and constant product pool" without it
