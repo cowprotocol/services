@@ -26,7 +26,6 @@ struct Config {
 
     /// Optional CoW Protocol Settlement contract address. If not specified,
     /// the default Settlement contract address will be used.
-    /// path.
     settlement: Option<H160>,
 
     /// The relative slippage allowed by the solver.
