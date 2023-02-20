@@ -7,31 +7,32 @@
 use {
     crate::{
         boundary,
-        domain::{auction, solution, Solver},
-        infra::config::legacy::LegacyConfig,
+        domain::{auction, eth, solution},
     },
-    futures::future::{BoxFuture, FutureExt},
+    reqwest::Url,
 };
+
+pub struct Config {
+    pub weth: eth::WethAddress,
+    pub solver_name: String,
+    pub chain_id: eth::ChainId,
+    pub endpoint: Url,
+}
 
 pub struct Legacy(boundary::legacy::Legacy);
 
 impl Legacy {
-    pub fn new(config: LegacyConfig) -> Self {
+    pub fn new(config: Config) -> Self {
         Self(boundary::legacy::Legacy::new(config))
     }
-}
 
-impl Solver for Legacy {
-    fn solve(&self, auction: auction::Auction) -> BoxFuture<Vec<solution::Solution>> {
-        async move {
-            match self.0.solve(auction).await {
-                Ok(solution) => vec![solution],
-                Err(err) => {
-                    tracing::warn!(?err, "failed to solve auction");
-                    vec![]
-                }
+    pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        match self.0.solve(auction).await {
+            Ok(solution) => vec![solution],
+            Err(err) => {
+                tracing::warn!(?err, "failed to solve auction");
+                vec![]
             }
         }
-        .boxed()
     }
 }

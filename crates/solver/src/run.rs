@@ -266,6 +266,7 @@ pub async fn run(args: Arguments) {
         update_interval: args.market_makable_token_list_update_interval,
         chain_id,
         client: http_factory.create(),
+        hardcoded: args.market_makable_tokens.unwrap_or_default(),
     };
     // updated in background task
     let market_makable_token_list =

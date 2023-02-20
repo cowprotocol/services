@@ -98,6 +98,8 @@ impl<'a> NonLiquidity<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct Reward(pub f64);
 
+/// An arbitrary ethereum interaction that is required for the settlement
+/// execution.
 #[derive(Debug, Clone)]
 pub struct Interaction {
     pub target: Address,
@@ -105,6 +107,9 @@ pub struct Interaction {
     pub calldata: Vec<u8>,
 }
 
+/// An order that can be used to provide just-in-time liquidity in form of a CoW
+/// Protocol order. This is how solvers integrate private market makers into
+/// their solutions.
 pub struct JitOrder {
     pub owner: Address,
     pub signature: Signature,
@@ -114,6 +119,8 @@ pub struct JitOrder {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
+    /// Interactions that get executed before tokens get transfer from users
+    /// into the settlement contract.
     pub pre_interactions: Vec<Interaction>,
     pub valid_to: u32,
     pub app_data: AppData,
@@ -176,4 +183,7 @@ impl EcdsaSignature {
     }
 }
 
+/// This is a hash allowing arbitrary user data to be associated with an order.
+/// While this type holds the hash, the data itself is uploaded to IPFS. This
+/// hash is signed along with the order.
 pub struct AppData(pub [u8; 32]);

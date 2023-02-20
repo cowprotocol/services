@@ -6,7 +6,7 @@ use {
         infra::{cli, config},
     },
     clap::Parser,
-    std::{net::SocketAddr, sync::Arc},
+    std::net::SocketAddr,
     tokio::sync::oneshot,
 };
 
@@ -15,18 +15,18 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
     crate::boundary::initialize_tracing(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
-    let solver: Arc<dyn Solver> = match args.command {
+    let solver = match args.command {
         cli::Command::Baseline => {
             let baseline = config::baseline::file::load(&args.config).await;
-            Arc::new(baseline::Baseline {
+            Solver::Baseline(baseline::Baseline {
                 weth: baseline.weth,
                 base_tokens: baseline.base_tokens.into_iter().collect(),
                 max_hops: baseline.max_hops,
             })
         }
         cli::Command::Legacy => {
-            let config = config::legacy::file::load(&args.config).await;
-            Arc::new(legacy::Legacy::new(config))
+            let config = config::legacy::load(&args.config).await;
+            Solver::Legacy(legacy::Legacy::new(config))
         }
     };
     crate::api::Api {

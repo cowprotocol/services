@@ -1,5 +1,9 @@
 use {
-    crate::{domain::eth, infra::contracts, util::serialize},
+    crate::{
+        domain::{eth, legacy},
+        infra::contracts,
+        util::serialize,
+    },
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
@@ -20,7 +24,7 @@ struct Config {
     pub solver_name: String,
 
     /// The URL of the endpoint that responds to solve requests.
-    pub solve_endpoint: String,
+    pub endpoint: String,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -28,7 +32,7 @@ struct Config {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> super::LegacyConfig {
+pub async fn load(path: &Path) -> legacy::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -36,10 +40,10 @@ pub async fn load(path: &Path) -> super::LegacyConfig {
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
     let contracts = contracts::Contracts::for_chain(config.chain_id);
 
-    super::LegacyConfig {
+    legacy::Config {
         weth: contracts.weth,
         solver_name: config.solver_name,
         chain_id: config.chain_id,
-        solve_endpoint: Url::parse(&config.solve_endpoint).unwrap(),
+        endpoint: Url::parse(&config.endpoint).unwrap(),
     }
 }

@@ -53,7 +53,7 @@ pub fn create_temp_config_file(solver_addr: &SocketAddr) -> tempfile::TempPath {
     let config = format!(
         r"
 solver-name = 'legacy_solver'
-solve-endpoint = '{}'
+endpoint = '{}'
 chain-id = '1'
 ",
         base_url

@@ -31,7 +31,7 @@ use {
         http_client::HttpClientFactory,
         maintenance::Maintaining,
         sources::uniswap_v2::pool_fetching::PoolFetcher,
-        token_list::{AutoUpdatingTokenList, Token},
+        token_list::AutoUpdatingTokenList,
     },
     solver::{
         liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -198,14 +198,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         base_tokens,
     };
     let network_id = web3.net().version().await.unwrap();
-    let market_makable_token_list = AutoUpdatingTokenList::new(maplit::hashmap! {
-        token_a.address() => Token {
-            address: token_a.address(),
-            name: "Test Coin".into(),
-            symbol: "TC".into(),
-            decimals: 18,
-        }
-    });
+    let market_makable_token_list =
+        AutoUpdatingTokenList::new(std::iter::once(token_a.address()).collect());
     let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
         contracts.weth.address(),
         web3.clone(),

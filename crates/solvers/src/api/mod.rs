@@ -10,7 +10,7 @@ pub mod dto;
 
 pub struct Api {
     pub addr: SocketAddr,
-    pub solver: Arc<dyn Solver>,
+    pub solver: Solver,
 }
 
 impl Api {
@@ -24,7 +24,7 @@ impl Api {
             .layer(
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
-            .with_state(self.solver);
+            .with_state(Arc::new(self.solver));
 
         let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
         if let Some(bind) = bind {
@@ -36,7 +36,7 @@ impl Api {
 }
 
 async fn solve(
-    state: axum::extract::State<Arc<dyn Solver>>,
+    state: axum::extract::State<Arc<Solver>>,
     auction: axum::extract::Json<dto::Auction>,
 ) -> (
     axum::http::StatusCode,

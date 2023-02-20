@@ -5,12 +5,14 @@ use {
 };
 
 /// A solution to an auction.
+#[derive(Default)]
 pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
 }
 
+/// A trade which executes an order as part of this solution.
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -18,6 +20,7 @@ pub enum Trade {
 
 /// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
+#[derive(Default)]
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 
 impl ClearingPrices {
@@ -36,7 +39,7 @@ pub struct Fulfillment {
 impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
-    pub fn new(order: order::Order, executed: U256) -> Option<Self> {
+    pub fn partial(order: order::Order, executed: U256) -> Option<Self> {
         let fill = match order.side {
             order::Side::Buy => order.buy.amount,
             order::Side::Sell => order.sell.amount,
@@ -79,12 +82,15 @@ impl Fulfillment {
     }
 }
 
+/// A trade of an order that was created specifically for this solution
+/// providing just-in-time liquidity for other regular orders.
 pub struct JitTrade {
     pub order: order::JitOrder,
     pub executed: U256,
 }
 
-/// A interaction included within an solution.
+/// An interaction that is required to execute a solution by acquiring liquidity
+/// or running some custom logic.
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -101,18 +107,27 @@ pub struct LiquidityInteraction {
     pub internalize: bool,
 }
 
-/// A custom interaction
+/// An arbitrary interaction returned by the solver, which needs to be executed
+/// to fulfill the trade.
 pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
     pub calldata: Vec<u8>,
-    pub inputs: Vec<eth::Asset>,
-    pub outputs: Vec<eth::Asset>,
+    /// Indicated whether the interaction should be internalized (skips its
+    /// execution as an optimization). This is only allowed under certain
+    /// conditions.
     pub internalize: bool,
+    /// Documents inputs of the interaction to determine whether internalization
+    /// is actually legal.
+    pub inputs: Vec<eth::Asset>,
+    /// Documents outputs of the interaction to determine whether
+    /// internalization is actually legal.
+    pub outputs: Vec<eth::Asset>,
+    /// Allowances required to successfully execute the interaction.
     pub allowances: Vec<Allowance>,
 }
 
-/// Approval required to make some custom interaction possible.
+/// Approval required to make some `[CustomInteraction]` possible.
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
