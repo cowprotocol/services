@@ -67,6 +67,7 @@ struct EstimatorEntry {
 /// Network options needed for creating price estimators.
 pub struct Network {
     pub web3: Web3,
+    pub simulation_web3: Option<Web3>,
     pub name: String,
     pub chain_id: u64,
     pub native_token: H160,
@@ -99,9 +100,12 @@ impl<'a> PriceEstimatorFactory<'a> {
             .trade_simulator
             .map(|kind| -> Result<TradeVerifier> {
                 let simulator = match kind {
-                    TradeValidatorKind::Web3 => {
-                        Arc::new(network.web3.clone()) as Arc<dyn CodeSimulating>
-                    }
+                    TradeValidatorKind::Web3 => Arc::new(
+                        network
+                            .simulation_web3
+                            .clone()
+                            .context("missing simulation node configuration")?,
+                    ) as Arc<dyn CodeSimulating>,
                     TradeValidatorKind::Tenderly => {
                         let tenderly_api = shared_args
                             .tenderly
