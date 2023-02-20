@@ -2,13 +2,20 @@
 //! serialized.
 
 use {
-    crate::tests::{self, legacy},
+    crate::tests::{self, legacy, mock},
     serde_json::json,
 };
 
 #[tokio::test]
 async fn test() {
-    let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
+    let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::glob(
+            "solve\
+             [?]instance_name=*_Mainnet_1_0\
+               &time_limit=*\
+               &max_nr_exec_orders=100\
+               &use_internal_buffers=true"
+        ),
         req: json!({
             "amms": {},
             "metadata": {
