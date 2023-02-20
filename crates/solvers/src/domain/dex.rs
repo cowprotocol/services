@@ -129,7 +129,7 @@ pub struct Allowance {
     pub amount: Amount,
 }
 
-/// A token amount
+/// A token amount.
 #[derive(Debug)]
 pub struct Amount(U256);
 
