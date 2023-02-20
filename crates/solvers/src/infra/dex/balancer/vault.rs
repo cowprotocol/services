@@ -1,16 +1,13 @@
-//! Balancer boundary module. This contains encoding logic for the Balancer V2
-//! vault contract. The reason this was moved to a boundary module is that it
-//! currently requires `web3` as dependencies (not to mention needing to
-//! instantiate a "dummy" web3 instance) for ABI encoding, which should **not**
-//! be necessary at all. The swap parameter types are here instead of the domain
-//! as they should be generated with the contract bindings (and are more like
-//! DTOs than domain objects anyway).
+//! This module contains logic for encoding swaps with the Balanver V2 Smart
+//! Contract. It serves as a thin wrapper around the `ethcontract` generated
+//! bindings, defining structs with named fields instead of using tuples.
 
-pub use ethcontract::I256;
 use {
     crate::domain::{dex, eth},
-    contracts::BalancerV2Vault,
-    ethcontract::Bytes,
+    contracts::{
+        ethcontract::{Bytes, I256},
+        BalancerV2Vault,
+    },
     ethereum_types::{H160, H256, U256},
 };
 

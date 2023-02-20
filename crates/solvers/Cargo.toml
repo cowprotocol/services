@@ -37,7 +37,6 @@ toml = "0.7"
 # remove/re-evaluate these dependencies.
 anyhow = { workspace = true }
 contracts = { path = "../contracts" }
-ethcontract = { workspace = true }
 model = { path = "../model" }
 shared = { path = "../shared" }
 solver = { path = "../solver" }

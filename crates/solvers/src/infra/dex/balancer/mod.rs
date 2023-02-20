@@ -1,20 +1,19 @@
 use {
-    crate::{
-        boundary,
-        domain::{auction, dex, eth, order},
-    },
+    crate::domain::{auction, dex, eth, order},
+    contracts::ethcontract::I256,
     ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
 };
 
 mod dto;
+mod vault;
 
 /// Bindings to the Balancer Smart Order Router (SOR) API.
 pub struct Sor {
     client: reqwest::Client,
     endpoint: reqwest::Url,
-    vault: boundary::balancer::Vault,
+    vault: vault::Vault,
     settlement: eth::ContractAddress,
 }
 
@@ -83,13 +82,13 @@ impl Sor {
 
         let call = {
             let kind = match order.side {
-                order::Side::Sell => boundary::balancer::SwapKind::GivenIn,
-                order::Side::Buy => boundary::balancer::SwapKind::GivenOut,
+                order::Side::Sell => vault::SwapKind::GivenIn,
+                order::Side::Buy => vault::SwapKind::GivenOut,
             } as _;
             let swaps = quote
                 .swaps
                 .into_iter()
-                .map(|swap| boundary::balancer::Swap {
+                .map(|swap| vault::Swap {
                     pool_id: swap.pool_id,
                     asset_in_index: swap.asset_in_index.into(),
                     asset_out_index: swap.asset_out_index.into(),
@@ -98,7 +97,7 @@ impl Sor {
                 })
                 .collect();
             let assets = quote.token_addresses.clone();
-            let funds = boundary::balancer::Funds {
+            let funds = vault::Funds {
                 sender: self.settlement.0,
                 from_internal_balance: false,
                 recipient: self.settlement.0,
@@ -115,7 +114,7 @@ impl Sor {
                     } else if *token == quote.token_out {
                         min_output.try_into().unwrap_or_default()
                     } else {
-                        boundary::balancer::I256::zero()
+                        I256::zero()
                     }
                 })
                 .collect();
