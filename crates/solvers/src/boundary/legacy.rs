@@ -369,7 +369,7 @@ fn to_domain_solution(
             .context("solution contains order not part of auction")?
         {
             Order::Protocol(order) => trades.push(solution::Trade::Fulfillment(
-                solution::Fulfillment::new(
+                solution::Fulfillment::partial(
                     (*order).clone(),
                     match order.side {
                         order::Side::Buy => execution.exec_buy_amount,

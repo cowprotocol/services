@@ -38,7 +38,7 @@ pub struct Fulfillment {
 impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
-    pub fn new(order: order::Order, executed: U256) -> Option<Self> {
+    pub fn partial(order: order::Order, executed: U256) -> Option<Self> {
         let fill = match order.side {
             order::Side::Buy => order.buy.amount,
             order::Side::Sell => order.sell.amount,
