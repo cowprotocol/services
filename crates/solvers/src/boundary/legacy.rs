@@ -2,7 +2,6 @@ use {
     crate::{
         boundary,
         domain::{auction, eth, liquidity, order, solution},
-        infra::config::legacy::LegacyConfig,
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -43,9 +42,9 @@ pub struct Legacy {
 }
 
 impl Legacy {
-    pub fn new(config: LegacyConfig) -> Self {
-        let solve_path = config.solve_endpoint.path().to_owned();
-        let mut base = config.solve_endpoint;
+    pub fn new(config: crate::domain::legacy::Config) -> Self {
+        let solve_path = config.endpoint.path().to_owned();
+        let mut base = config.endpoint;
         base.set_path("");
 
         Self {

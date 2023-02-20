@@ -4,16 +4,25 @@
 //! new HTTP API, we provide a solver "wrapper" that just marshals the API
 //! request types to and from the legacy format.
 
-use crate::{
-    boundary,
-    domain::{auction, solution},
-    infra::config::legacy::LegacyConfig,
+use {
+    crate::{
+        boundary,
+        domain::{auction, eth, solution},
+    },
+    reqwest::Url,
 };
+
+pub struct Config {
+    pub weth: eth::WethAddress,
+    pub solver_name: String,
+    pub chain_id: eth::ChainId,
+    pub endpoint: Url,
+}
 
 pub struct Legacy(boundary::legacy::Legacy);
 
 impl Legacy {
-    pub fn new(config: LegacyConfig) -> Self {
+    pub fn new(config: Config) -> Self {
         Self(boundary::legacy::Legacy::new(config))
     }
 

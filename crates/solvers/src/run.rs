@@ -25,7 +25,7 @@ pub async fn run(args: impl Iterator<Item = String>, bind: Option<oneshot::Sende
             })
         }
         cli::Command::Legacy => {
-            let config = config::legacy::file::load(&args.config).await;
+            let config = config::legacy::load(&args.config).await;
             Solver::Legacy(legacy::Legacy::new(config))
         }
     };
