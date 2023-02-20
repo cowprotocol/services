@@ -59,10 +59,7 @@ impl Slippage {
     /// accepted, i.e. a swap can return 5% less than promised). Returns `None`
     /// if an invalid value outside of the range [0.0, 1.0] is specified.
     pub fn new(value: f64) -> Option<Self> {
-        if !(0.0..=1.0).contains(&value) {
-            return None;
-        }
-        Some(Self(value))
+        (0.0..=1.0).contains(&value).then_some(Self(value))
     }
 
     /// Adds slippage to the specified token amount. This can be used to account
