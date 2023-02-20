@@ -122,7 +122,7 @@ pub trait SolverMetrics: Send + Sync {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Storage {
     /// Number of trades settled
-    #[metric(name = "trade_counter_seconds", labels("solver_type", "trade_type"))]
+    #[metric(name = "trade_counter", labels("solver_type", "trade_type"))]
     trade_counter: IntCounterVec,
     /// Counter for the number of seconds between creation and settlement of an
     /// order
