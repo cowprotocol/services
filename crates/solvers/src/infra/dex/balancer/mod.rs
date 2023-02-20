@@ -33,7 +33,7 @@ impl Sor {
         Self {
             client: reqwest::Client::new(),
             endpoint: config.endpoint,
-            vault: boundary::balancer::Vault::new(config.vault),
+            vault: vault::Vault::new(config.vault),
             settlement: config.settlement,
         }
     }
@@ -119,9 +119,9 @@ impl Sor {
                     if *token == quote.token_in {
                         // Use positive swap limit for sell amounts (that is, maximum
                         // amount that can be transferred in)
-                        boundary::balancer::I256::try_from(max_input).unwrap_or_default()
+                        I256::try_from(max_input).unwrap_or_default()
                     } else if *token == quote.token_out {
-                        boundary::balancer::I256::try_from(min_output)
+                        I256::try_from(min_output)
                             .unwrap_or_default()
                             .checked_neg()
                             .expect("positive integer can't overflow negation")

@@ -9,7 +9,7 @@ pub struct Contracts {
 
 impl Contracts {
     pub fn for_chain(chain: eth::ChainId) -> Self {
-        let a = |contract: &ethcontract::Contract| {
+        let a = |contract: &contracts::ethcontract::Contract| {
             eth::ContractAddress(
                 contract
                     .networks

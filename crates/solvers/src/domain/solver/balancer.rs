@@ -1,16 +1,13 @@
 //! A simple DEX solver that matches orders directly with swaps from the
 //! Balancer SOR API.
 
-use {
-    crate::{
-        domain::{
-            auction,
-            dex::{self, slippage},
-            solution,
-        },
-        infra,
+use crate::{
+    domain::{
+        auction,
+        dex::{self, slippage},
+        solution,
     },
-    futures::{future::BoxFuture, FutureExt},
+    infra,
 };
 
 pub struct Balancer {
@@ -22,7 +19,7 @@ pub struct Balancer {
 }
 
 impl Balancer {
-    async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+    pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         // TODO: order prioritization, skip liquidity orders, concurrency.
         let prices = slippage::Prices::for_auction(&auction);
 
@@ -46,11 +43,5 @@ impl Balancer {
         }
 
         solutions
-    }
-}
-
-impl super::Solver for Balancer {
-    fn solve(&self, auction: auction::Auction) -> BoxFuture<Vec<solution::Solution>> {
-        self.solve(auction).boxed()
     }
 }

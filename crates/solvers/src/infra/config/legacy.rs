@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, legacy},
+        domain::{eth, solver::legacy},
         infra::contracts,
         util::serialize,
     },
