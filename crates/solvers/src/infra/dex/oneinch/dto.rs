@@ -131,11 +131,11 @@ impl Slippage {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Swap {
-    // Amount of source token.
+    /// Amount of source token.
     #[serde_as(as = "serialize::U256")]
     pub from_token_amount: U256,
 
-    // Expected amount of destination token.
+    /// Expected amount of destination token.
     #[serde_as(as = "serialize::U256")]
     pub to_token_amount: U256,
 
@@ -148,10 +148,10 @@ pub struct Swap {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tx {
-    // Amount of source token.
+    /// Amount of source token.
     pub to: H160,
 
-    // Expected amount of destination token.
+    /// Expected amount of destination token.
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
 }
