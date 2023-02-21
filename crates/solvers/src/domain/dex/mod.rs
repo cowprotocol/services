@@ -165,4 +165,8 @@ impl Amount {
     pub fn new(value: U256) -> Self {
         Self(value)
     }
+
+    pub fn get(&self) -> U256 {
+        self.0
+    }
 }
