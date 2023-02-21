@@ -73,6 +73,7 @@ pub fn start_old_driver(
         "solver".to_string(),
         format!("--solver-account={}", hex::encode(private_key)),
         "--settle-interval=1".to_string(),
+        "--transaction-submission-nodes=http://localhost:8545".to_string(),
     ]
     .into_iter()
     .chain(api_autopilot_solver_arguments(contracts).chain(extra_args.iter().cloned()));
