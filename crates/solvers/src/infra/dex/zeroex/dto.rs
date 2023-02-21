@@ -95,19 +95,19 @@ pub struct Quote {
     /// The address of the contract to call in order to execute the swap.
     pub to: H160,
 
-    #[serde_as(as = "serialize::Hex")]
     /// The swap calldata.
+    #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
 
     /// The Ether value to use in order to execute the swap.
     #[serde_as(as = "serialize::U256")]
     pub value: U256,
 
-    // The amount of sell token (in atoms) that would be sold in this swap.
+    /// The amount of sell token (in atoms) that would be sold in this swap.
     #[serde_as(as = "serialize::U256")]
     pub sell_amount: U256,
 
-    // The amount of buy token (in atoms) that would be bought in this swap.
+    /// The amount of buy token (in atoms) that would be bought in this swap.
     #[serde_as(as = "serialize::U256")]
     pub buy_amount: U256,
 
