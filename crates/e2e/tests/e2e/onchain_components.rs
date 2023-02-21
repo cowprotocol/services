@@ -2,10 +2,7 @@ use {
     crate::deploy::Contracts,
     contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler},
     ethcontract::{Account, Bytes, H160, H256, U256},
-    shared::{
-        ethrpc::Web3,
-        sources::uniswap_v2::{pair_provider::PairProvider, UNISWAP_INIT},
-    },
+    shared::ethrpc::Web3,
     web3::signing::{Key as _, SecretKeyRef},
 };
 
@@ -180,12 +177,5 @@ pub async fn deploy_token_with_weth_uniswap_pool(
     MintableToken {
         contract: token,
         minter,
-    }
-}
-
-pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
-    PairProvider {
-        factory: contracts.uniswap_factory.address(),
-        init_code_digest: UNISWAP_INIT,
     }
 }

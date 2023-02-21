@@ -1,12 +1,11 @@
 use {
     crate::{
         onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-        services::{create_orderbook_api, OrderbookServices, API_HOST},
+        services::{solvable_orders, wait_for_condition, API_HOST},
         tx,
-        tx_value,
     },
     ethcontract::{
-        prelude::{Account, Address, PrivateKey, U256},
+        prelude::{Account, PrivateKey, U256},
         transaction::TransactionBuilder,
     },
     model::{
@@ -25,11 +24,13 @@ use {
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
-    shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining},
+    shared::ethrpc::Web3,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
 const TRADER_PK: [u8; 32] = [1; 32];
+const SOLVER_PK: [u8; 32] = [2; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 const QUOTE_ENDPOINT: &str = "/api/v1/quote/";
@@ -41,17 +42,29 @@ async fn local_node_order_cancellation() {
 }
 
 async fn order_cancellation(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,shared=debug");
+    shared::tracing::initialize_reentrant(
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
+    );
     shared::exit_process_on_panic::set_panic_hook();
 
+    crate::services::clear_database().await;
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let solver_account = Account::Local(accounts[0], None);
+    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
-    TransactionBuilder::new(web3.clone())
-        .value(to_wei(1))
-        .to(trader.address())
+    for account in [&trader, &solver] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(account.address())
+            .send()
+            .await
+            .unwrap();
+    }
+
+    contracts
+        .gp_authenticator
+        .add_solver(solver.address())
         .send()
         .await
         .unwrap();
@@ -61,28 +74,24 @@ async fn order_cancellation(web3: Web3) {
         &web3,
         &contracts,
         WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
+            token_amount: to_wei(1000),
+            weth_amount: to_wei(1000),
         },
     )
     .await;
-    token.mint(trader.address(), to_wei(100)).await;
+    token.mint(trader.address(), to_wei(10)).await;
     let token = token.contract;
 
     let weth = contracts.weth.clone();
-    tx_value!(solver_account, to_wei(100_000), weth.deposit());
 
     // Approve GPv2 for trading
-    tx!(trader, token.approve(contracts.allowance, to_wei(100)));
+    tx!(trader, token.approve(contracts.allowance, to_wei(10)));
 
-    let OrderbookServices {
-        maintenance,
-        solvable_orders_cache,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
+    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::start_api(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
 
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
+    let client = reqwest::Client::default();
 
     let place_order = |salt: u8| {
         let client = &client;
@@ -91,7 +100,7 @@ async fn order_cancellation(web3: Web3) {
             sell_token: token.address(),
             buy_token: weth.address(),
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: to_wei(10) },
+                sell_amount: SellAmount::AfterFee { value: to_wei(1) },
             },
             app_data: AppId([salt; 32]),
             ..Default::default()
@@ -190,12 +199,6 @@ async fn order_cancellation(web3: Web3) {
         }
     };
 
-    let get_auction = || async {
-        maintenance.run_maintenance().await.unwrap();
-        solvable_orders_cache.update(0).await.unwrap();
-        create_orderbook_api().get_auction().await.unwrap().auction
-    };
-
     let get_order = |order_uid: OrderUid| {
         let client = &client;
         async move {
@@ -216,7 +219,11 @@ async fn order_cancellation(web3: Web3) {
         place_order(1).await,
         place_order(2).await,
     ];
-    assert_eq!(get_auction().await.orders.len(), 3);
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 3
+    })
+    .await
+    .unwrap();
     for order_uid in &order_uids {
         assert_eq!(
             get_order(*order_uid).await.metadata.status,
@@ -226,7 +233,11 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
-    assert_eq!(get_auction().await.orders.len(), 2);
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 2
+    })
+    .await
+    .unwrap();
     assert_eq!(
         get_order(order_uids[0]).await.metadata.status,
         OrderStatus::Cancelled,
@@ -234,7 +245,11 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
-    assert_eq!(get_auction().await.orders.len(), 0);
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 0
+    })
+    .await
+    .unwrap();
     assert_eq!(
         get_order(order_uids[1]).await.metadata.status,
         OrderStatus::Cancelled,

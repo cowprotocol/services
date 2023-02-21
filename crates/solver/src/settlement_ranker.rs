@@ -60,7 +60,7 @@ impl SettlementRanker {
 
                     // Do not continue with settlements that are empty or only liquidity orders.
                     if !solver_settlements::has_user_order(&settlement) {
-                        tracing::debug!(
+                        tracing::trace!(
                             solver_name = %name,
                             "settlement(s) filtered containing only liquidity orders",
                         );

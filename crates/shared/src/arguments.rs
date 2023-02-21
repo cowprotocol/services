@@ -315,6 +315,10 @@ pub struct Arguments {
     /// Override address of the settlement contract.
     #[clap(long, env)]
     pub native_token_address: Option<H160>,
+
+    /// Override address of the balancer vault contract.
+    #[clap(long, env)]
+    pub balancer_v2_vault_address: Option<H160>,
 }
 
 pub fn display_secret_option<T>(
@@ -460,6 +464,11 @@ impl Display for Arguments {
             f,
             "native_token_address",
             &self.native_token_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "balancer_v2_vault_address",
+            &self.balancer_v2_vault_address.map(|a| format!("{a:?}")),
         )?;
         display_list(
             f,

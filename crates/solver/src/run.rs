@@ -34,6 +34,7 @@ use {
         },
     },
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    ethcontract::errors::DeployError,
     futures::{future, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
@@ -102,7 +103,16 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
-    let vault_contract = BalancerV2Vault::deployed(&web3).await.ok();
+    let vault_contract = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
+    };
     let native_token = match args.shared.native_token_address {
         Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
         None => WETH9::deployed(&web3)
@@ -461,16 +471,14 @@ pub async fn run(args: Arguments) {
             }
         }
     }
-    let tenderly_api = args
-        .shared
-        .tenderly
-        .get_api_instance(&http_factory)
-        .expect("failed to create Tenderly API");
     let access_list_estimator = Arc::new(
         crate::settlement_access_list::create_priority_estimator(
             &web3,
             args.access_list_estimators.as_slice(),
-            tenderly_api.clone(),
+            args.shared
+                .tenderly
+                .get_api_instance(&http_factory, "access_lists".to_owned())
+                .expect("failed to create Tenderly API"),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -513,7 +521,10 @@ pub async fn run(args: Arguments) {
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
-        tenderly_api,
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "driver".to_owned())
+            .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
     );
