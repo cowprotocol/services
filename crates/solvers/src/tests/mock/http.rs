@@ -1,22 +1,66 @@
 use std::{
+    fmt::{self, Debug, Formatter},
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+pub enum Path {
+    Any,
+    Exact(String),
+    Glob(glob::Pattern),
+}
+
+impl Path {
+    pub fn exact(s: impl ToString) -> Self {
+        Self::Exact(s.to_string())
+    }
+
+    pub fn glob(s: impl AsRef<str>) -> Self {
+        Self::Glob(glob::Pattern::new(s.as_ref()).unwrap())
+    }
+}
+
+impl PartialEq<Path> for String {
+    fn eq(&self, path: &Path) -> bool {
+        match path {
+            Path::Any => true,
+            Path::Exact(exact) => exact == self,
+            Path::Glob(glob) => glob.matches(self),
+        }
+    }
+}
+
+impl Debug for Path {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Path::Any => f.debug_tuple("Any").finish(),
+            Path::Exact(exact) => f
+                .debug_tuple("Exact")
+                .field(&format_args!("{exact}"))
+                .finish(),
+            Path::Glob(glob) => f
+                .debug_tuple("Glob")
+                .field(&format_args!("{}", glob.as_str()))
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Expectation {
     Get {
-        path: String,
+        path: Path,
         res: serde_json::Value,
     },
     Post {
-        path: String,
+        path: Path,
         req: serde_json::Value,
         res: serde_json::Value,
     },
 }
 
-/// Set up an mock external DEX or DEX aggregator API.
+/// Set up an mock external HTTP API.
 pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
     let state = Arc::new(Mutex::new(expectations));
     let app = axum::Router::new()
@@ -39,7 +83,7 @@ pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
             ),
         )
         // Annoying, but `axum` doesn't seem to match `/` with the above route,
-        // so explicitely mount `/`.
+        // so explicitly mount `/`.
         .route(
             "/",
             axum::routing::get(
@@ -99,6 +143,8 @@ fn post(
 
 fn full_path(path: Option<String>, query: Option<String>) -> String {
     let path = path.unwrap_or_default();
-    let query = query.unwrap_or_default();
-    format!("{path}{query}")
+    match query {
+        Some(query) => format!("{path}?{query}"),
+        None => path,
+    }
 }

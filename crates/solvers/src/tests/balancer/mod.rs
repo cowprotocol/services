@@ -8,7 +8,7 @@ mod out_of_price;
 pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
-endpoint = 'http://{solver_addr}/'
+endpoint = 'http://{solver_addr}/sor'
         ",
     ))
 }

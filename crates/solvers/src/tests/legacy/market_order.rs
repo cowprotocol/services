@@ -1,14 +1,22 @@
 //! Simple test case that verifies the solver can handle market orders.
 
 use {
-    crate::tests::{self, legacy},
+    crate::tests::{self, legacy, mock},
     serde_json::json,
 };
 
-/// Tests that orders get marked as "mandatory" in `/quote` requests.
+/// Tests that orders get marked as "mandatory" in `/quote` requests and that
+/// the HTTP query does not contain the `auction_id` parameter.
 #[tokio::test]
-async fn test_quoting() {
-    let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
+async fn quote() {
+    let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::glob(
+            "solve\
+             [?]instance_name=*_Mainnet_1_0\
+               &time_limit=*\
+               &max_nr_exec_orders=100\
+               &use_internal_buffers=true"
+        ),
         req: json!({
             "amms": {
                 "0x97b744df0b59d93a866304f97431d8efad29a08d": {
@@ -198,8 +206,16 @@ async fn test_quoting() {
 }
 
 #[tokio::test]
-async fn test_solving() {
-    let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
+async fn solve() {
+    let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::glob(
+            "solve\
+             [?]instance_name=*_Mainnet_1_1234\
+               &time_limit=*\
+               &max_nr_exec_orders=100\
+               &use_internal_buffers=true\
+               &auction_id=1234",
+        ),
         req: json!({
             "amms": {
                 "0x97b744df0b59d93a866304f97431d8efad29a08d": {

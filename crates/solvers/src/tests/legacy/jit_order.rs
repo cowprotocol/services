@@ -2,13 +2,14 @@
 //! serialized.
 
 use {
-    crate::tests::{self, legacy},
+    crate::tests::{self, legacy, mock},
     serde_json::json,
 };
 
 #[tokio::test]
 async fn test() {
-    let legacy_solver = tests::legacy::setup(vec![legacy::Expectation {
+    let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
         req: json!({
             "amms": {},
             "metadata": {
