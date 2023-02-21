@@ -370,11 +370,16 @@ pub async fn main(args: arguments::Arguments) {
         other => Some(other.unwrap()),
     };
 
+    let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
         factory::Network {
             web3: web3.clone(),
+            simulation_web3,
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
