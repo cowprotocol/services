@@ -153,13 +153,18 @@ pub async fn main(args: arguments::Arguments) {
             .await
             .expect("load native token contract"),
     };
-    let vault = match BalancerV2Vault::deployed(&web3).await {
-        Ok(contract) => Some(contract),
-        Err(DeployError::NotFound(_)) => {
-            tracing::warn!("balancer contracts are not deployed on this network");
-            None
-        }
-        Err(err) => panic!("failed to get balancer vault contract: {err}"),
+    let vault = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => {
+                tracing::warn!("balancer contracts are not deployed on this network");
+                None
+            }
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
     };
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,

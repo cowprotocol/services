@@ -34,6 +34,7 @@ use {
         },
     },
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    ethcontract::errors::DeployError,
     futures::{future, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
@@ -102,7 +103,16 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
-    let vault_contract = BalancerV2Vault::deployed(&web3).await.ok();
+    let vault_contract = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
+    };
     let native_token = match args.shared.native_token_address {
         Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
         None => WETH9::deployed(&web3)

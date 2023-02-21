@@ -4,65 +4,24 @@ use {
             deploy_token_with_weth_uniswap_pool,
             gnosis_safe_eip1271_signature,
             to_wei,
-            uniswap_pair_provider,
             WethPoolConfig,
         },
-        services::{
-            create_order_converter,
-            create_orderbook_api,
-            wait_for_solvable_orders,
-            OrderbookServices,
-            API_HOST,
-        },
+        services::{solvable_orders, wait_for_condition, API_HOST},
     },
-    contracts::{
-        GnosisSafe,
-        GnosisSafeCompatibilityFallbackHandler,
-        GnosisSafeProxy,
-        IUniswapLikeRouter,
-    },
-    ethcontract::{
-        transaction::TransactionBuilder,
-        Account,
-        Address,
-        Bytes,
-        PrivateKey,
-        H160,
-        H256,
-        U256,
-    },
+    contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
+    ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     model::{
         order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid},
         signature::hashed_eip712_message,
     },
     secp256k1::SecretKey,
-    shared::{
-        code_fetching::MockCodeFetching,
-        ethrpc::Web3,
-        http_client::HttpClientFactory,
-        maintenance::Maintaining,
-        sources::uniswap_v2::pool_fetching::PoolFetcher,
-    },
-    solver::{
-        liquidity::uniswap_v2::UniswapLikeLiquidity,
-        liquidity_collector::LiquidityCollector,
-        metrics::NoopMetrics,
-        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-        settlement_submission::{
-            submitter::{
-                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-                Strategy,
-            },
-            GlobalTxPool,
-            SolutionSubmitter,
-            StrategyArgs,
-        },
-    },
-    std::{sync::Arc, time::Duration},
+    shared::ethrpc::Web3,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
 const TRADER: [u8; 32] = [1; 32];
+const SOLVER: [u8; 32] = [2; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
@@ -73,17 +32,29 @@ async fn local_node_smart_contract_orders() {
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant(
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
+    );
     shared::exit_process_on_panic::set_panic_hook();
+
+    crate::services::clear_database().await;
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let solver_account = Account::Local(accounts[0], None);
-
+    let solver = Account::Offline(PrivateKey::from_raw(SOLVER).unwrap(), None);
     let user = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
-    TransactionBuilder::new(web3.clone())
-        .value(to_wei(1))
-        .to(user.address())
+    for account in [&user, &solver] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(account.address())
+            .send()
+            .await
+            .unwrap();
+    }
+
+    contracts
+        .gp_authenticator
+        .add_solver(solver.address())
         .send()
         .await
         .unwrap();
@@ -129,16 +100,11 @@ async fn smart_contract_orders(web3: Web3) {
     // Approve GPv2 for trading
     tx_safe!(user, safe, token.approve(contracts.allowance, to_wei(10)));
 
-    let OrderbookServices {
-        block_stream,
-        maintenance,
-        solvable_orders_cache: _solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
+    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::start_api(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
 
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
+    let client = reqwest::Client::default();
 
     // Place Orders
     let order_template = || {
@@ -223,85 +189,25 @@ async fn smart_contract_orders(web3: Web3) {
             .set_pre_signature(Bytes(orders[1].metadata.uid.0.to_vec()), true)
     );
 
-    // Drive orderbook in order to check that the presignature event was received.
-    maintenance.run_maintenance().await.unwrap();
+    // Check that the presignature event was received.
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 2
+    })
+    .await
+    .unwrap();
     assert_eq!(
         order_status(orders[1].metadata.uid).await,
         OrderStatus::Open
     );
 
-    wait_for_solvable_orders(&client, 2).await.unwrap();
-
     // Drive solution
-    let uniswap_pair_provider = uniswap_pair_provider(&contracts);
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
-        contracts.gp_settlement.clone(),
-        web3.clone(),
-        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
-    );
-    let solver = solver::solver::naive_solver(solver_account);
-    let liquidity_collector = LiquidityCollector {
-        liquidity_sources: vec![Box::new(uniswap_liquidity)],
-        base_tokens,
-    };
-    let network_id = web3.net().version().await.unwrap();
-    let submitted_transactions = GlobalTxPool::default();
-    let mut driver = solver::driver::Driver::new(
-        contracts.gp_settlement.clone(),
-        liquidity_collector,
-        vec![solver],
-        Arc::new(web3.clone()),
-        Duration::from_secs(30),
-        contracts.weth.address(),
-        Arc::new(NoopMetrics::default()),
-        web3.clone(),
-        network_id.clone(),
-        Duration::from_secs(30),
-        block_stream,
-        SolutionSubmitter {
-            web3: web3.clone(),
-            contract: contracts.gp_settlement.clone(),
-            gas_price_estimator: Arc::new(web3.clone()),
-            target_confirm_time: Duration::from_secs(1),
-            gas_price_cap: f64::MAX,
-            max_confirm_time: Duration::from_secs(120),
-            retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::new(
-                            SubmissionNodeKind::Broadcast,
-                            web3.clone(),
-                        )],
-                        false,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
-                }),
-            ],
-            access_list_estimator: Arc::new(
-                create_priority_estimator(
-                    &web3,
-                    &[AccessListEstimatorType::Web3],
-                    None,
-                    network_id,
-                )
-                .unwrap(),
-            ),
-            code_fetcher: Arc::new(MockCodeFetching::new()),
-        },
-        create_orderbook_api(),
-        create_order_converter(&web3, contracts.weth.address()),
-        15000000u128,
-        None,
-        None.into(),
-        None,
-        0,
-        Arc::new(MockCodeFetching::new()),
-    );
-    driver.single_run().await.unwrap();
+    tracing::info!("Waiting for trade.");
+    crate::services::start_old_driver(&contracts, &SOLVER, &[]);
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 0
+    })
+    .await
+    .unwrap();
 
     // Check matching
     let balance = token

@@ -2,15 +2,15 @@
 //! swap was found for the specified quoted order.
 
 use {
-    crate::tests::{self, balancer},
+    crate::tests::{self, balancer, mock},
     serde_json::json,
 };
 
 /// Tests that orders get marked as "mandatory" in `/quote` requests.
 #[tokio::test]
 async fn test() {
-    let api = tests::dex::setup(vec![tests::dex::Expectation::Post {
-        path: "".to_owned(),
+    let api = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
         req: json!({
             "sellToken": "0x1111111111111111111111111111111111111111",
             "buyToken": "0x2222222222222222222222222222222222222222",

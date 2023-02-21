@@ -5,14 +5,14 @@
 //! test cases with exuberant limit prices.
 
 use {
-    crate::tests::{self, balancer},
+    crate::tests::{self, balancer, mock},
     serde_json::json,
 };
 
 #[tokio::test]
 async fn sell() {
-    let api = tests::dex::setup(vec![tests::dex::Expectation::Post {
-        path: "".to_owned(),
+    let api = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
         req: json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
@@ -103,8 +103,8 @@ async fn sell() {
 
 #[tokio::test]
 async fn buy() {
-    let api = tests::dex::setup(vec![tests::dex::Expectation::Post {
-        path: "".to_owned(),
+    let api = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
         req: json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",

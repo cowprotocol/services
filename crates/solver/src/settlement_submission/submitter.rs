@@ -330,7 +330,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::debug!("found mined transaction {:?}", receipt);
+                    tracing::debug!("found mined transaction {:?}", receipt.transaction_hash);
                     track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
