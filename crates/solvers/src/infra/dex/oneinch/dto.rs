@@ -4,7 +4,7 @@
 use {
     crate::{
         domain::{auction, dex, order},
-        util::{self, serialize},
+        util::serialize,
     },
     bigdecimal::BigDecimal,
     ethereum_types::{H160, U256},
@@ -117,12 +117,12 @@ pub struct Slippage(BigDecimal);
 impl Slippage {
     /// Returns a 1Inch slippage amount.
     fn from_domain(slippage: &dex::Slippage) -> Self {
-        // 1Inch API expects slippage to be a percentage between 0 and 50% and
-        // only accepts up to 4 digits of precision.
+        // 1Inch API expects slippage to be a percentage only accepts up to 4
+        // digits of precision.
         // <https://github.com/cowprotocol/services/pull/585>
         // <https://github.com/cowprotocol/services/pull/589>
         // <https://github.com/cowprotocol/services/pull/600>
-        Self(util::num::round(&(slippage.as_factor() * BigInt::from(100)), 4).normalized())
+        Self((slippage.round(6).as_factor() * BigInt::from(100)).normalized())
     }
 }
 
@@ -174,6 +174,7 @@ impl Response {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Error {
     pub status_code: i32,
     pub description: String,
