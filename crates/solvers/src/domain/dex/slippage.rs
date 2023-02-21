@@ -54,6 +54,10 @@ impl Limits {
 pub struct Slippage(BigDecimal);
 
 impl Slippage {
+    pub fn one_percent() -> Self {
+        Self("0.01".parse().unwrap())
+    }
+
     /// Adds slippage to the specified token amount. This can be used to account
     /// for negative slippage in a sell amount.
     pub fn add(&self, amount: U256) -> U256 {
@@ -76,6 +80,11 @@ impl Slippage {
 
         let abs = numer.div_ceil(&denom);
         conv::biguint_to_u256(&abs).unwrap_or_else(U256::max_value)
+    }
+
+    /// Returns the relative slippage as a `BigDecimal` factor.
+    pub fn as_factor(&self) -> &BigDecimal {
+        &self.0
     }
 }
 

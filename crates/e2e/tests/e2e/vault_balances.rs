@@ -1,22 +1,10 @@
 use {
     crate::{
-        onchain_components::{
-            deploy_token_with_weth_uniswap_pool,
-            to_wei,
-            uniswap_pair_provider,
-            WethPoolConfig,
-        },
-        services::{
-            create_order_converter,
-            create_orderbook_api,
-            wait_for_solvable_orders,
-            OrderbookServices,
-            API_HOST,
-        },
+        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+        services::{solvable_orders, wait_for_condition, API_HOST},
     },
-    contracts::IUniswapLikeRouter,
     ethcontract::{
-        prelude::{Account, Address, PrivateKey, U256},
+        prelude::{Account, PrivateKey, U256},
         transaction::TransactionBuilder,
     },
     model::{
@@ -24,32 +12,13 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::{
-        code_fetching::MockCodeFetching,
-        ethrpc::Web3,
-        http_client::HttpClientFactory,
-        sources::uniswap_v2::pool_fetching::PoolFetcher,
-    },
-    solver::{
-        liquidity::uniswap_v2::UniswapLikeLiquidity,
-        liquidity_collector::LiquidityCollector,
-        metrics::NoopMetrics,
-        settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-        settlement_submission::{
-            submitter::{
-                public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-                Strategy,
-            },
-            GlobalTxPool,
-            SolutionSubmitter,
-            StrategyArgs,
-        },
-    },
-    std::{sync::Arc, time::Duration},
+    shared::ethrpc::Web3,
+    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
 const TRADER: [u8; 32] = [1; 32];
+const SOLVER: [u8; 32] = [2; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
@@ -60,16 +29,29 @@ async fn local_node_vault_balances() {
 }
 
 async fn vault_balances(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::tracing::initialize_reentrant(
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
+    );
     shared::exit_process_on_panic::set_panic_hook();
+
+    crate::services::clear_database().await;
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let solver_account = Account::Local(accounts[0], None);
+    let solver = Account::Offline(PrivateKey::from_raw(SOLVER).unwrap(), None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
-    TransactionBuilder::new(web3.clone())
-        .value(to_wei(1))
-        .to(trader.address())
+    for account in [&trader, &solver] {
+        TransactionBuilder::new(web3.clone())
+            .value(to_wei(1))
+            .to(account.address())
+            .send()
+            .await
+            .unwrap();
+    }
+
+    contracts
+        .gp_authenticator
+        .add_solver(solver.address())
         .send()
         .await
         .unwrap();
@@ -79,8 +61,8 @@ async fn vault_balances(web3: Web3) {
         &web3,
         &contracts,
         WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
+            token_amount: to_wei(1000),
+            weth_amount: to_wei(1000),
         },
     )
     .await;
@@ -99,15 +81,11 @@ async fn vault_balances(web3: Web3) {
             .set_relayer_approval(trader.address(), contracts.allowance, true)
     );
 
-    let OrderbookServices {
-        block_stream,
-        solvable_orders_cache: _solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
+    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::start_api(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
 
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
+    let client = reqwest::Client::default();
 
     // Place Orders
     let order = OrderBuilder::default()
@@ -132,79 +110,26 @@ async fn vault_balances(web3: Web3) {
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
-
-    wait_for_solvable_orders(&client, 1).await.unwrap();
+    let balance_before = contracts
+        .weth
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
 
     // Drive solution
-    let uniswap_pair_provider = uniswap_pair_provider(&contracts);
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
-        contracts.gp_settlement.clone(),
-        web3.clone(),
-        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
-    );
-    let solver = solver::solver::naive_solver(solver_account);
-    let liquidity_collector = LiquidityCollector {
-        liquidity_sources: vec![Box::new(uniswap_liquidity)],
-        base_tokens,
-    };
-    let network_id = web3.net().version().await.unwrap();
-    let submitted_transactions = GlobalTxPool::default();
-    let mut driver = solver::driver::Driver::new(
-        contracts.gp_settlement.clone(),
-        liquidity_collector,
-        vec![solver],
-        Arc::new(web3.clone()),
-        Duration::from_secs(30),
-        contracts.weth.address(),
-        Arc::new(NoopMetrics::default()),
-        web3.clone(),
-        network_id.clone(),
-        Duration::from_secs(30),
-        block_stream,
-        SolutionSubmitter {
-            web3: web3.clone(),
-            contract: contracts.gp_settlement.clone(),
-            gas_price_estimator: Arc::new(web3.clone()),
-            target_confirm_time: Duration::from_secs(1),
-            gas_price_cap: f64::MAX,
-            max_confirm_time: Duration::from_secs(120),
-            retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
-                solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(PublicMempoolApi::new(
-                        vec![SubmissionNode::new(
-                            SubmissionNodeKind::Broadcast,
-                            web3.clone(),
-                        )],
-                        false,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
-                }),
-            ],
-            access_list_estimator: Arc::new(
-                create_priority_estimator(
-                    &web3,
-                    &[AccessListEstimatorType::Web3],
-                    None,
-                    network_id,
-                )
-                .unwrap(),
-            ),
-            code_fetcher: Arc::new(MockCodeFetching::new()),
-        },
-        create_orderbook_api(),
-        create_order_converter(&web3, contracts.weth.address()),
-        15000000u128,
-        None,
-        None.into(),
-        None,
-        0,
-        Arc::new(MockCodeFetching::new()),
-    );
-    driver.single_run().await.unwrap();
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 1
+    })
+    .await
+    .unwrap();
+    crate::services::start_old_driver(&contracts, &SOLVER, &[]);
+    crate::services::wait_for_condition(Duration::from_secs(10), || async {
+        solvable_orders().await.unwrap() == 0
+    })
+    .await
+    .unwrap();
 
     // Check matching
     let balance = token
@@ -214,11 +139,11 @@ async fn vault_balances(web3: Web3) {
         .expect("Couldn't fetch token balance");
     assert_eq!(balance, U256::zero());
 
-    let balance = contracts
+    let balance_after = contracts
         .weth
         .balance_of(trader.address())
         .call()
         .await
-        .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(8_972_194_924_949_384_291_u128));
+        .unwrap();
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(8));
 }

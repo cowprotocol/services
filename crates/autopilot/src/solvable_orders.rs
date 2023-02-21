@@ -201,8 +201,8 @@ impl SolvableOrdersCache {
                 Ok(balance) => balance,
                 Err(err) => {
                     tracing::warn!(
-                        owner = %query.owner,
-                        token = %query.token,
+                        owner = ?query.owner,
+                        token = ?query.token,
                         source = ?query.source,
                         error = ?err,
                         "failed to get balance"

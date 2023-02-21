@@ -116,13 +116,18 @@ pub async fn run(args: Arguments) {
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
-    let vault = match BalancerV2Vault::deployed(&web3).await {
-        Ok(contract) => Some(contract),
-        Err(DeployError::NotFound(_)) => {
-            tracing::warn!("balancer contracts are not deployed on this network");
-            None
-        }
-        Err(err) => panic!("failed to get balancer vault contract: {err}"),
+    let vault = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => {
+                tracing::warn!("balancer contracts are not deployed on this network");
+                None
+            }
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
     };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
