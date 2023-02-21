@@ -4,9 +4,10 @@ use {
         infra,
         util::serialize,
     },
+    number_conversions::rational_to_big_decimal,
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::HashMap,
+    std::collections::{BTreeMap, HashMap},
 };
 
 impl Auction {
@@ -80,7 +81,23 @@ impl Auction {
                             fee: bigdecimal::BigDecimal::new(3.into(), 3),
                         })
                     }
-                    liquidity::Kind::UniswapV3(_) => todo!(),
+                    liquidity::Kind::UniswapV3(pool) => {
+                        Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
+                            id: liquidity.id.into(),
+                            address: pool.address.0,
+                            gas_estimate: liquidity.gas.0,
+                            tokens: vec![pool.tokens.get().0.into(), pool.tokens.get().1.into()],
+                            sqrt_price: pool.sqrt_price.0,
+                            liquidity: pool.liquidity.0.into(),
+                            tick: pool.tick.0,
+                            liquidity_net: pool
+                                .liquidity_net
+                                .iter()
+                                .map(|(key, value)| (key.0, value.0))
+                                .collect(),
+                            fee: rational_to_big_decimal(&pool.fee.0).unwrap(),
+                        })
+                    }
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
                     liquidity::Kind::BalancerV2Weighted(_) => todo!(),
                     liquidity::Kind::Swapr(_) => todo!(),
@@ -250,8 +267,7 @@ struct ConcentratedLiquidityPool {
     #[serde_as(as = "serialize::U256")]
     liquidity: eth::U256,
     tick: i32,
-    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serialize::U256>")]
-    liquidity_net: HashMap<i32, eth::U256>,
+    liquidity_net: BTreeMap<i32, i128>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }

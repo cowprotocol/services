@@ -1,7 +1,17 @@
 use {
     anyhow::{ensure, Result},
     bigdecimal::{num_bigint::ToBigInt, BigDecimal},
-    num::{bigint::Sign, BigInt, BigRational, BigUint, Zero},
+    num::{
+        bigint::Sign,
+        rational::Ratio,
+        BigInt,
+        BigRational,
+        BigUint,
+        FromPrimitive,
+        Integer,
+        ToPrimitive,
+        Zero,
+    },
     primitive_types::U256,
 };
 
@@ -56,6 +66,12 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
     big_int_to_u256(&big_int).ok()
 }
 
+pub fn rational_to_big_decimal<T: Clone + Integer + ToPrimitive + ToBigInt>(
+    value: &Ratio<T>,
+) -> Option<BigDecimal> {
+    BigDecimal::from_f64(value.to_f64()?)
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, num::One, std::str::FromStr};
@@ -68,6 +84,13 @@ mod tests {
                 U256::from(*val),
             );
         }
+    }
+
+    #[test]
+    fn rational_to_big_decimal_() {
+        let v = Ratio::new(3u16, 1_000u16);
+        let c = rational_to_big_decimal(&v).unwrap();
+        assert_eq!(c, BigDecimal::new(3.into(), 3));
     }
 
     #[test]
