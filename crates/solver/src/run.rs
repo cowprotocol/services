@@ -461,16 +461,14 @@ pub async fn run(args: Arguments) {
             }
         }
     }
-    let tenderly_api = args
-        .shared
-        .tenderly
-        .get_api_instance(&http_factory)
-        .expect("failed to create Tenderly API");
     let access_list_estimator = Arc::new(
         crate::settlement_access_list::create_priority_estimator(
             &web3,
             args.access_list_estimators.as_slice(),
-            tenderly_api.clone(),
+            args.shared
+                .tenderly
+                .get_api_instance(&http_factory, "access_lists".to_owned())
+                .expect("failed to create Tenderly API"),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -513,7 +511,10 @@ pub async fn run(args: Arguments) {
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
-        tenderly_api,
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "driver".to_owned())
+            .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
     );
