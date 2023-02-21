@@ -4,7 +4,6 @@ use {
         onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
         services::{wait_for_condition, API_HOST},
     },
-    clap::Parser,
     ethcontract::{transaction::TransactionBuilder, Account, PrivateKey, H160, H256, U256},
     hex_literal::hex,
     model::{
@@ -14,7 +13,6 @@ use {
     reqwest::Url,
     secp256k1::SecretKey,
     shared::{ethrpc::Web3, sources::uniswap_v2::UNISWAP_INIT},
-    sqlx::{Connection, PgConnection},
     std::{io::Write, time::Duration},
     tokio::task::JoinHandle,
     web3::signing::SecretKeyRef,
@@ -28,15 +26,12 @@ async fn local_node_test() {
 
 async fn test(web3: Web3) {
     shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,driver=debug,autopilot=debug,solvers=debug",
+        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
+         orderbook::api::request_summary=off",
     );
     shared::exit_process_on_panic::set_panic_hook();
 
-    tracing::info!("Clearing database.");
-    let mut db = PgConnection::connect("postgresql://").await.unwrap();
-    let mut db = db.begin().await.unwrap();
-    database::clear_DANGER_(&mut db).await.unwrap();
-    db.commit().await.unwrap();
+    crate::services::clear_database().await;
 
     tracing::info!("Setting up chain state.");
     let contracts = crate::deploy::deploy(&web3).await.unwrap();
@@ -85,23 +80,18 @@ async fn test(web3: Web3) {
         &SOLVER_PRIVATE_KEY,
     );
     let driver_url: Url = "http://localhost:11088/test_solver".parse().unwrap();
-    start_autopilot(&contracts, driver_url);
-    start_orderbook(&contracts);
+
+    let autopilot_args = &[
+        "--enable-colocation".to_string(),
+        format!("--drivers={driver_url}"),
+    ];
+    crate::services::start_autopilot(&contracts, autopilot_args);
+    crate::services::start_api(&contracts, &[]);
+    crate::services::wait_for_api_to_come_up().await;
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .unwrap();
-
-    tracing::info!("Waiting for API to come up.");
-    let is_up = || async {
-        http.get(format!("{API_HOST}/api/v1/version"))
-            .send()
-            .await
-            .is_ok()
-    };
-    wait_for_condition(Duration::from_secs(10), is_up)
-        .await
         .unwrap();
 
     tracing::info!("Placing order");
@@ -222,46 +212,4 @@ mempool = "public"
         driver::run::run(args.into_iter(), driver::infra::time::Now::Real, None).await;
     };
     tokio::task::spawn(task)
-}
-
-fn start_autopilot(contracts: &Contracts, driver: Url) -> JoinHandle<()> {
-    let args = [
-        "autopilot".to_string(),
-        "--network-block-interval=10".to_string(),
-        "--auction-update-interval=1".to_string(),
-        "--enable-colocation".to_string(),
-        format!("--drivers={driver}"),
-    ]
-    .into_iter()
-    .chain(autopilot_orderbook_shared_arguments(contracts));
-    let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
-    tokio::task::spawn(autopilot::main(args))
-}
-
-fn start_orderbook(contracts: &Contracts) -> JoinHandle<()> {
-    let args = ["orderbook".to_string()]
-        .into_iter()
-        .chain(autopilot_orderbook_shared_arguments(contracts));
-    let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-    tokio::task::spawn(orderbook::run::run(args))
-}
-
-fn autopilot_orderbook_shared_arguments(contracts: &Contracts) -> impl Iterator<Item = String> {
-    [
-        "--baseline-sources=None".to_string(),
-        format!(
-            "--custom-univ2-baseline-sources={:?}|{:?}",
-            contracts.uniswap_router.address(),
-            H256(UNISWAP_INIT),
-        ),
-        "--price-estimators=Baseline".to_string(),
-        "--native-price-estimators=Baseline".to_string(),
-        "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
-        format!(
-            "--settlement-contract-address={:?}",
-            contracts.gp_settlement.address()
-        ),
-        format!("--native-token-address={:?}", contracts.weth.address()),
-    ]
-    .into_iter()
 }

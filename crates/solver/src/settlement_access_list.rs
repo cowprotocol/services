@@ -101,7 +101,7 @@ pub async fn estimate_settlement_access_list(
     }))
     .await?;
 
-    tracing::debug!(
+    tracing::trace!(
         ?settlement,
         ?partial_access_lists,
         "generated partial access lists"
@@ -131,7 +131,7 @@ pub async fn estimate_settlement_access_list(
         tx.clone(),
         Some(partial_access_list.clone()),
     );
-    tracing::debug!(?settlement, %simulation_link, "generating access list for settlement");
+    tracing::trace!(?settlement, %simulation_link, "generating access list for settlement");
 
     // Generate the final access list
     estimator
