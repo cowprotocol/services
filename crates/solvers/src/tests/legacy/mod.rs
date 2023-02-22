@@ -1,6 +1,7 @@
 use {crate::tests, std::net::SocketAddr};
 
 mod attaching_approvals;
+mod concentrated_liquidity;
 mod jit_order;
 mod market_order;
 
