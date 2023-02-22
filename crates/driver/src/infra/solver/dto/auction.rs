@@ -7,7 +7,7 @@ use {
     number_conversions::rational_to_big_decimal,
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::{BTreeMap, HashMap},
+    std::collections::HashMap,
 };
 
 impl Auction {
@@ -88,7 +88,7 @@ impl Auction {
                             gas_estimate: liquidity.gas.0,
                             tokens: vec![pool.tokens.get().0.into(), pool.tokens.get().1.into()],
                             sqrt_price: pool.sqrt_price.0,
-                            liquidity: pool.liquidity.0.into(),
+                            liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
                             liquidity_net: pool
                                 .liquidity_net
@@ -264,10 +264,11 @@ struct ConcentratedLiquidityPool {
     tokens: Vec<eth::H160>,
     #[serde_as(as = "serialize::U256")]
     sqrt_price: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    liquidity: eth::U256,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    liquidity: u128,
     tick: i32,
-    liquidity_net: BTreeMap<i32, i128>,
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
+    liquidity_net: HashMap<i32, i128>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }

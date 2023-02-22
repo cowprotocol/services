@@ -8,8 +8,8 @@ use {
     ethereum_types::{H160, U256},
     itertools::Itertools as _,
     serde::Deserialize,
-    serde_with::serde_as,
-    std::collections::{BTreeMap, HashMap},
+    serde_with::{serde_as, DisplayFromStr},
+    std::collections::HashMap,
 };
 
 impl Auction {
@@ -327,9 +327,11 @@ struct ConcentratedLiquidityPool {
     tokens: Vec<H160>,
     #[serde_as(as = "serialize::U256")]
     sqrt_price: U256,
+    #[serde_as(as = "DisplayFromStr")]
     liquidity: u128,
     tick: i32,
-    liquidity_net: BTreeMap<i32, i128>,
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    liquidity_net: HashMap<i32, i128>,
     fee: BigDecimal,
 }
 
