@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{BalanceFetching, TransferSimulationError},
-        bad_token::BadTokenDetecting,
+        bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
@@ -87,7 +87,7 @@ pub enum PartialValidationError {
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
     UnsupportedSignature,
-    UnsupportedToken(H160),
+    UnsupportedToken { token: H160, reason: String },
     Other(anyhow::Error),
 }
 
@@ -157,8 +157,11 @@ impl From<FindQuoteError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(token)) => {
-                ValidationError::Partial(PartialValidationError::UnsupportedToken(token))
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
+                token,
+                reason,
+            }) => {
+                ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
             CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
                 ValidationError::ZeroAmount
@@ -379,14 +382,13 @@ impl OrderValidating for OrderValidator {
         }
 
         for &token in &[order.sell_token, order.buy_token] {
-            if !self
+            if let TokenQuality::Bad { reason } = self
                 .bad_token_detector
                 .detect(token)
                 .await
                 .map_err(PartialValidationError::Other)?
-                .is_good()
             {
-                return Err(PartialValidationError::UnsupportedToken(token));
+                return Err(PartialValidationError::UnsupportedToken { token, reason });
             }
         }
 
@@ -1587,7 +1589,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ValidationError::Partial(
-                PartialValidationError::UnsupportedToken(_)
+                PartialValidationError::UnsupportedToken { .. }
             ))
         ));
     }
@@ -2056,8 +2058,11 @@ mod tests {
             ValidationError::Other(_)
         );
         assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(Default::default())),
-            ValidationError::Partial(PartialValidationError::UnsupportedToken(_))
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
+                token: Default::default(),
+                reason: Default::default()
+            }),
+            ValidationError::Partial(PartialValidationError::UnsupportedToken { .. })
         );
         assert_calc_error_matches!(
             CalculateQuoteError::Price(PriceEstimationError::ZeroAmount),

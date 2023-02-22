@@ -54,14 +54,14 @@ impl BadTokenDetecting for ListBasedDetector {
 
         if self.deny_list.contains(&token) {
             return Ok(TokenQuality::Bad {
-                reason: "deny listed".to_string(),
+                reason: "token is explicitly deny listed".to_string(),
             });
         }
 
         match &self.strategy {
             UnknownTokenStrategy::Allow => Ok(TokenQuality::Good),
             UnknownTokenStrategy::Deny => Ok(TokenQuality::Bad {
-                reason: "default deny".to_string(),
+                reason: "token is not allow listed".to_string(),
             }),
             UnknownTokenStrategy::Forward(inner) => inner.detect(token).await,
         }
