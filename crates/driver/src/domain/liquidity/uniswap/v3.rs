@@ -1,5 +1,8 @@
 use {
-    crate::domain::{eth, liquidity},
+    crate::{
+        boundary,
+        domain::{eth, liquidity},
+    },
     std::collections::BTreeMap,
 };
 
@@ -48,3 +51,17 @@ pub struct LiquidityNet(pub i128);
 
 #[derive(Clone, Debug)]
 pub struct Fee(pub num::rational::Ratio<u32>);
+
+impl Pool {
+    /// Encodes a pool swap as an interaction. Returns `None` if the swap
+    /// parameters are invalid for the pool, specifically if the input and
+    /// output tokens don't correspond to the pool's token pair.
+    pub fn swap(
+        &self,
+        input: &liquidity::MaxInput,
+        output: &liquidity::ExactOutput,
+        receiver: &eth::Address,
+    ) -> eth::Interaction {
+        boundary::liquidity::uniswap::v3::to_interaction(self, input, output, receiver)
+    }
+}

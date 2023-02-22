@@ -73,7 +73,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> Vec<eth::Interaction> {
+) -> eth::Interaction {
     let web3 = shared::ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
@@ -96,7 +96,8 @@ pub fn to_interaction(
             value: eth::Ether(value),
             call_data: call_data.0,
         })
-        .collect()
+        .next()
+        .expect("returns exactly 1 interaction")
 }
 
 pub async fn collector(
