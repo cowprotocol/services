@@ -46,7 +46,8 @@ pub struct Query {
     pub gas_price: Option<U256>,
 
     /// List of sources to exclude.
-    #[serde(skip_serializing_if = "Vec::is_empty", with = "comma_separated")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde_as(as = "serialize::CommaSeparated")]
     pub excluded_sources: Vec<String>,
 
     /// The affiliate address to use for tracking and analytics purposes.
@@ -99,10 +100,6 @@ pub struct Quote {
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
 
-    /// The Ether value to use in order to execute the swap.
-    #[serde_as(as = "serialize::U256")]
-    pub value: U256,
-
     /// The amount of sell token (in atoms) that would be sold in this swap.
     #[serde_as(as = "serialize::U256")]
     pub sell_amount: U256,
@@ -134,23 +131,21 @@ mod address_none_when_zero {
     }
 }
 
-/// 0x API expects comma separated lists for `excludedSources` query parameter.
-mod comma_separated {
-    use serde::Serializer;
-
-    pub fn serialize<S>(list: &[String], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&list.join(","))
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response {
     Ok(Quote),
     Err(Error),
+}
+
+impl Response {
+    /// Turns the API response into a [`std::result::Result`].
+    pub fn into_result(self) -> Result<Quote, Error> {
+        match self {
+            Response::Ok(quote) => Ok(quote),
+            Response::Err(err) => Err(err),
+        }
+    }
 }
 
 #[derive(Deserialize)]

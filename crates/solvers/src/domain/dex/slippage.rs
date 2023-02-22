@@ -86,6 +86,20 @@ impl Slippage {
     pub fn as_factor(&self) -> &BigDecimal {
         &self.0
     }
+
+    /// Rounds a relative slippage value to the specified decimal precision.
+    pub fn round(&self, arg: u32) -> Self {
+        // This seems weird, but it is because `BigDecimal::round` panics for
+        // values with too much precision. See `tests::bigdecimal_round_panics`
+        // for an example of this. Specifically, the `round` implementation is
+        // internally casting its `BigInt` digits to a `i128` and unwrapping.
+        // This means that there is a maximum of 38-digits of precision
+        // (specifically, `i128::MAX.to_string().len() - 1`) allowed when
+        // rounding. So, in order to be pragmatic (and seing that 38 digits of
+        // precision is more than enough for slippage), first truncate the
+        // value to the maximum preicision and then round.
+        Self(self.0.with_prec(38).round(arg as _))
+    }
 }
 
 /// Token reference prices for a specified auction.
@@ -114,10 +128,7 @@ impl Prices {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        num::{BigInt, Signed},
-    };
+    use super::*;
 
     #[test]
     fn slippage_tolerance() {
@@ -217,35 +228,31 @@ mod tests {
 
             let computed = slippage.relative(&asset, &prices);
 
-            assert_eq!(round(&computed.0, 9), relative.0);
+            assert_eq!(computed.round(9), relative);
             assert_eq!(computed.sub(asset.amount), min);
             assert_eq!(computed.add(asset.amount), max);
         }
     }
 
-    /// Reimplementation of `BigDecimal::round` that doesn't panic.
-    fn round(x: &BigDecimal, round_digits: i64) -> BigDecimal {
-        let (bigint, decimal_part_digits) = x.as_bigint_and_exponent();
-        let need_to_round_digits = decimal_part_digits - round_digits;
-        if round_digits >= 0 && need_to_round_digits <= 0 {
-            return x.clone();
-        }
+    #[test]
+    #[should_panic]
+    fn bigdecimal_round_panics() {
+        let value =
+            "42.115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                .parse::<BigDecimal>()
+                .unwrap();
 
-        let mut number = bigint.clone();
-        if number.is_negative() {
-            number = -number;
-        }
-        for _ in 0..(need_to_round_digits - 1) {
-            number /= 10;
-        }
-        let digit = number % 10;
+        let _ = value.round(4);
+    }
 
-        if digit <= BigInt::from(4) {
-            x.with_scale(round_digits)
-        } else if bigint.is_negative() {
-            x.with_scale(round_digits) - BigDecimal::new(BigInt::from(1), round_digits)
-        } else {
-            x.with_scale(round_digits) + BigDecimal::new(BigInt::from(1), round_digits)
-        }
+    #[test]
+    fn round_does_not_panic() {
+        let slippage = Slippage(
+            "42.115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                .parse()
+                .unwrap(),
+        );
+
+        assert_eq!(slippage.round(4), Slippage("42.1158".parse().unwrap()));
     }
 }

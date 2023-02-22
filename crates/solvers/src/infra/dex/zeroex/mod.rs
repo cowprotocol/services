@@ -11,7 +11,6 @@ mod dto;
 pub struct ZeroEx {
     client: reqwest::Client,
     endpoint: reqwest::Url,
-    settlement: eth::ContractAddress,
     defaults: dto::Query,
 }
 
@@ -25,9 +24,6 @@ pub struct Config {
     /// by specifying this as header in the HTTP request.
     pub api_key: Option<String>,
 
-    /// The address of the Settlement contract.
-    pub settlement: eth::ContractAddress,
-
     /// The list of excluded liquidity sources. These will not be considered
     /// when quoting.
     pub excluded_sources: Vec<String>,
@@ -35,13 +31,13 @@ pub struct Config {
     /// The affiliate address to use.
     ///
     /// This is used by 0x for tracking and analytic purposes.
-    pub affiliate_address: Option<H160>,
+    pub affiliate: H160,
 
     /// Whether or not to enable slippage protection.
     pub enable_slippage_protection: bool,
 }
 
-const DEFAULT_URL: &str = "https://api.0x.org/";
+const DEFAULT_URL: &str = "https://api.0x.org/swap/v1/";
 
 impl ZeroEx {
     pub fn new(config: Config) -> Result<Self, CreationError> {
@@ -61,7 +57,7 @@ impl ZeroEx {
         };
         let defaults = dto::Query {
             excluded_sources: config.excluded_sources,
-            affiliate_address: config.affiliate_address.unwrap_or(config.settlement.0),
+            affiliate_address: config.affiliate,
             enable_slippage_protection: config.enable_slippage_protection,
             ..Default::default()
         };
@@ -71,7 +67,6 @@ impl ZeroEx {
             endpoint: config
                 .endpoint
                 .unwrap_or_else(|| DEFAULT_URL.parse().unwrap()),
-            settlement: config.settlement,
             defaults,
         })
     }
@@ -79,20 +74,16 @@ impl ZeroEx {
     async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
         let request = self
             .client
-            .get(self.endpoint.join("swap/v1/quote").unwrap())
+            .get(self.endpoint.join("quote").unwrap())
             .query(query)
             .build()?;
         tracing::trace!(request = %request.url(), "quoting");
-        let response = self
-            .client
-            .execute(request)
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        tracing::trace!(%response, "quoted");
-        let quote = serde_json::from_str(&response)?;
+        let response = self.client.execute(request).await?;
+        let status = response.status();
+        let body = response.text().await?;
+        tracing::trace!(status = %status.as_u16(), %body, "quoted");
 
+        let quote = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
         Ok(quote)
     }
 
@@ -116,12 +107,6 @@ impl ZeroEx {
                 .instrument(tracing::trace_span!("quote", id = %id))
                 .await?
         };
-
-        // Since we only trade ERC20 tokens, we expect that the swap should
-        // never require a value.
-        if !quote.value.is_zero() {
-            return Err(Error::NonZeroValue);
-        }
 
         let max_sell_amount = match order.side {
             order::Side::Buy => slippage.add(quote.sell_amount),
@@ -164,8 +149,6 @@ pub enum CreationError {
 pub enum Error {
     #[error("unable to find a quote")]
     NotFound,
-    #[error("quote has a non-zero transaction value")]
-    NonZeroValue,
     #[error("quote does not specify an approval spender")]
     MissingSpender,
     #[error("api error code {code}: {reason}")]
