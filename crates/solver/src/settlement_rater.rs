@@ -1,7 +1,7 @@
 use {
     crate::{
         driver::solver_settlements::RatedSettlement,
-        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
             call_data,
@@ -22,6 +22,7 @@ use {
     shared::{
         code_fetching::CodeFetching,
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
     std::{borrow::Borrow, sync::Arc},

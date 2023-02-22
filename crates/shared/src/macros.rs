@@ -56,3 +56,14 @@ macro_rules! deployed_bytecode {
             .unwrap()
     };
 }
+
+#[macro_export]
+macro_rules! externalprices {
+    (native_token: $nt:expr $(, $($t:tt)*)?) => {
+        $crate::external_prices::ExternalPrices::new(
+            $nt,
+            ::maplit::hashmap!($($($t)*)*),
+        )
+        .unwrap()
+    };
+}

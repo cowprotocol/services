@@ -1,4 +1,5 @@
 mod auction;
+pub mod auction_prices;
 pub mod auction_transaction;
 pub mod ethflow_events;
 mod events;
@@ -6,6 +7,7 @@ pub mod onchain_order_events;
 pub mod orders;
 mod quotes;
 pub mod recent_settlements;
+pub mod settlement_observation;
 
 use {
     sqlx::{PgConnection, PgPool},

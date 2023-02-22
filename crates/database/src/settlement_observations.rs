@@ -1,4 +1,4 @@
-use {crate::events::EventIndex, bigdecimal::BigDecimal, sqlx::PgConnection};
+use {bigdecimal::BigDecimal, sqlx::PgConnection};
 
 #[derive(Debug, PartialEq, sqlx::FromRow)]
 pub struct Observation {
@@ -12,7 +12,8 @@ pub struct Observation {
 
 pub async fn upsert(
     ex: &mut PgConnection,
-    event: &EventIndex,
+    block_number: i64,
+    log_index: i64,
     gas_used: BigDecimal,
     effective_gas_price: BigDecimal,
     surplus: BigDecimal,
@@ -28,8 +29,8 @@ pub async fn upsert(
         .bind(effective_gas_price)
         .bind(surplus)
         .bind(fee)
-        .bind(event.block_number)
-        .bind(event.log_index)
+        .bind(block_number)
+        .bind(log_index)
         .execute(ex)
         .await?;
     Ok(())
@@ -37,7 +38,7 @@ pub async fn upsert(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sqlx::Connection};
+    use {super::*, crate::events::EventIndex, sqlx::Connection};
 
     // helper function to make roundtrip possible
     pub async fn fetch(
@@ -64,9 +65,17 @@ mod tests {
             block_number: 1,
             log_index: 1,
         };
-        upsert(&mut db, &event, 1.into(), 2.into(), 3.into(), 4.into())
-            .await
-            .unwrap();
+        upsert(
+            &mut db,
+            event.block_number,
+            event.log_index,
+            1.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+        )
+        .await
+        .unwrap();
 
         let result = fetch(&mut db, &event).await.unwrap();
         assert_eq!(
@@ -82,9 +91,17 @@ mod tests {
         );
 
         // test update existing row
-        upsert(&mut db, &event, 5.into(), 6.into(), 7.into(), 8.into())
-            .await
-            .unwrap();
+        upsert(
+            &mut db,
+            event.block_number,
+            event.log_index,
+            5.into(),
+            6.into(),
+            7.into(),
+            8.into(),
+        )
+        .await
+        .unwrap();
         let result = fetch(&mut db, &event).await.unwrap();
         assert_eq!(
             result,

@@ -24,7 +24,7 @@ pub struct Request {
     pub competition: SolverCompetitionDB,
     pub executions: Vec<(OrderUid, Execution)>,
     pub scores: Scores,
-    pub participants: Vec<H160>,
+    pub participants: Vec<H160>, // solver addresses
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
