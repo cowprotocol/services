@@ -150,7 +150,13 @@ impl TraceCallDetector {
             }
         };
 
-        let message = "Failed to decode the token's balanceOf response because it did not return 32 bytes. A common cause of this is a bug in the Vyper smart contract compiler. See https://github.com/cowprotocol/services/pull/781 for more information.";
+        let message = "\
+            Failed to decode the token's balanceOf response because it did not \
+            return 32 bytes. A common cause of this is a bug in the Vyper \
+            smart contract compiler. See \
+            https://github.com/cowprotocol/services/pull/781 for more \
+            information.\
+        ";
         let bad = TokenQuality::Bad {
             reason: message.to_string(),
         };
