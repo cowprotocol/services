@@ -246,8 +246,11 @@ pub fn finalize_router(
 impl IntoWarpReply for PriceEstimationError {
     fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
-            Self::UnsupportedToken(token) => with_status(
-                error("UnsupportedToken", format!("Token address {token:?}")),
+            Self::UnsupportedToken { token, reason } => with_status(
+                error(
+                    "UnsupportedToken",
+                    format!("Token {token:?} is unsupported: {reason:}"),
+                ),
                 StatusCode::BAD_REQUEST,
             ),
             Self::NoLiquidity => with_status(
