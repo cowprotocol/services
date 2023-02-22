@@ -145,7 +145,9 @@ pub struct Arguments {
     /// This ensures that the proposed trade calldata gets simulated, thus
     /// avoiding invalid calldata mistakenly advertising unachievable prices
     /// when quoting, as well as more robustly identifying unsupported
-    /// tokens.
+    /// tokens. The `Web3` simulator requires the `--simulation-node_url`
+    /// parameter to be set. The `Tenderly` simulator requires `--tenderly-*`
+    /// parameters to be set.
     #[clap(long, env)]
     pub trade_simulator: Option<TradeValidatorKind>,
 
