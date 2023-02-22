@@ -107,16 +107,29 @@ impl Solution {
             .sorted()
     }
 
+    /// Verify that the solution is valid and can be broadcast safely. See
+    /// [`settlement::Verified`].
+    pub async fn verify(
+        self,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        auction: &competition::Auction,
+    ) -> Result<settlement::Verified, Error> {
+        self.verify_asset_flow()?;
+        self.verify_internalization(auction)?;
+        self.simulate(eth, simulator, auction).await
+    }
+
+    // TODO Simulate should not be public, verify() should be
     /// Simulate settling this solution on the blockchain. This process
     /// generates the access list and estimates the gas needed to settle
     /// the solution.
-    pub async fn simulate(
-        &self,
+    async fn simulate(
+        self,
         eth: &Ethereum,
         simulator: &Simulator,
-        // TODO Remove the auction parameter in a follow-up
         auction: &competition::Auction,
-    ) -> Result<settlement::Simulated, Error> {
+    ) -> Result<settlement::Verified, Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
@@ -158,11 +171,65 @@ impl Solution {
         // Finally, get the gas for the settlement using the full access list.
         let gas = simulator.gas(tx).await?;
 
-        Ok(settlement::Simulated {
+        Ok(settlement::Verified {
             inner: settlement,
             access_list,
             gas,
         })
+    }
+
+    /// Check that the sum of tokens into and out of the settlement are
+    /// non-negative.
+    fn verify_asset_flow(&self) -> Result<(), VerificationError> {
+        let mut sum_inputs = eth::U256::zero();
+        let mut sum_outputs = eth::U256::zero();
+        // TODO Use iterators and fold instead
+        for interaction in self.interactions.iter() {
+            match interaction {
+                Interaction::Custom(interaction) => {
+                    for input in interaction.inputs.iter() {
+                        sum_inputs += self
+                            .reference_amount(input)
+                            .ok_or(VerificationError::AssetFlow)?;
+                    }
+                    for output in interaction.outputs.iter() {
+                        sum_outputs += self
+                            .reference_amount(output)
+                            .ok_or(VerificationError::AssetFlow)?;
+                    }
+                }
+                Interaction::Liquidity(interaction) => {
+                    sum_inputs += self
+                        .reference_amount(&interaction.input)
+                        .ok_or(VerificationError::AssetFlow)?;
+                    sum_outputs += self
+                        .reference_amount(&interaction.output)
+                        .ok_or(VerificationError::AssetFlow)?;
+                }
+            }
+        }
+        if sum_inputs >= sum_outputs {
+            Ok(())
+        } else {
+            Err(VerificationError::AssetFlow)
+        }
+    }
+
+    fn verify_internalization(
+        &self,
+        _auction: &competition::Auction,
+    ) -> Result<(), VerificationError> {
+        // TODO Will be done in a follow-up PR.
+        // Check that internalized interactions use trusted tokens. This requires
+        // checking the internalized interactions in the solution against the
+        // trusted tokens in the auction to make sure there's no foul play.
+        Ok(())
+    }
+
+    /// The asset amount denominated in the solution's reference token. See
+    /// [`Solution::prices`].
+    fn reference_amount(&self, asset: &eth::Asset) -> Option<eth::U256> {
+        self.prices.get(&asset.token)?.checked_mul(asset.amount)
     }
 }
 
@@ -250,10 +317,30 @@ impl Id {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("simulation error: {0:?}")]
-    Simulation(#[from] simulator::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+    #[error("verification error: {0:?}")]
+    Verification(#[from] VerificationError),
+}
+
+// TODO Doc comment
+// TODO Specific errors
+#[derive(Debug, thiserror::Error)]
+#[error("verification error")]
+pub enum VerificationError {
+    #[error("simulation error: {0:?}")]
+    Simulation(#[from] simulator::Error),
+    #[error(
+        "invalid asset flow: token amounts entering the settlement do not equal token amounts \
+         exiting the settlement"
+    )]
+    AssetFlow,
+}
+
+impl From<simulator::Error> for Error {
+    fn from(value: simulator::Error) -> Self {
+        VerificationError::from(value).into()
+    }
 }

@@ -110,7 +110,7 @@ impl Mempool {
         })
     }
 
-    pub async fn send(&self, solver: &Solver, settlement: settlement::Simulated) -> Result<()> {
+    pub async fn send(&self, solver: &Solver, settlement: settlement::Verified) -> Result<()> {
         let web3 = boundary::web3(&self.eth);
         let nonce = web3
             .eth()
@@ -140,8 +140,8 @@ impl Mempool {
             web3.clone(),
             &web3,
         )?;
-        let gas = settlement.gas;
         let id = settlement.id();
+        let gas = settlement.gas;
         submitter
             .submit(
                 settlement.boundary().inner,

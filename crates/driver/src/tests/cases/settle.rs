@@ -11,7 +11,6 @@ use {
 };
 
 /// Test that the /settle endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
