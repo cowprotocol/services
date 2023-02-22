@@ -192,7 +192,8 @@ impl TraceCallDetector {
             return Ok(TokenQuality::bad(
                 "Transferring {amount} into settlement contract was expected to result in a \
                  balance of {computer_balance_after_in} but actually resulted in \
-                 {balance_after_in}.",
+                 {balance_after_in}. A common cause for this is that the token takes a fee on \
+                 transfer.",
             ));
         }
         if balance_after_out != balance_before_in {
@@ -215,7 +216,8 @@ impl TraceCallDetector {
             return Ok(TokenQuality::bad(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
                  result in a balance of {computer_balance_recipient_after} but actually resulted \
-                 in {balance_recipient_after}.",
+                 in {balance_recipient_after}. A common cause for this is that the token takes a \
+                 fee on transfer.",
             ));
         }
 
