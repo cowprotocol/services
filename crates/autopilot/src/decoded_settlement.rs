@@ -33,6 +33,7 @@ type DecodedSettlementTokenized = (
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct DecodedSettlement {
+    // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<DecodedTrade>,
@@ -156,10 +157,11 @@ fn surplus(
     clearing_prices: &[U256],
     external_prices: &ExternalPrices,
 ) -> Option<U256> {
-    let sell_token_clearing_price =
-        clearing_prices[trade.sell_token_index.as_u64() as usize].to_big_rational();
-    let buy_token_clearing_price =
-        clearing_prices[trade.buy_token_index.as_u64() as usize].to_big_rational();
+    let sell_token_index = trade.sell_token_index.as_u64() as usize;
+    let buy_token_index = trade.buy_token_index.as_u64() as usize;
+
+    let sell_token_clearing_price = clearing_prices[sell_token_index].to_big_rational();
+    let buy_token_clearing_price = clearing_prices[buy_token_index].to_big_rational();
     let kind = order_kind(&trade.flags).unwrap();
 
     if match kind {
@@ -182,11 +184,11 @@ fn surplus(
 
     let normalized_surplus = match kind {
         OrderKind::Sell => {
-            let buy_token = tokens.get(trade.buy_token_index.as_u64() as usize)?;
+            let buy_token = tokens.get(buy_token_index)?;
             external_prices.get_native_amount(*buy_token, surplus / buy_token_clearing_price)
         }
         OrderKind::Buy => {
-            let sell_token = tokens.get(trade.sell_token_index.as_u64() as usize)?;
+            let sell_token = tokens.get(sell_token_index)?;
             external_prices.get_native_amount(*sell_token, surplus / sell_token_clearing_price)
         }
     };

@@ -1,5 +1,5 @@
-//! This module is responsible for updating the database, for each settlement event
-//! that is emitted by the settlement contract.
+//! This module is responsible for updating the database, for each settlement
+//! event that is emitted by the settlement contract.
 
 use {
     crate::{database::Postgres, decoded_settlement::DecodedSettlement},
@@ -31,14 +31,14 @@ impl OnSettlementEventUpdater {
                 Ok(true) => (),
                 Ok(false) => tokio::time::sleep(Duration::from_secs(10)).await,
                 Err(err) => {
-                    tracing::error!(?err, "auction transaction update task failed");
+                    tracing::error!(?err, "on settlement event update task failed");
                     tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }
     }
 
-    /// Update a single settlement event.
+    /// Update database for a single settlement event.
     ///
     /// Returns whether an update was performed.
     async fn update(&self) -> Result<bool> {
@@ -112,7 +112,7 @@ impl OnSettlementEventUpdater {
         // that were used.
 
         // TODO how to detect missed settlements? need to populate settlement
-        // observation on event insertition.
+        // observation on event insertion.
 
         let tx_receipt = self
             .web3
@@ -176,8 +176,8 @@ impl OnSettlementEventUpdater {
                 let sell_token_price = auction_external_prices.get(sell_token);
                 match (buy_token_price, sell_token_price) {
                     (Some(buy_token_price), Some(sell_token_price)) => Some(vec![
-                        (buy_token.clone(), buy_token_price.clone()),
-                        (sell_token.clone(), sell_token_price.clone()),
+                        (*buy_token, *buy_token_price),
+                        (*sell_token, *sell_token_price),
                     ]),
                     _ => {
                         tracing::error!("settlement used token that was not in auction");
@@ -206,10 +206,7 @@ mod tests {
         shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new("postgresql://").await.unwrap();
         database::clear_DANGER(&db.0).await.unwrap();
-        //let transport = shared::ethrpc::create_env_test_transport();
-        let transport = shared::ethrpc::create_test_transport(
-            "https://mainnet.infura.io/v3/3b497b3196e4468288eb5c7f239e86f4",
-        );
+        let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let current_block = shared::current_block::current_block_stream(
             Arc::new(web3.clone()),
