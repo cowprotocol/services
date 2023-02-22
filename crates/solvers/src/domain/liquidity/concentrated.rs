@@ -44,6 +44,7 @@ pub struct Tick(pub i32);
 pub struct LiquidityNet(pub i128);
 
 /// Amount of fees accrued when using using this pool.
-/// Can be only one of these values: 5, 30 or 100 bps
+/// Uniswap v3 was launched with 3 fee tiers (5, 30, 100 bps) but more could be
+/// added by the uniswap DAO.
 #[derive(Clone, Debug)]
 pub struct Fee(pub eth::Rational);
