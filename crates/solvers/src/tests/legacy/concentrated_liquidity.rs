@@ -1,4 +1,5 @@
-//! Tests that concentrated liquidity pools (e.g. Uniswap v3) can be (de)serialized.
+//! Tests that concentrated liquidity pools (e.g. Uniswap v3) can be
+//! (de)serialized.
 
 use {
     crate::tests::{self, legacy, mock},
@@ -75,7 +76,8 @@ async fn test() {
                 }
             }
         }),
-    }]).await;
+    }])
+    .await;
 
     let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver)).await;
 
