@@ -17,24 +17,25 @@ impl Auction {
         timeout: competition::SolverTimeout,
         now: infra::time::Now,
     ) -> Self {
+        let mut tokens: HashMap<eth::H160, _> = auction
+            .tokens
+            .iter()
+            .map(|token| {
+                (
+                    token.address.into(),
+                    Token {
+                        decimals: token.decimals,
+                        symbol: token.symbol.clone(),
+                        reference_price: token.price.map(Into::into),
+                        available_balance: token.available_balance,
+                        trusted: token.trusted,
+                    },
+                )
+            })
+            .collect();
+
         Self {
             id: auction.id.as_ref().map(ToString::to_string),
-            tokens: auction
-                .tokens
-                .iter()
-                .map(|token| {
-                    (
-                        token.address.into(),
-                        Token {
-                            decimals: token.decimals,
-                            symbol: token.symbol.clone(),
-                            reference_price: token.price.map(Into::into),
-                            available_balance: token.available_balance,
-                            trusted: token.trusted,
-                        },
-                    )
-                })
-                .collect(),
             orders: auction
                 .orders
                 .iter()
@@ -62,6 +63,11 @@ impl Auction {
                 .iter()
                 .map(|liquidity| match &liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => {
+                        tokens.extend(
+                            pool.reserves
+                                .iter()
+                                .map(|asset| (asset.token.into(), Default::default())),
+                        );
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.address.into(),
@@ -82,6 +88,8 @@ impl Auction {
                         })
                     }
                     liquidity::Kind::UniswapV3(pool) => {
+                        tokens.insert(pool.tokens.get().0.into(), Default::default());
+                        tokens.insert(pool.tokens.get().1.into(), Default::default());
                         Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
                             id: liquidity.id.into(),
                             address: pool.address.0,
@@ -104,6 +112,7 @@ impl Auction {
                     liquidity::Kind::ZeroEx(_) => todo!(),
                 })
                 .collect(),
+            tokens,
             effective_gas_price: auction.gas_price.into(),
             deadline: timeout.deadline(now),
         }
@@ -159,7 +168,7 @@ enum Class {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Default, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Token {
     decimals: Option<u8>,

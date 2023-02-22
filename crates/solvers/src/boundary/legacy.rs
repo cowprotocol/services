@@ -114,14 +114,16 @@ fn to_boundary_auction(
                 (
                     address.0,
                     TokenInfoModel {
-                        decimals: info.decimals,
                         alias: info.symbol.clone(),
                         external_price: info
                             .reference_price
                             .map(|price| price.0 .0.to_f64_lossy() / 1e18),
                         internal_buffer: Some(info.available_balance),
                         accepted_for_internalization: info.trusted,
-                        ..Default::default()
+                        decimals: info.decimals,
+                        // Quasimodo crashes when the reference token doesn't have decimals. So
+                        // when we find a token with decimals we pick it as the reference token.
+                        normalize_priority: info.decimals.map(|_| 1),
                     },
                 )
             })
