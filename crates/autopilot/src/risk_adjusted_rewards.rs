@@ -227,8 +227,9 @@ impl FallbackCache {
     }
 }
 
-/// A caching wrapper over [NativePriceEstimating] used to estimate and cache CoW token price.
-/// Implemented to enable the [Calculator] produce rewards even when a fresh estimate is not available.
+/// A caching wrapper over [NativePriceEstimating] used to estimate and cache
+/// CoW token price. Implemented to enable the [Calculator] produce rewards even
+/// when a fresh estimate is not available.
 #[derive(Clone)]
 struct BestEffortCowPriceEstimator {
     inner: Arc<dyn NativePriceEstimating>,
@@ -448,9 +449,18 @@ mod tests {
         cache.set(1., Instant::now());
 
         assert_eq!(cache.get(Instant::now()), Some(1.));
-        assert_eq!(cache.get(Instant::now() + Duration::from_millis(500)), Some(1.));
-        assert_eq!(cache.get(Instant::now() + Duration::from_millis(1000)), Some(1.));
-        assert_eq!(cache.get(Instant::now() + Duration::from_millis(1001)), None);
+        assert_eq!(
+            cache.get(Instant::now() + Duration::from_millis(500)),
+            Some(1.)
+        );
+        assert_eq!(
+            cache.get(Instant::now() + Duration::from_millis(1000)),
+            Some(1.)
+        );
+        assert_eq!(
+            cache.get(Instant::now() + Duration::from_millis(1001)),
+            None
+        );
 
         cache.set(2., Instant::now());
 
