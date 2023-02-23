@@ -30,9 +30,6 @@ struct TestCase {
 async fn asset_flow_verification() {
     crate::boundary::initialize_tracing("error");
 
-    // TODO Also check the case where the input is larger than the output
-    // TODO Also check the case with multiple inputs and outputs
-    // TODO Probably just use cases and a loop?
     let cases = [
         TestCase {
             flow: |sell, buy, idx| match idx {
@@ -47,6 +44,7 @@ async fn asset_flow_verification() {
         },
         TestCase {
             flow: |sell, buy, idx| match idx {
+                // The inputs and outputs are spread across different interactions.
                 0 => Flow {
                     inputs: vec![sell],
                     outputs: vec![],

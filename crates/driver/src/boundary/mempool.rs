@@ -140,8 +140,8 @@ impl Mempool {
             web3.clone(),
             &web3,
         )?;
-        let id = settlement.id();
         let gas = settlement.gas;
+        let id = settlement.id();
         submitter
             .submit(
                 settlement.boundary().inner,

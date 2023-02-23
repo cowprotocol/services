@@ -22,9 +22,9 @@ impl Settlement {
     pub async fn encode(
         eth: &Ethereum,
         auction: &competition::Auction,
-        solution: competition::Solution,
+        solution: &competition::Solution,
     ) -> anyhow::Result<Self> {
-        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
         Ok(Self {
             id: solution.id,
             boundary,
@@ -41,14 +41,14 @@ impl Settlement {
 
 /// A settlement which has been verified to be correct. In particular:
 ///
-/// 1. Simulation: the settlement has been simulated without reverting.
-/// 2. Asset flow: the sum of tokens into and out of the settlement are
+/// - Simulation: the settlement has been simulated without reverting.
+/// - Asset flow: the sum of tokens into and out of the settlement are
 /// non-negative, meaning that the solver doesn't take any tokens out of the
 /// settlement contract.
-/// 3. Internalization: internalized interactions only use trusted tokens.
+/// - Internalization: internalized interactions only use trusted tokens.
 ///
-/// Such a solution obeys the rules of the protocol and can be safely
-/// broadcast and settled on the Ethereum network.
+/// Such a settlement obeys the rules of the protocol and can be safely
+/// broadcast to the Ethereum network.
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub(super) inner: Settlement,
@@ -72,6 +72,7 @@ impl Verified {
         self.inner.id
     }
 
+    /// Necessary for the boundary integration, to allow executing settlements.
     pub fn boundary(self) -> boundary::Settlement {
         self.inner.boundary
     }

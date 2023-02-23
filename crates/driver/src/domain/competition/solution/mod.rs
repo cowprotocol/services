@@ -110,7 +110,7 @@ impl Solution {
     /// Verify that the solution is valid and can be broadcast safely. See
     /// [`settlement::Verified`].
     pub async fn verify(
-        self,
+        &self,
         eth: &Ethereum,
         simulator: &Simulator,
         auction: &competition::Auction,
@@ -120,12 +120,11 @@ impl Solution {
         self.simulate(eth, simulator, auction).await
     }
 
-    // TODO Simulate should not be public, verify() should be
     /// Simulate settling this solution on the blockchain. This process
     /// generates the access list and estimates the gas needed to settle
     /// the solution.
     async fn simulate(
-        self,
+        &self,
         eth: &Ethereum,
         simulator: &Simulator,
         auction: &competition::Auction,
@@ -178,12 +177,11 @@ impl Solution {
         })
     }
 
-    /// Check that the sum of tokens into and out of the settlement are
-    /// non-negative.
+    /// Check that the sum of tokens entering the settlement is not less than
+    /// the sum of tokens exiting the settlement.
     fn verify_asset_flow(&self) -> Result<(), VerificationError> {
         let mut sum_inputs = eth::U256::zero();
         let mut sum_outputs = eth::U256::zero();
-        // TODO Use iterators and fold instead
         for interaction in self.interactions.iter() {
             match interaction {
                 Interaction::Custom(interaction) => {
@@ -325,8 +323,7 @@ pub enum Error {
     Verification(#[from] VerificationError),
 }
 
-// TODO Doc comment
-// TODO Specific errors
+/// Solution verification failed.
 #[derive(Debug, thiserror::Error)]
 #[error("verification error")]
 pub enum VerificationError {

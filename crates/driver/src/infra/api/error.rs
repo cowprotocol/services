@@ -46,8 +46,8 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
             Kind::InvalidAssetFlow => {
-                "Solution has invalid asset flow: token amounts entering the settlement contract \
-                 are lower than token amounts exiting the contract"
+                "The solver returned a solution with invalid asset flow: token amounts entering \
+                 the settlement contract are lower than token amounts exiting the contract"
             }
         };
         (
