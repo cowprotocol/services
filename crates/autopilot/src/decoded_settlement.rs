@@ -83,30 +83,18 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
             trades: trades
                 .into_iter()
                 .map(
-                    |(
-                        sell_token_index,
-                        buy_token_index,
-                        receiver,
-                        sell_amount,
-                        buy_amount,
-                        valid_to,
-                        app_data,
-                        fee_amount,
-                        flags,
-                        executed_amount,
-                        signature,
-                    )| DecodedTrade {
-                        sell_token_index,
-                        buy_token_index,
-                        receiver,
-                        sell_amount,
-                        buy_amount,
-                        valid_to,
-                        app_data,
-                        fee_amount,
-                        flags,
-                        executed_amount,
-                        signature,
+                    |(trade)| DecodedTrade {
+                        sell_token_index: trade.0,
+                        buy_token_index: trade.1,
+                        receiver: trade.2,
+                        sell_amount: trade.3,
+                        buy_amount: trade.4,
+                        valid_to: trade.5,
+                        app_data: trade.6,
+                        fee_amount: trade.7,
+                        flags: trade.8,
+                        executed_amount: trade.9,
+                        signature: trade.10,
                     },
                 )
                 .collect(),
