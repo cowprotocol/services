@@ -32,7 +32,7 @@ pub struct Error {
     description: &'static str,
 }
 
-impl From<Kind> for axum::Json<Error> {
+impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: Kind) -> Self {
         let description = match value {
             Kind::QuotingFailed => "No valid quote found",
@@ -50,14 +50,17 @@ impl From<Kind> for axum::Json<Error> {
                  are lower than token amounts exiting the contract"
             }
         };
-        axum::Json(Error {
-            kind: value,
-            description,
-        })
+        (
+            hyper::StatusCode::BAD_REQUEST,
+            axum::Json(Error {
+                kind: value,
+                description,
+            }),
+        )
     }
 }
 
-impl From<quote::Error> for axum::Json<Error> {
+impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
         let error = match value {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
@@ -69,7 +72,7 @@ impl From<quote::Error> for axum::Json<Error> {
     }
 }
 
-impl From<competition::Error> for axum::Json<Error> {
+impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
             competition::Error::SolutionNotFound => Kind::SolutionNotFound,
@@ -90,7 +93,7 @@ impl From<competition::Error> for axum::Json<Error> {
     }
 }
 
-impl From<api::routes::AuctionError> for axum::Json<Error> {
+impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::AuctionError) -> Self {
         let error = match value {
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
@@ -101,7 +104,7 @@ impl From<api::routes::AuctionError> for axum::Json<Error> {
     }
 }
 
-impl From<api::routes::OrderError> for axum::Json<Error> {
+impl From<api::routes::OrderError> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::OrderError) -> Self {
         let error = match value {
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,

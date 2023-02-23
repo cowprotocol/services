@@ -146,7 +146,7 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let solution = client
+    let (status, solution) = client
         .solve(
             SOLVER_NAME,
             json!({
@@ -191,6 +191,7 @@ async fn test() {
     setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
 
     // Assert.
+    assert_eq!(status, hyper::StatusCode::OK);
     let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let new_token_a = token_a.balance_of(admin).call().await.unwrap();
     let new_token_b = token_b.balance_of(admin).call().await.unwrap();
