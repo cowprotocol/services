@@ -446,24 +446,17 @@ mod tests {
 
         assert_eq!(cache.get(Instant::now()), None);
 
-        cache.set(1., Instant::now());
+        let set_at = Instant::now();
+        cache.set(1., set_at);
 
-        assert_eq!(cache.get(Instant::now()), Some(1.));
-        assert_eq!(
-            cache.get(Instant::now() + Duration::from_millis(500)),
-            Some(1.)
-        );
-        assert_eq!(
-            cache.get(Instant::now() + Duration::from_millis(1000)),
-            Some(1.)
-        );
-        assert_eq!(
-            cache.get(Instant::now() + Duration::from_millis(1001)),
-            None
-        );
+        assert_eq!(cache.get(set_at), Some(1.));
+        assert_eq!(cache.get(set_at + Duration::from_millis(500)), Some(1.));
+        assert_eq!(cache.get(set_at + Duration::from_millis(1000)), Some(1.));
+        assert_eq!(cache.get(set_at + Duration::from_millis(1001)), None);
 
-        cache.set(2., Instant::now());
+        let set_at = Instant::now();
+        cache.set(2., set_at);
 
-        assert_eq!(cache.get(Instant::now()), Some(2.));
+        assert_eq!(cache.get(set_at), Some(2.));
     }
 }
