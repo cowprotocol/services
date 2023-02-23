@@ -90,7 +90,7 @@ impl Fetcher {
         Ok(Self {
             blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources: uni_v2.into_iter().chain(uni_v3.into_iter()).collect(),
+                liquidity_sources: [uni_v2, uni_v3].into_iter().flatten().collect(),
                 base_tokens: Arc::new(base_tokens),
             },
         })
