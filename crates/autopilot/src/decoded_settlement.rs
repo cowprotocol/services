@@ -5,8 +5,8 @@ use {
     anyhow::{anyhow, Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
-    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
-    model::order::{Order, OrderKind},
+    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
+    model::order::OrderKind,
     num::BigRational,
     number_conversions::big_rational_to_u256,
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
@@ -105,6 +105,31 @@ pub struct FeeConfiguration {
     pub fee_objective_scaling_factor: f64,
 }
 
+pub struct Order {
+    pub full_fee_amount: U256,
+    pub kind: OrderKind,
+    pub sell_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub signature: Vec<u8>, //encoded signature
+}
+
+impl From<model::order::Order> for Order {
+    fn from(order: model::order::Order) -> Self {
+        Self {
+            full_fee_amount: order.metadata.full_fee_amount,
+            kind: order.data.kind,
+            sell_token: order.data.sell_token,
+            sell_amount: order.data.sell_amount,
+            buy_amount: order.data.buy_amount,
+            signature: order
+                .signature
+                .encode_for_settlement(order.metadata.owner)
+                .to_vec(),
+        }
+    }
+}
+
 impl DecodedSettlement {
     pub fn new(input: &[u8]) -> Result<Self> {
         let function = GPv2Settlement::raw_contract()
@@ -124,7 +149,7 @@ impl DecodedSettlement {
             acc + match surplus(trade, &self.tokens, &self.clearing_prices, external_prices) {
                 Some(surplus) => surplus,
                 None => {
-                    tracing::warn!("possible incomplete fee calculation");
+                    tracing::warn!("possible incomplete surplus calculation");
                     0.into()
                 }
             }
@@ -142,17 +167,18 @@ impl DecodedSettlement {
         configuration: &FeeConfiguration,
     ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders.iter().find(|order| {
-                let signature = Bytes(
-                    order
-                        .signature
-                        .encode_for_settlement(order.metadata.owner)
-                        .to_vec(),
-                );
-                signature == trade.signature
-            }) {
+            match orders
+                .iter()
+                .find(|order| order.signature == trade.signature.0)
+            {
                 Some(order) => {
-                    acc + fee(trade, external_prices, order, configuration).unwrap_or_default()
+                    acc + match fee(trade, external_prices, order, configuration) {
+                        Some(fee) => fee,
+                        None => {
+                            tracing::warn!("possible incomplete fee calculation");
+                            0.into()
+                        }
+                    }
                 }
                 None => {
                     tracing::warn!(
@@ -216,9 +242,9 @@ fn fee(
     order: &Order,
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
-    let scaled_fee_amount = order.metadata.full_fee_amount
-        * U256::from_f64_lossy(configuration.fee_objective_scaling_factor);
-    let fee = match order.data.kind {
+    let scaled_fee_amount =
+        order.full_fee_amount * U256::from_f64_lossy(configuration.fee_objective_scaling_factor);
+    let fee = match order.kind {
         model::order::OrderKind::Buy => scaled_fee_amount
             .checked_mul(trade.executed_amount)?
             .checked_div(trade.buy_amount),
@@ -227,7 +253,7 @@ fn fee(
             .checked_div(trade.sell_amount),
     }?;
     external_prices
-        .try_get_native_amount(order.data.sell_token, fee.to_big_rational())
+        .try_get_native_amount(order.sell_token, fee.to_big_rational())
         .and_then(|fee| big_rational_to_u256(&fee).ok())
 }
 
@@ -240,14 +266,14 @@ fn trade_surplus(
     buy_token_price: &BigRational,
 ) -> Option<BigRational> {
     match kind {
-        model::order::OrderKind::Buy => buy_order_surplus(
+        OrderKind::Buy => buy_order_surplus(
             sell_token_price,
             buy_token_price,
             sell_amount,
             buy_amount,
             executed_amount,
         ),
-        model::order::OrderKind::Sell => sell_order_surplus(
+        OrderKind::Sell => sell_order_surplus(
             sell_token_price,
             buy_token_price,
             sell_amount,
@@ -433,43 +459,21 @@ mod tests {
 
         let orders = vec![
             Order {
-            metadata: model::order::OrderMetadata {
-                owner: H160::from_str("0xe995e2a9ae5210feb6dd07618af28ec38b2d7ce1").unwrap(),
-                executed_buy_amount: 0u128.into(),
-                executed_sell_amount_before_fees: 0.into(),
                 full_fee_amount: 48263037u128.into(),
-                ..Default::default()
-            },
-            data: model::order::OrderData {
-                sell_token: H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
-                partially_fillable: false,
-                kind: model::order::OrderKind::Sell,
-                ..Default::default()
+                sell_token: H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
-            signature: model::signature::Signature::from_bytes(model::signature::SigningScheme::Eip712, &hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap()).unwrap(),
-            ..Default::default()
-        },
-        Order {
-            metadata: model::order::OrderMetadata {
-                owner: H160::from_str("0xf352bffb3e902d78166a79c9878e138a65022e11").unwrap(),
-                executed_buy_amount: 0u128.into(),
-                executed_sell_amount_before_fees: 0.into(),
+            Order {
                 full_fee_amount: 127253135942751092736u128.into(),
-                ..Default::default()
-            },
-            data: model::order::OrderData {
-                sell_token: H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
-                partially_fillable: false,
-                kind: model::order::OrderKind::Sell,
-                ..Default::default()
-            },
-            signature: model::signature::Signature::from_bytes(model::signature::SigningScheme::Eip712, &hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap()).unwrap(),
-            ..Default::default()
-        }
+                sell_token: H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
+            }
         ];
         let configuration = FeeConfiguration {
             fee_objective_scaling_factor: 1.0,
