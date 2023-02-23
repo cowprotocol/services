@@ -483,6 +483,8 @@ async fn main() -> ! {
         web3,
         network_id,
         args.solver_time_limit,
+        args.block_time,
+        args.additional_mining_deadline,
         current_block_stream.clone(),
         solution_submitter,
         api,

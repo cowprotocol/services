@@ -47,6 +47,7 @@ pub struct Scores {
     pub winning_score: U256,
     #[serde(with = "u256_decimal")]
     pub reference_score: U256,
+    pub block_deadline: u64,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

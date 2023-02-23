@@ -63,6 +63,8 @@ pub struct Driver {
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
     solver_time_limit: Duration,
+    block_time: Duration,
+    additional_mining_deadline: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -89,6 +91,8 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
+        block_time: Duration,
+        additional_mining_deadline: Duration,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -136,6 +140,8 @@ impl Driver {
             native_token,
             metrics,
             solver_time_limit,
+            block_time,
+            additional_mining_deadline,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -449,6 +455,13 @@ impl Driver {
             let scores = model::solver_competition::Scores {
                 winning_score: scores.pop().expect("no score"), // guaranteed to exist
                 reference_score: scores.last().copied().unwrap_or(0.into()),
+                block_deadline: {
+                    let deadline = self.solver_time_limit
+                        + self.solution_submitter.max_confirm_time
+                        + self.additional_mining_deadline;
+                    let number_blocks = deadline.as_secs() / self.block_time.as_secs();
+                    block_during_simulation + number_blocks
+                },
             };
             let participants = solver_competition
                 .solutions

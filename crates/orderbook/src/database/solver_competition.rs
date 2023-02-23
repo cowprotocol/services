@@ -52,6 +52,11 @@ impl SolverCompetitionStoring for Postgres {
             request.auction,
             u256_to_big_decimal(&request.scores.winning_score),
             u256_to_big_decimal(&request.scores.reference_score),
+            request
+                .scores
+                .block_deadline
+                .try_into()
+                .context("convert block deadline")?,
         )
         .await
         .context("settlement_scores::insert")?;
@@ -155,6 +160,7 @@ mod tests {
             scores: Scores {
                 winning_score: 100.into(),
                 reference_score: 99.into(),
+                block_deadline: 10,
             },
             participants: vec![H160([1; 20])],
         };

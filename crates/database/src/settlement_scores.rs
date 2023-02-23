@@ -5,6 +5,7 @@ pub struct Score {
     pub auction_id: AuctionId,
     pub winning_score: BigDecimal,
     pub reference_score: BigDecimal,
+    pub block_deadline: i64,
 }
 
 pub async fn insert(
@@ -12,12 +13,14 @@ pub async fn insert(
     auction_id: AuctionId,
     winning_score: BigDecimal,
     reference_score: BigDecimal,
+    block_deadline: i64,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"INSERT INTO settlement_scores (auction_id, winning_score, reference_score) VALUES ($1, $2, $3);"#;
+    const QUERY: &str = r#"INSERT INTO settlement_scores (auction_id, winning_score, reference_score, block_deadline) VALUES ($1, $2, $3, $4);"#;
     sqlx::query(QUERY)
         .bind(auction_id)
         .bind(winning_score)
         .bind(reference_score)
+        .bind(block_deadline)
         .execute(ex)
         .await?;
     Ok(())
@@ -45,7 +48,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        insert(&mut db, 1, 10.into(), 9.into()).await.unwrap();
+        insert(&mut db, 1, 10.into(), 9.into(), 1000).await.unwrap();
 
         let result = fetch(&mut db, 1).await.unwrap();
         assert_eq!(
@@ -54,6 +57,7 @@ mod tests {
                 auction_id: 1,
                 winning_score: 10.into(),
                 reference_score: 9.into(),
+                block_deadline: 1000,
             })
         );
     }

@@ -234,6 +234,8 @@ async fn single_limit_order_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
+        Duration::from_secs(13),
+        Duration::from_secs(60),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -486,6 +488,8 @@ async fn two_limit_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
+        Duration::from_secs(13),
+        Duration::from_secs(60),
         services.block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -747,6 +751,8 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         web3.clone(),
         network_id.clone(),
         Duration::from_secs(30),
+        Duration::from_secs(13),
+        Duration::from_secs(60),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
