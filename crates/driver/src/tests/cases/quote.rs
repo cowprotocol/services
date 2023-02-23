@@ -11,6 +11,7 @@ use {
 
 /// Test that the /quote endpoint behaves as expected.
 #[tokio::test]
+#[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.

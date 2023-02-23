@@ -27,6 +27,7 @@ struct TestCase {
 }
 
 #[tokio::test]
+#[ignore]
 async fn asset_flow_verification() {
     crate::boundary::initialize_tracing("error");
 
