@@ -8,7 +8,7 @@ use {
         orders::read_order as read_db_order,
         OrderUid,
     },
-    ethcontract::{Account, H160},
+    ethcontract::{Account, H160, H256},
     futures::{stream, StreamExt},
     shared::{
         current_block::timestamp_of_current_block_in_seconds,
@@ -115,7 +115,7 @@ impl RefundService {
                             tracing::error!(
                                 "Error while getting the currentonchain status of orderhash {:?}, \
                                  {:?}",
-                                order_hash,
+                                H256(order_hash),
                                 err
                             );
                             return None;
