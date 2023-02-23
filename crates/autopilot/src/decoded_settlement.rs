@@ -150,7 +150,7 @@ impl DecodedSettlement {
         })
     }
 
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &Vec<Order>) -> U256 {
+    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders.iter().find(|order| {
                 let signature = Bytes(
@@ -216,7 +216,7 @@ fn surplus(
 fn fee(trade: &DecodedTrade, external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
     let sell_token = order.data.sell_token;
 
-    let remaining = shared::remaining_amounts::Remaining::from_order(&order).ok()?;
+    let remaining = shared::remaining_amounts::Remaining::from_order(order).ok()?;
 
     // The reported fee amount that is used for objective computation is the
     // order's full full amount scaled by a constant factor.
@@ -237,8 +237,7 @@ fn fee(trade: &DecodedTrade, external_prices: &ExternalPrices, order: &Order) ->
     }?;
     external_prices
         .try_get_native_amount(sell_token, fee.to_big_rational())
-        .map(|fee| big_rational_to_u256(&fee).ok())
-        .flatten()
+        .and_then(|fee| big_rational_to_u256(&fee).ok())
 }
 
 fn trade_surplus(
@@ -412,10 +411,7 @@ mod tests {
 
         // fees: 45377573614605000
 
-        //let transport = shared::ethrpc::create_env_test_transport();
-        let transport = shared::ethrpc::create_test_transport(
-            "https://mainnet.infura.io/v3/3b497b3196e4468288eb5c7f239e86f4",
-        );
+        let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
