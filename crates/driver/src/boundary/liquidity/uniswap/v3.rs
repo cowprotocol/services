@@ -13,6 +13,7 @@ use {
     anyhow::Result,
     bigdecimal::ToPrimitive,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    itertools::Itertools,
     shared::{
         current_block::BlockRetrieving,
         http_solver::model::TokenAmount,
@@ -96,8 +97,8 @@ pub fn to_interaction(
             value: eth::Ether(value),
             call_data: call_data.0,
         })
-        .next()
-        .expect("returns exactly 1 interaction")
+        .exactly_one()
+        .unwrap()
 }
 
 pub async fn collector(
