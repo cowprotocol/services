@@ -103,7 +103,7 @@ impl Auction {
                                 .iter()
                                 .map(|(key, value)| (key.0, value.0))
                                 .collect(),
-                            fee: rational_to_big_decimal(&pool.fee.0).unwrap(),
+                            fee: rational_to_big_decimal(&pool.fee.0),
                         })
                     }
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
