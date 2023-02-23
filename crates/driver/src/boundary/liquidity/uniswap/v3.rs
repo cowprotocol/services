@@ -48,8 +48,8 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Option<liqui
             router: handler.inner.router.address().into(),
             address: pool.pool.address.into(),
             tokens: liquidity::TokenPair::new(
-                pool.pool.tokens[0].id.into(),
-                pool.pool.tokens[1].id.into(),
+                pool.pool.tokens.get(0)?.id.into(),
+                pool.pool.tokens.get(1)?.id.into(),
             )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
