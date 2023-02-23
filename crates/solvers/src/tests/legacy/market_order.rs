@@ -74,12 +74,12 @@ async fn quote() {
                     "decimals": 18,
                     "external_price": 1.0,
                     "internal_buffer": "1412206645170290748",
-                    "normalize_priority": null
+                    "normalize_priority": 1
                 },
                 "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": {
                     "accepted_for_internalization": true,
                     "alias": "COW",
-                    "decimals": 18,
+                    "decimals": null,
                     "external_price": 0.000053125132573502,
                     "internal_buffer": "740264138483556450389",
                     "normalize_priority": null
@@ -129,7 +129,7 @@ async fn quote() {
                     "trusted": true
                 },
                 "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB": {
-                    "decimals": 18,
+                    "decimals": null,
                     "symbol": "COW",
                     "referencePrice": "53125132573502",
                     "availableBalance": "740264138483556450389",
@@ -271,12 +271,12 @@ async fn solve() {
                     "decimals": 18,
                     "external_price": 1.0,
                     "internal_buffer": "1412206645170290748",
-                    "normalize_priority": null
+                    "normalize_priority": 1
                 },
                 "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": {
                     "accepted_for_internalization": true,
                     "alias": "COW",
-                    "decimals": 18,
+                    "decimals": null,
                     "external_price": 0.000053125132573502,
                     "internal_buffer": "740264138483556450389",
                     "normalize_priority": null
@@ -326,7 +326,7 @@ async fn solve() {
                     "trusted": true
                 },
                 "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB": {
-                    "decimals": 18,
+                    "decimals": null,
                     "symbol": "COW",
                     "referencePrice": "53125132573502",
                     "availableBalance": "740264138483556450389",

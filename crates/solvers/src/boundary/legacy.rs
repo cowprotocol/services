@@ -114,14 +114,16 @@ fn to_boundary_auction(
                 (
                     address.0,
                     TokenInfoModel {
-                        decimals: info.decimals,
                         alias: info.symbol.clone(),
                         external_price: info
                             .reference_price
                             .map(|price| price.0 .0.to_f64_lossy() / 1e18),
                         internal_buffer: Some(info.available_balance),
                         accepted_for_internalization: info.trusted,
-                        ..Default::default()
+                        decimals: info.decimals,
+                        // Quasimodo crashes when the reference token doesn't have decimals. So
+                        // when we find a token with decimals we pick it as the reference token.
+                        normalize_priority: info.decimals.map(|_| 1),
                     },
                 )
             })
@@ -245,18 +247,18 @@ fn to_boundary_auction(
                             tokens: vec![token(state.tokens.get().0), token(state.tokens.get().1)],
                             state: PoolState {
                                 sqrt_price: state.sqrt_price.0,
-                                liquidity: state.liquidity.0,
+                                liquidity: state.liquidity.0.into(),
                                 tick: num::BigInt::from(state.tick.0),
                                 liquidity_net: state
                                     .liquidity_net
                                     .iter()
                                     .map(|(tick, amount)| {
-                                        (num::BigInt::from(tick.0), to_big_int(&amount.0))
+                                        (num::BigInt::from(tick.0), num::BigInt::from(amount.0))
                                     })
                                     .collect(),
                                 fee: num::rational::Ratio::new(
-                                    state.fee.numer().as_u32(),
-                                    state.fee.denom().as_u32(),
+                                    state.fee.0.numer().as_u32(),
+                                    state.fee.0.denom().as_u32(),
                                 ),
                             },
                             gas_stats: PoolStats {
@@ -264,7 +266,7 @@ fn to_boundary_auction(
                             },
                         },
                     }),
-                    to_big_rational(&state.fee),
+                    to_big_rational(&state.fee.0),
                 )
             }
             liquidity::State::LimitOrder(state) => {
