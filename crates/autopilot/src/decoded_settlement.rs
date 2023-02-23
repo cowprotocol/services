@@ -120,12 +120,11 @@ pub struct FeeConfiguration {
 }
 
 impl DecodedSettlement {
-    pub fn new(contract: &GPv2Settlement, input: &[u8]) -> Result<Self> {
-        let function = contract
-            .raw_instance()
-            .abi()
+    pub fn new(input: &[u8]) -> Result<Self> {
+        let function = GPv2Settlement::raw_contract()
+            .abi
             .function("settle")
-            .context("settle function not found")?;
+            .unwrap();
         let decoded_input = decode_function_input(function, input)?;
         <DecodedSettlementTokenized>::from_token(Token::Tuple(decoded_input))
             .map(Into::into)
