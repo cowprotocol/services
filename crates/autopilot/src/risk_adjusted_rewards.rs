@@ -89,7 +89,7 @@ impl Calculator {
         };
         let cow_price = async {
             self.native_price
-                .get_price()
+                .get_price(Instant::now())
                 .await
                 .context("cow native price")
         };
@@ -203,57 +203,31 @@ fn uncapped_reward_eth_atoms(
     (profit + cost) / (1. - revert_probability) - cost
 }
 
-/// Price cache for [BestEffortCowPriceEstimator].
-struct FallbackCache {
+/// A caching wrapper over [NativePriceEstimating] used to estimate and cache
+/// CoW token price. Implemented to enable the [Calculator] produce rewards even
+/// when a fresh estimate is not available.
+struct BestEffortCowPriceEstimator {
+    inner: Arc<dyn NativePriceEstimating>,
+    cow_token: H160,
     /// Cached value and a timestamp.
-    value: Option<(f64, Instant)>,
+    fallback_cache: Mutex<Option<(f64, Instant)>>,
     /// How long is the value valid after being set.
     max_age: Duration,
 }
 
-impl FallbackCache {
-    fn get(&mut self, current_time: Instant) -> Option<f64> {
-        let (price, timestamp) = self.value?;
-
-        if timestamp + self.max_age >= current_time {
-            Some(price)
-        } else {
-            None
-        }
-    }
-
-    fn set(&mut self, price: f64, current_time: Instant) {
-        self.value.replace((price, current_time));
-    }
-}
-
-/// A caching wrapper over [NativePriceEstimating] used to estimate and cache
-/// CoW token price. Implemented to enable the [Calculator] produce rewards even
-/// when a fresh estimate is not available.
-#[derive(Clone)]
-struct BestEffortCowPriceEstimator {
-    inner: Arc<dyn NativePriceEstimating>,
-    cow_token: H160,
-    fallback_cache: Arc<Mutex<FallbackCache>>,
-}
-
 impl BestEffortCowPriceEstimator {
     fn new(inner: Arc<dyn NativePriceEstimating>, cow_token: H160, max_age: Duration) -> Self {
-        let fallback_cache = Arc::new(Mutex::new(FallbackCache {
-            value: None,
-            max_age,
-        }));
-
         Self {
             inner,
             cow_token,
-            fallback_cache,
+            fallback_cache: Mutex::new(None),
+            max_age,
         }
     }
 
     /// Attempts to use the inner estimator to get a fresh price estimate.
     /// If that fails, attempts to return the value from cache.
-    async fn get_price(&self) -> NativePriceEstimateResult {
+    async fn get_price(&self, current_time: Instant) -> NativePriceEstimateResult {
         let fresh = self
             .inner
             .estimate_native_prices(std::slice::from_ref(&self.cow_token))
@@ -264,19 +238,11 @@ impl BestEffortCowPriceEstimator {
 
         match fresh {
             Ok(price) => {
-                self.fallback_cache
-                    .lock()
-                    .unwrap()
-                    .set(price, Instant::now());
+                self.set_cached(price, current_time);
                 Ok(price)
             }
             Err(error) => {
-                let price = self
-                    .fallback_cache
-                    .lock()
-                    .unwrap()
-                    .get(Instant::now())
-                    .ok_or(error);
+                let price = self.get_cached(current_time).ok_or(error);
 
                 if price.is_ok() {
                     tracing::warn!("Using an old CoW token price from a fallback cache");
@@ -286,11 +252,36 @@ impl BestEffortCowPriceEstimator {
             }
         }
     }
+
+    fn get_cached(&self, current_time: Instant) -> Option<f64> {
+        let (price, timestamp) = (*self.fallback_cache.lock().unwrap())?;
+
+        if timestamp + self.max_age >= current_time {
+            Some(price)
+        } else {
+            None
+        }
+    }
+
+    fn set_cached(&self, price: f64, current_time: Instant) {
+        self.fallback_cache
+            .lock()
+            .unwrap()
+            .replace((price, current_time));
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, approx::assert_relative_eq};
+    use {
+        super::*,
+        approx::assert_relative_eq,
+        shared::price_estimation::{
+            mocks::{FailingPriceEstimator, FakePriceEstimator},
+            native::NativePriceEstimator,
+            Estimate,
+        },
+    };
 
     // realistic values
     const CONFIG: Configuration = Configuration {
@@ -437,26 +428,61 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fallback_cache() {
-        let mut cache = FallbackCache {
-            value: None,
-            max_age: Duration::from_millis(1000),
-        };
+    #[tokio::test]
+    async fn best_effort_estimator() {
+        let fake_estimator = Arc::new(NativePriceEstimator::new(
+            Arc::new(FakePriceEstimator(Estimate {
+                out_amount: 20.into(),
+                gas: 100,
+            })),
+            [0; 20].into(),
+            10.into(),
+        ));
+        let failing_estimator = Arc::new(NativePriceEstimator::new(
+            Arc::new(FailingPriceEstimator),
+            [0; 20].into(),
+            10.into(),
+        ));
+        let mut estimator = BestEffortCowPriceEstimator::new(
+            failing_estimator.clone(),
+            [1; 20].into(),
+            Duration::from_millis(1000),
+        );
 
-        assert_eq!(cache.get(Instant::now()), None);
+        assert!(estimator.get_price(Instant::now()).await.is_err());
 
-        let set_at = Instant::now();
-        cache.set(1., set_at);
+        estimator.inner = fake_estimator.clone();
+        let cache_set_at = Instant::now();
+        let estimate = estimator.get_price(cache_set_at).await.unwrap();
 
-        assert_eq!(cache.get(set_at), Some(1.));
-        assert_eq!(cache.get(set_at + Duration::from_millis(500)), Some(1.));
-        assert_eq!(cache.get(set_at + Duration::from_millis(1000)), Some(1.));
-        assert_eq!(cache.get(set_at + Duration::from_millis(1001)), None);
+        estimator.inner = failing_estimator;
+        assert_eq!(estimator.get_price(cache_set_at).await.unwrap(), estimate);
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(500))
+                .await
+                .unwrap(),
+            estimate
+        );
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(1000))
+                .await
+                .unwrap(),
+            estimate
+        );
+        assert!(estimator
+            .get_price(cache_set_at + Duration::from_millis(1001))
+            .await
+            .is_err());
 
-        let set_at = Instant::now();
-        cache.set(2., set_at);
-
-        assert_eq!(cache.get(set_at), Some(2.));
+        estimator.inner = fake_estimator;
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(1002))
+                .await
+                .unwrap(),
+            estimate
+        );
     }
 }
