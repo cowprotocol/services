@@ -39,7 +39,12 @@ impl TraceCallDetector {
         // Arbitrary amount that is large enough that small relative fees should be
         // visible.
         const MIN_AMOUNT: u64 = 100_000;
-        let (take_from, amount) = match self.finder.find_owner(token, MIN_AMOUNT.into()).await? {
+        let (take_from, amount) = match self
+            .finder
+            .find_owner(token, MIN_AMOUNT.into())
+            .await
+            .context("find_owner")?
+        {
             Some((address, balance)) => {
                 // Don't use the full balance, but instead a portion of it. This
                 // makes the trace call less racy and prone to the transfer
@@ -54,7 +59,12 @@ impl TraceCallDetector {
                 tracing::debug!(?token, ?address, ?amount, "found owner");
                 (address, amount)
             }
-            None => return Ok(TokenQuality::bad("no pool")),
+            None => {
+                return Ok(TokenQuality::bad(
+                    "Could not find on chain source of the token with at least {MIN_AMOUNT} \
+                     balance.",
+                ))
+            }
         };
 
         // We transfer the full available amount of the token from the amm pool into the
@@ -65,8 +75,8 @@ impl TraceCallDetector {
         let request = self.create_trace_request(token, amount, take_from);
         let traces = trace_many::trace_many(request, &self.web3)
             .await
-            .context("failed to trace for bad token detection")?;
-        Self::handle_response(&traces, amount)
+            .context("trace_many")?;
+        Self::handle_response(&traces, amount, take_from)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect
@@ -113,48 +123,62 @@ impl TraceCallDetector {
         requests
     }
 
-    fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality> {
+    fn handle_response(
+        traces: &[BlockTrace],
+        amount: U256,
+        take_from: H160,
+    ) -> Result<TokenQuality> {
         ensure!(traces.len() == 8, "unexpected number of traces");
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "can't transfer into settlement contract: {reason}"
+                    "Transfer of token from on chain source {take_from:?} into settlement \
+                     contract failed: {reason}"
                 )))
             }
         };
+        let arbitrary = Self::arbitrary_recipient();
         let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "can't transfer out of settlement contract: {reason}"
+                    "Transfer token out of settlement contract to arbitrary recipient \
+                     {arbitrary:?} failed: {reason}",
                 )))
             }
         };
 
+        let message = "\
+            Failed to decode the token's balanceOf response because it did not \
+            return 32 bytes. A common cause of this is a bug in the Vyper \
+            smart contract compiler. See \
+            https://github.com/cowprotocol/services/pull/781 for more \
+            information.\
+        ";
+        let bad = TokenQuality::Bad {
+            reason: message.to_string(),
+        };
         let balance_before_in = match decode_u256(&traces[0]) {
-            Ok(balance) => balance,
-            // Common cause of the failure: https://github.com/cowprotocol/services/pull/781
-            Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
         let balance_after_in = match decode_u256(&traces[2]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode middle settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
         let balance_after_out = match decode_u256(&traces[5]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
-
         let balance_recipient_before = match decode_u256(&traces[3]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
-
         let balance_recipient_after = match decode_u256(&traces[6]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance after")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
 
         tracing::debug!(%amount, %balance_before_in, %balance_after_in, %balance_after_out);
@@ -166,35 +190,46 @@ impl TraceCallDetector {
             Some(amount) => amount,
             None => {
                 return Ok(TokenQuality::bad(
-                    "token total supply does not fit a uint256",
+                    "Transferring {amount} into settlement contract would overflow its balance.",
                 ))
             }
         };
         if balance_after_in != computed_balance_after_in {
             return Ok(TokenQuality::bad(
-                "balance after in transfer does not match",
+                "Transferring {amount} into settlement contract was expected to result in a \
+                 balance of {computer_balance_after_in} but actually resulted in \
+                 {balance_after_in}. A common cause for this is that the token takes a fee on \
+                 transfer.",
             ));
         }
         if balance_after_out != balance_before_in {
             return Ok(TokenQuality::bad(
-                "balance after out transfer does not match",
+                "Transferring {amount} out of settlement contract was expected to result in the \
+                 original balance of {balance_before_in} but actually resulted in \
+                 {balance_after_out}.",
             ));
         }
         let computed_balance_recipient_after = match balance_recipient_before.checked_add(amount) {
             Some(amount) => amount,
             None => {
                 return Ok(TokenQuality::bad(
-                    "token total supply does not fit a uint256",
+                    "Transferring {amount} into arbitrary recipient {arbitrary:?} would overflow \
+                     its balance.",
                 ))
             }
         };
         if computed_balance_recipient_after != balance_recipient_after {
-            return Ok(TokenQuality::bad("balance of recipient does not match"));
+            return Ok(TokenQuality::bad(
+                "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
+                 result in a balance of {computer_balance_recipient_after} but actually resulted \
+                 in {balance_recipient_after}. A common cause for this is that the token takes a \
+                 fee on transfer.",
+            ));
         }
 
         if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
             return Ok(TokenQuality::bad(format!(
-                "can't approve max amount: {err}"
+                "Approval of U256::MAX failed: {err}"
             )));
         }
 
@@ -217,10 +252,13 @@ fn call_request(
     }
 }
 
-fn decode_u256(trace: &BlockTrace) -> Result<U256> {
+/// Returns none if the length of the bytes in the trace output is not 32.
+fn decode_u256(trace: &BlockTrace) -> Option<U256> {
     let bytes = trace.output.0.as_slice();
-    ensure!(bytes.len() == 32, "invalid length");
-    Ok(U256::from_big_endian(bytes))
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(U256::from_big_endian(bytes))
 }
 
 // The outer result signals communication failure with the node.
@@ -395,7 +433,7 @@ mod tests {
             },
         ];
 
-        let result = TraceCallDetector::handle_response(traces, 1.into()).unwrap();
+        let result = TraceCallDetector::handle_response(traces, 1.into(), H160::zero()).unwrap();
         let expected = TokenQuality::Good;
         assert_eq!(result, expected);
     }

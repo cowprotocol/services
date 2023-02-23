@@ -1,3 +1,5 @@
+use crate::bad_token::TokenQuality;
+
 pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
@@ -218,8 +220,8 @@ impl Display for Arguments {
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
-    #[error("Token {0:?} not supported")]
-    UnsupportedToken(H160),
+    #[error("token {token:?} is not supported: {reason:}")]
+    UnsupportedToken { token: H160, reason: String },
 
     #[error("No liquidity")]
     NoLiquidity,
@@ -240,7 +242,10 @@ pub enum PriceEstimationError {
 impl Clone for PriceEstimationError {
     fn clone(&self) -> Self {
         match self {
-            Self::UnsupportedToken(token) => Self::UnsupportedToken(*token),
+            Self::UnsupportedToken { token, reason } => Self::UnsupportedToken {
+                token: *token,
+                reason: reason.clone(),
+            },
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
@@ -364,12 +369,9 @@ pub async fn ensure_token_supported(
     bad_token_detector: &dyn BadTokenDetecting,
 ) -> Result<(), PriceEstimationError> {
     match bad_token_detector.detect(token).await {
-        Ok(quality) => {
-            if quality.is_good() {
-                Ok(())
-            } else {
-                Err(PriceEstimationError::UnsupportedToken(token))
-            }
+        Ok(TokenQuality::Good) => Ok(()),
+        Ok(TokenQuality::Bad { reason }) => {
+            Err(PriceEstimationError::UnsupportedToken { token, reason })
         }
         Err(err) => Err(PriceEstimationError::Other(err)),
     }
