@@ -114,7 +114,9 @@ pub async fn collector(
         UniswapV3PoolFetcher::new(
             eth.chain_id().0.as_u64(),
             web3.clone(),
-            // TODO: pass client into this function?
+            // TODO: Should we rather pass a `reqwest::Client` with preconfigured settings into
+            // this function than just creat a default one in place everytime?
+            // This could have an impact on things like timeout limits.
             Default::default(),
             block_retriever,
             config.max_pools_to_initialize,
