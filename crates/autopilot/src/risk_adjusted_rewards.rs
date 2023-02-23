@@ -242,13 +242,17 @@ impl BestEffortCowPriceEstimator {
                 Ok(price)
             }
             Err(error) => {
-                let price = self.get_cached(current_time).ok_or(error);
-
-                if price.is_ok() {
-                    tracing::warn!("Using an old CoW token price from a fallback cache");
+                let price = self.get_cached(current_time);
+                if let Some(price) = price {
+                    tracing::warn!(
+                        ?error,
+                        "Using an old CoW token price from a fallback cache, fetching a fresh \
+                         estimate failed"
+                    );
+                    Ok(price)
+                } else {
+                    Err(error)
                 }
-
-                price
             }
         }
     }
