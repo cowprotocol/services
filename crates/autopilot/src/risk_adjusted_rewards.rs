@@ -426,4 +426,25 @@ mod tests {
             println!("{} {:?}", order.metadata.uid, result);
         }
     }
+
+    #[test]
+    fn fallback_cache() {
+        let mut cache = FallbackCache {
+            value: None,
+            max_age: Duration::from_millis(1000),
+        };
+
+        assert_eq!(cache.get(Instant::now()), None);
+
+        cache.set(1., Instant::now());
+
+        assert_eq!(cache.get(Instant::now()), Some(1.));
+        assert_eq!(cache.get(Instant::now() + Duration::from_millis(500)), Some(1.));
+        assert_eq!(cache.get(Instant::now() + Duration::from_millis(1000)), Some(1.));
+        assert_eq!(cache.get(Instant::now() + Duration::from_millis(1001)), None);
+
+        cache.set(2., Instant::now());
+
+        assert_eq!(cache.get(Instant::now()), Some(2.));
+    }
 }
