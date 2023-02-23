@@ -4,7 +4,6 @@ use {
         infra,
         util::serialize,
     },
-    number_conversions::rational_to_big_decimal,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::HashMap,
@@ -63,11 +62,10 @@ impl Auction {
                 .iter()
                 .map(|liquidity| match &liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => {
-                        tokens.extend(
-                            pool.reserves
-                                .iter()
-                                .map(|asset| (asset.token.into(), Default::default())),
-                        );
+                        for token in pool.reserves.iter().map(|r| r.token) {
+                            tokens.entry(token.into()).or_insert_with(Default::default);
+                        }
+
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.address.into(),
@@ -88,8 +86,10 @@ impl Auction {
                         })
                     }
                     liquidity::Kind::UniswapV3(pool) => {
-                        tokens.insert(pool.tokens.get().0.into(), Default::default());
-                        tokens.insert(pool.tokens.get().1.into(), Default::default());
+                        for token in [pool.tokens.get().0, pool.tokens.get().1] {
+                            tokens.entry(token.into()).or_insert_with(Default::default);
+                        }
+
                         Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
                             id: liquidity.id.into(),
                             address: pool.address.0,
