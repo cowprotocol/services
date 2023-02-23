@@ -3,6 +3,7 @@ use crate::domain::{self, eth, liquidity};
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Interaction {
     Custom(Custom),
     Liquidity(Liquidity),
@@ -25,7 +26,7 @@ impl Interaction {
             Interaction::Liquidity(interaction) => {
                 let address = match &interaction.liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => pool.router.into(),
-                    liquidity::Kind::UniswapV3(_) => todo!(),
+                    liquidity::Kind::UniswapV3(pool) => pool.router.into(),
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
                     liquidity::Kind::BalancerV2Weighted(_) => todo!(),
                     liquidity::Kind::Swapr(_) => todo!(),

@@ -327,11 +327,11 @@ struct ConcentratedLiquidityPool {
     tokens: Vec<H160>,
     #[serde_as(as = "serialize::U256")]
     sqrt_price: U256,
-    #[serde_as(as = "serialize::U256")]
-    liquidity: U256,
+    #[serde_as(as = "DisplayFromStr")]
+    liquidity: u128,
     tick: i32,
-    #[serde_as(as = "HashMap<DisplayFromStr, serialize::U256>")]
-    liquidity_net: HashMap<i32, U256>,
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    liquidity_net: HashMap<i32, i128>,
     fee: BigDecimal,
 }
 
@@ -364,12 +364,14 @@ impl ConcentratedLiquidityPool {
                     .map(|(tick, liquidity)| {
                         (
                             liquidity::concentrated::Tick(*tick),
-                            liquidity::concentrated::Amount(*liquidity),
+                            liquidity::concentrated::LiquidityNet(*liquidity),
                         )
                     })
                     .collect(),
-                fee: conv::decimal_to_rational(&self.fee)
-                    .ok_or("invalid concentrated liquidity pool fee")?,
+                fee: liquidity::concentrated::Fee(
+                    conv::decimal_to_rational(&self.fee)
+                        .ok_or("invalid concentrated liquidity pool fee")?,
+                ),
             }),
         })
     }
