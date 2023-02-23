@@ -24,7 +24,12 @@ pub struct Dex {
 
 impl Dex {
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        // TODO: order prioritization, skip liquidity orders, concurrency.
+        // TODO:
+        // * order prioritization
+        // * skip liquidity orders
+        // * concurrency
+        // * respecting auction deadline
+
         let prices = slippage::Prices::for_auction(&auction);
 
         let mut solutions = Vec::new();
@@ -48,17 +53,16 @@ impl Dex {
         prices: &slippage::Prices,
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
-        let query = dex::Order::new(&order);
-        let slippage = self.slippage.relative(&query.amount(), prices);
+        let swap = {
+            let order = dex::Order::new(&order);
+            let slippage = self.slippage.relative(&order.amount(), prices);
+            self.dex.swap(&order, &slippage, gas).await
+        };
 
-        let swap = match self.dex.swap(&query, &slippage, gas).await {
+        let swap = match swap {
             Ok(swap) => swap,
-            Err(infra::dex::Error::NotFound) => {
-                tracing::debug!("cound not find swap for order");
-                return None;
-            }
-            Err(infra::dex::Error::OrderNotSupported) => {
-                tracing::debug!("skipping unsupported order");
+            Err(err @ infra::dex::Error::NotFound | err @ infra::dex::Error::OrderNotSupported) => {
+                tracing::debug!(?err, "skipping order");
                 return None;
             }
             Err(infra::dex::Error::Other(err)) => {
