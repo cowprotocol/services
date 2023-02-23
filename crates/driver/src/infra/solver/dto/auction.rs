@@ -4,6 +4,7 @@ use {
         infra,
         util::serialize,
     },
+    number_conversions::rational_to_big_decimal,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::HashMap,

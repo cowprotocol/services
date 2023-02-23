@@ -28,17 +28,17 @@ use {
         },
         liquidity_collector::LiquidityCollecting,
     },
-    std::sync::{Arc, Mutex},
+    std::{collections::BTreeMap, sync::{Arc, Mutex}},
 };
 
-pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> liquidity::Liquidity {
+pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Option<liquidity::Liquidity> {
     let handler = pool
         .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v3::UniswapV3SettlementHandler>()
         .expect("downcast uniswap settlement handler");
 
-    liquidity::Liquidity {
+    let liquidity = liquidity::Liquidity {
         id,
         gas: eth::Gas(pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
@@ -47,26 +47,27 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> liquidity::L
             tokens: liquidity::TokenPair::new(
                 pool.pool.tokens[0].id.into(),
                 pool.pool.tokens[1].id.into(),
-            )
-            .unwrap(),
+            )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
-            tick: Tick(pool.pool.state.tick.to_i32().unwrap()),
+            tick: Tick(pool.pool.state.tick.to_i32()?),
             liquidity_net: pool
                 .pool
                 .state
                 .liquidity_net
                 .iter()
-                .map(|(key, value)| {
-                    (
-                        Tick(key.to_i32().unwrap()),
-                        LiquidityNet(value.to_i128().unwrap()),
-                    )
+                .map(|(key, value)| -> Option<_> {
+                    Some((
+                        Tick(key.to_i32()?),
+                        LiquidityNet(value.to_i128()?),
+                    ))
                 })
-                .collect(),
+                .collect::<Option<BTreeMap<_, _>>>()?,
             fee: Fee(pool.pool.state.fee),
-        }),
-    }
+        })
+    };
+
+    Some(liquidity)
 }
 
 pub fn to_interaction(

@@ -118,10 +118,10 @@ impl Fetcher {
         let liquidity = liquidity
             .into_iter()
             .enumerate()
-            .map(|(index, liquidity)| {
+            .filter_map(|(index, liquidity)| {
                 let id = liquidity::Id(index);
                 match liquidity {
-                    Liquidity::ConstantProduct(pool) => uniswap::v2::to_domain(id, pool),
+                    Liquidity::ConstantProduct(pool) => Some(uniswap::v2::to_domain(id, pool)),
                     Liquidity::BalancerWeighted(_) => unreachable!(),
                     Liquidity::BalancerStable(_) => unreachable!(),
                     Liquidity::LimitOrder(_) => unreachable!(),
