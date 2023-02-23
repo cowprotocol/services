@@ -28,7 +28,10 @@ use {
         },
         liquidity_collector::LiquidityCollecting,
     },
-    std::{collections::BTreeMap, sync::{Arc, Mutex}},
+    std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
+    },
 };
 
 pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Option<liquidity::Liquidity> {
@@ -57,14 +60,11 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Option<liqui
                 .liquidity_net
                 .iter()
                 .map(|(key, value)| -> Option<_> {
-                    Some((
-                        Tick(key.to_i32()?),
-                        LiquidityNet(value.to_i128()?),
-                    ))
+                    Some((Tick(key.to_i32()?), LiquidityNet(value.to_i128()?)))
                 })
                 .collect::<Option<BTreeMap<_, _>>>()?,
             fee: Fee(pool.pool.state.fee),
-        })
+        }),
     };
 
     Some(liquidity)
