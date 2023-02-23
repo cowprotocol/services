@@ -23,6 +23,7 @@ enum Kind {
     MissingSurplusFee,
     QuoteSameTokens,
     InvalidAssetFlow,
+    InvalidInternalization,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +49,10 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::InvalidAssetFlow => {
                 "The solver returned a solution with invalid asset flow: token amounts entering \
                  the settlement contract are lower than token amounts exiting the contract"
+            }
+            Kind::InvalidInternalization => {
+                "The solver returned a solution which internalizes interactions with untrusted \
+                 tokens"
             }
         };
         (
@@ -84,6 +89,9 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::Solution(solution::Error::Verification(
                 solution::VerificationError::AssetFlow,
             )) => Kind::InvalidAssetFlow,
+            competition::Error::Solution(solution::Error::Verification(
+                solution::VerificationError::Internalization,
+            )) => Kind::InvalidInternalization,
             competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
             competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
