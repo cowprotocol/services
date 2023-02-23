@@ -19,6 +19,7 @@ pub mod ethrpc;
 pub mod event_handling;
 pub mod event_storing_helpers;
 pub mod exit_process_on_panic;
+pub mod external_prices;
 pub mod fee_subsidy;
 pub mod gas_price;
 pub mod gas_price_estimation;
