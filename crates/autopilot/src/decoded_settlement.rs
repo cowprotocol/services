@@ -174,8 +174,8 @@ fn surplus(
     let sell_token_index = trade.sell_token_index.as_u64() as usize;
     let buy_token_index = trade.buy_token_index.as_u64() as usize;
 
-    let sell_token_clearing_price = clearing_prices[sell_token_index].to_big_rational();
-    let buy_token_clearing_price = clearing_prices[buy_token_index].to_big_rational();
+    let sell_token_clearing_price = clearing_prices.get(sell_token_index)?.to_big_rational();
+    let buy_token_clearing_price = clearing_prices.get(buy_token_index)?.to_big_rational();
     let kind = order_kind(&trade.flags).unwrap();
 
     if match kind {
