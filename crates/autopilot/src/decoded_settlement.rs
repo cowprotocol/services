@@ -1,3 +1,6 @@
+//! This module contains the logic for decoding the function input for
+//! GPv2Settlement::settle.
+
 use {
     anyhow::{anyhow, Context, Result},
     bigdecimal::{Signed, Zero},
@@ -154,6 +157,10 @@ impl DecodedSettlement {
         })
     }
 
+    // Assumes it is called with already FILLED orders.
+    // Needs rework to support partially fillable orders.
+    // Tricky because the decoded settlement is using FILLED `orders` so we don't
+    // always know the executed amount in case of partial fill.
     pub fn total_fees(
         &self,
         external_prices: &ExternalPrices,
@@ -230,19 +237,8 @@ fn fee(
     order: &Order,
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
-    let sell_token = order.data.sell_token;
-
-    let remaining = shared::remaining_amounts::Remaining::from_order(order).ok()?;
-
-    // The reported fee amount that is used for objective computation is the
-    // order's full full amount scaled by a constant factor.
-    let scaled_fee_amount = U256::from_f64_lossy(
-        remaining
-            .remaining(order.metadata.full_fee_amount)
-            .ok()?
-            .to_f64_lossy()
-            * configuration.fee_objective_scaling_factor,
-    );
+    let scaled_fee_amount = order.metadata.full_fee_amount
+        * U256::from_f64_lossy(configuration.fee_objective_scaling_factor);
     let fee = match order.data.kind {
         model::order::OrderKind::Buy => scaled_fee_amount
             .checked_mul(trade.executed_amount)?
@@ -252,7 +248,7 @@ fn fee(
             .checked_div(trade.sell_amount),
     }?;
     external_prices
-        .try_get_native_amount(sell_token, fee.to_big_rational())
+        .try_get_native_amount(order.data.sell_token, fee.to_big_rational())
         .and_then(|fee| big_rational_to_u256(&fee).ok())
 }
 
