@@ -36,13 +36,15 @@ pub struct Configuration {
 }
 
 pub struct Calculator {
-    pub config: Configuration,
-    pub database: Postgres,
-    pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub native_price: BestEffortCowPriceEstimator,
+    config: Configuration,
+    database: Postgres,
+    gas_price: Arc<dyn GasPriceEstimating>,
+    native_price: BestEffortCowPriceEstimator,
 }
 
 impl Calculator {
+    /// Time limit for CoW token price cached in [BestEffortCowPriceEstimator].
+    /// Hardcoded to avoid bloating the service configuration.
     const COW_PRICE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
 
     pub fn new(
@@ -201,8 +203,11 @@ fn uncapped_reward_eth_atoms(
     (profit + cost) / (1. - revert_probability) - cost
 }
 
+/// Price cache for [BestEffortCowPriceEstimator].
 struct FallbackCache {
+    /// Cached value and a timestamp.
     value: Option<(f64, Instant)>,
+    /// How long is the value valid after being set.
     max_age: Duration,
 }
 
@@ -222,15 +227,17 @@ impl FallbackCache {
     }
 }
 
+/// A caching wrapper over [NativePriceEstimating] used to estimate and cache CoW token price.
+/// Implemented to enable the [Calculator] produce rewards even when a fresh estimate is not available.
 #[derive(Clone)]
-pub struct BestEffortCowPriceEstimator {
+struct BestEffortCowPriceEstimator {
     inner: Arc<dyn NativePriceEstimating>,
     cow_token: H160,
     fallback_cache: Arc<Mutex<FallbackCache>>,
 }
 
 impl BestEffortCowPriceEstimator {
-    pub fn new(inner: Arc<dyn NativePriceEstimating>, cow_token: H160, max_age: Duration) -> Self {
+    fn new(inner: Arc<dyn NativePriceEstimating>, cow_token: H160, max_age: Duration) -> Self {
         let fallback_cache = Arc::new(Mutex::new(FallbackCache {
             value: None,
             max_age,
@@ -243,7 +250,9 @@ impl BestEffortCowPriceEstimator {
         }
     }
 
-    pub async fn get_price(&self) -> NativePriceEstimateResult {
+    /// Attempts to use the inner estimator to get a fresh price estimate.
+    /// If that fails, attempts to return the value from cache.
+    async fn get_price(&self) -> NativePriceEstimateResult {
         let fresh = self
             .inner
             .estimate_native_prices(std::slice::from_ref(&self.cow_token))
