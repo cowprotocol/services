@@ -1,8 +1,6 @@
-pub mod external_prices;
 mod settlement_encoder;
 
 use {
-    self::external_prices::ExternalPrices,
     crate::{
         encoding::{self, EncodedSettlement, EncodedTrade},
         liquidity::Settleable,
@@ -206,9 +204,9 @@ impl Trade {
     }
 }
 
-use shared::http_solver::model::Score;
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
+use shared::{external_prices::ExternalPrices, http_solver::model::Score};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -562,11 +560,11 @@ fn surplus_ratio(
 pub mod tests {
     use {
         super::*,
-        crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices},
+        crate::liquidity::SettlementHandling,
         maplit::hashmap,
         model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
         num::FromPrimitive,
-        shared::addr,
+        shared::{addr, externalprices},
     };
 
     pub fn assert_settlement_encoded_with<L, S>(
