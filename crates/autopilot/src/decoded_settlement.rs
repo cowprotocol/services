@@ -128,6 +128,10 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
     }
 }
 
+pub struct FeeConfiguration {
+    pub fee_objective_scaling_factor: f64,
+}
+
 impl DecodedSettlement {
     pub fn new(contract: &GPv2Settlement, input: &[u8]) -> Result<Self> {
         let function = contract
@@ -150,7 +154,12 @@ impl DecodedSettlement {
         })
     }
 
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
+    pub fn total_fees(
+        &self,
+        external_prices: &ExternalPrices,
+        orders: &[Order],
+        configuration: &FeeConfiguration,
+    ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders.iter().find(|order| {
                 let signature = Bytes(
@@ -161,7 +170,9 @@ impl DecodedSettlement {
                 );
                 signature == trade.signature
             }) {
-                Some(order) => acc + fee(trade, external_prices, order).unwrap_or_default(),
+                Some(order) => {
+                    acc + fee(trade, external_prices, order, configuration).unwrap_or_default()
+                }
                 None => acc,
             }
         })
@@ -213,7 +224,12 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
-fn fee(trade: &DecodedTrade, external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
+fn fee(
+    trade: &DecodedTrade,
+    external_prices: &ExternalPrices,
+    order: &Order,
+    configuration: &FeeConfiguration,
+) -> Option<U256> {
     let sell_token = order.data.sell_token;
 
     let remaining = shared::remaining_amounts::Remaining::from_order(order).ok()?;
@@ -225,7 +241,7 @@ fn fee(trade: &DecodedTrade, external_prices: &ExternalPrices, order: &Order) ->
             .remaining(order.metadata.full_fee_amount)
             .ok()?
             .to_f64_lossy()
-            * 1.0, //self.fee_objective_scaling_factor, // TODO: add this
+            * configuration.fee_objective_scaling_factor,
     );
     let fee = match order.data.kind {
         model::order::OrderKind::Buy => scaled_fee_amount
@@ -482,8 +498,11 @@ mod tests {
             ..Default::default()
         }
         ];
+        let configuration = FeeConfiguration {
+            fee_objective_scaling_factor: 1.0,
+        };
         let fees = settlement
-            .total_fees(&external_prices, &orders)
+            .total_fees(&external_prices, &orders, &configuration)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);

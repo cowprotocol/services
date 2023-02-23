@@ -2,7 +2,10 @@
 //! event that is emitted by the settlement contract.
 
 use {
-    crate::{database::Postgres, decoded_settlement::DecodedSettlement},
+    crate::{
+        database::Postgres,
+        decoded_settlement::{DecodedSettlement, FeeConfiguration},
+    },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     primitive_types::{H160, H256},
@@ -22,6 +25,7 @@ pub struct OnSettlementEventUpdater {
     pub native_token: H160,
     pub db: Postgres,
     pub current_block: CurrentBlockStream,
+    pub fee_objective_scaling_factor: f64,
 }
 
 impl OnSettlementEventUpdater {
@@ -147,7 +151,10 @@ impl OnSettlementEventUpdater {
         )?;
         let surplus = settlement.total_surplus(&external_prices);
         let orders = self.db.orders_for_tx(&hash).await?;
-        let fee = settlement.total_fees(&external_prices, &orders);
+        let configuration = FeeConfiguration {
+            fee_objective_scaling_factor: self.fee_objective_scaling_factor,
+        };
+        let fee = settlement.total_fees(&external_prices, &orders, &configuration);
 
         self.db
             .insert_settlement_observation(
@@ -226,6 +233,7 @@ mod tests {
             native_token,
             current_block,
             contract,
+            fee_objective_scaling_factor: 1.0,
         };
 
         assert!(!updater.update().await.unwrap());

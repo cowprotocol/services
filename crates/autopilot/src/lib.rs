@@ -589,6 +589,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
             native_token: native_token.address(),
             db: db.clone(),
             current_block: current_block_stream,
+            fee_objective_scaling_factor: args.fee_objective_scaling_factor,
         };
     tokio::task::spawn(
         on_settlement_event_updater
