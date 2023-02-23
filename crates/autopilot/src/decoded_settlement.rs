@@ -110,23 +110,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
                     },
                 )
                 .collect(),
-            interactions: [
-                interactions[0]
-                    .clone()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-                interactions[1]
-                    .clone()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-                interactions[2]
-                    .clone()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-            ],
+            interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
         }
     }
 }
