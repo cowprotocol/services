@@ -34,8 +34,8 @@ pub async fn run(
         }
         cli::Command::Balancer { config } => {
             let config = config::balancer::file::load(&config).await;
-            Solver::Balancer(solver::Balancer {
-                sor: dex::balancer::Sor::new(config.sor),
+            Solver::Dex(solver::Dex {
+                dex: dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
                 slippage: config.slippage,
             })
         }

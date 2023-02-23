@@ -1,8 +1,9 @@
 //! The domain object representing a CoW Protocol order.
 
 use {
-    crate::domain::eth,
+    crate::{domain::eth, util},
     ethereum_types::{Address, H256, U256},
+    std::fmt::{self, Debug, Display, Formatter},
 };
 
 /// A CoW Protocol order in the auction.
@@ -29,8 +30,22 @@ impl Order {
 }
 
 /// UID of an order.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Uid(pub [u8; 56]);
+
+impl Debug for Uid {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_tuple("Uid")
+            .field(&util::fmt::Hex(&self.0))
+            .finish()
+    }
+}
+
+impl Display for Uid {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&util::fmt::Hex(&self.0), f)
+    }
+}
 
 /// An order fee amount, denominated in its sell token.
 #[derive(Clone, Copy, Debug)]
