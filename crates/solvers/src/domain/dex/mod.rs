@@ -5,10 +5,10 @@
 use {
     crate::{
         domain::{eth, order, solution},
-        util::fmt,
+        util,
     },
     ethereum_types::U256,
-    std::fmt::{Debug, Formatter},
+    std::fmt::{self, Debug, Formatter},
 };
 
 pub mod slippage;
@@ -63,7 +63,7 @@ impl Debug for Call {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Call")
             .field("to", &self.to)
-            .field("calldata", &fmt::Hex(&self.calldata))
+            .field("calldata", &util::fmt::Hex(&self.calldata))
             .finish()
     }
 }

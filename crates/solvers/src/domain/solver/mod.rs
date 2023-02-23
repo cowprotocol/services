@@ -1,17 +1,17 @@
 use crate::domain::{auction, solution};
 
-pub mod balancer;
 pub mod baseline;
+pub mod dex;
 pub mod legacy;
 pub mod naive;
 
-pub use self::{balancer::Balancer, baseline::Baseline, legacy::Legacy, naive::Naive};
+pub use self::{baseline::Baseline, dex::Dex, legacy::Legacy, naive::Naive};
 
 pub enum Solver {
     Baseline(Baseline),
     Naive(Naive),
     Legacy(Legacy),
-    Balancer(Balancer),
+    Dex(Dex),
 }
 
 impl Solver {
@@ -23,7 +23,7 @@ impl Solver {
             Solver::Baseline(solver) => solver.solve(auction),
             Solver::Naive(solver) => solver.solve(auction),
             Solver::Legacy(solver) => solver.solve(auction).await,
-            Solver::Balancer(solver) => solver.solve(auction).await,
+            Solver::Dex(solver) => solver.solve(auction).await,
         }
     }
 }
