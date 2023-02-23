@@ -102,14 +102,16 @@ impl OnSettlementEventUpdater {
         //
         // see database/sql/V048__create_settlement_rewards.sql
         //
-        // Surplus and fees calculation is based solely on the mined transaction call
-        // data and the auction external prices. Auction external prices for all tokens
-        // for all solvable orders are stored in the database (auction_prices table) in
-        // autopilot before competition. After a transaction is mined we calculate the
-        // surplus and fees for each transaction and insert them into the database
-        // (settlement_observations table). Now we know which tokens were used in the
-        // transaction so we update the auction_prices table with the actual prices
-        // that were used.
+        // Surplus and fees calculation is based on:
+        // a) the mined transaction call data
+        // b) the auction external prices fetched from orderbook
+        // c) the orders fetched from orderbook
+        // Auction external prices for all tokens for all solvable orders are stored in
+        // the database (auction_prices table) in autopilot before competition.
+        // After a transaction is mined we calculate the surplus and fees for each
+        // transaction and insert them into the database (settlement_observations
+        // table). Now we know which tokens were used in the transaction so we
+        // update the auction_prices table with the actual prices that were used.
 
         // TODO how to detect missed settlements? need to populate settlement
         // observation on event insertion.
@@ -126,7 +128,6 @@ impl OnSettlementEventUpdater {
         let effective_gas_price = tx_receipt
             .effective_gas_price
             .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let fee = primitive_types::U256::default(); // TODO
         let settlement = DecodedSettlement::new(&self.contract, &transaction.input.0)?;
         let auction_id = self
             .db
@@ -145,6 +146,8 @@ impl OnSettlementEventUpdater {
             auction_external_prices.clone(),
         )?;
         let surplus = settlement.total_surplus(&external_prices);
+        let orders = self.db.orders_for_tx(&hash).await?;
+        let fee = settlement.total_fees(&external_prices, &orders);
 
         self.db
             .insert_settlement_observation(

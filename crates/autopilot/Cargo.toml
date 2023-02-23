@@ -28,6 +28,7 @@ ethcontract = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
+hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
