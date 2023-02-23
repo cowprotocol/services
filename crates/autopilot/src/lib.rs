@@ -435,8 +435,8 @@ pub async fn main(args: arguments::Arguments) {
             6 => (),
             _ => panic!("need none or all cip_14 arguments"),
         };
-        Some(risk_adjusted_rewards::Calculator {
-            config: risk_adjusted_rewards::Configuration {
+        Some(risk_adjusted_rewards::Calculator::new(
+            risk_adjusted_rewards::Configuration {
                 beta: args.cip_14_beta.unwrap(),
                 alpha1: args.cip_14_alpha1.unwrap(),
                 alpha2: args.cip_14_alpha2.unwrap(),
@@ -444,14 +444,14 @@ pub async fn main(args: arguments::Arguments) {
                 gas_cap: args.cip_14_gas_cap.unwrap(),
                 reward_cap: args.cip_14_reward_cap.unwrap(),
             },
-            database: db.clone(),
-            cow_token: cow_token
+            db.clone(),
+            cow_token
                 .as_ref()
                 .expect("no cow token on mainnet")
                 .address(),
-            gas_price: gas_price_estimator.clone(),
-            native_price: native_price_estimator.clone(),
-        })
+            gas_price_estimator.clone(),
+            native_price_estimator.clone(),
+        ))
     })();
 
     let skip_event_sync_start = if args.skip_event_sync {

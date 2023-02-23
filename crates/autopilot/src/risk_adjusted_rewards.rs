@@ -15,8 +15,11 @@ use {
     gas_estimation::GasPriceEstimating,
     model::order::{Order, OrderClass, OrderUid},
     primitive_types::H160,
-    shared::price_estimation::native::NativePriceEstimating,
-    std::sync::Arc,
+    shared::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    std::{
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    },
 };
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -35,12 +38,32 @@ pub struct Configuration {
 pub struct Calculator {
     pub config: Configuration,
     pub database: Postgres,
-    pub cow_token: H160,
     pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub native_price: Arc<dyn NativePriceEstimating>,
+    pub native_price: BestEffortCowPriceEstimator,
 }
 
 impl Calculator {
+    const COW_PRICE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+
+    pub fn new(
+        config: Configuration,
+        database: Postgres,
+        cow_token: H160,
+        gas_price: Arc<dyn GasPriceEstimating>,
+        native_price: Arc<dyn NativePriceEstimating>,
+    ) -> Self {
+        Self {
+            config,
+            database,
+            gas_price,
+            native_price: BestEffortCowPriceEstimator::new(
+                native_price,
+                cow_token,
+                Self::COW_PRICE_MAX_AGE,
+            ),
+        }
+    }
+
     /// Returns the rewards in COW base units for several orders.
     ///
     /// An outer error indicates that no reward calculations were performed.
@@ -64,11 +87,8 @@ impl Calculator {
         };
         let cow_price = async {
             self.native_price
-                .estimate_native_prices(std::slice::from_ref(&self.cow_token))
-                .next()
+                .get_price()
                 .await
-                .unwrap()
-                .1
                 .context("cow native price")
         };
         let (gas_price, cow_price) = futures::future::try_join(gas_price, cow_price).await?;
@@ -179,6 +199,83 @@ fn uncapped_reward_eth_atoms(
     let exponent = -beta - alpha1 * (gas / 1e3) - alpha2 * (gas_price / 1e9);
     let revert_probability = 1. / (1. + exponent.exp());
     (profit + cost) / (1. - revert_probability) - cost
+}
+
+struct FallbackCache {
+    value: Option<(f64, Instant)>,
+    max_age: Duration,
+}
+
+impl FallbackCache {
+    fn get(&mut self, current_time: Instant) -> Option<f64> {
+        let (price, timestamp) = self.value?;
+
+        if timestamp + self.max_age >= current_time {
+            Some(price)
+        } else {
+            None
+        }
+    }
+
+    fn set(&mut self, price: f64, current_time: Instant) {
+        self.value.replace((price, current_time));
+    }
+}
+
+#[derive(Clone)]
+pub struct BestEffortCowPriceEstimator {
+    inner: Arc<dyn NativePriceEstimating>,
+    cow_token: H160,
+    fallback_cache: Arc<Mutex<FallbackCache>>,
+}
+
+impl BestEffortCowPriceEstimator {
+    pub fn new(inner: Arc<dyn NativePriceEstimating>, cow_token: H160, max_age: Duration) -> Self {
+        let fallback_cache = Arc::new(Mutex::new(FallbackCache {
+            value: None,
+            max_age,
+        }));
+
+        Self {
+            inner,
+            cow_token,
+            fallback_cache,
+        }
+    }
+
+    pub async fn get_price(&self) -> NativePriceEstimateResult {
+        let fresh = self
+            .inner
+            .estimate_native_prices(std::slice::from_ref(&self.cow_token))
+            .next()
+            .await
+            .unwrap()
+            .1;
+
+        match fresh {
+            Ok(price) => {
+                self.fallback_cache
+                    .lock()
+                    .unwrap()
+                    .set(price, Instant::now());
+                Ok(price)
+            }
+            Err(error) => {
+                let price = self
+                    .fallback_cache
+                    .lock()
+                    .unwrap()
+                    .get(Instant::now())
+                    .ok_or(error);
+
+                if price.is_ok() {
+                    tracing::warn!("Using an old CoW token price from a fallback cache");
+                }
+
+                price
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -296,14 +393,14 @@ mod tests {
         let db = Postgres::new(&std::env::var("DB_URL").unwrap())
             .await
             .unwrap();
-        let calc = Calculator {
-            config: CONFIG,
-            database: db.clone(),
-            cow_token: testlib::tokens::COW,
-            gas_price: Arc::new(gas_estimation::GasNowGasStation::new(
+        let calc = Calculator::new(
+            CONFIG,
+            db.clone(),
+            testlib::tokens::COW,
+            Arc::new(gas_estimation::GasNowGasStation::new(
                 shared::gas_price_estimation::Client(Default::default()),
             )),
-            native_price: Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
+            Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
                 Arc::new(shared::price_estimation::zeroex::ZeroExPriceEstimator::new(
                     Arc::new(shared::zeroex_api::DefaultZeroExApi::with_default_url(
                         Default::default(),
@@ -315,7 +412,8 @@ mod tests {
                 testlib::tokens::WETH,
                 primitive_types::U256::from_f64_lossy(1e18),
             )),
-        };
+        );
+
         let min_valid_to = model::time::now_in_epoch_seconds();
         let orders = db
             .solvable_orders(min_valid_to, Default::default())
