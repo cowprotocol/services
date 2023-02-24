@@ -37,7 +37,7 @@ pub struct PreSignature {
     pub signed: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, sqlx::FromRow)]
 pub struct EventIndex {
     pub block_number: i64,
     pub log_index: i64,
@@ -47,6 +47,7 @@ pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = "\
             SELECT GREATEST( (SELECT COALESCE(MAX(block_number), 0) FROM trades), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM settlements), (SELECT \
+                         COALESCE(MAX(block_number), 0) FROM settlement_observations),(SELECT \
                          COALESCE(MAX(block_number), 0) FROM invalidations), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM presignature_events));";
     sqlx::query_scalar(QUERY).fetch_one(ex).await
@@ -68,6 +69,11 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
         .await?;
 
+    const QUERY_OBSERVATIONS: &str =
+        "DELETE FROM settlement_observations WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
+        .await?;
+
     const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
         .await?;
@@ -87,7 +93,10 @@ pub async fn append(
         match event {
             Event::Trade(event) => insert_trade(ex, index, event).await?,
             Event::Invalidation(event) => insert_invalidation(ex, index, event).await?,
-            Event::Settlement(event) => insert_settlement(ex, index, event).await?,
+            Event::Settlement(event) => {
+                insert_settlement(ex, index, event).await?;
+                insert_observation(ex, index).await?
+            }
             Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
         };
     }
@@ -139,8 +148,8 @@ async fn insert_settlement(
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) \
-                         ON CONFLICT DO NOTHING;";
+    INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) ON \
+                         CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(event.transaction_hash)
         .bind(index.block_number)
@@ -148,6 +157,20 @@ async fn insert_settlement(
         .bind(event.solver)
         .execute(ex)
         .await?;
+
+    Ok(())
+}
+
+async fn insert_observation(ex: &mut PgConnection, index: &EventIndex) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "\
+    INSERT INTO settlement_observations (block_number, log_index) VALUES ($1, $2) ON CONFLICT DO \
+                         NOTHING;";
+    sqlx::query(QUERY)
+        .bind(index.block_number)
+        .bind(index.log_index)
+        .execute(ex)
+        .await?;
+
     Ok(())
 }
 
