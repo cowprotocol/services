@@ -60,10 +60,10 @@ impl Driver {
                 body=%serde_json::to_string_pretty(request).unwrap(),
                 "request",
             );
-            self.client.post(url).json(request)
+            self.client.post(url.clone()).json(request)
         } else {
             tracing::trace!(path=%url.path(), "request");
-            self.client.post(url)
+            self.client.post(url.clone())
         };
         let mut response = request.send().await.context("send")?;
         let status = response.status().as_u16();
@@ -72,10 +72,10 @@ impl Driver {
             .context("body")?;
         let text = String::from_utf8_lossy(&body);
         tracing::trace!(body=%text, "response");
+        let context = || format!("url {url}, body {text:?}");
         if status != 200 {
-            let body = std::str::from_utf8(&body).context("body text")?;
-            return Err(anyhow!("bad status {}, body {:?}", status, body));
+            return Err(anyhow!("bad status {status}, {}", context()));
         }
-        serde_json::from_slice(&body).with_context(|| format!("body json: {text}"))
+        serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))
     }
 }
