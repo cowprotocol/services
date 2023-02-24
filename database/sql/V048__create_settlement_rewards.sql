@@ -14,12 +14,12 @@ CREATE TABLE settlement_observations (
   -- table, read from the transaction receipt
   block_number bigint NOT NULL,
   log_index bigint NOT NULL,
-  gas_used numeric(78,0) NOT NULL,
-  effective_gas_price numeric(78,0) NOT NULL,
+  gas_used numeric(78,0),
+  effective_gas_price numeric(78,0),
   -- the surplus observed from the transaction call data,
   -- and converted to ETH with the auction external prices.
-  surplus numeric(78,0) NOT NULL,
-  fee numeric(78,0) NOT NULL,
+  surplus numeric(78,0),
+  fee numeric(78,0),
 
   PRIMARY KEY (block_number, log_index)
 );

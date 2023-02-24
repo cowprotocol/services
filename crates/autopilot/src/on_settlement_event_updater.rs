@@ -42,7 +42,7 @@ impl OnSettlementEventUpdater {
         }
     }
 
-    /// Update database for a single settlement event.
+    /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
     async fn update(&self) -> Result<bool> {
@@ -51,17 +51,22 @@ impl OnSettlementEventUpdater {
             .checked_sub(MAX_REORG_BLOCK_COUNT)
             .context("no reorg safe block")?;
         let reorg_safe_block: i64 = reorg_safe_block.try_into().context("convert block")?;
-        let event = match self
-            .db
-            .get_settlement_event_without_tx_info(reorg_safe_block)
-            .await
-            .context("get_settlement_event_without_tx_info")?
-        {
-            Some(event) => event,
-            None => return Ok(false),
+
+        let (settlement, observation) = match (
+            self.db
+                .get_settlement_event_without_tx_info(reorg_safe_block)
+                .await
+                .context("get_settlement_event_without_tx_info")?,
+            self.db
+                .get_settlement_event_without_observation(reorg_safe_block)
+                .await
+                .context("get_settlement_event_without_observation")?,
+        ) {
+            (Some(settlement), Some(observation)) => (Some(settlement), Some(observation)),
+            (Some(settlement), None) => (Some(settlement), None),
+            (None, Some(observation)) => (None, Some(observation)),
+            (None, None) => return Ok(false),
         };
-        let hash = H256(event.tx_hash.0);
-        tracing::trace!(?hash);
 
         // 1. Associating auction ids with transaction hashes.
 
@@ -81,26 +86,31 @@ impl OnSettlementEventUpdater {
         // insertion which also needs to deal with reorgs. It is also nicer from a code
         // organization standpoint.
 
-        let transaction = self
-            .web3
-            .eth()
-            .transaction(TransactionId::Hash(hash))
-            .await
-            .with_context(|| format!("get tx {hash:?}"))?
-            .with_context(|| format!("no tx {hash:?}"))?;
-        let from = transaction
-            .from
-            .with_context(|| format!("no from {hash:?}"))?;
-        let nonce: i64 = transaction
-            .nonce
-            .try_into()
-            .map_err(|err| anyhow!("{}", err))
-            .with_context(|| format!("convert nonce {hash:?}"))?;
+        if let Some(event) = settlement {
+            let hash = H256(event.tx_hash.0);
+            tracing::trace!(?hash);
 
-        self.db
-            .update_settlement_tx_info(event.block_number, event.log_index, from, nonce)
-            .await
-            .context("update_settlement_tx_info")?;
+            let transaction = self
+                .web3
+                .eth()
+                .transaction(TransactionId::Hash(hash))
+                .await
+                .with_context(|| format!("get tx {hash:?}"))?
+                .with_context(|| format!("no tx {hash:?}"))?;
+            let from = transaction
+                .from
+                .with_context(|| format!("no from {hash:?}"))?;
+            let nonce: i64 = transaction
+                .nonce
+                .try_into()
+                .map_err(|err| anyhow!("{}", err))
+                .with_context(|| format!("convert nonce {hash:?}"))?;
+
+            self.db
+                .update_settlement_tx_info(event.block_number, event.log_index, from, nonce)
+                .await
+                .context("update_settlement_tx_info")?;
+        }
 
         // 2. Inserting settlement observations
         //
@@ -117,89 +127,110 @@ impl OnSettlementEventUpdater {
         // table). Now we know which tokens were used in the transaction so we
         // update the auction_prices table with the actual prices that were used.
 
-        // TODO how to detect missed settlements? need to populate settlement
-        // observation on event insertion.
-
-        let tx_receipt = self
-            .web3
-            .eth()
-            .transaction_receipt(hash)
-            .await?
-            .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = tx_receipt
-            .gas_used
-            .with_context(|| format!("no gas used {hash:?}"))?;
-        let effective_gas_price = tx_receipt
-            .effective_gas_price
-            .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let settlement = DecodedSettlement::new(&self.contract, &transaction.input.0)?;
-        let auction_id = self
-            .db
-            .get_auction_id(from, nonce)
-            .await?
-            .context(format!("no auction id for tx {hash:?}"))?;
-        let auction_external_prices =
-            self.db
-                .fetch_auction_prices(auction_id)
+        if let Some(event) = observation {
+            let hash = self
+                .db
+                .get_hash_by_event(event.block_number, event.log_index)
+                .await?;
+            let transaction = self
+                .web3
+                .eth()
+                .transaction(TransactionId::Hash(hash))
                 .await
-                .context(format!(
-                    "no external prices for auction id {auction_id:?} and tx {hash:?}"
-                ))?;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.native_token,
-            auction_external_prices.clone(),
-        )?;
-        let surplus = settlement.total_surplus(&external_prices);
-        let orders = self.db.orders_for_tx(&hash).await?;
-        let configuration = FeeConfiguration {
-            fee_objective_scaling_factor: self.fee_objective_scaling_factor,
-        };
-        let fee = settlement.total_fees(&external_prices, &orders, &configuration);
+                .with_context(|| format!("get tx {hash:?}"))?
+                .with_context(|| format!("no tx {hash:?}"))?;
+            let from = transaction
+                .from
+                .with_context(|| format!("no from {hash:?}"))?;
+            let nonce: i64 = transaction
+                .nonce
+                .try_into()
+                .map_err(|err| anyhow!("{}", err))
+                .with_context(|| format!("convert nonce {hash:?}"))?;
+            let auction_id = self
+                .db
+                .get_auction_id(from, nonce)
+                .await?
+                .context(format!("no auction id for tx {hash:?}"))?;
+            let auction_external_prices =
+                self.db
+                    .fetch_auction_prices(auction_id)
+                    .await
+                    .context(format!(
+                        "no external prices for auction id {auction_id:?} and tx {hash:?}"
+                    ))?;
+            let external_prices = ExternalPrices::try_from_auction_prices(
+                self.native_token,
+                auction_external_prices.clone(),
+            )?;
 
-        self.db
-            .insert_settlement_observation(
-                event.block_number,
-                event.log_index,
-                gas_used,
-                effective_gas_price,
-                surplus,
-                fee,
-            )
-            .await
-            .context("insert_settlement_observation")?;
+            let tx_receipt = self
+                .web3
+                .eth()
+                .transaction_receipt(hash)
+                .await?
+                .with_context(|| format!("no receipt {hash:?}"))?;
+            let gas_used = tx_receipt
+                .gas_used
+                .with_context(|| format!("no gas used {hash:?}"))?;
+            let effective_gas_price = tx_receipt
+                .effective_gas_price
+                .with_context(|| format!("no effective gas price {hash:?}"))?;
 
-        // reduce external prices in `auction_prices` table to only include used tokens
-        // this is done to reduce the amount of data we store in the database
-        let reduced_external_prices = settlement
-            .trades
-            .iter()
-            .filter_map(|trade| {
-                let buy_token = settlement
-                    .tokens
-                    .get(trade.buy_token_index.as_u64() as usize)
-                    .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
-                let sell_token = settlement
-                    .tokens
-                    .get(trade.sell_token_index.as_u64() as usize)
-                    .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
-                let buy_token_price = auction_external_prices.get(buy_token);
-                let sell_token_price = auction_external_prices.get(sell_token);
-                match (buy_token_price, sell_token_price) {
-                    (Some(buy_token_price), Some(sell_token_price)) => Some(vec![
-                        (*buy_token, *buy_token_price),
-                        (*sell_token, *sell_token_price),
-                    ]),
-                    _ => {
-                        tracing::error!("settlement used token that was not in auction");
-                        None
+            // surplus and fees calculation
+            let settlement = DecodedSettlement::new(&self.contract, &transaction.input.0)?;
+            let surplus = settlement.total_surplus(&external_prices);
+            let configuration = FeeConfiguration {
+                fee_objective_scaling_factor: self.fee_objective_scaling_factor,
+            };
+            let orders = self.db.orders_for_tx(&hash).await?;
+            let fee = settlement.total_fees(&external_prices, &orders, &configuration);
+
+            self.db
+                .update_settlement_observation(
+                    event.block_number,
+                    event.log_index,
+                    gas_used,
+                    effective_gas_price,
+                    surplus,
+                    fee,
+                )
+                .await
+                .context("update_settlement_observation")?;
+
+            // reduce external prices in `auction_prices` table to only include used tokens
+            // this is done to reduce the amount of data we store in the database
+            let reduced_external_prices = settlement
+                .trades
+                .iter()
+                .filter_map(|trade| {
+                    let buy_token = settlement
+                        .tokens
+                        .get(trade.buy_token_index.as_u64() as usize)
+                        .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
+                    let sell_token = settlement
+                        .tokens
+                        .get(trade.sell_token_index.as_u64() as usize)
+                        .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
+                    let buy_token_price = auction_external_prices.get(buy_token);
+                    let sell_token_price = auction_external_prices.get(sell_token);
+                    match (buy_token_price, sell_token_price) {
+                        (Some(buy_token_price), Some(sell_token_price)) => Some(vec![
+                            (*buy_token, *buy_token_price),
+                            (*sell_token, *sell_token_price),
+                        ]),
+                        _ => {
+                            tracing::error!("settlement used token that was not in auction");
+                            None
+                        }
                     }
-                }
-            })
-            .flatten()
-            .collect::<std::collections::BTreeMap<_, _>>();
-        self.db
-            .insert_auction_prices(auction_id, &reduced_external_prices)
-            .await?;
+                })
+                .flatten()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            self.db
+                .insert_auction_prices(auction_id, &reduced_external_prices)
+                .await?;
+        }
 
         Ok(true)
     }

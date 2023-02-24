@@ -1,7 +1,12 @@
-use {anyhow::Context, ethcontract::U256, number_conversions::u256_to_big_decimal};
+use {
+    anyhow::Context,
+    database::settlement_observations::SettlementEvent,
+    ethcontract::U256,
+    number_conversions::u256_to_big_decimal,
+};
 
 impl super::Postgres {
-    pub async fn insert_settlement_observation(
+    pub async fn update_settlement_observation(
         &self,
         block_number: i64,
         log_index: i64,
@@ -16,7 +21,7 @@ impl super::Postgres {
             .start_timer();
 
         let mut ex = self.0.acquire().await.context("acquire")?;
-        database::settlement_observations::upsert(
+        database::settlement_observations::update(
             &mut ex,
             block_number,
             log_index,
@@ -29,5 +34,22 @@ impl super::Postgres {
         .context("update_settlement_observation")?;
 
         Ok(())
+    }
+
+    pub async fn get_settlement_event_without_observation(
+        &self,
+        max_block_number: i64,
+    ) -> Result<Option<SettlementEvent>, sqlx::Error> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["get_settlement_event_without_observation"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        database::settlement_observations::get_settlement_event_without_observation(
+            &mut ex,
+            max_block_number,
+        )
+        .await
     }
 }

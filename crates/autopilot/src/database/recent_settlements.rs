@@ -20,4 +20,21 @@ impl super::Postgres {
             .context("recent_settlement_tx_hashes")?;
         Ok(hashes.into_iter().map(|hash| H256(hash.0)).collect())
     }
+
+    pub async fn get_hash_by_event(
+        &self,
+        block_number: i64,
+        log_index: i64,
+    ) -> anyhow::Result<H256> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["get_hash_by_event"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await.context("acquire")?;
+        let hash = database::settlements::get_hash_by_event(&mut ex, block_number, log_index)
+            .await
+            .context("recent_settlement_tx_hashes")?;
+        Ok(H256(hash.0))
+    }
 }
