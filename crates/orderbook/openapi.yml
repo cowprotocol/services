@@ -398,6 +398,7 @@ components:
       type: string
       example: "1234567890"
     OnchainOrderData:
+      type: object
       properties:
         sender:
           description: |
@@ -411,13 +412,7 @@ components:
               successful. This could happen, for example, if the
               valid_to is too high, or no valid quote was found or generated
           type: string
-          enum:
-            [
-              QuoteNotFound,
-              ValidToTooFarInFuture,
-              PreValidationError,
-              ...,
-            ]
+          enum: [ QuoteNotFound, ValidToTooFarInFuture, PreValidationError ]
       required:
         - sender
     EthflowData:
