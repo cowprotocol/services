@@ -10,6 +10,7 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     chrono::Utc,
+    itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
         order::{LimitOrderClass, OrderClass},
@@ -151,7 +152,6 @@ impl RunLoop {
             tokens: auction
                 .prices
                 .iter()
-                // TODO Fill in the missing fields (Default::default())
                 .map(|(address, price)| solve::Token {
                     decimals: Default::default(),
                     symbol: Default::default(),
@@ -159,7 +159,21 @@ impl RunLoop {
                     price: Some(price.to_owned()),
                     available_balance: Default::default(),
                     trusted: self.market_makable_token_list.contains(address),
-                } )
+                })
+                .chain(
+                    self.market_makable_token_list
+                        .all()
+                        .into_iter()
+                        .map(|address| solve::Token {
+                            decimals: Default::default(),
+                            symbol: Default::default(),
+                            address,
+                            price: None,
+                            available_balance: Default::default(),
+                            trusted: true,
+                        }),
+                )
+                .dedup_by(|a, b| a.address == b.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
