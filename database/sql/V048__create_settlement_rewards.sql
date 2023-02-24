@@ -26,9 +26,9 @@ CREATE TABLE settlement_observations (
 );
 
 CREATE TABLE auction_prices (
-  auction_id bigint NOT NULL PRIMARY KEY,
-  tokens bytea[] NOT NULL,
-  prices numeric(78,0)[] NOT NULL
+  auction_id bigint NOT NULL,
+  token bytea NOT NULL,
+  price numeric(78,0) NOT NULL
 );
 
 CREATE TABLE auction_participants (
