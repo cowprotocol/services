@@ -37,7 +37,7 @@ pub struct PreSignature {
     pub signed: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, sqlx::FromRow)]
 pub struct EventIndex {
     pub block_number: i64,
     pub log_index: i64,

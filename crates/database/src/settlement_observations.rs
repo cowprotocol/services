@@ -1,15 +1,9 @@
-use {bigdecimal::BigDecimal, sqlx::PgConnection};
-
-#[derive(Debug, PartialEq, sqlx::FromRow)]
-pub struct SettlementEvent {
-    pub block_number: i64,
-    pub log_index: i64,
-}
+use {crate::events::EventIndex, bigdecimal::BigDecimal, sqlx::PgConnection};
 
 pub async fn get_settlement_event_without_observation(
     ex: &mut PgConnection,
     max_block_number: i64,
-) -> Result<Option<SettlementEvent>, sqlx::Error> {
+) -> Result<Option<EventIndex>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index
 FROM settlement_observations
@@ -124,7 +118,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            Some(SettlementEvent {
+            Some(EventIndex {
                 block_number: 1,
                 log_index: 1,
             })
