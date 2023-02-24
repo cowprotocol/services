@@ -1,4 +1,8 @@
-use {crate::TransactionHash, sqlx::PgConnection, std::ops::Range};
+use {
+    crate::{events::EventIndex, TransactionHash},
+    sqlx::PgConnection,
+    std::ops::Range,
+};
 
 pub async fn recent_settlement_tx_hashes(
     ex: &mut PgConnection,
@@ -20,8 +24,7 @@ WHERE
 
 pub async fn get_hash_by_event(
     ex: &mut PgConnection,
-    block_number: i64,
-    log_index: i64,
+    event: &EventIndex,
 ) -> Result<TransactionHash, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT tx_hash
@@ -31,8 +34,8 @@ WHERE
     block_number = $2
     "#;
     sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(block_number)
-        .bind(log_index)
+        .bind(event.block_number)
+        .bind(event.log_index)
         .fetch_one(ex)
         .await
 }

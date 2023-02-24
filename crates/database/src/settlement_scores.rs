@@ -1,6 +1,6 @@
 use {crate::auction::AuctionId, bigdecimal::BigDecimal, sqlx::PgConnection};
 
-#[derive(Debug, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct Score {
     pub auction_id: AuctionId,
     pub winning_score: BigDecimal,
@@ -42,17 +42,15 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        insert(&mut db, 1, 10.into(), 9.into(), 1000).await.unwrap();
+        let input = Score {
+            auction_id: 1,
+            winning_score: 10.into(),
+            reference_score: 9.into(),
+            block_deadline: 1000,
+        };
+        insert(&mut db, input.clone()).await.unwrap();
 
-        let result = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(
-            result,
-            Some(Score {
-                auction_id: 1,
-                winning_score: 10.into(),
-                reference_score: 9.into(),
-                block_deadline: 1000,
-            })
-        );
+        let output = fetch(&mut db, 1).await.unwrap().unwrap();
+        assert_eq!(input, output);
     }
 }

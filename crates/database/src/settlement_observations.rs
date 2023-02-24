@@ -57,17 +57,13 @@ mod tests {
     use {super::*, crate::events::EventIndex, sqlx::Connection};
 
     // helper function to make roundtrip possible
-    pub async fn insert(
-        ex: &mut PgConnection,
-        block_number: i64,
-        log_index: i64,
-    ) -> Result<(), sqlx::Error> {
+    pub async fn insert(ex: &mut PgConnection, event: &EventIndex) -> Result<(), sqlx::Error> {
         const QUERY: &str = r#"
         INSERT INTO settlement_observations (block_number, log_index) 
         VALUES ($1, $2) ON CONFLICT DO NOTHING;"#;
         sqlx::query(QUERY)
-            .bind(block_number)
-            .bind(log_index)
+            .bind(event.block_number)
+            .bind(event.log_index)
             .execute(ex)
             .await?;
         Ok(())
@@ -98,9 +94,7 @@ mod tests {
             block_number: 1,
             log_index: 1,
         };
-        insert(&mut db, event.block_number, event.log_index)
-            .await
-            .unwrap();
+        insert(&mut db, &event).await.unwrap();
 
         let result = fetch(&mut db, &event).await.unwrap();
         assert_eq!(
@@ -116,13 +110,7 @@ mod tests {
         let result = get_settlement_event_without_observation(&mut db, 2)
             .await
             .unwrap();
-        assert_eq!(
-            result,
-            Some(EventIndex {
-                block_number: 1,
-                log_index: 1,
-            })
-        );
+        assert_eq!(result, Some(event));
 
         // update existing row
         update(
