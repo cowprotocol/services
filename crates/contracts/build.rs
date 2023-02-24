@@ -220,6 +220,12 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
+    generate_contract_with_config("PancakeFactory", |builder| {
+        builder.add_network_str("1", "0x1097053Fd2ea711dad45caCcc45EfF7548fCB362")
+    });
+    generate_contract_with_config("PancakeRouter", |builder| {
+        builder.add_network_str("1", "0xeff92a263d31888d860bd50809a8d171709b7b1c")
+    });
     generate_contract_with_config("SushiSwapFactory", |builder| {
         builder
             .add_network_str(MAINNET, "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")

@@ -48,6 +48,8 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    PancakeFactory;
+    PancakeRouter;
     SolverTrampoline;
     SushiSwapFactory;
     SushiSwapRouter;

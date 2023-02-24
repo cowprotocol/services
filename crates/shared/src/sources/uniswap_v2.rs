@@ -30,6 +30,8 @@ pub const BAOSWAP_INIT: [u8; 32] =
     hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d");
 pub const SWAPR_INIT: [u8; 32] =
     hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776");
+pub const PANCAKE_INIT: [u8; 32] =
+    hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d");
 
 #[derive(Debug, Clone, Copy)]
 pub struct UniV2BaselineSourceParameters {
@@ -79,6 +81,11 @@ impl UniV2BaselineSourceParameters {
                 contracts::SwaprRouter::raw_contract(),
                 SWAPR_INIT,
                 PoolReadingStyle::Swapr,
+            )),
+            BS::PancakeSwap => Some((
+                contracts::PancakeRouter::raw_contract(),
+                PANCAKE_INIT,
+                PoolReadingStyle::Default,
             )),
         }?;
         Some(Self {

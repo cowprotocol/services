@@ -26,6 +26,7 @@ pub enum BaselineSource {
     Swapr,
     ZeroEx,
     UniswapV3,
+    PancakeSwap,
 }
 
 pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
@@ -37,6 +38,7 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::BalancerV2,
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
+            BaselineSource::PancakeSwap,
         ],
         4 => vec![
             BaselineSource::UniswapV2,
