@@ -1,6 +1,6 @@
 use {bigdecimal::BigDecimal, sqlx::PgConnection};
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, PartialEq, sqlx::FromRow)]
 pub struct SettlementEvent {
     pub block_number: i64,
     pub log_index: i64,
@@ -22,12 +22,12 @@ LIMIT 1
         .await
 }
 
-#[derive(Debug, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
-    pub gas_used: BigDecimal,
-    pub effective_gas_price: BigDecimal,
-    pub surplus: BigDecimal,
-    pub fee: BigDecimal,
+    pub gas_used: Option<BigDecimal>,
+    pub effective_gas_price: Option<BigDecimal>,
+    pub surplus: Option<BigDecimal>,
+    pub fee: Option<BigDecimal>,
     pub block_number: i64,
     pub log_index: i64,
 }
@@ -63,6 +63,23 @@ mod tests {
     use {super::*, crate::events::EventIndex, sqlx::Connection};
 
     // helper function to make roundtrip possible
+    pub async fn insert(
+        ex: &mut PgConnection,
+        block_number: i64,
+        log_index: i64,
+    ) -> Result<(), sqlx::Error> {
+        const QUERY: &str = r#"
+        INSERT INTO settlement_observations (block_number, log_index) 
+        VALUES ($1, $2) ON CONFLICT DO NOTHING;"#;
+        sqlx::query(QUERY)
+            .bind(block_number)
+            .bind(log_index)
+            .execute(ex)
+            .await?;
+        Ok(())
+    }
+
+    // helper function to make roundtrip possible
     pub async fn fetch(
         ex: &mut PgConnection,
         event: &EventIndex,
@@ -87,32 +104,33 @@ mod tests {
             block_number: 1,
             log_index: 1,
         };
-        update(
-            &mut db,
-            event.block_number,
-            event.log_index,
-            1.into(),
-            2.into(),
-            3.into(),
-            4.into(),
-        )
-        .await
-        .unwrap();
+        insert(&mut db, event.block_number, event.log_index)
+            .await
+            .unwrap();
 
         let result = fetch(&mut db, &event).await.unwrap();
         assert_eq!(
             result,
             Some(Observation {
-                gas_used: 1.into(),
-                effective_gas_price: 2.into(),
-                surplus: 3.into(),
-                fee: 4.into(),
+                block_number: 1,
+                log_index: 1,
+                ..Default::default()
+            })
+        );
+
+        // there is one settlement event without observation
+        let result = get_settlement_event_without_observation(&mut db, 2)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            Some(SettlementEvent {
                 block_number: 1,
                 log_index: 1,
             })
         );
 
-        // test update existing row
+        // update existing row
         update(
             &mut db,
             event.block_number,
@@ -128,13 +146,19 @@ mod tests {
         assert_eq!(
             result,
             Some(Observation {
-                gas_used: 5.into(),
-                effective_gas_price: 6.into(),
-                surplus: 7.into(),
-                fee: 8.into(),
+                gas_used: Some(5.into()),
+                effective_gas_price: Some(6.into()),
+                surplus: Some(7.into()),
+                fee: Some(8.into()),
                 block_number: 1,
                 log_index: 1,
             })
         );
+
+        // since updated, no more events without observations
+        let result = get_settlement_event_without_observation(&mut db, 2)
+            .await
+            .unwrap();
+        assert_eq!(result, None,);
     }
 }
