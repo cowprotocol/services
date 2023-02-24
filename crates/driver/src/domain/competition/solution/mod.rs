@@ -196,7 +196,6 @@ impl Solution {
                 interaction
                     .inputs()
                     .iter()
-                    .chain(interaction.outputs().iter())
                     .all(|asset| auction.is_trusted(asset.token))
             })
         {
