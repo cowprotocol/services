@@ -242,8 +242,9 @@ fn fee(
     order: &Order,
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
-    let scaled_fee_amount =
-        order.full_fee_amount * U256::from_f64_lossy(configuration.fee_objective_scaling_factor);
+    let scaled_fee_amount = U256::from_f64_lossy(
+        order.full_fee_amount.to_f64_lossy() * configuration.fee_objective_scaling_factor,
+    );
     let fee = match order.kind {
         model::order::OrderKind::Buy => scaled_fee_amount
             .checked_mul(trade.executed_amount)?
