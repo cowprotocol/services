@@ -339,7 +339,7 @@ pub struct Arguments {
         default_value = "13",
         value_parser = shared::arguments::duration_from_seconds,
     )]
-    pub block_time: Duration, // TODO release note: set for each network in configuration
+    pub block_time: Duration,
 
     /// Additional time to wait for a transaction to appear onchain before
     /// considering the solution invalid and setting the reward to 0.
