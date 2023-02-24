@@ -4,22 +4,18 @@ use {
 };
 
 /// Participants of a solver competition for a given auction.
-#[derive(Debug, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct Participants {
     pub auction_id: AuctionId,
     pub participants: Vec<Address>,
 }
 
-pub async fn insert(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-    participants: Vec<Address>,
-) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgConnection, data: Participants) -> Result<(), sqlx::Error> {
     const QUERY: &str =
         r#"INSERT INTO auction_participants (auction_id, participants) VALUES ($1, $2);"#;
     sqlx::query(QUERY)
-        .bind(auction_id)
-        .bind(participants)
+        .bind(data.auction_id)
+        .bind(data.participants)
         .execute(ex)
         .await?;
     Ok(())
@@ -47,16 +43,13 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let participants = (0u8..3).map(|i| ByteArray([i; 20])).collect::<Vec<_>>();
-        insert(&mut db, 1, participants.clone()).await.unwrap();
+        let data = Participants {
+            auction_id: 1,
+            participants: (0u8..3).map(|i| ByteArray([i; 20])).collect::<Vec<_>>(),
+        };
+        insert(&mut db, data.clone()).await.unwrap();
 
-        let result = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(
-            result,
-            Some(Participants {
-                auction_id: 1,
-                participants
-            })
-        );
+        let result = fetch(&mut db, 1).await.unwrap().unwrap();
+        assert_eq!(result, data);
     }
 }

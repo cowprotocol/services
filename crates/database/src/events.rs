@@ -65,9 +65,13 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_TRADE).bind(delete_from_block_number))
         .await?;
 
-    const QUERY_SETTLEMENTS: &str = "WITH S AS (DELETE FROM settlements WHERE block_number >= $1) \
-                                     DELETE FROM settlement_observations WHERE block_number >= $1;";
+    const QUERY_SETTLEMENTS: &str = "DELETE FROM settlements WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
+        .await?;
+
+    const QUERY_OBSERVATIONS: &str =
+        "DELETE FROM settlement_observations WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
         .await?;
 
     const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
@@ -89,7 +93,10 @@ pub async fn append(
         match event {
             Event::Trade(event) => insert_trade(ex, index, event).await?,
             Event::Invalidation(event) => insert_invalidation(ex, index, event).await?,
-            Event::Settlement(event) => insert_settlement(ex, index, event).await?,
+            Event::Settlement(event) => {
+                insert_settlement(ex, index, event).await?;
+                insert_observation(ex, index).await?
+            }
             Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
         };
     }
@@ -141,15 +148,26 @@ async fn insert_settlement(
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-    WITH S AS (INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, \
-                         $3, $4) ON CONFLICT DO NOTHING)
-    INSERT INTO settlement_observations (block_number, log_index) VALUES ($2, $3) ON CONFLICT DO \
-                         NOTHING;";
+    INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) ON \
+                         CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(event.transaction_hash)
         .bind(index.block_number)
         .bind(index.log_index)
         .bind(event.solver)
+        .execute(ex)
+        .await?;
+
+    Ok(())
+}
+
+async fn insert_observation(ex: &mut PgConnection, index: &EventIndex) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "\
+    INSERT INTO settlement_observations (block_number, log_index) VALUES ($1, $2) ON CONFLICT DO \
+                         NOTHING;";
+    sqlx::query(QUERY)
+        .bind(index.block_number)
+        .bind(index.log_index)
         .execute(ex)
         .await?;
 
