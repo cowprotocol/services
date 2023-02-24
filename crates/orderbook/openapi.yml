@@ -1053,6 +1053,9 @@ components:
             Order ID linked to a quote to enable providing more metadata when analyzing
             order slippage.
           type: integer
+      required:
+        - quote
+        - expiration
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.
