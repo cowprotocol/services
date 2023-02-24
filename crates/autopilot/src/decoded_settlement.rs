@@ -8,7 +8,7 @@ use {
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
     model::order::OrderKind,
     num::BigRational,
-    number_conversions::big_rational_to_u256,
+    number_conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
     web3::ethabi::{Function, Token},
 };
@@ -102,7 +102,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 }
 
 pub struct FeeConfiguration {
-    pub fee_objective_scaling_factor: f64,
+    pub fee_objective_scaling_factor: BigRational,
 }
 
 pub struct Order {
@@ -242,20 +242,22 @@ fn fee(
     order: &Order,
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
-    let scaled_fee_amount = U256::from_f64_lossy(
-        order.full_fee_amount.to_f64_lossy() * configuration.fee_objective_scaling_factor,
-    );
+    let full_fee_amount = u256_to_big_rational(&order.full_fee_amount);
+    let scaled_fee_amount = full_fee_amount * configuration.fee_objective_scaling_factor.clone();
+
     let fee = match order.kind {
-        model::order::OrderKind::Buy => scaled_fee_amount
-            .checked_mul(trade.executed_amount)?
-            .checked_div(trade.buy_amount),
-        model::order::OrderKind::Sell => scaled_fee_amount
-            .checked_mul(trade.executed_amount)?
-            .checked_div(trade.sell_amount),
-    }?;
-    external_prices
-        .try_get_native_amount(order.sell_token, fee.to_big_rational())
-        .and_then(|fee| big_rational_to_u256(&fee).ok())
+        model::order::OrderKind::Buy => {
+            scaled_fee_amount * u256_to_big_rational(&trade.executed_amount)
+                / u256_to_big_rational(&trade.buy_amount)
+        }
+        model::order::OrderKind::Sell => {
+            scaled_fee_amount * u256_to_big_rational(&trade.executed_amount)
+                / u256_to_big_rational(&trade.sell_amount)
+        }
+    };
+
+    let fee = external_prices.try_get_native_amount(order.sell_token, fee)?;
+    big_rational_to_u256(&fee).ok()
 }
 
 fn trade_surplus(
@@ -357,6 +359,7 @@ pub fn decode_function_input(function: &Function, input: &[u8]) -> Result<Vec<To
 mod tests {
     use {
         super::*,
+        bigdecimal::One,
         ethcontract::H160,
         shared::ethrpc::Web3,
         std::{collections::BTreeMap, str::FromStr},
@@ -477,7 +480,7 @@ mod tests {
             }
         ];
         let configuration = FeeConfiguration {
-            fee_objective_scaling_factor: 1.0,
+            fee_objective_scaling_factor: BigRational::one(),
         };
         let fees = settlement
             .total_fees(&external_prices, &orders, &configuration)
