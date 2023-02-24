@@ -12,7 +12,7 @@ pub struct Participant {
 
 pub async fn insert(
     ex: &mut PgTransaction<'_>,
-    participants: Vec<Participant>,
+    participants: &[Participant],
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str =
         r#"INSERT INTO auction_participants (auction_id, participant) VALUES ($1, $2);"#;
@@ -55,7 +55,7 @@ mod tests {
                 participant: ByteArray([3; 20]),
             },
         ];
-        insert(&mut db, input.clone()).await.unwrap();
+        insert(&mut db, &input).await.unwrap();
         let output = fetch(&mut db, 1).await.unwrap();
         assert_eq!(input, output);
     }

@@ -35,5 +35,7 @@ CREATE TABLE auction_participants (
  -- This links to the `auctions` table
  auction_id bigint NOT NULL,
  -- Solver who submitted a valid solution to the auction.
- participant bytea NOT NULL
+ participant bytea NOT NULL,
+
+  PRIMARY KEY (auction_id, participant)
 );
