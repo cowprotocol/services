@@ -76,7 +76,8 @@ impl SolverCompetitionStoring for Postgres {
                     auction_id: request.auction,
                     participant: ByteArray(p.0),
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .await
         .context("auction_participants::insert")?;

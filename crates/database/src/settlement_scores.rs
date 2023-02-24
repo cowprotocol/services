@@ -1,4 +1,8 @@
-use {crate::auction::AuctionId, bigdecimal::BigDecimal, sqlx::PgConnection};
+use {
+    crate::{auction::AuctionId, PgTransaction},
+    bigdecimal::BigDecimal,
+    sqlx::PgConnection,
+};
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct Score {
@@ -8,7 +12,7 @@ pub struct Score {
     pub block_deadline: i64,
 }
 
-pub async fn insert(ex: &mut PgConnection, score: Score) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgTransaction<'_>, score: Score) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"INSERT INTO settlement_scores (auction_id, winning_score, reference_score, block_deadline) VALUES ($1, $2, $3, $4);"#;
     sqlx::query(QUERY)
         .bind(score.auction_id)
