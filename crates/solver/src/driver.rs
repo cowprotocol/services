@@ -404,11 +404,11 @@ impl Driver {
         // highest score. So we need to get the scores of all settlements and
         // sort them.
         // CIP20 TODO - add to if statement below, once the transition period is over.
-        let scores = rated_settlements
+        let mut scores = rated_settlements
             .iter()
             .map(|(_, rated_settlement, _)| rated_settlement.score.score())
             .sorted()
-            .collect::<Vec<_>>();
+            .rev();
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -453,10 +453,10 @@ impl Driver {
                     .context("convert nonce")?,
             };
             let scores = model::solver_competition::Scores {
-                winning_score: scores.last().copied().expect("no score"), // guaranteed to exist
+                winning_score: scores.next().expect("no score"), // guaranteed to exist
                 // reference score is the second highest score, or 0 if there is only one score (see
                 // CIP20)
-                reference_score: scores.get(scores.len() - 2).copied().unwrap_or(0.into()),
+                reference_score: scores.next().unwrap_or(0.into()),
                 block_deadline: {
                     let deadline = self.solver_time_limit
                         + self.solution_submitter.max_confirm_time
