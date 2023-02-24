@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{dex::slippage, eth},
-        infra::{contracts, dex},
+        infra::{contracts, dex::zeroex},
         util::conv,
     },
     bigdecimal::BigDecimal,
@@ -16,17 +16,31 @@ use {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
-    /// The URL of the Balancer SOR API.
+    /// The versioned URL endpoint for the 0x swap API.
+    #[serde(default = "default_endpoint")]
     #[serde_as(as = "serde_with::DisplayFromStr")]
     endpoint: reqwest::Url,
 
-    /// Optional Balancer V2 Vault contract address. If not specified, the
-    /// default Vault contract address will be used.
-    vault: Option<H160>,
+    /// An optional API key to use. This is needed when configuring 0x to use
+    /// the gated API for partners.
+    api_key: Option<String>,
 
-    /// Optional CoW Protocol Settlement contract address. If not specified,
-    /// the default Settlement contract address will be used.
-    settlement: Option<H160>,
+    /// The list of excluded liquidity sources. Liquidity from these sources
+    /// will not be considered when solving.
+    #[serde(default)]
+    excluded_sources: Vec<String>,
+
+    /// The affiliate address to use. Defaults to the mainnet CoW Protocol
+    /// settlement contract address.
+    #[serde(default = "default_affiliate")]
+    affiliate: H160,
+
+    /// Whether or not to enable slippage protection. The slippage protection
+    /// considers average negative slippage paid out in MEV when quoting,
+    /// preferring private market maker orders when they are close to what you
+    /// would get with on-chain liquidity pools.
+    #[serde(default)]
+    enable_slippage_protection: bool,
 
     /// The relative slippage allowed by the solver.
     #[serde(default = "default_relative_slippage")]
@@ -38,11 +52,21 @@ struct Config {
     absolute_slippage: Option<BigDecimal>,
 }
 
+fn default_endpoint() -> reqwest::Url {
+    "https://api.0x.org/swap/v1/".parse().unwrap()
+}
+
+fn default_affiliate() -> H160 {
+    contracts::Contracts::for_chain(eth::ChainId::Mainnet)
+        .settlement
+        .0
+}
+
 fn default_relative_slippage() -> BigDecimal {
     BigDecimal::new(1.into(), 2) // 1%
 }
 
-/// Load the driver configuration from a TOML file.
+/// Load the 0x solver configuration from a TOML file.
 ///
 /// # Panics
 ///
@@ -54,20 +78,13 @@ pub async fn load(path: &Path) -> super::Config {
     let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
 
-    // Balancer SOR solver only supports mainnet.
-    let contracts = contracts::Contracts::for_chain(eth::ChainId::Mainnet);
-
     super::Config {
-        sor: dex::balancer::Config {
+        zeroex: zeroex::Config {
             endpoint: config.endpoint,
-            vault: config
-                .vault
-                .map(eth::ContractAddress)
-                .unwrap_or(contracts.balancer_vault),
-            settlement: config
-                .settlement
-                .map(eth::ContractAddress)
-                .unwrap_or(contracts.settlement),
+            api_key: config.api_key,
+            excluded_sources: config.excluded_sources,
+            affiliate: config.affiliate,
+            enable_slippage_protection: config.enable_slippage_protection,
         },
         slippage: slippage::Limits::new(
             config.relative_slippage,

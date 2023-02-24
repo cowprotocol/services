@@ -16,7 +16,7 @@ pub struct ZeroEx {
 
 pub struct Config {
     /// The base URL for the 0x swap API.
-    pub endpoint: Option<reqwest::Url>,
+    pub endpoint: reqwest::Url,
 
     /// Optional API key.
     ///
@@ -24,8 +24,8 @@ pub struct Config {
     /// by specifying this as header in the HTTP request.
     pub api_key: Option<String>,
 
-    /// The list of excluded liquidity sources. These will not be considered
-    /// when quoting.
+    /// The list of excluded liquidity sources. Liquidity from these sources
+    /// will not be considered when solving.
     pub excluded_sources: Vec<String>,
 
     /// The affiliate address to use.
@@ -36,8 +36,6 @@ pub struct Config {
     /// Whether or not to enable slippage protection.
     pub enable_slippage_protection: bool,
 }
-
-const DEFAULT_URL: &str = "https://api.0x.org/swap/v1/";
 
 impl ZeroEx {
     pub fn new(config: Config) -> Result<Self, CreationError> {
@@ -64,9 +62,7 @@ impl ZeroEx {
 
         Ok(Self {
             client,
-            endpoint: config
-                .endpoint
-                .unwrap_or_else(|| DEFAULT_URL.parse().unwrap()),
+            endpoint: config.endpoint,
             defaults,
         })
     }

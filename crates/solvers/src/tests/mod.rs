@@ -15,6 +15,7 @@ mod baseline;
 mod legacy;
 mod mock;
 mod naive;
+mod zeroex;
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {
