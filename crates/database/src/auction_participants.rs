@@ -1,35 +1,39 @@
 use {
     crate::{auction::AuctionId, Address},
-    sqlx::PgConnection,
+    sqlx::{Connection, PgConnection},
 };
 
-/// Participants of a solver competition for a given auction.
+/// Participant of a solver competition for a given auction.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
-pub struct Participants {
+pub struct Participant {
     pub auction_id: AuctionId,
-    pub participants: Vec<Address>,
+    pub participant: Address,
 }
 
-pub async fn insert(ex: &mut PgConnection, data: Participants) -> Result<(), sqlx::Error> {
+pub async fn insert(
+    ex: &mut PgConnection,
+    participants: Vec<Participant>,
+) -> Result<(), sqlx::Error> {
+    let mut transaction = ex.begin().await?;
     const QUERY: &str =
-        r#"INSERT INTO auction_participants (auction_id, participants) VALUES ($1, $2);"#;
-    sqlx::query(QUERY)
-        .bind(data.auction_id)
-        .bind(data.participants)
-        .execute(ex)
-        .await?;
+        r#"INSERT INTO auction_participants (auction_id, participant) VALUES ($1, $2);"#;
+    for participant in participants {
+        sqlx::query(QUERY)
+            .bind(participant.auction_id)
+            .bind(participant.participant)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    transaction.commit().await?;
     Ok(())
 }
 
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
-) -> Result<Option<Participants>, sqlx::Error> {
+) -> Result<Vec<Participant>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM auction_participants WHERE auction_id = $1"#;
-    sqlx::query_as(QUERY)
-        .bind(auction_id)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
 }
 
 #[cfg(test)]
@@ -43,13 +47,18 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let data = Participants {
-            auction_id: 1,
-            participants: (0u8..3).map(|i| ByteArray([i; 20])).collect::<Vec<_>>(),
-        };
-        insert(&mut db, data.clone()).await.unwrap();
-
-        let result = fetch(&mut db, 1).await.unwrap().unwrap();
-        assert_eq!(result, data);
+        let input = vec![
+            Participant {
+                auction_id: 1,
+                participant: ByteArray([2; 20]),
+            },
+            Participant {
+                auction_id: 1,
+                participant: ByteArray([3; 20]),
+            },
+        ];
+        insert(&mut db, input.clone()).await.unwrap();
+        let output = fetch(&mut db, 1).await.unwrap();
+        assert_eq!(input, output);
     }
 }
