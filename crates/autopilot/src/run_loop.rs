@@ -173,7 +173,7 @@ impl RunLoop {
                             trusted: true,
                         }),
                 )
-                .dedup_by(|a, b| a.address == b.address)
+                .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
