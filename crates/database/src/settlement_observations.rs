@@ -16,37 +16,29 @@ LIMIT 1
         .await
 }
 
-#[derive(Debug, Default, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
-    pub gas_used: Option<BigDecimal>,
-    pub effective_gas_price: Option<BigDecimal>,
-    pub surplus: Option<BigDecimal>,
-    pub fee: Option<BigDecimal>,
+    pub gas_used: BigDecimal,
+    pub effective_gas_price: BigDecimal,
+    pub surplus: BigDecimal,
+    pub fee: BigDecimal,
     pub block_number: i64,
     pub log_index: i64,
 }
 
-pub async fn update(
-    ex: &mut PgConnection,
-    block_number: i64,
-    log_index: i64,
-    gas_used: BigDecimal,
-    effective_gas_price: BigDecimal,
-    surplus: BigDecimal,
-    fee: BigDecimal,
-) -> Result<(), sqlx::Error> {
+pub async fn update(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlement_observations
 SET gas_used = $1, effective_gas_price = $2, surplus = $3, fee = $4
 WHERE block_number = $5 AND log_index = $6
     ;"#;
     sqlx::query(QUERY)
-        .bind(gas_used)
-        .bind(effective_gas_price)
-        .bind(surplus)
-        .bind(fee)
-        .bind(block_number)
-        .bind(log_index)
+        .bind(observation.gas_used)
+        .bind(observation.effective_gas_price)
+        .bind(observation.surplus)
+        .bind(observation.fee)
+        .bind(observation.block_number)
+        .bind(observation.log_index)
         .execute(ex)
         .await?;
     Ok(())
@@ -90,21 +82,12 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        // insert event without observation
         let event = EventIndex {
             block_number: 1,
             log_index: 1,
         };
         insert(&mut db, &event).await.unwrap();
-
-        let result = fetch(&mut db, &event).await.unwrap();
-        assert_eq!(
-            result,
-            Some(Observation {
-                block_number: 1,
-                log_index: 1,
-                ..Default::default()
-            })
-        );
 
         // there is one settlement event without observation
         let result = get_settlement_event_without_observation(&mut db, 2)
@@ -113,29 +96,17 @@ mod tests {
         assert_eq!(result, Some(event));
 
         // update existing row
-        update(
-            &mut db,
-            event.block_number,
-            event.log_index,
-            5.into(),
-            6.into(),
-            7.into(),
-            8.into(),
-        )
-        .await
-        .unwrap();
-        let result = fetch(&mut db, &event).await.unwrap();
-        assert_eq!(
-            result,
-            Some(Observation {
-                gas_used: Some(5.into()),
-                effective_gas_price: Some(6.into()),
-                surplus: Some(7.into()),
-                fee: Some(8.into()),
-                block_number: 1,
-                log_index: 1,
-            })
-        );
+        let input = Observation {
+            gas_used: 5.into(),
+            effective_gas_price: 6.into(),
+            surplus: 7.into(),
+            fee: 8.into(),
+            block_number: 1,
+            log_index: 1,
+        };
+        update(&mut db, input.clone()).await.unwrap();
+        let output = fetch(&mut db, &event).await.unwrap().unwrap();
+        assert_eq!(input, output);
 
         // since updated, no more events without observations
         let result = get_settlement_event_without_observation(&mut db, 2)
