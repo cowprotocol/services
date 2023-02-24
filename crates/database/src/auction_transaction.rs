@@ -247,4 +247,22 @@ mod tests {
             .unwrap();
         assert!(event.is_none());
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_auction_id_test() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        upsert_auction_transaction(&mut db, 5, &Default::default(), 3)
+            .await
+            .unwrap();
+
+        let auction_id = get_auction_id(&mut db, &Default::default(), 3)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(auction_id, 5);
+    }
 }
