@@ -120,7 +120,7 @@ impl Display for UniV2BaselineSourceParameters {
         write!(
             f,
             "{:?}|{:?}|{}",
-            self.router.0, self.init_code_digest, self.pool_reading
+            self.router, self.init_code_digest, self.pool_reading
         )
     }
 }
