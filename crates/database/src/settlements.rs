@@ -18,6 +18,25 @@ WHERE
         .await
 }
 
+pub async fn get_hash_by_event(
+    ex: &mut PgConnection,
+    block_number: i64,
+    log_index: i64,
+) -> Result<TransactionHash, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT tx_hash
+FROM settlements
+WHERE
+    block_number = $1 AND
+    block_number = $2
+    "#;
+    sqlx::query_scalar::<_, TransactionHash>(QUERY)
+        .bind(block_number)
+        .bind(log_index)
+        .fetch_one(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {

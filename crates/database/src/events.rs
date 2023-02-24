@@ -47,6 +47,7 @@ pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = "\
             SELECT GREATEST( (SELECT COALESCE(MAX(block_number), 0) FROM trades), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM settlements), (SELECT \
+                         COALESCE(MAX(block_number), 0) FROM settlement_observations),(SELECT \
                          COALESCE(MAX(block_number), 0) FROM invalidations), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM presignature_events));";
     sqlx::query_scalar(QUERY).fetch_one(ex).await
@@ -64,7 +65,8 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_TRADE).bind(delete_from_block_number))
         .await?;
 
-    const QUERY_SETTLEMENTS: &str = "DELETE FROM settlements WHERE block_number >= $1;";
+    const QUERY_SETTLEMENTS: &str = "WITH S AS (DELETE FROM settlements WHERE block_number >= $1) \
+                                     DELETE FROM settlement_observations WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
         .await?;
 
@@ -139,8 +141,10 @@ async fn insert_settlement(
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) \
-                         ON CONFLICT DO NOTHING;";
+    WITH S AS (INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, \
+                         $3, $4) ON CONFLICT DO NOTHING)
+    INSERT INTO settlement_observations (block_number, log_index) VALUES ($2, $3) ON CONFLICT DO \
+                         NOTHING;";
     sqlx::query(QUERY)
         .bind(event.transaction_hash)
         .bind(index.block_number)
@@ -148,6 +152,7 @@ async fn insert_settlement(
         .bind(event.solver)
         .execute(ex)
         .await?;
+
     Ok(())
 }
 

@@ -70,6 +70,26 @@ LIMIT 1
         .await
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct Auction {
+    pub auction_id: AuctionId,
+}
+
+pub async fn get_auction_id(
+    ex: &mut PgConnection,
+    tx_from: &Address,
+    tx_nonce: i64,
+) -> Result<Option<AuctionId>, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT auction_id FROM auction_transaction WHERE tx_from = $1 AND tx_nonce = $2;"#;
+    let auction: Option<Auction> = sqlx::query_as(QUERY)
+        .bind(tx_from)
+        .bind(tx_nonce)
+        .fetch_optional(ex)
+        .await?;
+    Ok(auction.map(|auction| auction.auction_id))
+}
+
 #[cfg(test)]
 mod tests {
     use {
