@@ -20,6 +20,7 @@ use {
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         event_handling::MAX_REORG_BLOCK_COUNT,
+        token_list::AutoUpdatingTokenList,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
@@ -35,6 +36,7 @@ pub struct RunLoop {
     pub current_block: CurrentBlockStream,
     pub web3: Web3,
     pub network_block_interval: Duration,
+    pub market_makable_token_list: AutoUpdatingTokenList,
 }
 
 impl RunLoop {
@@ -146,7 +148,19 @@ impl RunLoop {
                     }
                 })
                 .collect(),
-            prices: auction.prices.clone(),
+            tokens: auction
+                .prices
+                .iter()
+                // TODO Fill in the missing fields (Default::default())
+                .map(|(address, price)| solve::Token {
+                    decimals: Default::default(),
+                    symbol: Default::default(),
+                    address: address.to_owned(),
+                    price: Some(price.to_owned()),
+                    available_balance: Default::default(),
+                    trusted: self.market_makable_token_list.contains(address),
+                } )
+                .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
         let futures = self

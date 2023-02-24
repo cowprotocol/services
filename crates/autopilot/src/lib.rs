@@ -1,3 +1,5 @@
+use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
+
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
@@ -649,6 +651,17 @@ pub async fn main(args: arguments::Arguments) {
         if args.drivers.is_empty() {
             panic!("colocation is enabled but no drivers are configured");
         }
+        let market_makable_token_list_configuration = TokenListConfiguration {
+            url: args.trusted_tokens_url,
+            update_interval: args.trusted_tokens_update_interval,
+            chain_id,
+            client: http_factory.create(),
+            hardcoded: args.trusted_tokens.unwrap_or_default(),
+        };
+        // updated in background task
+        let market_makable_token_list =
+            AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
+                .await;
         let run = run_loop::RunLoop {
             solvable_orders_cache,
             database: db,
@@ -660,6 +673,7 @@ pub async fn main(args: arguments::Arguments) {
             current_block: current_block_stream,
             web3,
             network_block_interval: network_time_between_blocks,
+            market_makable_token_list,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

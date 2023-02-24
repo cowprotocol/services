@@ -80,10 +80,14 @@ async fn test(web3: Web3) {
         &SOLVER_PRIVATE_KEY,
     );
     let driver_url: Url = "http://localhost:11088/test_solver".parse().unwrap();
-
     let autopilot_args = &[
         "--enable-colocation".to_string(),
         format!("--drivers={driver_url}"),
+        format!(
+            "--trusted-tokens=0x{},0x{}",
+            hex::encode(token.address()),
+            hex::encode(contracts.weth.address())
+        ),
     ];
     crate::services::start_autopilot(&contracts, autopilot_args);
     crate::services::start_api(&contracts, &[]);
@@ -118,7 +122,7 @@ async fn test(web3: Web3) {
         .send()
         .await
         .unwrap();
-    assert_eq!(placement.status(), 201,);
+    assert_eq!(placement.status(), 201);
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -189,6 +193,9 @@ base-tokens = []
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
+
+[submission]
+gas-price-cap = 1000000000000
 
 [[submission.mempool]]
 mempool = "public"
