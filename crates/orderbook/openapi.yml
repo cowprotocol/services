@@ -937,8 +937,7 @@ components:
           description: Quote a sell order given the final total sell amount including fees
           properties:
             kind:
-              type: string
-              enum: [sell]
+              $ref: "#/components/schemas/OrderKind"
             sellAmountBeforeFee:
               description: |
                 The total amount that is available for the order. From this value, the fee
@@ -951,8 +950,7 @@ components:
           description: Quote a sell order given the sell amount.
           properties:
             kind:
-              type: string
-              enum: [sell]
+              $ref: "#/components/schemas/OrderKind"
             sellAmountAfterFee:
               description: The sell amount for the order.
               $ref: "#/components/schemas/TokenAmount"
@@ -963,8 +961,7 @@ components:
           description: Quote a buy order given an exact buy amount.
           properties:
             kind:
-              type: string
-              enum: [buy]
+              $ref: "#/components/schemas/OrderKind"
             buyAmountAfterFee:
               description: The buy amount for the order.
               $ref: "#/components/schemas/TokenAmount"
