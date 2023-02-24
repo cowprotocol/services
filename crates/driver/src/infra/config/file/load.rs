@@ -57,6 +57,15 @@ pub async fn load(path: &Path) -> infra::Config {
                     max_pools_to_initialize: config.max_pools_to_initialize,
                 })
                 .collect(),
+            balancer_weighted: config
+                .liquidity
+                .balancer_weighted
+                .into_iter()
+                .map(|config| liquidity::config::BalancerWeighted {
+                    vault: config.vault.into(),
+                    deny_listed_pools: config.deny_listed_pools,
+                })
+                .collect(),
         },
         mempools: config
             .submission

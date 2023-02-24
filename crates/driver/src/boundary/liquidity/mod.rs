@@ -12,6 +12,7 @@ use {
         baseline_solver::BaseTokens,
         current_block::{self, BlockRetrieverStrategy, CurrentBlockStream},
         recent_block_cache::{self, CacheConfig},
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     solver::{
         liquidity::Liquidity,
@@ -25,6 +26,7 @@ use {
     },
 };
 
+pub mod balancer;
 pub mod uniswap;
 
 /// The default poll interval for the block stream updating task.
@@ -54,8 +56,12 @@ impl Fetcher {
             block_stream_retriever_strategy: BlockRetrieverStrategy::EthCall,
         };
 
-        let block_stream = blocks.stream(boundary::web3(eth)).await?;
-        let block_retriever = blocks.retriever(boundary::web3(eth));
+        let web3 = boundary::web3(eth);
+        let block_stream = blocks.stream(web3.clone()).await?;
+        let block_retriever = blocks.retriever(web3.clone());
+
+        let token_info_fetcher = Box::new(TokenInfoFetcher { web3: web3.clone() });
+        let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(token_info_fetcher));
 
         let uni_v3: Vec<_> = future::join_all(
             config
@@ -66,6 +72,20 @@ impl Fetcher {
         .await
         .into_iter()
         .try_collect()?;
+
+        let balancer_weighted: Vec<_> =
+            future::join_all(config.balancer_weighted.iter().map(|config| {
+                balancer::weighted::collector(
+                    eth,
+                    block_retriever.clone(),
+                    block_stream.clone(),
+                    token_info_fetcher.clone(),
+                    config,
+                )
+            }))
+            .await
+            .into_iter()
+            .try_collect()?;
 
         let uni_v2: Vec<_> = future::join_all(
             config
@@ -90,7 +110,10 @@ impl Fetcher {
         Ok(Self {
             blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources: [uni_v2, uni_v3].into_iter().flatten().collect(),
+                liquidity_sources: [uni_v2, uni_v3, balancer_weighted]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
                 base_tokens: Arc::new(base_tokens),
             },
         })
@@ -122,7 +145,9 @@ impl Fetcher {
                 let id = liquidity::Id(index);
                 match liquidity {
                     Liquidity::ConstantProduct(pool) => Some(uniswap::v2::to_domain(id, pool)),
-                    Liquidity::BalancerWeighted(_) => unreachable!(),
+                    Liquidity::BalancerWeighted(pool) => {
+                        Some(balancer::weighted::to_domain(id, pool))
+                    }
                     Liquidity::BalancerStable(_) => unreachable!(),
                     Liquidity::LimitOrder(_) => unreachable!(),
                     Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),

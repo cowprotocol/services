@@ -97,9 +97,19 @@ where
 
 #[derive(Clone, Copy, Debug)]
 pub struct CacheConfig {
+    /// Previous blocks stay cached until the block is this much older than the
+    /// current block. If there is a request for a block that is already too old
+    /// then the result stays cached until the automatic updating runs the next
+    /// time.
     pub number_of_blocks_to_cache: NonZeroU64,
+    /// The number of most recently used entries to keep track of and auto
+    /// update when the current block changes.
     pub number_of_entries_to_auto_update: NonZeroUsize,
+    /// When a recent block is requested, this is the maximum age a cached block
+    /// can have to be considered.
     pub maximum_recent_block_age: u64,
+    /// How often to re-query a node to mitigate read inconsistency issues with
+    /// load balanced nodes.
     pub max_retries: u32,
     pub delay_between_retries: Duration,
 }
@@ -133,17 +143,6 @@ where
     V: Clone,
     F: CacheFetching<K, V>,
 {
-    /// number_of_blocks_to_cache: Previous blocks stay cached until the block
-    /// is this much older than the current block. If there is a request for
-    /// a block that is already too old then the result stays cached until
-    /// the automatic updating runs the next time.
-    ///
-    /// number_of_entries_to_auto_update: The number of most recently used
-    /// entries to keep track of and auto update when the current block
-    /// changes.
-    ///
-    /// maximum_recent_block_age: When a recent block is requested, this is the
-    /// maximum a cached block can have to be considered.
     pub fn new(
         config: CacheConfig,
         fetcher: F,

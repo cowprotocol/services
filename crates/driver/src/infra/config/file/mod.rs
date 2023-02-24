@@ -189,6 +189,10 @@ struct LiquidityConfig {
     /// Liquidity provided by a Uniswap V3 compatible contract.
     #[serde(default)]
     uniswap_v3: Vec<UniswapV3Config>,
+
+    /// Liquidity provided by a balancer weighted pool compatible contract.
+    #[serde(default)]
+    balancer_weighted: Vec<BalancerWeightedConfig>,
 }
 
 // TODO it would be nice to provide presets so that you can write:
@@ -212,9 +216,19 @@ struct UniswapV2Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct UniswapV3Config {
-    /// Addresses of Uniswap V3 compatible router contracts.
+    /// Address of Uniswap V3 compatible router contract.
     router: eth::H160,
 
     /// How many pools to initialize during start up.
     max_pools_to_initialize: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct BalancerWeightedConfig {
+    /// Address of balancer vault.
+    vault: eth::H160,
+
+    /// IDs of pools that should not get indexed.
+    deny_listed_pools: Vec<eth::H256>,
 }

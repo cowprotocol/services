@@ -3,7 +3,7 @@
 use {
     crate::{
         interactions::{
-            allowances::{AllowanceManager, AllowanceManaging, Allowances},
+            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
             BalancerSwapGivenOutInteraction,
         },
         liquidity::{
@@ -22,6 +22,7 @@ use {
     model::TokenPair,
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
@@ -122,13 +123,12 @@ impl LiquidityCollecting for BalancerV2Liquidity {
 }
 
 pub struct SettlementHandler {
-    pool_id: H256,
+    pub pool_id: H256,
     settlement: GPv2Settlement,
-    vault: BalancerV2Vault,
+    pub vault: BalancerV2Vault,
     allowances: Arc<Allowances>,
 }
 
-#[cfg(test)]
 impl SettlementHandler {
     pub fn new(
         pool_id: H256,
@@ -166,28 +166,36 @@ impl SettlementHandling<StablePoolOrder> for SettlementHandler {
 }
 
 impl SettlementHandler {
+    pub fn encode(
+        &self,
+        input_max: TokenAmount,
+        output: TokenAmount,
+    ) -> (Option<Approval>, BalancerSwapGivenOutInteraction) {
+        let approval = self.allowances.approve_token(input_max.clone());
+        let swap = BalancerSwapGivenOutInteraction {
+            settlement: self.settlement.clone(),
+            vault: self.vault.clone(),
+            pool_id: self.pool_id,
+            asset_in_max: input_max,
+            asset_out: output,
+            // Balancer pools allow passing additional user data in order to
+            // control pool behaviour for swaps. That being said, weighted pools
+            // do not seem to make use of this at the moment so leave it empty.
+            user_data: Default::default(),
+        };
+        (approval.unwrap_or_default(), swap)
+    }
+
     fn inner_encode(
         &self,
         execution: AmmOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        if let Some(approval) = self.allowances.approve_token(execution.input_max.clone())? {
+        let (approval, swap) = self.encode(execution.input_max, execution.output);
+        if let Some(approval) = approval {
             encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
         }
-        encoder.append_to_execution_plan_internalizable(
-            BalancerSwapGivenOutInteraction {
-                settlement: self.settlement.clone(),
-                vault: self.vault.clone(),
-                pool_id: self.pool_id,
-                asset_in_max: execution.input_max,
-                asset_out: execution.output,
-                // Balancer pools allow passing additional user data in order to
-                // control pool behaviour for swaps. That being said, weighted pools
-                // do not seem to make use of this at the moment so leave it empty.
-                user_data: Default::default(),
-            },
-            execution.internalizable,
-        );
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
 
         Ok(())
     }

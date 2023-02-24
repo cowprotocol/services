@@ -25,7 +25,7 @@ mod logexpmath;
 /// It corresponds to Solidity's `ufixed256x18`.
 /// Operations on this type are implemented as in Balancer's FixedPoint library,
 /// including error codes, from which the name (Balancer Fixed Point).
-pub struct Bfp(U256);
+pub struct Bfp(pub U256);
 
 lazy_static! {
     static ref ONE_18: U256 = U256::exp10(18);

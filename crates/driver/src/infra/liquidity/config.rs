@@ -15,6 +15,9 @@ pub struct Config {
     /// The collection of Uniswap V3 compatible exchanges to fetch liquidity
     /// for.
     pub uniswap_v3: Vec<UniswapV3>,
+
+    /// The collection of exchanges compatible with balancer v2 weighted pools.
+    pub balancer_weighted: Vec<BalancerWeighted>,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.
@@ -35,4 +38,14 @@ pub struct UniswapV3 {
 
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: u64,
+}
+
+/// Liquidity fetching options for weighted balancer pools.
+#[derive(Clone, Debug)]
+pub struct BalancerWeighted {
+    /// The address of the balancer vault.
+    pub vault: eth::ContractAddress,
+
+    /// IDs of pools that should not get indexed.
+    pub deny_listed_pools: Vec<eth::H256>,
 }
