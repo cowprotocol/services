@@ -1,8 +1,13 @@
 use {
+    self::trade::Fulfillment,
     crate::{
         boundary,
         domain::{
-            competition::{self, order},
+            competition::{
+                self,
+                order::{self, Kind},
+                Order,
+            },
             eth,
         },
         infra::{
@@ -162,6 +167,21 @@ impl Solution {
             inner: settlement,
             access_list,
             gas,
+        })
+    }
+
+    pub fn has_user_trade(&self) -> bool {
+        self.trades.iter().any(|trade| {
+            matches!(
+                trade,
+                Trade::Fulfillment(Fulfillment {
+                    order: Order {
+                        kind: Kind::Market | Kind::Limit { .. },
+                        ..
+                    },
+                    ..
+                })
+            )
         })
     }
 }

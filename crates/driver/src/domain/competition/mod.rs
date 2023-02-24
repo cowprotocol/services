@@ -44,7 +44,10 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
+    pub async fn solve(
+        &self,
+        auction: &Auction,
+    ) -> Result<(solution::Id, Option<solution::Score>), Error> {
         tracing::trace!("fetching liquidity");
         let liquidity = self.liquidity.fetch(&Self::liquidity_pairs(auction)).await;
         tracing::trace!("solving");
@@ -52,6 +55,9 @@ impl Competition {
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
             .await?;
+        if !solution.has_user_trade() {
+            return Ok((solution.id, None));
+        }
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
@@ -63,7 +69,7 @@ impl Competition {
         let score = settlement.score(&self.eth, auction).await?;
         let id = settlement.id();
         *self.settlement.lock().unwrap() = Some((id, settlement));
-        Ok((id, score))
+        Ok((id, Some(score)))
     }
 
     // TODO Rename this to settle()?

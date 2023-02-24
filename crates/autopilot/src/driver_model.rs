@@ -116,7 +116,7 @@ pub mod solve {
     #[serde(deny_unknown_fields)]
     pub struct Response {
         pub id: String,
-        pub score: f64,
+        pub score: Option<f64>,
     }
 }
 

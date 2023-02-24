@@ -5,10 +5,11 @@ use {
 };
 
 impl Solution {
-    pub fn from_domain(id: solution::Id, score: competition::Score) -> Self {
+    /// A None score indicates no solution was found.
+    pub fn from_domain(id: solution::Id, score: Option<competition::Score>) -> Self {
         Self {
             id: id.into(),
-            score: score.into(),
+            score: score.map(Into::into),
         }
     }
 }
@@ -18,5 +19,5 @@ impl Solution {
 pub struct Solution {
     #[serde_as(as = "DisplayFromStr")]
     id: u64,
-    score: f64,
+    score: Option<f64>,
 }

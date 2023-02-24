@@ -71,7 +71,9 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by(|left, right| left.1.score.total_cmp(&right.1.score));
+        solutions.sort_unstable_by(|left, right| {
+            left.1.score.unwrap().total_cmp(&right.1.score.unwrap())
+        });
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
@@ -95,6 +97,8 @@ impl RunLoop {
     }
 
     /// Returns the successful /solve responses and the index of the solver.
+    ///
+    /// Returned scores are never None.
     async fn solve(&self, auction: &Auction, id: AuctionId) -> Vec<(usize, solve::Response)> {
         if auction
             .orders
@@ -166,7 +170,8 @@ impl RunLoop {
         results
             .into_iter()
             .filter_map(|(index, result)| match result {
-                Ok(result) => Some((index, result)),
+                Ok(result) if result.score.is_some() => Some((index, result)),
+                Ok(_) => None,
                 Err(err) => {
                     tracing::warn!(?err, "driver solve error");
                     None
