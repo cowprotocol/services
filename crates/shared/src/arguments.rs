@@ -212,6 +212,13 @@ pub struct Arguments {
     pub baseline_sources: Option<Vec<BaselineSource>>,
 
     /// List of non hardcoded univ2-like contracts.
+    ///
+    /// For example to add a univ2-like liquidity source the argument could be
+    /// set to
+    ///
+    /// 0x0000000000000000000000000000000000000001|0x0000000000000000000000000000000000000000000000000000000000000002
+    ///
+    /// which sets the router address to 0x01 and the init code digest to 0x02.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub custom_univ2_baseline_sources: Vec<UniV2BaselineSourceParameters>,
 
