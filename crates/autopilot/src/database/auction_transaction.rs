@@ -63,4 +63,6 @@ impl super::Postgres {
         database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
             .await
     }
+
+    /// get tx_hash from database by 
 }
