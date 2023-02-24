@@ -29,6 +29,7 @@ pub struct Request {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Scores {
+    pub winner: H160,
     #[serde(with = "u256_decimal")]
     pub winning_score: U256,
     #[serde(with = "u256_decimal")]

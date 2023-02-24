@@ -453,6 +453,7 @@ impl Driver {
                     .context("convert nonce")?,
             };
             let scores = model::solver_competition::Scores {
+                winner: winning_solver.account().address(),
                 winning_score: scores.next().expect("no score"), // guaranteed to exist
                 // reference score is the second highest score, or 0 if there is only one score (see
                 // CIP20)

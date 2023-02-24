@@ -2,6 +2,7 @@
 -- (after the submissions have been ranked)
 CREATE TABLE settlement_scores (
   auction_id bigint PRIMARY KEY,
+  winner bytea NOT NULL,
   winning_score numeric(78,0) NOT NULL,
   -- The score from a runner-up solver, if there is one, otherwise zero.
   reference_score numeric(78,0) NOT NULL,

@@ -55,6 +55,7 @@ impl SolverCompetitionStoring for Postgres {
             &mut ex,
             Score {
                 auction_id: request.auction,
+                winner: ByteArray(request.scores.winner.0),
                 winning_score: u256_to_big_decimal(&request.scores.winning_score),
                 reference_score: u256_to_big_decimal(&request.scores.reference_score),
                 block_deadline: request
@@ -167,6 +168,7 @@ mod tests {
             },
             executions: Default::default(),
             scores: Scores {
+                winner: H160([1; 20]),
                 winning_score: 100.into(),
                 reference_score: 99.into(),
                 block_deadline: 10,
