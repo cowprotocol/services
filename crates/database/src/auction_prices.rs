@@ -1,7 +1,7 @@
 use {
     crate::{auction::AuctionId, Address},
     bigdecimal::BigDecimal,
-    sqlx::PgConnection,
+    sqlx::{Connection, PgConnection},
 };
 
 /// External token price for a given auction.
@@ -13,16 +13,18 @@ pub struct AuctionPrice {
 }
 
 pub async fn insert(ex: &mut PgConnection, prices: Vec<AuctionPrice>) -> Result<(), sqlx::Error> {
+    let mut transaction = ex.begin().await?;
+    const QUERY: &str =
+        r#"INSERT INTO auction_prices (auction_id, token, price) VALUES ($1, $2, $3);"#;
     for price in prices {
-        const QUERY: &str =
-            r#"INSERT INTO auction_prices (auction_id, token, price) VALUES ($1, $2, $3);"#;
         sqlx::query(QUERY)
             .bind(price.auction_id)
             .bind(price.token)
             .bind(price.price)
-            .execute(&mut *ex)
+            .execute(&mut *transaction)
             .await?;
     }
+    transaction.commit().await?;
     Ok(())
 }
 
