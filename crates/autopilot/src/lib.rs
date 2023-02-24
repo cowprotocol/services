@@ -1,6 +1,7 @@
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
+pub mod decoded_settlement;
 pub mod event_updater;
 pub mod risk_adjusted_rewards;
 pub mod solvable_orders;
