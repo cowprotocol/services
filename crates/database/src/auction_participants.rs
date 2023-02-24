@@ -1,6 +1,6 @@
 use {
-    crate::{auction::AuctionId, Address},
-    sqlx::{Connection, PgConnection},
+    crate::{auction::AuctionId, Address, PgTransaction},
+    sqlx::PgConnection,
 };
 
 /// Participant of a solver competition for a given auction.
@@ -11,20 +11,18 @@ pub struct Participant {
 }
 
 pub async fn insert(
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
     participants: Vec<Participant>,
 ) -> Result<(), sqlx::Error> {
-    let mut transaction = ex.begin().await?;
     const QUERY: &str =
         r#"INSERT INTO auction_participants (auction_id, participant) VALUES ($1, $2);"#;
     for participant in participants {
         sqlx::query(QUERY)
             .bind(participant.auction_id)
             .bind(participant.participant)
-            .execute(&mut *transaction)
+            .execute(&mut *ex)
             .await?;
     }
-    transaction.commit().await?;
     Ok(())
 }
 
