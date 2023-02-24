@@ -1,5 +1,7 @@
-use crate::{Address, OrderUid, PgTransaction, TransactionHash};
-use sqlx::{types::BigDecimal, Executor, PgConnection};
+use {
+    crate::{Address, OrderUid, PgTransaction, TransactionHash},
+    sqlx::{types::BigDecimal, Executor, PgConnection},
+};
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -43,11 +45,10 @@ pub struct EventIndex {
 
 pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = "\
-            SELECT GREATEST( \
-                (SELECT COALESCE(MAX(block_number), 0) FROM trades), \
-                (SELECT COALESCE(MAX(block_number), 0) FROM settlements), \
-                (SELECT COALESCE(MAX(block_number), 0) FROM invalidations), \
-                (SELECT COALESCE(MAX(block_number), 0) FROM presignature_events));";
+            SELECT GREATEST( (SELECT COALESCE(MAX(block_number), 0) FROM trades), (SELECT \
+                         COALESCE(MAX(block_number), 0) FROM settlements), (SELECT \
+                         COALESCE(MAX(block_number), 0) FROM invalidations), (SELECT \
+                         COALESCE(MAX(block_number), 0) FROM presignature_events));";
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
@@ -78,9 +79,10 @@ pub async fn append(
     ex: &mut PgTransaction<'_>,
     events: &[(EventIndex, Event)],
 ) -> Result<(), sqlx::Error> {
-    // TODO: there might be a more efficient way to do this like execute_many or COPY but my
-    // tests show that even if we sleep during the transaction it does not block other
-    // connections from using the database, so it's not high priority.
+    // TODO: there might be a more efficient way to do this like execute_many or
+    // COPY but my tests show that even if we sleep during the transaction it
+    // does not block other connections from using the database, so it's not
+    // high priority.
     for (index, event) in events {
         match event {
             Event::Trade(event) => insert_trade(ex, index, event).await?,
@@ -97,12 +99,11 @@ async fn insert_invalidation(
     index: &EventIndex,
     event: &Invalidation,
 ) -> Result<(), sqlx::Error> {
-    // We use ON CONFLICT so that multiple updates running at the same do not error because of
-    // events already existing. This can happen when multiple orderbook apis run in HPA.
-    // See #444 .
-    const QUERY: &str =
-        "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3) \
-         ON CONFLICT DO NOTHING;";
+    // We use ON CONFLICT so that multiple updates running at the same do not error
+    // because of events already existing. This can happen when multiple
+    // orderbook apis run in HPA. See #444 .
+    const QUERY: &str = "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES \
+                         ($1, $2, $3) ON CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(index.block_number)
         .bind(index.log_index)
@@ -118,8 +119,8 @@ pub async fn insert_trade(
     event: &Trade,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount) VALUES ($1, $2, $3, $4, $5, $6) \
-        ON CONFLICT DO NOTHING;";
+        INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, \
+                         fee_amount) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(index.block_number)
         .bind(index.log_index)
@@ -139,7 +140,7 @@ async fn insert_settlement(
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
         INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) \
-        ON CONFLICT DO NOTHING;";
+                         ON CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(event.transaction_hash)
         .bind(index.block_number)
@@ -156,8 +157,8 @@ async fn insert_presignature(
     event: &PreSignature,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) VALUES ($1, $2, $3, $4, $5) \
-        ON CONFLICT DO NOTHING;";
+        INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) VALUES \
+                         ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(index.block_number)
         .bind(index.log_index)
@@ -171,8 +172,7 @@ async fn insert_presignature(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

@@ -1,11 +1,13 @@
 //! Module containing traits for abstracting Web3 operations so components can
 //! more easily be tested with mocked versions of these behaviours.
 
-use crate::ethrpc::Web3;
-use anyhow::Result;
-use cached::{Cached, SizedCache};
-use std::sync::{Arc, Mutex};
-use web3::types::{Bytes, H160};
+use {
+    crate::ethrpc::Web3,
+    anyhow::Result,
+    cached::{Cached, SizedCache},
+    std::sync::{Arc, Mutex},
+    web3::types::{Bytes, H160},
+};
 
 #[mockall::automock]
 #[async_trait::async_trait]
@@ -74,8 +76,10 @@ impl CodeFetching for CachedCodeFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mockall::{predicate, Sequence};
+    use {
+        super::*,
+        mockall::{predicate, Sequence},
+    };
 
     #[tokio::test]
     async fn caches_code() {

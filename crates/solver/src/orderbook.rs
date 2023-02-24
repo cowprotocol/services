@@ -1,6 +1,8 @@
-use anyhow::{Context, Result};
-use model::auction::AuctionWithId;
-use reqwest::{Client, Url};
+use {
+    anyhow::{Context, Result},
+    model::auction::AuctionWithId,
+    reqwest::{Client, Url},
+};
 
 pub struct OrderBookApi {
     base: Url,

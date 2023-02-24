@@ -1,16 +1,19 @@
-use crate::{
-    settlement::Settlement,
-    settlement_post_processing::PostProcessing,
-    solver::{Auction, Solver},
+use {
+    crate::{
+        settlement::Settlement,
+        settlement_post_processing::PostProcessing,
+        solver::{Auction, Solver},
+    },
+    anyhow::Result,
+    ethcontract::Account,
+    gas_estimation::GasPrice1559,
+    model::auction::AuctionId,
+    shared::http_solver::model::AuctionResult,
+    std::sync::Arc,
 };
-use anyhow::Result;
-use ethcontract::Account;
-use gas_estimation::GasPrice1559;
-use model::auction::AuctionId;
-use shared::http_solver::model::AuctionResult;
-use std::sync::Arc;
 
-/// A wrapper for solvers that applies a set of optimizations to all the generated settlements.
+/// A wrapper for solvers that applies a set of optimizations to all the
+/// generated settlements.
 pub struct OptimizingSolver {
     pub inner: Arc<dyn Solver>,
     pub post_processing_pipeline: Arc<dyn PostProcessing>,
@@ -51,17 +54,20 @@ impl Solver for OptimizingSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::UnwrapWethInteraction, settlement_post_processing::MockPostProcessing,
-        solver::MockSolver,
+    use {
+        super::*,
+        crate::{
+            interactions::UnwrapWethInteraction,
+            settlement_post_processing::MockPostProcessing,
+            solver::MockSolver,
+        },
+        contracts::WETH9,
+        ethcontract::PrivateKey,
+        futures::FutureExt,
+        hex_literal::hex,
+        primitive_types::H160,
+        shared::dummy_contract,
     };
-    use contracts::WETH9;
-    use ethcontract::PrivateKey;
-    use futures::FutureExt;
-    use hex_literal::hex;
-    use primitive_types::H160;
-    use shared::dummy_contract;
 
     #[tokio::test]
     async fn optimizes_solutions() {

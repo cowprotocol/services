@@ -1,23 +1,30 @@
-use crate::database::orders::{InsertionError, OrderStoring};
-use anyhow::{Context, Result};
-use chrono::Utc;
-use ethcontract::H256;
-use model::{
-    auction::AuctionWithId,
-    order::{
-        Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid,
-        SignedOrderCancellations,
+use {
+    crate::database::orders::{InsertionError, OrderStoring},
+    anyhow::{Context, Result},
+    chrono::Utc,
+    ethcontract::H256,
+    model::{
+        auction::AuctionWithId,
+        order::{
+            Order,
+            OrderCancellation,
+            OrderClass,
+            OrderCreation,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
+        },
+        quote::QuoteId,
+        DomainSeparator,
     },
-    quote::QuoteId,
-    DomainSeparator,
+    primitive_types::H160,
+    shared::{
+        metrics::LivenessChecking,
+        order_validation::{OrderValidating, ValidationError},
+    },
+    std::sync::Arc,
+    thiserror::Error,
 };
-use primitive_types::H160;
-use shared::{
-    metrics::LivenessChecking,
-    order_validation::{OrderValidating, ValidationError},
-};
-use std::sync::Arc;
-use thiserror::Error;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "orderbook")]
@@ -359,16 +366,18 @@ impl LivenessChecking for Orderbook {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::database::orders::MockOrderStoring;
-    use ethcontract::H160;
-    use mockall::predicate::eq;
-    use model::{
-        app_id::AppId,
-        order::{OrderData, OrderMetadata},
-        signature::Signature,
+    use {
+        super::*,
+        crate::database::orders::MockOrderStoring,
+        ethcontract::H160,
+        mockall::predicate::eq,
+        model::{
+            app_id::AppId,
+            order::{OrderData, OrderMetadata},
+            signature::Signature,
+        },
+        shared::order_validation::MockOrderValidating,
     };
-    use shared::order_validation::MockOrderValidating;
 
     #[tokio::test]
     #[ignore]

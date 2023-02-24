@@ -1,14 +1,17 @@
-use crate::settlement::{Revertable, Settlement};
-
-use super::{
-    super::submitter::{TransactionHandle, TransactionSubmitting},
-    common::PrivateNetwork,
-    AdditionalTip, Strategy, SubmissionLoopStatus,
+use {
+    super::{
+        super::submitter::{TransactionHandle, TransactionSubmitting},
+        common::PrivateNetwork,
+        AdditionalTip,
+        Strategy,
+        SubmissionLoopStatus,
+    },
+    crate::settlement::{Revertable, Settlement},
+    anyhow::{Context, Result},
+    ethcontract::transaction::TransactionBuilder,
+    reqwest::{Client, IntoUrl},
+    shared::ethrpc::{http::HttpTransport, Web3, Web3Transport},
 };
-use anyhow::{Context, Result};
-use ethcontract::transaction::TransactionBuilder;
-use reqwest::{Client, IntoUrl};
-use shared::ethrpc::{http::HttpTransport, Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct FlashbotsApi {

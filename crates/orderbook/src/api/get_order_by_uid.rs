@@ -1,8 +1,10 @@
-use crate::orderbook::Orderbook;
-use anyhow::Result;
-use model::order::{Order, OrderUid};
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply, Filter, Rejection};
+use {
+    crate::orderbook::Orderbook,
+    anyhow::Result,
+    model::order::{Order, OrderUid},
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply, Filter, Rejection},
+};
 
 pub fn get_order_by_uid_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
     warp::path!("v1" / "orders" / OrderUid).and(warp::get())
@@ -39,9 +41,11 @@ pub fn get_order_by_uid(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::api::response_body;
-    use warp::{test::request, Reply};
+    use {
+        super::*,
+        shared::api::response_body,
+        warp::{test::request, Reply},
+    };
 
     #[tokio::test]
     async fn get_order_by_uid_request_ok() {

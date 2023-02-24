@@ -1,11 +1,13 @@
-use ethcontract::Bytes;
-use primitive_types::{H160, U256};
+use {
+    ethcontract::Bytes,
+    primitive_types::{H160, U256},
+};
 
 pub trait Interaction: std::fmt::Debug + Send + Sync {
     // TODO: not sure if this should return a result.
-    // Write::write returns a result but we know we write to a vector in memory so we know it will
-    // never fail. Then the question becomes whether interactions should be allowed to fail encoding
-    // for other reasons.
+    // Write::write returns a result but we know we write to a vector in memory so
+    // we know it will never fail. Then the question becomes whether
+    // interactions should be allowed to fail encoding for other reasons.
     fn encode(&self) -> Vec<EncodedInteraction>;
 }
 

@@ -1,8 +1,10 @@
-use crate::{orders::OrderKind, Address};
-use bigdecimal::BigDecimal;
-use sqlx::{
-    types::chrono::{DateTime, Utc},
-    PgConnection,
+use {
+    crate::{orders::OrderKind, Address},
+    bigdecimal::BigDecimal,
+    sqlx::{
+        types::chrono::{DateTime, Utc},
+        PgConnection,
+    },
 };
 
 pub type QuoteId = i64;
@@ -33,7 +35,8 @@ pub struct Quote {
     pub quote_kind: QuoteKind,
 }
 
-/// Stores the quote and returns the id. The id of the quote parameter is not used.
+/// Stores the quote and returns the id. The id of the quote parameter is not
+/// used.
 pub async fn save(ex: &mut PgConnection, quote: &Quote) -> Result<QuoteId, sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO quotes (
@@ -140,10 +143,12 @@ WHERE expiration_timestamp < $1
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::byte_array::ByteArray;
-    use chrono::Duration;
-    use sqlx::{types::chrono::TimeZone, Connection};
+    use {
+        super::*,
+        crate::byte_array::ByteArray,
+        chrono::Duration,
+        sqlx::{types::chrono::TimeZone, Connection},
+    };
 
     /// The postgres database in our CI has different datetime precision than
     /// the `DateTime` uses. This leads to issues comparing round-tripped data.

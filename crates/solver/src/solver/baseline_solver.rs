@@ -1,21 +1,33 @@
-use crate::{
-    liquidity::{
-        slippage::{SlippageCalculator, SlippageContext},
-        token_pairs, AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity,
-        WeightedProductOrder,
+use {
+    crate::{
+        liquidity::{
+            slippage::{SlippageCalculator, SlippageContext},
+            token_pairs,
+            AmmOrderExecution,
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
+            WeightedProductOrder,
+        },
+        settlement::Settlement,
+        solver::{Auction, Solver},
     },
-    settlement::Settlement,
-    solver::{Auction, Solver},
+    anyhow::Result,
+    ethcontract::{Account, H160, U256},
+    maplit::hashmap,
+    model::TokenPair,
+    shared::{
+        baseline_solver::{
+            estimate_buy_amount,
+            estimate_sell_amount,
+            BaseTokens,
+            BaselineSolvable,
+        },
+        http_solver::model::TokenAmount,
+        sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
+    },
+    std::{collections::HashMap, sync::Arc},
 };
-use anyhow::Result;
-use ethcontract::{Account, H160, U256};
-use maplit::hashmap;
-use model::TokenPair;
-use shared::{
-    baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
-    sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
-};
-use std::{collections::HashMap, sync::Arc};
 
 pub struct BaselineSolver {
     account: Account,
@@ -157,14 +169,15 @@ impl BaselineSolver {
                             tracing::debug!("Excluded stable pool from baseline solving.")
                         }
                         Liquidity::LimitOrder(_) => {}
-                        Liquidity::Concentrated(_) => {} // not being implemented right now since baseline solver
-                                                         // is not winning anyway
+                        Liquidity::Concentrated(_) => {} /* not being implemented right now since
+                                                          * baseline solver
+                                                          * is not winning anyway */
                     }
                     amm_map
                 });
 
-        // We assume that individual settlements do not move the amm pools significantly when
-        // returning multiple settlements.
+        // We assume that individual settlements do not move the amm pools significantly
+        // when returning multiple settlements.
         let mut settlements = Vec::new();
 
         // Return a solution for the first settle-able user order
@@ -278,8 +291,8 @@ impl Solution {
                 .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculable");
             let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
-                input_max: (sell_token, sell_amount),
-                output: (buy_token, buy_amount),
+                input_max: TokenAmount::new(sell_token, sell_amount),
+                output: TokenAmount::new(buy_token, buy_amount),
                 internalizable: false,
             })?;
             match &amm.order {
@@ -312,20 +325,25 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        liquidity::{
-            tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
+    use {
+        super::*,
+        crate::{
+            liquidity::{
+                tests::CapturingSettlementHandler,
+                AmmOrderExecution,
+                ConstantProductOrder,
+                LimitOrder,
+            },
+            test::account,
         },
-        test::account,
-    };
-    use model::order::OrderKind;
-    use num::rational::Ratio;
-    use shared::{
-        addr,
-        sources::balancer_v2::{
-            pool_fetching::{TokenState, WeightedTokenState},
-            swap::fixed_point::Bfp,
+        model::order::OrderKind,
+        num::rational::Ratio,
+        shared::{
+            addr,
+            sources::balancer_v2::{
+                pool_fetching::{TokenState, WeightedTokenState},
+                swap::fixed_point::Bfp,
+            },
         },
     };
 
@@ -424,8 +442,8 @@ mod tests {
             amm_handler[1].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (sell_token, 100_000.into()),
-                    output: (native_token, 98_715.into()),
+                    input_max: TokenAmount::new(sell_token, 100_000),
+                    output: TokenAmount::new(native_token, 98_715),
                     internalizable: false
                 })
                 .unwrap(),
@@ -434,8 +452,8 @@ mod tests {
             amm_handler[2].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (native_token, 98_715.into()),
-                    output: (buy_token, 97_459.into()),
+                    input_max: TokenAmount::new(native_token, 98_715),
+                    output: TokenAmount::new(buy_token, 97_459),
                     internalizable: false
                 })
                 .unwrap(),
@@ -537,8 +555,8 @@ mod tests {
             amm_handler[1].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (sell_token, 102_660.into()),
-                    output: (native_token, 101_315.into()),
+                    input_max: TokenAmount::new(sell_token, 102_660),
+                    output: TokenAmount::new(native_token, 101_315),
                     internalizable: false
                 })
                 .unwrap(),
@@ -547,8 +565,8 @@ mod tests {
             amm_handler[2].clone().calls()[0],
             slippage
                 .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (native_token, 101_315.into()),
-                    output: (buy_token, 100_000.into()),
+                    input_max: TokenAmount::new(native_token, 101_315),
+                    output: TokenAmount::new(buy_token, 100_000),
                     internalizable: false
                 })
                 .unwrap(),
@@ -709,8 +727,8 @@ mod tests {
             fee: Bfp::zero(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
-        // When baseline solver goes from the buy token to the sell token it sees that a path with
-        // a sell amount of 7999613.
+        // When baseline solver goes from the buy token to the sell token it sees that a
+        // path with a sell amount of 7999613.
         assert_eq!(
             pool_0.get_amount_in(tokens[1], (1.into(), tokens[2])),
             Some(1.into())
@@ -719,9 +737,9 @@ mod tests {
             pool_1.get_amount_in(tokens[0], (1.into(), tokens[1])),
             Some(7999613.into())
         );
-        // But then when it goes from the sell token to the buy token to construct the settlement
-        // it encounters the asymmetry of the weighted pool. With the same in amount the out amount
-        // has changed from 1 to 0.
+        // But then when it goes from the sell token to the buy token to construct the
+        // settlement it encounters the asymmetry of the weighted pool. With the
+        // same in amount the out amount has changed from 1 to 0.
         assert_eq!(
             pool_1.get_amount_out(tokens[1], (7999613.into(), tokens[0])),
             Some(0.into()),

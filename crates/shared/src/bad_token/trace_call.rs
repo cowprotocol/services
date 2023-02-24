@@ -1,18 +1,20 @@
-use super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality};
-use crate::{ethrpc::Web3, trace_many};
-use anyhow::{bail, ensure, Context, Result};
-use contracts::ERC20;
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey};
-use primitive_types::{H160, U256};
-use std::{cmp, sync::Arc};
-use web3::{
-    signing::keccak256,
-    types::{BlockTrace, CallRequest, Res},
+use {
+    super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality},
+    crate::{ethrpc::Web3, trace_many},
+    anyhow::{bail, ensure, Context, Result},
+    contracts::ERC20,
+    ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, PrivateKey},
+    primitive_types::{H160, U256},
+    std::{cmp, sync::Arc},
+    web3::{
+        signing::keccak256,
+        types::{BlockTrace, CallRequest, Res},
+    },
 };
 
-/// Detects whether a token is "bad" (works in unexpected ways that are problematic for solving) by
-/// simulating several transfers of a token. To find an initial address to transfer from we use
-/// the amm pair providers.
+/// Detects whether a token is "bad" (works in unexpected ways that are
+/// problematic for solving) by simulating several transfers of a token. To find
+/// an initial address to transfer from we use the amm pair providers.
 /// Tokens are bad if:
 /// - we cannot find an amm pool of the token to one of the base tokens
 /// - transfer into the settlement contract or back out fails
@@ -34,41 +36,52 @@ impl BadTokenDetecting for TraceCallDetector {
 
 impl TraceCallDetector {
     pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
-        // Arbitrary amount that is large enough that small relative fees should be visible.
+        // Arbitrary amount that is large enough that small relative fees should be
+        // visible.
         const MIN_AMOUNT: u64 = 100_000;
-        let (take_from, amount) = match self.finder.find_owner(token, MIN_AMOUNT.into()).await? {
+        let (take_from, amount) = match self
+            .finder
+            .find_owner(token, MIN_AMOUNT.into())
+            .await
+            .context("find_owner")?
+        {
             Some((address, balance)) => {
                 // Don't use the full balance, but instead a portion of it. This
                 // makes the trace call less racy and prone to the transfer
                 // failing because of a balance change from one block to the
                 // next. This can happen because of either:
-                // - Block propagation - the trace_callMany is handled by a node
-                //   that is 1 block in the past
-                // - New block observed - the trace_callMany is executed on a
-                //   block that came in since we read the balance
+                // - Block propagation - the trace_callMany is handled by a node that is 1 block
+                //   in the past
+                // - New block observed - the trace_callMany is executed on a block that came in
+                //   since we read the balance
                 let amount = cmp::max(balance / 2, MIN_AMOUNT.into());
 
                 tracing::debug!(?token, ?address, ?amount, "found owner");
                 (address, amount)
             }
-            None => return Ok(TokenQuality::bad("no pool")),
+            None => {
+                return Ok(TokenQuality::bad(
+                    "Could not find on chain source of the token with at least {MIN_AMOUNT} \
+                     balance.",
+                ))
+            }
         };
 
         // We transfer the full available amount of the token from the amm pool into the
         // settlement contract and then to an arbitrary address.
-        // Note that gas use can depend on the recipient because for the standard implementation
-        // sending to an address that does not have any balance yet (implicitly 0) causes an
-        // allocation.
+        // Note that gas use can depend on the recipient because for the standard
+        // implementation sending to an address that does not have any balance
+        // yet (implicitly 0) causes an allocation.
         let request = self.create_trace_request(token, amount, take_from);
         let traces = trace_many::trace_many(request, &self.web3)
             .await
-            .context("failed to trace for bad token detection")?;
-        Self::handle_response(&traces, amount)
+            .context("trace_many")?;
+        Self::handle_response(&traces, amount, take_from)
     }
 
-    // For the out transfer we use an arbitrary address without balance to detect tokens that
-    // usually apply fees but not if the the sender or receiver is specifically exempt like
-    // their own uniswap pools.
+    // For the out transfer we use an arbitrary address without balance to detect
+    // tokens that usually apply fees but not if the the sender or receiver is
+    // specifically exempt like their own uniswap pools.
     fn arbitrary_recipient() -> H160 {
         PrivateKey::from_raw(keccak256(b"moo"))
             .unwrap()
@@ -110,88 +123,113 @@ impl TraceCallDetector {
         requests
     }
 
-    fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality> {
+    fn handle_response(
+        traces: &[BlockTrace],
+        amount: U256,
+        take_from: H160,
+    ) -> Result<TokenQuality> {
         ensure!(traces.len() == 8, "unexpected number of traces");
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "can't transfer into settlement contract: {reason}"
+                    "Transfer of token from on chain source {take_from:?} into settlement \
+                     contract failed: {reason}"
                 )))
             }
         };
+        let arbitrary = Self::arbitrary_recipient();
         let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "can't transfer out of settlement contract: {reason}"
+                    "Transfer token out of settlement contract to arbitrary recipient \
+                     {arbitrary:?} failed: {reason}",
                 )))
             }
         };
 
+        let message = "\
+            Failed to decode the token's balanceOf response because it did not \
+            return 32 bytes. A common cause of this is a bug in the Vyper \
+            smart contract compiler. See \
+            https://github.com/cowprotocol/services/pull/781 for more \
+            information.\
+        ";
+        let bad = TokenQuality::Bad {
+            reason: message.to_string(),
+        };
         let balance_before_in = match decode_u256(&traces[0]) {
-            Ok(balance) => balance,
-            // Common cause of the failure: https://github.com/cowprotocol/services/pull/781
-            Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
         let balance_after_in = match decode_u256(&traces[2]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode middle settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
         let balance_after_out = match decode_u256(&traces[5]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
-
         let balance_recipient_before = match decode_u256(&traces[3]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
-
         let balance_recipient_after = match decode_u256(&traces[6]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance after")),
+            Some(balance) => balance,
+            None => return Ok(bad),
         };
 
         tracing::debug!(%amount, %balance_before_in, %balance_after_in, %balance_after_out);
 
-        // todo: Maybe do >= checks in case token transfer for whatever reason grants user more than
-        // an amount transferred like an anti fee.
+        // todo: Maybe do >= checks in case token transfer for whatever reason grants
+        // user more than an amount transferred like an anti fee.
 
         let computed_balance_after_in = match balance_before_in.checked_add(amount) {
             Some(amount) => amount,
             None => {
                 return Ok(TokenQuality::bad(
-                    "token total supply does not fit a uint256",
+                    "Transferring {amount} into settlement contract would overflow its balance.",
                 ))
             }
         };
         if balance_after_in != computed_balance_after_in {
             return Ok(TokenQuality::bad(
-                "balance after in transfer does not match",
+                "Transferring {amount} into settlement contract was expected to result in a \
+                 balance of {computer_balance_after_in} but actually resulted in \
+                 {balance_after_in}. A common cause for this is that the token takes a fee on \
+                 transfer.",
             ));
         }
         if balance_after_out != balance_before_in {
             return Ok(TokenQuality::bad(
-                "balance after out transfer does not match",
+                "Transferring {amount} out of settlement contract was expected to result in the \
+                 original balance of {balance_before_in} but actually resulted in \
+                 {balance_after_out}.",
             ));
         }
         let computed_balance_recipient_after = match balance_recipient_before.checked_add(amount) {
             Some(amount) => amount,
             None => {
                 return Ok(TokenQuality::bad(
-                    "token total supply does not fit a uint256",
+                    "Transferring {amount} into arbitrary recipient {arbitrary:?} would overflow \
+                     its balance.",
                 ))
             }
         };
         if computed_balance_recipient_after != balance_recipient_after {
-            return Ok(TokenQuality::bad("balance of recipient does not match"));
+            return Ok(TokenQuality::bad(
+                "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
+                 result in a balance of {computer_balance_recipient_after} but actually resulted \
+                 in {balance_recipient_after}. A common cause for this is that the token takes a \
+                 fee on transfer.",
+            ));
         }
 
         if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
             return Ok(TokenQuality::bad(format!(
-                "can't approve max amount: {err}"
+                "Approval of U256::MAX failed: {err}"
             )));
         }
 
@@ -214,10 +252,13 @@ fn call_request(
     }
 }
 
-fn decode_u256(trace: &BlockTrace) -> Result<U256> {
+/// Returns none if the length of the bytes in the trace output is not 32.
+fn decode_u256(trace: &BlockTrace) -> Option<U256> {
     let bytes = trace.output.0.as_slice();
-    ensure!(bytes.len() == 32, "invalid length");
-    Ok(U256::from_big_endian(bytes))
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(U256::from_big_endian(bytes))
 }
 
 // The outer result signals communication failure with the node.
@@ -239,26 +280,39 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        bad_token::token_owner_finder::{
-            blockscout::BlockscoutTokenOwnerFinder,
-            liquidity::{
-                BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
+    use {
+        super::*,
+        crate::{
+            bad_token::token_owner_finder::{
+                blockscout::BlockscoutTokenOwnerFinder,
+                liquidity::{
+                    BalancerVaultFinder,
+                    FeeValues,
+                    UniswapLikePairProviderFinder,
+                    UniswapV3Finder,
+                },
+                solvers::{
+                    solver_api::SolverConfiguration,
+                    solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+                },
+                TokenOwnerFinder,
             },
-            solvers::{
-                solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
-            },
-            TokenOwnerFinder,
+            ethrpc::create_env_test_transport,
+            sources::{uniswap_v2, BaselineSource},
         },
-        ethrpc::create_env_test_transport,
-        sources::{sushiswap, uniswap_v2},
-    };
-    use contracts::{BalancerV2Vault, IUniswapV3Factory};
-    use hex_literal::hex;
-    use std::{env, time::Duration};
-    use web3::types::{
-        Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace,
+        contracts::{BalancerV2Vault, IUniswapV3Factory},
+        hex_literal::hex,
+        std::{env, time::Duration},
+        web3::types::{
+            Action,
+            ActionType,
+            Bytes,
+            Call,
+            CallResult,
+            CallType,
+            Res,
+            TransactionTrace,
+        },
     };
 
     fn encode_u256(u256: U256) -> Bytes {
@@ -379,7 +433,7 @@ mod tests {
             },
         ];
 
-        let result = TraceCallDetector::handle_response(traces, 1.into()).unwrap();
+        let result = TraceCallDetector::handle_response(traces, 1.into(), H160::zero()).unwrap();
         let expected = TokenQuality::Good;
         assert_eq!(result, expected);
     }
@@ -393,9 +447,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_tokens() {
-        // shared::tracing::initialize("orderbook::bad_token=debug,shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
+        // shared::tracing::initialize("orderbook::bad_token=debug,
+        // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
+        let version = web3.net().version().await.unwrap();
 
         let base_tokens = &[
             testlib::tokens::WETH,
@@ -540,7 +596,8 @@ mod tests {
             addr!("d5281bb2d1ee94866b03a0fccdd4e900c8cb5091"),
             addr!("da1e53e088023fe4d1dc5a418581748f52cbd1b8"),
             addr!("dd339f370bbb18b8f389bd0443329d82ecf4b593"),
-            addr!("decade1c6bf2cd9fb89afad73e4a519c867adcf5"), // Should be denied because can't approve more than balance
+            addr!("decade1c6bf2cd9fb89afad73e4a519c867adcf5"), /* Should be denied because can't
+                                                                * approve more than balance */
             addr!("dfdd3459d4f87234751696840092ee20c970fb07"),
             addr!("e0bdaafd0aab238c55d68ad54e616305d4a21772"),
             addr!("e2d66561b39eadbd488868af8493fb55d4b9d084"),
@@ -557,28 +614,42 @@ mod tests {
         ];
 
         // Of the deny listed tokens the following are detected as good:
-        // - token 0xc12d1c73ee7dc3615ba4e37e4abfdbddfa38907e
-        //   Has some kind of "freezing" mechanism where some balance is unusuable. We don't seem to
+        // - token 0xc12d1c73ee7dc3615ba4e37e4abfdbddfa38907e Has some kind of
+        //   "freezing" mechanism where some balance is unusuable. We don't seem to
         //   trigger it.
-        // - 0x910524678c0b1b23ffb9285a81f99c29c11cbaed
-        //   Has some kind of time lock that we don't encounter.
-        // - 0xed5e5ab076ae60bdb9c49ac255553e65426a2167
-        //   Not sure why deny listed.
-        // - 0x1337def18c680af1f9f45cbcab6309562975b1dd
-        //   Not sure why deny listed, maybe the callback that I didn't follow in the SC code.
-        // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667
-        //   Not sure why deny listed.
+        // - 0x910524678c0b1b23ffb9285a81f99c29c11cbaed Has some kind of time lock that
+        //   we don't encounter.
+        // - 0xed5e5ab076ae60bdb9c49ac255553e65426a2167 Not sure why deny listed.
+        // - 0x1337def18c680af1f9f45cbcab6309562975b1dd Not sure why deny listed, maybe
+        //   the callback that I didn't follow in the SC code.
+        // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667 Not sure why deny listed.
 
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: uniswap_v2::get_liquidity_source(&web3).await.unwrap().0,
+                    inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+                        BaselineSource::UniswapV2,
+                        &version,
+                    )
+                    .unwrap()
+                    .into_source(&web3)
+                    .await
+                    .unwrap()
+                    .pair_provider,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(UniswapLikePairProviderFinder {
-                    inner: sushiswap::get_liquidity_source(&web3).await.unwrap().0,
+                    inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+                        BaselineSource::SushiSwap,
+                        &version,
+                    )
+                    .unwrap()
+                    .into_source(&web3)
+                    .await
+                    .unwrap()
+                    .pair_provider,
                     base_tokens: base_tokens.to_vec(),
                 }),
                 Arc::new(BalancerVaultFinder(

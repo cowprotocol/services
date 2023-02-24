@@ -1,9 +1,11 @@
-use crate::ethrpc::Web3;
-use async_trait::async_trait;
-use contracts::ERC20;
-use ethcontract::{batch::CallBatch, H160};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
+use {
+    crate::ethrpc::Web3,
+    async_trait::async_trait,
+    contracts::ERC20,
+    ethcontract::{batch::CallBatch, H160},
+    std::{collections::HashMap, sync::Arc},
+    tokio::sync::Mutex,
+};
 
 const MAX_BATCH_SIZE: usize = 100;
 
@@ -22,7 +24,8 @@ pub struct TokenInfoFetcher {
 #[async_trait]
 pub trait TokenInfoFetching: Send + Sync {
     /// Retrieves all token information.
-    /// Default implementation calls get_token_info for each token and ignores errors.
+    /// Default implementation calls get_token_info for each token and ignores
+    /// errors.
     async fn get_token_infos(&self, addresses: &[H160]) -> HashMap<H160, TokenInfo>;
 }
 
@@ -125,8 +128,7 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use maplit::hashmap;
+    use {super::*, maplit::hashmap};
 
     #[tokio::test]
     async fn cached_token_info_fetcher() {
@@ -157,7 +159,8 @@ mod tests {
         let token_infos = cached_token_info_fetcher.get_token_infos(&[address0]).await;
         assert!(token_infos.contains_key(&address0) && token_infos[&address0].decimals == Some(18));
 
-        // Should panic because of the times(1) constraint above, unless the cache is working as expected.
+        // Should panic because of the times(1) constraint above, unless the cache is
+        // working as expected.
         cached_token_info_fetcher.get_token_infos(&[address0]).await;
 
         // Fetching an item that is unavailable should work.

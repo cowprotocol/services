@@ -1,6 +1,8 @@
-use crate::{auction::AuctionId, OrderUid};
-use bigdecimal::BigDecimal;
-use sqlx::PgConnection;
+use {
+    crate::{auction::AuctionId, OrderUid},
+    bigdecimal::BigDecimal,
+    sqlx::PgConnection,
+};
 
 pub async fn save(
     ex: &mut PgConnection,
@@ -25,8 +27,7 @@ VALUES ($1, $2, $3, $4)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

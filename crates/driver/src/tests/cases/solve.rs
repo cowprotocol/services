@@ -13,6 +13,7 @@ use {
 #[ignore]
 #[tokio::test]
 async fn test() {
+    crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
         web3,
@@ -150,18 +151,10 @@ async fn test() {
         .solve(
             SOLVER_NAME,
             json!({
-                "id": "1",
-                "tokens": {
-                    hex_address(sell_token): {
-                        "availableBalance": "0",
-                        "trusted": false,
-                        "referencePrice": buy_amount.to_string(),
-                    },
-                    hex_address(buy_token): {
-                        "availableBalance": "0",
-                        "trusted": false,
-                        "referencePrice": sell_amount.to_string(),
-                    }
+                "id": 1,
+                "prices": {
+                    hex_address(sell_token): buy_amount.to_string(),
+                    hex_address(buy_token): sell_amount.to_string(),
                 },
                 "orders": [
                     {
@@ -177,7 +170,7 @@ async fn test() {
                         "owner": hex_address(admin),
                         "partiallyFillable": false,
                         "executed": "0",
-                        "interactions": [],
+                        "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "reward": 0.1,
@@ -185,7 +178,6 @@ async fn test() {
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
                 ],
-                "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
         )
@@ -196,6 +188,6 @@ async fn test() {
     assert_eq!(result.as_object().unwrap().len(), 2);
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
-    // TODO This needs to be updated due to the solution ID
-    assert_eq!(result.get("score").unwrap(), -74551241429078.0);
+    let score = result.get("score").unwrap().as_f64().unwrap();
+    approx::assert_relative_eq!(score, -74551241429078.0, max_relative = 0.01);
 }

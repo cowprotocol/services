@@ -1,5 +1,7 @@
-use anyhow::Result;
-use model::auction::{Auction, AuctionWithId};
+use {
+    anyhow::Result,
+    model::auction::{Auction, AuctionWithId},
+};
 
 impl super::Postgres {
     pub async fn most_recent_auction(&self) -> Result<Option<AuctionWithId>> {

@@ -1,39 +1,45 @@
 mod merge;
 
-use crate::{
-    liquidity::{LimitOrder, LimitOrderId},
-    metrics::SolverMetrics,
-    settlement::{external_prices::ExternalPrices, Settlement},
-    solver::{Auction, Solver},
-};
-use anyhow::{Error, Result};
-use clap::Parser;
-use ethcontract::Account;
-use num::ToPrimitive;
-use number_conversions::u256_to_big_rational;
-use primitive_types::U256;
-use rand::prelude::SliceRandom;
-use shared::interaction::Interaction;
-use std::{
-    collections::VecDeque,
-    fmt::{self, Display, Formatter},
-    sync::Arc,
-    time::Duration,
+use {
+    crate::{
+        liquidity::{LimitOrder, LimitOrderId},
+        metrics::SolverMetrics,
+        settlement::{external_prices::ExternalPrices, Settlement},
+        solver::{Auction, Solver},
+    },
+    anyhow::{Error, Result},
+    clap::Parser,
+    ethcontract::Account,
+    num::ToPrimitive,
+    number_conversions::u256_to_big_rational,
+    primitive_types::U256,
+    rand::prelude::SliceRandom,
+    shared::interaction::Interaction,
+    std::{
+        collections::VecDeque,
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+        time::Duration,
+    },
 };
 
-/// CLI arguments to configure order prioritization of single order solvers based on an orders price.
+/// CLI arguments to configure order prioritization of single order solvers
+/// based on an orders price.
 #[derive(Debug, Parser, Clone)]
 #[group(skip)]
 pub struct Arguments {
-    /// Exponent to turn an order's price ratio into a weight for a weighted prioritization.
+    /// Exponent to turn an order's price ratio into a weight for a weighted
+    /// prioritization.
     #[clap(long, env, default_value = "10.0")]
     pub price_priority_exponent: f64,
 
-    /// The lowest possible weight an order can have for the weighted order prioritization.
+    /// The lowest possible weight an order can have for the weighted order
+    /// prioritization.
     #[clap(long, env, default_value = "0.01")]
     pub price_priority_min_weight: f64,
 
-    /// The highest possible weight an order can have for the weighted order prioritization.
+    /// The highest possible weight an order can have for the weighted order
+    /// prioritization.
     #[clap(long, env, default_value = "10.0")]
     pub price_priority_max_weight: f64,
 }
@@ -82,7 +88,8 @@ impl Default for Arguments {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-/// Implementations of this trait know how to settle a single limit order (not taking advantage of batching multiple orders together)
+/// Implementations of this trait know how to settle a single limit order (not
+/// taking advantage of batching multiple orders together)
 pub trait SingleOrderSolving: Send + Sync + 'static {
     async fn try_settle_order(
         &self,
@@ -169,7 +176,8 @@ impl Solver for SingleOrderSolver {
             }
         };
 
-        // Subtract a small amount of time to ensure that the driver doesn't reach the deadline first.
+        // Subtract a small amount of time to ensure that the driver doesn't reach the
+        // deadline first.
         let _ = tokio::time::timeout_at(
             auction
                 .deadline
@@ -180,11 +188,11 @@ impl Solver for SingleOrderSolver {
         )
         .await;
 
-        // Keep at most this many settlements. This is important in case where a solver produces
-        // a large number of settlements which would hold up the driver logic when simulating
-        // them.
-        // Shuffle first so that in the case a buggy solver keeps returning some amount of
-        // invalid settlements first we have a chance to make progress.
+        // Keep at most this many settlements. This is important in case where a solver
+        // produces a large number of settlements which would hold up the driver
+        // logic when simulating them.
+        // Shuffle first so that in the case a buggy solver keeps returning some amount
+        // of invalid settlements first we have a chance to make progress.
         settlements.shuffle(&mut rand::thread_rng());
         settlements.truncate(self.max_settlements_per_solver);
 
@@ -243,9 +251,9 @@ impl From<anyhow::Error> for SettlementError {
     }
 }
 
-/// Prioritizes orders to settle in the auction. First come all the market orders and then all the
-/// limit orders. Orders within these groups get prioritized by their price achievability.
-/// See [`prioritize_orders`].
+/// Prioritizes orders to settle in the auction. First come all the market
+/// orders and then all the limit orders. Orders within these groups get
+/// prioritized by their price achievability. See [`prioritize_orders`].
 fn get_prioritized_orders(
     orders: &[LimitOrder],
     prices: &ExternalPrices,
@@ -263,8 +271,9 @@ fn get_prioritized_orders(
     market.into_iter().chain(limit.into_iter()).collect()
 }
 
-/// Returns the `native_sell_amount / native_buy_amount` of the given order under the current
-/// market conditions. The higher the value the more likely it is that this order could get filled.
+/// Returns the `native_sell_amount / native_buy_amount` of the given order
+/// under the current market conditions. The higher the value the more likely it
+/// is that this order could get filled.
 fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 {
     let sell_amount = u256_to_big_rational(&order.sell_amount);
     let buy_amount = u256_to_big_rational(&order.buy_amount);
@@ -275,10 +284,11 @@ fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 
         .unwrap_or(0.)
 }
 
-/// In case there are too many orders to solve before the auction deadline we want to
-/// prioritize orders which are more likely to be matchable. This is implemented by rating each
-/// order's viability by comparing the ask price with the current market price. The lower the ask
-/// price is compared to the market price the higher the chance the order will get prioritized.
+/// In case there are too many orders to solve before the auction deadline we
+/// want to prioritize orders which are more likely to be matchable. This is
+/// implemented by rating each order's viability by comparing the ask price with
+/// the current market price. The lower the ask price is compared to the market
+/// price the higher the chance the order will get prioritized.
 fn prioritize_orders(
     mut orders: Vec<LimitOrder>,
     prices: &ExternalPrices,
@@ -290,9 +300,9 @@ fn prioritize_orders(
 
     let mut rng = rand::thread_rng();
 
-    // Chose `user_orders.len()` distinct items from `user_orders` weighted by the viability of the order.
-    // This effectively sorts the orders by viability with a slight randomness to not get stuck on
-    // bad orders.
+    // Chose `user_orders.len()` distinct items from `user_orders` weighted by the
+    // viability of the order. This effectively sorts the orders by viability
+    // with a slight randomness to not get stuck on bad orders.
     match orders.choose_multiple_weighted(&mut rng, orders.len(), |order| {
         let price_viability = estimate_price_viability(order, prices);
         order_prioritization_config.apply_weight_constraints(price_viability)
@@ -307,38 +317,43 @@ fn prioritize_orders(
     }
 }
 
-// Used by the single order solvers to verify that the response respects the order price.
-// We have also observed that a 0x buy order did not respect the queried buy amount so verifying
-// just the price or verifying just one component of the price (sell amount for buy orders, buy
-// amount for sell orders) is not enough.
+// Used by the single order solvers to verify that the response respects the
+// order price. We have also observed that a 0x buy order did not respect the
+// queried buy amount so verifying just the price or verifying just one
+// component of the price (sell amount for buy orders, buy amount for sell
+// orders) is not enough.
 pub fn execution_respects_order(
     order: &LimitOrder,
     executed_sell_amount: U256,
     executed_buy_amount: U256,
 ) -> bool {
-    // note: This would be different for partially fillable orders but LimitOrder does currently not
-    // contain the remaining fill amount.
+    // note: This would be different for partially fillable orders but LimitOrder
+    // does currently not contain the remaining fill amount.
     executed_sell_amount <= order.sell_amount && executed_buy_amount >= order.buy_amount
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        liquidity::{
-            order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
-            LiquidityOrderId,
+    use {
+        super::*,
+        crate::{
+            liquidity::{
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
+                LiquidityOrderId,
+            },
+            metrics::NoopMetrics,
         },
-        metrics::NoopMetrics,
+        anyhow::anyhow,
+        ethcontract::Bytes,
+        maplit::hashmap,
+        model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid},
+        num::{BigRational, FromPrimitive},
+        primitive_types::H160,
+        shared::http_solver::model::InternalizationStrategy,
+        std::sync::Arc,
     };
-    use anyhow::anyhow;
-    use ethcontract::Bytes;
-    use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
-    use num::{BigRational, FromPrimitive};
-    use primitive_types::H160;
-    use shared::http_solver::model::InternalizationStrategy;
-    use std::sync::Arc;
 
     fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
         SingleOrderSolver {
@@ -534,8 +549,8 @@ mod tests {
         };
         assert!(execution_respects_order(&order, 10.into(), 11.into(),));
         assert!(!execution_respects_order(&order, 10.into(), 9.into(),));
-        // Unexpectedly the executed sell amount is less than the real sell order for a fill kill
-        // order but we still get enough buy token.
+        // Unexpectedly the executed sell amount is less than the real sell order for a
+        // fill kill order but we still get enough buy token.
         assert!(execution_respects_order(&order, 9.into(), 10.into(),));
         // Price is respected but order is partially filled.
         assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
@@ -592,8 +607,8 @@ mod tests {
             let expected_output = &[orders[3].clone(), orders[2].clone(), orders[1].clone()];
             expected_results += usize::from(prioritized_orders == expected_output);
         }
-        // Using weighted selection should give us some suboptimal orderings even with skewed
-        // weights.
+        // Using weighted selection should give us some suboptimal orderings even with
+        // skewed weights.
         dbg!(expected_results);
         assert!((expected_results as f64) < (SAMPLES as f64 * 0.9));
     }
@@ -633,8 +648,8 @@ mod tests {
             let prioritized_orders = prioritize_orders(orders.clone(), &prices, &config);
             expected_results += usize::from(prioritized_orders == orders);
         }
-        // Using weighted selection should give us some suboptimal orderings even with skewed
-        // weights.
+        // Using weighted selection should give us some suboptimal orderings even with
+        // skewed weights.
         dbg!(expected_results);
         assert!((expected_results as f64) < (SAMPLES as f64 * 0.9));
     }

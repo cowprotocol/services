@@ -1,28 +1,35 @@
 //! Module with shared logic for creating a `PriceEstimating` implementation
 //! from an inner `TradeFinding`.
 
-use super::{
-    rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+use {
+    super::{
+        rate_limited,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+    },
+    crate::{
+        code_fetching::CodeFetching,
+        code_simulation::{CodeSimulating, SimulationError},
+        ethrpc::extensions::StateOverride,
+        rate_limiter::RateLimiter,
+        request_sharing::RequestSharing,
+        trade_finding::{Trade, TradeError, TradeFinding},
+    },
+    anyhow::{bail, ensure, Context as _, Result},
+    contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader},
+    ethcontract::{tokens::Tokenize, H160, I256, U256},
+    futures::{
+        future::{BoxFuture, FutureExt as _},
+        stream::StreamExt as _,
+    },
+    maplit::hashmap,
+    model::order::OrderKind,
+    std::sync::Arc,
+    web3::{ethabi::Token, types::CallRequest},
 };
-use crate::{
-    code_fetching::CodeFetching,
-    code_simulation::{CodeSimulating, SimulationError},
-    ethrpc::extensions::StateOverride,
-    rate_limiter::RateLimiter,
-    request_sharing::RequestSharing,
-    trade_finding::{Trade, TradeError, TradeFinding},
-};
-use anyhow::{bail, ensure, Context as _, Result};
-use contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader};
-use ethcontract::{tokens::Tokenize, H160, I256, U256};
-use futures::{
-    future::{BoxFuture, FutureExt as _},
-    stream::StreamExt as _,
-};
-use maplit::hashmap;
-use model::order::OrderKind;
-use std::sync::Arc;
-use web3::{ethabi::Token, types::CallRequest};
 
 /// A `TradeFinding`-based price estimator with request sharing and rate
 /// limiting.
@@ -113,10 +120,9 @@ impl Inner {
 }
 
 impl TradeVerifier {
-    const DEFAULT_TRADER: H160 = addr!("Ca1Fca1fcA1FCA1fcA1fcA1fca1Fca1FcA1fCA1f");
-    const DEFAULT_ORIGIN: H160 = addr!("BEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef");
     const DEFAULT_GAS: u64 = 8_000_000;
-
+    const DEFAULT_ORIGIN: H160 = addr!("BEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef");
+    const DEFAULT_TRADER: H160 = addr!("Ca1Fca1fcA1FCA1fcA1fcA1fca1Fca1FcA1fCA1f");
     const TOKEN_IMPLEMENTATION: H160 = addr!("0000000000000000000000000000000000010000");
 
     pub fn new(
@@ -321,8 +327,7 @@ impl SettleOutput {
 /// is very generous since we return the executed trade amounts and use those
 /// for the final estimate.
 mod slippage {
-    use crate::conversions::U256Ext as _;
-    use ethcontract::U256;
+    use {crate::conversions::U256Ext as _, ethcontract::U256};
 
     fn abs(amount: U256) -> U256 {
         amount.ceil_div(&100.into())
@@ -346,24 +351,29 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        code_fetching::MockCodeFetching,
-        code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
-        ethrpc::{create_env_test_transport, Web3},
-        oneinch_api::OneInchClientImpl,
-        price_estimation::single_estimate,
-        tenderly_api::TenderlyHttpApi,
-        trade_finding::{
-            oneinch::OneInchTradeFinder, zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding,
-            Quote,
+    use {
+        super::*,
+        crate::{
+            code_fetching::MockCodeFetching,
+            code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
+            ethrpc::{create_env_test_transport, Web3},
+            oneinch_api::OneInchClientImpl,
+            price_estimation::single_estimate,
+            tenderly_api::TenderlyHttpApi,
+            trade_finding::{
+                oneinch::OneInchTradeFinder,
+                zeroex::ZeroExTradeFinder,
+                Interaction,
+                MockTradeFinding,
+                Quote,
+            },
+            zeroex_api::DefaultZeroExApi,
         },
-        zeroex_api::DefaultZeroExApi,
+        anyhow::anyhow,
+        hex_literal::hex,
+        mockall::predicate,
+        std::sync::Mutex,
     };
-    use anyhow::anyhow;
-    use hex_literal::hex;
-    use mockall::predicate;
-    use std::sync::Mutex;
 
     #[test]
     fn decodes_trader_settle_output() {

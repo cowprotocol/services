@@ -1,8 +1,4 @@
-use std::ops::Range;
-
-use sqlx::PgConnection;
-
-use crate::TransactionHash;
+use {crate::TransactionHash, sqlx::PgConnection, std::ops::Range};
 
 pub async fn recent_settlement_tx_hashes(
     ex: &mut PgConnection,
@@ -24,14 +20,14 @@ WHERE
 
 #[cfg(test)]
 mod tests {
-    use sqlx::Connection;
-
-    use crate::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement},
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            events::{Event, EventIndex, Settlement},
+        },
+        sqlx::Connection,
     };
-
-    use super::*;
 
     #[tokio::test]
     #[ignore]

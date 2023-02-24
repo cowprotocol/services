@@ -2,22 +2,24 @@
 //!
 //! For more information on the HTTP API, consult:
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
-//! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
-//! uses EIP 1559 gas prices.
-use crate::interaction::{EncodedInteraction, Interaction};
-use anyhow::{ensure, Result};
-use cached::{Cached, TimedCache};
-use derivative::Derivative;
-use ethcontract::{Bytes, H160, U256};
-use model::u256_decimal;
-use reqwest::{Client, IntoUrl, Url};
-use serde::{de::DeserializeOwned, Deserialize};
-use std::{
-    fmt::{self, Display, Formatter},
-    sync::{Arc, Mutex},
-    time::Duration,
+//! Although there is no documentation about API v4.1, it exists and is
+//! identical to v4.0 except it uses EIP 1559 gas prices.
+use {
+    crate::interaction::{EncodedInteraction, Interaction},
+    anyhow::{ensure, Result},
+    cached::{Cached, TimedCache},
+    derivative::Derivative,
+    ethcontract::{Bytes, H160, U256},
+    model::u256_decimal,
+    reqwest::{Client, IntoUrl, Url},
+    serde::{de::DeserializeOwned, Deserialize},
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
+    thiserror::Error,
 };
-use thiserror::Error;
 
 /// Parts to split a swap.
 ///
@@ -203,9 +205,9 @@ pub struct SwapQuery {
     /// Should Chi of from_token_address be burnt to compensate for gas.
     /// default: false
     pub burn_chi: Option<bool>,
-    /// If true, the algorithm can cancel part of the route, if the rate has become
-    /// less attractive. Unswapped tokens will return to the from_address
-    /// default: true
+    /// If true, the algorithm can cancel part of the route, if the rate has
+    /// become less attractive. Unswapped tokens will return to the
+    /// from_address default: true
     pub allow_partial_fill: Option<bool>,
     pub quote: SellOrderQuoteQuery,
 }
@@ -492,7 +494,6 @@ pub struct OneInchClientImpl {
 
 impl OneInchClientImpl {
     pub const DEFAULT_URL: &'static str = "https://api.1inch.exchange/";
-
     // 1: mainnet, 100: gnosis chain
     pub const SUPPORTED_CHAINS: &'static [u64] = &[1, 100];
 
@@ -578,8 +579,8 @@ impl ProtocolCache {
         }
 
         let all_protocols = api.get_liquidity_sources().await?.protocols;
-        // In the mean time the cache could have already been populated with new protocols,
-        // which we would now overwrite. This is fine.
+        // In the mean time the cache could have already been populated with new
+        // protocols, which we would now overwrite. This is fine.
         self.0.lock().unwrap().cache_set((), all_protocols.clone());
 
         Ok(all_protocols)
@@ -615,9 +616,7 @@ impl Default for ProtocolCache {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::addr;
-    use futures::FutureExt as _;
+    use {super::*, crate::addr, futures::FutureExt as _};
 
     #[test]
     fn slippage_rounds_percentage() {

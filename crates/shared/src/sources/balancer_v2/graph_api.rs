@@ -8,15 +8,17 @@
 //! - ensure that we are using the latest up-to-date pool data by using events
 //!   from the node
 
-use super::swap::fixed_point::Bfp;
-use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
-use anyhow::{bail, Result};
-use ethcontract::{H160, H256};
-use reqwest::Client;
-use serde::Deserialize;
-use serde_json::json;
-use serde_with::{serde_as, DisplayFromStr};
-use std::collections::HashMap;
+use {
+    super::swap::fixed_point::Bfp,
+    crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
+    anyhow::{bail, Result},
+    ethcontract::{H160, H256},
+    reqwest::Client,
+    serde::Deserialize,
+    serde_json::json,
+    serde_with::{serde_as, DisplayFromStr},
+    std::collections::HashMap,
+};
 
 /// The page size when querying pools.
 #[cfg(not(test))]
@@ -177,8 +179,7 @@ pub struct Token {
 }
 
 mod pools_query {
-    use super::PoolData;
-    use serde::Deserialize;
+    use {super::PoolData, serde::Deserialize};
 
     pub const QUERY: &str = r#"
         query Pools($block: Int, $pageSize: Int, $lastId: ID) {
@@ -242,11 +243,13 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
-    use ethcontract::{H160, H256};
-    use maplit::hashmap;
-    use std::collections::HashMap;
+    use {
+        super::*,
+        crate::sources::balancer_v2::swap::fixed_point::Bfp,
+        ethcontract::{H160, H256},
+        maplit::hashmap,
+        std::collections::HashMap,
+    };
 
     #[test]
     fn decode_pools_data() {

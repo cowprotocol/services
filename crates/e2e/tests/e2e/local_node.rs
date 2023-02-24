@@ -1,14 +1,16 @@
-use chrono::{DateTime, Utc};
-use ethcontract::{futures::FutureExt, Account, Address, U256};
-use lazy_static::lazy_static;
-use shared::ethrpc::{create_test_transport, Web3};
-use std::{
-    fmt::Debug,
-    future::Future,
-    panic::{self, AssertUnwindSafe},
-    sync::Mutex,
+use {
+    chrono::{DateTime, Utc},
+    ethcontract::{futures::FutureExt, U256},
+    lazy_static::lazy_static,
+    shared::ethrpc::{create_test_transport, Web3},
+    std::{
+        fmt::Debug,
+        future::Future,
+        panic::{self, AssertUnwindSafe},
+        sync::Mutex,
+    },
+    web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-use web3::{api::Namespace, helpers::CallFuture, Transport};
 
 lazy_static! {
     static ref NODE_MUTEX: Mutex<()> = Mutex::new(());
@@ -118,25 +120,5 @@ impl<T: Transport> TestNodeApi<T> {
 
     pub fn mine_pending_block(&self) -> CallFuture<String, T::Out> {
         CallFuture::new(self.transport.execute("evm_mine", vec![]))
-    }
-}
-
-pub struct AccountAssigner {
-    pub default_deployer: Account,
-    free_accounts: Vec<Account>,
-}
-
-impl AccountAssigner {
-    pub async fn new(web3: &Web3) -> Self {
-        let addresses: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-        let mut accounts = addresses.into_iter().map(|addr| Account::Local(addr, None));
-        AccountAssigner {
-            default_deployer: accounts.next().expect("No accounts available"),
-            free_accounts: accounts.collect(),
-        }
-    }
-
-    pub fn assign_free_account(&mut self) -> Account {
-        self.free_accounts.pop().expect("No testing accounts available, consider increasing the number of testing account in the test node")
     }
 }

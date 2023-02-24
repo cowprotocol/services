@@ -1,14 +1,16 @@
 //! Dry run settlement submission strategy. I.e. just log!
 
-use crate::{
-    settlement::Settlement,
-    settlement_simulation::{settle_method_builder, tenderly_link},
+use {
+    crate::{
+        settlement::Settlement,
+        settlement_simulation::{settle_method_builder, tenderly_link},
+    },
+    anyhow::Result,
+    contracts::GPv2Settlement,
+    ethcontract::Account,
+    shared::http_solver::model::InternalizationStrategy,
+    web3::types::TransactionReceipt,
 };
-use anyhow::Result;
-use contracts::GPv2Settlement;
-use ethcontract::Account;
-use shared::http_solver::model::InternalizationStrategy;
-use web3::types::TransactionReceipt;
 
 pub async fn log_settlement(
     account: Account,
@@ -37,9 +39,7 @@ pub async fn log_settlement(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::H160;
-    use ethcontract_mock::Mock;
+    use {super::*, ethcontract::H160, ethcontract_mock::Mock};
 
     #[tokio::test]
     async fn queries_and_logs_settlement() {

@@ -1,21 +1,25 @@
-use super::Postgres;
-use anyhow::{anyhow, Context, Result};
-use contracts::gpv2_settlement::{
-    event_data::{
-        OrderInvalidated as ContractInvalidation, PreSignature as ContractPreSignature,
-        Settlement as ContractSettlement, Trade as ContractTrade,
+use {
+    super::Postgres,
+    anyhow::{anyhow, Context, Result},
+    contracts::gpv2_settlement::{
+        event_data::{
+            OrderInvalidated as ContractInvalidation,
+            PreSignature as ContractPreSignature,
+            Settlement as ContractSettlement,
+            Trade as ContractTrade,
+        },
+        Event as ContractEvent,
     },
-    Event as ContractEvent,
+    database::{
+        byte_array::ByteArray,
+        events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+        OrderUid,
+    },
+    ethcontract::{Event as EthContractEvent, EventMetadata},
+    number_conversions::u256_to_big_decimal,
+    shared::{current_block::RangeInclusive, event_handling::EventStoring},
+    std::convert::TryInto,
 };
-use database::{
-    byte_array::ByteArray,
-    events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
-    OrderUid,
-};
-use ethcontract::{Event as EthContractEvent, EventMetadata};
-use number_conversions::u256_to_big_decimal;
-use shared::{current_block::RangeInclusive, event_handling::EventStoring};
-use std::convert::TryInto;
 
 pub fn contract_to_db_events(
     contract_events: Vec<EthContractEvent<ContractEvent>>,

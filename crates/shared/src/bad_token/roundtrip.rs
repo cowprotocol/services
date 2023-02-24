@@ -1,15 +1,17 @@
 //! Module for abstracting the generation of calldata for roundtripping a token
 //! in order to determine whether or not it is valid.
 
-use crate::{
-    ethrpc::extensions::{StateOverride, StateOverrides},
-    trade_finding::{convert_interactions, Interaction},
+use {
+    crate::{
+        ethrpc::extensions::{StateOverride, StateOverrides},
+        trade_finding::{convert_interactions, Interaction},
+    },
+    anyhow::Result,
+    contracts::support::Trader,
+    ethcontract::{H160, U256},
+    std::{collections::HashMap, iter},
+    web3::types::CallRequest,
 };
-use anyhow::Result;
-use contracts::support::Trader;
-use ethcontract::{H160, U256};
-use std::{collections::HashMap, iter};
-use web3::types::CallRequest;
 
 /// A trait for abstracting roundtripping of a token from and to native token.
 #[async_trait::async_trait]
@@ -77,9 +79,11 @@ impl Roundtrip {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use contracts::{UniswapV2Router02, ERC20, WETH9};
-    use maplit::hashmap;
+    use {
+        super::*,
+        contracts::{UniswapV2Router02, ERC20, WETH9},
+        maplit::hashmap,
+    };
 
     #[test]
     fn roundtrip_abi_encoding() {

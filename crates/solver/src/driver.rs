@@ -1,50 +1,57 @@
 pub mod solver_settlements;
 
-use crate::{
-    auction_preprocessing,
-    driver_logger::DriverLogger,
-    in_flight_orders::InFlightOrders,
-    liquidity::order_converter::OrderConverter,
-    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::SolverMetrics,
-    orderbook::OrderBookApi,
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_ranker::SettlementRanker,
-    settlement_rater::SettlementRater,
-    settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
-    settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, Solver, Solvers},
-};
-use anyhow::{anyhow, Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::Account;
-use futures::future::join_all;
-use gas_estimation::GasPriceEstimating;
-use model::{
-    auction::{AuctionId, AuctionWithId},
-    order::{LimitOrderClass, OrderClass, OrderUid},
-    solver_competition::{
-        self, CompetitionAuction, Execution, Objective, SolverCompetitionDB, SolverSettlement,
+use {
+    crate::{
+        auction_preprocessing,
+        driver_logger::DriverLogger,
+        in_flight_orders::InFlightOrders,
+        liquidity::order_converter::OrderConverter,
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::SolverMetrics,
+        orderbook::OrderBookApi,
+        settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+        settlement_ranker::SettlementRanker,
+        settlement_rater::SettlementRater,
+        settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
+        settlement_submission::{SolutionSubmitter, SubmissionError},
+        solver::{Auction, Solver, Solvers},
     },
-    TokenPair,
+    anyhow::{anyhow, Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::Account,
+    futures::future::join_all,
+    gas_estimation::GasPriceEstimating,
+    model::{
+        auction::{AuctionId, AuctionWithId},
+        order::{LimitOrderClass, OrderClass, OrderUid},
+        solver_competition::{
+            self,
+            CompetitionAuction,
+            Execution,
+            Objective,
+            SolverCompetitionDB,
+            SolverSettlement,
+        },
+        TokenPair,
+    },
+    num::{rational::Ratio, BigInt, ToPrimitive},
+    primitive_types::{H160, U256},
+    shared::{
+        code_fetching::CodeFetching,
+        current_block::CurrentBlockStream,
+        ethrpc::Web3,
+        http_solver::model::{InternalizationStrategy, SolverRunError},
+        recent_block_cache::Block,
+        tenderly_api::TenderlyApi,
+    },
+    std::{
+        collections::HashSet,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    tracing::Instrument as _,
+    web3::types::TransactionReceipt,
 };
-use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::{H160, U256};
-use shared::{
-    code_fetching::CodeFetching,
-    current_block::CurrentBlockStream,
-    ethrpc::Web3,
-    http_solver::model::{InternalizationStrategy, SolverRunError},
-    recent_block_cache::Block,
-    tenderly_api::TenderlyApi,
-};
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tracing::Instrument as _;
-use web3::types::TransactionReceipt;
 
 pub struct Driver {
     liquidity_collector: LiquidityCollector,
@@ -60,7 +67,6 @@ pub struct Driver {
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
     web3: Web3,
@@ -75,7 +81,6 @@ impl Driver {
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
         native_token: H160,
-        min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
         network_id: String,
@@ -85,7 +90,6 @@ impl Driver {
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
         simulation_gas_limit: u128,
-        fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
@@ -103,7 +107,6 @@ impl Driver {
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
-            min_order_age,
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
         };
@@ -131,8 +134,6 @@ impl Driver {
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
-                .unwrap(),
             settlement_ranker,
             logger,
             web3,
@@ -191,8 +192,8 @@ impl Driver {
             .await
             .context("error retrieving current auction")?;
 
-        // It doesn't make sense to solve the same auction again because we wouldn't be able to
-        // store competition info etc.
+        // It doesn't make sense to solve the same auction again because we wouldn't be
+        // able to store competition info etc.
         if self.last_attempted_settlement == Some(auction.id) {
             tracing::debug!("skipping run because auction hasn't changed {}", auction.id);
             return Ok(());
@@ -228,7 +229,8 @@ impl Driver {
         let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
         if before_count != auction.orders.len() {
             tracing::debug!(
-                "reduced {} orders to {} because in flight at last seen block {}, orders in flight: {:?}",
+                "reduced {} orders to {} because in flight at last seen block {}, orders in \
+                 flight: {:?}",
                 before_count,
                 auction.orders.len(),
                 auction.latest_settlement_block,
@@ -274,9 +276,7 @@ impl Driver {
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders)
-            || !auction_preprocessing::has_at_least_one_mature_order(&orders)
-        {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
             return Ok(false);
         }
 
@@ -318,11 +318,11 @@ impl Driver {
             .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
             .await?;
 
-        // We don't know the exact block because simulation can happen over multiple blocks but
-        // this is a good approximation.
+        // We don't know the exact block because simulation can happen over multiple
+        // blocks but this is a good approximation.
         let block_during_simulation = self.block_stream.borrow().number;
 
-        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements);
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetitionDB {
@@ -335,16 +335,14 @@ impl Driver {
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
                     solver: solver.name().to_string(),
+                    solver_address: solver.account().address(),
                     objective: Objective {
                         total: rated_settlement
                             .objective_value
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement
-                            .scaled_unsubsidized_fee
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
+                        fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
@@ -430,8 +428,8 @@ impl Driver {
                 competition: solver_competition,
                 executions,
             };
-            // This has to succeed in order to continue settling. Otherwise we can't be sure the
-            // competition info has been stored.
+            // This has to succeed in order to continue settling. Otherwise we can't be sure
+            // the competition info has been stored.
             self.send_solver_competition(&solver_competition).await?;
 
             self.metrics
@@ -527,9 +525,14 @@ pub async fn submit_settlement(
     let result = solution_submitter
         .settle(settlement.clone(), gas_estimate, account, nonce)
         .await;
-    logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &settlement, settlement_id, solver_name)
+        .log_submission_info(
+            &result,
+            &settlement,
+            settlement_id,
+            solver_name,
+            start.elapsed(),
+        )
         .await;
-    result
+    result.map(Into::into)
 }

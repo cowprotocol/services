@@ -1,20 +1,22 @@
 //! Module implementing stable pool specific indexing logic.
 
-use super::{common, FactoryIndexing, PoolIndexing};
-use crate::{
-    conversions::U256Ext as _,
-    ethrpc::Web3CallBatch,
-    sources::balancer_v2::{
-        graph_api::{PoolData, PoolType},
-        swap::fixed_point::Bfp,
+use {
+    super::{common, FactoryIndexing, PoolIndexing},
+    crate::{
+        conversions::U256Ext as _,
+        ethrpc::Web3CallBatch,
+        sources::balancer_v2::{
+            graph_api::{PoolData, PoolType},
+            swap::fixed_point::Bfp,
+        },
     },
+    anyhow::{ensure, Result},
+    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory, BalancerV2StablePoolFactoryV2},
+    ethcontract::{BlockId, H160, U256},
+    futures::{future::BoxFuture, FutureExt as _},
+    num::BigRational,
+    std::collections::BTreeMap,
 };
-use anyhow::{ensure, Result};
-use contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory, BalancerV2StablePoolFactoryV2};
-use ethcontract::{BlockId, H160, U256};
-use futures::{future::BoxFuture, FutureExt as _};
-use num::BigRational;
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -60,8 +62,9 @@ impl AmplificationParameter {
     /// This is the format used to pass along to HTTP solver.
     pub fn as_big_rational(&self) -> BigRational {
         // We can assert that the precision is non-zero as we check when constructing
-        // new `AmplificationParameter` instances that this invariant holds, and we don't
-        // allow modifications of `self.precision` such that it could become 0.
+        // new `AmplificationParameter` instances that this invariant holds, and we
+        // don't allow modifications of `self.precision` such that it could
+        // become 0.
         debug_assert!(!self.precision.is_zero());
         BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
     }
@@ -134,12 +137,14 @@ fn as_v1(factory: &BalancerV2StablePoolFactoryV2) -> BalancerV2StablePoolFactory
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::graph_api::Token;
-    use ethcontract::{H160, H256};
-    use ethcontract_mock::Mock;
-    use futures::future;
-    use maplit::btreemap;
+    use {
+        super::*,
+        crate::sources::balancer_v2::graph_api::Token,
+        ethcontract::{H160, H256},
+        ethcontract_mock::Mock,
+        futures::future,
+        maplit::btreemap,
+    };
 
     #[tokio::test]
     async fn fetch_pool_state() {

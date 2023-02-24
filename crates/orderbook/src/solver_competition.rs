@@ -1,10 +1,12 @@
 //! Manage solver competition data received by the driver through a private spi.
 
-use anyhow::Result;
-use database::auction::AuctionId;
-use model::solver_competition::SolverCompetitionAPI;
-use primitive_types::H256;
-use thiserror::Error;
+use {
+    anyhow::Result,
+    database::auction::AuctionId,
+    model::solver_competition::SolverCompetitionAPI,
+    primitive_types::H256,
+    thiserror::Error,
+};
 
 pub enum Identifier {
     Id(AuctionId),

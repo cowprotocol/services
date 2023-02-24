@@ -1,14 +1,16 @@
 //! A 0x-based trade finder.
 
-use super::{Interaction, Quote, Trade, TradeError, TradeFinding};
-use crate::{
-    price_estimation::{gas, Query},
-    request_sharing::{BoxRequestSharing, BoxShared},
-    zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
+use {
+    super::{Interaction, Quote, Trade, TradeError, TradeFinding},
+    crate::{
+        price_estimation::{gas, Query},
+        request_sharing::{BoxRequestSharing, BoxShared},
+        zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
+    },
+    futures::FutureExt as _,
+    model::order::OrderKind,
+    std::sync::Arc,
 };
-use futures::FutureExt as _;
-use model::order::OrderKind;
-use std::sync::Arc;
 
 pub struct ZeroExTradeFinder {
     inner: Inner,
@@ -107,10 +109,12 @@ impl From<ZeroExResponseError> for TradeError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse};
-    use reqwest::Client;
-    use std::time::Duration;
+    use {
+        super::*,
+        crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+        reqwest::Client,
+        std::time::Duration,
+    };
 
     fn create_trader(api: Arc<dyn ZeroExApi>) -> ZeroExTradeFinder {
         ZeroExTradeFinder::new(api, Default::default())

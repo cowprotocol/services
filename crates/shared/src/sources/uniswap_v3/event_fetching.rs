@@ -1,20 +1,26 @@
-use std::collections::BTreeMap;
-
-use crate::{
-    current_block::RangeInclusive,
-    ethrpc::Web3,
-    event_handling::{EventRetrieving, EventStoring},
-};
-use hex_literal::hex;
-
-use anyhow::{Context, Result};
-use contracts::{
-    uniswap_v3_pool::event_data::{Burn, Mint, Swap},
-    UniswapV3Pool,
-};
-use ethcontract::{
-    common::abi::Error, contract::ParseLog, dyns::DynAllEventsBuilder, errors::ExecutionError,
-    Event, RawLog, H160, H256,
+use {
+    crate::{
+        current_block::RangeInclusive,
+        ethrpc::Web3,
+        event_handling::{EventRetrieving, EventStoring},
+    },
+    anyhow::{Context, Result},
+    contracts::{
+        uniswap_v3_pool::event_data::{Burn, Mint, Swap},
+        UniswapV3Pool,
+    },
+    ethcontract::{
+        common::abi::Error,
+        contract::ParseLog,
+        dyns::DynAllEventsBuilder,
+        errors::ExecutionError,
+        Event,
+        RawLog,
+        H160,
+        H256,
+    },
+    hex_literal::hex,
+    std::collections::BTreeMap,
 };
 
 const SWAP_TOPIC: [u8; 32] =
@@ -72,6 +78,7 @@ pub struct UniswapV3PoolEventFetcher(pub Web3);
 
 impl EventRetrieving for UniswapV3PoolEventFetcher {
     type Event = UniswapV3Event;
+
     fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
         let mut events = DynAllEventsBuilder::new(self.0.clone(), H160::default(), None);
         let events_signatures = vec![H256(SWAP_TOPIC), H256(BURN_TOPIC), H256(MINT_TOPIC)];
@@ -90,7 +97,8 @@ pub struct RecentEventsCache {
 }
 
 impl RecentEventsCache {
-    /// Removes all events up to the specified block, excluding the specified block.
+    /// Removes all events up to the specified block, excluding the specified
+    /// block.
     pub fn remove_events_older_than_block(&mut self, delete_up_to_block_number: u64) {
         self.events = self.events.split_off(&(delete_up_to_block_number, 0));
     }
@@ -141,9 +149,7 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
 
 #[cfg(test)]
 mod tests {
-    use ethcontract::EventMetadata;
-
-    use super::*;
+    use {super::*, ethcontract::EventMetadata};
 
     fn build_event((block_number, log_index): (u64, usize)) -> Event<UniswapV3Event> {
         Event {

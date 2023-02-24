@@ -1,30 +1,40 @@
-use super::price_estimation::{
-    self,
-    native::{native_single_estimate, NativePriceEstimating},
-    single_estimate, PriceEstimating, PriceEstimationError,
-};
-use crate::{
-    db_order_conversions::order_kind_from,
-    fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
-    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
-};
-use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, TimeZone as _, Utc};
-use database::quotes::{Quote as QuoteRow, QuoteKind};
-use ethcontract::{H160, U256};
-use futures::TryFutureExt as _;
-use gas_estimation::GasPriceEstimating;
-use model::{
-    app_id::AppId,
-    order::{OrderClass, OrderKind},
-    quote::{
-        OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
-        QuoteSigningScheme, SellAmount,
+use {
+    super::price_estimation::{
+        self,
+        native::{native_single_estimate, NativePriceEstimating},
+        single_estimate,
+        PriceEstimating,
+        PriceEstimationError,
     },
+    crate::{
+        db_order_conversions::order_kind_from,
+        fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
+        order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+    },
+    anyhow::{Context, Result},
+    chrono::{DateTime, Duration, TimeZone as _, Utc},
+    database::quotes::{Quote as QuoteRow, QuoteKind},
+    ethcontract::{H160, U256},
+    futures::TryFutureExt as _,
+    gas_estimation::GasPriceEstimating,
+    model::{
+        app_id::AppId,
+        order::{OrderClass, OrderKind},
+        quote::{
+            OrderQuote,
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            PriceQuality,
+            QuoteId,
+            QuoteSigningScheme,
+            SellAmount,
+        },
+    },
+    number_conversions::big_decimal_to_u256,
+    std::sync::Arc,
+    thiserror::Error,
 };
-use number_conversions::big_decimal_to_u256;
-use std::sync::Arc;
-use thiserror::Error;
 
 /// A high-level interface for handling API quote requests.
 pub struct QuoteHandler {
@@ -69,8 +79,9 @@ impl QuoteHandler {
             }
             PriceQuality::Fast => {
                 let mut quote = self.fast_quoter.calculate_quote(request.into()).await?;
-                // We maintain an API guarantee that fast quotes always have an expiry of zero, because
-                // they're not very accurate and can be considered to expire immediately.
+                // We maintain an API guarantee that fast quotes always have an expiry of zero,
+                // because they're not very accurate and can be considered to
+                // expire immediately.
                 quote.data.expiration = Utc.timestamp(0, 0);
                 quote
             }
@@ -200,7 +211,8 @@ impl Quote {
         }
     }
 
-    /// Applies a subsidy to the quote **with** the `QuoteSigningScheme.verification_gas_limit`
+    /// Applies a subsidy to the quote **with** the
+    /// `QuoteSigningScheme.verification_gas_limit`
     pub fn with_subsidy_and_signing_scheme(
         mut self,
         subsidy: &Subsidy,
@@ -301,7 +313,8 @@ impl TryFrom<QuoteRow> for QuoteData {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
-    /// Computes a quote for the specified order parameters. Doesn't store the quote.
+    /// Computes a quote for the specified order parameters. Doesn't store the
+    /// quote.
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
@@ -418,7 +431,8 @@ impl Now for DateTime<Utc> {
     }
 }
 
-/// Standard validity for a quote: Quotes are stored only as long as they are valid.
+/// Standard validity for a quote: Quotes are stored only as long as they are
+/// valid.
 const STANDARD_QUOTE_VALIDITY_SECONDS: i64 = 60;
 
 /// An order quoter implementation that relies
@@ -677,19 +691,21 @@ fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        fee_subsidy::Subsidy,
-        gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+    use {
+        super::*,
+        crate::{
+            fee_subsidy::Subsidy,
+            gas_price_estimation::FakeGasPriceEstimator,
+            price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+        },
+        chrono::Utc,
+        ethcontract::H160,
+        futures::StreamExt as _,
+        gas_estimation::GasPrice1559,
+        mockall::{predicate::eq, Sequence},
+        model::{quote::Validity, time},
+        std::sync::Mutex,
     };
-    use chrono::Utc;
-    use ethcontract::H160;
-    use futures::StreamExt as _;
-    use gas_estimation::GasPrice1559;
-    use mockall::{predicate::eq, Sequence};
-    use model::{quote::Validity, time};
-    use std::sync::Mutex;
 
     #[test]
     fn pre_order_data_from_quote_request() {

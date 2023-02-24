@@ -1,5 +1,4 @@
-use once_cell::sync::OnceCell;
-use std::collections::HashMap;
+use {once_cell::sync::OnceCell, std::collections::HashMap};
 
 /// Global metrics registry used by all components.
 static REGISTRY: OnceCell<prometheus_metric_storage::StorageRegistry> = OnceCell::new();

@@ -1,17 +1,23 @@
-use super::{
-    gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
-    Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+use {
+    super::{
+        gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+    },
+    crate::{
+        balancer_sor_api::{self, BalancerSorApi},
+        rate_limiter::RateLimiter,
+        request_sharing::RequestSharing,
+    },
+    anyhow::Result,
+    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
+    gas_estimation::GasPriceEstimating,
+    primitive_types::U256,
+    std::sync::Arc,
 };
-use crate::{
-    balancer_sor_api::{self, BalancerSorApi},
-    rate_limiter::RateLimiter,
-    request_sharing::RequestSharing,
-};
-use anyhow::Result;
-use futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt};
-use gas_estimation::GasPriceEstimating;
-use primitive_types::U256;
-use std::sync::Arc;
 
 pub struct BalancerSor {
     api: Arc<dyn BalancerSorApi>,
@@ -78,11 +84,13 @@ impl PriceEstimating for BalancerSor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate};
-    use gas_estimation::GasPrice1559;
-    use model::order::OrderKind;
-    use std::time::Duration;
+    use {
+        super::*,
+        crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate},
+        gas_estimation::GasPrice1559,
+        model::order::OrderKind,
+        std::time::Duration,
+    };
 
     struct FixedGasPriceEstimator(f64);
 

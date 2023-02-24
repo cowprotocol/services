@@ -1,29 +1,33 @@
-//! Contains the order type as described by the specification with serialization as described by the openapi documentation.
+//! Contains the order type as described by the specification with serialization
+//! as described by the openapi documentation.
 
-use crate::{
-    app_id::AppId,
-    interaction::InteractionData,
-    quote::QuoteId,
-    signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
-    u256_decimal::{self, DecimalU256},
-    DomainSeparator, TokenPair,
+use {
+    crate::{
+        app_id::AppId,
+        interaction::InteractionData,
+        quote::QuoteId,
+        signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
+        u256_decimal::{self, DecimalU256},
+        DomainSeparator,
+        TokenPair,
+    },
+    anyhow::{anyhow, Result},
+    chrono::{offset::Utc, DateTime},
+    derivative::Derivative,
+    hex_literal::hex,
+    num::BigUint,
+    primitive_types::{H160, H256, U256},
+    secp256k1::ONE_KEY,
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    serde_with::{serde_as, DisplayFromStr},
+    std::{
+        collections::HashSet,
+        fmt::{self, Debug, Display},
+        str::FromStr,
+    },
+    strum::{AsRefStr, EnumString, EnumVariantNames},
+    web3::signing::{self, Key, SecretKeyRef},
 };
-use anyhow::{anyhow, Result};
-use chrono::{offset::Utc, DateTime};
-use derivative::Derivative;
-use hex_literal::hex;
-use num::BigUint;
-use primitive_types::{H160, H256, U256};
-use secp256k1::ONE_KEY;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::{serde_as, DisplayFromStr};
-use std::{
-    collections::HashSet,
-    fmt::{self, Debug, Display},
-    str::FromStr,
-};
-use strum::{AsRefStr, EnumString, EnumVariantNames};
-use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
 /// It is used in place of an actual buy token address in an order.
@@ -227,6 +231,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_solver_fee(mut self, fee: U256) -> Self {
+        self.0.metadata.solver_fee = fee;
+        self
+    }
+
     pub fn build(self) -> Order {
         self.0
     }
@@ -249,6 +258,13 @@ pub struct OrderData {
     pub buy_amount: U256,
     pub valid_to: u32,
     pub app_data: AppId,
+    /// Fees that will be taken in terms of `sell_token`.
+    /// This is 0 for liquidity orders unless its owner bribes the protocol
+    /// as they should only ever be used to improve the price of a regular order
+    /// and should not be settled on their own.
+    /// This is 0 for limit orders as their fee gets taken from the surplus.
+    /// This is `OrderMetadata::full_fee_amount` modulo possible subsidies for
+    /// market orders.
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
@@ -260,10 +276,6 @@ pub struct OrderData {
 }
 
 impl OrderData {
-    // See <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L47>
-    pub const TYPE_HASH: [u8; 32] =
-        hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
-
     // keccak256("erc20")
     pub const BALANCE_ERC20: [u8; 32] =
         hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
@@ -273,14 +285,19 @@ impl OrderData {
     // keccak256("internal")
     pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
+    // See <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L47>
+    pub const TYPE_HASH: [u8; 32] =
+        hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
-    /// Returns the value of hashStruct() over the order data as defined by EIP-712.
+    /// Returns the value of hashStruct() over the order data as defined by
+    /// EIP-712.
     ///
     /// https://eips.ethereum.org/EIPS/eip-712#definition-of-hashstruct
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        // Some slots are not assigned (stay 0) because all values are extended to 256 bits.
+        // Some slots are not assigned (stay 0) because all values are extended to 256
+        // bits.
         hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
         hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
         hash_data[108..128]
@@ -493,9 +510,10 @@ pub struct EthflowData {
     pub refund_tx_hash: Option<H256>,
 }
 
-// We still want to have the `is_refunded` field in the JSON response to stay backwards compatible.
-// However, `refund_tx_hash` already contains all the information we need so we rather have a
-// custom `Serialize` implementation than redundant fields that could possibly contradict each other.
+// We still want to have the `is_refunded` field in the JSON response to stay
+// backwards compatible. However, `refund_tx_hash` already contains all the
+// information we need so we rather have a custom `Serialize` implementation
+// than redundant fields that could possibly contradict each other.
 impl ::serde::Serialize for EthflowData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -579,8 +597,23 @@ pub struct OrderMetadata {
     #[serde(flatten)]
     pub class: OrderClass,
     pub settlement_contract: H160,
+    /// This is `fee_amount` for liquidity orders. See comment on `fee_amount`
+    /// for the reasoning.
+    /// For market/limit orders it's the gas used of the best trade
+    /// execution we could find while quoting converted to an equivalent
+    /// `sell_token` amount.
+    /// Does not take partial fill into account.
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
+    /// The fee amount that should be used for objective value computations.
+    ///
+    /// This is different than the actual signed fee in that it
+    /// does not have any subsidies applied and may be scaled by a constant
+    /// factor to make matching orders more valuable from an objective value
+    /// perspective.
+    /// Does not take partial fill into account.
+    #[serde(default, with = "u256_decimal")]
+    pub solver_fee: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -623,6 +656,7 @@ impl OrderUid {
 
 impl FromStr for OrderUid {
     type Err = hex::FromHexError;
+
     fn from_str(s: &str) -> Result<OrderUid, hex::FromHexError> {
         let mut value = [0u8; 56];
         let s_without_prefix = s.strip_prefix("0x").unwrap_or(s);
@@ -711,6 +745,7 @@ pub enum OrderKind {
     Eq,
     PartialEq,
     Clone,
+    Copy,
     Debug,
     Default,
     Deserialize,
@@ -723,19 +758,22 @@ pub enum OrderKind {
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]
 pub enum OrderClass {
-    /// The most common type of order which can be placed by any user. Expected to be fulfilled
-    /// immediately (in the next block).
+    /// The most common type of order which can be placed by any user. Expected
+    /// to be fulfilled immediately (in the next block).
     #[default]
     Market,
     /// Liquidity orders can only be placed by whitelisted users. These are
-    /// used for matching "coincidence of wants" trades. These are zero-fee orders which are
-    /// not expected to be fulfilled immediately and can potentially live for a long time.
+    /// used for matching "coincidence of wants" trades. These are zero-fee
+    /// orders which are not expected to be fulfilled immediately and can
+    /// potentially live for a long time.
     Liquidity,
-    /// Orders which are not expected to be fulfilled immediately, but potentially somewhere far in
-    /// the future. These are orders where users essentially want to say: "once the price is at least X in
-    /// the future, then fulfill my order". These orders have their fee set to zero, because it's
-    /// impossible to predict fees that far in the future. Instead, the fee is taken from the order
-    /// surplus once the order becomes fulfillable and the surplus is high enough.
+    /// Orders which are not expected to be fulfilled immediately, but
+    /// potentially somewhere far in the future. These are orders where
+    /// users essentially want to say: "once the price is at least X in
+    /// the future, then fulfill my order". These orders have their fee set to
+    /// zero, because it's impossible to predict fees that far in the
+    /// future. Instead, the fee is taken from the order surplus once the
+    /// order becomes fulfillable and the surplus is high enough.
     Limit(LimitOrderClass),
 }
 
@@ -746,7 +784,7 @@ impl OrderClass {
 }
 
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Debug, Default, Hash, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
     #[serde_as(as = "Option<DecimalU256>")]
@@ -757,12 +795,12 @@ pub struct LimitOrderClass {
 }
 
 impl OrderKind {
-    // keccak256("sell")
-    pub const SELL: [u8; 32] =
-        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
     // keccak256("buy")
     pub const BUY: [u8; 32] =
         hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
+    // keccak256("sell")
+    pub const SELL: [u8; 32] =
+        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
 
     /// Returns a the order kind as a string label that can be used in metrics.
     pub fn label(&self) -> &'static str {
@@ -771,6 +809,7 @@ impl OrderKind {
             Self::Sell => "sell",
         }
     }
+
     pub fn from_contract_bytes(kind: [u8; 32]) -> Result<Self> {
         match kind {
             Self::SELL => Ok(OrderKind::Sell),
@@ -805,7 +844,8 @@ impl SellTokenSource {
     }
 }
 
-/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfillment
+/// Destination for which the buyAmount should be transferred to order's
+/// receiver to upon fulfillment
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
@@ -843,15 +883,17 @@ pub fn debug_biguint_to_string(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::signature::{EcdsaSigningScheme, SigningScheme};
-    use chrono::NaiveDateTime;
-    use hex_literal::hex;
-    use maplit::hashset;
-    use primitive_types::H256;
-    use secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use serde_json::json;
-    use web3::signing::keccak256;
+    use {
+        super::*,
+        crate::signature::{EcdsaSigningScheme, SigningScheme},
+        chrono::NaiveDateTime,
+        hex_literal::hex,
+        maplit::hashset,
+        primitive_types::H256,
+        secp256k1::{PublicKey, Secp256k1, SecretKey},
+        serde_json::json,
+        web3::signing::keccak256,
+    };
 
     #[test]
     fn deserialization_and_back() {
@@ -878,6 +920,7 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
             "partiallyFillable": false,
@@ -912,6 +955,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
+                solver_fee: U256::MAX,
                 ..Default::default()
             },
             data: OrderData {
@@ -1015,8 +1059,8 @@ mod tests {
         }
     }
 
-    // from the test `should recover signing address for all supported ECDSA-based schemes` in
-    // <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
+    // from the test `should recover signing address for all supported ECDSA-based
+    // schemes` in <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
     #[test]
     fn order_creation_signature() {
         let domain_separator = DomainSeparator(hex!(

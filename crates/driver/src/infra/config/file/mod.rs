@@ -10,7 +10,7 @@ mod load;
 pub use load::load;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
@@ -36,7 +36,7 @@ struct Config {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation. Expects a floating point
@@ -97,7 +97,7 @@ fn default_additional_tip_percentage() -> f64 {
 }
 
 fn default_gas_price_cap() -> f64 {
-    1500.0
+    1e9
 }
 
 fn default_target_confirm_time_secs() -> u64 {
@@ -136,16 +136,13 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
-    /// The address of this solver. Expects a 20-byte hex encoded string.
-    address: eth::H160,
-
     /// The private key used to sign transactions. Expects a 32-byte hex encoded
     /// string.
     private_key: eth::H256,
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
     pub gp_v2_settlement: Option<eth::H160>,
@@ -155,7 +152,7 @@ pub struct ContractsConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct TenderlyConfig {
     /// Optionally override the Tenderly API URL.
     url: Option<Url>,
@@ -178,7 +175,7 @@ struct TenderlyConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
@@ -188,6 +185,10 @@ struct LiquidityConfig {
     /// Liquidity provided by a Uniswap V2 compatible contract.
     #[serde(default)]
     uniswap_v2: Vec<UniswapV2Config>,
+
+    /// Liquidity provided by a Uniswap V3 compatible contract.
+    #[serde(default)]
+    uniswap_v3: Vec<UniswapV3Config>,
 }
 
 // TODO it would be nice to provide presets so that you can write:
@@ -199,11 +200,21 @@ struct LiquidityConfig {
 // preset = "sushiswap"
 // ```
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct UniswapV2Config {
     /// The address of the Uniswap V2 compatible router contract.
     router: eth::H160,
 
     /// The digest of the pool initialization code.
     pool_code: eth::H256,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct UniswapV3Config {
+    /// Addresses of Uniswap V3 compatible router contracts.
+    router: eth::H160,
+
+    /// How many pools to initialize during start up.
+    max_pools_to_initialize: u64,
 }

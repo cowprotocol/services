@@ -1,13 +1,19 @@
-use super::{
-    trade_finder::{TradeEstimator, TradeVerifier},
-    PriceEstimateResult, PriceEstimating, Query,
+use {
+    super::{
+        trade_finder::{TradeEstimator, TradeVerifier},
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
+    },
+    crate::{
+        paraswap_api::ParaswapApi,
+        rate_limiter::RateLimiter,
+        token_info::TokenInfoFetching,
+        trade_finding::paraswap::ParaswapTradeFinder,
+    },
+    ethcontract::H160,
+    std::sync::Arc,
 };
-use crate::{
-    paraswap_api::ParaswapApi, rate_limiter::RateLimiter, token_info::TokenInfoFetching,
-    trade_finding::paraswap::ParaswapTradeFinder,
-};
-use ethcontract::H160;
-use std::sync::Arc;
 
 pub struct ParaswapPriceEstimator(TradeEstimator);
 
@@ -46,15 +52,17 @@ impl PriceEstimating for ParaswapPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        ethrpc::{create_env_test_transport, Web3},
-        paraswap_api::DefaultParaswapApi,
-        price_estimation::single_estimate,
-        token_info::TokenInfoFetcher,
+    use {
+        super::*,
+        crate::{
+            ethrpc::{create_env_test_transport, Web3},
+            paraswap_api::DefaultParaswapApi,
+            price_estimation::single_estimate,
+            token_info::TokenInfoFetcher,
+        },
+        model::order::OrderKind,
+        reqwest::Client,
     };
-    use model::order::OrderKind;
-    use reqwest::Client;
 
     #[tokio::test]
     #[ignore]

@@ -1,8 +1,11 @@
-//! Implements the logic for indexing `OrderRefund` events of the ethflow contract.
-use crate::database::{events::bytes_to_order_uid, Postgres};
-use anyhow::Result;
-use database::ethflow_orders::Refund;
-use shared::{current_block::RangeInclusive, event_handling::EventStoring};
+//! Implements the logic for indexing `OrderRefund` events of the ethflow
+//! contract.
+use {
+    crate::database::{events::bytes_to_order_uid, Postgres},
+    anyhow::Result,
+    database::ethflow_orders::Refund,
+    shared::{current_block::RangeInclusive, event_handling::EventStoring},
+};
 
 fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refund>> {
     events

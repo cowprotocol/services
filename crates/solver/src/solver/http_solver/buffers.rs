@@ -1,9 +1,11 @@
-use contracts::ERC20;
-use ethcontract::{batch::CallBatch, errors::MethodError, H160, U256};
-use futures::{future::join_all, join};
-use model::order::BUY_ETH_ADDRESS;
-use shared::ethrpc::Web3;
-use std::collections::HashMap;
+use {
+    contracts::ERC20,
+    ethcontract::{batch::CallBatch, errors::MethodError, H160, U256},
+    futures::{future::join_all, join},
+    model::order::BUY_ETH_ADDRESS,
+    shared::ethrpc::Web3,
+    std::collections::HashMap,
+};
 
 const MAX_BATCH_SIZE: usize = 100;
 
@@ -93,10 +95,12 @@ impl BufferRetrieving for BufferRetriever {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use contracts::GPv2Settlement;
-    use hex_literal::hex;
-    use shared::ethrpc::create_test_transport;
+    use {
+        super::*,
+        contracts::GPv2Settlement,
+        hex_literal::hex,
+        shared::ethrpc::create_test_transport,
+    };
 
     #[tokio::test]
     #[ignore]

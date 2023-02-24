@@ -1,18 +1,23 @@
 pub mod optimize_buffer_usage;
 pub mod optimize_unwrapping;
 
-use crate::{
-    settlement::Settlement, settlement_simulation::simulate_and_estimate_gas_at_current_block,
-    solver::http_solver::buffers::BufferRetriever,
-};
-use contracts::{GPv2Settlement, WETH9};
-use ethcontract::Account;
-use gas_estimation::GasPrice1559;
-use optimize_buffer_usage::optimize_buffer_usage;
-use optimize_unwrapping::optimize_unwrapping;
-use primitive_types::H160;
-use shared::{
-    ethrpc::Web3, http_solver::model::InternalizationStrategy, token_list::AutoUpdatingTokenList,
+use {
+    crate::{
+        settlement::Settlement,
+        settlement_simulation::simulate_and_estimate_gas_at_current_block,
+        solver::http_solver::buffers::BufferRetriever,
+    },
+    contracts::{GPv2Settlement, WETH9},
+    ethcontract::Account,
+    gas_estimation::GasPrice1559,
+    optimize_buffer_usage::optimize_buffer_usage,
+    optimize_unwrapping::optimize_unwrapping,
+    primitive_types::H160,
+    shared::{
+        ethrpc::Web3,
+        http_solver::model::InternalizationStrategy,
+        token_list::AutoUpdatingTokenList,
+    },
 };
 
 /// Determines whether a settlement would be executed successfully.
@@ -46,8 +51,8 @@ impl SettlementSimulating for SettlementSimulator {
 #[async_trait::async_trait]
 #[mockall::automock]
 pub trait PostProcessing: Send + Sync + 'static {
-    /// Tries to apply optimizations to a given settlement. If all optimizations fail the original
-    /// settlement gets returned.
+    /// Tries to apply optimizations to a given settlement. If all optimizations
+    /// fail the original settlement gets returned.
     async fn optimize_settlement(
         &self,
         settlement: Settlement,

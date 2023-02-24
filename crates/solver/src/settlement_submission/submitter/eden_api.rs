@@ -1,24 +1,29 @@
 //! https://docs.edennetwork.io/for-traders/getting-started
 
-use crate::{
-    settlement::{Revertable, Settlement},
-    settlement_submission::submitter::{
-        common::PrivateNetwork, AdditionalTip, Strategy, SubmissionLoopStatus, TransactionHandle,
-        TransactionSubmitting,
+use {
+    crate::{
+        settlement::{Revertable, Settlement},
+        settlement_submission::submitter::{
+            common::PrivateNetwork,
+            AdditionalTip,
+            Strategy,
+            SubmissionLoopStatus,
+            TransactionHandle,
+            TransactionSubmitting,
+        },
     },
+    anyhow::{bail, Context, Result},
+    ethcontract::{
+        transaction::{Transaction, TransactionBuilder},
+        H256,
+    },
+    futures::{FutureExt, TryFutureExt},
+    jsonrpc_core::types::Value,
+    reqwest::{Client, IntoUrl, Url},
+    serde::Deserialize,
+    shared::ethrpc::{http::HttpTransport, Web3, Web3Transport},
+    web3::{helpers, types::Bytes},
 };
-
-use anyhow::{bail, Context, Result};
-use ethcontract::{
-    transaction::{Transaction, TransactionBuilder},
-    H256,
-};
-use futures::{FutureExt, TryFutureExt};
-use jsonrpc_core::types::Value;
-use reqwest::{Client, IntoUrl, Url};
-use serde::Deserialize;
-use shared::ethrpc::{http::HttpTransport, Web3, Web3Transport};
-use web3::{helpers, types::Bytes};
 
 #[derive(Clone)]
 pub struct EdenApi {
@@ -50,8 +55,9 @@ impl EdenApi {
         Ok(Self { client, url, rpc })
     }
 
-    // When using `eth_sendSlotTxs` method, we must use native Client because the response for this method
-    // is a non-standard json that can't be automatically deserialized when `Transport` is used.
+    // When using `eth_sendSlotTxs` method, we must use native Client because the
+    // response for this method is a non-standard json that can't be
+    // automatically deserialized when `Transport` is used.
     async fn submit_slot_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
@@ -125,7 +131,8 @@ impl TransactionSubmitting for EdenApi {
     }
 
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
-        // disable strategy if there is a high possibility for a transaction to be reverted (check done only for mainnet)
+        // disable strategy if there is a high possibility for a transaction to be
+        // reverted (check done only for mainnet)
         if shared::gas_price_estimation::is_mainnet(network_id) {
             if let Revertable::NoRisk = settlement.revertable() {
                 return SubmissionLoopStatus::Enabled(AdditionalTip::Off);
@@ -142,8 +149,7 @@ impl TransactionSubmitting for EdenApi {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::str::FromStr;
+    use {super::*, std::str::FromStr};
 
     #[test]
     fn eden_success_response() {

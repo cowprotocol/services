@@ -1,13 +1,15 @@
-use crate::{
-    db_order_conversions::order_kind_into,
-    order_quoting::{QuoteData, QuoteSearchParameters},
+use {
+    crate::{
+        db_order_conversions::order_kind_into,
+        order_quoting::{QuoteData, QuoteSearchParameters},
+    },
+    chrono::{DateTime, Utc},
+    database::{
+        byte_array::ByteArray,
+        quotes::{Quote as DbQuote, QuoteKind, QuoteSearchParameters as DbQuoteSearchParameters},
+    },
+    number_conversions::u256_to_big_decimal,
 };
-use chrono::{DateTime, Utc};
-use database::{
-    byte_array::ByteArray,
-    quotes::{Quote as DbQuote, QuoteKind, QuoteSearchParameters as DbQuoteSearchParameters},
-};
-use number_conversions::u256_to_big_decimal;
 
 pub fn create_quote_row(data: QuoteData) -> DbQuote {
     DbQuote {

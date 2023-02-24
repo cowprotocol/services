@@ -3,12 +3,14 @@
 //! This module contains a component used to initialize Balancer pool registries
 //! with existing data in order to reduce the "cold start" time of the service.
 
-use super::graph_api::{BalancerSubgraphClient, RegisteredPools};
-use anyhow::{anyhow, bail, Result};
-use contracts::BalancerV2Vault;
-use ethcontract::{
-    common::{contract::Network, DeploymentInformation},
-    Contract,
+use {
+    super::graph_api::{BalancerSubgraphClient, RegisteredPools},
+    anyhow::{anyhow, bail, Result},
+    contracts::BalancerV2Vault,
+    ethcontract::{
+        common::{contract::Network, DeploymentInformation},
+        Contract,
+    },
 };
 
 #[async_trait::async_trait]

@@ -1,19 +1,23 @@
-use super::Postgres;
-use anyhow::{Context, Result};
-use database::{auction::AuctionId, quotes::QuoteKind};
-use futures::{StreamExt, TryStreamExt};
-use model::{auction::Auction, order::Order};
+use {
+    super::Postgres,
+    anyhow::{Context, Result},
+    database::{auction::AuctionId, quotes::QuoteKind},
+    futures::{StreamExt, TryStreamExt},
+    model::{auction::Auction, order::Order},
+};
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
 }
-use chrono::{DateTime, Utc};
-use model::quote::QuoteId;
-use shared::{
-    db_order_conversions::full_order_into_model_order,
-    event_storing_helpers::{create_db_search_parameters, create_quote_row},
-    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+use {
+    chrono::{DateTime, Utc},
+    model::quote::QuoteId,
+    shared::{
+        db_order_conversions::full_order_into_model_order,
+        event_storing_helpers::{create_db_search_parameters, create_quote_row},
+        order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+    },
 };
 
 #[async_trait::async_trait]

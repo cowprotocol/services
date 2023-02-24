@@ -1,6 +1,8 @@
-use super::events::EventIndex;
-use crate::{Address, OrderUid, PgTransaction};
-use sqlx::{Executor, PgConnection};
+use {
+    super::events::EventIndex,
+    crate::{Address, OrderUid, PgTransaction},
+    sqlx::{Executor, PgConnection},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
@@ -129,10 +131,7 @@ pub async fn read_order(
 
 #[cfg(test)]
 mod tests {
-    use crate::byte_array::ByteArray;
-
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

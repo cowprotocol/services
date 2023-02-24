@@ -1,29 +1,40 @@
-use super::{
-    single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+use {
+    super::{
+        single_order_solver::{
+            execution_respects_order,
+            SettlementError,
+            SingleOrderSettlement,
+            SingleOrderSolving,
+        },
+        Auction,
     },
-    Auction,
-};
-use crate::{
-    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::{slippage::SlippageCalculator, LimitOrder},
-};
-use anyhow::{anyhow, Result};
-use contracts::GPv2Settlement;
-use derivative::Derivative;
-use ethcontract::{Account, H160};
-use model::order::OrderKind;
-use reqwest::Client;
-use shared::{
-    ethrpc::Web3,
-    paraswap_api::{
-        DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
-        TradeAmount, TransactionBuilderQuery,
+    crate::{
+        interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+        liquidity::{slippage::SlippageCalculator, LimitOrder},
     },
-    rate_limiter::RateLimiter,
-    token_info::{TokenInfo, TokenInfoFetching},
+    anyhow::{anyhow, Result},
+    contracts::GPv2Settlement,
+    derivative::Derivative,
+    ethcontract::{Account, H160},
+    model::order::OrderKind,
+    reqwest::Client,
+    shared::{
+        ethrpc::Web3,
+        paraswap_api::{
+            DefaultParaswapApi,
+            ParaswapApi,
+            ParaswapResponseError,
+            PriceQuery,
+            PriceResponse,
+            Side,
+            TradeAmount,
+            TransactionBuilderQuery,
+        },
+        rate_limiter::RateLimiter,
+        token_info::{TokenInfo, TokenInfoFetching},
+    },
+    std::{collections::HashMap, sync::Arc},
 };
-use std::{collections::HashMap, sync::Arc};
 
 const REFERRER: &str = "GPv2";
 
@@ -202,25 +213,27 @@ fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        test::account,
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::{Approval, MockAllowanceManaging},
+            test::account,
+        },
+        contracts::WETH9,
+        ethcontract::U256,
+        futures::FutureExt as _,
+        maplit::hashmap,
+        mockall::{predicate::*, Sequence},
+        model::order::{Order, OrderData, OrderKind},
+        reqwest::Client,
+        shared::{
+            dummy_contract,
+            ethrpc::create_env_test_transport,
+            paraswap_api::MockParaswapApi,
+            token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
+        },
+        std::collections::HashMap,
     };
-    use contracts::WETH9;
-    use ethcontract::U256;
-    use futures::FutureExt as _;
-    use maplit::hashmap;
-    use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind};
-    use reqwest::Client;
-    use shared::{
-        dummy_contract,
-        ethrpc::create_env_test_transport,
-        paraswap_api::MockParaswapApi,
-        token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
-    };
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_skips_order_if_unable_to_fetch_decimals() {
@@ -245,7 +258,8 @@ mod tests {
         let order = LimitOrder::default();
         let result = solver.try_settle_order(order, &Auction::default()).await;
 
-        // This implicitly checks that we don't call the API is its mock doesn't have any expectations and would panic
+        // This implicitly checks that we don't call the API is its mock doesn't have
+        // any expectations and would panic
         assert!(result.is_err());
     }
 

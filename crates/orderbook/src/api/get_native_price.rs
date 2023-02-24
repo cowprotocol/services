@@ -1,13 +1,15 @@
-use anyhow::Result;
-use ethcontract::H160;
-use futures::StreamExt;
-use serde::Serialize;
-use shared::{
-    api::{ApiReply, IntoWarpReply},
-    price_estimation::native::NativePriceEstimating,
+use {
+    anyhow::Result,
+    ethcontract::H160,
+    futures::StreamExt,
+    serde::Serialize,
+    shared::{
+        api::{ApiReply, IntoWarpReply},
+        price_estimation::native::NativePriceEstimating,
+    },
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 #[derive(Serialize)]
 struct PriceResponse {
@@ -50,10 +52,7 @@ pub fn get_native_price(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use futures::FutureExt;
-    use hex_literal::hex;
-    use warp::test::request;
+    use {super::*, futures::FutureExt, hex_literal::hex, warp::test::request};
 
     #[test]
     fn native_prices_query() {

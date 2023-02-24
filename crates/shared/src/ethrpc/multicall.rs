@@ -1,20 +1,22 @@
 //! Multicall encoding and decoding.
 
-use crate::ethrpc::dummy;
-use contracts::support::Multicall;
-use ethcontract::{
-    errors::ExecutionError,
-    tokens::{self, Tokenize as _},
-};
-use hex_literal::hex;
-use lazy_static::lazy_static;
-use std::iter;
-use web3::{
-    self,
-    api::Eth,
-    ethabi::{self, ParamType, Token},
-    types::{AccessList, BlockId, Bytes, CallRequest, H160, U256, U64},
-    Transport,
+use {
+    crate::ethrpc::dummy,
+    contracts::support::Multicall,
+    ethcontract::{
+        errors::ExecutionError,
+        tokens::{self, Tokenize as _},
+    },
+    hex_literal::hex,
+    lazy_static::lazy_static,
+    std::iter,
+    web3::{
+        self,
+        api::Eth,
+        ethabi::{self, ParamType, Token},
+        types::{AccessList, BlockId, Bytes, CallRequest, H160, U256, U64},
+        Transport,
+    },
 };
 
 /// A single call in a multicall batch.
@@ -215,9 +217,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::{create_env_test_transport, Web3};
-    use std::fmt::Debug;
+    use {
+        super::*,
+        crate::ethrpc::{create_env_test_transport, Web3},
+        std::fmt::Debug,
+    };
 
     macro_rules! data {
         ($x:literal) => {{

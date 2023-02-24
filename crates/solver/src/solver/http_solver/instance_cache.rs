@@ -1,15 +1,18 @@
-use super::instance_creation::{InstanceCreator, Instances};
-use crate::{s3_instance_upload::S3InstanceUploader, solver::Auction};
-use model::auction::AuctionId;
-use once_cell::sync::OnceCell;
-use prometheus::IntCounterVec;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tracing::{Instrument, Span};
+use {
+    super::instance_creation::{InstanceCreator, Instances},
+    crate::{s3_instance_upload::S3InstanceUploader, solver::Auction},
+    model::auction::AuctionId,
+    once_cell::sync::OnceCell,
+    prometheus::IntCounterVec,
+    std::sync::Arc,
+    tokio::sync::Mutex,
+    tracing::{Instrument, Span},
+};
 
-/// To `Driver` every http solver is presented as an individual `Solver` implementor. Internally
-/// http solvers share the same data that is needed to create the instance for the same auction. In
-/// order to waste less resources we create the instance once per auction in this component.
+/// To `Driver` every http solver is presented as an individual `Solver`
+/// implementor. Internally http solvers share the same data that is needed to
+/// create the instance for the same auction. In order to waste less resources
+/// we create the instance once per auction in this component.
 pub struct SharedInstanceCreator {
     creator: InstanceCreator,
     uploader: Option<Arc<S3InstanceUploader>>,
@@ -31,8 +34,9 @@ impl SharedInstanceCreator {
         }
     }
 
-    /// The first call for a new run id creates the instance and stores it in a cache. Subsequent
-    /// calls copy the instance from the cache (and block until the first call completes).
+    /// The first call for a new run id creates the instance and stores it in a
+    /// cache. Subsequent calls copy the instance from the cache (and block
+    /// until the first call completes).
     pub async fn get_instances(&self, auction: Auction) -> Arc<Instances> {
         let mut guard = self.last.lock().await;
         let cache: &Cache = match guard.as_ref() {
@@ -118,10 +122,12 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::solver::http_solver::buffers::MockBufferRetrieving;
-    use primitive_types::U256;
-    use shared::token_info::{MockTokenInfoFetching, TokenInfo};
+    use {
+        super::*,
+        crate::solver::http_solver::buffers::MockBufferRetrieving,
+        primitive_types::U256,
+        shared::token_info::{MockTokenInfoFetching, TokenInfo},
+    };
 
     #[tokio::test]
     async fn cache_ok() {
@@ -148,9 +154,9 @@ mod tests {
         };
         let shared = SharedInstanceCreator::new(creator, None);
 
-        // Query the cache a couple of times with different auction and run ids. We check whether
-        // the inner instance creator has been called by comparing the size of orders vec in the
-        // model.
+        // Query the cache a couple of times with different auction and run ids. We
+        // check whether the inner instance creator has been called by comparing
+        // the size of orders vec in the model.
 
         let mut auction = Auction {
             id: 0,
@@ -161,8 +167,8 @@ mod tests {
         let instance = shared.get_instances(auction.clone()).await;
         assert_eq!(instance.plain.orders.len(), 0);
 
-        // Size stays the same even though auction has one more order because cached result is used
-        // because id in cache.
+        // Size stays the same even though auction has one more order because cached
+        // result is used because id in cache.
         auction.orders.push(Default::default());
         let instance = shared.get_instances(auction.clone()).await;
         assert_eq!(instance.plain.orders.len(), 0);

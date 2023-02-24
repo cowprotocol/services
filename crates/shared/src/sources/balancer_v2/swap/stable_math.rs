@@ -4,10 +4,12 @@
 //! smart contract. The original contract code can be found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pkg/pool-stable/contracts/StableMath.sol
 
-use super::error::Error;
-use crate::sources::balancer_v2::swap::{fixed_point::Bfp, math::BalU256};
-use ethcontract::U256;
-use lazy_static::lazy_static;
+use {
+    super::error::Error,
+    crate::sources::balancer_v2::swap::{fixed_point::Bfp, math::BalU256},
+    ethcontract::U256,
+    lazy_static::lazy_static,
+};
 
 lazy_static! {
     static ref AMP_PRECISION: U256 = U256::from(1000);
@@ -44,7 +46,8 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
             .bdiv_down(*AMP_PRECISION)?
             .badd(d_p.bmul(num_tokens)?)?
             .bmul(invariant)?;
-        // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens + 1) * D_P
+        // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens
+        // + 1) * D_P
         let denominator = amp_times_total
             .bsub(*AMP_PRECISION)?
             .bmul(invariant)?
@@ -80,8 +83,10 @@ pub fn calc_out_given_in(
         invariant,
         token_index_out,
     )?;
-    // No need to use checked arithmetic since `tokenAmountIn` was actually added to the same balance right before
-    // calling `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't alter the balances array.
+    // No need to use checked arithmetic since `tokenAmountIn` was actually added to
+    // the same balance right before
+    // calling `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't
+    // alter the balances array.
     balances[token_index_in] = balances[token_index_in]
         .sub(token_amount_in)
         .expect("will not underflow");
@@ -113,8 +118,10 @@ pub fn calc_in_given_out(
         token_index_in,
     )?;
 
-    // No need to use checked arithmetic since `tokenAmountOut` was actually subtracted from the same balance right
-    // before calling `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't alter the balances array.
+    // No need to use checked arithmetic since `tokenAmountOut` was actually
+    // subtracted from the same balance right before calling
+    // `_getTokenBalanceGivenInvariantAndAllOtherBalances` which doesn't alter the
+    // balances array.
     balances[token_index_out] = balances[token_index_out]
         .add(token_amount_out)
         .expect("Will not overflow");
@@ -139,7 +146,8 @@ fn get_token_balance_given_invariant_and_all_other_balances(
     let mut sum = balances[0].as_uint256();
     let mut p_d = sum.bmul(num_tokens)?;
     for balance_j in &balances[1..] {
-        // P_D = Math.divDown(Math.mul(Math.mul(P_D, balances[j]), balances.length), invariant);
+        // P_D = Math.divDown(Math.mul(Math.mul(P_D, balances[j]), balances.length),
+        // invariant);
         p_d = p_d
             .bmul(balance_j.as_uint256())?
             .bmul(num_tokens)?
@@ -159,11 +167,13 @@ fn get_token_balance_given_invariant_and_all_other_balances(
         .bmul(*AMP_PRECISION)?
         .bmul(balances[token_index].as_uint256())?;
 
-    // uint256 b = sum.add(Math.mul(Math.divDown(invariant, ampTimesTotal), _AMP_PRECISION));
+    // uint256 b = sum.add(Math.mul(Math.divDown(invariant, ampTimesTotal),
+    // _AMP_PRECISION));
     let b = sum.badd(invariant.bdiv_down(amp_times_total)?.bmul(*AMP_PRECISION)?)?;
     // iterate to find the balance
-    // multiply the first iteration outside the loop with `invariant` to set initial approximation.
-    // uint256 tokenBalance = Math.divUp(inv2.add(c), invariant.add(b));
+    // multiply the first iteration outside the loop with `invariant` to set initial
+    // approximation. uint256 tokenBalance = Math.divUp(inv2.add(c),
+    // invariant.add(b));
     let mut token_balance = inv2.badd(c)?.bdiv_up(invariant.badd(b)?)?;
     for _ in 0..255 {
         let prev_token_balance = token_balance;
@@ -205,17 +215,20 @@ fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
 
 /// We mimic the smart contract tests from this source:
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/master/pkg/pool-stable/test/StableMath.test.ts
-/// These tests verify that the integer approximations made by the contract functions on the EVM are
-/// converging in the same way as their algebraic/polynomial evaluations when using floating point arithmetic.
-/// We implement the floating point evaluation methods here in the test and use those
-/// to compare with the output of analogous contract methods. Cross-reference to the TS code:
-/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts
+/// These tests verify that the integer approximations made by the contract
+/// functions on the EVM are converging in the same way as their
+/// algebraic/polynomial evaluations when using floating point arithmetic.
+/// We implement the floating point evaluation methods here in the test and use
+/// those to compare with the output of analogous contract methods.
+/// Cross-reference to the TS code: https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
-    use ethcontract::U256;
-    use std::str::FromStr;
+    use {
+        super::*,
+        crate::sources::balancer_v2::swap::fixed_point::Bfp,
+        ethcontract::U256,
+        std::str::FromStr,
+    };
 
     // interpreted from
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pvt/helpers/src/models/pools/stable/math.ts#L53

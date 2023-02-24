@@ -1,20 +1,23 @@
-use shared::arguments::{display_option, display_secret_option};
-
-use crate::s3_instance_upload::Config;
+use {
+    crate::s3_instance_upload::Config,
+    shared::arguments::{display_option, display_secret_option},
+};
 
 #[derive(clap::Parser)]
 pub struct S3UploadArguments {
-    /// The s3_instance_upload_* arguments configure how quasimodo instances should be uploaded to
-    /// AWS S3. They must either all be set or all not set. If they are set then every instance sent to
-    /// Quasimodo as part of auction solving is also uploaded to S3.
+    /// The s3_instance_upload_* arguments configure how quasimodo instances
+    /// should be uploaded to AWS S3. They must either all be set or all not
+    /// set. If they are set then every instance sent to Quasimodo as part
+    /// of auction solving is also uploaded to S3.
     #[clap(long, env)]
     pub s3_instance_upload_region: Option<String>,
 
     #[clap(long, env)]
     pub s3_instance_upload_bucket: Option<String>,
 
-    /// Prepended to the auction id to form the final instance filename on S3. Something like
-    /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a folder.
+    /// Prepended to the auction id to form the final instance filename on S3.
+    /// Something like "staging/mainnet/quasimodo/". Should end with `/` if
+    /// intended to be a folder.
     #[clap(long, env)]
     pub s3_instance_upload_filename_prefix: Option<String>,
 

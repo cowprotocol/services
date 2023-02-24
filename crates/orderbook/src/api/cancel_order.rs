@@ -1,9 +1,11 @@
-use crate::orderbook::{OrderCancellationError, Orderbook};
-use anyhow::Result;
-use model::order::{CancellationPayload, OrderCancellation, OrderUid};
-use shared::api::{convert_json_response, extract_payload, IntoWarpReply};
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+use {
+    crate::orderbook::{OrderCancellationError, Orderbook},
+    anyhow::Result,
+    model::order::{CancellationPayload, OrderCancellation, OrderUid},
+    shared::api::{convert_json_response, extract_payload, IntoWarpReply},
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+};
 
 pub fn cancel_order_request(
 ) -> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
@@ -77,12 +79,14 @@ pub fn cancel_order(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::H256;
-    use hex_literal::hex;
-    use model::signature::{EcdsaSignature, EcdsaSigningScheme};
-    use serde_json::json;
-    use warp::{test::request, Reply};
+    use {
+        super::*,
+        ethcontract::H256,
+        hex_literal::hex,
+        model::signature::{EcdsaSignature, EcdsaSigningScheme},
+        serde_json::json,
+        warp::{test::request, Reply},
+    };
 
     #[test]
     fn cancellation_payload_deserialization() {

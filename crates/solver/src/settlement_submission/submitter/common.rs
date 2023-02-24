@@ -1,9 +1,11 @@
-use super::super::submitter::TransactionHandle;
-use anyhow::Result;
-use ethcontract::transaction::{Transaction, TransactionBuilder};
-use futures::FutureExt;
-use shared::ethrpc::{Web3, Web3Transport};
-use web3::{api::Namespace, types::Bytes};
+use {
+    super::super::submitter::TransactionHandle,
+    anyhow::Result,
+    ethcontract::transaction::{Transaction, TransactionBuilder},
+    futures::FutureExt,
+    shared::ethrpc::{Web3, Web3Transport},
+    web3::{api::Namespace, types::Bytes},
+};
 
 /// An additonal specialized submitter API for private network transactions.
 #[derive(Clone)]

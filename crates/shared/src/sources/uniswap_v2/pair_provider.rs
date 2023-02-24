@@ -1,8 +1,6 @@
-use ethcontract::H160;
-use model::TokenPair;
-use web3::signing::keccak256;
+use {ethcontract::H160, model::TokenPair, web3::signing::keccak256};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PairProvider {
     pub factory: H160,
     pub init_code_digest: [u8; 32],
@@ -33,8 +31,7 @@ fn create2_target_address(creator: H160, salt: &[u8; 32], init_code_digest: &[u8
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn test_create2_mainnet() {

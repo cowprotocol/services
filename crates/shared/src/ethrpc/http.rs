@@ -1,19 +1,24 @@
-use ethcontract::jsonrpc as jsonrpc_core;
-use futures::{future::BoxFuture, FutureExt};
-use jsonrpc_core::types::{Call, Output, Request, Value};
-use reqwest::{header, Client, Url};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Formatter},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
+use {
+    ethcontract::jsonrpc as jsonrpc_core,
+    futures::{future::BoxFuture, FutureExt},
+    jsonrpc_core::types::{Call, Output, Request, Value},
+    reqwest::{header, Client, Url},
+    serde::{de::DeserializeOwned, Deserialize, Serialize},
+    std::{
+        collections::HashMap,
+        fmt::{Debug, Formatter},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     },
-};
-use web3::{
-    error::{Error as Web3Error, TransportError},
-    helpers, BatchTransport, RequestId, Transport,
+    web3::{
+        error::{Error as Web3Error, TransportError},
+        helpers,
+        BatchTransport,
+        RequestId,
+        Transport,
+    },
 };
 
 #[derive(Clone)]
@@ -85,8 +90,9 @@ async fn execute_rpc<T: DeserializeOwned>(
         tracing::warn!(name = %inner.name, %id, %err, "failed to get response body");
         Web3Error::Transport(TransportError::Message(err.to_string()))
     })?;
-    // Log the raw text before decoding to get more information on responses that aren't valid
-    // json. Debug encoding so we don't get control characters like newlines in the output.
+    // Log the raw text before decoding to get more information on responses that
+    // aren't valid json. Debug encoding so we don't get control characters like
+    // newlines in the output.
     tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
         return Err(Web3Error::Transport(TransportError::Message(format!(
@@ -131,7 +137,8 @@ impl BatchTransport for HttpTransport {
     where
         T: IntoIterator<Item = (RequestId, Call)>,
     {
-        // Batch calls don't need an id but it helps associate the response log to the request log.
+        // Batch calls don't need an id but it helps associate the response log to the
+        // request log.
         let id = self.next_id();
         let (client, inner) = self.new_request();
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
@@ -154,7 +161,8 @@ impl BatchTransport for HttpTransport {
     }
 }
 
-/// Workaround for Erigon nodes, which encode each element of the Batch Response as a String rather than a deserializable JSON object
+/// Workaround for Erigon nodes, which encode each element of the Batch Response
+/// as a String rather than a deserializable JSON object
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 enum OutputOrString {
@@ -231,7 +239,8 @@ struct TransportMetrics {
     #[metric(labels("method"))]
     requests_complete: prometheus::IntCounterVec,
 
-    /// Execution time for each RPC request (batches are counted as one request).
+    /// Execution time for each RPC request (batches are counted as one
+    /// request).
     #[metric(labels("method"))]
     requests_duration_seconds: prometheus::HistogramVec,
 
@@ -260,8 +269,10 @@ impl TransportMetrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::{create_env_test_transport, Web3};
+    use {
+        super::*,
+        crate::ethrpc::{create_env_test_transport, Web3},
+    };
 
     #[test]
     fn handles_batch_response_being_in_different_order_than_input() {

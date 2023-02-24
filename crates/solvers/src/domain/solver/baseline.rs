@@ -5,13 +5,13 @@
 //! **does not** try to split large orders into multiple parts and route them
 //! over separate paths.
 
-use crate::{
-    boundary,
-    domain::{auction, eth, liquidity, order, solution},
+use {
+    crate::{
+        boundary,
+        domain::{auction, eth, liquidity, order, solution},
+    },
+    std::collections::HashSet,
 };
-use std::collections::HashSet;
-
-use super::solution::Interaction;
 
 pub struct Baseline {
     pub weth: eth::WethAddress,
@@ -32,7 +32,7 @@ pub struct Baseline {
 impl Baseline {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
-    pub fn solve(&self, auction: &auction::Auction) -> Vec<solution::Solution> {
+    pub fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
@@ -48,14 +48,20 @@ impl Baseline {
                         (order.sell.token, route.output().amount),
                         (order.buy.token, route.input().amount),
                     ]),
-                    trades: vec![solution::Trade::fill(order.clone())],
+                    trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::fill(
+                        order.clone(),
+                    ))],
                     interactions: route
                         .segments
                         .iter()
-                        .map(|segment| Interaction {
-                            liquidity: segment.liquidity.clone(),
-                            input: segment.input,
-                            output: segment.output,
+                        .map(|segment| {
+                            solution::Interaction::Liquidity(solution::LiquidityInteraction {
+                                liquidity: segment.liquidity.clone(),
+                                input: segment.input,
+                                output: segment.output,
+                                // TODO does the baseline solver know about this optimization?
+                                internalize: false,
+                            })
                         })
                         .collect(),
                 })

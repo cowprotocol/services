@@ -1,25 +1,28 @@
-use crate::{
-    analytics,
-    driver::solver_settlements::RatedSettlement,
-    metrics::{SolverMetrics, SolverSimulationOutcome},
-    settlement::Settlement,
-    settlement_simulation::{
-        simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
+use {
+    crate::{
+        analytics,
+        driver::solver_settlements::RatedSettlement,
+        metrics::{SolverMetrics, SolverSimulationOutcome},
+        settlement::Settlement,
+        settlement_simulation::{
+            simulate_and_error_with_tenderly_link,
+            simulate_before_after_access_list,
+        },
+        settlement_submission::{SubmissionError, SubmissionReceipt},
+        solver::{Simulation, SimulationWithError, Solver},
     },
-    settlement_submission::SubmissionError,
-    solver::{Simulation, SimulationWithError, Solver},
+    anyhow::{Context, Result},
+    contracts::GPv2Settlement,
+    gas_estimation::GasPrice1559,
+    itertools::Itertools,
+    model::order::{Order, OrderKind},
+    num::ToPrimitive,
+    primitive_types::H256,
+    shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
+    std::{sync::Arc, time::Duration},
+    tracing::{Instrument as _, Span},
+    web3::types::AccessList,
 };
-use anyhow::{Context, Result};
-use contracts::GPv2Settlement;
-use gas_estimation::GasPrice1559;
-use itertools::Itertools;
-use model::order::{Order, OrderKind};
-use num::{BigRational, ToPrimitive};
-use primitive_types::H256;
-use shared::{ethrpc::Web3, tenderly_api::TenderlyApi};
-use std::sync::Arc;
-use tracing::{Instrument as _, Span};
-use web3::types::{AccessList, TransactionReceipt};
 
 pub struct DriverLogger {
     pub metrics: Arc<dyn SolverMetrics>,
@@ -51,9 +54,10 @@ impl DriverLogger {
         Ok(())
     }
 
-    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
-    /// orders multiple times will not result in duplicates. Partially fillable orders get
-    /// considered as traded only the first time we tap into their liquidity.
+    /// Collects all orders which got traded in the settlement. Tapping into
+    /// partially fillable orders multiple times will not result in
+    /// duplicates. Partially fillable orders get considered as traded only
+    /// the first time we tap into their liquidity.
     fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
         let mut traded_orders = Vec::new();
         for (_, group) in &settlement
@@ -76,18 +80,26 @@ impl DriverLogger {
 
     pub async fn log_submission_info(
         &self,
-        submission: &Result<TransactionReceipt, SubmissionError>,
+        submission: &Result<SubmissionReceipt, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
         solver_name: &str,
+        elapsed_time: Duration,
     ) {
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
+        self.metrics.transaction_submission(
+            elapsed_time,
+            submission
+                .as_ref()
+                .map(|x| x.strategy)
+                .unwrap_or("all_failed"),
+        );
         match submission {
             Ok(receipt) => {
                 tracing::info!(
                     settlement_id,
-                    transaction_hash =? receipt.transaction_hash,
+                    transaction_hash =? receipt.tx.transaction_hash,
                     "Successfully submitted settlement",
                 );
                 Self::get_traded_orders(settlement)
@@ -98,12 +110,12 @@ impl DriverLogger {
                     solver_name,
                 );
                 if let Err(err) = self
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
+                    .metric_access_list_gas_saved(receipt.tx.transaction_hash)
                     .await
                 {
                     tracing::debug!(?err, "access list metric not saved");
                 }
-                match receipt.effective_gas_price {
+                match receipt.tx.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
                     }
@@ -113,8 +125,9 @@ impl DriverLogger {
                 }
             }
             Err(err) => {
-                // Since we simulate and only submit solutions when they used to pass before, there is no
-                // point in logging transaction failures in the form of race conditions as hard errors.
+                // Since we simulate and only submit solutions when they used to pass before,
+                // there is no point in logging transaction failures in the form
+                // of race conditions as hard errors.
                 tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver_name);
@@ -127,11 +140,12 @@ impl DriverLogger {
         }
     }
 
-    // Log simulation errors only if the simulation also fails in the block at which on chain
-    // liquidity was queried. If the simulation succeeds at the previous block then the solver
-    // worked correctly and the error doesn't have to be reported.
-    // Note that we could still report a false positive because the earlier block might be off by if
-    // the block has changed just as were were querying the node.
+    // Log simulation errors only if the simulation also fails in the block at which
+    // on chain liquidity was queried. If the simulation succeeds at the
+    // previous block then the solver worked correctly and the error doesn't
+    // have to be reported. Note that we could still report a false positive
+    // because the earlier block might be off by if the block has changed just
+    // as were were querying the node.
     pub fn report_simulation_errors(
         &self,
         errors: Vec<SimulationWithError>,
@@ -198,7 +212,8 @@ impl DriverLogger {
                     tracing::debug!(
                         name = solver.name(),
                         ?error_at_latest_block,
-                        "simulation only failed on the latest block but not on the block the auction started",
+                        "simulation only failed on the latest block but not on the block the \
+                         auction started",
                     );
                 }
             }
@@ -208,31 +223,22 @@ impl DriverLogger {
 
     pub fn print_settlements(
         rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-        fee_objective_scaling_factor: &BigRational,
     ) {
         let mut text = String::new();
         for (solver, settlement, access_list) in rated_settlements {
             use std::fmt::Write;
             write!(
                 text,
-                "\nid={} solver={} \
-             objective={:.2e} surplus={:.2e} \
-             gas_estimate={:.2e} gas_price={:.2e} \
-             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-             access_list_addreses={}",
+                "\nid={} solver={} objective={:.2e} surplus={:.2e} gas_estimate={:.2e} \
+                 gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} access_list_addresses={}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
                 settlement.surplus.to_f64().unwrap_or(f64::NAN),
                 settlement.gas_estimate.to_f64_lossy(),
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
-                    .to_f64()
-                    .unwrap_or(f64::NAN),
-                settlement
-                    .unscaled_subsidized_fee
-                    .to_f64()
-                    .unwrap_or(f64::NAN),
+                &settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
+                settlement.earned_fees.to_f64().unwrap_or(f64::NAN),
                 access_list.clone().unwrap_or_default().len()
             )
             .unwrap();
@@ -240,11 +246,14 @@ impl DriverLogger {
         tracing::info!("Rated Settlements: {}", text);
     }
 
-    /// Record metrics on the matched orders from a single batch. Specifically we report on
-    /// the number of orders that were;
-    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
-    ///  - matched but not settled in this runloop (effectively queued for the next one)
-    /// Should help us to identify how much we can save by parallelizing execution.
+    /// Record metrics on the matched orders from a single batch. Specifically
+    /// we report on the number of orders that were;
+    ///  - surplus in winning settlement vs unrealized surplus from other
+    ///    feasible solutions.
+    ///  - matched but not settled in this runloop (effectively queued for the
+    ///    next one)
+    /// Should help us to identify how much we can save by parallelizing
+    /// execution.
     pub fn report_on_batch(
         &self,
         submitted: &(Arc<dyn Solver>, RatedSettlement),
@@ -263,8 +272,7 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::solver::dummy_arc_solver;
+    use {super::*, crate::solver::dummy_arc_solver, num::BigRational};
 
     #[test]
     #[ignore]
@@ -276,8 +284,8 @@ mod tests {
                     id: 0,
                     settlement: Default::default(),
                     surplus: BigRational::new(1u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
+                    earned_fees: BigRational::new(2u8.into(), 1u8.into()),
+                    solver_fees: BigRational::new(3u8.into(), 1u8.into()),
                     gas_estimate: 4.into(),
                     gas_price: BigRational::new(5u8.into(), 1u8.into()),
                     objective_value: BigRational::new(6u8.into(), 1u8.into()),
@@ -290,8 +298,8 @@ mod tests {
                     id: 6,
                     settlement: Default::default(),
                     surplus: BigRational::new(7u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
+                    earned_fees: BigRational::new(8u8.into(), 1u8.into()),
+                    solver_fees: BigRational::new(9u8.into(), 1u8.into()),
                     gas_estimate: 10.into(),
                     gas_price: BigRational::new(11u8.into(), 1u8.into()),
                     objective_value: BigRational::new(12u8.into(), 1u8.into()),
@@ -301,6 +309,6 @@ mod tests {
         ];
 
         shared::tracing::initialize_reentrant("INFO");
-        DriverLogger::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
+        DriverLogger::print_settlements(&a);
     }
 }

@@ -7,9 +7,11 @@ mod uniswap_v3;
 mod weth;
 pub mod zeroex;
 
-pub use balancer_v2::BalancerSwapGivenOutInteraction;
-pub use erc20::Erc20ApproveInteraction;
-pub use uniswap_v2::UniswapInteraction;
-pub use uniswap_v3::{ExactOutputSingleParams, UniswapV3Interaction};
-pub use weth::UnwrapWethInteraction;
-pub use zeroex::ZeroExInteraction;
+pub use {
+    balancer_v2::BalancerSwapGivenOutInteraction,
+    erc20::Erc20ApproveInteraction,
+    uniswap_v2::UniswapInteraction,
+    uniswap_v3::{ExactOutputSingleParams, UniswapV3Interaction},
+    weth::UnwrapWethInteraction,
+    zeroex::ZeroExInteraction,
+};

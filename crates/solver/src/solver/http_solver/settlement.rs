@@ -1,25 +1,32 @@
-use crate::{
-    interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
-    liquidity::{
-        order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution, LimitOrder,
-        LimitOrderId, Liquidity,
+use {
+    crate::{
+        interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
+        liquidity::{
+            order_converter::OrderConverter,
+            slippage::SlippageContext,
+            AmmOrderExecution,
+            LimitOrder,
+            LimitOrderId,
+            Liquidity,
+        },
+        settlement::Settlement,
     },
-    settlement::Settlement,
-};
-use anyhow::{anyhow, ensure, Context as _, Result};
-use model::{
-    order::{Interactions, Order, OrderClass, OrderKind, OrderMetadata},
-    DomainSeparator,
-};
-use primitive_types::{H160, U256};
-use shared::http_solver::model::*;
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
+    anyhow::{anyhow, ensure, Context as _, Result},
+    model::{
+        order::{Order, OrderClass, OrderKind, OrderMetadata},
+        DomainSeparator,
+    },
+    primitive_types::{H160, U256},
+    shared::http_solver::model::*,
+    std::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
-// To send an instance to the solver we need to identify tokens and orders through strings. This
-// struct combines the created model and a mapping of those identifiers to their original value.
+// To send an instance to the solver we need to identify tokens and orders
+// through strings. This struct combines the created model and a mapping of
+// those identifiers to their original value.
 #[derive(Clone, Debug)]
 pub struct SettlementContext {
     pub orders: Vec<LimitOrder>,
@@ -81,8 +88,8 @@ impl Execution {
             LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
             Amm(executed_amm) => {
                 let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
-                    input_max: executed_amm.input,
-                    output: executed_amm.output,
+                    input_max: executed_amm.input.clone(),
+                    output: executed_amm.output.clone(),
                     internalizable,
                 })?;
                 match &executed_amm.order {
@@ -113,8 +120,9 @@ impl Execution {
     }
 }
 
-// An intermediate representation between SettledBatchAuctionModel and Settlement useful for doing
-// the error checking up front and then working with a more convenient representation.
+// An intermediate representation between SettledBatchAuctionModel and
+// Settlement useful for doing the error checking up front and then working with
+// a more convenient representation.
 struct IntermediateSettlement<'a> {
     approvals: Vec<Approval>,
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
@@ -123,7 +131,8 @@ struct IntermediateSettlement<'a> {
     submitter: SubmissionPreference,
 }
 
-// Conversion error happens during building a settlement from a solution received from searcher
+// Conversion error happens during building a settlement from a solution
+// received from searcher
 #[derive(Debug)]
 pub enum ConversionError {
     InvalidExecutionPlans(anyhow::Error),
@@ -166,8 +175,8 @@ impl ExecutedLimitOrder {
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 struct ExecutedAmm {
-    input: (H160, U256),
-    output: (H160, U256),
+    input: TokenAmount,
+    output: TokenAmount,
     order: Liquidity,
     exec_plan: ExecutionPlan,
 }
@@ -285,15 +294,13 @@ fn convert_foreign_liquidity_orders(
                     class: OrderClass::Liquidity,
                     // Not needed for encoding but nice to have for logs and competition info.
                     uid: liquidity.order.data.uid(domain, &liquidity.order.from),
-                    // These fields do not seem to be used at all for order
+                    // These remaining fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
-                    settlement_contract: Default::default(),
-                    // For other metdata fields, the default value is correct.
                     ..Default::default()
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
-                interactions: Interactions::default(),
+                interactions: liquidity.order.interactions,
             })?;
             Ok(ExecutedLimitOrder {
                 order: converted,
@@ -329,8 +336,14 @@ fn match_prepared_and_settled_amms(
                     .copied()
                     .ok_or_else(|| anyhow!("Invalid AMM {}", address))?
                     .clone(),
-                input: (settled.buy_token, settled.exec_buy_amount),
-                output: (settled.sell_token, settled.exec_sell_amount),
+                input: TokenAmount {
+                    token: settled.buy_token,
+                    amount: settled.exec_buy_amount,
+                },
+                output: TokenAmount {
+                    token: settled.sell_token,
+                    amount: settled.exec_sell_amount,
+                },
                 exec_plan: settled.exec_plan,
             })
         })
@@ -429,26 +442,31 @@ fn duplicate_coordinates(executions: &[Execution]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::MockAllowanceManaging,
-        liquidity::{
-            tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
-            StablePoolOrder, WeightedProductOrder,
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::MockAllowanceManaging,
+            liquidity::{
+                tests::CapturingSettlementHandler,
+                ConstantProductOrder,
+                LiquidityOrderId,
+                StablePoolOrder,
+                WeightedProductOrder,
+            },
+            settlement::{PricedTrade, Trade},
         },
-        settlement::{PricedTrade, Trade},
-    };
-    use hex_literal::hex;
-    use maplit::hashmap;
-    use model::{
-        order::{OrderData, OrderUid},
-        signature::Signature,
-        TokenPair,
-    };
-    use num::{rational::Ratio, BigRational};
-    use shared::sources::balancer_v2::{
-        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-        swap::fixed_point::Bfp,
+        hex_literal::hex,
+        maplit::hashmap,
+        model::{
+            order::{OrderData, OrderUid},
+            signature::Signature,
+            TokenPair,
+        },
+        num::{rational::Ratio, BigRational},
+        shared::sources::balancer_v2::{
+            pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+            swap::fixed_point::Bfp,
+        },
     };
 
     #[tokio::test]
@@ -549,6 +567,7 @@ mod tests {
                     ..Default::default()
                 },
                 signature: Signature::PreSign,
+                interactions: Default::default(),
             },
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),
@@ -678,7 +697,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    scaled_unsubsidized_fee: 42.into(),
+                    solver_fee: 0.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),
@@ -689,32 +708,44 @@ mod tests {
         assert_eq!(
             cp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input_max: (t0, 9.into()),
-                output: (t1, 9.into()),
+                input_max: TokenAmount {
+                    token: t0,
+                    amount: 9.into()
+                },
+                output: TokenAmount {
+                    token: t1,
+                    amount: 9.into()
+                },
                 internalizable: false
             }]
         );
         assert_eq!(
             internal_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input_max: (t0, 2.into()),
-                output: (t1, 1.into()),
+                input_max: TokenAmount {
+                    token: t0,
+                    amount: 2.into()
+                },
+                output: TokenAmount {
+                    token: t1,
+                    amount: 1.into()
+                },
                 internalizable: true
             }]
         );
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input_max: (t0, 2.into()),
-                output: (t1, 2.into()),
+                input_max: TokenAmount::new(t0, 2),
+                output: TokenAmount::new(t1, 2),
                 internalizable: false
             }]
         );
         assert_eq!(
             sp_amm_handler.calls(),
             vec![AmmOrderExecution {
-                input_max: (t0, 5.into()),
-                output: (t1, 6.into()),
+                input_max: TokenAmount::new(t0, 5),
+                output: TokenAmount::new(t1, 6),
                 internalizable: false
             }]
         );
@@ -977,8 +1008,8 @@ mod tests {
             vec![
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerWeighted(wpo),
-                    input: (token_c, U256::from(996570293625184642u128)),
-                    output: (token_b, U256::from(354009510372384890u128)),
+                    input: TokenAmount::new(token_c, 996570293625184642u128),
+                    output: TokenAmount::new(token_b, 354009510372384890u128),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
@@ -989,8 +1020,8 @@ mod tests {
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
-                    input: (token_b, U256::from(354009510372389956u128)),
-                    output: (token_a, U256::from(932415220613609833982u128)),
+                    input: TokenAmount::new(token_b, 354009510372389956u128),
+                    output: TokenAmount::new(token_a, 932415220613609833982u128),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
@@ -1001,8 +1032,8 @@ mod tests {
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
-                    input: (token_c, U256::from(2)),
-                    output: (token_b, U256::from(1)),
+                    input: TokenAmount::new(token_c, 2),
+                    output: TokenAmount::new(token_b, 1),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
@@ -1013,8 +1044,8 @@ mod tests {
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
-                    input: (token_c, U256::from(4)),
-                    output: (token_b, U256::from(3)),
+                    input: TokenAmount::new(token_c, 4),
+                    output: TokenAmount::new(token_b, 3),
                     exec_plan: ExecutionPlan {
                         coordinates: ExecutionPlanCoordinatesModel {
                             sequence: 0,
@@ -1041,8 +1072,8 @@ mod tests {
         };
         let executions_amms = vec![ExecutedAmm {
             order: Liquidity::ConstantProduct(cpo_1),
-            input: (token_a, U256::from(2_u8)),
-            output: (token_b, U256::from(1_u8)),
+            input: TokenAmount::new(token_a, 2),
+            output: TokenAmount::new(token_b, 1),
             exec_plan: ExecutionPlan {
                 coordinates: ExecutionPlanCoordinatesModel {
                     sequence: 1u32,

@@ -1,12 +1,14 @@
-use crate::{
-    current_block::CurrentBlockStream,
-    maintenance::Maintaining,
-    recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
-    sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+use {
+    crate::{
+        current_block::CurrentBlockStream,
+        maintenance::Maintaining,
+        recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
+        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+    },
+    anyhow::Result,
+    model::TokenPair,
+    std::{collections::HashSet, sync::Arc},
 };
-use anyhow::Result;
-use model::TokenPair;
-use std::{collections::HashSet, sync::Arc};
 
 pub struct PoolCache(RecentBlockCache<TokenPair, Pool, Arc<dyn PoolFetching>>);
 

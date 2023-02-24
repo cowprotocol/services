@@ -1,11 +1,13 @@
-use crate::database::trades::{TradeFilter, TradeRetrieving};
-use anyhow::{Context, Result};
-use model::order::OrderUid;
-use primitive_types::H160;
-use serde::Deserialize;
-use shared::api::{error, ApiReply};
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+use {
+    crate::database::trades::{TradeFilter, TradeRetrieving},
+    anyhow::{Context, Result},
+    model::order::OrderUid,
+    primitive_types::H160,
+    serde::Deserialize,
+    shared::api::{error, ApiReply},
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,10 +75,12 @@ pub fn get_trades(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use primitive_types::H160;
-    use warp::test::{request, RequestBuilder};
+    use {
+        super::*,
+        hex_literal::hex,
+        primitive_types::H160,
+        warp::test::{request, RequestBuilder},
+    };
 
     #[tokio::test]
     async fn get_trades_request_ok() {

@@ -1,8 +1,10 @@
-use crate::liquidity::Liquidity;
-use anyhow::Result;
-use model::TokenPair;
-use shared::{baseline_solver::BaseTokens, recent_block_cache::Block};
-use std::{collections::HashSet, sync::Arc};
+use {
+    crate::liquidity::Liquidity,
+    anyhow::Result,
+    model::TokenPair,
+    shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
+    std::{collections::HashSet, sync::Arc},
+};
 
 #[mockall::automock]
 #[async_trait::async_trait]

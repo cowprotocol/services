@@ -1,18 +1,21 @@
-use crate::{
-    auction::AuctionId,
-    bytes_hex::BytesHex,
-    order::OrderUid,
-    u256_decimal::{self, DecimalU256},
+use {
+    crate::{
+        auction::AuctionId,
+        bytes_hex::BytesHex,
+        order::OrderUid,
+        u256_decimal::{self, DecimalU256},
+    },
+    primitive_types::{H160, H256, U256},
+    serde::{Deserialize, Serialize},
+    serde_with::serde_as,
+    std::collections::BTreeMap,
 };
-use primitive_types::{H160, H256, U256};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use std::collections::BTreeMap;
 
-/// As a temporary measure the driver informs the api about per competition data that should be
-/// stored in the database. This goes to the api through an unlisted and authenticated http endpoint
-/// because we do not want the driver to have a database connection.
-/// Once autopilot is handling the competition this will no longer be needed.
+/// As a temporary measure the driver informs the api about per competition data
+/// that should be stored in the database. This goes to the api through an
+/// unlisted and authenticated http endpoint because we do not want the driver
+/// to have a database connection. Once autopilot is handling the competition
+/// this will no longer be needed.
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
@@ -73,6 +76,8 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    #[serde(default)]
+    pub solver_address: H160,
     pub objective: Objective,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
@@ -104,8 +109,7 @@ pub struct Order {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use maplit::btreemap;
+    use {super::*, maplit::btreemap};
 
     #[test]
     fn serialize() {
@@ -137,6 +141,7 @@ mod tests {
             "solutions": [
                 {
                     "solver": "2",
+                    "solverAddress": "0x2222222222222222222222222222222222222222",
                     "objective": {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
@@ -183,6 +188,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
+                    solver_address: H160([0x22; 20]),
                     objective: Objective {
                         total: 3.,
                         surplus: 4.,

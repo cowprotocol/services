@@ -1,45 +1,50 @@
-use crate::{
-    driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
-    metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_rater::{RatedSolverSettlement, SettlementRating},
-    settlement_simulation::call_data,
-    solver::{SimulationWithError, Solver},
+use {
+    crate::{
+        driver::solver_settlements::{self, RatedSettlement},
+        metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
+        settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+        settlement_rater::{RatedSolverSettlement, SettlementRating},
+        settlement_simulation::call_data,
+        solver::{SimulationWithError, Solver},
+    },
+    anyhow::Result,
+    gas_estimation::GasPrice1559,
+    itertools::enumerate,
+    model::auction::AuctionId,
+    num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
+    rand::prelude::SliceRandom,
+    shared::http_solver::model::{
+        AuctionResult,
+        InternalizationStrategy,
+        SolverRejectionReason,
+        SolverRunError,
+        TransactionWithError,
+    },
+    std::{cmp::Ordering, sync::Arc},
 };
-use anyhow::Result;
-use gas_estimation::GasPrice1559;
-use itertools::enumerate;
-use model::auction::AuctionId;
-use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
-use rand::prelude::SliceRandom;
-use shared::http_solver::model::{
-    AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
-    TransactionWithError,
-};
-use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
 // We require from solvers to have a bit more ETH balance then needed
 // at the moment of simulating the transaction, to cover the potential increase
-// of the cost of sending transaction onchain, because of the sudden gas price increase.
-// To simulate this sudden increase of gas price during simulation, we artificially multiply
-// the gas price with this factor.
+// of the cost of sending transaction onchain, because of the sudden gas price
+// increase. To simulate this sudden increase of gas price during simulation, we
+// artificially multiply the gas price with this factor.
 const SOLVER_BALANCE_MULTIPLIER: f64 = 3.;
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
-    // TODO: these should probably come from the autopilot to make the test parameters identical for
-    // everyone.
-    pub min_order_age: Duration,
+    // TODO: these should probably come from the autopilot to make the test parameters identical
+    // for everyone.
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
 }
 
 impl SettlementRanker {
-    /// Discards settlements without user orders and settlements which violate price checks.
-    /// Logs info and updates metrics about the out come of this run loop for each solver.
+    /// Discards settlements without user orders and settlements which violate
+    /// price checks. Logs info and updates metrics about the out come of
+    /// this run loop for each solver.
     fn discard_illegal_settlements(
         &self,
         solver: &Arc<dyn Solver>,
@@ -55,7 +60,7 @@ impl SettlementRanker {
 
                     // Do not continue with settlements that are empty or only liquidity orders.
                     if !solver_settlements::has_user_order(&settlement) {
-                        tracing::debug!(
+                        tracing::trace!(
                             solver_name = %name,
                             "settlement(s) filtered containing only liquidity orders",
                         );
@@ -109,7 +114,8 @@ impl SettlementRanker {
         }
     }
 
-    /// Computes a list of settlements which pass all pre-simulation sanity checks.
+    /// Computes a list of settlements which pass all pre-simulation sanity
+    /// checks.
     fn get_legal_settlements(
         &self,
         settlements: Vec<SolverResult>,
@@ -124,10 +130,7 @@ impl SettlementRanker {
                 solver_settlements.push((solver.clone(), settlement));
             }
         }
-
-        // TODO this needs to move into the autopilot eventually.
-        // filters out all non-mature settlements
-        retain_mature_settlements(self.min_order_age, solver_settlements, auction_id)
+        solver_settlements
     }
 
     /// Determines legal settlements and ranks them by simulating them.
@@ -145,9 +148,10 @@ impl SettlementRanker {
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
-        // log considered settlements. While we already log all found settlements, this additonal
-        // statement allows us to figure out which settlements were filtered out and which ones are
-        // going to be simulated and considered for competition.
+        // log considered settlements. While we already log all found settlements, this
+        // additonal statement allows us to figure out which settlements were
+        // filtered out and which ones are going to be simulated and considered
+        // for competition.
         for (solver, settlement) in &solver_settlements {
             let uninternalized_calldata = format!(
                 "0x{}",
@@ -169,8 +173,9 @@ impl SettlementRanker {
             .rate_settlements(solver_settlements, external_prices, gas_price)
             .await?;
 
-        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-        // preference to any specific solver when there is an objective value tie.
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we
+        // don't give preference to any specific solver when there is an
+        // objective value tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
@@ -219,8 +224,7 @@ fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::driver::solver_settlements::RatedSettlement;
+    use {super::*, crate::driver::solver_settlements::RatedSettlement};
 
     impl RatedSettlement {
         fn with_objective(objective_value: f64) -> Self {

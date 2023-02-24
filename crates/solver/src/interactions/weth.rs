@@ -1,8 +1,10 @@
-use anyhow::{ensure, Result};
-use contracts::WETH9;
-use ethcontract::Bytes;
-use primitive_types::U256;
-use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    anyhow::{ensure, Result},
+    contracts::WETH9,
+    ethcontract::Bytes,
+    primitive_types::U256,
+    shared::interaction::{EncodedInteraction, Interaction},
+};
 
 #[derive(Clone, Debug)]
 pub struct UnwrapWethInteraction {
@@ -39,9 +41,7 @@ impl Interaction for UnwrapWethInteraction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use shared::dummy_contract;
+    use {super::*, hex_literal::hex, shared::dummy_contract};
 
     #[test]
     fn encode_unwrap_weth() {

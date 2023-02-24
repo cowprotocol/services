@@ -1,15 +1,19 @@
 //! An `InternalPoolFetching` implementation that fetches from multiple
 //! `InternalPoolFetching`s.
 
-use super::internal::InternalPoolFetching;
-use crate::{
-    maintenance::Maintaining, recent_block_cache::Block, sources::balancer_v2::pools::Pool,
+use {
+    super::internal::InternalPoolFetching,
+    crate::{
+        maintenance::Maintaining,
+        recent_block_cache::Block,
+        sources::balancer_v2::pools::Pool,
+    },
+    anyhow::Result,
+    ethcontract::H256,
+    futures::future,
+    model::TokenPair,
+    std::collections::HashSet,
 };
-use anyhow::Result;
-use ethcontract::H256;
-use futures::future;
-use model::TokenPair;
-use std::collections::HashSet;
 
 /// An aggregate `InternalPoolFetching` implementation.
 pub struct Aggregate {
