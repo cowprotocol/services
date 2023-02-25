@@ -1,7 +1,7 @@
 use {
-    crate::{auction::AuctionId, Address},
+    crate::{auction::AuctionId, Address, PgTransaction},
     bigdecimal::BigDecimal,
-    sqlx::{Connection, PgConnection},
+    sqlx::PgConnection,
 };
 
 /// External token price for a given auction.
@@ -12,8 +12,10 @@ pub struct AuctionPrice {
     pub price: BigDecimal,
 }
 
-pub async fn insert(ex: &mut PgConnection, prices: Vec<AuctionPrice>) -> Result<(), sqlx::Error> {
-    let mut transaction = ex.begin().await?;
+pub async fn insert(
+    ex: &mut PgTransaction<'_>,
+    prices: Vec<AuctionPrice>,
+) -> Result<(), sqlx::Error> {
     const QUERY: &str =
         r#"INSERT INTO auction_prices (auction_id, token, price) VALUES ($1, $2, $3);"#;
     for price in prices {
@@ -21,14 +23,13 @@ pub async fn insert(ex: &mut PgConnection, prices: Vec<AuctionPrice>) -> Result<
             .bind(price.auction_id)
             .bind(price.token)
             .bind(price.price)
-            .execute(&mut *transaction)
+            .execute(&mut *ex)
             .await?;
     }
-    transaction.commit().await?;
     Ok(())
 }
 
-pub async fn delete(ex: &mut PgConnection, auction_id: AuctionId) -> Result<(), sqlx::Error> {
+pub async fn delete(ex: &mut PgTransaction<'_>, auction_id: AuctionId) -> Result<(), sqlx::Error> {
     const QUERY: &str = "DELETE FROM auction_prices WHERE auction_id = $1";
     sqlx::query(QUERY).bind(auction_id).execute(ex).await?;
     Ok(())

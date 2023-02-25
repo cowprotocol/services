@@ -15,12 +15,12 @@ CREATE TABLE settlement_observations (
   -- table, read from the transaction receipt
   block_number bigint NOT NULL,
   log_index bigint NOT NULL,
-  gas_used numeric(78,0),
-  effective_gas_price numeric(78,0),
+  gas_used numeric(78,0) NOT NULL,
+  effective_gas_price numeric(78,0) NOT NULL,
   -- the surplus observed from the transaction call data,
   -- and converted to ETH with the auction external prices.
-  surplus numeric(78,0),
-  fee numeric(78,0),
+  surplus numeric(78,0) NOT NULL,
+  fee numeric(78,0) NOT NULL,
 
   PRIMARY KEY (block_number, log_index)
 );
@@ -28,7 +28,9 @@ CREATE TABLE settlement_observations (
 CREATE TABLE auction_prices (
   auction_id bigint NOT NULL,
   token bytea NOT NULL,
-  price numeric(78,0) NOT NULL
+  price numeric(78,0) NOT NULL,
+
+  PRIMARY KEY (auction_id, token)
 );
 
 CREATE TABLE auction_participants (
