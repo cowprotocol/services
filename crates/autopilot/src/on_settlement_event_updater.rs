@@ -212,7 +212,13 @@ impl OnSettlementEventUpdater {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, bigdecimal::One, sqlx::Executor, std::sync::Arc};
+    use {
+        super::*,
+        bigdecimal::One,
+        database::{auction_prices::AuctionPrice, settlement_observations::Observation},
+        sqlx::Executor,
+        std::sync::Arc,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -250,9 +256,18 @@ VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30
         updater.db.0.execute(query).await.unwrap();
 
         let query = r#"
-INSERT INTO solver_competitions (id, tx_hash)
-VALUES (0, '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a')
+INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
+VALUES (0, '\xa21740833858985e4d801533a808786d3647fb83', 4701)
     ;"#;
+        updater.db.0.execute(query).await.unwrap();
+
+        let query = r#"
+INSERT INTO auction_prices (auction_id, token, price)
+VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 6347795727933475088343330979840),
+        (0, '\x6b175474e89094c44da98b954eedeac495271d0f', 634671683530053),
+        (0, '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 634553336916241343152390144)
+            ;"#;
+
         updater.db.0.execute(query).await.unwrap();
 
         assert!(updater.update().await.unwrap());
@@ -286,6 +301,24 @@ FROM auction_transaction
             hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
         );
         assert_eq!(tx_nonce, 4701);
+
+        // assert that the prices are updated
+        let query = r#"SELECT * FROM auction_prices;"#;
+        let prices: Vec<AuctionPrice> = sqlx::query_as(query)
+            .fetch_all(&updater.db.0)
+            .await
+            .unwrap();
+        assert_eq!(prices.len(), 2);
+
+        // assert that the observations are updated
+        let query = r#"SELECT * FROM settlement_observations;"#;
+        let observation: Observation = sqlx::query_as(query)
+            .fetch_one(&updater.db.0)
+            .await
+            .unwrap();
+        assert_eq!(observation.gas_used, 179155.into());
+        assert_eq!(observation.effective_gas_price, 19789368758u64.into());
+        assert_eq!(observation.surplus, 5150444803867862u64.into());
 
         assert!(!updater.update().await.unwrap());
     }
