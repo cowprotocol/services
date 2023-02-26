@@ -153,12 +153,7 @@ async fn order_cancellation(web3: Web3) {
     .unwrap();
     for order_uid in &order_uids {
         assert_eq!(
-            services
-                .get_order(order_uid)
-                .await
-                .unwrap()
-                .metadata
-                .status,
+            services.get_order(order_uid).await.unwrap().metadata.status,
             OrderStatus::Open,
         );
     }

@@ -169,6 +169,9 @@ impl Deref for MintableToken {
     }
 }
 
+/// Wrapper over deployed [Contracts].
+/// Exposes various utility methods for tests.
+/// Deterministically generates unique accounts.
 pub struct OnchainComponents {
     web3: Web3,
     contracts: Contracts,
@@ -186,6 +189,7 @@ impl OnchainComponents {
         }
     }
 
+    /// Generate next `N` accounts with the given initial balance.
     pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
         assert_eq!(res.len(), N);
@@ -197,8 +201,10 @@ impl OnchainComponents {
         res.try_into().unwrap()
     }
 
-    pub async fn make_solvers<const N: usize>(&mut self, send_wei: U256) -> [TestAccount; N] {
-        let solvers = self.make_accounts::<N>(send_wei).await;
+    /// Generate next `N` accounts with the given initial balance and
+    /// authenticate them as solvers.
+    pub async fn make_solvers<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
+        let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
             self.contracts
@@ -228,6 +234,7 @@ impl OnchainComponents {
         res.try_into().unwrap()
     }
 
+    /// Deploy `N` tokens with WETH Uniswap pools.
     pub async fn deploy_tokens_with_weth_uni_pools<const N: usize>(
         &self,
         token_amount: U256,
