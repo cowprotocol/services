@@ -1,9 +1,10 @@
 use {
     crate::deploy::Contracts,
     contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler},
-    ethcontract::{Account, Bytes, H160, H256, U256},
+    ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     shared::ethrpc::Web3,
-    web3::signing::{Key as _, SecretKeyRef},
+    std::{borrow::BorrowMut, ops::Deref},
+    web3::signing::{Key, SecretKeyRef},
 };
 
 #[macro_export]
@@ -28,7 +29,7 @@ macro_rules! tx {
 
 #[macro_export]
 macro_rules! tx_safe {
-    ($acc:ident, $safe:ident, $call:expr) => {{
+    ($acc:expr, $safe:ident, $call:expr) => {{
         let call = $call;
         $crate::tx!(
             $acc,
@@ -46,10 +47,6 @@ macro_rules! tx_safe {
             )
         );
     }};
-}
-
-pub fn to_wei(base: u32) -> U256 {
-    U256::from(base) * U256::from(10).pow(18.into())
 }
 
 /// Generate a Safe "pre-validated" signature.
@@ -102,20 +99,59 @@ pub async fn gnosis_safe_eip1271_signature(
     bytes
 }
 
-pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
-    ERC20Mintable::builder(web3)
-        .deploy()
-        .await
-        .expect("MintableERC20 deployment failed")
+pub fn to_wei(base: u32) -> U256 {
+    U256::from(base) * U256::from(10).pow(18.into())
 }
 
-pub struct WethPoolConfig {
-    pub token_amount: U256,
-    pub weth_amount: U256,
+#[derive(Debug)]
+pub struct TestAccount {
+    account: Account,
+    private_key: [u8; 32],
 }
 
+impl TestAccount {
+    pub fn account(&self) -> &Account {
+        &self.account
+    }
+
+    pub fn address(&self) -> H160 {
+        self.account.address()
+    }
+
+    pub fn private_key(&self) -> &[u8; 32] {
+        &self.private_key
+    }
+}
+
+#[derive(Default)]
+struct AccountGenerator {
+    id: usize,
+}
+
+impl Iterator for AccountGenerator {
+    type Item = TestAccount;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            self.id = self.id.checked_add(1)?;
+
+            let mut buffer = [0; 32];
+            buffer[24..].copy_from_slice(&self.id.to_be_bytes());
+            let Ok(pk) = PrivateKey::from_raw(buffer) else {
+                continue;
+            };
+
+            break Some(TestAccount {
+                account: Account::Offline(pk, None),
+                private_key: buffer,
+            });
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct MintableToken {
-    pub contract: ERC20Mintable,
+    contract: ERC20Mintable,
     minter: Account,
 }
 
@@ -125,57 +161,136 @@ impl MintableToken {
     }
 }
 
-pub async fn deploy_token_with_weth_uniswap_pool(
-    web3: &Web3,
-    deployed_contracts: &Contracts,
-    pool_config: WethPoolConfig,
-) -> MintableToken {
-    let token = deploy_mintable_token(web3).await;
-    let minter = Account::Local(
-        web3.eth().accounts().await.expect("get accounts failed")[0],
-        None,
-    );
+impl Deref for MintableToken {
+    type Target = ERC20Mintable;
 
-    let WethPoolConfig {
-        weth_amount,
-        token_amount,
-    } = pool_config;
+    fn deref(&self) -> &Self::Target {
+        &self.contract
+    }
+}
 
-    tx!(minter, token.mint(minter.address(), token_amount));
-    tx_value!(minter, weth_amount, deployed_contracts.weth.deposit());
+pub struct OnchainComponents {
+    web3: Web3,
+    contracts: Contracts,
+    accounts: AccountGenerator,
+}
 
-    tx!(
-        minter,
-        deployed_contracts
-            .uniswap_factory
-            .create_pair(token.address(), deployed_contracts.weth.address())
-    );
-    tx!(
-        minter,
-        token.approve(deployed_contracts.uniswap_router.address(), token_amount)
-    );
-    tx!(
-        minter,
-        deployed_contracts
-            .weth
-            .approve(deployed_contracts.uniswap_router.address(), weth_amount)
-    );
-    tx!(
-        minter,
-        deployed_contracts.uniswap_router.add_liquidity(
-            token.address(),
-            deployed_contracts.weth.address(),
-            token_amount,
-            weth_amount,
-            0_u64.into(),
-            0_u64.into(),
-            minter.address(),
-            U256::max_value(),
-        )
-    );
+impl OnchainComponents {
+    pub async fn deploy(web3: Web3) -> Self {
+        let contracts = Contracts::deploy(&web3).await;
 
-    MintableToken {
-        contract: token,
-        minter,
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
+    pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
+        let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
+        assert_eq!(res.len(), N);
+
+        for account in &res {
+            self.send_wei(account.address(), with_wei).await;
+        }
+
+        res.try_into().unwrap()
+    }
+
+    pub async fn make_solvers<const N: usize>(&mut self, send_wei: U256) -> [TestAccount; N] {
+        let solvers = self.make_accounts::<N>(send_wei).await;
+
+        for solver in &solvers {
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver.address())
+                .send()
+                .await
+                .expect("failed to add solver");
+        }
+
+        solvers
+    }
+
+    async fn deploy_tokens<const N: usize>(&self, minter: Account) -> [MintableToken; N] {
+        let mut res = Vec::with_capacity(N);
+        for _ in 0..N {
+            let contract = ERC20Mintable::builder(&self.web3)
+                .deploy()
+                .await
+                .expect("MintableERC20 deployment failed");
+            res.push(MintableToken {
+                contract,
+                minter: minter.clone(),
+            });
+        }
+
+        res.try_into().unwrap()
+    }
+
+    pub async fn deploy_tokens_with_weth_uni_pools<const N: usize>(
+        &self,
+        token_amount: U256,
+        weth_amount: U256,
+    ) -> [MintableToken; N] {
+        let minter = Account::Local(
+            self.web3
+                .eth()
+                .accounts()
+                .await
+                .expect("getting accounts failed")[0],
+            None,
+        );
+        let tokens = self.deploy_tokens::<N>(minter).await;
+
+        for MintableToken { contract, minter } in &tokens {
+            tx!(minter, contract.mint(minter.address(), token_amount));
+            tx_value!(minter, weth_amount, self.contracts.weth.deposit());
+
+            tx!(
+                minter,
+                self.contracts
+                    .uniswap_factory
+                    .create_pair(contract.address(), self.contracts.weth.address())
+            );
+            tx!(
+                minter,
+                contract.approve(self.contracts.uniswap_router.address(), token_amount)
+            );
+            tx!(
+                minter,
+                self.contracts
+                    .weth
+                    .approve(self.contracts.uniswap_router.address(), weth_amount)
+            );
+            tx!(
+                minter,
+                self.contracts.uniswap_router.add_liquidity(
+                    contract.address(),
+                    self.contracts.weth.address(),
+                    token_amount,
+                    weth_amount,
+                    0_u64.into(),
+                    0_u64.into(),
+                    minter.address(),
+                    U256::max_value(),
+                )
+            );
+        }
+
+        tokens
+    }
+
+    pub async fn send_wei(&self, to: H160, amount: U256) {
+        TransactionBuilder::new(self.web3.clone())
+            .value(amount)
+            .to(to)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    pub fn contracts(&self) -> &Contracts {
+        &self.contracts
     }
 }

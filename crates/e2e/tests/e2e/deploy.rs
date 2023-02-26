@@ -1,5 +1,4 @@
 use {
-    anyhow::{Context, Result},
     contracts::{
         BalancerV2Authorizer,
         BalancerV2Vault,
@@ -27,95 +26,96 @@ pub struct Contracts {
     pub ethflow: CoWSwapEthFlow,
 }
 
-pub async fn deploy(web3: &Web3) -> Result<Contracts> {
-    let network_id = web3.net().version().await.expect("get network ID failed");
-    tracing::info!("connected to test network {}", network_id);
+impl Contracts {
+    pub async fn deploy(web3: &Web3) -> Self {
+        let network_id = web3.net().version().await.expect("get network ID failed");
+        tracing::info!("connected to test network {}", network_id);
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let admin = accounts[0];
+        let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
+        let admin = accounts[0];
 
-    macro_rules! deploy {
-            ($contract:ident) => { deploy!($contract ()) };
-            ($contract:ident ( $($param:expr),* $(,)? )) => {
-                deploy!($contract ($($param),*) as stringify!($contract))
-            };
-            ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
-                let name = $name;
-                let instance = $contract::builder(&web3 $(, $param)*)
-                    .deploy()
-                    .await
-                    .with_context(|| format!("failed to deploy {}", name))?;
-                instance
-            }};
-        }
+        macro_rules! deploy {
+                ($contract:ident) => { deploy!($contract ()) };
+                ($contract:ident ( $($param:expr),* $(,)? )) => {
+                    deploy!($contract ($($param),*) as stringify!($contract))
+                };
+                ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
+                    let name = $name;
+                    $contract::builder(&web3 $(, $param)*)
+                        .deploy()
+                        .await
+                        .unwrap_or_else(|e| panic!("failed to deploy {name}: {e:?}"))
+                }};
+            }
 
-    let weth = deploy!(WETH9());
+        let weth = deploy!(WETH9());
 
-    let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
-    let balancer_vault = deploy!(BalancerV2Vault(
-        balancer_authorizer.address(),
-        weth.address(),
-        U256::from(0),
-        U256::from(0),
-    ));
+        let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
+        let balancer_vault = deploy!(BalancerV2Vault(
+            balancer_authorizer.address(),
+            weth.address(),
+            U256::from(0),
+            U256::from(0),
+        ));
 
-    let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
-    let uniswap_router = deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
+        let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
+        let uniswap_router = deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
 
-    let gp_authenticator = deploy!(GPv2AllowListAuthentication);
-    gp_authenticator
-        .initialize_manager(admin)
-        .send()
+        let gp_authenticator = deploy!(GPv2AllowListAuthentication);
+        gp_authenticator
+            .initialize_manager(admin)
+            .send()
+            .await
+            .expect("failed to initialize manager");
+        let gp_settlement = deploy!(GPv2Settlement(
+            gp_authenticator.address(),
+            balancer_vault.address(),
+        ));
+
+        gp_authenticator
+            .add_solver(admin)
+            .send()
+            .await
+            .expect("failed to allow list account 0");
+
+        contracts::vault::grant_required_roles(
+            &balancer_authorizer,
+            balancer_vault.address(),
+            gp_settlement
+                .vault_relayer()
+                .call()
+                .await
+                .expect("failed to retrieve Vault relayer contract address"),
+        )
         .await
-        .context("failed to initialize manager")?;
-    let gp_settlement = deploy!(GPv2Settlement(
-        gp_authenticator.address(),
-        balancer_vault.address(),
-    ));
+        .expect("failed to authorize Vault relayer");
 
-    gp_authenticator
-        .add_solver(admin)
-        .send()
-        .await
-        .context("failed to allow list account 0")?;
-
-    contracts::vault::grant_required_roles(
-        &balancer_authorizer,
-        balancer_vault.address(),
-        gp_settlement
+        let allowance = gp_settlement
             .vault_relayer()
             .call()
             .await
-            .context("failed to retrieve Vault relayer contract address")?,
-    )
-    .await
-    .context("failed to authorize Vault relayer")?;
+            .expect("Couldn't get vault relayer address");
+        let domain_separator = DomainSeparator(
+            gp_settlement
+                .domain_separator()
+                .call()
+                .await
+                .expect("Couldn't query domain separator")
+                .0,
+        );
 
-    let allowance = gp_settlement
-        .vault_relayer()
-        .call()
-        .await
-        .expect("Couldn't get vault relayer address");
-    let domain_separator = DomainSeparator(
-        gp_settlement
-            .domain_separator()
-            .call()
-            .await
-            .expect("Couldn't query domain separator")
-            .0,
-    );
+        let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address(),));
 
-    let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address(),));
-
-    Ok(Contracts {
-        balancer_vault,
-        gp_settlement,
-        gp_authenticator,
-        uniswap_factory,
-        uniswap_router,
-        weth,
-        allowance,
-        domain_separator,
-        ethflow,
-    })
+        Self {
+            balancer_vault,
+            gp_settlement,
+            gp_authenticator,
+            uniswap_factory,
+            uniswap_router,
+            weth,
+            allowance,
+            domain_separator,
+            ethflow,
+        }
+    }
 }

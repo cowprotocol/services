@@ -16,7 +16,7 @@ lazy_static! {
     static ref NODE_MUTEX: Mutex<()> = Mutex::new(());
 }
 
-const NODE_HOST: &str = "http://127.0.0.1:8545";
+pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
 /// *Testing* function that takes a closure and runs it on a local testing node.
 /// Before each test, it creates a snapshot of the current state of the chain.

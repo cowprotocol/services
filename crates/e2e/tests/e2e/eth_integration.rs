@@ -1,13 +1,11 @@
 use {
     crate::{
-        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+        helpers,
+        onchain_components::{to_wei, OnchainComponents},
         services::{solvable_orders, wait_for_condition, API_HOST},
         tx,
     },
-    ethcontract::{
-        prelude::{Account, Address, PrivateKey, U256},
-        transaction::TransactionBuilder,
-    },
+    ethcontract::prelude::{Address, U256},
     model::{
         order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
         signature::EcdsaSigningScheme,
@@ -19,10 +17,6 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const TRADER_A_PK: [u8; 32] = [1; 32];
-const TRADER_B_PK: [u8; 32] = [2; 32];
-const SOLVER_PK: [u8; 32] = [3; 32];
-
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
@@ -32,58 +26,35 @@ async fn local_node_eth_integration() {
 }
 
 async fn eth_integration(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    helpers::init().await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
-    let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
-    let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
-    for account in [&trader_a, &trader_b, &solver] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(1))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
-
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
 
     // Create & mint tokens to trade, pools for fee connections
-    let token = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
-        },
-    )
-    .await;
-
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_pools(to_wei(100_000), to_wei(100_000))
+        .await;
     token.mint(trader_a.address(), to_wei(51)).await;
     token.mint(trader_b.address(), to_wei(51)).await;
-    let token = token.contract;
 
     // Approve GPv2 for trading
-    tx!(trader_a, token.approve(contracts.allowance, to_wei(51)));
-    tx!(trader_b, token.approve(contracts.allowance, to_wei(51)));
+    tx!(
+        trader_a.account(),
+        token.approve(onchain.contracts().allowance, to_wei(51))
+    );
+    tx!(
+        trader_b.account(),
+        token.approve(onchain.contracts().allowance, to_wei(51))
+    );
 
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
     let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
-    crate::services::start_autopilot(&contracts, &[]);
-    crate::services::start_api(&contracts, &[]);
+    crate::services::start_autopilot(onchain.contracts(), &[]);
+    crate::services::start_api(onchain.contracts(), &[]);
     crate::services::wait_for_api_to_come_up().await;
 
     let client = reqwest::Client::default();
@@ -118,7 +89,7 @@ async fn eth_integration(web3: Web3) {
     }
 
     // Place Orders
-    assert_ne!(contracts.weth.address(), BUY_ETH_ADDRESS);
+    assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderBuilder::default()
         .with_kind(OrderKind::Buy)
         .with_sell_token(token.address())
@@ -129,8 +100,8 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
@@ -150,8 +121,8 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
@@ -168,7 +139,7 @@ async fn eth_integration(web3: Web3) {
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(&contracts, &SOLVER_PK, &[]);
+    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
     let trade_happened = || async {
         let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();

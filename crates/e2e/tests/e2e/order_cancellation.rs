@@ -1,13 +1,11 @@
 use {
     crate::{
-        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
+        helpers,
+        onchain_components::{to_wei, OnchainComponents},
         services::{solvable_orders, wait_for_condition, API_HOST},
         tx,
     },
-    ethcontract::{
-        prelude::{Account, PrivateKey, U256},
-        transaction::TransactionBuilder,
-    },
+    ethcontract::prelude::U256,
     model::{
         app_id::AppId,
         order::{
@@ -29,9 +27,6 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const TRADER_PK: [u8; 32] = [1; 32];
-const SOLVER_PK: [u8; 32] = [2; 32];
-
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 const QUOTE_ENDPOINT: &str = "/api/v1/quote/";
 
@@ -42,63 +37,39 @@ async fn local_node_order_cancellation() {
 }
 
 async fn order_cancellation(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    helpers::init().await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
-    for account in [&trader, &solver] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(1))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
+    let [_] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .await;
 
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
-
-    // Create & mint tokens to trade, pools for fee connections
-    let token = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(1000),
-            weth_amount: to_wei(1000),
-        },
-    )
-    .await;
     token.mint(trader.address(), to_wei(10)).await;
-    let token = token.contract;
-
-    let weth = contracts.weth.clone();
 
     // Approve GPv2 for trading
-    tx!(trader, token.approve(contracts.allowance, to_wei(10)));
+    tx!(
+        trader.account(),
+        token.approve(onchain.contracts().allowance, to_wei(10))
+    );
 
-    crate::services::start_autopilot(&contracts, &[]);
-    crate::services::start_api(&contracts, &[]);
+    crate::services::start_autopilot(onchain.contracts(), &[]);
+    crate::services::start_api(onchain.contracts(), &[]);
     crate::services::wait_for_api_to_come_up().await;
 
     let client = reqwest::Client::default();
 
     let place_order = |salt: u8| {
         let client = &client;
+        let onchain = &onchain;
+        let trader = &trader;
+
         let request = OrderQuoteRequest {
             from: trader.address(),
             sell_token: token.address(),
-            buy_token: weth.address(),
+            buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: to_wei(1) },
             },
@@ -128,8 +99,8 @@ async fn order_cancellation(web3: Web3) {
                 .with_app_data(quote.app_data.0)
                 .sign_with(
                     EcdsaSigningScheme::Eip712,
-                    &contracts.domain_separator,
-                    SecretKeyRef::from(&SecretKey::from_slice(&TRADER_PK).unwrap()),
+                    &onchain.contracts().domain_separator,
+                    SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
                 )
                 .build()
                 .into_order_creation();
@@ -151,8 +122,8 @@ async fn order_cancellation(web3: Web3) {
         let client = &client;
         let cancellation = OrderCancellation::for_order(
             order_uid,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
         );
 
         async move {
@@ -176,9 +147,9 @@ async fn order_cancellation(web3: Web3) {
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let signature = EcdsaSignature::sign(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
+            &onchain.contracts().domain_separator,
             &cancellations.hash_struct(),
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_PK).unwrap()),
+            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
         );
 
         let signed_cancellations = SignedOrderCancellations {

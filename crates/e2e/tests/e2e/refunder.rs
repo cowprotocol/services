@@ -1,18 +1,13 @@
 use {
     crate::{
         eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+        helpers,
         local_node::TestNodeApi,
-        onchain_components::{
-            deploy_token_with_weth_uniswap_pool,
-            to_wei,
-            MintableToken,
-            WethPoolConfig,
-        },
+        onchain_components::{to_wei, OnchainComponents},
         services::{wait_for_condition, API_HOST},
     },
     chrono::{DateTime, NaiveDateTime, Utc},
-    ethcontract::{transaction::TransactionBuilder, Account, PrivateKey, H160, U256},
-    hex_literal::hex,
+    ethcontract::{H160, U256},
     model::{
         order::Order,
         quote::{
@@ -38,39 +33,17 @@ async fn local_node_refunder_tx() {
 }
 
 async fn refunder_tx(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
-    shared::exit_process_on_panic::set_panic_hook();
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    helpers::init().await;
 
-    let user_pk = hex!("0000000000000000000000000000000000000000000000000000000000000001");
-    let user = Account::Offline(PrivateKey::from_raw(user_pk).unwrap(), None);
-    let refunder_pk = hex!("0000000000000000000000000000000000000000000000000000000000000002");
-    let refunder = Account::Offline(PrivateKey::from_raw(refunder_pk).unwrap(), None);
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    for account in [&user, &refunder] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(10))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
+    let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .await;
 
-    // Create & mint tokens to trade, pools for fee connections
-    let MintableToken {
-        contract: token, ..
-    } = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(1000),
-            weth_amount: to_wei(1000),
-        },
-    )
-    .await;
-
-    crate::services::start_autopilot(&contracts, &[]);
-    crate::services::start_api(&contracts, &[]);
+    crate::services::start_autopilot(onchain.contracts(), &[]);
+    crate::services::start_api(onchain.contracts(), &[]);
     crate::services::wait_for_api_to_come_up().await;
 
     let client = reqwest::Client::default();
@@ -81,8 +54,8 @@ async fn refunder_tx(web3: Web3) {
     let sell_amount = U256::from("3000000000000000");
 
     let quote = OrderQuoteRequest {
-        from: contracts.ethflow.address(),
-        sell_token: contracts.weth.address(),
+        from: onchain.contracts().ethflow.address(),
+        sell_token: onchain.contracts().weth.address(),
         buy_token,
         receiver,
         validity: Validity::For(3600),
@@ -112,14 +85,14 @@ async fn refunder_tx(web3: Web3) {
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
     ethflow_order
-        .mine_order_creation(&user, &contracts.ethflow)
+        .mine_order_creation(user.account(), &onchain.contracts().ethflow)
         .await;
 
     let get_order = || async {
         client
             .get(format!(
                 "{API_HOST}/api/v1/orders/{}",
-                ethflow_order.uid(&contracts).await
+                ethflow_order.uid(onchain.contracts()).await
             ))
             .send()
             .await
@@ -154,21 +127,21 @@ async fn refunder_tx(web3: Web3) {
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
-        contracts.ethflow.clone(),
+        onchain.contracts().ethflow.clone(),
         validity_duration as i64 / 2,
         10u64,
-        refunder,
+        refunder.account().clone(),
     );
 
     assert_ne!(
-        ethflow_order.status(&contracts).await,
+        ethflow_order.status(onchain.contracts()).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
 
     refunder.try_to_refund_all_eligble_orders().await.unwrap();
 
     assert_eq!(
-        ethflow_order.status(&contracts).await,
+        ethflow_order.status(onchain.contracts()).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
 

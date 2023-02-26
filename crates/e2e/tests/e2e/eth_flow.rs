@@ -1,28 +1,16 @@
 use {
     crate::{
         deploy::Contracts,
+        helpers,
         local_node::TestNodeApi,
-        onchain_components::{
-            deploy_token_with_weth_uniswap_pool,
-            to_wei,
-            MintableToken,
-            WethPoolConfig,
-        },
+        onchain_components::{to_wei, OnchainComponents},
         services::{get_auction, solvable_orders, wait_for_condition, API_HOST},
     },
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     chrono::{DateTime, NaiveDateTime, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
-    ethcontract::{
-        transaction::{TransactionBuilder, TransactionResult},
-        Account,
-        Bytes,
-        PrivateKey,
-        H160,
-        H256,
-        U256,
-    },
+    ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     hex_literal::hex,
     model::{
         app_id::AppId,
@@ -83,47 +71,17 @@ async fn local_node_eth_flow_indexing_after_refund() {
 }
 
 async fn eth_flow_tx(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    helpers::init().await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    const SOLVER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000001");
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
-    const TRADER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000002");
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
-    for account in [&solver, &trader] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(2))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
 
     // Create token with Uniswap pool for price estimation
-    let MintableToken { contract: dai, .. } = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            // 1 ETH ≈ 1k DAI
-            token_amount: to_wei(DAI_PER_ETH * 1_000),
-            weth_amount: to_wei(1_000),
-        },
-    )
-    .await;
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .await;
 
     // Get a quote from the services
     let buy_token = dai.address();
@@ -137,12 +95,12 @@ async fn eth_flow_tx(web3: Web3) {
 
     let client = reqwest::Client::default();
 
-    crate::services::start_api(&contracts, &[]);
-    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::start_api(onchain.contracts(), &[]);
+    crate::services::start_autopilot(onchain.contracts(), &[]);
     crate::services::wait_for_api_to_come_up().await;
 
     let quote: OrderQuoteResponse = submit_quote(
-        &intent.to_quote_request(&contracts.ethflow, &contracts.weth),
+        &intent.to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
         &client,
     )
     .await;
@@ -153,9 +111,15 @@ async fn eth_flow_tx(web3: Web3) {
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
 
-    sumbit_order(&ethflow_order, &trader, &contracts).await;
+    sumbit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
-    test_order_availability_in_api(&client, &ethflow_order, &trader.address(), &contracts).await;
+    test_order_availability_in_api(
+        &client,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+    )
+    .await;
 
     tracing::info!("waiting for trade");
     wait_for_condition(Duration::from_secs(10), || async {
@@ -163,64 +127,31 @@ async fn eth_flow_tx(web3: Web3) {
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(&contracts, &SOLVER_PK, &[]);
+    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
     test_order_was_settled(&ethflow_order, &web3).await;
 
-    test_trade_availability_in_api(&client, &ethflow_order, &trader.address(), &contracts).await;
+    test_trade_availability_in_api(
+        &client,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+    )
+    .await;
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    helpers::init().await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    const SOLVER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000001");
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [refunder, trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
+        .await;
 
-    const REFUNDER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000002");
-    let refunder = Account::Offline(PrivateKey::from_raw(REFUNDER_PK).unwrap(), None);
-    const TRADER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000003");
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
-    const DUMMY_TRADER_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000004");
-    let dummy_trader = Account::Offline(PrivateKey::from_raw(DUMMY_TRADER_PK).unwrap(), None);
-    for account in [&solver, &refunder, &trader, &dummy_trader] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(2))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
-
-    // Create token with Uniswap pool for price estimation
-    let MintableToken { contract: dai, .. } = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            // 1 ETH ≈ 1k DAI
-            token_amount: to_wei(DAI_PER_ETH * 1_000),
-            weth_amount: to_wei(1_000),
-        },
-    )
-    .await;
-
-    crate::services::start_api(&contracts, &[]);
-    crate::services::start_autopilot(&contracts, &[]);
+    crate::services::start_api(onchain.contracts(), &[]);
+    crate::services::start_autopilot(onchain.contracts(), &[]);
     crate::services::wait_for_api_to_come_up().await;
 
     let client = reqwest::Client::default();
@@ -236,14 +167,14 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token: dai.address(),
                 receiver: H160([42; 20]),
             })
-            .to_quote_request(&contracts.ethflow, &contracts.weth),
+            .to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
             &client,
         )
         .await,
         valid_to,
     )
     .include_slippage_bps(300);
-    sumbit_order(&dummy_order, &dummy_trader, &contracts).await;
+    sumbit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
     web3.api::<TestNodeApi<_>>()
         .set_next_block_timestamp(&DateTime::from_utc(
             NaiveDateTime::from_timestamp(valid_to as i64 + 1, 0),
@@ -252,7 +183,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await
         .expect("Must be able to set block timestamp");
     dummy_order
-        .mine_order_invalidation(&refunder, &contracts.ethflow)
+        .mine_order_invalidation(refunder.account(), &onchain.contracts().ethflow)
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
@@ -269,14 +200,14 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token,
                 receiver,
             })
-            .to_quote_request(&contracts.ethflow, &contracts.weth),
+            .to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
             &client,
         )
         .await,
         valid_to,
     )
     .include_slippage_bps(300);
-    sumbit_order(&ethflow_order, &trader, &contracts).await;
+    sumbit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
     tracing::info!("waiting for trade");
     wait_for_condition(Duration::from_secs(10), || async {
@@ -284,7 +215,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(&contracts, &SOLVER_PK, &[]);
+    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
     test_order_was_settled(&ethflow_order, &web3).await;
 }
 
@@ -308,17 +239,16 @@ async fn submit_quote(quote: &OrderQuoteRequest, client: &reqwest::Client) -> Or
     assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
     assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
 
-    if let OrderQuoteSide::Sell {
+    let OrderQuoteSide::Sell {
         sell_amount:
             model::quote::SellAmount::AfterFee {
                 value: sell_amount_after_fees,
             },
-    } = quote.side
-    {
-        assert_eq!(response.quote.sell_amount, sell_amount_after_fees);
-    } else {
-        panic!("Untested")
+    } = quote.side else {
+        panic!("untested!");
     };
+
+    assert_eq!(response.quote.sell_amount, sell_amount_after_fees);
 
     response
 }
