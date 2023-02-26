@@ -1,9 +1,7 @@
 use {
     crate::{
-        deploy::Contracts,
-        helpers,
+        helpers::*,
         local_node::TestNodeApi,
-        onchain_components::{to_wei, OnchainComponents},
         services::{get_auction, solvable_orders, wait_for_condition, API_HOST},
     },
     anyhow::bail,
@@ -71,7 +69,7 @@ async fn local_node_eth_flow_indexing_after_refund() {
 }
 
 async fn eth_flow_tx(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -140,7 +138,7 @@ async fn eth_flow_tx(web3: Web3) {
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 

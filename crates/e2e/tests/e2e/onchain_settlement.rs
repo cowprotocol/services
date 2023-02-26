@@ -1,7 +1,6 @@
 use {
     crate::{
-        helpers,
-        onchain_components::{to_wei, OnchainComponents},
+        helpers::*,
         services::{get_auction, API_HOST},
         tx,
     },
@@ -25,7 +24,7 @@ async fn local_node_onchain_settlement() {
 }
 
 async fn onchain_settlement(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     crate::services::clear_database().await;
     let mut onchain = OnchainComponents::deploy(web3).await;

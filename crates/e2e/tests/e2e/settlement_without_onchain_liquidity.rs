@@ -1,7 +1,6 @@
 use {
     crate::{
-        helpers,
-        onchain_components::{to_wei, OnchainComponents},
+        helpers::*,
         services::{solvable_orders, wait_for_condition, API_HOST},
     },
     ethcontract::prelude::U256,
@@ -24,7 +23,7 @@ async fn local_node_onchain_settlement_without_liquidity() {
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3).await;
 

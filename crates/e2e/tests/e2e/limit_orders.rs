@@ -1,7 +1,6 @@
 use {
     crate::{
-        helpers,
-        onchain_components::{to_wei, OnchainComponents},
+        helpers::*,
         services::{solvable_orders, wait_for_condition, API_HOST},
     },
     ethcontract::prelude::U256,
@@ -42,7 +41,7 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 async fn single_limit_order_test(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -156,7 +155,7 @@ async fn single_limit_order_test(web3: Web3) {
 }
 
 async fn two_limit_orders_test(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -316,7 +315,7 @@ async fn two_limit_orders_test(web3: Web3) {
 }
 
 async fn mixed_limit_and_market_orders_test(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -477,7 +476,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 

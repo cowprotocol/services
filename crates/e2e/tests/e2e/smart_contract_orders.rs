@@ -1,7 +1,6 @@
 use {
     crate::{
-        helpers,
-        onchain_components::{gnosis_safe_eip1271_signature, to_wei, OnchainComponents},
+        helpers::*,
         services::{solvable_orders, wait_for_condition, API_HOST},
     },
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
@@ -25,7 +24,7 @@ async fn local_node_smart_contract_orders() {
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 

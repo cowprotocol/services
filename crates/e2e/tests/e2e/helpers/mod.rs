@@ -1,3 +1,7 @@
+mod deploy;
+#[macro_use]
+mod onchain_components;
+
 use {std::io::Write, tempfile::TempPath};
 
 pub async fn init() {
@@ -21,3 +25,5 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(config: C) -> TempPath {
     file.write_all(config.as_ref()).unwrap();
     file.into_temp_path()
 }
+
+pub use {deploy::*, onchain_components::*};

@@ -1,9 +1,8 @@
 use {
     crate::{
         eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-        helpers,
+        helpers::*,
         local_node::TestNodeApi,
-        onchain_components::{to_wei, OnchainComponents},
         services::{wait_for_condition, API_HOST},
     },
     chrono::{DateTime, NaiveDateTime, Utc},
@@ -33,7 +32,7 @@ async fn local_node_refunder_tx() {
 }
 
 async fn refunder_tx(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 

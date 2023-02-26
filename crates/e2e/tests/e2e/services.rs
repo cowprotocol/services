@@ -1,5 +1,5 @@
 use {
-    crate::deploy::Contracts,
+    crate::helpers::Contracts,
     anyhow::{anyhow, Context, Result},
     clap::Parser,
     ethcontract::H256,

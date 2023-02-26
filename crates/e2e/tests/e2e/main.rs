@@ -4,8 +4,6 @@
 // tests we want to run.
 
 #[macro_use]
-mod onchain_components;
-mod deploy;
 mod helpers;
 mod local_node;
 mod services;

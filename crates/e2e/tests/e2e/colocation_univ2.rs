@@ -1,9 +1,7 @@
 use {
     crate::{
-        deploy::Contracts,
-        helpers,
+        helpers::*,
         local_node::NODE_HOST,
-        onchain_components::{to_wei, OnchainComponents, TestAccount},
         services::{wait_for_condition, API_HOST},
     },
     ethcontract::{H160, H256, U256},
@@ -26,7 +24,7 @@ async fn local_node_test() {
 }
 
 async fn test(web3: Web3) {
-    helpers::init().await;
+    init().await;
 
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -109,7 +107,7 @@ async fn test(web3: Web3) {
 }
 
 async fn start_solver(weth: H160) -> (Url, JoinHandle<()>) {
-    let config_file = helpers::config_tmp_file(format!(
+    let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
 base-tokens = []
@@ -138,7 +136,7 @@ fn start_driver(
     solver_endpoint: &Url,
     solver_account: &TestAccount,
 ) -> JoinHandle<()> {
-    let config_file = helpers::config_tmp_file(format!(
+    let config_file = config_tmp_file(format!(
         r#"
 # CI e2e tests run with hardhat, which doesn't support access lists.
 disable-access-list-simulation = true
