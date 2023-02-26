@@ -1,9 +1,5 @@
 use {
-    crate::{
-        helpers::*,
-        local_node::NODE_HOST,
-        services::{wait_for_condition, API_HOST},
-    },
+    crate::{helpers::*, local_node::NODE_HOST},
     ethcontract::{H160, H256, U256},
     model::{
         order::{OrderBuilder, OrderKind},
@@ -49,27 +45,20 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let (solver_endpoint, _) = start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint = start_solver(onchain.contracts().weth.address()).await;
     start_driver(onchain.contracts(), &solver_endpoint, &solver);
-    let driver_url: Url = "http://localhost:11088/test_solver".parse().unwrap();
 
-    let autopilot_args = &[
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![
         "--enable-colocation".to_string(),
-        format!("--drivers={driver_url}"),
-    ];
-    crate::services::start_autopilot(onchain.contracts(), autopilot_args);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap();
+        "--drivers=http://localhost:11088/test_solver".to_string(),
+    ]);
+    services.start_api(vec![]).await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
-    let order_a = OrderBuilder::default()
+    let order = OrderBuilder::default()
         .with_sell_token(onchain.contracts().weth.address())
         .with_sell_amount(to_wei(2))
         .with_fee_amount(to_wei(1))
@@ -84,13 +73,7 @@ async fn test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = http
-        .post(&format!("{API_HOST}/api/v1/orders"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201,);
+    services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -106,7 +89,7 @@ async fn test(web3: Web3) {
     // made its way into the DB.
 }
 
-async fn start_solver(weth: H160) -> (Url, JoinHandle<()>) {
+async fn start_solver(weth: H160) -> Url {
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
@@ -121,14 +104,13 @@ max-hops = 0
     ];
 
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
-    let handle = tokio::task::spawn(async move {
+    tokio::task::spawn(async move {
         let _config_file = config_file;
         solvers::run::run(args.into_iter(), Some(bind)).await;
     });
-    let solver_addr = bind_receiver.await.unwrap();
-    let url = format!("http://{solver_addr}").parse().unwrap();
 
-    (url, handle)
+    let solver_addr = bind_receiver.await.unwrap();
+    format!("http://{solver_addr}").parse().unwrap()
 }
 
 fn start_driver(

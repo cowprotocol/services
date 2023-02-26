@@ -1,8 +1,5 @@
 use {
-    crate::{
-        helpers::*,
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
+    crate::helpers::*,
     ethcontract::prelude::U256,
     model::{
         order::{OrderBuilder, OrderKind, SellTokenSource},
@@ -14,8 +11,6 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-
 #[tokio::test]
 #[ignore]
 async fn local_node_vault_balances() {
@@ -25,7 +20,6 @@ async fn local_node_vault_balances() {
 async fn vault_balances(web3: Web3) {
     init().await;
 
-    crate::services::clear_database().await;
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -50,11 +44,9 @@ async fn vault_balances(web3: Web3) {
         )
     );
 
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     // Place Orders
     let order = OrderBuilder::default()
@@ -73,12 +65,7 @@ async fn vault_balances(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order).await.unwrap();
     let balance_before = onchain
         .contracts()
         .weth
@@ -90,13 +77,13 @@ async fn vault_balances(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 1
+        services.get_auction().await.auction.orders.len() == 1
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
-    crate::services::wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+    services.start_old_driver(solver.private_key(), vec![]);
+    wait_for_condition(Duration::from_secs(10), || async {
+        services.get_auction().await.auction.orders.is_empty()
     })
     .await
     .unwrap();

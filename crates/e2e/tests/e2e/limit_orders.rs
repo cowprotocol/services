@@ -1,11 +1,8 @@
 use {
-    crate::{
-        helpers::*,
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
+    crate::helpers::*,
     ethcontract::prelude::U256,
     model::{
-        order::{Order, OrderBuilder, OrderClass, OrderKind},
+        order::{OrderBuilder, OrderClass, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -13,8 +10,6 @@ use {
     std::time::Duration,
     web3::signing::SecretKeyRef,
 };
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
@@ -93,11 +88,9 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -113,23 +106,8 @@ async fn single_limit_order_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
-    let order_id: String = placement.json().await.unwrap();
-    let limit_order: Order = client
-        .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_id}"))
-        .json(&order)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(
         limit_order.metadata.class,
         OrderClass::Limit(Default::default())
@@ -139,13 +117,14 @@ async fn single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 1
+        services.solvable_orders().await == 1
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+
+    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.solvable_orders().await == 0
     })
     .await
     .unwrap();
@@ -212,11 +191,9 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -232,24 +209,9 @@ async fn two_limit_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
-    let order_id: String = placement.json().await.unwrap();
+    let order_id = services.create_order(&order_a).await.unwrap();
 
-    let limit_order: Order = client
-        .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_id}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
@@ -266,28 +228,13 @@ async fn two_limit_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_b)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
-    let order_id: String = placement.json().await.unwrap();
+    let order_id = services.create_order(&order_b).await.unwrap();
 
-    let limit_order: Order = client
-        .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_id}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.solvable_orders().await == 2
     })
     .await
     .unwrap();
@@ -297,13 +244,15 @@ async fn two_limit_orders_test(web3: Web3) {
     let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.solvable_orders().await == 2
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+
+    services.start_old_driver(solver.private_key(), vec![]);
+
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.solvable_orders().await == 0
     })
     .await
     .unwrap();
@@ -372,11 +321,9 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -392,24 +339,9 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
-    let order_id: String = placement.json().await.unwrap();
+    let order_id = services.create_order(&order_a).await.unwrap();
 
-    let limit_order: Order = client
-        .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_id}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
     let order_b = OrderBuilder::default()
@@ -427,28 +359,13 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_b)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
-    let order_id: String = placement.json().await.unwrap();
+    let order_id = services.create_order(&order_b).await.unwrap();
 
-    let limit_order: Order = client
-        .get(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}{order_id}"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Market);
 
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.solvable_orders().await == 2
     })
     .await
     .unwrap();
@@ -458,13 +375,15 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.solvable_orders().await == 2
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+
+    services.start_old_driver(solver.private_key(), vec![]);
+
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.solvable_orders().await == 0
     })
     .await
     .unwrap();
@@ -493,13 +412,10 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    crate::services::start_api(
-        onchain.contracts(),
-        &["--max-limit-orders-per-user=1".to_string()],
-    );
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_api(vec!["--max-limit-orders-per-user=1".into()])
+        .await;
 
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -515,13 +431,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
+    services.create_order(&order).await.unwrap();
 
     // Attempt to place another order, but the orderbook is configured to allow only
     // one limit order per user.
@@ -539,16 +449,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 400);
-    assert!(placement
-        .text()
-        .await
-        .unwrap()
-        .contains("TooManyLimitOrders"));
+    let (status, body) = services.create_order(&order).await.unwrap_err();
+    assert_eq!(status, 400);
+    assert!(body.contains("TooManyLimitOrders"));
 }

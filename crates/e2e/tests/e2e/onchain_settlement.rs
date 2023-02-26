@@ -1,9 +1,5 @@
 use {
-    crate::{
-        helpers::*,
-        services::{get_auction, API_HOST},
-        tx,
-    },
+    crate::helpers::*,
     ethcontract::prelude::U256,
     model::{
         order::{OrderBuilder, OrderKind},
@@ -15,8 +11,6 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-
 #[tokio::test]
 #[ignore]
 async fn local_node_onchain_settlement() {
@@ -26,7 +20,6 @@ async fn local_node_onchain_settlement() {
 async fn onchain_settlement(web3: Web3) {
     init().await;
 
-    crate::services::clear_database().await;
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -81,11 +74,9 @@ async fn onchain_settlement(web3: Web3) {
         token_b.approve(onchain.contracts().allowance, to_wei(51))
     );
 
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -102,12 +93,7 @@ async fn onchain_settlement(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_a)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_a).await.unwrap();
 
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
@@ -124,12 +110,7 @@ async fn onchain_settlement(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_b)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_b).await.unwrap();
 
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
@@ -137,10 +118,10 @@ async fn onchain_settlement(web3: Web3) {
     assert_eq!(balance, 0.into());
 
     tracing::info!("Waiting for trade.");
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
-    crate::services::wait_for_condition(Duration::from_secs(10), trade_happened)
+    wait_for_condition(Duration::from_secs(10), trade_happened)
         .await
         .unwrap();
 
@@ -151,8 +132,8 @@ async fn onchain_settlement(web3: Web3) {
     assert!(balance >= order_b.data.buy_amount);
 
     tracing::info!("Waiting for auction to be cleared.");
-    let auction_is_empty = || async { get_auction().await.unwrap().auction.orders.is_empty() };
-    crate::services::wait_for_condition(Duration::from_secs(10), auction_is_empty)
+    let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
+    wait_for_condition(Duration::from_secs(10), auction_is_empty)
         .await
         .unwrap();
 }

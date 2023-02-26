@@ -1,22 +1,16 @@
 use {
-    crate::{
-        helpers::*,
-        services::{solvable_orders, wait_for_condition, API_HOST},
-        tx,
-    },
+    crate::helpers::*,
     ethcontract::prelude::{Address, U256},
     model::{
         order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    serde_json::json,
     shared::ethrpc::Web3,
     std::time::Duration,
     web3::signing::SecretKeyRef,
 };
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
@@ -52,40 +46,29 @@ async fn eth_integration(web3: Web3) {
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
     let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
-    let client = reqwest::Client::default();
-
-    // Test quote
-    let client_ref = &client;
-    let quote = |sell_token, buy_token| async move {
-        let body = json!({
-                "sellToken": sell_token,
-                "buyToken": buy_token,
-                "from": Address::default(),
-                "kind": "sell",
-                "sellAmountAfterFee": to_wei(42).to_string(),
-        });
-        client_ref
-            .post(&format!("{}{}", API_HOST, "/api/v1/quote",))
-            .json(&body)
-            .send()
-            .await
-            .unwrap()
+    let quote = |sell_token, buy_token| {
+        let services = &services;
+        async move {
+            let request = OrderQuoteRequest {
+                sell_token,
+                buy_token,
+                from: Address::default(),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee { value: to_wei(43) },
+                },
+                ..Default::default()
+            };
+            services.submit_quote(&request).await
+        }
     };
-    let response = quote(token.address(), BUY_ETH_ADDRESS).await;
-    if response.status() != 200 {
-        tracing::error!("{}", response.text().await.unwrap());
-        panic!("bad status");
-    }
+    quote(token.address(), BUY_ETH_ADDRESS).await.unwrap();
     // Eth is only supported as the buy token
-    let response = quote(BUY_ETH_ADDRESS, token.address()).await;
-    if response.status() != 400 {
-        tracing::error!("{}", response.text().await.unwrap());
-        panic!("bad status");
-    }
+    let (status, body) = quote(BUY_ETH_ADDRESS, token.address()).await.unwrap_err();
+    assert_eq!(status, 400, "{body}");
 
     // Place Orders
     assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
@@ -104,12 +87,7 @@ async fn eth_integration(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_buy_eth_a)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderBuilder::default()
         .with_kind(OrderKind::Sell)
         .with_sell_token(token.address())
@@ -125,20 +103,17 @@ async fn eth_integration(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_buy_eth_b)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.solvable_orders().await == 2
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+
+    services.start_old_driver(solver.private_key(), vec![]);
+
     let trade_happened = || async {
         let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();

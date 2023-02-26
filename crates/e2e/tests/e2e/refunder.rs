@@ -3,27 +3,18 @@ use {
         eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
         helpers::*,
         local_node::TestNodeApi,
-        services::{wait_for_condition, API_HOST},
     },
     chrono::{DateTime, NaiveDateTime, Utc},
     ethcontract::{H160, U256},
     model::{
         order::Order,
-        quote::{
-            OrderQuoteRequest,
-            OrderQuoteResponse,
-            OrderQuoteSide,
-            QuoteSigningScheme,
-            Validity,
-        },
+        quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     },
     refunder::refund_service::RefundService,
     shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
     std::time::Duration,
 };
-
-const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
 
 #[tokio::test]
 #[ignore]
@@ -41,9 +32,9 @@ async fn refunder_tx(web3: Web3) {
         .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let client = reqwest::Client::default();
 
@@ -67,14 +58,7 @@ async fn refunder_tx(web3: Web3) {
         },
         ..Default::default()
     };
-    let quoting = client
-        .post(&format!("{API_HOST}{QUOTING_ENDPOINT}"))
-        .json(&quote)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(quoting.status(), 200);
-    let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
+    let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600;
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;

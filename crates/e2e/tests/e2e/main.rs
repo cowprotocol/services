@@ -6,7 +6,6 @@
 #[macro_use]
 mod helpers;
 mod local_node;
-mod services;
 
 // Each of the following modules contains tests.
 mod colocation_univ2;

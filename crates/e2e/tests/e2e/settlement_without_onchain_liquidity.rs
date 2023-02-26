@@ -1,8 +1,5 @@
 use {
-    crate::{
-        helpers::*,
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
+    crate::helpers::*,
     ethcontract::prelude::U256,
     model::{
         order::{OrderBuilder, OrderKind},
@@ -13,8 +10,6 @@ use {
     std::time::Duration,
     web3::signing::SecretKeyRef,
 };
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
@@ -84,11 +79,9 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
 
     // Place Orders
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -105,31 +98,26 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 1
+        services.get_auction().await.auction.orders.len() == 1
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(
-        onchain.contracts(),
+
+    services.start_old_driver(
         solver.private_key(),
-        &[format!(
+        vec![format!(
             "--market-makable-tokens={:?},{:?}",
             token_a.address(),
             token_b.address()
         )],
     );
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.get_auction().await.auction.orders.is_empty()
     })
     .await
     .unwrap();

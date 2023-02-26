@@ -1,12 +1,9 @@
 use {
-    crate::{
-        helpers::*,
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
+    crate::helpers::*,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid},
+        order::{OrderBuilder, OrderKind, OrderStatus, OrderUid},
         signature::hashed_eip712_message,
     },
     secp256k1::SecretKey,
@@ -14,8 +11,6 @@ use {
     std::time::Duration,
     web3::signing::SecretKeyRef,
 };
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
@@ -68,11 +63,9 @@ async fn smart_contract_orders(web3: Web3) {
         token.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    crate::services::start_autopilot(onchain.contracts(), &[]);
-    crate::services::start_api(onchain.contracts(), &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     // Place Orders
     let order_template = || {
@@ -107,30 +100,19 @@ async fn smart_contract_orders(web3: Web3) {
     ];
 
     for order in &mut orders {
-        let creation = order.clone().into_order_creation();
-        let placement = client
-            .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-            .json(&creation)
-            .send()
+        let uid = services
+            .create_order(&order.clone().into_order_creation())
             .await
             .unwrap();
-        assert_eq!(placement.status(), 201);
-        order.metadata.uid = placement.json::<OrderUid>().await.unwrap();
+        order.metadata.uid = uid;
     }
     let orders = orders; // prevent further changes to `orders`.
 
     let order_status = |order_uid: OrderUid| {
-        let client = client.clone();
+        let services = &services;
         async move {
-            client
-                .get(&format!(
-                    "{}{}{}",
-                    API_HOST, ORDER_PLACEMENT_ENDPOINT, &order_uid
-                ))
-                .send()
-                .await
-                .unwrap()
-                .json::<Order>()
+            services
+                .get_order(&order_uid)
                 .await
                 .unwrap()
                 .metadata
@@ -160,7 +142,7 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Check that the presignature event was received.
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.get_auction().await.auction.orders.len() == 2
     })
     .await
     .unwrap();
@@ -171,9 +153,9 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    crate::services::start_old_driver(onchain.contracts(), solver.private_key(), &[]);
+    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.get_auction().await.auction.orders.is_empty()
     })
     .await
     .unwrap();
