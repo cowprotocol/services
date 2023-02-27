@@ -188,7 +188,6 @@ pub struct Solution {
     // TODO I also need to use this
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
-    // TODO I need to use this in the quote response
     interactions: Vec<Interaction>,
 }
 

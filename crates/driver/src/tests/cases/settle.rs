@@ -11,8 +11,8 @@ use {
 };
 
 /// Test that the /settle endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
+#[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
@@ -64,8 +64,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();
@@ -111,7 +121,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": "0",
+                "effectiveGasPrice": "243044758",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -147,15 +157,23 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let solution = client
+    let (status, solution) = client
         .solve(
             SOLVER_NAME,
             json!({
                 "id": 1,
-                "prices": {
-                    hex_address(sell_token): "1",
-                    hex_address(buy_token): "2",
-                },
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
+                        "trusted": false,
+                    },
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
+                        "trusted": false,
+                    }
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
@@ -182,6 +200,8 @@ async fn test() {
             }),
         )
         .await;
+
+    assert_eq!(status, hyper::StatusCode::OK);
 
     let solution_id = solution.get("id").unwrap().as_str().unwrap();
     let block_number = web3.eth().block_number().await.unwrap();
