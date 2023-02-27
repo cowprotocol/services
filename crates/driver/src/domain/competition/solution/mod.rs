@@ -74,6 +74,11 @@ impl Solution {
         Ok(approvals)
     }
 
+    /// An empty solution has no user trades and a score of 0.
+    pub fn is_empty(&self) -> bool {
+        self.user_trades().next().is_none()
+    }
+
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
@@ -245,7 +250,7 @@ impl SolverTimeout {
 }
 
 /// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Score(pub num::BigRational);
 
 impl From<Score> for f64 {
@@ -257,6 +262,12 @@ impl From<Score> for f64 {
 impl From<num::BigRational> for Score {
     fn from(inner: num::BigRational) -> Self {
         Self(inner)
+    }
+}
+
+impl Score {
+    pub fn zero() -> Self {
+        Self::default()
     }
 }
 

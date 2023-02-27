@@ -52,6 +52,12 @@ impl Competition {
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
             .await?;
+
+        if solution.is_empty() {
+            // Don't waste resources on simulating an empty solution.
+            return Ok((solution.id, solution::Score::zero()));
+        }
+
         // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
