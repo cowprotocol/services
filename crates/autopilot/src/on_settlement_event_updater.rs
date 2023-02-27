@@ -80,10 +80,11 @@ impl OnSettlementEventUpdater {
     /// Returns whether an update was performed.
     async fn update(&self) -> Result<bool> {
         let current_block = self.current_block.borrow().number;
-        let reorg_safe_block: u64 = current_block
+        let reorg_safe_block: i64 = current_block
             .checked_sub(MAX_REORG_BLOCK_COUNT)
-            .context("no reorg safe block")?;
-        let reorg_safe_block: i64 = reorg_safe_block.try_into().context("convert block")?;
+            .context("no reorg safe block")?
+            .try_into()
+            .context("convert block")?;
 
         let event = match self
             .db
