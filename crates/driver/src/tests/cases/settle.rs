@@ -56,26 +56,26 @@ async fn test() {
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
         .into_iter()
-        .map(|(address, interaction)| {
+        .map(|interaction| {
             json!({
                 "kind": "custom",
                 "internalize": false,
-                "target": hex_address(address),
+                "target": hex_address(interaction.address),
                 "value": "0",
-                "callData": format!("0x{}", hex::encode(interaction)),
+                "callData": format!("0x{}", hex::encode(interaction.calldata)),
                 "allowances": [],
-                "inputs": [
-                    {
-                        "token": hex_address(sell_token),
-                        "amount": sell_amount.to_string(),
-                    }
-                ],
-                "outputs": [
-                    {
-                        "token": hex_address(buy_token),
-                        "amount": buy_amount.to_string(),
-                    }
-                ],
+                "inputs": interaction.inputs.iter().map(|input| {
+                    json!({
+                        "token": hex_address(input.token.into()),
+                        "amount": input.amount.to_string(),
+                    })
+                }).collect_vec(),
+                "outputs": interaction.outputs.iter().map(|output| {
+                    json!({
+                        "token": hex_address(output.token.into()),
+                        "amount": output.amount.to_string(),
+                    })
+                }).collect_vec(),
             })
         })
         .collect_vec();

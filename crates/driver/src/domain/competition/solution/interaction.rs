@@ -18,8 +18,6 @@ impl Interaction {
         }
     }
 
-    // TODO Use these two in the asset flow verification as well
-
     /// The assets going into the settlement contract as part of this
     /// interaction.
     pub fn inputs(&self) -> Vec<eth::Asset> {

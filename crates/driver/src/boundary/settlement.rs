@@ -68,6 +68,7 @@ impl Settlement {
 
         let clearing_prices = solution
             .prices
+            .0
             .iter()
             .map(|(&token, &amount)| (token.into(), amount))
             .collect();
