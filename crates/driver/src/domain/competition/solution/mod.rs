@@ -183,15 +183,26 @@ impl Solution {
         Ok(())
     }
 
+    /// Check that internalized interactions only use trusted tokens.
     fn verify_internalization(
         &self,
-        _auction: &competition::Auction,
+        auction: &competition::Auction,
     ) -> Result<(), VerificationError> {
-        // TODO Will be done in a follow-up PR.
-        // Check that internalized interactions use trusted tokens. This requires
-        // checking the internalized interactions in the solution against the
-        // trusted tokens in the auction to make sure there's no foul play.
-        Ok(())
+        if self
+            .interactions
+            .iter()
+            .filter(|interaction| interaction.internalize())
+            .all(|interaction| {
+                interaction
+                    .inputs()
+                    .iter()
+                    .all(|asset| auction.is_trusted(asset.token))
+            })
+        {
+            Ok(())
+        } else {
+            Err(VerificationError::Internalization)
+        }
     }
 }
 
@@ -298,6 +309,10 @@ pub enum VerificationError {
          exiting the settlement"
     )]
     AssetFlow,
+    #[error(
+        "invalid internalization: solution attempts to internalize tokens which are not trusted"
+    )]
+    Internalization,
 }
 
 impl From<simulator::Error> for Error {

@@ -198,6 +198,7 @@ pub async fn setup() -> Uniswap {
     let token_a_reserve = ethcontract::U256::from_dec_str("1000000000000000000000").unwrap();
     let token_b_reserve = ethcontract::U256::from_dec_str("600000000000").unwrap();
 
+    // Fund the uniswap pair.
     super::wait_for(
         &web3,
         token_a
@@ -229,6 +230,27 @@ pub async fn setup() -> Uniswap {
     )
     .await
     .unwrap();
+
+    // Fund the settlement contract.
+    super::wait_for(
+        &web3,
+        token_a
+            .mint(settlement.address(), token_a_reserve)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
+    super::wait_for(
+        &web3,
+        token_b
+            .mint(settlement.address(), token_b_reserve)
+            .from(admin_account.clone())
+            .send(),
+    )
+    .await
+    .unwrap();
+
     // UniswapV2Pair._update, which is called by both mint() and swap(), will check
     // the block.timestamp and decide what to do based on it. If the block.timestamp
     // has changed since the last _update call, a conditional block will be

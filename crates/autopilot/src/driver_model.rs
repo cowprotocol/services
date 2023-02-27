@@ -56,7 +56,6 @@ pub mod solve {
         primitive_types::{H160, U256},
         serde::{Deserialize, Serialize},
         serde_with::{serde_as, DisplayFromStr},
-        std::collections::BTreeMap,
     };
 
     #[serde_as]
@@ -64,10 +63,19 @@ pub mod solve {
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         pub id: i64,
+        pub tokens: Vec<Token>,
         pub orders: Vec<Order>,
-        #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub prices: BTreeMap<H160, U256>,
         pub deadline: DateTime<Utc>,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Token {
+        pub address: H160,
+        #[serde_as(as = "Option<DisplayFromStr>")]
+        pub price: Option<U256>,
+        pub trusted: bool,
     }
 
     #[serde_as]

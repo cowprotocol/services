@@ -64,8 +64,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();
@@ -84,14 +94,14 @@ async fn test() {
                     hex_address(sell_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": buy_amount.to_string(),
+                        "referencePrice": "1",
                         "availableBalance": "0",
                         "trusted": false,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": sell_amount.to_string(),
+                        "referencePrice": "2",
                         "availableBalance": "0",
                         "trusted": false,
                     }
@@ -152,10 +162,18 @@ async fn test() {
             SOLVER_NAME,
             json!({
                 "id": 1,
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): sell_amount.to_string(),
-                },
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
+                        "trusted": false,
+                    },
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
+                        "trusted": false,
+                    }
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
@@ -190,5 +208,5 @@ async fn test() {
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
     let score = result.get("score").unwrap().as_f64().unwrap();
-    approx::assert_relative_eq!(score, -74551241429078.0, max_relative = 0.01);
+    approx::assert_relative_eq!(score, -57863609895124.0, max_relative = 0.01);
 }

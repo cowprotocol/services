@@ -19,10 +19,21 @@ pub struct Auction {
     /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
     /// used for competition.
     pub id: Option<Id>,
+    // TODO Turn this into a HashSet
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
     pub gas_price: eth::EffectiveGasPrice,
     pub deadline: Deadline,
+}
+
+impl Auction {
+    pub fn is_trusted(&self, token: eth::TokenAddress) -> bool {
+        self.tokens
+            .iter()
+            .find(|t| t.address == token)
+            .map(|token| token.trusted)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Debug)]

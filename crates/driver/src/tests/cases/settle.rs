@@ -64,8 +64,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();
@@ -111,7 +121,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": "273805601",
+                "effectiveGasPrice": "243044758",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -152,10 +162,18 @@ async fn test() {
             SOLVER_NAME,
             json!({
                 "id": 1,
-                "prices": {
-                    hex_address(sell_token): "1",
-                    hex_address(buy_token): "2",
-                },
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
+                        "trusted": false,
+                    },
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
+                        "trusted": false,
+                    }
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
@@ -183,6 +201,8 @@ async fn test() {
         )
         .await;
 
+    assert_eq!(status, hyper::StatusCode::OK);
+
     let solution_id = solution.get("id").unwrap().as_str().unwrap();
     let block_number = web3.eth().block_number().await.unwrap();
     let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
@@ -192,7 +212,6 @@ async fn test() {
     setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
 
     // Assert.
-    assert_eq!(status, hyper::StatusCode::OK);
     let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let new_token_a = token_a.balance_of(admin).call().await.unwrap();
     let new_token_b = token_b.balance_of(admin).call().await.unwrap();

@@ -29,8 +29,8 @@ struct TestCase {
 
 #[tokio::test]
 #[ignore]
-async fn asset_flow_verification() {
-    crate::boundary::initialize_tracing("error");
+async fn verify_asset_flow() {
+    crate::boundary::initialize_tracing("driver=trace");
 
     let cases = [
         TestCase {
@@ -232,24 +232,22 @@ async fn asset_flow_verification() {
                     },
                     idx,
                 );
-                {
-                    json!({
-                        "kind": "custom",
-                        "internalize": false,
-                        "target": hex_address(address),
-                        "value": "0",
-                        "callData": format!("0x{}", hex::encode(interaction)),
-                        "allowances": [],
-                        "inputs": flow.inputs.iter().map(|asset| json!({
-                            "token": hex_address(asset.token.into()),
-                            "amount": asset.amount.to_string(),
-                        })).collect_vec(),
-                        "outputs": flow.outputs.iter().map(|asset| json!({
-                            "token": hex_address(asset.token.into()),
-                            "amount": asset.amount.to_string(),
-                        })).collect_vec(),
-                    })
-                }
+                json!({
+                    "kind": "custom",
+                    "internalize": false,
+                    "target": hex_address(address),
+                    "value": "0",
+                    "callData": format!("0x{}", hex::encode(interaction)),
+                    "allowances": [],
+                    "inputs": flow.inputs.iter().map(|asset| json!({
+                        "token": hex_address(asset.token.into()),
+                        "amount": asset.amount.to_string(),
+                    })).collect_vec(),
+                    "outputs": flow.outputs.iter().map(|asset| json!({
+                        "token": hex_address(asset.token.into()),
+                        "amount": asset.amount.to_string(),
+                    })).collect_vec(),
+                })
             })
             .collect_vec();
 
@@ -267,14 +265,14 @@ async fn asset_flow_verification() {
                         hex_address(sell_token): {
                             "decimals": null,
                             "symbol": null,
-                            "referencePrice": buy_amount.to_string(),
+                            "referencePrice": "1",
                             "availableBalance": "0",
                             "trusted": false,
                         },
                         hex_address(buy_token): {
                             "decimals": null,
                             "symbol": null,
-                            "referencePrice": sell_amount.to_string(),
+                            "referencePrice": "2",
                             "availableBalance": "0",
                             "trusted": false,
                         }
@@ -335,10 +333,20 @@ async fn asset_flow_verification() {
             SOLVER_NAME,
             json!({
                 "id": 1,
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): sell_amount.to_string(),
-                },
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
+                        "availableBalance": "0",
+                        "trusted": false,
+                    },
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
+                        "availableBalance": "0",
+                        "trusted": false,
+                    }
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
