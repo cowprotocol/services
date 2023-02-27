@@ -109,6 +109,7 @@ pub struct Order {
     pub full_fee_amount: U256,
     pub kind: OrderKind,
     pub sell_token: H160,
+    pub buy_token: H160,
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub signature: Vec<u8>, //encoded signature
@@ -120,6 +121,7 @@ impl From<model::order::Order> for Order {
             full_fee_amount: order.metadata.full_fee_amount,
             kind: order.data.kind,
             sell_token: order.data.sell_token,
+            buy_token: order.data.buy_token,
             sell_amount: order.data.sell_amount,
             buy_amount: order.data.buy_amount,
             signature: order
@@ -225,11 +227,12 @@ fn surplus(
     let normalized_surplus = match kind {
         OrderKind::Sell => {
             let buy_token = tokens.get(buy_token_index)?;
-            external_prices.get_native_amount(*buy_token, surplus / buy_token_clearing_price)
+            external_prices.try_get_native_amount(*buy_token, surplus / buy_token_clearing_price)?
         }
         OrderKind::Buy => {
             let sell_token = tokens.get(sell_token_index)?;
-            external_prices.get_native_amount(*sell_token, surplus / sell_token_clearing_price)
+            external_prices
+                .try_get_native_amount(*sell_token, surplus / sell_token_clearing_price)?
         }
     };
 
@@ -468,6 +471,7 @@ mod tests {
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
                 sell_token: H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                buy_token: Default::default(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             Order {
@@ -476,6 +480,7 @@ mod tests {
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
                 sell_token: H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                buy_token: Default::default(),
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
             }
         ];

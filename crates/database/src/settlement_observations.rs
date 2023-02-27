@@ -1,20 +1,4 @@
-use {crate::events::EventIndex, bigdecimal::BigDecimal, sqlx::PgConnection};
-
-pub async fn get_settlement_event_without_observation(
-    ex: &mut PgConnection,
-    max_block_number: i64,
-) -> Result<Option<EventIndex>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT block_number, log_index
-FROM settlement_observations
-WHERE gas_used IS NULL AND block_number <= $1
-LIMIT 1
-    "#;
-    sqlx::query_as(QUERY)
-        .bind(max_block_number)
-        .fetch_optional(ex)
-        .await
-}
+use {crate::PgTransaction, bigdecimal::BigDecimal};
 
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
@@ -26,11 +10,13 @@ pub struct Observation {
     pub log_index: i64,
 }
 
-pub async fn update(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
+pub async fn insert(
+    ex: &mut PgTransaction<'_>,
+    observation: Observation,
+) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-UPDATE settlement_observations
-SET gas_used = $1, effective_gas_price = $2, surplus = $3, fee = $4
-WHERE block_number = $5 AND log_index = $6
+INSERT INTO settlement_observations (gas_used, effective_gas_price, surplus, fee, block_number, log_index)
+VALUES ($1, $2, $3, $4, $5, $6)
     ;"#;
     sqlx::query(QUERY)
         .bind(observation.gas_used)
@@ -46,20 +32,11 @@ WHERE block_number = $5 AND log_index = $6
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::events::EventIndex, sqlx::Connection};
-
-    // helper function to make roundtrip possible
-    pub async fn insert(ex: &mut PgConnection, event: &EventIndex) -> Result<(), sqlx::Error> {
-        const QUERY: &str = r#"
-        INSERT INTO settlement_observations (block_number, log_index) 
-        VALUES ($1, $2) ON CONFLICT DO NOTHING;"#;
-        sqlx::query(QUERY)
-            .bind(event.block_number)
-            .bind(event.log_index)
-            .execute(ex)
-            .await?;
-        Ok(())
-    }
+    use {
+        super::*,
+        crate::events::EventIndex,
+        sqlx::{Connection, PgConnection},
+    };
 
     // helper function to make roundtrip possible
     pub async fn fetch(
@@ -82,36 +59,26 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert event without observation
-        let event = EventIndex {
-            block_number: 1,
-            log_index: 1,
-        };
-        insert(&mut db, &event).await.unwrap();
-
-        // there is one settlement event without observation
-        let result = get_settlement_event_without_observation(&mut db, 2)
-            .await
-            .unwrap();
-        assert_eq!(result, Some(event));
-
-        // update existing row
         let input = Observation {
-            gas_used: 5.into(),
-            effective_gas_price: 6.into(),
-            surplus: 7.into(),
-            fee: 8.into(),
+            gas_used: 1.into(),
+            effective_gas_price: 2.into(),
+            surplus: 3.into(),
+            fee: 4.into(),
             block_number: 1,
             log_index: 1,
         };
-        update(&mut db, input.clone()).await.unwrap();
-        let output = fetch(&mut db, &event).await.unwrap().unwrap();
-        assert_eq!(input, output);
 
-        // since updated, no more events without observations
-        let result = get_settlement_event_without_observation(&mut db, 2)
-            .await
-            .unwrap();
-        assert_eq!(result, None,);
+        insert(&mut db, input.clone()).await.unwrap();
+        let output = fetch(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                log_index: 1,
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(input, output);
     }
 }

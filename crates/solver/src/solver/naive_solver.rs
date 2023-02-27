@@ -127,14 +127,11 @@ fn extract_deepest_amm_liquidity(
 mod tests {
     use {
         super::*,
-        crate::{
-            liquidity::{
-                order_converter::OrderConverter,
-                tests::CapturingSettlementHandler,
-                LimitOrderId,
-                LiquidityOrderId,
-            },
-            settlement::external_prices::ExternalPrices,
+        crate::liquidity::{
+            order_converter::OrderConverter,
+            tests::CapturingSettlementHandler,
+            LimitOrderId,
+            LiquidityOrderId,
         },
         ethcontract::H160,
         maplit::hashmap,
@@ -149,7 +146,7 @@ mod tests {
             BUY_ETH_ADDRESS,
         },
         num::{rational::Ratio, BigRational, FromPrimitive},
-        shared::addr,
+        shared::{addr, external_prices::ExternalPrices},
     };
 
     #[test]

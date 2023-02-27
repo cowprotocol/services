@@ -272,7 +272,12 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::solver::dummy_arc_solver, num::BigRational, model::solver_competition::Score};
+    use {
+        super::*,
+        crate::solver::dummy_arc_solver,
+        model::solver_competition::Score,
+        num::BigRational,
+    };
 
     #[test]
     #[ignore]

@@ -15,6 +15,7 @@ use {
         OrderUid,
     },
     num::{BigRational, One},
+    shared::external_prices::ExternalPrices,
     solver::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
@@ -26,7 +27,7 @@ use {
             LiquidityOrderId,
             SettlementHandling,
         },
-        settlement::{external_prices::ExternalPrices, SettlementEncoder},
+        settlement::SettlementEncoder,
         solver::naive_solver::multi_order_solver,
     },
     std::sync::{Arc, Mutex},

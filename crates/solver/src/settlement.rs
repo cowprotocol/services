@@ -210,10 +210,12 @@ impl Trade {
     }
 }
 
-use model::order::OrderClass;
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
-use shared::{external_prices::ExternalPrices, http_solver::model::Score};
+use {
+    model::order::OrderClass,
+    shared::{external_prices::ExternalPrices, http_solver::model::Score},
+};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;

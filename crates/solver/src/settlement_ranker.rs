@@ -22,7 +22,7 @@ use {
             TransactionWithError,
         },
     },
-    std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Duration},
+    std::{cmp::Ordering, collections::HashMap, sync::Arc},
 };
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);

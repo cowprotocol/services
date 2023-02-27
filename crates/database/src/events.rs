@@ -47,7 +47,6 @@ pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
     const QUERY: &str = "\
             SELECT GREATEST( (SELECT COALESCE(MAX(block_number), 0) FROM trades), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM settlements), (SELECT \
-                         COALESCE(MAX(block_number), 0) FROM settlement_observations),(SELECT \
                          COALESCE(MAX(block_number), 0) FROM invalidations), (SELECT \
                          COALESCE(MAX(block_number), 0) FROM presignature_events));";
     sqlx::query_scalar(QUERY).fetch_one(ex).await
@@ -93,10 +92,7 @@ pub async fn append(
         match event {
             Event::Trade(event) => insert_trade(ex, index, event).await?,
             Event::Invalidation(event) => insert_invalidation(ex, index, event).await?,
-            Event::Settlement(event) => {
-                insert_settlement(ex, index, event).await?;
-                insert_observation(ex, index).await?
-            }
+            Event::Settlement(event) => insert_settlement(ex, index, event).await?,
             Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
         };
     }
@@ -155,19 +151,6 @@ async fn insert_settlement(
         .bind(index.block_number)
         .bind(index.log_index)
         .bind(event.solver)
-        .execute(ex)
-        .await?;
-
-    Ok(())
-}
-
-async fn insert_observation(ex: &mut PgConnection, index: &EventIndex) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-    INSERT INTO settlement_observations (block_number, log_index) VALUES ($1, $2) ON CONFLICT DO \
-                         NOTHING;";
-    sqlx::query(QUERY)
-        .bind(index.block_number)
-        .bind(index.log_index)
         .execute(ex)
         .await?;
 

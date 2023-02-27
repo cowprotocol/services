@@ -1,4 +1,8 @@
-use {crate::settlement::Settlement, num::BigRational, primitive_types::U256};
+use {
+    crate::{driver::solver_competition::Score, settlement::Settlement},
+    num::BigRational,
+    primitive_types::U256,
+};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement.user_trades().next().is_some()
