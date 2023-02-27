@@ -1,5 +1,5 @@
 use {
-    crate::helpers::*,
+    crate::setup::*,
     ethcontract::prelude::{Address, U256},
     model::{
         order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},

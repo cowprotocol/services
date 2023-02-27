@@ -4,7 +4,7 @@
 // tests we want to run.
 
 #[macro_use]
-mod helpers;
+mod setup;
 mod local_node;
 
 // Each of the following modules contains tests.

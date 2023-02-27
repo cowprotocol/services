@@ -1,5 +1,5 @@
 use {
-    crate::{helpers::*, local_node::NODE_HOST},
+    crate::{local_node::NODE_HOST, setup::*},
     ethcontract::{H160, H256, U256},
     model::{
         order::{OrderBuilder, OrderKind},

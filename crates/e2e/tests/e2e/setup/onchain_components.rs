@@ -1,5 +1,5 @@
 use {
-    crate::helpers::deploy::Contracts,
+    crate::setup::deploy::Contracts,
     contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler},
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     shared::ethrpc::Web3,
@@ -43,7 +43,7 @@ macro_rules! tx_safe {
                 Default::default(),
                 Default::default(),
                 Default::default(),
-                $crate::helpers::gnosis_safe_prevalidated_signature($acc.address()),
+                $crate::setup::gnosis_safe_prevalidated_signature($acc.address()),
             )
         );
     }};

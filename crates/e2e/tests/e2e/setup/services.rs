@@ -1,7 +1,7 @@
 use {
     crate::{
-        helpers::{wait_for_condition, Contracts},
         local_node::NODE_HOST,
+        setup::{wait_for_condition, Contracts},
     },
     clap::Parser,
     ethcontract::H256,
