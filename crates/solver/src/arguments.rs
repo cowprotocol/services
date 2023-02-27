@@ -328,8 +328,19 @@ pub struct Arguments {
     pub s3_upload: S3UploadArguments,
 
     /// Enable ranking of settlements by score
+    /// /// CIP20 TODO - remove after transition period is over
     #[clap(long, env, default_value = "false")]
     pub enable_auction_rewards: bool,
+
+    /// Additional time to wait for a transaction to appear onchain before
+    /// considering the solution invalid and setting the reward to 0.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub additional_mining_deadline: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -451,6 +462,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "{}", self.s3_upload)?;
         writeln!(f, "enable_auction_rewards: {}", self.enable_auction_rewards)?;
+        writeln!(
+            f,
+            "additional_mining_deadline: {:?}",
+            self.additional_mining_deadline
+        )?;
         Ok(())
     }
 }

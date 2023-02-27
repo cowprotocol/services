@@ -23,6 +23,18 @@ pub struct Request {
     pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
     pub executions: Vec<(OrderUid, Execution)>,
+    pub scores: Scores,
+    pub participants: Vec<H160>, // solver addresses
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Scores {
+    pub winner: H160,
+    #[serde(with = "u256_decimal")]
+    pub winning_score: U256,
+    #[serde(with = "u256_decimal")]
+    pub reference_score: U256,
+    pub block_deadline: u64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -76,6 +88,7 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    pub solver_address: H160,
     pub objective: Objective,
     #[serde(flatten)]
     pub score: Score, // auction based score
@@ -179,6 +192,7 @@ mod tests {
             "solutions": [
                 {
                     "solver": "2",
+                    "solverAddress": "0x0000000000000000000000000000000000000000",
                     "objective": {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
@@ -227,6 +241,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
+                    solver_address: H160([0x00; 20]),
                     objective: Objective {
                         total: 3.,
                         surplus: 4.,

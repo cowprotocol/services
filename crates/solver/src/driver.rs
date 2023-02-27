@@ -21,6 +21,7 @@ use {
     ethcontract::Account,
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
+    itertools::Itertools,
     model::{
         auction::{AuctionId, AuctionWithId},
         order::{LimitOrderClass, OrderClass, OrderUid},
@@ -62,6 +63,8 @@ pub struct Driver {
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
     solver_time_limit: Duration,
+    block_time: Duration,
+    additional_mining_deadline: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -88,6 +91,8 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
+        block_time: Duration,
+        additional_mining_deadline: Duration,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -135,6 +140,8 @@ impl Driver {
             native_token,
             metrics,
             solver_time_limit,
+            block_time,
+            additional_mining_deadline,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -346,6 +353,7 @@ impl Driver {
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
                     solver: solver.name().to_string(),
+                    solver_address: solver.account().address(),
                     objective: Objective {
                         total: rated_settlement
                             .objective_value
@@ -392,6 +400,19 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
+        // In transition period last settlement is not necessarily the one with the
+        // highest score. So we need to get the scores of all settlements and
+        // sort them.
+        // CIP20 TODO - add to if statement below, once the transition period is over.
+        let mut scores = rated_settlements
+            .iter()
+            .map(|(solver, rated_settlement, _)| {
+                (solver.account().address(), rated_settlement.score.score())
+            })
+            .sorted_unstable_by(|(_, left_score), (_, right_score)| {
+                Ord::cmp(&right_score, &left_score) // descending
+            })
+            .peekable();
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -435,6 +456,27 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
+            let scores = model::solver_competition::Scores {
+                winner: scores.peek().expect("no winner").0,
+                winning_score: scores.next().expect("no score").1, // guaranteed to exist
+                // reference score is the second highest score, or 0 if there is only one score (see
+                // CIP20)
+                reference_score: scores.next().unwrap_or_default().1,
+                block_deadline: {
+                    let deadline = self.solver_time_limit
+                        + self.solution_submitter.max_confirm_time
+                        + self.additional_mining_deadline;
+                    let number_blocks = deadline.as_secs() / self.block_time.as_secs();
+                    block_during_simulation + number_blocks
+                },
+            };
+            let participants = solver_competition
+                .solutions
+                .iter()
+                .map(|solution| solution.solver_address)
+                .collect::<HashSet<_>>() // to avoid duplicates
+                .into_iter()
+                .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -442,6 +484,8 @@ impl Driver {
                 transaction,
                 competition: solver_competition,
                 executions,
+                scores,
+                participants,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.
