@@ -24,13 +24,13 @@ pub struct SettlementUpdate {
 }
 
 impl super::Postgres {
-    pub async fn update_settlement_event(
+    pub async fn update_settlement_details(
         &self,
         settlement_update: SettlementUpdate,
     ) -> anyhow::Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["update_settlement_event"])
+            .with_label_values(&["update_settlement_details"])
             .start_timer();
 
         let mut ex = self.0.begin().await?;

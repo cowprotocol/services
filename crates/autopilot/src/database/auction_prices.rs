@@ -7,6 +7,7 @@ use {
 };
 
 impl super::Postgres {
+    /// Insert external prices for an auction, provided by the autopilot.
     pub async fn insert_auction_prices(
         &self,
         auction_id: AuctionId,

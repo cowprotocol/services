@@ -96,7 +96,7 @@ impl OnSettlementEventUpdater {
         };
 
         let hash = H256(event.tx_hash.0);
-        tracing::trace!(?hash);
+        tracing::trace!("updating settlement details for tx {hash:?}");
 
         let transaction = self
             .web3
@@ -130,14 +130,14 @@ impl OnSettlementEventUpdater {
             .db
             .get_auction_id(tx_from, tx_nonce)
             .await?
-            .context(format!("no auction id for tx {hash:?}"))?;
+            .with_context(|| format!("no auction id for tx {hash:?}"))?;
         let auction_external_prices =
             self.db
                 .get_auction_prices(auction_id)
                 .await
-                .context(format!(
-                    "no external prices for auction id {auction_id:?} and tx {hash:?}"
-                ))?;
+                .with_context(|| {
+                    format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+                })?;
         let orders = self
             .db
             .orders_for_tx(&hash)
@@ -166,12 +166,10 @@ impl OnSettlementEventUpdater {
             .filter_map(|trade| {
                 let buy_token = settlement
                     .tokens
-                    .get(trade.buy_token_index.as_u64() as usize)
-                    .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
+                    .get(trade.buy_token_index.as_u64() as usize)?;
                 let sell_token = settlement
                     .tokens
-                    .get(trade.sell_token_index.as_u64() as usize)
-                    .unwrap(); // TODO can I unwrap here? Is it guaranteed by the settlement contract?
+                    .get(trade.sell_token_index.as_u64() as usize)?;
                 let buy_token_price = auction_external_prices.get(buy_token);
                 let sell_token_price = auction_external_prices.get(sell_token);
                 match (buy_token_price, sell_token_price) {
@@ -202,7 +200,7 @@ impl OnSettlementEventUpdater {
         };
 
         self.db
-            .update_settlement_event(update)
+            .update_settlement_details(update)
             .await
             .context("insert_settlement_update")?;
 
