@@ -46,10 +46,12 @@ impl BalancerSorApi for DefaultBalancerSorApi {
             .post(self.url.clone())
             .json(&query)
             .send()
-            .await?
+            .await?;
+        let status = response.status();
+        let response = response
             .text()
             .await?;
-        tracing::debug!(%response, "received Balancer SOR quote");
+        tracing::debug!(%response, %status, "received Balancer SOR quote");
 
         let quote = serde_json::from_str::<Quote>(&response)?;
         if quote.is_empty() {
