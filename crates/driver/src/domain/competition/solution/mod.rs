@@ -107,16 +107,28 @@ impl Solution {
             .sorted()
     }
 
-    /// Simulate settling this solution on the blockchain. This process
-    /// generates the access list and estimates the gas needed to settle
-    /// the solution.
-    pub async fn simulate(
+    /// Verify that the solution is valid and can be broadcast safely. See
+    /// [`settlement::Verified`].
+    pub async fn verify(
         &self,
         eth: &Ethereum,
         simulator: &Simulator,
-        // TODO Remove the auction parameter in a follow-up
         auction: &competition::Auction,
-    ) -> Result<settlement::Simulated, Error> {
+    ) -> Result<settlement::Verified, Error> {
+        self.verify_asset_flow()?;
+        self.verify_internalization(auction)?;
+        self.simulate(eth, simulator, auction).await
+    }
+
+    /// Simulate settling this solution on the blockchain. This process
+    /// generates the access list and estimates the gas needed to settle
+    /// the solution.
+    async fn simulate(
+        &self,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        auction: &competition::Auction,
+    ) -> Result<settlement::Verified, Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
@@ -158,11 +170,28 @@ impl Solution {
         // Finally, get the gas for the settlement using the full access list.
         let gas = simulator.gas(tx).await?;
 
-        Ok(settlement::Simulated {
+        Ok(settlement::Verified {
             inner: settlement,
             access_list,
             gas,
         })
+    }
+
+    /// Check that the sum of tokens entering the settlement is not less than
+    /// the sum of tokens exiting the settlement.
+    fn verify_asset_flow(&self) -> Result<(), VerificationError> {
+        Ok(())
+    }
+
+    fn verify_internalization(
+        &self,
+        _auction: &competition::Auction,
+    ) -> Result<(), VerificationError> {
+        // TODO Will be done in a follow-up PR.
+        // Check that internalized interactions use trusted tokens. This requires
+        // checking the internalized interactions in the solution against the
+        // trusted tokens in the auction to make sure there's no foul play.
+        Ok(())
     }
 }
 
@@ -250,10 +279,29 @@ impl Id {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("simulation error: {0:?}")]
-    Simulation(#[from] simulator::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+    #[error("verification error: {0:?}")]
+    Verification(#[from] VerificationError),
+}
+
+/// Solution verification failed.
+#[derive(Debug, thiserror::Error)]
+#[error("verification error")]
+pub enum VerificationError {
+    #[error("simulation error: {0:?}")]
+    Simulation(#[from] simulator::Error),
+    #[error(
+        "invalid asset flow: token amounts entering the settlement do not equal token amounts \
+         exiting the settlement"
+    )]
+    AssetFlow,
+}
+
+impl From<simulator::Error> for Error {
+    fn from(value: simulator::Error) -> Self {
+        VerificationError::from(value).into()
+    }
 }

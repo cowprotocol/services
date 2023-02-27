@@ -22,6 +22,7 @@ enum Kind {
     InvalidAuctionId,
     MissingSurplusFee,
     QuoteSameTokens,
+    InvalidAssetFlow,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,7 +32,7 @@ pub struct Error {
     description: &'static str,
 }
 
-impl From<Kind> for axum::Json<Error> {
+impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: Kind) -> Self {
         let description = match value {
             Kind::QuotingFailed => "No valid quote found",
@@ -44,15 +45,22 @@ impl From<Kind> for axum::Json<Error> {
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
+            Kind::InvalidAssetFlow => {
+                "The solver returned a solution with invalid asset flow: token amounts entering \
+                 the settlement contract are lower than token amounts exiting the contract"
+            }
         };
-        axum::Json(Error {
-            kind: value,
-            description,
-        })
+        (
+            hyper::StatusCode::BAD_REQUEST,
+            axum::Json(Error {
+                kind: value,
+                description,
+            }),
+        )
     }
 }
 
-impl From<quote::Error> for axum::Json<Error> {
+impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
         let error = match value {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
@@ -64,13 +72,18 @@ impl From<quote::Error> for axum::Json<Error> {
     }
 }
 
-impl From<competition::Error> for axum::Json<Error> {
+impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
             competition::Error::SolutionNotFound => Kind::SolutionNotFound,
-            competition::Error::Solution(solution::Error::Simulation(_)) => Kind::SimulationFailed,
             competition::Error::Solution(solution::Error::Blockchain(_)) => Kind::Unknown,
             competition::Error::Solution(solution::Error::Boundary(_)) => Kind::Unknown,
+            competition::Error::Solution(solution::Error::Verification(
+                solution::VerificationError::Simulation(_),
+            )) => Kind::SimulationFailed,
+            competition::Error::Solution(solution::Error::Verification(
+                solution::VerificationError::AssetFlow,
+            )) => Kind::InvalidAssetFlow,
             competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
             competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
@@ -80,7 +93,7 @@ impl From<competition::Error> for axum::Json<Error> {
     }
 }
 
-impl From<api::routes::AuctionError> for axum::Json<Error> {
+impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::AuctionError) -> Self {
         let error = match value {
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
@@ -91,7 +104,7 @@ impl From<api::routes::AuctionError> for axum::Json<Error> {
     }
 }
 
-impl From<api::routes::OrderError> for axum::Json<Error> {
+impl From<api::routes::OrderError> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::OrderError) -> Self {
         let error = match value {
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,

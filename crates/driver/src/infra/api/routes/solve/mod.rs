@@ -13,7 +13,7 @@ pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<
 async fn route(
     state: axum::extract::State<State>,
     auction: axum::Json<dto::Auction>,
-) -> Result<axum::Json<dto::Solution>, axum::Json<Error>> {
+) -> Result<axum::Json<dto::Solution>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction = auction.0.into_domain(state.eth()).await.tap_err(|err| {
         tracing::warn!(?err, "error creating auction");
     })?;

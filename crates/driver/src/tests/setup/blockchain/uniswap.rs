@@ -26,10 +26,10 @@ pub struct Uniswap {
 
 /// Set up a Uniswap V2 pair ready for the following swap:
 ///
-///   /------------>(1. SELL 0.5 A for B)------------\
-///   |                                              |
-///   |                                              v
-/// [USDT]<---(Uniswap Pair 1000 A / 600.000 B)--->[WETH]
+///  /--->(1. SELL 0.5 A for B)----\
+///  |                             |
+///  |                             v
+/// (Uniswap Pair 1000 A / 600.000 B)
 pub async fn setup() -> Uniswap {
     let geth = super::geth().await;
     let web3 = super::web3(&geth.url());

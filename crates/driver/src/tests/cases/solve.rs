@@ -10,8 +10,8 @@ use {
 };
 
 /// Test that the /solve endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
+#[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
@@ -147,7 +147,7 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let result = client
+    let (status, result) = client
         .solve(
             SOLVER_NAME,
             json!({
@@ -184,6 +184,7 @@ async fn test() {
         .await;
 
     // Assert.
+    assert_eq!(status, hyper::StatusCode::OK);
     assert!(result.is_object());
     assert_eq!(result.as_object().unwrap().len(), 2);
     assert!(result.get("id").is_some());
