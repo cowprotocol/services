@@ -332,15 +332,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false")]
     pub enable_auction_rewards: bool,
 
-    /// The time between two mined blocks in seconds
-    #[clap(
-        long,
-        env,
-        default_value = "13",
-        value_parser = shared::arguments::duration_from_seconds,
-    )]
-    pub block_time: Duration,
-
     /// Additional time to wait for a transaction to appear onchain before
     /// considering the solution invalid and setting the reward to 0.
     #[clap(
@@ -471,7 +462,6 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "{}", self.s3_upload)?;
         writeln!(f, "enable_auction_rewards: {}", self.enable_auction_rewards)?;
-        writeln!(f, "block_time: {:?}", self.block_time)?;
         writeln!(
             f,
             "additional_mining_deadline: {:?}",
