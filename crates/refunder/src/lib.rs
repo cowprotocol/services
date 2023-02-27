@@ -19,6 +19,21 @@ const LOOP_INTERVAL: Duration = Duration::from_secs(30);
 const DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY: Duration = LOOP_INTERVAL.saturating_mul(4);
 
 pub async fn main(args: arguments::Arguments) {
+    let http_factory = HttpClientFactory::new(&args.http_client);
+    let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
+    if let Some(expected_chain_id) = args.chain_id {
+        let chain_id = web3
+            .eth()
+            .chain_id()
+            .await
+            .expect("Could not get chainId")
+            .as_u64();
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
     let pg_pool = PgPool::connect_lazy(args.db_url.as_str()).expect("failed to create database");
 
     let liveness = Arc::new(Liveness {
@@ -27,8 +42,6 @@ pub async fn main(args: arguments::Arguments) {
     });
     shared::metrics::serve_metrics(liveness.clone(), ([0, 0, 0, 0], args.metrics_port).into());
 
-    let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     let ethflow_contract = CoWSwapEthFlow::at(&web3, args.ethflow_contract);
     let refunder_account = Account::Offline(args.refunder_pk.parse::<PrivateKey>().unwrap(), None);
     let mut refunder = RefundService::new(

@@ -10,9 +10,10 @@ use {
 };
 
 /// Test that the /solve endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
+#[ignore]
 async fn test() {
+    crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
         web3,
@@ -63,8 +64,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();
@@ -83,14 +94,14 @@ async fn test() {
                     hex_address(sell_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": buy_amount.to_string(),
+                        "referencePrice": "1",
                         "availableBalance": "0",
                         "trusted": false,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": sell_amount.to_string(),
+                        "referencePrice": "2",
                         "availableBalance": "0",
                         "trusted": false,
                     }
@@ -146,23 +157,23 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let result = client
+    let (status, result) = client
         .solve(
             SOLVER_NAME,
             json!({
-                "id": "1",
-                "tokens": {
-                    hex_address(sell_token): {
-                        "availableBalance": "0",
+                "id": 1,
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
                         "trusted": false,
-                        "referencePrice": buy_amount.to_string(),
                     },
-                    hex_address(buy_token): {
-                        "availableBalance": "0",
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
                         "trusted": false,
-                        "referencePrice": sell_amount.to_string(),
                     }
-                },
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
@@ -177,7 +188,7 @@ async fn test() {
                         "owner": hex_address(admin),
                         "partiallyFillable": false,
                         "executed": "0",
-                        "interactions": [],
+                        "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "reward": 0.1,
@@ -185,17 +196,17 @@ async fn test() {
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
                 ],
-                "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
         )
         .await;
 
     // Assert.
+    assert_eq!(status, hyper::StatusCode::OK);
     assert!(result.is_object());
     assert_eq!(result.as_object().unwrap().len(), 2);
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
-    // TODO This needs to be updated due to the solution ID
-    assert_eq!(result.get("score").unwrap(), -74551241429078.0);
+    let score = result.get("score").unwrap().as_f64().unwrap();
+    approx::assert_relative_eq!(score, -57863609895124.0, max_relative = 0.01);
 }

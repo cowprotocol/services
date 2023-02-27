@@ -1,73 +1,35 @@
 use {
     crate::{
-        deploy::Contracts,
-        eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder, ORDERS_ENDPOINT},
-        local_node::{AccountAssigner, TestNodeApi},
-        onchain_components::{
-            deploy_token_with_weth_uniswap_pool,
-            to_wei,
-            MintableToken,
-            WethPoolConfig,
-        },
-        services::{OrderbookServices, API_HOST},
+        eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+        local_node::TestNodeApi,
+        setup::*,
     },
-    anyhow::Result,
     chrono::{DateTime, NaiveDateTime, Utc},
-    ethcontract::{H160, H256, U256},
-    model::{
-        order::Order,
-        quote::{
-            OrderQuoteRequest,
-            OrderQuoteResponse,
-            OrderQuoteSide,
-            QuoteSigningScheme,
-            Validity,
-        },
-    },
+    ethcontract::{H160, U256},
+    model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     refunder::refund_service::RefundService,
-    reqwest::Client,
-    shared::{
-        current_block::timestamp_of_current_block_in_seconds,
-        ethrpc::Web3,
-        http_client::HttpClientFactory,
-        maintenance::Maintaining,
-    },
+    shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
+    std::time::Duration,
 };
-
-const QUOTING_ENDPOINT: &str = "/api/v1/quote/";
 
 #[tokio::test]
 #[ignore]
 async fn local_node_refunder_tx() {
-    crate::local_node::test(refunder_tx).await;
+    run_test(refunder_tx).await;
 }
 
 async fn refunder_tx(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
-    shared::exit_process_on_panic::set_panic_hook();
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let mut accounts = AccountAssigner::new(&web3).await;
-    let user = accounts.assign_free_account();
-    let refunder_account = accounts.assign_free_account();
+    let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
 
-    // Create & mint tokens to trade, pools for fee connections
-    let MintableToken {
-        contract: token, ..
-    } = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
-        },
-    )
-    .await;
-
-    let services = OrderbookServices::new(&web3, &contracts, true).await;
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     // Get quote id for order placement
     let buy_token = token.address();
@@ -75,11 +37,11 @@ async fn refunder_tx(web3: Web3) {
     let sell_amount = U256::from("3000000000000000");
 
     let quote = OrderQuoteRequest {
-        from: contracts.ethflow.address(),
-        sell_token: contracts.weth.address(),
+        from: onchain.contracts().ethflow.address(),
+        sell_token: onchain.contracts().weth.address(),
         buy_token,
         receiver,
-        validity: Validity::For(u32::MAX),
+        validity: Validity::For(3600),
         signing_scheme: QuoteSigningScheme::Eip1271 {
             onchain_order: true,
             verification_gas_limit: 0,
@@ -89,28 +51,26 @@ async fn refunder_tx(web3: Web3) {
         },
         ..Default::default()
     };
-    let quoting = client
-        .post(&format!("{API_HOST}{QUOTING_ENDPOINT}"))
-        .json(&quote)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(quoting.status(), 200);
-    let quote_response = quoting.json::<OrderQuoteResponse>().await.unwrap();
+    let quote_response = services.submit_quote(&quote).await.unwrap();
 
     let validity_duration = 600;
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + validity_duration;
-    // Accounting for slippage is necesary for the order to be picked up by the
+    // Accounting for slippage is necessary for the order to be picked up by the
     // refunder
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote_response, valid_to).include_slippage_bps(9999);
 
     ethflow_order
-        .mine_order_creation(&user, &contracts.ethflow)
+        .mine_order_creation(user.account(), &onchain.contracts().ethflow)
         .await;
+    let order_id = ethflow_order.uid(onchain.contracts()).await;
 
-    // Run autopilot indexing loop
-    services.maintenance.run_maintenance().await.unwrap();
+    tracing::info!("Waiting for order to be indexed.");
+    wait_for_condition(Duration::from_secs(10), || async {
+        services.get_order(&order_id).await.is_ok()
+    })
+    .await
+    .unwrap();
 
     let time_after_expiration = valid_to as i64 + 60;
     web3.api::<TestNodeApi<_>>()
@@ -131,48 +91,37 @@ async fn refunder_tx(web3: Web3) {
     let mut refunder = RefundService::new(
         pg_pool,
         web3,
-        contracts.ethflow.clone(),
+        onchain.contracts().ethflow.clone(),
         validity_duration as i64 / 2,
         10u64,
-        refunder_account,
+        refunder.account().clone(),
     );
 
     assert_ne!(
-        ethflow_order.status(&contracts).await,
+        ethflow_order.status(onchain.contracts()).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
 
     refunder.try_to_refund_all_eligble_orders().await.unwrap();
 
     assert_eq!(
-        ethflow_order.status(&contracts).await,
+        ethflow_order.status(onchain.contracts()).await,
         EthFlowOrderOnchainStatus::Invalidated
     );
 
-    // Run autopilot to index refund tx
-    services.maintenance.run_maintenance().await.unwrap();
-
-    let tx_hash = get_refund_tx_hash_for_order_uid(&client, &ethflow_order, &contracts)
+    tracing::info!("Waiting for autopilot to index refund tx hash.");
+    let has_tx_hash = || async {
+        services
+            .get_order(&order_id)
+            .await
+            .unwrap()
+            .metadata
+            .ethflow_data
+            .unwrap()
+            .refund_tx_hash
+            .is_some()
+    };
+    wait_for_condition(Duration::from_secs(10), has_tx_hash)
         .await
         .unwrap();
-    assert!(tx_hash.is_some());
-}
-
-async fn get_refund_tx_hash_for_order_uid(
-    client: &Client,
-    ethflow_order: &ExtendedEthFlowOrder,
-    contracts: &Contracts,
-) -> Result<Option<H256>> {
-    let query = client
-        .get(&format!(
-            r#"{API_HOST}{ORDERS_ENDPOINT}/{}"#,
-            ethflow_order.uid(contracts).await,
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(query.status(), 200);
-    let response = query.json::<Order>().await.unwrap();
-
-    Ok(response.metadata.ethflow_data.unwrap().refund_tx_hash)
 }

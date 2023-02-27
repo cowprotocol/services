@@ -1,8 +1,11 @@
 use {
     contracts::{BalancerV2Vault, GPv2Settlement},
-    ethcontract::{Bytes, H160, H256},
+    ethcontract::{Bytes, H256},
     primitive_types::U256,
-    shared::interaction::{EncodedInteraction, Interaction},
+    shared::{
+        http_solver::model::TokenAmount,
+        interaction::{EncodedInteraction, Interaction},
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -10,10 +13,8 @@ pub struct BalancerSwapGivenOutInteraction {
     pub settlement: GPv2Settlement,
     pub vault: BalancerV2Vault,
     pub pool_id: H256,
-    pub asset_in: H160,
-    pub asset_out: H160,
-    pub amount_out: U256,
-    pub amount_in_max: U256,
+    pub asset_in_max: TokenAmount,
+    pub asset_out: TokenAmount,
     pub user_data: Bytes<Vec<u8>>,
 }
 
@@ -36,9 +37,9 @@ impl Interaction for BalancerSwapGivenOutInteraction {
             (
                 Bytes(self.pool_id.0),
                 SwapKind::GivenOut as _,
-                self.asset_in,
-                self.asset_out,
-                self.amount_out,
+                self.asset_in_max.token,
+                self.asset_out.token,
+                self.asset_out.amount,
                 self.user_data.clone(),
             ),
             (
@@ -47,7 +48,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
                 self.settlement.address(), // recipient
                 false,                     // toInternalBalance
             ),
-            self.amount_in_max,
+            self.asset_in_max.amount,
             *NEVER,
         );
         let calldata = method.tx.data.expect("no calldata").0;
@@ -57,7 +58,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::dummy_contract};
+    use {super::*, primitive_types::H160, shared::dummy_contract};
 
     #[test]
     fn encode_unwrap_weth() {
@@ -66,10 +67,8 @@ mod tests {
             settlement: dummy_contract!(GPv2Settlement, [0x02; 20]),
             vault: vault.clone(),
             pool_id: H256([0x03; 32]),
-            asset_in: H160([0x04; 20]),
-            asset_out: H160([0x05; 20]),
-            amount_out: U256::from(42_000_000_000_000_000_000u128),
-            amount_in_max: U256::from(1_337_000_000_000_000_000_000u128),
+            asset_in_max: TokenAmount::new(H160([0x04; 20]), 1_337_000_000_000_000_000_000u128),
+            asset_out: TokenAmount::new(H160([0x05; 20]), 42_000_000_000_000_000_000u128),
             user_data: Bytes::default(),
         };
 

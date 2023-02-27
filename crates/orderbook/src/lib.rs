@@ -2,6 +2,7 @@ pub mod api;
 pub mod arguments;
 pub mod database;
 pub mod orderbook;
+pub mod run;
 pub mod solver_competition;
 
 use {

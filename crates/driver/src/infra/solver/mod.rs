@@ -58,8 +58,6 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
-    /// The address of this solver.
-    pub address: eth::Address,
     /// The private key of this solver.
     pub private_key: eth::PrivateKey,
 }
@@ -94,7 +92,7 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.address
+        self.config.private_key.public_address().into()
     }
 
     /// The private key of this solver.

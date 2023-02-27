@@ -1,5 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between
 //! the binaries.
+
 use {
     crate::{
         current_block,
@@ -8,7 +9,11 @@ use {
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimatorType,
         rate_limiter::RateLimitingStrategy,
-        sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
+        sources::{
+            balancer_v2::BalancerFactoryKind,
+            uniswap_v2::UniV2BaselineSourceParameters,
+            BaselineSource,
+        },
         tenderly_api,
     },
     anyhow::{anyhow, ensure, Context, Result},
@@ -169,6 +174,12 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
+    /// The expected chain ID that the services are expected to run against.
+    /// This can be optionally specified in order to check at startup whether
+    /// the connected nodes match to detect misconfigurations.
+    #[clap(long, env)]
+    pub chain_id: Option<u64>,
+
     /// Which gas estimators to use. Multiple estimators are used in sequence if
     /// a previous one fails. Individual estimators support different
     /// networks. `EthGasStation`: supports mainnet.
@@ -199,6 +210,17 @@ pub struct Arguments {
     /// Which Liquidity sources to be used by Price Estimator.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub baseline_sources: Option<Vec<BaselineSource>>,
+
+    /// List of non hardcoded univ2-like contracts.
+    ///
+    /// For example to add a univ2-like liquidity source the argument could be
+    /// set to
+    ///
+    /// 0x0000000000000000000000000000000000000001|0x0000000000000000000000000000000000000000000000000000000000000002
+    ///
+    /// which sets the router address to 0x01 and the init code digest to 0x02.
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
+    pub custom_univ2_baseline_sources: Vec<UniV2BaselineSourceParameters>,
 
     /// The number of blocks kept in the pool cache.
     #[clap(long, env, default_value = "10")]
@@ -243,13 +265,9 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
-    /// If quasimodo should use internal buffers to improve solution quality.
+    /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env)]
-    pub quasimodo_uses_internal_buffers: bool,
-
-    /// If mipsolver should use internal buffers to improve solution quality.
-    #[clap(long, env)]
-    pub mip_uses_internal_buffers: bool,
+    pub use_internal_buffers: bool,
 
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
@@ -300,6 +318,18 @@ pub struct Arguments {
     /// The time in seconds between new blocks on the network.
     #[clap(long, env, value_parser = duration_from_seconds)]
     pub network_block_interval: Option<Duration>,
+    
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub settlement_contract_address: Option<H160>,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
+    pub native_token_address: Option<H160>,
+
+    /// Override address of the balancer vault contract.
+    #[clap(long, env)]
+    pub balancer_v2_vault_address: Option<H160>,
 }
 
 pub fn display_secret_option<T>(
@@ -390,6 +420,7 @@ impl Display for Arguments {
             self.logging.log_stderr_threshold
         )?;
         writeln!(f, "node_url: {}", self.node_url)?;
+        display_option(f, "chain_id", &self.chain_id)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
@@ -415,16 +446,7 @@ impl Display for Arguments {
         display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
-        writeln!(
-            f,
-            "quasimodo_uses_internal_buffers: {}",
-            self.quasimodo_uses_internal_buffers
-        )?;
-        writeln!(
-            f,
-            "mip_uses_internal_buffers: {}",
-            self.mip_uses_internal_buffers
-        )?;
+        writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         display_list(
             f,
@@ -450,6 +472,26 @@ impl Display for Arguments {
             &self
                 .network_block_interval
                 .map(|duration| duration.as_secs_f32()),
+        )?;
+        display_option(
+            f,
+            "settlement_contract_address",
+            &self.settlement_contract_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "native_token_address",
+            &self.native_token_address.map(|a| format!("{a:?}")),
+        )?;
+        display_option(
+            f,
+            "balancer_v2_vault_address",
+            &self.balancer_v2_vault_address.map(|a| format!("{a:?}")),
+        )?;
+        display_list(
+            f,
+            "custom_univ2_baseline_sources",
+            &self.custom_univ2_baseline_sources,
         )?;
 
         Ok(())

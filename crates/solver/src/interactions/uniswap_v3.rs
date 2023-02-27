@@ -2,7 +2,10 @@ use {
     contracts::UniswapV3SwapRouter,
     ethcontract::Bytes,
     primitive_types::{H160, U256},
-    shared::interaction::{EncodedInteraction, Interaction},
+    shared::{
+        http_solver::model::TokenAmount,
+        interaction::{EncodedInteraction, Interaction},
+    },
 };
 
 #[derive(Debug)]
@@ -13,25 +16,23 @@ pub struct UniswapV3Interaction {
 
 #[derive(Debug)]
 pub struct ExactOutputSingleParams {
-    pub token_in: H160,
-    pub token_out: H160,
+    pub token_amount_in_max: TokenAmount,
+    pub token_amount_out: TokenAmount,
     pub fee: u32,
     pub recipient: H160,
     pub deadline: U256,
-    pub amount_out: U256,
-    pub amount_in_max: U256,
     pub sqrt_price_limit_x96: U256,
 }
 impl Interaction for UniswapV3Interaction {
     fn encode(&self) -> Vec<EncodedInteraction> {
         let method = self.router.exact_output_single((
-            self.params.token_in,
-            self.params.token_out,
+            self.params.token_amount_in_max.token,
+            self.params.token_amount_out.token,
             self.params.fee,
             self.params.recipient,
             self.params.deadline,
-            self.params.amount_out,
-            self.params.amount_in_max,
+            self.params.token_amount_out.amount,
+            self.params.token_amount_in_max.amount,
             self.params.sqrt_price_limit_x96,
         ));
         let calldata = method.tx.data.expect("no calldata").0;
@@ -62,13 +63,17 @@ mod tests {
         let interaction = UniswapV3Interaction {
             router: router.clone(),
             params: ExactOutputSingleParams {
-                token_in: H160::from_low_u64_be(token_in as u64),
-                token_out: H160::from_low_u64_be(token_out as u64),
+                token_amount_in_max: TokenAmount::new(
+                    H160::from_low_u64_be(token_in.into()),
+                    amount_in_max,
+                ),
+                token_amount_out: TokenAmount::new(
+                    H160::from_low_u64_be(token_out.into()),
+                    amount_out,
+                ),
                 fee,
                 recipient: H160::from_low_u64_be(payout_to as u64),
                 deadline,
-                amount_out: amount_out.into(),
-                amount_in_max: amount_in_max.into(),
                 sqrt_price_limit_x96: U256::zero(),
             },
         };

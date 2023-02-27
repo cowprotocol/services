@@ -2,7 +2,7 @@ use {
     crate::limit_orders::QuotingStrategy,
     primitive_types::H160,
     shared::{
-        arguments::display_option,
+        arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation,
@@ -43,6 +43,11 @@ pub struct Arguments {
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
     pub tracing_node_url: Option<Url>,
+
+    /// An Ethereum node URL that supports `eth_call`s with state overrides to
+    /// be used exclusively for trade simulations.
+    #[clap(long, env)]
+    pub simulation_node_url: Option<Url>,
 
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
@@ -163,6 +168,40 @@ pub struct Arguments {
     /// limit orders.
     #[clap(long, env, use_value_delimiter = true)]
     pub quoting_strategies: Vec<QuotingStrategy>,
+
+    /// Fee scaling factor for objective value. This controls the constant
+    /// factor by which order fees are multiplied with. Setting this to a value
+    /// greater than 1.0 makes settlements with negative objective values less
+    /// likely, promoting more aggressive merging of single order settlements.
+    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
+    pub fee_objective_scaling_factor: f64,
+
+    /// The URL of a list of tokens our settlement contract is willing to
+    /// internalize.
+    #[clap(long, env)]
+    pub trusted_tokens_url: Option<Url>,
+
+    /// Hardcoded list of trusted tokens to use in addition to
+    /// `trusted_tokens_url`.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub trusted_tokens: Option<Vec<H160>>,
+
+    /// Time interval after which the trusted tokens list needs to be updated.
+    #[clap(
+        long,
+        env,
+        default_value = "3600",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub trusted_tokens_update_interval: Duration,
+
+    /// Enable the colocation run loop.
+    #[clap(long, env)]
+    pub enable_colocation: bool,
+
+    /// Driver base URLs.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub drivers: Vec<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -173,6 +212,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
+        display_option(f, "simulation_node_url", &self.simulation_node_url)?;
         writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
         writeln!(
             f,
@@ -226,6 +266,13 @@ impl std::fmt::Display for Arguments {
             self.limit_order_quoter_batch_size,
         )?;
         writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
+        writeln!(
+            f,
+            "fee_objective_scaling_factor: {}",
+            self.fee_objective_scaling_factor
+        )?;
+        writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
+        display_list(f, "drivers", self.drivers.iter())?;
         Ok(())
     }
 }

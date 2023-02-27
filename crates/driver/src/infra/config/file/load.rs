@@ -29,7 +29,6 @@ pub async fn load(path: &Path) -> infra::Config {
                     relative: config.relative_slippage,
                     absolute: config.absolute_slippage.map(Into::into),
                 },
-                address: config.address.into(),
                 private_key: eth::PrivateKey::from_raw(config.private_key.0).unwrap(),
             })
             .collect(),
@@ -47,6 +46,15 @@ pub async fn load(path: &Path) -> infra::Config {
                 .map(|config| liquidity::config::UniswapV2 {
                     router: config.router.into(),
                     pool_code: config.pool_code.into(),
+                })
+                .collect(),
+            uniswap_v3: config
+                .liquidity
+                .uniswap_v3
+                .into_iter()
+                .map(|config| liquidity::config::UniswapV3 {
+                    router: config.router.into(),
+                    max_pools_to_initialize: config.max_pools_to_initialize,
                 })
                 .collect(),
         },

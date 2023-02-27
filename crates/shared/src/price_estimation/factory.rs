@@ -67,6 +67,7 @@ struct EstimatorEntry {
 /// Network options needed for creating price estimators.
 pub struct Network {
     pub web3: Web3,
+    pub simulation_web3: Option<Web3>,
     pub name: String,
     pub chain_id: u64,
     pub native_token: H160,
@@ -99,13 +100,19 @@ impl<'a> PriceEstimatorFactory<'a> {
             .trade_simulator
             .map(|kind| -> Result<TradeVerifier> {
                 let simulator = match kind {
-                    TradeValidatorKind::Web3 => {
-                        Arc::new(network.web3.clone()) as Arc<dyn CodeSimulating>
-                    }
+                    TradeValidatorKind::Web3 => Arc::new(
+                        network
+                            .simulation_web3
+                            .clone()
+                            .context("missing simulation node configuration")?,
+                    ) as Arc<dyn CodeSimulating>,
                     TradeValidatorKind::Tenderly => {
                         let tenderly_api = shared_args
                             .tenderly
-                            .get_api_instance(&components.http_factory)?
+                            .get_api_instance(
+                                &components.http_factory,
+                                "price_estimation".to_owned(),
+                            )?
                             .context("missing Tenderly configuration")?;
                         let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id)
                             .save(false, args.tenderly_save_failed_trade_simulations);
@@ -203,20 +210,26 @@ impl<'a> PriceEstimatorFactory<'a> {
             }
             PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                self.args
-                    .quasimodo_solver_url
-                    .clone()
-                    .context("quasimodo solver url not specified")?,
+                (
+                    self.args
+                        .quasimodo_solver_url
+                        .clone()
+                        .context("quasimodo solver url not specified")?,
+                    "solve".to_owned(),
+                ),
             ),
             PriceEstimatorType::OneInch => {
                 self.create_estimator_entry::<OneInchPriceEstimator>(kind, ())
             }
             PriceEstimatorType::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                self.args
-                    .yearn_solver_url
-                    .clone()
-                    .context("yearn solver url not specified")?,
+                (
+                    self.args
+                        .yearn_solver_url
+                        .clone()
+                        .context("yearn solver url not specified")?,
+                    self.args.yearn_solver_path.clone(),
+                ),
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
         }
@@ -489,12 +502,12 @@ impl PriceEstimatorCreating for BalancerSor {
 }
 
 impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = Url;
+    type Params = (Url, String);
 
     fn init(
         factory: &PriceEstimatorFactory,
         kind: PriceEstimatorType,
-        base: Self::Params,
+        (base, solve_path): Self::Params,
     ) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
             Arc::new(DefaultHttpSolverApi {
@@ -502,9 +515,10 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 network_name: factory.network.name.clone(),
                 chain_id: factory.network.chain_id,
                 base,
+                solve_path,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
-                    use_internal_buffers: Some(factory.shared_args.quasimodo_uses_internal_buffers),
+                    use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
                     objective: Some(Objective::SurplusFeesCosts),
                     ..Default::default()
                 },

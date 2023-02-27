@@ -27,7 +27,7 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    shared::{external_prices::ExternalPrices, http_solver::model::InternalizationStrategy},
+    shared::{external_prices::ExternalPrices, http_solver::model::{InternalizationStrategy, TokenAmount}},
     solver::{
         interactions::Erc20ApproveInteraction,
         liquidity::{
@@ -55,9 +55,6 @@ impl Settlement {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
-            // Fee is already scaled by the autopilot, so this can be set to exactly 1.
-            fee_objective_scaling_factor: 1.,
-            min_order_age: Default::default(),
         };
 
         let settlement_contract = eth.contracts().settlement();
@@ -219,7 +216,8 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             },
         },
         metadata: OrderMetadata {
-            full_fee_amount: order.fee.solver.into(),
+            full_fee_amount: Default::default(),
+            solver_fee: order.fee.solver.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
@@ -341,25 +339,33 @@ pub fn to_boundary_interaction(
         competition::solution::Interaction::Liquidity(liquidity) => {
             let boundary_execution =
                 slippage_context.apply_to_amm_execution(AmmOrderExecution {
-                    input_max: (liquidity.input.token.into(), liquidity.input.amount),
-                    output: (liquidity.output.token.into(), liquidity.output.amount),
+                    input_max: TokenAmount::new(
+                        liquidity.input.token.into(),
+                        liquidity.input.amount,
+                    ),
+                    output: TokenAmount::new(
+                        liquidity.output.token.into(),
+                        liquidity.output.amount,
+                    ),
                     internalizable: interaction.internalize(),
                 })?;
 
             let input = liquidity::MaxInput(eth::Asset {
-                token: boundary_execution.input_max.0.into(),
-                amount: boundary_execution.input_max.1,
+                token: boundary_execution.input_max.token.into(),
+                amount: boundary_execution.input_max.amount,
             });
             let output = liquidity::ExactOutput(eth::Asset {
-                token: boundary_execution.output.0.into(),
-                amount: boundary_execution.output.1,
+                token: boundary_execution.output.token.into(),
+                amount: boundary_execution.output.amount,
             });
 
             let interaction = match &liquidity.liquidity.kind {
                 liquidity::Kind::UniswapV2(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid uniswap V2 execution")?,
-                liquidity::Kind::UniswapV3(_) => todo!(),
+                liquidity::Kind::UniswapV3(pool) => pool
+                    .swap(&input, &output, &settlement_contract.into())
+                    .context("invalid uniswap v3 execution")?,
                 liquidity::Kind::BalancerV2Stable(_) => todo!(),
                 liquidity::Kind::BalancerV2Weighted(_) => todo!(),
                 liquidity::Kind::Swapr(_) => todo!(),

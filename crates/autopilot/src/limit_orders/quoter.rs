@@ -47,7 +47,7 @@ impl LimitOrderQuoter {
         loop {
             let sleep = match self.update().await {
                 // Prevent busy looping on the database if there is no work to be done.
-                Ok(true) => Duration::from_secs_f32(10.),
+                Ok(true) => Duration::from_secs_f32(1.),
                 Ok(false) => Duration::from_secs_f32(0.),
                 Err(err) => {
                     tracing::error!(?err, "limit order quoter update error");

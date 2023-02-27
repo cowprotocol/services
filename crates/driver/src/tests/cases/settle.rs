@@ -11,9 +11,10 @@ use {
 };
 
 /// Test that the /settle endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
+#[ignore]
 async fn test() {
+    crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
         web3,
@@ -51,7 +52,6 @@ async fn test() {
         domain_separator,
         owner: admin,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -64,8 +64,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();
@@ -84,14 +94,14 @@ async fn test() {
                     hex_address(sell_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": buy_amount.to_string(),
+                        "referencePrice": "1",
                         "availableBalance": "0",
                         "trusted": false,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": sell_amount.to_string(),
+                        "referencePrice": "2",
                         "availableBalance": "0",
                         "trusted": false,
                     }
@@ -111,7 +121,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": "243044758",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -147,23 +157,23 @@ async fn test() {
     .await;
 
     // Call /solve.
-    let solution = client
+    let (status, solution) = client
         .solve(
             SOLVER_NAME,
             json!({
-                "id": "1",
-                "tokens": {
-                    hex_address(sell_token): {
-                        "availableBalance": "0",
+                "id": 1,
+                "tokens": [
+                    {
+                        "address": hex_address(sell_token),
+                        "price": "1",
                         "trusted": false,
-                        "referencePrice": buy_amount.to_string(),
                     },
-                    hex_address(buy_token): {
-                        "availableBalance": "0",
+                    {
+                        "address": hex_address(buy_token),
+                        "price": "2",
                         "trusted": false,
-                        "referencePrice": sell_amount.to_string(),
                     }
-                },
+                ],
                 "orders": [
                     {
                         "uid": boundary.uid(),
@@ -178,7 +188,7 @@ async fn test() {
                         "owner": hex_address(admin),
                         "partiallyFillable": false,
                         "executed": "0",
-                        "interactions": [],
+                        "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "reward": 0.1,
@@ -186,11 +196,12 @@ async fn test() {
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
                 ],
-                "effectiveGasPrice": gas_price,
                 "deadline": deadline,
             }),
         )
         .await;
+
+    assert_eq!(status, hyper::StatusCode::OK);
 
     let solution_id = solution.get("id").unwrap().as_str().unwrap();
     let block_number = web3.eth().block_number().await.unwrap();

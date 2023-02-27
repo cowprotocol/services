@@ -1,6 +1,6 @@
 use {
     crate::{
-        driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
+        driver::solver_settlements::{self, RatedSettlement},
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
         settlement_rater::{RatedSolverSettlement, SettlementRating},
@@ -38,7 +38,6 @@ pub struct SettlementRanker {
     pub settlement_rater: Arc<dyn SettlementRating>,
     // TODO: these should probably come from the autopilot to make the test parameters identical
     // for everyone.
-    pub min_order_age: Duration,
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
@@ -64,7 +63,7 @@ impl SettlementRanker {
 
                     // Do not continue with settlements that are empty or only liquidity orders.
                     if !solver_settlements::has_user_order(&settlement) {
-                        tracing::debug!(
+                        tracing::trace!(
                             solver_name = %name,
                             "settlement(s) filtered containing only liquidity orders",
                         );
@@ -134,10 +133,7 @@ impl SettlementRanker {
                 solver_settlements.push((solver.clone(), settlement));
             }
         }
-
-        // TODO this needs to move into the autopilot eventually.
-        // filters out all non-mature settlements
-        retain_mature_settlements(self.min_order_age, solver_settlements, auction_id)
+        solver_settlements
     }
 
     /// Determines legal settlements and ranks them by simulating them.

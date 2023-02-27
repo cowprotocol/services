@@ -1,15 +1,16 @@
+use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
+
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
-pub mod decoded_settlement;
-pub mod event_updater;
-pub mod risk_adjusted_rewards;
-pub mod solvable_orders;
-
 pub mod driver_api;
 pub mod driver_model;
+pub mod event_updater;
 pub mod limit_orders;
+pub mod risk_adjusted_rewards;
 pub mod run_loop;
+pub mod solvable_orders;
+pub mod decoded_settlement;
 
 use {
     crate::{
@@ -34,6 +35,7 @@ use {
         WETH9,
     },
     ethcontract::{errors::DeployError, BlockNumber},
+    futures::StreamExt,
     model::DomainSeparator,
     shared::{
         account_balances::Web3BalanceFetcher,
@@ -68,7 +70,7 @@ use {
                 BalancerFactoryKind,
                 BalancerPoolFetcher,
             },
-            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,
@@ -102,7 +104,7 @@ impl LivenessChecking for Liveness {
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) -> ! {
+pub async fn main(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
         crate::database::database_metrics(db.clone())
@@ -117,6 +119,19 @@ pub async fn main(args: arguments::Arguments) -> ! {
         "base",
     );
 
+    let chain_id = web3
+        .eth()
+        .chain_id()
+        .await
+        .expect("Could not get chainId")
+        .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
     let current_block_stream = args
         .shared
         .current_block
@@ -124,36 +139,41 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .await
         .unwrap();
 
-    let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
-        .await
-        .expect("Couldn't load deployed settlement");
+    let settlement_contract = match args.shared.settlement_contract_address {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => contracts::GPv2Settlement::deployed(&web3)
+            .await
+            .expect("load settlement contract"),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
-    let vault = match BalancerV2Vault::deployed(&web3).await {
-        Ok(contract) => Some(contract),
-        Err(DeployError::NotFound(_)) => {
-            tracing::warn!("balancer contracts are not deployed on this network");
-            None
-        }
-        Err(err) => panic!("failed to get balancer vault contract: {err}"),
+    let native_token = match args.shared.native_token_address {
+        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
+        None => WETH9::deployed(&web3)
+            .await
+            .expect("load native token contract"),
+    };
+    let vault = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => {
+                tracing::warn!("balancer contracts are not deployed on this network");
+                None
+            }
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
     };
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
         other => Some(other.unwrap()),
     };
 
-    let chain_id = web3
-        .eth()
-        .chain_id()
-        .await
-        .expect("Could not get chainId")
-        .as_u64();
     let network = web3
         .net()
         .version()
@@ -161,7 +181,6 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
     let _network_time_between_blocks = args
-        .shared
         .network_block_interval
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
@@ -193,13 +212,22 @@ pub async fn main(args: arguments::Arguments) -> ! {
             .expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
-        shared::sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
-            .await
-            .expect("failed to load baseline source pair providers")
-            .values()
-            .cloned()
-            .unzip();
+    let univ2_sources = baseline_sources
+        .iter()
+        .filter_map(|source: &BaselineSource| {
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+        })
+        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
+    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
+        .then(|source: UniV2BaselineSourceParameters| {
+            let web3 = &web3;
+            async move {
+                let source = source.into_source(web3).await.unwrap();
+                (source.pair_provider, source.pool_fetching)
+            }
+        })
+        .unzip()
+        .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
         native_token.address(),
@@ -345,11 +373,16 @@ pub async fn main(args: arguments::Arguments) -> ! {
         other => Some(other.unwrap()),
     };
 
+    let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
         factory::Network {
             web3: web3.clone(),
+            simulation_web3,
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
@@ -405,8 +438,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
             6 => (),
             _ => panic!("need none or all cip_14 arguments"),
         };
-        Some(risk_adjusted_rewards::Calculator {
-            config: risk_adjusted_rewards::Configuration {
+        Some(risk_adjusted_rewards::Calculator::new(
+            risk_adjusted_rewards::Configuration {
                 beta: args.cip_14_beta.unwrap(),
                 alpha1: args.cip_14_alpha1.unwrap(),
                 alpha2: args.cip_14_alpha2.unwrap(),
@@ -414,14 +447,14 @@ pub async fn main(args: arguments::Arguments) -> ! {
                 gas_cap: args.cip_14_gas_cap.unwrap(),
                 reward_cap: args.cip_14_reward_cap.unwrap(),
             },
-            database: db.clone(),
-            cow_token: cow_token
+            db.clone(),
+            cow_token
                 .as_ref()
                 .expect("no cow token on mainnet")
                 .address(),
-            gas_price: gas_price_estimator.clone(),
-            native_price: native_price_estimator.clone(),
-        })
+            gas_price_estimator.clone(),
+            native_price_estimator.clone(),
+        ))
     })();
 
     let skip_event_sync_start = if args.skip_event_sync {
@@ -571,7 +604,8 @@ pub async fn main(args: arguments::Arguments) -> ! {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        true,
+        !args.enable_colocation,
+        args.fee_objective_scaling_factor,
     );
     solvable_orders_cache
         .update(block)
@@ -579,14 +613,14 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .expect("failed to perform initial solvable orders update");
     let liveness = Liveness {
         max_auction_age: args.max_auction_age,
-        solvable_orders_cache,
+        solvable_orders_cache: solvable_orders_cache.clone(),
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
-        web3,
+        web3: web3.clone(),
         db: db.clone(),
-        current_block: current_block_stream,
+        current_block: current_block_stream.clone(),
     };
     tokio::task::spawn(
         auction_transaction_updater
@@ -609,11 +643,43 @@ pub async fn main(args: arguments::Arguments) -> ! {
         LimitOrderMetrics {
             quoting_age: limit_order_age,
             validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-            database: db,
+            database: db.clone(),
         }
         .spawn();
     }
 
-    let result = serve_metrics.await;
-    panic!("serve_metrics exited {result:?}");
+    if args.enable_colocation {
+        if args.drivers.is_empty() {
+            panic!("colocation is enabled but no drivers are configured");
+        }
+        let market_makable_token_list_configuration = TokenListConfiguration {
+            url: args.trusted_tokens_url,
+            update_interval: args.trusted_tokens_update_interval,
+            chain_id,
+            client: http_factory.create(),
+            hardcoded: args.trusted_tokens.unwrap_or_default(),
+        };
+        // updated in background task
+        let market_makable_token_list =
+            AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
+                .await;
+        let run = run_loop::RunLoop {
+            solvable_orders_cache,
+            database: db,
+            drivers: args
+                .drivers
+                .into_iter()
+                .map(driver_api::Driver::new)
+                .collect(),
+            current_block: current_block_stream,
+            web3,
+            network_block_interval: network_time_between_blocks,
+            market_makable_token_list,
+        };
+        run.run_forever().await;
+        unreachable!("run loop exited");
+    } else {
+        let result = serve_metrics.await;
+        unreachable!("serve_metrics exited {result:?}");
+    }
 }

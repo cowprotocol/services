@@ -171,10 +171,7 @@ impl SettlementHandler {
         execution: AmmOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        let (asset_in, amount_in_max) = execution.input_max;
-        let (asset_out, amount_out) = execution.output;
-
-        if let Some(approval) = self.allowances.approve_token(asset_in, amount_in_max)? {
+        if let Some(approval) = self.allowances.approve_token(execution.input_max.clone())? {
             encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
         }
         encoder.append_to_execution_plan_internalizable(
@@ -182,10 +179,8 @@ impl SettlementHandler {
                 settlement: self.settlement.clone(),
                 vault: self.vault.clone(),
                 pool_id: self.pool_id,
-                asset_in,
-                asset_out,
-                amount_out,
-                amount_in_max,
+                asset_in_max: execution.input_max,
+                asset_out: execution.output,
                 // Balancer pools allow passing additional user data in order to
                 // control pool behaviour for swaps. That being said, weighted pools
                 // do not seem to make use of this at the moment so leave it empty.
@@ -211,7 +206,7 @@ mod tests {
         shared::{
             baseline_solver::BaseTokens,
             dummy_contract,
-            http_solver::model::InternalizationStrategy,
+            http_solver::model::{InternalizationStrategy, TokenAmount},
             interaction::Interaction,
             sources::balancer_v2::pool_fetching::{
                 AmplificationParameter,
@@ -420,8 +415,8 @@ mod tests {
         SettlementHandling::<WeightedProductOrder>::encode(
             &handler,
             AmmOrderExecution {
-                input_max: (H160([0x70; 20]), 10.into()),
-                output: (H160([0x71; 20]), 11.into()),
+                input_max: TokenAmount::new(H160([0x70; 20]), 10),
+                output: TokenAmount::new(H160([0x71; 20]), 11),
                 internalizable: false,
             },
             &mut encoder,
@@ -430,8 +425,8 @@ mod tests {
         SettlementHandling::<WeightedProductOrder>::encode(
             &handler,
             AmmOrderExecution {
-                input_max: (H160([0x71; 20]), 12.into()),
-                output: (H160([0x72; 20]), 13.into()),
+                input_max: TokenAmount::new(H160([0x71; 20]), 12),
+                output: TokenAmount::new(H160([0x72; 20]), 13),
                 internalizable: false,
             },
             &mut encoder,
@@ -453,10 +448,8 @@ mod tests {
                     settlement: settlement.clone(),
                     vault: vault.clone(),
                     pool_id: H256([0x90; 32]),
-                    asset_in: H160([0x70; 20]),
-                    asset_out: H160([0x71; 20]),
-                    amount_out: 11.into(),
-                    amount_in_max: 10.into(),
+                    asset_in_max: TokenAmount::new(H160([0x70; 20]), 10),
+                    asset_out: TokenAmount::new(H160([0x71; 20]), 11),
                     user_data: Default::default(),
                 }
                 .encode(),
@@ -464,10 +457,8 @@ mod tests {
                     settlement,
                     vault,
                     pool_id: H256([0x90; 32]),
-                    asset_in: H160([0x71; 20]),
-                    asset_out: H160([0x72; 20]),
-                    amount_out: 13.into(),
-                    amount_in_max: 12.into(),
+                    asset_in_max: TokenAmount::new(H160([0x71; 20]), 12),
+                    asset_out: TokenAmount::new(H160([0x72; 20]), 13),
                     user_data: Default::default(),
                 }
                 .encode(),

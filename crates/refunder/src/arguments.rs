@@ -1,7 +1,7 @@
 use {
     clap::Parser,
     ethcontract::H160,
-    shared::{ethrpc, http_client, logging_args_with_default_filter},
+    shared::{arguments::display_option, ethrpc, http_client, logging_args_with_default_filter},
     std::time::Duration,
     tracing::level_filters::LevelFilter,
     url::Url,
@@ -46,6 +46,12 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
+    /// The expected chain ID that the services are expected to run against.
+    /// This can be optionally specified in order to check at startup whether
+    /// the connected nodes match to detect misconfigurations.
+    #[clap(long, env)]
+    pub chain_id: Option<u64>,
+
     /// Address of the ethflow contract
     #[clap(long, env)]
     pub ethflow_contract: H160,
@@ -66,6 +72,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "min_slippage_bps: {}", self.min_slippage_bps)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", self.node_url)?;
+        display_option(f, "chain_id", &self.chain_id)?;
         writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
