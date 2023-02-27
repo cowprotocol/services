@@ -318,7 +318,7 @@ pub struct Arguments {
     /// The time in seconds between new blocks on the network.
     #[clap(long, env, value_parser = duration_from_seconds)]
     pub network_block_interval: Option<Duration>,
-    
+
     /// Override address of the settlement contract.
     #[clap(long, env)]
     pub settlement_contract_address: Option<H160>,

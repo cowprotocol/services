@@ -27,7 +27,10 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    shared::{external_prices::ExternalPrices, http_solver::model::{InternalizationStrategy, TokenAmount}},
+    shared::{
+        external_prices::ExternalPrices,
+        http_solver::model::{InternalizationStrategy, TokenAmount},
+    },
     solver::{
         interactions::Erc20ApproveInteraction,
         liquidity::{

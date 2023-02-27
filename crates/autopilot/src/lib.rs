@@ -3,6 +3,7 @@ use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
 pub mod arguments;
 pub mod auction_transaction;
 pub mod database;
+pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
@@ -10,7 +11,6 @@ pub mod limit_orders;
 pub mod risk_adjusted_rewards;
 pub mod run_loop;
 pub mod solvable_orders;
-pub mod decoded_settlement;
 
 use {
     crate::{
