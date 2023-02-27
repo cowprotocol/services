@@ -273,16 +273,16 @@ components:
           type: string
           example: "2020-12-03T18:35:18.814523Z"
     SolveResponse:
-      description: Response of the solve endpoint.
+      description: |
+        Response of the solve endpoint.
+
+        A score of 0 indicates the empty solution, which is never executed.
       type: object
       properties:
-        objective:
+        score:
           description: |
             The objective value of the solution.
-
-            `null` indicates that solving was successful but no solution was found.
           type: number
-          nullable: true
         signature:
           description: |
             Signature confirming that the Solver promised to have this solution for this auction.
