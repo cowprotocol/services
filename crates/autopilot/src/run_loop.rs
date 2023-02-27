@@ -153,11 +153,8 @@ impl RunLoop {
                 .prices
                 .iter()
                 .map(|(address, price)| solve::Token {
-                    decimals: Default::default(),
-                    symbol: Default::default(),
                     address: address.to_owned(),
                     price: Some(price.to_owned()),
-                    available_balance: Default::default(),
                     trusted: self.market_makable_token_list.contains(address),
                 })
                 .chain(
@@ -165,11 +162,8 @@ impl RunLoop {
                         .all()
                         .into_iter()
                         .map(|address| solve::Token {
-                            decimals: Default::default(),
-                            symbol: Default::default(),
                             address,
                             price: None,
-                            available_balance: Default::default(),
                             trusted: true,
                         }),
                 )

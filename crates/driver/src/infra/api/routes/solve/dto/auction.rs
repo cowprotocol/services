@@ -17,11 +17,11 @@ impl Auction {
                 .tokens
                 .into_iter()
                 .map(|token| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
+                    decimals: None,
+                    symbol: None,
                     address: token.address.into(),
                     price: token.price.map(Into::into),
-                    available_balance: token.available_balance,
+                    available_balance: Default::default(),
                     trusted: token.trusted,
                 })
                 .collect(),
@@ -143,13 +143,9 @@ pub struct Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Token {
-    pub decimals: Option<u8>,
-    pub symbol: Option<String>,
     pub address: eth::H160,
     #[serde_as(as = "Option<serialize::U256>")]
     pub price: Option<eth::U256>,
-    #[serde_as(as = "serialize::U256")]
-    pub available_balance: eth::U256,
     pub trusted: bool,
 }
 

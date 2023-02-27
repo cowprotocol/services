@@ -72,13 +72,9 @@ pub mod solve {
     #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Token {
-        pub decimals: Option<u8>,
-        pub symbol: Option<String>,
         pub address: H160,
         #[serde_as(as = "Option<DisplayFromStr>")]
         pub price: Option<U256>,
-        #[serde_as(as = "DisplayFromStr")]
-        pub available_balance: U256,
         pub trusted: bool,
     }
 
