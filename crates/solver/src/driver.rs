@@ -281,6 +281,7 @@ impl Driver {
         tracing::info!(count =% orders.len(), ?orders, "got orders");
         self.metrics.orders_fetched(&orders);
 
+        let auction_prices = auction.prices.clone();
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed auction prices")?;
@@ -466,6 +467,20 @@ impl Driver {
                 .collect::<HashSet<_>>() // to avoid duplicates
                 .into_iter()
                 .collect();
+            // external prices for all tokens contained in the trades of a settlement
+            let prices = winning_settlement
+                .settlement
+                .trades()
+                .filter_map(|trade| {
+                    let sell_token = trade.order.data.sell_token;
+                    let buy_token = trade.order.data.buy_token;
+                    Some(vec![
+                        (sell_token, auction_prices.get(&sell_token).cloned()?),
+                        (buy_token, auction_prices.get(&buy_token).cloned()?),
+                    ])
+                })
+                .flatten()
+                .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -475,6 +490,7 @@ impl Driver {
                 executions,
                 scores,
                 participants,
+                prices,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.

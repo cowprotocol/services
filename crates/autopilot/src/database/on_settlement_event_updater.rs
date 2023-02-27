@@ -1,13 +1,8 @@
 use {
     anyhow::Context,
-    database::{
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
-        settlement_observations::Observation,
-    },
+    database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::{H160, U256},
     number_conversions::u256_to_big_decimal,
-    std::collections::BTreeMap,
 };
 
 #[derive(Debug, Clone)]
@@ -21,8 +16,6 @@ pub struct SettlementUpdate {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
-    // external prices of tokens used in the settlement, that we want to keep in database
-    pub prices: BTreeMap<H160, U256>,
 }
 
 impl super::Postgres {
@@ -62,30 +55,6 @@ impl super::Postgres {
         )
         .await
         .context("insert_settlement_observations")?;
-
-        // Update auction_prices
-        // We first delete all external prices for the auction and then insert the
-        // external prices we want to keep (the ones used in the settlement)
-        // Note that we could instead just delete the external prices not used in the
-        // settlement
-        database::auction_prices::delete(&mut ex, settlement_update.auction_id)
-            .await
-            .context("delete_auction_prices")?;
-        database::auction_prices::insert(
-            &mut ex,
-            settlement_update
-                .prices
-                .iter()
-                .map(|(token, price)| AuctionPrice {
-                    auction_id: settlement_update.auction_id,
-                    token: ByteArray(token.0),
-                    price: u256_to_big_decimal(price),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("insert_auction_prices")?;
 
         ex.commit().await?;
         Ok(())
