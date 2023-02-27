@@ -1,27 +1,27 @@
 use {
     crate::{
         domain::{competition, eth},
+        infra::Ethereum,
         util::serialize,
     },
     itertools::Itertools,
     serde::Deserialize,
     serde_with::serde_as,
-    std::{collections::HashMap, str::FromStr},
 };
 
 impl Auction {
-    pub fn into_domain(self) -> Result<competition::Auction, Error> {
+    pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
-            id: Some(FromStr::from_str(&self.id).map_err(|_| Error::InvalidAuctionId)?),
+            id: Some((self.id as u64).into()),
             tokens: self
                 .tokens
                 .into_iter()
-                .map(|(address, token)| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
-                    address: address.into(),
-                    price: token.reference_price.map(Into::into),
-                    available_balance: token.available_balance,
+                .map(|token| competition::auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: token.address.into(),
+                    price: token.price.map(Into::into),
+                    available_balance: Default::default(),
                     trusted: token.trusted,
                 })
                 .collect(),
@@ -68,7 +68,7 @@ impl Auction {
                             competition::order::Partial::No
                         },
                         interactions: order
-                            .interactions
+                            .pre_interactions
                             .into_iter()
                             .map(|interaction| eth::Interaction {
                                 target: interaction.target.into(),
@@ -112,8 +112,8 @@ impl Auction {
                         reward: order.reward,
                     })
                 })
-                .try_collect()?,
-            gas_price: self.effective_gas_price.into(),
+                .try_collect::<_, _, Error>()?,
+            gas_price: eth.gas_price().await.map_err(Error::GasPrice)?,
             deadline: self.deadline.into(),
         })
     }
@@ -125,23 +125,33 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
+    #[error("error getting gas price")]
+    GasPrice(#[source] crate::infra::blockchain::Error),
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
-    id: String,
-    tokens: HashMap<eth::H160, Token>,
+    id: i64,
+    tokens: Vec<Token>,
     orders: Vec<Order>,
-    #[serde_as(as = "serialize::U256")]
-    effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Token {
+    pub address: eth::H160,
+    #[serde_as(as = "Option<serialize::U256>")]
+    pub price: Option<eth::U256>,
+    pub trusted: bool,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
     uid: [u8; 56],
@@ -163,7 +173,7 @@ struct Order {
     /// Always zero if the order is not partially fillable.
     #[serde_as(as = "serialize::U256")]
     executed: eth::U256,
-    interactions: Vec<Interaction>,
+    pre_interactions: Vec<Interaction>,
     #[serde(default)]
     sell_token_balance: SellTokenBalance,
     #[serde(default)]
@@ -180,7 +190,7 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
@@ -188,7 +198,7 @@ enum Kind {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Interaction {
     target: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -198,7 +208,7 @@ struct Interaction {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -207,7 +217,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -215,7 +225,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -224,22 +234,9 @@ enum SigningScheme {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Class {
     Market,
     Limit,
     Liquidity,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Token {
-    decimals: Option<u8>,
-    symbol: Option<String>,
-    #[serde_as(as = "Option<serialize::U256>")]
-    reference_price: Option<eth::U256>,
-    #[serde_as(as = "serialize::U256")]
-    available_balance: eth::U256,
-    trusted: bool,
 }

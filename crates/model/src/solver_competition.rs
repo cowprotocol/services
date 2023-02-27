@@ -88,6 +88,7 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    #[serde(default)]
     pub solver_address: H160,
     pub objective: Objective,
     #[serde(flatten)]
@@ -192,7 +193,7 @@ mod tests {
             "solutions": [
                 {
                     "solver": "2",
-                    "solverAddress": "0x0000000000000000000000000000000000000000",
+                    "solverAddress": "0x2222222222222222222222222222222222222222",
                     "objective": {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
@@ -241,7 +242,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
-                    solver_address: H160([0x00; 20]),
+                    solver_address: H160([0x22; 20]),
                     objective: Objective {
                         total: 3.,
                         surplus: 4.,

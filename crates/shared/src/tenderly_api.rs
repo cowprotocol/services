@@ -8,6 +8,7 @@ use {
     anyhow::Result,
     clap::Parser,
     model::bytes_hex::BytesHex,
+    prometheus::IntGaugeVec,
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Url,
@@ -24,7 +25,6 @@ use {
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
 pub trait TenderlyApi: Send + Sync + 'static {
-    async fn block_number(&self, network_id: &str) -> Result<u64>;
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse>;
 }
 
@@ -72,18 +72,6 @@ impl TenderlyHttpApi {
 
 #[async_trait::async_trait]
 impl TenderlyApi for TenderlyHttpApi {
-    async fn block_number(&self, network_id: &str) -> Result<u64> {
-        Ok(self
-            .client
-            .get(format!("{BASE_URL}/v1/network/{network_id}/block-number"))
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<BlockNumber>()
-            .await?
-            .block_number)
-    }
-
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
         Ok(self
             .client
@@ -97,9 +85,30 @@ impl TenderlyApi for TenderlyHttpApi {
     }
 }
 
-#[derive(Deserialize)]
-pub struct BlockNumber {
-    pub block_number: u64,
+/// Instrumented Tenderly HTTP API.
+pub struct Instrumented {
+    inner: TenderlyHttpApi,
+    name: String,
+}
+
+#[async_trait::async_trait]
+impl TenderlyApi for Instrumented {
+    async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
+        let result = self.inner.simulate(simulation).await;
+
+        Metrics::get()
+            .tenderly_simulations
+            .with_label_values(&[
+                &self.name,
+                match &result {
+                    Ok(_) => "ok",
+                    Err(_) => "err",
+                },
+            ])
+            .inc();
+
+        result
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -221,6 +230,7 @@ impl Arguments {
     pub fn get_api_instance(
         &self,
         http_factory: &HttpClientFactory,
+        name: String,
     ) -> Result<Option<Arc<dyn TenderlyApi>>> {
         Some(())
             .and_then(|_| {
@@ -231,7 +241,7 @@ impl Arguments {
                         self.tenderly_project.as_deref()?,
                         self.tenderly_api_key.as_deref()?,
                     )
-                    .map(|api| Arc::new(api) as _),
+                    .map(|inner| Arc::new(Instrumented { inner, name }) as _),
                 )
             })
             .transpose()
@@ -245,6 +255,19 @@ impl Display for Arguments {
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
 
         Ok(())
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Tenderly simulations.
+    #[metric(labels("name", "result"))]
+    tenderly_simulations: IntGaugeVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Metrics {
+        Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
     }
 }
 
@@ -280,14 +303,6 @@ mod tests {
             serde_json::from_value::<SimulationRequest>(json).unwrap(),
             request
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_block_number() {
-        let tenderly = TenderlyHttpApi::test_from_env();
-        let block_number = tenderly.block_number("1").await.unwrap();
-        assert!(block_number > 0);
     }
 
     #[tokio::test]

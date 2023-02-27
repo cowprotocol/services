@@ -119,7 +119,7 @@ impl Solver for HttpSolver {
         // settlement contract
         let non_bufferable_tokens = non_bufferable_tokens_used(
             &settled.interaction_data,
-            &self.market_makable_token_list.addresses(),
+            &self.market_makable_token_list.all(),
         );
         if !non_bufferable_tokens.is_empty() {
             tracing::warn!(
@@ -279,6 +279,7 @@ mod tests {
                 network_name: "mock_network_id".to_string(),
                 chain_id: 0,
                 base: url.parse().unwrap(),
+                solve_path: "solve".to_owned(),
                 client: Client::new(),
                 config: SolverConfig::default(),
             },

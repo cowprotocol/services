@@ -63,7 +63,7 @@ impl InstanceCreator {
                 });
         orders.extend(limit_orders);
 
-        let market_makable_token_list = self.market_makable_token_list.addresses();
+        let market_makable_token_list = self.market_makable_token_list.all();
 
         let tokens = map_tokens_for_solver(&orders, &amms, &market_makable_token_list);
         let (token_infos, buffers_result) = futures::join!(
@@ -185,17 +185,6 @@ fn map_tokens_for_solver(
     Vec::from_iter(token_set)
 }
 
-fn order_fee(order: &LimitOrder) -> TokenAmount {
-    let amount = match order.is_liquidity_order() {
-        true => order.unscaled_subsidized_fee,
-        false => order.scaled_unsubsidized_fee,
-    };
-    TokenAmount {
-        amount,
-        token: order.sell_token,
-    }
-}
-
 fn token_models(
     token_infos: &HashMap<H160, TokenInfo>,
     price_estimates: &HashMap<H160, f64>,
@@ -256,13 +245,16 @@ fn order_models(
                     buy_amount: order.buy_amount,
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
-                    fee: order_fee(order),
+                    fee: TokenAmount {
+                        amount: order.solver_fee,
+                        token: order.sell_token,
+                    },
                     cost,
                     is_liquidity_order: order.is_liquidity_order(),
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,
-                    is_mature: order.is_mature,
+                    is_mature: true,
                 },
             ))
         })

@@ -15,6 +15,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
     },
@@ -66,8 +67,7 @@ impl ZeroExLiquidity {
             buy_amount: record.metadata.remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
             partially_fillable: true,
-            unscaled_subsidized_fee: U256::zero(),
-            scaled_unsubsidized_fee: U256::zero(),
+            solver_fee: U256::zero(),
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order: record.order,
                 zeroex: self.zeroex.clone(),
@@ -75,7 +75,6 @@ impl ZeroExLiquidity {
             }),
             exchange: Exchange::ZeroEx,
             reward: 0.,
-            is_mature: false, // irrelevant for liquidity orders
         };
         Some(Liquidity::LimitOrder(limit_order))
     }
@@ -195,7 +194,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         }
         if let Some(approval) = self
             .allowances
-            .approve_token(self.order.taker_token, executed_amount)?
+            .approve_token(TokenAmount::new(self.order.taker_token, executed_amount))?
         {
             encoder.append_to_execution_plan(approval);
         }

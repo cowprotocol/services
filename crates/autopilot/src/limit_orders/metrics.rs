@@ -9,21 +9,30 @@ pub struct LimitOrderMetrics {
     pub database: Postgres,
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// Open limit orders
+    limit_orders: IntGauge,
+
+    /// Quoted limit orders.
+    quoted_limit_orders: IntGauge,
+
+    /// Limit orders awaiting quote.
+    unquoted_limit_orders: IntGauge,
+
+    /// Limit orders usable in the auction.
+    usable_limit_orders: IntGauge,
+
+    /// Limit orders with surplus_fee too old for the auction.
+    unusable_limit_orders: IntGauge,
+}
+
 impl LimitOrderMetrics {
     pub fn spawn(self) {
         tokio::spawn(
             async move {
-                let limit_orders_gauge = gauge("limit_orders", "Open limit orders.");
-                let quoted_limit_orders_gauge =
-                    gauge("quoted_limit_orders", "Quoted limit orders.");
-                let unquoted_limit_orders_gauge =
-                    gauge("unquoted_limit_orders", "Limit orders awaiting a quote.");
-                let usable_limit_orders_gauge =
-                    gauge("usable_limit_orders", "Limit orders usable in the auction.");
-                let unusable_limit_orders_gauge = gauge(
-                    "unusable_limit_orders",
-                    "Limit orders with surplus_fee too old for the auction.",
-                );
+                let metrics =
+                    Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
 
                 loop {
                     let limit_orders = self.database.count_limit_orders().await.unwrap();
@@ -41,11 +50,11 @@ impl LimitOrderMetrics {
                     let quoted_limit_orders = limit_orders - awaiting_quote;
                     let usable_limit_orders = limit_orders - unusable;
 
-                    limit_orders_gauge.set(limit_orders);
-                    unquoted_limit_orders_gauge.set(awaiting_quote);
-                    quoted_limit_orders_gauge.set(quoted_limit_orders);
-                    usable_limit_orders_gauge.set(usable_limit_orders);
-                    unusable_limit_orders_gauge.set(unusable);
+                    metrics.limit_orders.set(limit_orders);
+                    metrics.unquoted_limit_orders.set(awaiting_quote);
+                    metrics.quoted_limit_orders.set(quoted_limit_orders);
+                    metrics.usable_limit_orders.set(usable_limit_orders);
+                    metrics.unusable_limit_orders.set(unusable);
 
                     tokio::time::sleep(Duration::from_secs(10)).await;
                 }
@@ -53,11 +62,4 @@ impl LimitOrderMetrics {
             .instrument(tracing::info_span!("limit_order_metrics")),
         );
     }
-}
-
-fn gauge(name: &str, help: &str) -> IntGauge {
-    let registry = global_metrics::get_metrics_registry();
-    let gauge = IntGauge::new(name, help).unwrap();
-    registry.register(Box::new(gauge.clone())).unwrap();
-    gauge
 }

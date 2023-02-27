@@ -58,9 +58,11 @@ impl SanitizedPriceEstimator {
                 Err(err) => {
                     token_quality_errors.insert(token, PriceEstimationError::Other(err));
                 }
-                Ok(TokenQuality::Bad { .. }) => {
-                    token_quality_errors
-                        .insert(token, PriceEstimationError::UnsupportedToken(token));
+                Ok(TokenQuality::Bad { reason }) => {
+                    token_quality_errors.insert(
+                        token,
+                        PriceEstimationError::UnsupportedToken { token, reason },
+                    );
                 }
                 _ => (),
             };
@@ -443,11 +445,11 @@ mod tests {
         );
         assert!(matches!(
             result[8].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken(_)
+            PriceEstimationError::UnsupportedToken { .. }
         ));
         assert!(matches!(
             result[9].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken(_)
+            PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 

@@ -3,7 +3,7 @@
 use {
     crate::{
         boundary,
-        domain::{baseline, eth, liquidity, order},
+        domain::{eth, liquidity, order, solver::baseline},
     },
     ethereum_types::{H160, U256},
     model::TokenPair,

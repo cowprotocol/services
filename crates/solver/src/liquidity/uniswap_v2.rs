@@ -12,9 +12,10 @@ use {
     anyhow::Result,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
     model::TokenPair,
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::PoolFetching,
     },
@@ -128,24 +129,24 @@ impl Inner {
 
     pub fn settle(
         &self,
-        (token_in, amount_in_max): (H160, U256),
-        (token_out, amount_out): (H160, U256),
+        token_amount_in_max: TokenAmount,
+        token_amount_out: TokenAmount,
     ) -> (Option<Approval>, UniswapInteraction) {
         let approval = self
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_in, amount_in_max);
+            .approve_token_or_default(token_amount_in_max.clone());
 
         (
             approval,
             UniswapInteraction {
                 router: self.router.clone(),
                 settlement: self.gpv2_settlement.clone(),
-                amount_out,
-                amount_in_max,
-                token_in,
-                token_out,
+                amount_out: token_amount_out.amount,
+                amount_in_max: token_amount_in_max.amount,
+                token_in: token_amount_in_max.token,
+                token_out: token_amount_out.token,
             },
         )
     }
@@ -174,7 +175,7 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::dummy_contract, std::collections::HashMap};
+    use {super::*, primitive_types::U256, shared::dummy_contract, std::collections::HashMap};
 
     impl Inner {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
@@ -198,22 +199,36 @@ mod tests {
         let inner = Inner::new_dummy(allowances);
 
         // Token A below, equal, above
-        let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()));
+        let (approval, _) = inner.settle(
+            TokenAmount::new(token_a, 50),
+            TokenAmount::new(token_b, 100),
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()));
+        let (approval, _) = inner.settle(
+            TokenAmount::new(token_a, 99),
+            TokenAmount::new(token_b, 100),
+        );
         assert_eq!(approval, None);
 
         // Token B below, equal, above
-        let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()));
+        let (approval, _) = inner.settle(
+            TokenAmount::new(token_b, 150),
+            TokenAmount::new(token_a, 100),
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()));
+        let (approval, _) = inner.settle(
+            TokenAmount::new(token_b, 199),
+            TokenAmount::new(token_a, 100),
+        );
         assert_eq!(approval, None);
 
         // Untracked token
-        let (approval, _) =
-            inner.settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
+        let (approval, _) = inner.settle(
+            TokenAmount::new(H160::from_low_u64_be(3), 1),
+            TokenAmount::new(token_a, 100),
+        );
         assert_ne!(approval, None);
     }
 }

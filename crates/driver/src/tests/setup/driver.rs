@@ -40,7 +40,11 @@ impl Client {
         }
     }
 
-    pub async fn solve(&self, solver: &str, req: serde_json::Value) -> serde_json::Value {
+    pub async fn solve(
+        &self,
+        solver: &str,
+        req: serde_json::Value,
+    ) -> (hyper::StatusCode, serde_json::Value) {
         let res = self
             .client
             .post(format!("http://{}/{solver}/solve", self.addr))
@@ -51,8 +55,7 @@ impl Client {
         let status = res.status();
         let text = res.text().await.unwrap();
         tracing::debug!(?status, ?text, "got a response from /solve");
-        assert_eq!(status, 200);
-        serde_json::from_str(&text).unwrap()
+        (status, serde_json::from_str(&text).unwrap())
     }
 
     pub async fn quote(&self, solver: &str, req: serde_json::Value) -> serde_json::Value {
@@ -128,7 +131,7 @@ pub async fn setup(config: Config<'_>) -> Client {
     };
     let args = vec![
         "/test/driver/path".to_owned(),
-        "--bind-addr".to_owned(),
+        "--addr".to_owned(),
         "0.0.0.0:0".to_owned(),
         "--ethrpc".to_owned(),
         config.geth.url(),

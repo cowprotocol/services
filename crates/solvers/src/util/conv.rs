@@ -4,7 +4,7 @@ use {
     crate::domain::eth,
     bigdecimal::BigDecimal,
     ethereum_types::U256,
-    num::{rational::Ratio, BigUint},
+    num::{rational::Ratio, BigInt, BigUint, One},
 };
 
 /// Converts a `BigDecimal` value to a `eth::Rational` value. Returns `None` if
@@ -31,12 +31,30 @@ pub fn decimal_to_rational(d: &BigDecimal) -> Option<eth::Rational> {
     Some(eth::Rational::new_raw(numer, denom))
 }
 
-fn biguint_to_u256(i: &BigUint) -> Option<U256> {
+pub fn biguint_to_u256(i: &BigUint) -> Option<U256> {
     let bytes = i.to_bytes_be();
     if bytes.len() > 32 {
         return None;
     }
     Some(U256::from_big_endian(&bytes))
+}
+
+pub fn u256_to_biguint(i: &U256) -> BigUint {
+    let mut bytes = [0_u8; 32];
+    i.to_big_endian(&mut bytes);
+    BigUint::from_bytes_be(&bytes)
+}
+
+/// Converts a `BigDecimal` amount in Ether units to wei.
+pub fn decimal_to_ether(d: &BigDecimal) -> Option<eth::Ether> {
+    let scaled = d * BigDecimal::new(BigInt::one(), -18);
+    let ratio = decimal_to_rational(&scaled)?;
+    Some(eth::Ether(ratio.numer() / ratio.denom()))
+}
+
+/// Converts an `eth::Ether` amount into a `BigDecimal` representation.
+pub fn ether_to_decimal(e: &eth::Ether) -> BigDecimal {
+    BigDecimal::new(u256_to_biguint(&e.0).into(), 18)
 }
 
 #[cfg(test)]
@@ -73,6 +91,21 @@ mod tests {
         ] {
             let result = decimal_to_rational(&value.parse().unwrap());
             assert!(result.is_none());
+        }
+    }
+
+    #[test]
+    fn decimal_to_and_from_ether() {
+        for (decimal, ether) in [
+            ("0.01", 10_000_000_000_000_000_u128),
+            ("4.20", 4_200_000_000_000_000_000),
+            ("10", 10_000_000_000_000_000_000),
+        ] {
+            let decimal = decimal.parse().unwrap();
+            let ether = eth::Ether(ether.into());
+
+            assert_eq!(decimal_to_ether(&decimal).unwrap(), ether);
+            assert_eq!(ether_to_decimal(&ether), decimal);
         }
     }
 }

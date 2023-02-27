@@ -9,8 +9,6 @@ pub mod zeroex;
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
-#[cfg(test)]
-use shared::sources::uniswap_v2::pool_fetching::Pool;
 use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
@@ -20,12 +18,16 @@ use {
     },
     num::{rational::Ratio, BigRational},
     primitive_types::{H160, U256},
-    shared::sources::{
-        balancer_v2::{
-            pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-            swap::fixed_point::Bfp,
+    shared::{
+        http_solver::model::TokenAmount,
+        sources::{
+            balancer_v2::{
+                pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+                swap::fixed_point::Bfp,
+            },
+            uniswap_v2::pool_fetching::Pool,
+            uniswap_v3::pool_fetching::PoolInfo,
         },
-        uniswap_v3::pool_fetching::PoolInfo,
     },
     std::{collections::HashMap, sync::Arc},
     strum::{EnumVariantNames, IntoStaticStr},
@@ -172,21 +174,14 @@ pub struct LimitOrder {
     pub id: LimitOrderId,
     pub sell_token: H160,
     pub buy_token: H160,
+    /// The amount that can be sold to acquire the required `buy_token`.
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub unscaled_subsidized_fee: U256,
-    /// The scaled fee amount that the protocol pretends it is receiving.
-    ///
-    /// This is different than the actual signed fee in that it
-    /// does not have any subsidies applied and may be scaled by a constant
-    /// factor to make matching orders more valuable from an objective value
-    /// perspective.
-    pub scaled_unsubsidized_fee: U256,
-    /// Indicator if the order is mature at the creation of the Auction.
-    /// Relevant to user orders.
-    pub is_mature: bool,
+    /// The fee that should be used for objective value computations.
+    /// Takes partiall fill into account.
+    pub solver_fee: U256,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
@@ -244,10 +239,8 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            unscaled_subsidized_fee: Default::default(),
-            scaled_unsubsidized_fee: Default::default(),
+            solver_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
-            is_mature: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),
@@ -269,6 +262,20 @@ pub struct ConstantProductOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
+impl ConstantProductOrder {
+    /// Creates a new constant product order from a Uniswap V2 pool and a
+    /// settlement handler implementation.
+    pub fn for_pool(pool: Pool, settlement_handling: Arc<dyn SettlementHandling<Self>>) -> Self {
+        Self {
+            address: pool.address,
+            tokens: pool.tokens,
+            reserves: pool.reserves,
+            fee: pool.fee,
+            settlement_handling,
+        }
+    }
+}
+
 impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Constant Product AMM {:?}", self.tokens)
@@ -278,13 +285,7 @@ impl std::fmt::Debug for ConstantProductOrder {
 #[cfg(test)]
 impl From<Pool> for ConstantProductOrder {
     fn from(pool: Pool) -> Self {
-        Self {
-            address: pool.address,
-            tokens: pool.tokens,
-            reserves: pool.reserves,
-            fee: pool.fee,
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
+        Self::for_pool(pool, tests::CapturingSettlementHandler::arc())
     }
 }
 
@@ -344,8 +345,8 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AmmOrderExecution {
-    pub input_max: (H160, U256),
-    pub output: (H160, U256),
+    pub input_max: TokenAmount,
+    pub output: TokenAmount,
     pub internalizable: bool,
 }
 

@@ -35,7 +35,7 @@ use {
         },
         TokenPair,
     },
-    num::{rational::Ratio, BigInt, BigRational, ToPrimitive},
+    num::{rational::Ratio, BigInt, ToPrimitive},
     primitive_types::{H160, U256},
     shared::{
         code_fetching::CodeFetching,
@@ -71,7 +71,6 @@ pub struct Driver {
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
     web3: Web3,
@@ -86,7 +85,6 @@ impl Driver {
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
         native_token: H160,
-        min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
         network_id: String,
@@ -98,7 +96,6 @@ impl Driver {
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
         simulation_gas_limit: u128,
-        fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
@@ -117,7 +114,6 @@ impl Driver {
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
-            min_order_age,
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
             enable_auction_rewards,
@@ -148,8 +144,6 @@ impl Driver {
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
-                .unwrap(),
             settlement_ranker,
             logger,
             web3,
@@ -292,9 +286,7 @@ impl Driver {
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders)
-            || !auction_preprocessing::has_at_least_one_mature_order(&orders)
-        {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
             return Ok(false);
         }
 
@@ -340,7 +332,7 @@ impl Driver {
         // blocks but this is a good approximation.
         let block_during_simulation = self.block_stream.borrow().number;
 
-        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements);
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetitionDB {
@@ -360,10 +352,7 @@ impl Driver {
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement
-                            .scaled_unsubsidized_fee
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
+                        fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
@@ -584,9 +573,14 @@ pub async fn submit_settlement(
     let result = solution_submitter
         .settle(settlement.clone(), gas_estimate, account, nonce)
         .await;
-    logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &settlement, settlement_id, solver_name)
+        .log_submission_info(
+            &result,
+            &settlement,
+            settlement_id,
+            solver_name,
+            start.elapsed(),
+        )
         .await;
-    result
+    result.map(Into::into)
 }

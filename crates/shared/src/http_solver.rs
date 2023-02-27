@@ -62,6 +62,9 @@ pub struct DefaultHttpSolverApi {
     /// Base solver url.
     pub base: Url,
 
+    /// The custom URL path used for the solve request.
+    pub solve_path: String,
+
     /// An async HTTP client instance that will be used to interact with the
     /// solver.
     pub client: Client,
@@ -112,12 +115,12 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     ) -> Result<model::SettledBatchAuctionModel, Error> {
         // The timeout we give to the solver is one second less than
         // the deadline to make up for overhead from the network.
-        // We use one second because the old MIP solver uses integer timeouts.
+        // We use one second because a now-deleted solver used integer timeouts.
         let solver_timeout = timeout
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
 
-        let mut url = self.base.join("solve").context("join base")?;
+        let mut url = self.base.join(&self.solve_path).context("join base")?;
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
@@ -125,9 +128,9 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
-            // Use integer remaining seconds for the time limit as the MIP solver
-            // does not support fractional values here. Note that this means that
-            // we don't have much granularity with the time limit.
+            // We use integer remaining seconds for legacy reasons. Note that
+            // this means that we don't have much granularity with the time
+            // limit.
             .append_pair("time_limit", &solver_timeout.as_secs().to_string())
             .append_pair(
                 "max_nr_exec_orders",
@@ -275,6 +278,7 @@ HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\
             network_name: Default::default(),
             chain_id: Default::default(),
             base: "http://localhost:1234".parse().unwrap(),
+            solve_path: "solve".to_owned(),
             client: Default::default(),
             config: Default::default(),
         };

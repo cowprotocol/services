@@ -2,11 +2,8 @@
 
 use {
     crate::{
-        ethrpc::{Web3, Web3CallBatch},
-        sources::uniswap_v2::{
-            pair_provider::PairProvider,
-            pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
-        },
+        ethrpc::Web3CallBatch,
+        sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
     },
     anyhow::Result,
     contracts::ISwaprPair,
@@ -20,16 +17,12 @@ use {
 ///
 /// Specifically, Swapr pools have dynamic fees that need to be fetched with the
 /// pool state.
-pub struct SwaprPoolReader(DefaultPoolReader);
+pub struct SwaprPoolReader(pub DefaultPoolReader);
 
 /// The base amount for fees representing 100%.
 const FEE_BASE: u32 = 10_000;
 
 impl PoolReading for SwaprPoolReader {
-    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self {
-        Self(DefaultPoolReader::for_pair_provider(pair_provider, web3))
-    }
-
     fn read_state(
         &self,
         pair: TokenPair,
@@ -67,7 +60,7 @@ mod tests {
             ethcontract_error,
             ethrpc::{create_env_test_transport, Web3},
             recent_block_cache::Block,
-            sources::swapr,
+            sources::{uniswap_v2, BaselineSource},
         },
         ethcontract::H160,
         maplit::hashset,
@@ -115,8 +108,16 @@ mod tests {
     async fn fetch_swapr_pool() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-
-        let (_, pool_fetcher) = swapr::get_liquidity_source(&web3).await.unwrap();
+        let version = web3.net().version().await.unwrap();
+        let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
+            BaselineSource::Swapr,
+            &version,
+        )
+        .unwrap()
+        .into_source(&web3)
+        .await
+        .unwrap()
+        .pool_fetching;
         let pool = pool_fetcher
             .fetch(
                 hashset! {

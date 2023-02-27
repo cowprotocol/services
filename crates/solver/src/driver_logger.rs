@@ -8,7 +8,7 @@ use {
             simulate_and_error_with_tenderly_link,
             simulate_before_after_access_list,
         },
-        settlement_submission::SubmissionError,
+        settlement_submission::{SubmissionError, SubmissionReceipt},
         solver::{Simulation, SimulationWithError, Solver},
     },
     anyhow::{Context, Result},
@@ -16,12 +16,12 @@ use {
     gas_estimation::GasPrice1559,
     itertools::Itertools,
     model::order::{Order, OrderKind},
-    num::{BigRational, ToPrimitive},
+    num::ToPrimitive,
     primitive_types::H256,
     shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
     tracing::{Instrument as _, Span},
-    web3::types::{AccessList, TransactionReceipt},
+    web3::types::AccessList,
 };
 
 pub struct DriverLogger {
@@ -80,18 +80,26 @@ impl DriverLogger {
 
     pub async fn log_submission_info(
         &self,
-        submission: &Result<TransactionReceipt, SubmissionError>,
+        submission: &Result<SubmissionReceipt, SubmissionError>,
         settlement: &Settlement,
         settlement_id: Option<u64>,
         solver_name: &str,
+        elapsed_time: Duration,
     ) {
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver_name);
+        self.metrics.transaction_submission(
+            elapsed_time,
+            submission
+                .as_ref()
+                .map(|x| x.strategy)
+                .unwrap_or("all_failed"),
+        );
         match submission {
             Ok(receipt) => {
                 tracing::info!(
                     settlement_id,
-                    transaction_hash =? receipt.transaction_hash,
+                    transaction_hash =? receipt.tx.transaction_hash,
                     "Successfully submitted settlement",
                 );
                 Self::get_traded_orders(settlement)
@@ -102,12 +110,12 @@ impl DriverLogger {
                     solver_name,
                 );
                 if let Err(err) = self
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
+                    .metric_access_list_gas_saved(receipt.tx.transaction_hash)
                     .await
                 {
                     tracing::debug!(?err, "access list metric not saved");
                 }
-                match receipt.effective_gas_price {
+                match receipt.tx.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
                     }
@@ -215,7 +223,6 @@ impl DriverLogger {
 
     pub fn print_settlements(
         rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-        fee_objective_scaling_factor: &BigRational,
     ) {
         let mut text = String::new();
         for (solver, settlement, access_list) in rated_settlements {
@@ -223,21 +230,15 @@ impl DriverLogger {
             write!(
                 text,
                 "\nid={} solver={} objective={:.2e} surplus={:.2e} gas_estimate={:.2e} \
-                 gas_price={:.2e} unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-                 access_list_addreses={}",
+                 gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} access_list_addresses={}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
                 settlement.surplus.to_f64().unwrap_or(f64::NAN),
                 settlement.gas_estimate.to_f64_lossy(),
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
-                    .to_f64()
-                    .unwrap_or(f64::NAN),
-                settlement
-                    .unscaled_subsidized_fee
-                    .to_f64()
-                    .unwrap_or(f64::NAN),
+                &settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
+                settlement.earned_fees.to_f64().unwrap_or(f64::NAN),
                 access_list.clone().unwrap_or_default().len()
             )
             .unwrap();
@@ -271,7 +272,12 @@ impl DriverLogger {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::solver::dummy_arc_solver, model::solver_competition::Score};
+    use {
+        super::*,
+        crate::solver::dummy_arc_solver,
+        model::solver_competition::Score,
+        num::BigRational,
+    };
 
     #[test]
     #[ignore]
@@ -283,8 +289,8 @@ mod tests {
                     id: 0,
                     settlement: Default::default(),
                     surplus: BigRational::new(1u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
+                    earned_fees: BigRational::new(2u8.into(), 1u8.into()),
+                    solver_fees: BigRational::new(3u8.into(), 1u8.into()),
                     gas_estimate: 4.into(),
                     gas_price: BigRational::new(5u8.into(), 1u8.into()),
                     objective_value: BigRational::new(6u8.into(), 1u8.into()),
@@ -299,8 +305,8 @@ mod tests {
                     id: 6,
                     settlement: Default::default(),
                     surplus: BigRational::new(7u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
+                    earned_fees: BigRational::new(8u8.into(), 1u8.into()),
+                    solver_fees: BigRational::new(9u8.into(), 1u8.into()),
                     gas_estimate: 10.into(),
                     gas_price: BigRational::new(11u8.into(), 1u8.into()),
                     objective_value: BigRational::new(12u8.into(), 1u8.into()),
@@ -312,6 +318,6 @@ mod tests {
         ];
 
         shared::tracing::initialize_reentrant("INFO");
-        DriverLogger::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
+        DriverLogger::print_settlements(&a);
     }
 }

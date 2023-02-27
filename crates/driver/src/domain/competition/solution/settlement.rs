@@ -39,9 +39,18 @@ impl Settlement {
     }
 }
 
-/// A settlement which has been simulated on the blockchain.
+/// A settlement which has been verified to be correct. In particular:
+///
+/// - Simulation: the settlement has been simulated without reverting.
+/// - Asset flow: the sum of tokens into and out of the settlement are
+/// non-negative, meaning that the solver doesn't take any tokens out of the
+/// settlement contract.
+/// - Internalization: internalized interactions only use trusted tokens.
+///
+/// Such a settlement obeys the rules of the protocol and can be safely
+/// broadcast to the Ethereum network.
 #[derive(Debug, Clone)]
-pub struct Simulated {
+pub struct Verified {
     pub(super) inner: Settlement,
     /// The access list used by the settlement.
     pub access_list: eth::AccessList,
@@ -49,7 +58,7 @@ pub struct Simulated {
     pub gas: eth::Gas,
 }
 
-impl Simulated {
+impl Verified {
     /// Calculate the score for this settlement.
     pub async fn score(
         &self,

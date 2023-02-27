@@ -166,7 +166,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
         match err {
             // highest priority
             PriceEstimationError::ZeroAmount => 0,
-            PriceEstimationError::UnsupportedToken(_) => 1,
+            PriceEstimationError::UnsupportedToken { .. } => 1,
             PriceEstimationError::NoLiquidity => 2,
             PriceEstimationError::Other(_) => 3,
             PriceEstimationError::UnsupportedOrderType => 4,
@@ -282,7 +282,10 @@ mod tests {
                     Ok(estimates[1]),
                     Ok(estimates[1]),
                     Err(PriceEstimationError::Other(anyhow!("b"))),
-                    Err(PriceEstimationError::UnsupportedToken(H160([0; 20]))),
+                    Err(PriceEstimationError::UnsupportedToken {
+                        token: H160([0; 20]),
+                        reason: "".to_string(),
+                    }),
                 ])
                 .enumerate()
                 .boxed()
@@ -309,7 +312,7 @@ mod tests {
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken(_),
+            PriceEstimationError::UnsupportedToken { .. },
         ));
     }
 

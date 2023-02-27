@@ -32,11 +32,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8080")]
     pub orderbook_url: Url,
 
-    /// The API endpoint to call the mip solver
-    #[clap(long, env, default_value = "http://localhost:8000")]
-    pub mip_solver_url: Url,
-
-    /// The API endpoint to call the mip v2 solver
+    /// The API endpoint to call the Quasimodo solver
     #[clap(long, env, default_value = "http://localhost:8000")]
     pub quasimodo_solver_url: Url,
 
@@ -104,17 +100,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub external_solvers: Option<Vec<ExternalSolverArg>>,
 
-    /// A settlement must contain at least one order older than this duration in
-    /// seconds for it to be applied.  Larger values delay individual
-    /// settlements more but have a higher coincidence of wants chance.
-    #[clap(
-        long,
-        env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
-    )]
-    pub min_order_age: Duration,
-
     /// The port at which we serve our metrics
     #[clap(long, env, default_value = "9587")]
     pub metrics_port: u16,
@@ -132,10 +117,14 @@ pub struct Arguments {
     )]
     pub solver_time_limit: Duration,
 
-    /// The list of tokens our settlement contract is willing to buy when
-    /// settling trades without external liquidity
-    #[clap(long, env, default_value = "https://files.cow.fi/token_list.json")]
-    pub market_makable_token_list: String,
+    /// The URL of a list of tokens our settlement contract is willing to buy
+    /// when settling trades without external liquidity
+    #[clap(long, env)]
+    pub market_makable_token_list: Option<Url>,
+
+    /// Like `market_makable_token_list` but hardcoded list of tokens.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub market_makable_tokens: Option<Vec<H160>>,
 
     /// Time interval after which market makable list needs to be updated
     #[clap(
@@ -276,13 +265,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub disable_high_risk_public_mempool_transactions: bool,
 
-    /// Fee scaling factor for objective value. This controls the constant
-    /// factor by which order fees are multiplied with. Setting this to a value
-    /// greater than 1.0 makes settlements with negative objective values less
-    /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
-    pub fee_objective_scaling_factor: f64,
-
     /// The maximum number of settlements the driver considers per solver.
     #[clap(long, env, default_value = "20")]
     pub max_settlements_per_solver: usize,
@@ -350,7 +332,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.slippage)?;
         write!(f, "{}", self.order_prioritization)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
-        writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
         writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
         writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
@@ -374,14 +355,21 @@ impl std::fmt::Display for Arguments {
                 .flatten()
                 .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
         )?;
-        writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
         writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
-        writeln!(
+        display_option(
             f,
-            "market_makable_token_list: {}",
-            self.market_makable_token_list
+            "market_makable_token_list",
+            &self.market_makable_token_list,
+        )?;
+        display_option(
+            f,
+            "market_makable_tokens",
+            &self
+                .market_makable_tokens
+                .as_ref()
+                .map(|list| format!("{list:?}")),
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
@@ -437,11 +425,6 @@ impl std::fmt::Display for Arguments {
             f,
             "disable_high_risk_public_mempool_transactions: {}",
             self.disable_high_risk_public_mempool_transactions,
-        )?;
-        writeln!(
-            f,
-            "fee_objective_scaling_factor: {}",
-            self.fee_objective_scaling_factor
         )?;
         writeln!(
             f,
