@@ -78,6 +78,10 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
+            // The winner has score 0 so all solutions are empty.
+            if solution.score == 0. {
+                return;
+            }
             tracing::info!("executing with solver {}", index);
             match self
                 .execute(auction, id, &self.drivers[index], &solution)
@@ -188,7 +192,13 @@ impl RunLoop {
         results
             .into_iter()
             .filter_map(|(index, result)| match result {
-                Ok(result) => Some((index, result)),
+                Ok(result) if result.score.is_finite() && result.score >= 0. => {
+                    Some((index, result))
+                }
+                Ok(result) => {
+                    tracing::warn!("bad score {:?}", result.score);
+                    None
+                }
                 Err(err) => {
                     tracing::warn!(?err, "driver solve error");
                     None
