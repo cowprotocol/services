@@ -157,7 +157,7 @@ impl<'a> Services<'a> {
         serde_json::from_str(&body).unwrap()
     }
 
-    /// Create an [Order].
+    /// Create an [`Order`].
     /// If the response status code is not `201`, return the status and the
     /// body.
     pub async fn create_order(
@@ -181,7 +181,7 @@ impl<'a> Services<'a> {
         }
     }
 
-    /// Submit an [model::quote::OrderQuote].
+    /// Submit an [`model::quote::OrderQuote`].
     /// If the response status is not `200`, return the status and the body.
     pub async fn submit_quote(
         &self,
@@ -208,7 +208,7 @@ impl<'a> Services<'a> {
         self.get_auction().await.auction.orders.len()
     }
 
-    /// Retrieve an [Order]. If the respons status is not `200`, return the
+    /// Retrieve an [`Order`]. If the respons status is not `200`, return the
     /// status and the body.
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Order, (StatusCode, String)> {
         let response = self
