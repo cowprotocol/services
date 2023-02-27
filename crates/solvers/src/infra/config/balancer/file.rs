@@ -52,7 +52,7 @@ pub async fn load(path: &Path) -> super::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
 
     // Balancer SOR solver only supports mainnet.
     let contracts = contracts::Contracts::for_chain(eth::ChainId::Mainnet);
