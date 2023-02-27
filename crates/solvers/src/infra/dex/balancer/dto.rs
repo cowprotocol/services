@@ -123,8 +123,10 @@ pub struct Swap {
     /// The ID of the pool swapping in this step.
     pub pool_id: H256,
     /// The index in `token_addresses` for the input token.
+    #[serde(with = "value_or_string")]
     pub asset_in_index: usize,
     /// The index in `token_addresses` for the ouput token.
+    #[serde(with = "value_or_string")]
     pub asset_out_index: usize,
     /// The amount to swap.
     #[serde_as(as = "serialize::U256")]
@@ -151,5 +153,35 @@ mod address_default_when_empty {
             return Ok(H160::default());
         }
         value.parse().map_err(de::Error::custom)
+    }
+}
+
+/// Tries to either parse the `T` directly or tries to convert the value in case
+/// it's a string. This is intended for deserializing number/string but is
+/// generic enough to be used for any value that can be converted from a string.
+mod value_or_string {
+    use {
+        serde::{de, Deserialize, Deserializer},
+        std::borrow::Cow,
+    };
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de> + std::str::FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Display,
+    {
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Content<'a, T> {
+            Value(T),
+            String(Cow<'a, str>),
+        }
+
+        match <Content<T>>::deserialize(deserializer) {
+            Ok(Content::Value(value)) => Ok(value),
+            Ok(Content::String(s)) => s.parse().map_err(de::Error::custom),
+            Err(err) => Err(err),
+        }
     }
 }

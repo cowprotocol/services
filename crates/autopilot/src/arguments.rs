@@ -180,6 +180,25 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
+    /// The URL of a list of tokens our settlement contract is willing to
+    /// internalize.
+    #[clap(long, env)]
+    pub trusted_tokens_url: Option<Url>,
+
+    /// Hardcoded list of trusted tokens to use in addition to
+    /// `trusted_tokens_url`.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub trusted_tokens: Option<Vec<H160>>,
+
+    /// Time interval after which the trusted tokens list needs to be updated.
+    #[clap(
+        long,
+        env,
+        default_value = "3600",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub trusted_tokens_update_interval: Duration,
+
     /// Enable the colocation run loop.
     #[clap(long, env)]
     pub enable_colocation: bool,

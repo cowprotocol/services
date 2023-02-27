@@ -10,8 +10,8 @@ use {
 };
 
 /// Test that the /quote endpoint behaves as expected.
-#[ignore]
 #[tokio::test]
+#[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
@@ -48,8 +48,18 @@ async fn test() {
                 "value": "0",
                 "callData": format!("0x{}", hex::encode(interaction)),
                 "allowances": [],
-                "inputs": [],
-                "outputs": [],
+                "inputs": [
+                    {
+                        "token": hex_address(sell_token),
+                        "amount": sell_amount.to_string(),
+                    }
+                ],
+                "outputs": [
+                    {
+                        "token": hex_address(buy_token),
+                        "amount": buy_amount.to_string(),
+                    }
+                ],
             })
         })
         .collect_vec();

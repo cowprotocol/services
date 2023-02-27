@@ -7,7 +7,6 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     serde_with::serde_as,
-    std::collections::HashMap,
 };
 
 impl Auction {
@@ -15,17 +14,15 @@ impl Auction {
         Ok(competition::Auction {
             id: Some((self.id as u64).into()),
             tokens: self
-                .prices
+                .tokens
                 .into_iter()
-                // TODO: Populate currently hardcoded fields.
-                .map(|(key, value)| competition::auction::Token {
+                .map(|token| competition::auction::Token {
                     decimals: None,
                     symbol: None,
-                    address: key.into(),
-                    price: Some(value.into()),
-                    available_balance: 0.into(),
-                    // TODO: Does autopilot communicate this to drivers?
-                    trusted: false,
+                    address: token.address.into(),
+                    price: token.price.map(Into::into),
+                    available_balance: Default::default(),
+                    trusted: token.trusted,
                 })
                 .collect(),
             orders: self
@@ -137,10 +134,19 @@ pub enum Error {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
     id: i64,
-    #[serde_as(as = "HashMap<_, serialize::U256>")]
-    prices: HashMap<eth::H160, eth::U256>,
+    tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Token {
+    pub address: eth::H160,
+    #[serde_as(as = "Option<serialize::U256>")]
+    pub price: Option<eth::U256>,
+    pub trusted: bool,
 }
 
 #[serde_as]

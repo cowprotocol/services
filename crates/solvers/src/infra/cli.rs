@@ -23,6 +23,7 @@ pub struct Args {
 
 /// The solver engine to run.
 #[derive(Subcommand, Debug)]
+#[clap(rename_all = "lowercase")]
 pub enum Command {
     /// Baseline solver.
     Baseline {
@@ -42,6 +43,13 @@ pub enum Command {
     },
     /// Balancer SOR solver.
     Balancer {
+        /// Path to the solver configuration file. This file should be in TOML
+        /// format.
+        #[clap(long, env)]
+        config: PathBuf,
+    },
+    /// 0x solver.
+    ZeroEx {
         /// Path to the solver configuration file. This file should be in TOML
         /// format.
         #[clap(long, env)]

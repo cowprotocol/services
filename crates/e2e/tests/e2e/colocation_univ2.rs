@@ -139,6 +139,9 @@ base-tokens = []
 router = "{:?}"
 pool-code = "{:?}"
 
+[submission]
+gas-price-cap = 1000000000000
+
 [[submission.mempool]]
 mempool = "public"
 "#,

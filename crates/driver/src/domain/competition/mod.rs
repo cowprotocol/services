@@ -39,7 +39,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
-    pub settlement: Mutex<Option<(solution::Id, settlement::Simulated)>>,
+    pub settlement: Mutex<Option<(solution::Id, settlement::Verified)>>,
 }
 
 impl Competition {
@@ -56,9 +56,7 @@ impl Competition {
         // doesn't fail simulation. Currently this is the case, but this needs to stay
         // the same as this code changes.
         tracing::trace!("simulating");
-        let settlement = solution
-            .simulate(&self.eth, &self.simulator, auction)
-            .await?;
+        let settlement = solution.verify(&self.eth, &self.simulator, auction).await?;
         tracing::trace!("scoring");
         let score = settlement.score(&self.eth, auction).await?;
         let id = settlement.id();

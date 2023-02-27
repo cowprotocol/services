@@ -10,6 +10,7 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     chrono::Utc,
+    itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
         order::{LimitOrderClass, OrderClass},
@@ -20,6 +21,7 @@ use {
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         event_handling::MAX_REORG_BLOCK_COUNT,
+        token_list::AutoUpdatingTokenList,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
@@ -35,6 +37,7 @@ pub struct RunLoop {
     pub current_block: CurrentBlockStream,
     pub web3: Web3,
     pub network_block_interval: Duration,
+    pub market_makable_token_list: AutoUpdatingTokenList,
 }
 
 impl RunLoop {
@@ -146,7 +149,26 @@ impl RunLoop {
                     }
                 })
                 .collect(),
-            prices: auction.prices.clone(),
+            tokens: auction
+                .prices
+                .iter()
+                .map(|(address, price)| solve::Token {
+                    address: address.to_owned(),
+                    price: Some(price.to_owned()),
+                    trusted: self.market_makable_token_list.contains(address),
+                })
+                .chain(
+                    self.market_makable_token_list
+                        .all()
+                        .into_iter()
+                        .map(|address| solve::Token {
+                            address,
+                            price: None,
+                            trusted: true,
+                        }),
+                )
+                .unique_by(|token| token.address)
+                .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
         let futures = self

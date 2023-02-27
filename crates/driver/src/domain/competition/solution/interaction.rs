@@ -10,11 +10,31 @@ pub enum Interaction {
 }
 
 impl Interaction {
-    /// Returns whether or not the interaction should be internalized.
+    /// Should the interaction be internalized?
     pub fn internalize(&self) -> bool {
         match self {
             Interaction::Custom(custom) => custom.internalize,
             Interaction::Liquidity(liquidity) => liquidity.internalize,
+        }
+    }
+
+    // TODO Use these two in the asset flow verification as well
+
+    /// The assets going into the settlement contract as part of this
+    /// interaction.
+    pub fn inputs(&self) -> Vec<eth::Asset> {
+        match self {
+            Interaction::Custom(custom) => custom.inputs.clone(),
+            Interaction::Liquidity(liquidity) => vec![liquidity.input],
+        }
+    }
+
+    /// The assets leaving the settlement contract as part of this
+    /// interaction.
+    pub fn outputs(&self) -> Vec<eth::Asset> {
+        match self {
+            Interaction::Custom(custom) => custom.outputs.clone(),
+            Interaction::Liquidity(liquidity) => vec![liquidity.output],
         }
     }
 

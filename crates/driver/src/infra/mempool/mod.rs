@@ -8,7 +8,7 @@ pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Kind, Mempool
 pub async fn send(
     mempools: &[Mempool],
     solver: &Solver,
-    settlement: settlement::Simulated,
+    settlement: settlement::Verified,
 ) -> Result<(), Error> {
     if mempools.is_empty() {
         return Err(Error::AllMempoolsFailed);
