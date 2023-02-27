@@ -75,12 +75,6 @@ impl Contracts {
             balancer_vault.address(),
         ));
 
-        gp_authenticator
-            .add_solver(admin)
-            .send()
-            .await
-            .expect("failed to allow list account 0");
-
         contracts::vault::grant_required_roles(
             &balancer_authorizer,
             balancer_vault.address(),

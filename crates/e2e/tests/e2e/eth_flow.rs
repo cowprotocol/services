@@ -49,18 +49,16 @@ const DAI_PER_ETH: u32 = 1_000;
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_flow() {
-    crate::local_node::test(eth_flow_tx).await;
+    run_test(eth_flow_tx).await;
 }
 
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_flow_indexing_after_refund() {
-    crate::local_node::test(eth_flow_indexing_after_refund).await;
+    run_test(eth_flow_indexing_after_refund).await;
 }
 
 async fn eth_flow_tx(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
@@ -68,7 +66,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     // Create token with Uniswap pool for price estimation
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
         .await;
 
     // Get a quote from the services
@@ -127,14 +125,12 @@ async fn eth_flow_tx(web3: Web3) {
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
     let [refunder, trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
     let [dai] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
     let services = Services::new(onchain.contracts()).await;

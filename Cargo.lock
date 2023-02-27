@@ -1114,7 +1114,6 @@ name = "e2e"
 version = "1.0.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "autopilot",
  "chrono",
  "clap",
@@ -1124,11 +1123,8 @@ dependencies = [
  "ethcontract",
  "hex",
  "hex-literal",
- "lazy_static",
- "maplit",
  "model",
  "orderbook",
- "prometheus",
  "rand",
  "refunder",
  "reqwest",

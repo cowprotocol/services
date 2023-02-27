@@ -14,36 +14,34 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_single_limit_order() {
-    crate::local_node::test(single_limit_order_test).await;
+    run_test(single_limit_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
 async fn local_node_two_limit_orders() {
-    crate::local_node::test(two_limit_orders_test).await;
+    run_test(two_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
 async fn local_node_too_many_limit_orders() {
-    crate::local_node::test(too_many_limit_orders_test).await;
+    run_test(too_many_limit_orders_test).await;
 }
 
 #[tokio::test]
 #[ignore]
 async fn local_node_mixed_limit_and_market_orders() {
-    crate::local_node::test(mixed_limit_and_market_orders_test).await;
+    run_test(mixed_limit_and_market_orders_test).await;
 }
 
 async fn single_limit_order_test(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts
@@ -140,14 +138,12 @@ async fn single_limit_order_test(web3: Web3) {
 }
 
 async fn two_limit_orders_test(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts and prepare funding Uniswap pool
@@ -276,14 +272,12 @@ async fn two_limit_orders_test(web3: Web3) {
 }
 
 async fn mixed_limit_and_market_orders_test(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader accounts
@@ -413,13 +407,11 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
     token_a.mint(trader.address(), to_wei(1)).await;
 

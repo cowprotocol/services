@@ -236,7 +236,7 @@ impl OnchainComponents {
     }
 
     /// Deploy `N` tokens with WETH Uniswap pools.
-    pub async fn deploy_tokens_with_weth_uni_pools<const N: usize>(
+    pub async fn deploy_tokens_with_weth_uni_v2_pools<const N: usize>(
         &self,
         token_amount: U256,
         weth_amount: U256,

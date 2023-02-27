@@ -15,12 +15,10 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_smart_contract_orders() {
-    crate::local_node::test(smart_contract_orders).await;
+    run_test(smart_contract_orders).await;
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -52,7 +50,7 @@ async fn smart_contract_orders(web3: Web3) {
     .unwrap();
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(100_000), to_wei(100_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
     token.mint(safe.address(), to_wei(10)).await;
 

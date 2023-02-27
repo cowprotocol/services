@@ -14,18 +14,16 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_onchain_settlement_without_liquidity() {
-    crate::local_node::test(onchain_settlement_without_liquidity).await;
+    run_test(onchain_settlement_without_liquidity).await;
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     // Fund trader, settlement accounts, and pool creation

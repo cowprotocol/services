@@ -24,18 +24,16 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_order_cancellation() {
-    crate::local_node::test(order_cancellation).await;
+    run_test(order_cancellation).await;
 }
 
 async fn order_cancellation(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [_] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     token.mint(trader.address(), to_wei(10)).await;

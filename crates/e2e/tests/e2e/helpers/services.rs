@@ -31,10 +31,7 @@ pub struct Services<'a> {
 }
 
 impl<'a> Services<'a> {
-    /// Create a new instance of this struct and clear the database.
     pub async fn new(contracts: &'a Contracts) -> Services<'a> {
-        Self::clear_database().await;
-
         Self {
             contracts,
             http: Client::builder()
@@ -42,14 +39,6 @@ impl<'a> Services<'a> {
                 .build()
                 .unwrap(),
         }
-    }
-
-    async fn clear_database() {
-        tracing::info!("Clearing database.");
-        let mut db = sqlx::PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        database::clear_DANGER_(&mut db).await.unwrap();
-        db.commit().await.unwrap();
     }
 
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
@@ -241,4 +230,12 @@ impl<'a> Services<'a> {
     pub fn client(&self) -> &Client {
         &self.http
     }
+}
+
+pub async fn clear_database() {
+    tracing::info!("Clearing database.");
+    let mut db = sqlx::PgConnection::connect("postgresql://").await.unwrap();
+    let mut db = db.begin().await.unwrap();
+    database::clear_DANGER_(&mut db).await.unwrap();
+    db.commit().await.unwrap();
 }

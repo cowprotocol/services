@@ -19,17 +19,15 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_refunder_tx() {
-    crate::local_node::test(refunder_tx).await;
+    run_test(refunder_tx).await;
 }
 
 async fn refunder_tx(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     let services = Services::new(onchain.contracts()).await;

@@ -15,12 +15,10 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_integration() {
-    crate::local_node::test(eth_integration).await;
+    run_test(eth_integration).await;
 }
 
 async fn eth_integration(web3: Web3) {
-    init().await;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -28,7 +26,7 @@ async fn eth_integration(web3: Web3) {
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(100_000), to_wei(100_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
         .await;
     token.mint(trader_a.address(), to_wei(51)).await;
     token.mint(trader_b.address(), to_wei(51)).await;

@@ -16,19 +16,17 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_test() {
-    crate::local_node::test(test).await;
+    run_test(test).await;
 }
 
 async fn test(web3: Web3) {
-    init().await;
-
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     tx!(
