@@ -6,10 +6,7 @@ use {
     },
     chrono::{DateTime, NaiveDateTime, Utc},
     ethcontract::{H160, U256},
-    model::{
-        order::Order,
-        quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
-    },
+    model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     refunder::refund_service::RefundService,
     shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
@@ -33,8 +30,6 @@ async fn refunder_tx(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
-
-    let client = reqwest::Client::default();
 
     // Get quote id for order placement
     let buy_token = token.address();
@@ -68,26 +63,14 @@ async fn refunder_tx(web3: Web3) {
     ethflow_order
         .mine_order_creation(user.account(), &onchain.contracts().ethflow)
         .await;
-
-    let get_order = || async {
-        client
-            .get(format!(
-                "{API_HOST}/api/v1/orders/{}",
-                ethflow_order.uid(onchain.contracts()).await
-            ))
-            .send()
-            .await
-            .unwrap()
-    };
+    let order_id = ethflow_order.uid(onchain.contracts()).await;
 
     tracing::info!("Waiting for order to be indexed.");
-    let order_exists = || async {
-        let response = get_order().await;
-        response.status().is_success()
-    };
-    wait_for_condition(Duration::from_secs(10), order_exists)
-        .await
-        .unwrap();
+    wait_for_condition(Duration::from_secs(10), || async {
+        services.get_order(&order_id).await.is_ok()
+    })
+    .await
+    .unwrap();
 
     let time_after_expiration = valid_to as i64 + 60;
     web3.api::<TestNodeApi<_>>()
@@ -128,8 +111,10 @@ async fn refunder_tx(web3: Web3) {
 
     tracing::info!("Waiting for autopilot to index refund tx hash.");
     let has_tx_hash = || async {
-        let order = get_order().await.json::<Order>().await.unwrap();
-        order
+        services
+            .get_order(&order_id)
+            .await
+            .unwrap()
             .metadata
             .ethflow_data
             .unwrap()
