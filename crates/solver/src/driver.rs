@@ -470,6 +470,8 @@ impl Driver {
                 .solutions
                 .iter()
                 .map(|solution| solution.solver_address)
+                .collect::<HashSet<_>>() // to avoid duplicates
+                .into_iter()
                 .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
