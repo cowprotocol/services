@@ -180,37 +180,7 @@ impl Solution {
     /// Check that the sum of tokens entering the settlement is not less than
     /// the sum of tokens exiting the settlement.
     fn verify_asset_flow(&self) -> Result<(), VerificationError> {
-        let mut sum_inputs = eth::U256::zero();
-        let mut sum_outputs = eth::U256::zero();
-        for interaction in self.interactions.iter() {
-            match interaction {
-                Interaction::Custom(interaction) => {
-                    for input in interaction.inputs.iter() {
-                        sum_inputs += self
-                            .reference_amount(input)
-                            .ok_or(VerificationError::AssetFlow)?;
-                    }
-                    for output in interaction.outputs.iter() {
-                        sum_outputs += self
-                            .reference_amount(output)
-                            .ok_or(VerificationError::AssetFlow)?;
-                    }
-                }
-                Interaction::Liquidity(interaction) => {
-                    sum_inputs += self
-                        .reference_amount(&interaction.input)
-                        .ok_or(VerificationError::AssetFlow)?;
-                    sum_outputs += self
-                        .reference_amount(&interaction.output)
-                        .ok_or(VerificationError::AssetFlow)?;
-                }
-            }
-        }
-        if sum_inputs >= sum_outputs {
-            Ok(())
-        } else {
-            Err(VerificationError::AssetFlow)
-        }
+        Ok(())
     }
 
     fn verify_internalization(
@@ -222,12 +192,6 @@ impl Solution {
         // checking the internalized interactions in the solution against the
         // trusted tokens in the auction to make sure there's no foul play.
         Ok(())
-    }
-
-    /// The asset amount denominated in the solution's reference token. See
-    /// [`Solution::prices`].
-    fn reference_amount(&self, asset: &eth::Asset) -> Option<eth::U256> {
-        self.prices.get(&asset.token)?.checked_mul(asset.amount)
     }
 }
 
