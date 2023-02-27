@@ -470,6 +470,11 @@ async fn main() -> ! {
         http_factory.create(),
         args.shared.solver_competition_auth.clone(),
     );
+    let network_time_between_blocks = args
+        .shared
+        .network_block_interval
+        .or_else(|| shared::network::block_interval(&network_id, chain_id))
+        .expect("unknown network block interval");
 
     let mut driver = Driver::new(
         settlement_contract,
@@ -483,6 +488,8 @@ async fn main() -> ! {
         web3,
         network_id,
         args.solver_time_limit,
+        network_time_between_blocks,
+        args.additional_mining_deadline,
         current_block_stream.clone(),
         solution_submitter,
         api,

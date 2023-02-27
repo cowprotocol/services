@@ -162,6 +162,7 @@ pub async fn main(args: arguments::Arguments) -> ! {
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
     let _network_time_between_blocks = args
+        .shared
         .network_block_interval
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");

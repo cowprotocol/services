@@ -31,7 +31,7 @@ SELECT tx_hash
 FROM settlements
 WHERE
     block_number = $1 AND
-    block_number = $2
+    log_index = $2
     "#;
     sqlx::query_scalar::<_, TransactionHash>(QUERY)
         .bind(event.block_number)

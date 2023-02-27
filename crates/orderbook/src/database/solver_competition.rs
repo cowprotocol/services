@@ -2,7 +2,11 @@ use {
     super::Postgres,
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     anyhow::{Context, Result},
-    database::byte_array::ByteArray,
+    database::{
+        auction_participants::Participant,
+        byte_array::ByteArray,
+        settlement_scores::Score,
+    },
     model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
     number_conversions::u256_to_big_decimal,
     primitive_types::H256,
@@ -46,6 +50,38 @@ impl SolverCompetitionStoring for Postgres {
             .await
             .context("order_rewards::save")?;
         }
+
+        database::settlement_scores::insert(
+            &mut ex,
+            Score {
+                auction_id: request.auction,
+                winner: ByteArray(request.scores.winner.0),
+                winning_score: u256_to_big_decimal(&request.scores.winning_score),
+                reference_score: u256_to_big_decimal(&request.scores.reference_score),
+                block_deadline: request
+                    .scores
+                    .block_deadline
+                    .try_into()
+                    .context("convert block deadline")?,
+            },
+        )
+        .await
+        .context("settlement_scores::insert")?;
+
+        database::auction_participants::insert(
+            &mut ex,
+            request
+                .participants
+                .iter()
+                .map(|p| Participant {
+                    auction_id: request.auction,
+                    participant: ByteArray(p.0),
+                })
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .context("auction_participants::insert")?;
 
         ex.commit().await.context("commit")
     }
@@ -93,7 +129,7 @@ impl SolverCompetitionStoring for Postgres {
 mod tests {
     use {
         super::*,
-        model::solver_competition::{CompetitionAuction, SolverSettlement},
+        model::solver_competition::{CompetitionAuction, Scores, SolverSettlement},
         primitive_types::H160,
     };
 
@@ -120,6 +156,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "asdf".to_string(),
+                    solver_address: H160([1; 20]),
                     objective: Default::default(),
                     score: Default::default(),
                     ranking: 1,
@@ -130,6 +167,13 @@ mod tests {
                 }],
             },
             executions: Default::default(),
+            scores: Scores {
+                winner: H160([1; 20]),
+                winning_score: 100.into(),
+                reference_score: 99.into(),
+                block_deadline: 10,
+            },
+            participants: vec![H160([1; 20])],
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();

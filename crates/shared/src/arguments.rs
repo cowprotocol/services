@@ -296,6 +296,10 @@ pub struct Arguments {
     /// The number of pools to initially populate the UniswapV3 cache
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: u64,
+
+    /// The time in seconds between new blocks on the network.
+    #[clap(long, env, value_parser = duration_from_seconds)]
+    pub network_block_interval: Option<Duration>,
 }
 
 pub fn display_secret_option<T>(
@@ -440,6 +444,13 @@ impl Display for Arguments {
             self.balancer_pool_deny_list
         )?;
         display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_option(
+            f,
+            "network_block_interval",
+            &self
+                .network_block_interval
+                .map(|duration| duration.as_secs_f32()),
+        )?;
 
         Ok(())
     }
