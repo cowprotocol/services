@@ -21,6 +21,7 @@ pub struct SettlementUpdate {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
+    // external prices of tokens used in the settlement, that we want to keep in database
     pub prices: BTreeMap<H160, U256>,
 }
 
@@ -62,7 +63,11 @@ impl super::Postgres {
         .await
         .context("insert_settlement_observations")?;
 
-        // update auction_prices
+        // Update auction_prices
+        // We first delete all external prices for the auction and then insert the
+        // external prices we want to keep (the ones used in the settlement)
+        // Note that we could instead just delete the external prices not used in the
+        // settlement
         database::auction_prices::delete(&mut ex, settlement_update.auction_id)
             .await
             .context("delete_auction_prices")?;
