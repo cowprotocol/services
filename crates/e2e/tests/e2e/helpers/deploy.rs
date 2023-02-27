@@ -18,8 +18,8 @@ pub struct Contracts {
     pub balancer_vault: BalancerV2Vault,
     pub gp_settlement: GPv2Settlement,
     pub gp_authenticator: GPv2AllowListAuthentication,
-    pub uniswap_factory: UniswapV2Factory,
-    pub uniswap_router: UniswapV2Router02,
+    pub uniswap_v2_factory: UniswapV2Factory,
+    pub uniswap_v2_router: UniswapV2Router02,
     pub weth: WETH9,
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
@@ -58,8 +58,11 @@ impl Contracts {
             U256::from(0),
         ));
 
-        let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
-        let uniswap_router = deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
+        let uniswap_v2_factory = deploy!(UniswapV2Factory(accounts[0]));
+        let uniswap_v2_router = deploy!(UniswapV2Router02(
+            uniswap_v2_factory.address(),
+            weth.address()
+        ));
 
         let gp_authenticator = deploy!(GPv2AllowListAuthentication);
         gp_authenticator
@@ -110,8 +113,8 @@ impl Contracts {
             balancer_vault,
             gp_settlement,
             gp_authenticator,
-            uniswap_factory,
-            uniswap_router,
+            uniswap_v2_factory,
+            uniswap_v2_router,
             weth,
             allowance,
             domain_separator,

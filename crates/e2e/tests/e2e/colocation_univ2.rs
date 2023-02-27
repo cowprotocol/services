@@ -148,7 +148,7 @@ mempool = "public"
         contracts.weth.address(),
         solver_account.address(),
         hex::encode(solver_account.private_key()),
-        contracts.uniswap_router.address(),
+        contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),
     ));
     let args = vec![

@@ -100,7 +100,7 @@ pub async fn gnosis_safe_eip1271_signature(
 }
 
 pub fn to_wei(base: u32) -> U256 {
-    U256::from(base) * U256::from(10).pow(18.into())
+    U256::from(base) * U256::exp10(18)
 }
 
 #[derive(Debug)]
@@ -132,10 +132,11 @@ impl Iterator for AccountGenerator {
     type Item = TestAccount;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let mut buffer = [0; 32];
+
         loop {
             self.id = self.id.checked_add(1)?;
 
-            let mut buffer = [0; 32];
             buffer[24..].copy_from_slice(&self.id.to_be_bytes());
             let Ok(pk) = PrivateKey::from_raw(buffer) else {
                 continue;
@@ -257,22 +258,22 @@ impl OnchainComponents {
             tx!(
                 minter,
                 self.contracts
-                    .uniswap_factory
+                    .uniswap_v2_factory
                     .create_pair(contract.address(), self.contracts.weth.address())
             );
             tx!(
                 minter,
-                contract.approve(self.contracts.uniswap_router.address(), token_amount)
+                contract.approve(self.contracts.uniswap_v2_router.address(), token_amount)
             );
             tx!(
                 minter,
                 self.contracts
                     .weth
-                    .approve(self.contracts.uniswap_router.address(), weth_amount)
+                    .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
             );
             tx!(
                 minter,
-                self.contracts.uniswap_router.add_liquidity(
+                self.contracts.uniswap_v2_router.add_liquidity(
                     contract.address(),
                     self.contracts.weth.address(),
                     token_amount,

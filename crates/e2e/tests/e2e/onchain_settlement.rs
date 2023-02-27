@@ -39,20 +39,26 @@ async fn onchain_settlement(web3: Web3) {
         solver.account(),
         onchain
             .contracts()
-            .uniswap_factory
+            .uniswap_v2_factory
             .create_pair(token_a.address(), token_b.address())
     );
     tx!(
         solver.account(),
-        token_a.approve(onchain.contracts().uniswap_router.address(), to_wei(1000))
+        token_a.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
     );
     tx!(
         solver.account(),
-        token_b.approve(onchain.contracts().uniswap_router.address(), to_wei(1000))
+        token_b.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
     );
     tx!(
         solver.account(),
-        onchain.contracts().uniswap_router.add_liquidity(
+        onchain.contracts().uniswap_v2_router.add_liquidity(
             token_a.address(),
             token_b.address(),
             to_wei(1000),

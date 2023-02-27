@@ -67,7 +67,7 @@ impl<'a> Services<'a> {
             "--baseline-sources=None".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
-                self.contracts.uniswap_router.address(),
+                self.contracts.uniswap_v2_router.address(),
                 H256(shared::sources::uniswap_v2::UNISWAP_INIT),
             ),
             format!(

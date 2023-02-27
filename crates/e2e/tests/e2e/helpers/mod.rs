@@ -22,7 +22,7 @@ pub async fn init() {
     .join(",");
 
     shared::tracing::initialize_reentrant(&filters);
-    // shared::exit_process_on_panic::set_panic_hook();
+    shared::exit_process_on_panic::set_panic_hook();
 }
 
 /// Create a temporary file with the given content.
