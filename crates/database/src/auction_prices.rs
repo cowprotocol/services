@@ -14,7 +14,7 @@ pub struct AuctionPrice {
 
 pub async fn insert(
     ex: &mut PgTransaction<'_>,
-    prices: Vec<AuctionPrice>,
+    prices: &[AuctionPrice],
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str =
         r#"INSERT INTO auction_prices (auction_id, token, price) VALUES ($1, $2, $3);"#;
@@ -22,7 +22,7 @@ pub async fn insert(
         sqlx::query(QUERY)
             .bind(price.auction_id)
             .bind(price.token)
-            .bind(price.price)
+            .bind(price.price.clone())
             .execute(&mut *ex)
             .await?;
     }
@@ -67,7 +67,7 @@ mod tests {
                 price: 5.into(),
             },
         ];
-        insert(&mut db, input.clone()).await.unwrap();
+        insert(&mut db, &input).await.unwrap();
         let output = fetch(&mut db, 1).await.unwrap();
         assert_eq!(input, output);
 

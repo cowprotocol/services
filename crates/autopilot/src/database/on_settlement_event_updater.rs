@@ -76,7 +76,8 @@ impl super::Postgres {
                     token: ByteArray(token.0),
                     price: u256_to_big_decimal(price),
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .await
         .context("insert_auction_prices")?;
