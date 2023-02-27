@@ -406,9 +406,13 @@ impl Driver {
         // CIP20 TODO - add to if statement below, once the transition period is over.
         let mut scores = rated_settlements
             .iter()
-            .map(|(_, rated_settlement, _)| rated_settlement.score.score())
-            .sorted()
-            .rev();
+            .map(|(solver, rated_settlement, _)| {
+                (solver.account().address(), rated_settlement.score.score())
+            })
+            .sorted_unstable_by(|(_, left_score), (_, right_score)| {
+                Ord::cmp(&right_score, &left_score) // descending
+            })
+            .peekable();
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -453,11 +457,11 @@ impl Driver {
                     .context("convert nonce")?,
             };
             let scores = model::solver_competition::Scores {
-                winner: winning_solver.account().address(),
-                winning_score: scores.next().expect("no score"), // guaranteed to exist
+                winner: scores.peek().expect("no winner").0,
+                winning_score: scores.next().expect("no score").1, // guaranteed to exist
                 // reference score is the second highest score, or 0 if there is only one score (see
                 // CIP20)
-                reference_score: scores.next().unwrap_or(0.into()),
+                reference_score: scores.next().unwrap_or_default().1,
                 block_deadline: {
                     let deadline = self.solver_time_limit
                         + self.solution_submitter.max_confirm_time
