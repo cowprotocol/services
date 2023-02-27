@@ -8,7 +8,7 @@ use {
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
     model::order::OrderKind,
     num::BigRational,
-    number_conversions::{big_rational_to_u256, u256_to_big_rational},
+    number_conversions::{big_rational_to_u256, big_uint_to_u256, u256_to_big_rational},
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
     web3::ethabi::{Function, Token},
 };
@@ -112,23 +112,30 @@ pub struct Order {
     pub buy_token: H160,
     pub sell_amount: U256,
     pub buy_amount: U256,
+    pub executed_amount: U256,
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl From<model::order::Order> for Order {
-    fn from(order: model::order::Order) -> Self {
-        Self {
+impl TryFrom<model::order::Order> for Order {
+    type Error = anyhow::Error;
+
+    fn try_from(order: model::order::Order) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
             full_fee_amount: order.metadata.full_fee_amount,
             kind: order.data.kind,
             sell_token: order.data.sell_token,
             buy_token: order.data.buy_token,
             sell_amount: order.data.sell_amount,
             buy_amount: order.data.buy_amount,
+            executed_amount: match order.data.kind {
+                OrderKind::Buy => big_uint_to_u256(&order.metadata.executed_buy_amount)?,
+                OrderKind::Sell => order.metadata.executed_sell_amount_before_fees,
+            },
             signature: order
                 .signature
                 .encode_for_settlement(order.metadata.owner)
                 .to_vec(),
-        }
+        })
     }
 }
 
@@ -174,7 +181,7 @@ impl DecodedSettlement {
                 .find(|order| order.signature == trade.signature.0)
             {
                 Some(order) => {
-                    acc + match fee(trade, external_prices, order, configuration) {
+                    acc + match fee(external_prices, order, configuration) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -240,7 +247,6 @@ fn surplus(
 }
 
 fn fee(
-    trade: &DecodedTrade,
     external_prices: &ExternalPrices,
     order: &Order,
     configuration: &FeeConfiguration,
@@ -250,12 +256,12 @@ fn fee(
 
     let fee = match order.kind {
         model::order::OrderKind::Buy => {
-            scaled_fee_amount * u256_to_big_rational(&trade.executed_amount)
-                / u256_to_big_rational(&trade.buy_amount)
+            scaled_fee_amount * u256_to_big_rational(&order.executed_amount)
+                / u256_to_big_rational(&order.buy_amount)
         }
         model::order::OrderKind::Sell => {
-            scaled_fee_amount * u256_to_big_rational(&trade.executed_amount)
-                / u256_to_big_rational(&trade.sell_amount)
+            scaled_fee_amount * u256_to_big_rational(&order.executed_amount)
+                / u256_to_big_rational(&order.sell_amount)
         }
     };
 
@@ -472,6 +478,7 @@ mod tests {
                 sell_amount: 14955083027u128.into(),
                 sell_token: H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
                 buy_token: Default::default(),
+                executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             Order {
@@ -481,6 +488,7 @@ mod tests {
                 sell_amount: 5701912712048588025933u128.into(),
                 sell_token: H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
                 buy_token: Default::default(),
+                executed_amount: 5701912712048588025933u128.into(),
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
             }
         ];
