@@ -1,11 +1,6 @@
 use {
-    crate::{
-        deploy::Contracts,
-        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-        services::{wait_for_condition, API_HOST},
-    },
-    ethcontract::{transaction::TransactionBuilder, Account, PrivateKey, H160, H256, U256},
-    hex_literal::hex,
+    crate::{local_node::NODE_HOST, setup::*},
+    ethcontract::{H160, H256, U256},
     model::{
         order::{OrderBuilder, OrderKind},
         signature::EcdsaSigningScheme,
@@ -13,7 +8,7 @@ use {
     reqwest::Url,
     secp256k1::SecretKey,
     shared::{ethrpc::Web3, sources::uniswap_v2::UNISWAP_INIT},
-    std::{io::Write, time::Duration},
+    std::time::Duration,
     tokio::task::JoinHandle,
     web3::signing::SecretKeyRef,
 };
@@ -21,88 +16,48 @@ use {
 #[tokio::test]
 #[ignore]
 async fn local_node_test() {
-    crate::local_node::test(test).await;
+    run_test(test).await;
 }
 
 async fn test(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
-
-    crate::services::clear_database().await;
-
     tracing::info!("Setting up chain state.");
-    let contracts = crate::deploy::deploy(&web3).await.unwrap();
-    const SOLVER_PRIVATE_KEY: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000001");
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PRIVATE_KEY).unwrap(), None);
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
-    const TRADER_A_PK: [u8; 32] =
-        hex!("0000000000000000000000000000000000000000000000000000000000000002");
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
-    for address in [&solver.address(), &trader.address()] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(10))
-            .to(*address)
-            .send()
-            .await
-            .unwrap();
-    }
-    let token = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(1000),
-            weth_amount: to_wei(1000),
-        },
-    )
-    .await;
-    let token = token.contract;
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
     tx!(
-        trader,
-        contracts.weth.approve(contracts.allowance, to_wei(3))
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(3))
     );
-    tx_value!(trader, to_wei(3), contracts.weth.deposit());
+    tx_value!(
+        trader.account(),
+        to_wei(3),
+        onchain.contracts().weth.deposit()
+    );
 
     tracing::info!("Starting services.");
-    let (solver_endpoint, _) = start_solver(contracts.weth.address()).await;
-    start_driver(
-        &contracts,
-        &solver_endpoint,
-        &solver.address(),
-        &SOLVER_PRIVATE_KEY,
-    );
-    let driver_url: Url = "http://localhost:11088/test_solver".parse().unwrap();
-    let autopilot_args = &[
-        "--enable-colocation".to_string(),
-        format!("--drivers={driver_url}"),
-        format!(
-            "--trusted-tokens=0x{},0x{}",
-            hex::encode(token.address()),
-            hex::encode(contracts.weth.address())
-        ),
-    ];
-    crate::services::start_autopilot(&contracts, autopilot_args);
-    crate::services::start_api(&contracts, &[]);
-    crate::services::wait_for_api_to_come_up().await;
+    let solver_endpoint = start_solver(onchain.contracts().weth.address()).await;
+    start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![
+        "--enable-colocation".to_string(),
+        "--drivers=http://localhost:11088/test_solver".to_string(),
+    ]);
+    services.start_api(vec![]).await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
-    let order_a = OrderBuilder::default()
-        .with_sell_token(contracts.weth.address())
+    let order = OrderBuilder::default()
+        .with_sell_token(onchain.contracts().weth.address())
         .with_sell_amount(to_wei(2))
         .with_fee_amount(to_wei(1))
         .with_buy_token(token.address())
@@ -111,18 +66,12 @@ async fn test(web3: Web3) {
         .with_kind(OrderKind::Buy)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
-    let placement = http
-        .post(&format!("{API_HOST}/api/v1/orders"))
-        .json(&order_a)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(placement.status(), 201);
+    services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -138,40 +87,36 @@ async fn test(web3: Web3) {
     // made its way into the DB.
 }
 
-async fn start_solver(weth: H160) -> (Url, JoinHandle<()>) {
-    let config = format!(
+async fn start_solver(weth: H160) -> Url {
+    let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
 base-tokens = []
 max-hops = 0
         "#,
-    );
-    let mut file = tempfile::NamedTempFile::new().unwrap();
-    file.write_all(config.as_bytes()).unwrap();
-    let file = file.into_temp_path();
+    ));
     let args = vec![
         "solvers".to_string(),
         "baseline".to_string(),
-        format!("--config={}", file.to_str().unwrap()),
+        format!("--config={}", config_file.display()),
     ];
+
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
-    let task = async move {
-        let _file = file;
+    tokio::task::spawn(async move {
+        let _config_file = config_file;
         solvers::run::run(args.into_iter(), Some(bind)).await;
-    };
-    let handle = tokio::task::spawn(task);
+    });
+
     let solver_addr = bind_receiver.await.unwrap();
-    let url = format!("http://{solver_addr}").parse().unwrap();
-    (url, handle)
+    format!("http://{solver_addr}").parse().unwrap()
 }
 
 fn start_driver(
     contracts: &Contracts,
     solver_endpoint: &Url,
-    solver_account_address: &H160,
-    solver_account_private_key: &[u8; 32],
+    solver_account: &TestAccount,
 ) -> JoinHandle<()> {
-    let config = format!(
+    let config_file = config_tmp_file(format!(
         r#"
 # CI e2e tests run with hardhat, which doesn't support access lists.
 disable-access-list-simulation = true
@@ -184,7 +129,7 @@ weth = "{:?}"
 name = "test_solver"
 endpoint = "{solver_endpoint}"
 relative-slippage = "0.1"
-address = "{solver_account_address:?}"
+address = "{:?}"
 private-key = "0x{}"
 
 [liquidity]
@@ -202,21 +147,19 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
-        hex::encode(solver_account_private_key),
-        contracts.uniswap_router.address(),
+        solver_account.address(),
+        hex::encode(solver_account.private_key()),
+        contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),
-    );
-    let mut file = tempfile::NamedTempFile::new().unwrap();
-    file.write_all(config.as_bytes()).unwrap();
-    let file = file.into_temp_path();
+    ));
     let args = vec![
         "driver".to_string(),
-        format!("--config={}", dbg!(file.to_str().unwrap())),
-        "--ethrpc=http://localhost:8545".to_string(),
+        format!("--config={}", config_file.display()),
+        format!("--ethrpc={NODE_HOST}"),
     ];
-    let task = async move {
-        let _file = file;
+
+    tokio::task::spawn(async move {
+        let _config_file = config_file;
         driver::run::run(args.into_iter(), driver::infra::time::Now::Real, None).await;
-    };
-    tokio::task::spawn(task)
+    })
 }

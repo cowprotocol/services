@@ -1,13 +1,6 @@
 use {
-    crate::{
-        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
-    ethcontract::{
-        prelude::{Account, PrivateKey, U256},
-        transaction::TransactionBuilder,
-    },
-    hex_literal::hex,
+    crate::setup::*,
+    ethcontract::prelude::U256,
     model::{
         order::{OrderBuilder, OrderKind},
         signature::EcdsaSigningScheme,
@@ -18,100 +11,60 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const TRADER_PK: [u8; 32] =
-    hex!("0000000000000000000000000000000000000000000000000000000000000001");
-const SOLVER_PK: [u8; 32] =
-    hex!("0000000000000000000000000000000000000000000000000000000000000003");
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-
 #[tokio::test]
 #[ignore]
 async fn local_node_onchain_settlement_without_liquidity() {
-    crate::local_node::test(onchain_settlement_without_liquidity).await;
+    run_test(onchain_settlement_without_liquidity).await;
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
-
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER_PK).unwrap(), None);
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER_PK).unwrap(), None);
-    for account in [&trader, &solver] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(1))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
-
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
-
-    // Create & mint tokens to trade, pools for fee connections
-    let token_a = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(1000),
-            weth_amount: to_wei(1000),
-        },
-    )
-    .await;
-    let token_b = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(1000),
-            weth_amount: to_wei(1000),
-        },
-    )
-    .await;
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
 
     // Fund trader, settlement accounts, and pool creation
     token_a.mint(trader.address(), to_wei(10)).await;
     token_b
-        .mint(contracts.gp_settlement.address(), to_wei(100))
+        .mint(onchain.contracts().gp_settlement.address(), to_wei(100))
         .await;
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
-    let token_a = token_a.contract;
-    let token_b = token_b.contract;
+
     let settlement_contract_balance_before = token_b
-        .balance_of(contracts.gp_settlement.address())
+        .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
 
     // Create and fund Uniswap pool
     tx!(
-        solver,
-        contracts
-            .uniswap_factory
+        solver.account(),
+        onchain
+            .contracts()
+            .uniswap_v2_factory
             .create_pair(token_a.address(), token_b.address())
     );
     tx!(
-        solver,
-        token_a.approve(contracts.uniswap_router.address(), to_wei(1000))
+        solver.account(),
+        token_a.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
     );
     tx!(
-        solver,
-        token_b.approve(contracts.uniswap_router.address(), to_wei(1000))
+        solver.account(),
+        token_b.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
     );
     tx!(
-        solver,
-        contracts.uniswap_router.add_liquidity(
+        solver.account(),
+        onchain.contracts().uniswap_v2_router.add_liquidity(
             token_a.address(),
             token_b.address(),
             to_wei(1000),
@@ -124,14 +77,15 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader, token_a.approve(contracts.allowance, to_wei(10)));
+    tx!(
+        trader.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(10))
+    );
 
     // Place Orders
-    crate::services::start_autopilot(&contracts, &[]);
-    crate::services::start_api(&contracts, &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     let order = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -143,36 +97,31 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 1
+        services.get_auction().await.auction.orders.len() == 1
     })
     .await
     .unwrap();
-    crate::services::start_old_driver(
-        &contracts,
-        &SOLVER_PK,
-        &[format!(
+
+    services.start_old_driver(
+        solver.private_key(),
+        vec![format!(
             "--market-makable-tokens={:?},{:?}",
             token_a.address(),
             token_b.address()
         )],
     );
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.get_auction().await.auction.orders.is_empty()
     })
     .await
     .unwrap();
@@ -194,7 +143,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Check that settlement buffers were traded.
     let settlement_contract_balance_after = token_b
-        .balance_of(contracts.gp_settlement.address())
+        .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();

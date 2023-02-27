@@ -4,10 +4,8 @@
 // tests we want to run.
 
 #[macro_use]
-mod onchain_components;
-mod deploy;
+mod setup;
 mod local_node;
-mod services;
 
 // Each of the following modules contains tests.
 mod colocation_univ2;

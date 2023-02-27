@@ -1,17 +1,9 @@
 use {
-    crate::{
-        onchain_components::{
-            deploy_token_with_weth_uniswap_pool,
-            gnosis_safe_eip1271_signature,
-            to_wei,
-            WethPoolConfig,
-        },
-        services::{solvable_orders, wait_for_condition, API_HOST},
-    },
+    crate::setup::*,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
-    ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
+    ethcontract::{Bytes, H160, H256, U256},
     model::{
-        order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid},
+        order::{OrderBuilder, OrderKind, OrderStatus, OrderUid},
         signature::hashed_eip712_message,
     },
     secp256k1::SecretKey,
@@ -20,44 +12,17 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-const TRADER: [u8; 32] = [1; 32];
-const SOLVER: [u8; 32] = [2; 32];
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-
 #[tokio::test]
 #[ignore]
 async fn local_node_smart_contract_orders() {
-    crate::local_node::test(smart_contract_orders).await;
+    run_test(smart_contract_orders).await;
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    shared::tracing::initialize_reentrant(
-        "e2e=debug,orderbook=debug,solver=debug,autopilot=debug,\
-         orderbook::api::request_summary=off",
-    );
-    shared::exit_process_on_panic::set_panic_hook();
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    crate::services::clear_database().await;
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
-
-    let solver = Account::Offline(PrivateKey::from_raw(SOLVER).unwrap(), None);
-    let user = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
-    for account in [&user, &solver] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(1))
-            .to(account.address())
-            .send()
-            .await
-            .unwrap();
-    }
-
-    contracts
-        .gp_authenticator
-        .add_solver(solver.address())
-        .send()
-        .await
-        .unwrap();
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
 
     // Deploy and setup a Gnosis Safe.
     let safe_singleton = GnosisSafe::builder(&web3).deploy().await.unwrap();
@@ -71,7 +36,7 @@ async fn smart_contract_orders(web3: Web3) {
         .unwrap();
     let safe = GnosisSafe::at(&web3, safe_proxy.address());
     safe.setup(
-        vec![user.address()],
+        vec![trader.address()],
         1.into(),         // threshold
         H160::default(),  // delegate call
         Bytes::default(), // delegate call bytes
@@ -84,27 +49,21 @@ async fn smart_contract_orders(web3: Web3) {
     .await
     .unwrap();
 
-    // Create & mint tokens to trade, pools for fee connections
-    let token = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
-        },
-    )
-    .await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .await;
     token.mint(safe.address(), to_wei(10)).await;
-    let token = token.contract;
 
     // Approve GPv2 for trading
-    tx_safe!(user, safe, token.approve(contracts.allowance, to_wei(10)));
+    tx_safe!(
+        trader.account(),
+        safe,
+        token.approve(onchain.contracts().allowance, to_wei(10))
+    );
 
-    crate::services::start_autopilot(&contracts, &[]);
-    crate::services::start_api(&contracts, &[]);
-    crate::services::wait_for_api_to_come_up().await;
-
-    let client = reqwest::Client::default();
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
     // Place Orders
     let order_template = || {
@@ -113,7 +72,7 @@ async fn smart_contract_orders(web3: Web3) {
             .with_sell_token(token.address())
             .with_sell_amount(to_wei(4))
             .with_fee_amount(to_wei(1))
-            .with_buy_token(contracts.weth.address())
+            .with_buy_token(onchain.contracts().weth.address())
             .with_buy_amount(to_wei(3))
             .with_valid_to(model::time::now_in_epoch_seconds() + 300)
     };
@@ -122,10 +81,10 @@ async fn smart_contract_orders(web3: Web3) {
             .with_eip1271(
                 safe.address(),
                 gnosis_safe_eip1271_signature(
-                    SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
+                    SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
                     &safe,
                     H256(hashed_eip712_message(
-                        &contracts.domain_separator,
+                        &onchain.contracts().domain_separator,
                         &order_template().build().data.hash_struct(),
                     )),
                 )
@@ -139,30 +98,19 @@ async fn smart_contract_orders(web3: Web3) {
     ];
 
     for order in &mut orders {
-        let creation = order.clone().into_order_creation();
-        let placement = client
-            .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-            .json(&creation)
-            .send()
+        let uid = services
+            .create_order(&order.clone().into_order_creation())
             .await
             .unwrap();
-        assert_eq!(placement.status(), 201);
-        order.metadata.uid = placement.json::<OrderUid>().await.unwrap();
+        order.metadata.uid = uid;
     }
     let orders = orders; // prevent further changes to `orders`.
 
     let order_status = |order_uid: OrderUid| {
-        let client = client.clone();
+        let services = &services;
         async move {
-            client
-                .get(&format!(
-                    "{}{}{}",
-                    API_HOST, ORDER_PLACEMENT_ENDPOINT, &order_uid
-                ))
-                .send()
-                .await
-                .unwrap()
-                .json::<Order>()
+            services
+                .get_order(&order_uid)
                 .await
                 .unwrap()
                 .metadata
@@ -182,16 +130,17 @@ async fn smart_contract_orders(web3: Web3) {
         OrderStatus::PresignaturePending
     );
     tx_safe!(
-        user,
+        trader.account(),
         safe,
-        contracts
+        onchain
+            .contracts()
             .gp_settlement
             .set_pre_signature(Bytes(orders[1].metadata.uid.0.to_vec()), true)
     );
 
     // Check that the presignature event was received.
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 2
+        services.get_auction().await.auction.orders.len() == 2
     })
     .await
     .unwrap();
@@ -202,9 +151,9 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    crate::services::start_old_driver(&contracts, &SOLVER, &[]);
+    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(Duration::from_secs(10), || async {
-        solvable_orders().await.unwrap() == 0
+        services.get_auction().await.auction.orders.is_empty()
     })
     .await
     .unwrap();
@@ -217,7 +166,8 @@ async fn smart_contract_orders(web3: Web3) {
         .expect("Couldn't fetch token balance");
     assert_eq!(balance, U256::zero());
 
-    let balance = contracts
+    let balance = onchain
+        .contracts()
         .weth
         .balance_of(safe.address())
         .call()

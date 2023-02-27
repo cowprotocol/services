@@ -1,64 +1,19 @@
 use {
     chrono::{DateTime, Utc},
-    ethcontract::{futures::FutureExt, U256},
-    lazy_static::lazy_static,
-    shared::ethrpc::{create_test_transport, Web3},
-    std::{
-        fmt::Debug,
-        future::Future,
-        panic::{self, AssertUnwindSafe},
-        sync::Mutex,
-    },
+    ethcontract::U256,
+    std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
 
-lazy_static! {
-    static ref NODE_MUTEX: Mutex<()> = Mutex::new(());
-}
+pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
-const NODE_HOST: &str = "http://127.0.0.1:8545";
-
-/// *Testing* function that takes a closure and runs it on a local testing node.
-/// Before each test, it creates a snapshot of the current state of the chain.
-/// The saved state is restored at the end of the test.
-///
-/// Note that tests calling with this function will not be run simultaneously.
-pub async fn test<F, Fut>(f: F)
-where
-    F: FnOnce(Web3) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    // The mutex guarantees that no more than a test at a time is running on
-    // the testing node.
-    // Note that the mutex is expected to become poisoned if a test panics. This
-    // is not relevant for us as we are not interested in the data stored in
-    // it but rather in the locked state.
-    let _lock = NODE_MUTEX.lock();
-
-    let http = create_test_transport(NODE_HOST);
-    let web3 = Web3::new(http);
-    let resetter = Resetter::new(&web3).await;
-
-    // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
-    // does not catch some types of panics. In this cases, the state of the node
-    // is not restored. This is not considered an issue since this function
-    // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
-
-    resetter.reset().await;
-
-    if let Err(err) = result {
-        panic::resume_unwind(err);
-    }
-}
-
-struct Resetter<T> {
+pub struct Resetter<T> {
     test_node_api: TestNodeApi<T>,
     snapshot_id: U256,
 }
 
 impl<T: Transport> Resetter<T> {
-    async fn new(web3: &web3::Web3<T>) -> Self {
+    pub async fn new(web3: &web3::Web3<T>) -> Self {
         let test_node_api = web3.api::<TestNodeApi<_>>();
         let snapshot_id = test_node_api
             .snapshot()
@@ -70,7 +25,7 @@ impl<T: Transport> Resetter<T> {
         }
     }
 
-    async fn reset(&self) {
+    pub async fn reset(&self) {
         self.test_node_api
             .revert(&self.snapshot_id)
             .await
