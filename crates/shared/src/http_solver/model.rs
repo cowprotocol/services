@@ -193,7 +193,7 @@ pub enum Score {
     /// To have more flexibility, the protocol score can be tweaked by the
     /// solver by providing a multiplication factor. Expected value: [0,
     /// inf], 0 being 100% discount, 1 being the same as protocol score
-    MulFactor(f64),
+    ScoreFactor(f64),
 }
 
 #[serde_as]
@@ -854,14 +854,14 @@ mod tests {
             {
                 "tokens": {},
                 "orders": {},
-                "mulFactor": 13.37,
+                "scoreFactor": 13.37,
                 "metadata": {},
                 "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                 "prices": {}
             }
         "#;
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(deserialized.score, Some(Score::MulFactor(13.37)));
+        assert_eq!(deserialized.score, Some(Score::ScoreFactor(13.37)));
     }
 
     #[test]

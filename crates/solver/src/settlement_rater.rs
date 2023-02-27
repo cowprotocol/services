@@ -209,7 +209,7 @@ impl SettlementRating for SettlementRater {
             let score = match &settlement.score {
                 Some(score) => match score {
                     shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
-                    shared::http_solver::model::Score::MulFactor(factor) => Score::Discounted(
+                    shared::http_solver::model::Score::ScoreFactor(factor) => Score::Discounted(
                         discounted_score(&objective_value, factor).unwrap_or_default(),
                     ),
                 },
