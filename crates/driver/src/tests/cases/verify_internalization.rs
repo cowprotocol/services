@@ -59,26 +59,26 @@ async fn valid_internalization() {
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
         .into_iter()
-        .map(|(address, interaction)| {
+        .map(|interaction| {
             json!({
                 "kind": "custom",
                 "internalize": true,
-                "target": hex_address(address),
+                "target": hex_address(interaction.address),
                 "value": "0",
-                "callData": format!("0x{}", hex::encode(interaction)),
+                "callData": format!("0x{}", hex::encode(interaction.calldata)),
                 "allowances": [],
-                "inputs": [
-                    {
-                        "token": hex_address(sell_token),
-                        "amount": sell_amount.to_string(),
-                    }
-                ],
-                "outputs": [
-                    {
-                        "token": hex_address(buy_token),
-                        "amount": buy_amount.to_string(),
-                    }
-                ],
+                "inputs": interaction.inputs.iter().map(|input| {
+                    json!({
+                        "token": hex_address(input.token.into()),
+                        "amount": input.amount.to_string(),
+                    })
+                }).collect_vec(),
+                "outputs": interaction.outputs.iter().map(|output| {
+                    json!({
+                        "token": hex_address(output.token.into()),
+                        "amount": output.amount.to_string(),
+                    })
+                }).collect_vec(),
             })
         })
         .collect_vec();
@@ -99,14 +99,14 @@ async fn valid_internalization() {
                         "symbol": null,
                         "referencePrice": "1",
                         "availableBalance": "0",
-                        "trusted": true,
+                        "trusted": false,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
                         "referencePrice": "2",
                         "availableBalance": "0",
-                        "trusted": false,
+                        "trusted": true,
                     }
                 },
                 "orders": [
@@ -169,12 +169,12 @@ async fn valid_internalization() {
                     {
                         "address": hex_address(sell_token),
                         "price": "1",
-                        "trusted": true,
+                        "trusted": false,
                     },
                     {
                         "address": hex_address(buy_token),
                         "price": "2",
-                        "trusted": false,
+                        "trusted": true,
                     }
                 ],
                 "orders": [
@@ -259,26 +259,26 @@ async fn invalid_internalization() {
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
         .into_iter()
-        .map(|(address, interaction)| {
+        .map(|interaction| {
             json!({
                 "kind": "custom",
                 "internalize": true,
-                "target": hex_address(address),
+                "target": hex_address(interaction.address),
                 "value": "0",
-                "callData": format!("0x{}", hex::encode(interaction)),
+                "callData": format!("0x{}", hex::encode(interaction.calldata)),
                 "allowances": [],
-                "inputs": [
-                    {
-                        "token": hex_address(sell_token),
-                        "amount": sell_amount.to_string(),
-                    }
-                ],
-                "outputs": [
-                    {
-                        "token": hex_address(buy_token),
-                        "amount": buy_amount.to_string(),
-                    }
-                ],
+                "inputs": interaction.inputs.iter().map(|input| {
+                    json!({
+                        "token": hex_address(input.token.into()),
+                        "amount": input.amount.to_string(),
+                    })
+                }).collect_vec(),
+                "outputs": interaction.outputs.iter().map(|output| {
+                    json!({
+                        "token": hex_address(output.token.into()),
+                        "amount": output.amount.to_string(),
+                    })
+                }).collect_vec(),
             })
         })
         .collect_vec();
@@ -299,14 +299,14 @@ async fn invalid_internalization() {
                         "symbol": null,
                         "referencePrice": "1",
                         "availableBalance": "0",
-                        "trusted": false,
+                        "trusted": true,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
                         "referencePrice": "2",
                         "availableBalance": "0",
-                        "trusted": true,
+                        "trusted": false,
                     }
                 },
                 "orders": [
@@ -369,12 +369,12 @@ async fn invalid_internalization() {
                     {
                         "address": hex_address(sell_token),
                         "price": "1",
-                        "trusted": false,
+                        "trusted": true,
                     },
                     {
                         "address": hex_address(buy_token),
                         "price": "2",
-                        "trusted": true,
+                        "trusted": false,
                     }
                 ],
                 "orders": [

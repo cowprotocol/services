@@ -32,11 +32,13 @@ impl Quote {
     fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .prices
+            .0
             .get(&order.tokens.sell)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let buy_price = solution
             .prices
+            .0
             .get(&order.tokens.buy)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
