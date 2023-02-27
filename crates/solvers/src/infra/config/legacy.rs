@@ -21,10 +21,10 @@ struct Config {
     chain_id: eth::ChainId,
 
     /// The solver name used in metrics.
-    pub solver_name: String,
+    solver_name: String,
 
     /// The URL of the endpoint that responds to solve requests.
-    pub endpoint: String,
+    endpoint: String,
 }
 
 /// Load the driver configuration from a TOML file.

@@ -7,7 +7,7 @@ use {crate::tests, serde_json::json};
 async fn test() {
     let engine = tests::SolverEngine::new(
         "baseline",
-        tests::Config::File("example.baseline.toml".into()),
+        tests::Config::File("config/example.baseline.toml".into()),
     )
     .await;
 

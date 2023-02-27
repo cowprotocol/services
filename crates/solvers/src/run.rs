@@ -32,6 +32,15 @@ pub async fn run(
             let config = config::legacy::load(&config).await;
             Solver::Legacy(solver::Legacy::new(config))
         }
+        cli::Command::ZeroEx { config } => {
+            let config = config::zeroex::file::load(&config).await;
+            Solver::Dex(solver::Dex {
+                dex: dex::Dex::ZeroEx(
+                    dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
+                ),
+                slippage: config.slippage,
+            })
+        }
         cli::Command::Balancer { config } => {
             let config = config::balancer::file::load(&config).await;
             Solver::Dex(solver::Dex {

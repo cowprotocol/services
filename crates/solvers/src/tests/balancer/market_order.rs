@@ -1,5 +1,5 @@
-//! This test ensures that the Balancer solver properly handles cases where no
-//! swap was found for the specified quoted order.
+//! This test ensures that the Balancer SOR solver properly handles sell and buy
+//! market orders, turning Balancer SOR responses into CoW Protocol solutions.
 
 use {
     crate::tests::{self, balancer, mock},
