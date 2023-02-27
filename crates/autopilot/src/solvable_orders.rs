@@ -264,7 +264,13 @@ impl SolvableOrdersCache {
             let auction_id = self.database.replace_current_auction(&auction).await?;
             self.database
                 .insert_auction_prices(auction_id, &auction.prices)
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "update external prices for auction {} with prices {:?}",
+                        auction_id, &auction.prices
+                    )
+                })?;
         }
 
         *self.cache.lock().unwrap() = Inner {

@@ -10,6 +10,7 @@ use {
     std::collections::BTreeMap,
 };
 
+#[derive(Debug, Clone)]
 pub struct SettlementUpdate {
     pub block_number: i64,
     pub log_index: i64,

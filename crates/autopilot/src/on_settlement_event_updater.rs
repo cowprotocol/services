@@ -48,7 +48,7 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         external_prices::ExternalPrices,
     },
-    std::time::Duration,
+    std::{collections::HashSet, time::Duration},
     web3::types::TransactionId,
 };
 
@@ -160,10 +160,14 @@ impl OnSettlementEventUpdater {
 
         // reduce external prices in `auction_prices` table to only include used tokens
         // this is done to reduce the amount of data we store in the database
+        let order_tokens = orders
+            .into_iter()
+            .flat_map(|order| vec![order.buy_token, order.sell_token])
+            .collect::<HashSet<_>>();
         let prices = settlement
             .trades
             .iter()
-            .filter_map(|trade| {
+            .flat_map(|trade| {
                 let buy_token = settlement
                     .tokens
                     .get(trade.buy_token_index.as_u64() as usize)?;
@@ -178,7 +182,21 @@ impl OnSettlementEventUpdater {
                         (*sell_token, *sell_token_price),
                     ]),
                     _ => {
-                        tracing::error!("settlement used token that was not in auction");
+                        // for db orders there should be external price for tokens
+                        if order_tokens.contains(buy_token) {
+                            tracing::error!(
+                                "missing buy_token {} auction {}",
+                                auction_id,
+                                sell_token
+                            );
+                        }
+                        if order_tokens.contains(sell_token) {
+                            tracing::error!(
+                                "missing sell_token {} auction {}",
+                                auction_id,
+                                sell_token
+                            );
+                        }
                         None
                     }
                 }
@@ -200,9 +218,9 @@ impl OnSettlementEventUpdater {
         };
 
         self.db
-            .update_settlement_details(update)
+            .update_settlement_details(update.clone())
             .await
-            .context("insert_settlement_update")?;
+            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
 
         Ok(true)
     }
