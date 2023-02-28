@@ -1,15 +1,14 @@
-//! Test that the asset flow verification behaves as expected. See
-//! [`competition::solution::settlement::Verified`].
+//! Test that the asset flow verification behaves as expected for market orders.
+//! See [`competition::solution::settlement::Verified`].
 
 use {
-    super::SOLVER_NAME,
     crate::{
         domain::{
             competition::{self, auction},
             eth,
         },
         infra,
-        tests::{self, hex_address, setup},
+        tests::{self, cases::SOLVER_NAME, hex_address, setup},
     },
     itertools::Itertools,
     serde_json::json,
@@ -212,6 +211,7 @@ async fn verify_asset_flow() {
             secret_key: admin_secret_key,
             domain_separator,
             owner: admin,
+            partially_fillable: false,
         };
         let gas_price = web3.eth().gas_price().await.unwrap().to_string();
         let now = infra::time::Now::Fake(chrono::Utc::now());

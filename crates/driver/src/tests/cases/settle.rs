@@ -51,6 +51,7 @@ async fn test() {
         secret_key: admin_secret_key,
         domain_separator,
         owner: admin,
+        partially_fillable: false,
     };
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);

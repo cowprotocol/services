@@ -29,6 +29,10 @@ pub struct Fulfillment {
 #[derive(Debug)]
 pub struct Jit {
     pub order: order::Jit,
+    /// The amount executed by this JIT trade. See
+    /// [`competition::order::Jit::partially_fillable`]. If the order is not
+    /// partially fillable, the executed amount must equal the amount from the
+    /// order.
     pub executed: competition::order::TargetAmount,
 }
 

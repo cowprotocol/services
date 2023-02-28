@@ -50,6 +50,7 @@ async fn test() {
         secret_key: admin_secret_key,
         domain_separator,
         owner: admin,
+        partially_fillable: false,
     };
     let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
