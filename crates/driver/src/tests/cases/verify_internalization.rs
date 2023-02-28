@@ -99,14 +99,14 @@ async fn valid_internalization() {
                         "symbol": null,
                         "referencePrice": "1",
                         "availableBalance": "0",
-                        "trusted": false,
+                        "trusted": true,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
                         "referencePrice": "2",
                         "availableBalance": "0",
-                        "trusted": true,
+                        "trusted": false,
                     }
                 },
                 "orders": [
@@ -169,12 +169,12 @@ async fn valid_internalization() {
                     {
                         "address": hex_address(sell_token),
                         "price": "1",
-                        "trusted": false,
+                        "trusted": true,
                     },
                     {
                         "address": hex_address(buy_token),
                         "price": "2",
-                        "trusted": true,
+                        "trusted": false,
                     }
                 ],
                 "orders": [
@@ -299,14 +299,14 @@ async fn invalid_internalization() {
                         "symbol": null,
                         "referencePrice": "1",
                         "availableBalance": "0",
-                        "trusted": true,
+                        "trusted": false,
                     },
                     hex_address(buy_token): {
                         "decimals": null,
                         "symbol": null,
                         "referencePrice": "2",
                         "availableBalance": "0",
-                        "trusted": false,
+                        "trusted": true,
                     }
                 },
                 "orders": [
@@ -369,12 +369,12 @@ async fn invalid_internalization() {
                     {
                         "address": hex_address(sell_token),
                         "price": "1",
-                        "trusted": true,
+                        "trusted": false,
                     },
                     {
                         "address": hex_address(buy_token),
                         "price": "2",
-                        "trusted": false,
+                        "trusted": true,
                     }
                 ],
                 "orders": [

@@ -332,12 +332,12 @@ pub async fn setup() -> Uniswap {
                 address: uniswap_pair.address(),
                 calldata: swap_interaction,
                 inputs: vec![eth::Asset {
-                    token: token_b.address().into(),
-                    amount: token_b_out_amount,
-                }],
-                outputs: vec![eth::Asset {
                     token: token_a.address().into(),
                     amount: token_a_in_amount,
+                }],
+                outputs: vec![eth::Asset {
+                    token: token_b.address().into(),
+                    amount: token_b_out_amount,
                 }],
             },
         ],

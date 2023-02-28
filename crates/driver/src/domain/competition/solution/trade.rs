@@ -25,61 +25,119 @@ pub struct Fulfillment {
     pub executed: competition::order::TargetAmount,
 }
 
-impl Fulfillment {
-    /// Calculate the settlement contract input and output amounts executed by
-    /// this trade.
-    pub fn execution(&self, clearing_prices: &ClearingPrices) -> Result<Execution, Error> {
-        let input = self.executed.to_asset(&self.order);
-        let (input_price, output_price) = {
-            let sell_price = clearing_prices
-                .0
-                .get(&self.order.sell.token)
-                .ok_or(Error::ClearingPriceMissing)?
-                .to_owned();
-            let buy_price = clearing_prices
-                .0
-                .get(&self.order.buy.token)
-                .ok_or(Error::ClearingPriceMissing)?
-                .to_owned();
-            match self.order.side {
-                order::Side::Buy => (buy_price, sell_price),
-                order::Side::Sell => (sell_price, buy_price),
-            }
-        };
-        let output = eth::Asset {
-            amount: match self.order.kind {
-                order::Kind::Market => input
-                    .amount
-                    .checked_mul(input_price)
-                    .ok_or(Error::Overflow)?
-                    .checked_ceil_div(&output_price)
-                    .ok_or(Error::Overflow)?,
-                order::Kind::Limit { .. } => todo!(),
-                order::Kind::Liquidity => todo!(),
-            },
-            token: match self.order.side {
-                order::Side::Buy => self.order.sell.token,
-                order::Side::Sell => self.order.buy.token,
-            },
-        };
-        Ok(Execution { input, output })
-    }
-}
-
-/// The amounts executed by a fulfillment.
-#[derive(Debug, Clone, Copy)]
-pub struct Execution {
-    /// The amount entering the settlement contract.
-    pub input: eth::Asset,
-    /// The amount exiting the settlement contract.
-    pub output: eth::Asset,
-}
-
 /// A trade which adds a JIT order. See [`order::Jit`].
 #[derive(Debug)]
 pub struct Jit {
     pub order: order::Jit,
     pub executed: competition::order::TargetAmount,
+}
+
+impl Trade {
+    /// Calculate the settlement contract input and output amounts executed by
+    /// this trade.
+    pub fn execution(&self, clearing_prices: &ClearingPrices) -> Result<Execution, Error> {
+        // Values needed to calculate the executed amounts.
+        let ExecutionParams {
+            side,
+            kind,
+            sell,
+            buy,
+            executed,
+        } = match self {
+            Trade::Fulfillment(trade) => ExecutionParams {
+                side: trade.order.side,
+                kind: trade.order.kind,
+                sell: trade.order.sell,
+                buy: trade.order.buy,
+                executed: trade.executed,
+            },
+            Trade::Jit(trade) => ExecutionParams {
+                side: trade.order.side,
+                // For the purposes of calculating the executed amounts, a JIT order behaves the
+                // same as a regular market order.
+                kind: order::Kind::Market,
+                sell: trade.order.sell,
+                buy: trade.order.buy,
+                executed: trade.executed,
+            },
+        };
+
+        // Clearing prices.
+        let sell_price = clearing_prices
+            .0
+            .get(&sell.token)
+            .ok_or(Error::ClearingPriceMissing)?
+            .to_owned();
+        let buy_price = clearing_prices
+            .0
+            .get(&buy.token)
+            .ok_or(Error::ClearingPriceMissing)?
+            .to_owned();
+
+        // Calculate the executed amounts.
+        Ok(match side {
+            order::Side::Buy => Execution {
+                buy: eth::Asset {
+                    amount: executed.into(),
+                    token: buy.token,
+                },
+                sell: eth::Asset {
+                    amount: match kind {
+                        // TODO Is this really something that should return an error?
+                        // Just use BigInt for the calculation instead and the FINAL result needs
+                        // to be able to fit into a U256
+                        order::Kind::Market => executed
+                            .0
+                            .checked_mul(buy_price)
+                            .ok_or(Error::Overflow)?
+                            .checked_ceil_div(&sell_price)
+                            .ok_or(Error::Overflow)?,
+                        order::Kind::Limit { .. } => todo!(),
+                        order::Kind::Liquidity => todo!(),
+                    },
+                    token: sell.token,
+                },
+            },
+            order::Side::Sell => Execution {
+                sell: eth::Asset {
+                    amount: executed.into(),
+                    token: sell.token,
+                },
+                buy: eth::Asset {
+                    amount: match kind {
+                        order::Kind::Market => executed
+                            .0
+                            .checked_mul(sell_price)
+                            .ok_or(Error::Overflow)?
+                            .checked_ceil_div(&buy_price)
+                            .ok_or(Error::Overflow)?,
+                        order::Kind::Limit { .. } => todo!(),
+                        order::Kind::Liquidity => todo!(),
+                    },
+                    token: buy.token,
+                },
+            },
+        })
+    }
+}
+
+/// The amounts executed by a trade.
+#[derive(Debug, Clone, Copy)]
+pub struct Execution {
+    /// The total amount being sold.
+    pub sell: eth::Asset,
+    /// The total amount being bought.
+    pub buy: eth::Asset,
+}
+
+/// The amounts executed by a trade.
+#[derive(Debug, Clone, Copy)]
+struct ExecutionParams {
+    side: order::Side,
+    kind: order::Kind,
+    sell: eth::Asset,
+    buy: eth::Asset,
+    executed: order::TargetAmount,
 }
 
 #[derive(Debug, thiserror::Error)]
