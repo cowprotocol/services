@@ -472,7 +472,7 @@ impl Driver {
                 .flat_map(|trade| {
                     let sell_token = trade.order.data.sell_token;
                     let buy_token = trade.order.data.buy_token;
-                    vec![
+                    [
                         (
                             sell_token,
                             auction_prices.get(&sell_token).cloned().unwrap_or_default(),
