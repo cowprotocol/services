@@ -4,6 +4,7 @@ use {
     anyhow::{Context, Result},
     database::{
         auction_participants::Participant,
+        auction_prices::AuctionPrice,
         byte_array::ByteArray,
         settlement_scores::Score,
     },
@@ -83,6 +84,22 @@ impl SolverCompetitionStoring for Postgres {
         .await
         .context("auction_participants::insert")?;
 
+        database::auction_prices::insert(
+            &mut ex,
+            request
+                .prices
+                .iter()
+                .map(|(token, price)| AuctionPrice {
+                    auction_id: request.auction,
+                    token: ByteArray(token.0),
+                    price: u256_to_big_decimal(price),
+                })
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .context("auction_prices::insert")?;
+
         ex.commit().await.context("commit")
     }
 
@@ -131,6 +148,7 @@ mod tests {
         super::*,
         model::solver_competition::{CompetitionAuction, Scores, SolverSettlement},
         primitive_types::H160,
+        std::collections::BTreeMap,
     };
 
     #[tokio::test]
@@ -173,7 +191,8 @@ mod tests {
                 reference_score: 99.into(),
                 block_deadline: 10,
             },
-            participants: vec![H160([1; 20])],
+            participants: [H160([1; 20])].into(),
+            prices: BTreeMap::from([(H160([1; 20]), 1.into())]),
         };
         db.handle_request(request.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();

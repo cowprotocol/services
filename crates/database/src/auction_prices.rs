@@ -29,12 +29,6 @@ pub async fn insert(
     Ok(())
 }
 
-pub async fn delete(ex: &mut PgTransaction<'_>, auction_id: AuctionId) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "DELETE FROM auction_prices WHERE auction_id = $1";
-    sqlx::query(QUERY).bind(auction_id).execute(ex).await?;
-    Ok(())
-}
-
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -70,10 +64,6 @@ mod tests {
         insert(&mut db, &input).await.unwrap();
         let output = fetch(&mut db, 1).await.unwrap();
         assert_eq!(input, output);
-
-        delete(&mut db, 1).await.unwrap();
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert!(output.is_empty());
 
         // non-existent auction
         let output = fetch(&mut db, 2).await.unwrap();

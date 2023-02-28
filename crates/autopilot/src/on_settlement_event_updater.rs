@@ -26,12 +26,9 @@
 // a) the mined transaction call data
 // b) the auction external prices fetched from orderbook
 // c) the orders fetched from orderbook
-// Auction external prices for all tokens for all solvable orders are stored in
-// the database (auction_prices table) in autopilot before competition.
 // After a transaction is mined we calculate the surplus and fees for each
 // transaction and insert them into the database (settlement_observations
-// table). Now we know which tokens were used in the transaction so we
-// update the auction_prices table with the actual prices that were used.
+// table).
 
 use {
     crate::{
@@ -48,7 +45,7 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         external_prices::ExternalPrices,
     },
-    std::{collections::HashSet, time::Duration},
+    std::time::Duration,
     web3::types::TransactionId,
 };
 
@@ -159,52 +156,6 @@ impl OnSettlementEventUpdater {
         let surplus = settlement.total_surplus(&external_prices);
         let fee = settlement.total_fees(&external_prices, &orders, &configuration);
 
-        // reduce external prices in `auction_prices` table to only include used tokens
-        // this is done to reduce the amount of data we store in the database
-        let order_tokens = orders
-            .into_iter()
-            .flat_map(|order| vec![order.buy_token, order.sell_token])
-            .collect::<HashSet<_>>();
-        let prices = settlement
-            .trades
-            .iter()
-            .flat_map(|trade| {
-                let buy_token = settlement
-                    .tokens
-                    .get(trade.buy_token_index.as_u64() as usize)?;
-                let sell_token = settlement
-                    .tokens
-                    .get(trade.sell_token_index.as_u64() as usize)?;
-                let buy_token_price = auction_external_prices.get(buy_token);
-                let sell_token_price = auction_external_prices.get(sell_token);
-                match (buy_token_price, sell_token_price) {
-                    (Some(buy_token_price), Some(sell_token_price)) => Some(vec![
-                        (*buy_token, *buy_token_price),
-                        (*sell_token, *sell_token_price),
-                    ]),
-                    _ => {
-                        // for db orders there should be external price for tokens
-                        if order_tokens.contains(buy_token) {
-                            tracing::error!(
-                                "missing buy_token {} auction {}",
-                                auction_id,
-                                sell_token
-                            );
-                        }
-                        if order_tokens.contains(sell_token) {
-                            tracing::error!(
-                                "missing sell_token {} auction {}",
-                                auction_id,
-                                sell_token
-                            );
-                        }
-                        None
-                    }
-                }
-            })
-            .flatten()
-            .collect::<std::collections::BTreeMap<_, _>>();
-
         let update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
@@ -215,8 +166,9 @@ impl OnSettlementEventUpdater {
             effective_gas_price,
             surplus,
             fee,
-            prices,
         };
+
+        tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
         self.db
             .update_settlement_details(update.clone())

@@ -8,7 +8,7 @@ use {
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::collections::BTreeMap,
+    std::collections::{BTreeMap, HashSet},
 };
 
 /// As a temporary measure the driver informs the api about per competition data
@@ -24,7 +24,8 @@ pub struct Request {
     pub competition: SolverCompetitionDB,
     pub executions: Vec<(OrderUid, Execution)>,
     pub scores: Scores,
-    pub participants: Vec<H160>, // solver addresses
+    pub participants: HashSet<H160>,  // solver addresses
+    pub prices: BTreeMap<H160, U256>, // external prices for auction
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

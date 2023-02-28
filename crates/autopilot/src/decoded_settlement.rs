@@ -34,7 +34,6 @@ type DecodedSettlementTokenized = (
 );
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
