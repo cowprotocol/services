@@ -115,7 +115,42 @@ impl Trade {
                     },
                 }
             }
-            order::Kind::Liquidity => todo!(),
+            order::Kind::Liquidity => {
+                // Liquidity orders (including JIT) compute the executed amounts by linearly
+                // scaling the buy/sell amounts in the order.
+                match side {
+                    order::Side::Buy => Execution {
+                        buy: eth::Asset {
+                            amount: executed.into(),
+                            token: buy.token,
+                        },
+                        sell: eth::Asset {
+                            amount: executed
+                                .0
+                                .checked_mul(sell.amount)
+                                .ok_or(Error::Overflow)?
+                                .checked_div(buy.amount)
+                                .ok_or(Error::Overflow)?,
+                            token: sell.token,
+                        },
+                    },
+                    order::Side::Sell => Execution {
+                        sell: eth::Asset {
+                            amount: executed.into(),
+                            token: sell.token,
+                        },
+                        buy: eth::Asset {
+                            amount: executed
+                                .0
+                                .checked_mul(buy.amount)
+                                .ok_or(Error::Overflow)?
+                                .checked_ceil_div(&sell.amount)
+                                .ok_or(Error::Overflow)?,
+                            token: buy.token,
+                        },
+                    },
+                }
+            }
             order::Kind::Limit { .. } => todo!(),
         })
     }
