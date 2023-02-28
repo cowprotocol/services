@@ -2,7 +2,7 @@
 //! GPv2Settlement::settle function.
 
 use {
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
@@ -211,7 +211,7 @@ fn surplus(
 
     let sell_token_clearing_price = clearing_prices.get(sell_token_index)?.to_big_rational();
     let buy_token_clearing_price = clearing_prices.get(buy_token_index)?.to_big_rational();
-    let kind = order_kind(&trade.flags).unwrap();
+    let kind = order_kind(&trade.flags);
 
     if match kind {
         OrderKind::Sell => &buy_token_clearing_price,
@@ -342,12 +342,12 @@ fn sell_order_surplus(
     }
 }
 
-fn order_kind(flags: &U256) -> Result<OrderKind> {
+fn order_kind(flags: &U256) -> OrderKind {
     let flags = flags.byte(0);
     match flags & 0b1 {
-        0b0 => Ok(OrderKind::Sell),
-        0b1 => Ok(OrderKind::Buy),
-        _ => Err(anyhow!("invalid order kind")),
+        0b0 => OrderKind::Sell,
+        0b1 => OrderKind::Buy,
+        _ => unreachable!(),
     }
 }
 
