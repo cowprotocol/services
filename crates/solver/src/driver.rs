@@ -464,22 +464,25 @@ impl Driver {
                 .solutions
                 .iter()
                 .map(|solution| solution.solver_address)
-                .collect::<HashSet<_>>() // to avoid duplicates
-                .into_iter()
-                .collect();
-            // external prices for all tokens contained in the trades of a settlement
+                .collect::<HashSet<_>>(); // to avoid duplicates
+                                          // external prices for all tokens contained in the trades of a settlement
             let prices = winning_settlement
                 .settlement
                 .trades()
-                .filter_map(|trade| {
+                .flat_map(|trade| {
                     let sell_token = trade.order.data.sell_token;
                     let buy_token = trade.order.data.buy_token;
-                    Some(vec![
-                        (sell_token, auction_prices.get(&sell_token).cloned()?),
-                        (buy_token, auction_prices.get(&buy_token).cloned()?),
-                    ])
+                    vec![
+                        (
+                            sell_token,
+                            auction_prices.get(&sell_token).cloned().unwrap_or_default(),
+                        ),
+                        (
+                            buy_token,
+                            auction_prices.get(&buy_token).cloned().unwrap_or_default(),
+                        ),
+                    ]
                 })
-                .flatten()
                 .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 

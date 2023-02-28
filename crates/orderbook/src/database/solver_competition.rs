@@ -191,7 +191,7 @@ mod tests {
                 reference_score: 99.into(),
                 block_deadline: 10,
             },
-            participants: vec![H160([1; 20])],
+            participants: [H160([1; 20])].into(),
             prices: BTreeMap::from([(H160([1; 20]), 1.into())]),
         };
         db.handle_request(request.clone()).await.unwrap();

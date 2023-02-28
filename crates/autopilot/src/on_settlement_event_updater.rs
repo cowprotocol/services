@@ -168,7 +168,7 @@ impl OnSettlementEventUpdater {
             fee,
         };
 
-        tracing::debug!("updating settlement details for tx {hash:?}: {update:?}");
+        tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
         self.db
             .update_settlement_details(update.clone())
