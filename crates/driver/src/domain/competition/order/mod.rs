@@ -18,13 +18,11 @@ pub struct Order {
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
-    /// The amount that this order ideally wants to sell. When the order is
-    /// fulfilled, the actual sold amount isn't always exactly equal to this
-    /// amount, e.g. because the order was partial or due to slippage.
+    /// The maximum amount this order is allowed to sell when completely filled.
+    /// The actual executed amount depends on partial fills and the order sid
     pub sell: eth::Asset,
-    /// The amount that this order ideally wants to buy. When the order is
-    /// fulfilled, the actual bought amount isn't always exactly equal to this
-    /// amount, e.g. because the order was partial or due to slippage.
+    /// The minimum amount this order must buy when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
     pub side: Side,
     pub fee: Fee,
@@ -217,13 +215,11 @@ pub enum BuyTokenBalance {
 /// [`Order`].
 #[derive(Debug)]
 pub struct Jit {
-    /// The amount that this order ideally wants to sell. When the order is
-    /// fulfilled, the actual sold amount isn't always exactly equal to this
-    /// amount, e.g. because the order was partial or due to slippage.
+    /// The maximum amount this order is allowed to sell when completely filled.
+    /// The actual executed amount depends on partial fills and the order sid
     pub sell: eth::Asset,
-    /// The amount that this order ideally wants to buy. When the order is
-    /// fulfilled, the actual bought amount isn't always exactly equal to this
-    /// amount, e.g. because the order was partial or due to slippage.
+    /// The minimum amount this order must buy when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
     pub fee: SellAmount,
     pub receiver: eth::Address,
