@@ -181,36 +181,33 @@ impl Solution {
     fn verify_asset_flow(&self) -> Result<(), VerificationError> {
         let mut flow: HashMap<eth::TokenAddress, num::BigInt> = Default::default();
 
-        // Interaction inputs represent flow into the contract, i.e. positive flow.
+        // Interaction inputs represent flow out of the contract, i.e. negative flow.
         for input in self
             .interactions
             .iter()
             .flat_map(|interaction| interaction.inputs())
         {
-            *flow.entry(input.token).or_default() += util::conv::u256::to_big_int(input.amount);
+            *flow.entry(input.token).or_default() -= util::conv::u256::to_big_int(input.amount);
         }
 
-        // Interaction outputs represent flow out of the contract, i.e. negative flow.
+        // Interaction outputs represent flow into the contract, i.e. positive flow.
         for output in self
             .interactions
             .iter()
             .flat_map(|interaction| interaction.outputs())
         {
-            *flow.entry(output.token).or_default() -= util::conv::u256::to_big_int(output.amount);
+            *flow.entry(output.token).or_default() += util::conv::u256::to_big_int(output.amount);
         }
 
-        // For trades, the input and output amounts are determined by the type of trade.
-        for trade in self.trades.iter().filter_map(|trade| match trade {
-            Trade::Fulfillment(trade) => Some(trade),
-            // JIT trades are "fake" trades inserted by the solver to improve the solution score,
-            // and hence should not be considered for asset flow verification.
-            Trade::Jit(..) => None,
-        }) {
-            let trade::Execution { input, output } = trade
+        // For trades, the sold amounts are always entering the contract (positive
+        // flow), whereas the buy amounts are always exiting the contract
+        // (negative flow).
+        for trade in self.trades.iter() {
+            let trade::Execution { sell, buy } = trade
                 .execution(&self.prices)
                 .map_err(|_| VerificationError::AssetFlow)?;
-            *flow.entry(input.token).or_default() += util::conv::u256::to_big_int(input.amount);
-            *flow.entry(output.token).or_default() -= util::conv::u256::to_big_int(output.amount);
+            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(sell.amount);
+            *flow.entry(buy.token).or_default() -= util::conv::u256::to_big_int(buy.amount);
         }
 
         if flow.values().any(|v| v.is_negative()) {

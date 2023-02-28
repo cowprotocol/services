@@ -35,8 +35,8 @@ async fn verify_asset_flow() {
         TestCase {
             flow: |sell, buy, idx| match idx {
                 0 => Flow {
-                    inputs: vec![buy],
-                    outputs: vec![sell],
+                    inputs: vec![sell],
+                    outputs: vec![buy],
                 },
                 1 => Default::default(),
                 _ => unreachable!(),
@@ -47,12 +47,12 @@ async fn verify_asset_flow() {
             flow: |sell, buy, idx| match idx {
                 // The inputs and outputs are spread across different interactions.
                 0 => Flow {
-                    inputs: vec![buy],
+                    inputs: vec![sell],
                     outputs: vec![],
                 },
                 1 => Flow {
                     inputs: vec![],
-                    outputs: vec![sell],
+                    outputs: vec![buy],
                 },
                 _ => unreachable!(),
             },
@@ -61,13 +61,13 @@ async fn verify_asset_flow() {
         TestCase {
             flow: |sell, buy, idx| match idx {
                 0 => Flow {
-                    // The output is higher than the input, meaning that the settlement
-                    // takes money out of the contract, which is illegal.
-                    inputs: vec![buy],
-                    outputs: vec![eth::Asset {
+                    // The interaction input is higher than the output, meaning that
+                    // the settlement takes money out of the contract, which is illegal.
+                    inputs: vec![eth::Asset {
                         token: sell.token,
                         amount: sell.amount + eth::U256::from(12),
                     }],
+                    outputs: vec![buy],
                 },
                 1 => Default::default(),
                 _ => unreachable!(),
@@ -77,13 +77,13 @@ async fn verify_asset_flow() {
         TestCase {
             flow: |sell, buy, idx| match idx {
                 0 => Flow {
-                    // The input is higher than the output, leaving money in the settlement
-                    // contract. This is OK!
-                    inputs: vec![eth::Asset {
+                    // The interaction output is higher than the input, leaving money in the
+                    // settlement contract. This is OK!
+                    inputs: vec![sell],
+                    outputs: vec![eth::Asset {
                         token: buy.token,
                         amount: buy.amount + eth::U256::from(12),
                     }],
-                    outputs: vec![sell],
                 },
                 1 => Default::default(),
                 _ => unreachable!(),
@@ -95,21 +95,21 @@ async fn verify_asset_flow() {
                 // The inputs and outputs are spread across different interactions.
                 0 => Flow {
                     inputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: buy.amount - 20,
+                        token: sell.token,
+                        amount: sell.amount - 20,
                     }],
                     outputs: vec![eth::Asset {
-                        token: sell.token,
-                        amount: sell.amount - 30,
+                        token: buy.token,
+                        amount: buy.amount - 30,
                     }],
                 },
                 1 => Flow {
                     inputs: vec![eth::Asset {
-                        token: buy.token,
+                        token: sell.token,
                         amount: 20.into(),
                     }],
                     outputs: vec![eth::Asset {
-                        token: sell.token,
+                        token: buy.token,
                         amount: 30.into(),
                     }],
                 },
@@ -122,23 +122,23 @@ async fn verify_asset_flow() {
                 // The inputs and outputs are spread across different interactions.
                 0 => Flow {
                     inputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: buy.amount - 20,
+                        token: sell.token,
+                        amount: sell.amount - 20,
                     }],
                     outputs: vec![eth::Asset {
-                        token: sell.token,
-                        amount: sell.amount - 30,
+                        token: buy.token,
+                        amount: buy.amount - 30,
                     }],
                 },
                 1 => Flow {
+                    // More money coming out of the contract - illegal!
                     inputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: 20.into(),
-                    }],
-                    // More money coming out - illegal!
-                    outputs: vec![eth::Asset {
                         token: sell.token,
-                        amount: 40.into(),
+                        amount: 30.into(),
+                    }],
+                    outputs: vec![eth::Asset {
+                        token: buy.token,
+                        amount: 30.into(),
                     }],
                 },
                 _ => unreachable!(),
@@ -150,23 +150,23 @@ async fn verify_asset_flow() {
                 // The inputs and outputs are spread across different interactions.
                 0 => Flow {
                     inputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: buy.amount - 20,
+                        token: sell.token,
+                        amount: sell.amount - 20,
                     }],
                     outputs: vec![eth::Asset {
-                        token: sell.token,
-                        amount: sell.amount - 30,
+                        token: buy.token,
+                        amount: buy.amount - 30,
                     }],
                 },
                 1 => Flow {
+                    // Less money taken out of the contract - OK!
                     inputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: 20.into(),
-                    }],
-                    // Less money coming out - OK!
-                    outputs: vec![eth::Asset {
                         token: sell.token,
-                        amount: 20.into(),
+                        amount: 10.into(),
+                    }],
+                    outputs: vec![eth::Asset {
+                        token: buy.token,
+                        amount: 30.into(),
                     }],
                 },
                 _ => unreachable!(),
