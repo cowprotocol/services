@@ -94,7 +94,7 @@ impl OnSettlementEventUpdater {
         };
 
         let hash = H256(event.tx_hash.0);
-        tracing::trace!("updating settlement details for tx {hash:?}");
+        tracing::debug!("updating settlement details for tx {hash:?}");
 
         let transaction = self
             .web3
@@ -147,10 +147,8 @@ impl OnSettlementEventUpdater {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.native_token,
-            auction_external_prices.clone(),
-        )?;
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(self.native_token, auction_external_prices)?;
 
         // surplus and fees calculation
         let configuration = FeeConfiguration {

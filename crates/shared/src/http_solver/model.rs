@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_multiplication_factor() {
+    fn decode_score_factor() {
         let solution = r#"
             {
                 "tokens": {},

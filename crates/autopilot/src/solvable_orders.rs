@@ -269,7 +269,7 @@ impl SolvableOrdersCache {
         counter.record(&auction.orders);
 
         if self.store_in_db {
-            let _ = self.database.replace_current_auction(&auction).await?;
+            let _id = self.database.replace_current_auction(&auction).await?;
         }
 
         *self.cache.lock().unwrap() = Inner {
