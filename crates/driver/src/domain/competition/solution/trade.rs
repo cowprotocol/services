@@ -54,73 +54,69 @@ impl Trade {
             Trade::Jit(trade) => ExecutionParams {
                 side: trade.order.side,
                 // For the purposes of calculating the executed amounts, a JIT order behaves the
-                // same as a regular market order.
-                // TODO Martinqua said that this should be similar to liquidity and scale linearly.
-                // Check if that's the default behavior for liquidity orders and of so simply use
-                // that one.
-                kind: order::Kind::Market,
+                // same as a liquidity order. This makes sense, since their purposes are similar:
+                // to make the solution better for other (market) orders.
+                kind: order::Kind::Liquidity,
                 sell: trade.order.sell,
                 buy: trade.order.buy,
                 executed: trade.executed,
             },
         };
 
-        // Clearing prices.
-        let sell_price = clearing_prices
-            .0
-            .get(&sell.token)
-            .ok_or(Error::ClearingPriceMissing)?
-            .to_owned();
-        let buy_price = clearing_prices
-            .0
-            .get(&buy.token)
-            .ok_or(Error::ClearingPriceMissing)?
-            .to_owned();
-
-        // Calculate the executed amounts. For operations which require division, the
-        // rounding always happens in favor of the user. Errors are returned on
-        // 256-bit overflow in certain cases, even though technically they could
-        // be avoided by doing BigInt conversions. The reason for this behavior is to
-        // mimic the onchain settlement contract, which reverts on overflow.
-        Ok(match side {
-            order::Side::Buy => Execution {
-                buy: eth::Asset {
-                    amount: executed.into(),
-                    token: buy.token,
-                },
-                sell: eth::Asset {
-                    amount: match kind {
-                        order::Kind::Market => executed
-                            .0
-                            .checked_mul(buy_price)
-                            .ok_or(Error::Overflow)?
-                            .checked_div(sell_price)
-                            .ok_or(Error::Overflow)?,
-                        order::Kind::Limit { .. } => todo!(),
-                        order::Kind::Liquidity => todo!(),
+        // For operations which require division, the rounding always happens in favor
+        // of the user.
+        // Errors are returned on 256-bit overflow in certain cases, even though
+        // technically they could be avoided by doing BigInt conversions. The
+        // reason for this behavior is to mimic the onchain settlement contract,
+        // which reverts on overflow.
+        Ok(match kind {
+            order::Kind::Market => {
+                // Market orders use clearing prices to calculate the executed amounts.
+                let sell_price = clearing_prices
+                    .0
+                    .get(&sell.token)
+                    .ok_or(Error::ClearingPriceMissing)?
+                    .to_owned();
+                let buy_price = clearing_prices
+                    .0
+                    .get(&buy.token)
+                    .ok_or(Error::ClearingPriceMissing)?
+                    .to_owned();
+                match side {
+                    order::Side::Buy => Execution {
+                        buy: eth::Asset {
+                            amount: executed.into(),
+                            token: buy.token,
+                        },
+                        sell: eth::Asset {
+                            amount: executed
+                                .0
+                                .checked_mul(buy_price)
+                                .ok_or(Error::Overflow)?
+                                .checked_div(sell_price)
+                                .ok_or(Error::Overflow)?,
+                            token: sell.token,
+                        },
                     },
-                    token: sell.token,
-                },
-            },
-            order::Side::Sell => Execution {
-                sell: eth::Asset {
-                    amount: executed.into(),
-                    token: sell.token,
-                },
-                buy: eth::Asset {
-                    amount: match kind {
-                        order::Kind::Market => executed
-                            .0
-                            .checked_mul(sell_price)
-                            .ok_or(Error::Overflow)?
-                            .checked_ceil_div(&buy_price)
-                            .ok_or(Error::Overflow)?,
-                        order::Kind::Limit { .. } => todo!(),
-                        order::Kind::Liquidity => todo!(),
+                    order::Side::Sell => Execution {
+                        sell: eth::Asset {
+                            amount: executed.into(),
+                            token: sell.token,
+                        },
+                        buy: eth::Asset {
+                            amount: executed
+                                .0
+                                .checked_mul(sell_price)
+                                .ok_or(Error::Overflow)?
+                                .checked_ceil_div(&buy_price)
+                                .ok_or(Error::Overflow)?,
+                            token: buy.token,
+                        },
                     },
-                    token: buy.token,
-                },
-            },
+                }
+            }
+            order::Kind::Liquidity => todo!(),
+            order::Kind::Limit { .. } => todo!(),
         })
     }
 }
