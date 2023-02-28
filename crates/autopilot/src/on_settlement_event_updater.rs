@@ -141,8 +141,12 @@ impl OnSettlementEventUpdater {
             .orders_for_tx(&hash)
             .await?
             .into_iter()
-            .map(Into::into)
-            .collect::<Vec<_>>();
+            .map(|order| {
+                order.try_into().with_context(|| {
+                    format!("failed to convert order for tx {hash:?} and auction id {auction_id:?}")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         let external_prices = ExternalPrices::try_from_auction_prices(
             self.native_token,
             auction_external_prices.clone(),
