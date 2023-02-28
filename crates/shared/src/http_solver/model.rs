@@ -191,9 +191,10 @@ pub enum Score {
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol.
     /// To have more flexibility, the protocol score can be tweaked by the
-    /// solver by providing a multiplication factor. Expected value: [0,
-    /// inf], 0 being 100% discount, 1 being the same as protocol score
-    ScoreFactor(f64),
+    /// solver by providing a discount.
+    #[serde(with = "u256_decimal")]
+    #[serde(rename = "scoreDiscount")]
+    Discount(U256),
 }
 
 #[serde_as]
@@ -854,14 +855,14 @@ mod tests {
             {
                 "tokens": {},
                 "orders": {},
-                "scoreFactor": 13.37,
+                "scoreDiscount": "1337",
                 "metadata": {},
                 "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                 "prices": {}
             }
         "#;
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(deserialized.score, Some(Score::ScoreFactor(13.37)));
+        assert_eq!(deserialized.score, Some(Score::Discount(1337.into())));
     }
 
     #[test]
