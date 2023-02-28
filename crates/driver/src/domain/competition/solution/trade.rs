@@ -55,6 +55,9 @@ impl Trade {
                 side: trade.order.side,
                 // For the purposes of calculating the executed amounts, a JIT order behaves the
                 // same as a regular market order.
+                // TODO Martinqua said that this should be similar to liquidity and scale linearly.
+                // Check if that's the default behavior for liquidity orders and of so simply use
+                // that one.
                 kind: order::Kind::Market,
                 sell: trade.order.sell,
                 buy: trade.order.buy,
@@ -74,7 +77,11 @@ impl Trade {
             .ok_or(Error::ClearingPriceMissing)?
             .to_owned();
 
-        // Calculate the executed amounts.
+        // Calculate the executed amounts. For operations which require division, the
+        // rounding always happens in favor of the user. Errors are returned on
+        // 256-bit overflow in certain cases, even though technically they could
+        // be avoided by doing BigInt conversions. The reason for this behavior is to
+        // mimic the onchain settlement contract, which reverts on overflow.
         Ok(match side {
             order::Side::Buy => Execution {
                 buy: eth::Asset {
@@ -83,9 +90,6 @@ impl Trade {
                 },
                 sell: eth::Asset {
                     amount: match kind {
-                        // TODO Is this really something that should return an error?
-                        // Just use BigInt for the calculation instead and the FINAL result needs
-                        // to be able to fit into a U256
                         order::Kind::Market => executed
                             .0
                             .checked_mul(buy_price)
