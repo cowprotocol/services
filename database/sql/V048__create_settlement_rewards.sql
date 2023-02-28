@@ -1,5 +1,10 @@
--- Populated before settlement occurs on chain
--- (after the submissions have been ranked)
+-- Introduces tables needed for the calculation of solver rewards, based on the CIP20 proposal.
+-- All solver participants submit a score, and the best score is selected as the winning score.
+-- We also save the second best score, which is used as a reference score for the reward calculation.
+-- Scores, prices and participants are populated before settlement occurs on chain. This means that 
+-- they are populated for both successful and reverted settlements.
+-- Observations are populated after settlement occurs on chain (only for successful settlements).
+
 CREATE TABLE settlement_scores (
   auction_id bigint PRIMARY KEY,
   winner bytea NOT NULL,
@@ -26,6 +31,7 @@ CREATE TABLE settlement_observations (
   PRIMARY KEY (block_number, log_index)
 );
 
+-- External prices for all tokens used in the winning solution.
 CREATE TABLE auction_prices (
   auction_id bigint NOT NULL,
   token bytea NOT NULL,
@@ -35,10 +41,10 @@ CREATE TABLE auction_prices (
 );
 
 CREATE TABLE auction_participants (
- -- This links to the `auctions` table
- auction_id bigint NOT NULL,
- -- Solver who submitted a valid solution to the auction.
- participant bytea NOT NULL,
+  -- This links to the `auctions` table
+  auction_id bigint NOT NULL,
+  -- Solver who submitted a valid solution to the auction.
+  participant bytea NOT NULL,
 
   PRIMARY KEY (auction_id, participant)
 );
