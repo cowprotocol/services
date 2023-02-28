@@ -19,7 +19,7 @@ pub struct Order {
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
     /// The maximum amount this order is allowed to sell when completely filled.
-    /// The actual executed amount depends on partial fills and the order sid
+    /// The actual executed amount depends on partial fills and the order side.
     pub sell: eth::Asset,
     /// The minimum amount this order must buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
@@ -216,7 +216,7 @@ pub enum BuyTokenBalance {
 #[derive(Debug)]
 pub struct Jit {
     /// The maximum amount this order is allowed to sell when completely filled.
-    /// The actual executed amount depends on partial fills and the order sid
+    /// The actual executed amount depends on partial fills and the order side.
     pub sell: eth::Asset,
     /// The minimum amount this order must buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
