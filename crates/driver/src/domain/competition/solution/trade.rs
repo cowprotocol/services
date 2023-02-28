@@ -90,7 +90,7 @@ impl Trade {
                             .0
                             .checked_mul(buy_price)
                             .ok_or(Error::Overflow)?
-                            .checked_ceil_div(&sell_price)
+                            .checked_div(sell_price)
                             .ok_or(Error::Overflow)?,
                         order::Kind::Limit { .. } => todo!(),
                         order::Kind::Liquidity => todo!(),
