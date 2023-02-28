@@ -621,6 +621,10 @@ components:
             For ethflow orders - order that are placed onchain with native eth -, this field
             contains a struct with two variables user_valid_to and is_refunded
           $ref: "#/components/schemas/EthflowData"
+        onchainUser:
+          description: |
+            TODO: smth related to ETH flow
+          $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
             There is some data only available for orders that are placed onchain. This data
