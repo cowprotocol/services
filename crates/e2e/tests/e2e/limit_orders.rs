@@ -7,7 +7,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -120,18 +119,14 @@ async fn single_limit_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 1
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 0
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
 
     let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
@@ -241,29 +236,23 @@ async fn two_limit_orders_test(web3: Web3) {
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 2
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 2
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
 
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 0
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
 
     let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
@@ -376,29 +365,23 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Market);
 
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 2
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 2
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
 
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 0
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
 
     let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();

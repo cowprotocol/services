@@ -10,7 +10,6 @@ use {
     refunder::refund_service::RefundService,
     shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
-    std::time::Duration,
 };
 
 #[tokio::test]
@@ -66,7 +65,7 @@ async fn refunder_tx(web3: Web3) {
     let order_id = ethflow_order.uid(onchain.contracts()).await;
 
     tracing::info!("Waiting for order to be indexed.");
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_order(&order_id).await.is_ok()
     })
     .await
@@ -121,7 +120,5 @@ async fn refunder_tx(web3: Web3) {
             .refund_tx_hash
             .is_some()
     };
-    wait_for_condition(Duration::from_secs(10), has_tx_hash)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, has_tx_hash).await.unwrap();
 }

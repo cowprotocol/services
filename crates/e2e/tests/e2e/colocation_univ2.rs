@@ -8,7 +8,6 @@ use {
     reqwest::Url,
     secp256k1::SecretKey,
     shared::{ethrpc::Web3, sources::uniswap_v2::UNISWAP_INIT},
-    std::time::Duration,
     tokio::task::JoinHandle,
     web3::signing::SecretKeyRef,
 };
@@ -76,9 +75,7 @@ async fn test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     let trade_happened =
         || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
-    wait_for_condition(Duration::from_secs(10), trade_happened)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(1));
