@@ -8,7 +8,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -139,7 +138,7 @@ async fn smart_contract_orders(web3: Web3) {
     );
 
     // Check that the presignature event was received.
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 2
     })
     .await
@@ -152,7 +151,7 @@ async fn smart_contract_orders(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     services.start_old_driver(solver.private_key(), vec![]);
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })
     .await

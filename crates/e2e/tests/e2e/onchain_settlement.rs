@@ -7,7 +7,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -125,9 +124,7 @@ async fn onchain_settlement(web3: Web3) {
     services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
-    wait_for_condition(Duration::from_secs(10), trade_happened)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
@@ -137,7 +134,5 @@ async fn onchain_settlement(web3: Web3) {
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
-    wait_for_condition(Duration::from_secs(10), auction_is_empty)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }

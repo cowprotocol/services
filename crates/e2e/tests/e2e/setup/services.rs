@@ -1,7 +1,7 @@
 use {
     crate::{
         local_node::NODE_HOST,
-        setup::{wait_for_condition, Contracts},
+        setup::{wait_for_condition, Contracts, TIMEOUT},
     },
     clap::Parser,
     ethcontract::H256,
@@ -136,7 +136,7 @@ impl<'a> Services<'a> {
         };
 
         tracing::info!("Waiting for API to come up.");
-        wait_for_condition(Duration::from_secs(10), is_up)
+        wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
     }

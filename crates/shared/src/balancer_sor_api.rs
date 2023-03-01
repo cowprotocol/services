@@ -8,7 +8,7 @@ use {
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
     num::BigInt,
-    reqwest::{Client, IntoUrl, Url},
+    reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
 };
@@ -46,10 +46,11 @@ impl BalancerSorApi for DefaultBalancerSorApi {
             .post(self.url.clone())
             .json(&query)
             .send()
-            .await?
-            .text()
             .await?;
-        tracing::debug!(%response, "received Balancer SOR quote");
+        let status = response.status();
+        let response = response.text().await?;
+        tracing::debug!(%response, %status, "received Balancer SOR quote");
+        anyhow::ensure!(status != StatusCode::TOO_MANY_REQUESTS, "rate limited");
 
         let quote = serde_json::from_str::<Quote>(&response)?;
         if quote.is_empty() {

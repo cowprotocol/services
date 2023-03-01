@@ -41,7 +41,6 @@ use {
         ethrpc::Web3,
         signature_validator::check_erc1271_result,
     },
-    std::time::Duration,
 };
 
 const DAI_PER_ETH: u32 = 1_000;
@@ -106,11 +105,9 @@ async fn eth_flow_tx(web3: Web3) {
     .await;
 
     tracing::info!("waiting for trade");
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 1
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
@@ -191,11 +188,9 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     sumbit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
     tracing::info!("waiting for trade");
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 1
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
@@ -254,9 +249,7 @@ async fn test_order_availability_in_api(
     tracing::info!("Waiting for order to show up in API.");
     let uid = order.uid(contracts).await;
     let is_available = || async { services.get_order(&uid).await.is_ok() };
-    wait_for_condition(Duration::from_secs(10), is_available)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, is_available).await.unwrap();
 
     test_orders_query(services, order, owner, contracts).await;
 
@@ -266,11 +259,9 @@ async fn test_order_availability_in_api(
         test_account_query(address, services.client(), order, owner, contracts).await;
     }
 
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 1
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
 
     test_auction_query(services, order, owner, contracts).await;
 }
@@ -301,9 +292,7 @@ async fn test_order_was_settled(
     web3: &Web3,
 ) {
     let auction_is_empty = || async { services.solvable_orders().await == 0 };
-    wait_for_condition(Duration::from_secs(10), auction_is_empty)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 
     let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
     let receiver_buy_token_balance = buy_token

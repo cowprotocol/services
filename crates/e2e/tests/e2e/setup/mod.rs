@@ -26,6 +26,14 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
     file.into_temp_path()
 }
 
+/// Reasonable default timeout for `wait_for_condition`.
+///
+/// The correct timeout depends on the condition and where the test is run. For
+/// example, it can take a couple of seconds for a newly placed order to show up
+/// in the auction. When running on Github CI, anything can take an unexpectedly
+/// long time.
+pub const TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Repeatedly evaluate condition until it returns true or the timeout is
 /// reached. If condition evaluates to true, Ok(()) is returned. If the timeout
 /// is reached Err is returned.
@@ -38,7 +46,7 @@ where
 {
     let start = std::time::Instant::now();
     while !condition().await {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         if start.elapsed() > timeout {
             return Err(anyhow!("timeout"));
         }
