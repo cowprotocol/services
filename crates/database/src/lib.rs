@@ -2,6 +2,8 @@
 #![allow(clippy::needless_borrow)]
 
 pub mod auction;
+pub mod auction_participants;
+pub mod auction_prices;
 pub mod auction_transaction;
 pub mod byte_array;
 pub mod ethflow_orders;
@@ -11,6 +13,8 @@ pub mod onchain_invalidations;
 pub mod order_execution;
 pub mod orders;
 pub mod quotes;
+pub mod settlement_observations;
+pub mod settlement_scores;
 pub mod settlements;
 pub mod solver_competition;
 pub mod trades;
@@ -57,6 +61,10 @@ pub const ALL_TABLES: &[&str] = &[
     "interactions",
     "auction_transaction",
     "ethflow_refunds",
+    "settlement_scores",
+    "settlement_observations",
+    "auction_prices",
+    "auction_participants",
 ];
 
 /// Delete all data in the database. Only used by tests.

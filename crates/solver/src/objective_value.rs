@@ -1,8 +1,9 @@
 use {
-    crate::settlement::{external_prices::ExternalPrices, Settlement},
+    crate::settlement::Settlement,
     num::BigRational,
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
+    shared::external_prices::ExternalPrices,
 };
 
 #[derive(Debug)]

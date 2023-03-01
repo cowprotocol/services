@@ -9,7 +9,7 @@ use {
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::SolverMetrics,
         orderbook::OrderBookApi,
-        settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+        settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
         settlement_rater::SettlementRater,
         settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
@@ -21,6 +21,7 @@ use {
     ethcontract::Account,
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
+    itertools::Itertools,
     model::{
         auction::{AuctionId, AuctionWithId},
         order::{LimitOrderClass, OrderClass, OrderUid},
@@ -40,6 +41,7 @@ use {
         code_fetching::CodeFetching,
         current_block::CurrentBlockStream,
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SolverRunError},
         recent_block_cache::Block,
         tenderly_api::TenderlyApi,
@@ -61,6 +63,8 @@ pub struct Driver {
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
     solver_time_limit: Duration,
+    block_time: Duration,
+    additional_mining_deadline: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -85,6 +89,8 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
+        block_time: Duration,
+        additional_mining_deadline: Duration,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -95,6 +101,7 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
+        enable_auction_rewards: bool,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
@@ -109,6 +116,7 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
+            enable_auction_rewards,
         };
 
         let logger = DriverLogger {
@@ -128,6 +136,8 @@ impl Driver {
             native_token,
             metrics,
             solver_time_limit,
+            block_time,
+            additional_mining_deadline,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -271,6 +281,7 @@ impl Driver {
         tracing::info!(count =% orders.len(), ?orders, "got orders");
         self.metrics.orders_fetched(&orders);
 
+        let auction_prices = auction.prices.clone();
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed auction prices")?;
@@ -347,6 +358,8 @@ impl Driver {
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
+                    score: rated_settlement.score,
+                    ranking: rated_settlement.ranking,
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()
@@ -377,6 +390,16 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
+        // In transition period last settlement is not necessarily the one with the
+        // highest score. So we need to get the scores of all settlements and
+        // sort them.
+        // CIP20 TODO - add to if statement below, once the transition period is over.
+        let mut scores = rated_settlements
+            .iter()
+            .map(|(solver, rated_settlement, _)| {
+                (solver.account().address(), rated_settlement.score.score())
+            })
+            .sorted_unstable_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -420,6 +443,38 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
+            let (winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
+            let scores = model::solver_competition::Scores {
+                winner,
+                winning_score,
+                // second highest score, or 0 if there is only one score (see CIP20)
+                reference_score: scores.next().unwrap_or_default().1,
+                block_deadline: {
+                    let deadline = self.solver_time_limit
+                        + self.solution_submitter.max_confirm_time
+                        + self.additional_mining_deadline;
+                    let number_blocks = deadline.as_secs() / self.block_time.as_secs();
+                    block_during_simulation + number_blocks
+                },
+            };
+            let participants = solver_competition
+                .solutions
+                .iter()
+                .map(|solution| solution.solver_address)
+                .collect(); // to avoid duplicates
+
+            // external prices for all tokens contained in the trades of a settlement
+            let prices = winning_settlement
+                .settlement
+                .trades()
+                .flat_map(|trade| {
+                    let sell_token = trade.order.data.sell_token;
+                    let buy_token = trade.order.data.buy_token;
+                    let sell_price = auction_prices.get(&sell_token).cloned().unwrap_or_default();
+                    let buy_price = auction_prices.get(&buy_token).cloned().unwrap_or_default();
+                    [(sell_token, sell_price), (buy_token, buy_price)]
+                })
+                .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -427,6 +482,9 @@ impl Driver {
                 transaction,
                 competition: solver_competition,
                 executions,
+                scores,
+                participants,
+                prices,
             };
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.

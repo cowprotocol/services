@@ -2,25 +2,27 @@ use {
     crate::{
         driver::solver_settlements::{self, RatedSettlement},
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-        settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
+        settlement::{PriceCheckTokens, Settlement},
         settlement_rater::{RatedSolverSettlement, SettlementRating},
         settlement_simulation::call_data,
         solver::{SimulationWithError, Solver},
     },
     anyhow::Result,
     gas_estimation::GasPrice1559,
-    itertools::enumerate,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
     rand::prelude::SliceRandom,
-    shared::http_solver::model::{
-        AuctionResult,
-        InternalizationStrategy,
-        SolverRejectionReason,
-        SolverRunError,
-        TransactionWithError,
+    shared::{
+        external_prices::ExternalPrices,
+        http_solver::model::{
+            AuctionResult,
+            InternalizationStrategy,
+            SolverRejectionReason,
+            SolverRunError,
+            TransactionWithError,
+        },
     },
-    std::{cmp::Ordering, sync::Arc},
+    std::{cmp::Ordering, collections::HashMap, sync::Arc},
 };
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
@@ -39,6 +41,7 @@ pub struct SettlementRanker {
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
+    pub enable_auction_rewards: bool,
 }
 
 impl SettlementRanker {
@@ -173,13 +176,6 @@ impl SettlementRanker {
             .rate_settlements(solver_settlements, external_prices, gas_price)
             .await?;
 
-        // Before sorting, make sure to shuffle the settlements. This is to make sure we
-        // don't give preference to any specific solver when there is an
-        // objective value tie.
-        rated_settlements.shuffle(&mut rand::thread_rng());
-
-        rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
-
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
@@ -196,17 +192,65 @@ impl SettlementRanker {
                 )),
             );
         }
-        for (i, (solver, _, _)) in enumerate(&rated_settlements) {
-            let rank = rated_settlements.len() - i;
-            solver.notify_auction_result(auction_id, AuctionResult::Ranked(rank));
-            self.metrics
-                .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-        }
 
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we
+        // don't give preference to any specific solver when there is an
+        // objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
+
+        if self.enable_auction_rewards {
+            rated_settlements.sort_by_key(|s| s.1.score.score());
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = i + 1;
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                },
+            );
+        } else {
+            // TODO: remove this block of code once `auction-rewards` is implemented
+            rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
+
+            let auction_based_ranking = auction_based_ranking(
+                rated_settlements
+                    .iter()
+                    .map(|(_, settlement, _)| settlement)
+                    .collect(),
+            );
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = auction_based_ranking
+                        .get(&settlement.id)
+                        .copied()
+                        .unwrap_or(0);
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                },
+            );
+        }
         Ok((rated_settlements, errors))
     }
 }
 
+// TODO: remove this once `auction-rewards` is implemented
+// Sort settlements by `auction-rewards` rules and return hashmap of settlement
+// id to ranking
+fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
+    let mut settlements = settlements;
+    settlements.sort_by_key(|s| s.score.score());
+    settlements
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(i, settlement)| (settlement.id, i + 1))
+        .collect()
+}
+
+// TODO: remove this once `auction-rewards` is implemented
 fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
     let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
     let rounded_lhs = lhs

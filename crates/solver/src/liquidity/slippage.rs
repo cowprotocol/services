@@ -2,17 +2,14 @@
 
 use {
     super::{AmmOrderExecution, LimitOrder},
-    crate::{
-        settlement::external_prices::ExternalPrices,
-        solver::{Auction, SolverType},
-    },
+    crate::solver::{Auction, SolverType},
     anyhow::{anyhow, Context as _, Result},
     clap::{Parser, ValueEnum as _},
     ethcontract::{H160, U256},
     model::order::OrderKind,
     num::{BigInt, BigRational, Integer as _, ToPrimitive as _},
     once_cell::sync::OnceCell,
-    shared::http_solver::model::TokenAmount,
+    shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
     std::{
         borrow::Cow,
         cmp,
@@ -420,8 +417,7 @@ fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
 mod tests {
     use {
         super::*,
-        crate::settlement::external_prices::externalprices,
-        shared::conversions::U256Ext as _,
+        shared::{conversions::U256Ext as _, externalprices},
         testlib::tokens::{GNO, USDC, WETH},
     };
 

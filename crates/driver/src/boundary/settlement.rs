@@ -27,7 +27,10 @@ use {
         DomainSeparator,
     },
     number_conversions::u256_to_big_rational,
-    shared::http_solver::model::{InternalizationStrategy, TokenAmount},
+    shared::{
+        external_prices::ExternalPrices,
+        http_solver::model::{InternalizationStrategy, TokenAmount},
+    },
     solver::{
         interactions::Erc20ApproveInteraction,
         liquidity::{
@@ -35,7 +38,6 @@ use {
             slippage::{SlippageCalculator, SlippageContext},
             AmmOrderExecution,
         },
-        settlement::external_prices::ExternalPrices,
         settlement_simulation::settle_method_builder,
     },
 };

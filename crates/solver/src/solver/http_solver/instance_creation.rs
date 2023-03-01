@@ -3,10 +3,7 @@ use {
         buffers::{BufferRetrievalError, BufferRetrieving},
         settlement::SettlementContext,
     },
-    crate::{
-        liquidity::{Exchange, LimitOrder, Liquidity},
-        settlement::external_prices::ExternalPrices,
-    },
+    crate::liquidity::{Exchange, LimitOrder, Liquidity},
     anyhow::{Context, Result},
     ethcontract::{errors::ExecutionError, U256},
     itertools::{Either, Itertools as _},
@@ -15,6 +12,7 @@ use {
     num::{BigInt, BigRational},
     primitive_types::H160,
     shared::{
+        external_prices::ExternalPrices,
         http_solver::{gas_model::GasModel, model::*},
         sources::balancer_v2::pools::common::compute_scaling_rate,
         token_info::{TokenInfo, TokenInfoFetching},
@@ -398,11 +396,10 @@ mod tests {
         super::*,
         crate::{
             liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder},
-            settlement::external_prices::externalprices,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
         model::TokenPair,
-        shared::token_info::MockTokenInfoFetching,
+        shared::{externalprices, token_info::MockTokenInfoFetching},
     };
 
     #[tokio::test]

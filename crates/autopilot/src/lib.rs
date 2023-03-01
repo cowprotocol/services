@@ -1,12 +1,13 @@
 use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
 
 pub mod arguments;
-pub mod auction_transaction;
 pub mod database;
+pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
 pub mod limit_orders;
+pub mod on_settlement_event_updater;
 pub mod risk_adjusted_rewards;
 pub mod run_loop;
 pub mod solvable_orders;
@@ -36,6 +37,7 @@ use {
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
+    num::BigRational,
     shared::{
         account_balances::Web3BalanceFetcher,
         bad_token::{
@@ -180,6 +182,7 @@ pub async fn main(args: arguments::Arguments) {
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
     let network_time_between_blocks = args
+        .shared
         .network_block_interval
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
@@ -616,15 +619,22 @@ pub async fn main(args: arguments::Arguments) {
     };
     let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
-    let auction_transaction_updater = crate::auction_transaction::AuctionTransactionUpdater {
-        web3: web3.clone(),
-        db: db.clone(),
-        current_block: current_block_stream.clone(),
-    };
+    let on_settlement_event_updater =
+        crate::on_settlement_event_updater::OnSettlementEventUpdater {
+            web3: web3.clone(),
+            contract: settlement_contract,
+            native_token: native_token.address(),
+            db: db.clone(),
+            current_block: current_block_stream.clone(),
+            fee_objective_scaling_factor: BigRational::from_float(
+                args.fee_objective_scaling_factor,
+            )
+            .unwrap(),
+        };
     tokio::task::spawn(
-        auction_transaction_updater
+        on_settlement_event_updater
             .run_forever()
-            .instrument(tracing::info_span!("auction_transaction_updater")),
+            .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
     if args.enable_limit_orders {

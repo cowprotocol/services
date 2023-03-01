@@ -54,6 +54,7 @@ impl<'a> Services<'a> {
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
         [
             "--baseline-sources=None".to_string(),
+            "--network-block-interval=10".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
                 self.contracts.uniswap_v2_router.address(),
@@ -76,7 +77,6 @@ impl<'a> Services<'a> {
     pub fn start_autopilot(&self, extra_args: Vec<String>) {
         let args = [
             "autopilot".to_string(),
-            "--network-block-interval=10".to_string(),
             "--auction-update-interval=1".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync".to_string(),

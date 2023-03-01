@@ -353,10 +353,7 @@ fn is_valid_solution(solution: &Settlement) -> bool {
 mod tests {
     use {
         super::*,
-        crate::{
-            liquidity::slippage::SlippageCalculator,
-            settlement::external_prices::ExternalPrices,
-        },
+        crate::liquidity::slippage::SlippageCalculator,
         ethcontract::H160,
         liquidity::tests::CapturingSettlementHandler,
         maplit::hashmap,
@@ -366,7 +363,11 @@ mod tests {
         },
         num::rational::Ratio,
         once_cell::sync::OnceCell,
-        shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool},
+        shared::{
+            baseline_solver::BaselineSolvable,
+            external_prices::ExternalPrices,
+            sources::uniswap_v2::pool_fetching::Pool,
+        },
     };
 
     fn to_wei(base: u128) -> U256 {

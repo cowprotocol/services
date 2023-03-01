@@ -1,8 +1,6 @@
-pub mod external_prices;
 mod settlement_encoder;
 
 use {
-    self::external_prices::ExternalPrices,
     crate::{
         encoding::{self, EncodedSettlement, EncodedTrade},
         liquidity::Settleable,
@@ -212,9 +210,12 @@ impl Trade {
     }
 }
 
-use model::order::OrderClass;
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    model::order::OrderClass,
+    shared::{external_prices::ExternalPrices, http_solver::model::Score},
+};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -229,7 +230,9 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference,
+    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
+                                          * struct */
+    pub score: Option<Score>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -277,6 +280,7 @@ impl Settlement {
         Self {
             encoder,
             submitter: self.submitter.clone(),
+            score: self.score.clone(),
         }
     }
 
@@ -456,6 +460,12 @@ impl Settlement {
         Ok(Self {
             encoder: merged,
             submitter: self.submitter,
+            score: match (self.score, other.score) {
+                (Some(Score::Score(left)), Some(Score::Score(right))) => {
+                    Some(Score::Score(left + right))
+                }
+                _ => None,
+            },
         })
     }
 
@@ -559,11 +569,11 @@ fn surplus_ratio(
 pub mod tests {
     use {
         super::*,
-        crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices},
+        crate::liquidity::SettlementHandling,
         maplit::hashmap,
         model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
         num::FromPrimitive,
-        shared::addr,
+        shared::{addr, externalprices},
     };
 
     pub fn assert_settlement_encoded_with<L, S>(

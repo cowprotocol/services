@@ -19,7 +19,7 @@ use {
         },
         metrics::SolverMetrics,
         s3_instance_upload::S3InstanceUploader,
-        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement::Settlement,
         settlement_post_processing::PostProcessing,
         solver::{
             balancer_sor_solver::BalancerSorSolver,
@@ -42,6 +42,7 @@ use {
         baseline_solver::BaseTokens,
         conversions::U256Ext,
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_client::HttpClientFactory,
         http_solver::{
             model::{AuctionResult, SimulatedTransaction},
@@ -586,9 +587,10 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 mod tests {
     use {
         super::*,
-        crate::{liquidity::LimitOrder, settlement::external_prices::externalprices},
+        crate::liquidity::LimitOrder,
         model::order::OrderKind,
         num::One as _,
+        shared::externalprices,
     };
 
     /// Dummy solver returning no settlements

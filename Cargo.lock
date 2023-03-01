@@ -186,6 +186,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "global-metrics",
+ "hex",
  "hex-literal",
  "itertools",
  "maplit",

@@ -164,10 +164,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
 
-    /// The time in seconds between new blocks on the network.
-    #[clap(long, env, value_parser = shared::arguments::duration_from_seconds)]
-    pub network_block_interval: Option<Duration>,
-
     /// Defines which strategies to apply when updating the `surplus_fee` of
     /// limit orders.
     #[clap(long, env, use_value_delimiter = true)]
@@ -268,13 +264,6 @@ impl std::fmt::Display for Arguments {
             f,
             "limit_order_quoter_batch_size: {:?}",
             self.limit_order_quoter_batch_size,
-        )?;
-        display_option(
-            f,
-            "network_block_interval",
-            &self
-                .network_block_interval
-                .map(|duration| duration.as_secs_f32()),
         )?;
         writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
         writeln!(

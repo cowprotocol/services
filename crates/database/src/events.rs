@@ -37,7 +37,7 @@ pub struct PreSignature {
     pub signed: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, sqlx::FromRow)]
 pub struct EventIndex {
     pub block_number: i64,
     pub log_index: i64,
@@ -66,6 +66,11 @@ pub async fn delete(
 
     const QUERY_SETTLEMENTS: &str = "DELETE FROM settlements WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
+        .await?;
+
+    const QUERY_OBSERVATIONS: &str =
+        "DELETE FROM settlement_observations WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
         .await?;
 
     const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
@@ -139,8 +144,8 @@ async fn insert_settlement(
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) \
-                         ON CONFLICT DO NOTHING;";
+    INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) ON \
+                         CONFLICT DO NOTHING;";
     sqlx::query(QUERY)
         .bind(event.transaction_hash)
         .bind(index.block_number)
@@ -148,6 +153,7 @@ async fn insert_settlement(
         .bind(event.solver)
         .execute(ex)
         .await?;
+
     Ok(())
 }
 

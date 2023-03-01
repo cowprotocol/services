@@ -1,4 +1,8 @@
-use {crate::settlement::Settlement, num::BigRational, primitive_types::U256};
+use {
+    crate::{driver::solver_competition::Score, settlement::Settlement},
+    num::BigRational,
+    primitive_types::U256,
+};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement.user_trades().next().is_some()
@@ -16,6 +20,8 @@ pub struct RatedSettlement {
     pub gas_estimate: U256,       // In gas units.
     pub gas_price: BigRational,   // In wei per gas unit.
     pub objective_value: BigRational,
+    pub score: Score,   // auction based score.
+    pub ranking: usize, // auction based ranking.
 }
 
 #[cfg(test)]

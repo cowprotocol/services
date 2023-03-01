@@ -6,12 +6,12 @@
 //! native asset and native wrapped token exist with a value of 1.
 
 use {
+    crate::conversions::U256Ext,
     anyhow::{bail, Result},
     ethcontract::{H160, U256},
     lazy_static::lazy_static,
     model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, One as _, ToPrimitive as _},
-    shared::conversions::U256Ext as _,
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -121,20 +121,6 @@ fn to_native_xrate(price: U256) -> BigRational {
     // an exchange rate such that `x TOKEN * xrate = y ETH`.
     price.to_big_rational() / &*UNIT
 }
-
-#[cfg(test)]
-/// Macro for instantiating an `ExternalPrices` instance for testing.
-macro_rules! externalprices {
-    (native_token: $nt:expr $(, $($t:tt)*)?) => {
-        $crate::settlement::external_prices::ExternalPrices::new(
-            $nt,
-            ::maplit::hashmap!($($($t)*)*),
-        )
-        .unwrap()
-    };
-}
-#[cfg(test)]
-pub(crate) use externalprices;
 
 #[cfg(test)]
 mod tests {

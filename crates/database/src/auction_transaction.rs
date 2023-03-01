@@ -70,6 +70,21 @@ LIMIT 1
         .await
 }
 
+pub async fn get_auction_id(
+    ex: &mut PgConnection,
+    tx_from: &Address,
+    tx_nonce: i64,
+) -> Result<Option<AuctionId>, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT auction_id FROM auction_transaction WHERE tx_from = $1 AND tx_nonce = $2;"#;
+    let auction = sqlx::query_scalar(QUERY)
+        .bind(tx_from)
+        .bind(tx_nonce)
+        .fetch_optional(ex)
+        .await?;
+    Ok(auction)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -226,5 +241,23 @@ mod tests {
             .await
             .unwrap();
         assert!(event.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn get_auction_id_test() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        upsert_auction_transaction(&mut db, 5, &Default::default(), 3)
+            .await
+            .unwrap();
+
+        let auction_id = get_auction_id(&mut db, &Default::default(), 3)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(auction_id, 5);
     }
 }

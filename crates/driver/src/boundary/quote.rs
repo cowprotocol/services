@@ -4,12 +4,8 @@ use {
         domain::{competition::solution, eth},
         infra::blockchain::Ethereum,
     },
-    shared::http_solver::model::InternalizationStrategy,
-    solver::{
-        interactions::Erc20ApproveInteraction,
-        liquidity::slippage::SlippageCalculator,
-        settlement::external_prices::ExternalPrices,
-    },
+    shared::{external_prices::ExternalPrices, http_solver::model::InternalizationStrategy},
+    solver::{interactions::Erc20ApproveInteraction, liquidity::slippage::SlippageCalculator},
 };
 
 const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100; // 1%
