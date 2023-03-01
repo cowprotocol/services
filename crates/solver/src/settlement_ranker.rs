@@ -199,7 +199,7 @@ impl SettlementRanker {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         if self.enable_auction_rewards {
-            rated_settlements.sort_by(|a, b| a.1.score.score().cmp(&b.1.score.score()));
+            rated_settlements.sort_by_key(|s| s.1.score.score());
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
                 |(i, (solver, settlement, _))| {
@@ -217,7 +217,7 @@ impl SettlementRanker {
                 rated_settlements
                     .iter()
                     .map(|(_, settlement, _)| settlement)
-                    .collect::<Vec<_>>(),
+                    .collect(),
             );
 
             rated_settlements.iter_mut().rev().enumerate().for_each(
@@ -241,7 +241,7 @@ impl SettlementRanker {
 // id to ranking
 fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
     let mut settlements = settlements;
-    settlements.sort_by(|a, b| a.score.score().cmp(&b.score.score()));
+    settlements.sort_by_key(|s| s.score.score());
     settlements
         .iter()
         .rev()

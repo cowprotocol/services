@@ -399,10 +399,7 @@ impl Driver {
             .map(|(solver, rated_settlement, _)| {
                 (solver.account().address(), rated_settlement.score.score())
             })
-            .sorted_unstable_by(|(_, left_score), (_, right_score)| {
-                Ord::cmp(&right_score, &left_score) // descending
-            })
-            .peekable();
+            .sorted_unstable_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -446,11 +443,11 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
+            let (winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
             let scores = model::solver_competition::Scores {
-                winner: scores.peek().expect("no winner").0,
-                winning_score: scores.next().expect("no score").1, // guaranteed to exist
-                // reference score is the second highest score, or 0 if there is only one score (see
-                // CIP20)
+                winner,
+                winning_score,
+                // second highest score, or 0 if there is only one score (see CIP20)
                 reference_score: scores.next().unwrap_or_default().1,
                 block_deadline: {
                     let deadline = self.solver_time_limit
@@ -464,24 +461,18 @@ impl Driver {
                 .solutions
                 .iter()
                 .map(|solution| solution.solver_address)
-                .collect::<HashSet<_>>(); // to avoid duplicates
-                                          // external prices for all tokens contained in the trades of a settlement
+                .collect(); // to avoid duplicates
+
+            // external prices for all tokens contained in the trades of a settlement
             let prices = winning_settlement
                 .settlement
                 .trades()
                 .flat_map(|trade| {
                     let sell_token = trade.order.data.sell_token;
                     let buy_token = trade.order.data.buy_token;
-                    [
-                        (
-                            sell_token,
-                            auction_prices.get(&sell_token).cloned().unwrap_or_default(),
-                        ),
-                        (
-                            buy_token,
-                            auction_prices.get(&buy_token).cloned().unwrap_or_default(),
-                        ),
-                    ]
+                    let sell_price = auction_prices.get(&sell_token).cloned().unwrap_or_default();
+                    let buy_price = auction_prices.get(&buy_token).cloned().unwrap_or_default();
+                    [(sell_token, sell_price), (buy_token, buy_price)]
                 })
                 .collect();
             tracing::debug!(?transaction, "winning solution transaction");

@@ -461,10 +461,9 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(left), Some(right)) => match (left, right) {
-                    (Score::Score(left), Score::Score(right)) => Some(Score::Score(left + right)),
-                    _ => None,
-                },
+                (Some(Score::Score(left)), Some(Score::Score(right))) => {
+                    Some(Score::Score(left + right))
+                }
                 _ => None,
             },
         })
