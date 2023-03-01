@@ -8,7 +8,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -104,11 +103,9 @@ async fn eth_integration(web3: Web3) {
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
-    wait_for_condition(Duration::from_secs(10), || async {
-        services.solvable_orders().await == 2
-    })
-    .await
-    .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
     services.start_old_driver(solver.private_key(), vec![]);
 
@@ -117,9 +114,7 @@ async fn eth_integration(web3: Web3) {
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
         balance_a != trader_a_eth_balance_before && balance_b != trader_b_eth_balance_before
     };
-    wait_for_condition(Duration::from_secs(10), trade_happened)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
     let trader_a_eth_balance_after = web3.eth().balance(trader_a.address(), None).await.unwrap();

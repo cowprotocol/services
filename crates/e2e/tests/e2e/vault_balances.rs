@@ -7,7 +7,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -74,13 +73,13 @@ async fn vault_balances(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 1
     })
     .await
     .unwrap();
     services.start_old_driver(solver.private_key(), vec![]);
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })
     .await
