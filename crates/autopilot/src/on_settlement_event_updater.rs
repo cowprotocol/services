@@ -111,64 +111,74 @@ impl OnSettlementEventUpdater {
             .try_into()
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
-        let receipt = self
-            .web3
-            .eth()
-            .transaction_receipt(hash)
-            .await?
-            .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = receipt
-            .gas_used
-            .with_context(|| format!("no gas used {hash:?}"))?;
-        let effective_gas_price = receipt
-            .effective_gas_price
-            .with_context(|| format!("no effective gas price {hash:?}"))?;
 
-        let auction_id = self
-            .db
-            .get_auction_id(tx_from, tx_nonce)
-            .await?
-            .with_context(|| format!("no auction id for tx {hash:?}"))?;
-        let auction_external_prices =
-            self.db
-                .get_auction_prices(auction_id)
-                .await
-                .with_context(|| {
-                    format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-                })?;
-        let orders = self
-            .db
-            .orders_for_tx(&hash)
-            .await?
-            .into_iter()
-            .map(|order| {
-                order.try_into().with_context(|| {
-                    format!("failed to convert order for tx {hash:?} and auction id {auction_id:?}")
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let external_prices =
-            ExternalPrices::try_from_auction_prices(self.native_token, auction_external_prices)?;
-
-        // surplus and fees calculation
-        let configuration = FeeConfiguration {
-            fee_objective_scaling_factor: self.fee_objective_scaling_factor.clone(),
-        };
-        let settlement = DecodedSettlement::new(&transaction.input.0)?;
-        let surplus = settlement.total_surplus(&external_prices);
-        let fee = settlement.total_fees(&external_prices, &orders, &configuration);
-
-        let update = SettlementUpdate {
+        let auction_id = self.db.get_auction_id(tx_from, tx_nonce).await?;
+        let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
             auction_id,
             tx_from,
             tx_nonce,
-            gas_used,
-            effective_gas_price,
-            surplus,
-            fee,
+            ..Default::default()
         };
+
+        // It is possible that auction_id does not exist for a transaction.
+        // This happens for production auctions queried from the staging environment and
+        // vice versa (because we have databases for both environments).
+        //
+        // If auction_id exists, we expect all other relevant information to exist as
+        // well.
+        if let Some(auction_id) = auction_id {
+            let receipt = self
+                .web3
+                .eth()
+                .transaction_receipt(hash)
+                .await?
+                .with_context(|| format!("no receipt {hash:?}"))?;
+            let gas_used = receipt
+                .gas_used
+                .with_context(|| format!("no gas used {hash:?}"))?;
+            let effective_gas_price = receipt
+                .effective_gas_price
+                .with_context(|| format!("no effective gas price {hash:?}"))?;
+            let auction_external_prices = self
+                .db
+                .get_auction_prices(auction_id)
+                .await
+                .with_context(|| {
+                    format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+                })?;
+            let orders = self
+                .db
+                .orders_for_tx(&hash)
+                .await?
+                .into_iter()
+                .map(|order| {
+                    order.try_into().with_context(|| {
+                        format!(
+                            "failed to convert order for tx {hash:?} and auction id {auction_id:?}"
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let external_prices = ExternalPrices::try_from_auction_prices(
+                self.native_token,
+                auction_external_prices,
+            )?;
+
+            // surplus and fees calculation
+            let configuration = FeeConfiguration {
+                fee_objective_scaling_factor: self.fee_objective_scaling_factor.clone(),
+            };
+            let settlement = DecodedSettlement::new(&transaction.input.0)?;
+            let surplus = settlement.total_surplus(&external_prices);
+            let fee = settlement.total_fees(&external_prices, &orders, &configuration);
+
+            update.surplus = surplus;
+            update.fee = fee;
+            update.gas_used = gas_used;
+            update.effective_gas_price = effective_gas_price;
+        }
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
 

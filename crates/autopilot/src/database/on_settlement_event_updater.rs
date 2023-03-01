@@ -5,11 +5,11 @@ use {
     number_conversions::u256_to_big_decimal,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct SettlementUpdate {
     pub block_number: i64,
     pub log_index: i64,
-    pub auction_id: i64,
+    pub auction_id: Option<i64>,
     pub tx_from: H160,
     pub tx_nonce: i64,
     pub gas_used: U256,
@@ -41,20 +41,24 @@ impl super::Postgres {
         .await
         .context("insert_settlement_tx_info")?;
 
-        // update settlement_observations
-        database::settlement_observations::insert(
-            &mut ex,
-            Observation {
-                block_number: settlement_update.block_number,
-                log_index: settlement_update.log_index,
-                gas_used: u256_to_big_decimal(&settlement_update.gas_used),
-                effective_gas_price: u256_to_big_decimal(&settlement_update.effective_gas_price),
-                surplus: u256_to_big_decimal(&settlement_update.surplus),
-                fee: u256_to_big_decimal(&settlement_update.fee),
-            },
-        )
-        .await
-        .context("insert_settlement_observations")?;
+        // update settlement_observations if exist
+        if settlement_update.auction_id.is_some() {
+            database::settlement_observations::insert(
+                &mut ex,
+                Observation {
+                    block_number: settlement_update.block_number,
+                    log_index: settlement_update.log_index,
+                    gas_used: u256_to_big_decimal(&settlement_update.gas_used),
+                    effective_gas_price: u256_to_big_decimal(
+                        &settlement_update.effective_gas_price,
+                    ),
+                    surplus: u256_to_big_decimal(&settlement_update.surplus),
+                    fee: u256_to_big_decimal(&settlement_update.fee),
+                },
+            )
+            .await
+            .context("insert_settlement_observations")?;
+        }
 
         ex.commit().await?;
         Ok(())
