@@ -2,18 +2,20 @@
 
 mod trampoline;
 
-use self::trampoline::Trampoline;
-use super::SubmissionError;
-use crate::settlement::Settlement;
-use anyhow::{anyhow, Context as _, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{Account, H256};
-use shared::{
-    ethrpc::Web3,
-    gelato_api::{GelatoClient, TaskId, TaskState},
+use {
+    self::trampoline::Trampoline,
+    super::SubmissionError,
+    crate::settlement::Settlement,
+    anyhow::{anyhow, Context as _, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{Account, H256},
+    shared::{
+        ethrpc::Web3,
+        gelato_api::{GelatoClient, TaskId, TaskState},
+    },
+    std::time::Duration,
+    web3::types::TransactionReceipt,
 };
-use std::time::Duration;
-use web3::types::TransactionReceipt;
 
 /// A Gelato submitter.
 pub struct GelatoSubmitter {
@@ -93,9 +95,11 @@ impl GelatoSubmitter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::ethrpc::{create_env_test_transport, Web3};
-    use std::env;
+    use {
+        super::*,
+        shared::ethrpc::{create_env_test_transport, Web3},
+        std::env,
+    };
 
     #[ignore]
     #[tokio::test]

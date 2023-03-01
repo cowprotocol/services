@@ -1,20 +1,21 @@
 //! Module containing The Graph API client used for retrieving Uniswap V3
 //! data from the Uniswap V3 subgraph.
 
-use std::collections::HashMap;
-
-use crate::{
-    event_handling::MAX_REORG_BLOCK_COUNT,
-    subgraph::{ContainsId, SubgraphClient},
+use {
+    crate::{
+        event_handling::MAX_REORG_BLOCK_COUNT,
+        subgraph::{ContainsId, SubgraphClient},
+    },
+    anyhow::{bail, Result},
+    ethcontract::{H160, U256},
+    model::u256_decimal,
+    num::BigInt,
+    reqwest::Client,
+    serde::{Deserialize, Serialize},
+    serde_json::{json, Map, Value},
+    serde_with::{serde_as, DisplayFromStr},
+    std::collections::HashMap,
 };
-use anyhow::{bail, Result};
-use ethcontract::{H160, U256};
-use model::u256_decimal;
-use num::BigInt;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use serde_with::{serde_as, DisplayFromStr};
 
 const ALL_POOLS_QUERY: &str = r#"
     query Pools($block: Int, $pageSize: Int, $lastId: ID) {
@@ -310,10 +311,12 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::subgraph::{Data, QUERY_PAGE_SIZE};
-    use serde_json::json;
-    use std::str::FromStr;
+    use {
+        super::*,
+        crate::subgraph::{Data, QUERY_PAGE_SIZE},
+        serde_json::json,
+        std::str::FromStr,
+    };
 
     #[test]
     fn decode_pools_data() {

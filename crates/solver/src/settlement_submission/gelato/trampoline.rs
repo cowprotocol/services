@@ -4,20 +4,22 @@
 //! This allows settlement transactions to be executed permissionlessly by any
 //! relayer using signed settlement calldata.
 
-use crate::{settlement::Settlement, settlement_simulation::settle_method_builder};
-use anyhow::{bail, Result};
-use contracts::{GPv2Settlement, SolverTrampoline};
-use ethcontract::{Account, Bytes, U256};
-use hex_literal::hex;
-use model::{
-    signature::{EcdsaSignature, EcdsaSigningScheme},
-    DomainSeparator,
+use {
+    crate::{settlement::Settlement, settlement_simulation::settle_method_builder},
+    anyhow::{bail, Result},
+    contracts::{GPv2Settlement, SolverTrampoline},
+    ethcontract::{Account, Bytes, U256},
+    hex_literal::hex,
+    model::{
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+        DomainSeparator,
+    },
+    shared::{
+        gelato_api::GelatoCall,
+        http_solver::model::InternalizationStrategy::SkipInternalizableInteraction,
+    },
+    web3::signing::{self, SecretKeyRef},
 };
-use shared::{
-    gelato_api::GelatoCall,
-    http_solver::model::InternalizationStrategy::SkipInternalizableInteraction,
-};
-use web3::signing::{self, SecretKeyRef};
 
 pub struct Trampoline {
     chain_id: u64,
@@ -129,13 +131,15 @@ impl Trampoline {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::{
-        addr,
-        ethrpc::{create_env_test_transport, Web3},
-        tenderly_api::{SimulationRequest, TenderlyHttpApi},
+    use {
+        super::*,
+        shared::{
+            addr,
+            ethrpc::{create_env_test_transport, Web3},
+            tenderly_api::{SimulationRequest, TenderlyHttpApi},
+        },
+        std::env,
     };
-    use std::env;
 
     #[ignore]
     #[tokio::test]

@@ -1,9 +1,11 @@
-use crate::current_block::{self, BlockInfo, CurrentBlockStream};
-use anyhow::{ensure, Result};
-use futures::{future::join_all, Stream, StreamExt as _};
-use std::{sync::Arc, time::Duration};
-use tokio::time;
-use tracing::Instrument as _;
+use {
+    crate::current_block::{self, BlockInfo, CurrentBlockStream},
+    anyhow::{ensure, Result},
+    futures::{future::join_all, Stream, StreamExt as _},
+    std::{sync::Arc, time::Duration},
+    tokio::time,
+    tracing::Instrument as _,
+};
 
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
@@ -133,11 +135,9 @@ impl ServiceMaintenance {
 #[metric(subsystem = "maintenance")]
 struct Metrics {
     /// Service maintenance last seen block.
-    #[metric()]
     last_seen_block: prometheus::IntGauge,
 
     /// Service maintenance last successfully updated block.
-    #[metric()]
     last_updated_block: prometheus::IntGauge,
 
     /// Service maintenance error counter
@@ -147,10 +147,7 @@ struct Metrics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use anyhow::bail;
-    use futures::stream;
-    use mockall::Sequence;
+    use {super::*, anyhow::bail, futures::stream, mockall::Sequence};
 
     #[tokio::test]
     async fn run_maintenance_no_early_exit_on_error() {

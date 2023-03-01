@@ -1,5 +1,7 @@
-use crate::{OrderUid, PgTransaction, TransactionHash};
-use sqlx::{Executor, PgConnection};
+use {
+    crate::{OrderUid, PgTransaction, TransactionHash},
+    sqlx::{Executor, PgConnection},
+};
 
 #[derive(Clone, Debug, Default, sqlx::FromRow, Eq, PartialEq)]
 pub struct EthOrderPlacement {
@@ -22,8 +24,8 @@ pub async fn insert_or_overwrite_ethflow_order(
     event: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) \
-        ON CONFLICT (uid) DO UPDATE SET valid_to = $2;";
+        INSERT INTO ethflow_orders (uid, valid_to) VALUES ($1, $2) ON CONFLICT (uid) DO UPDATE SET \
+                         valid_to = $2;";
     sqlx::query(QUERY)
         .bind(event.uid)
         .bind(event.valid_to)
@@ -65,8 +67,7 @@ pub async fn delete_refunds(
     to_block: i64,
 ) -> Result<(), sqlx::Error> {
     const DELETE_REFUNDS: &str = "\
-    DELETE FROM ethflow_refunds \
-    WHERE block_number >= $1 and block_number <= $2;";
+    DELETE FROM ethflow_refunds WHERE block_number >= $1 and block_number <= $2;";
     ex.execute(sqlx::query(DELETE_REFUNDS).bind(from_block).bind(to_block))
         .await?;
     Ok(())
@@ -129,7 +130,7 @@ AND o.partially_fillable = false
 AND t.order_uid is null
 AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
-AND (1.0 - o.buy_amount / oq.buy_amount) > $3
+AND (1.0 - o.buy_amount / oq.buy_amount) >= $3
 AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
     "#;
     sqlx::query_as(QUERY)
@@ -142,17 +143,18 @@ AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        byte_array::ByteArray,
-        events::{insert_trade, EventIndex, Trade},
-        onchain_invalidations::insert_onchain_invalidation,
-        orders::{insert_order, insert_quote, Order, Quote},
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            events::{insert_trade, EventIndex, Trade},
+            onchain_invalidations::insert_onchain_invalidation,
+            orders::{insert_order, insert_quote, Order, Quote},
+        },
+        bigdecimal::BigDecimal,
+        chrono::{TimeZone, Utc},
+        sqlx::Connection,
     };
-
-    use super::*;
-    use bigdecimal::BigDecimal;
-    use chrono::{TimeZone, Utc};
-    use sqlx::Connection;
 
     #[tokio::test]
     #[ignore]
@@ -449,7 +451,7 @@ mod tests {
         let now = std::time::Instant::now();
         refundable_orders(&mut db, 1, 1, 1.0).await.unwrap();
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
+        println!("{elapsed:?}");
         assert!(elapsed < std::time::Duration::from_secs(1));
     }
 }

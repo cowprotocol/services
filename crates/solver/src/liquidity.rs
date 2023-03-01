@@ -5,29 +5,33 @@ pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod zeroex;
 
-use crate::settlement::SettlementEncoder;
-use anyhow::Result;
 #[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
-use model::{
-    order::{OrderKind, OrderUid},
-    TokenPair,
-};
-use num::{rational::Ratio, BigRational};
-use primitive_types::{H160, U256};
-#[cfg(test)]
-use shared::sources::uniswap_v2::pool_fetching::Pool;
-use shared::sources::{
-    balancer_v2::{
-        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-        swap::fixed_point::Bfp,
+use {
+    crate::settlement::SettlementEncoder,
+    anyhow::Result,
+    model::{
+        order::{OrderKind, OrderUid},
+        TokenPair,
     },
-    uniswap_v3::pool_fetching::PoolInfo,
+    num::{rational::Ratio, BigRational},
+    primitive_types::{H160, U256},
+    shared::{
+        http_solver::model::TokenAmount,
+        sources::{
+            balancer_v2::{
+                pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+                swap::fixed_point::Bfp,
+            },
+            uniswap_v2::pool_fetching::Pool,
+            uniswap_v3::pool_fetching::PoolInfo,
+        },
+    },
+    std::{collections::HashMap, sync::Arc},
+    strum::{EnumVariantNames, IntoStaticStr},
 };
-use std::{collections::HashMap, sync::Arc};
-use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
@@ -80,6 +84,18 @@ pub trait SettlementHandling<L>: Send + Sync
 where
     L: Settleable,
 {
+    /// What is this craziness?!
+    ///
+    /// While developing the `driver`, we want to access information that is
+    /// part of a liquidity's settlement handler. Unfortunately, with how the
+    /// `Liquidity` abstraction is currently setup, this is not really possible.
+    /// This method allows us to downcast `SettlementHandling` trait objects
+    /// into concrete types in order to make the `driver` boundary integration
+    /// work.
+    ///
+    /// This should eventually be purged with fire.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     fn encode(&self, execution: L::Execution, encoder: &mut SettlementEncoder) -> Result<()>;
 }
 
@@ -89,8 +105,9 @@ pub enum Exchange {
     ZeroEx,
 }
 
-/// Used to differentiate between different types of orders that can be sent to solvers.
-/// User orders (market + limit) containing OrderUid are the orders from the orderbook.
+/// Used to differentiate between different types of orders that can be sent to
+/// solvers. User orders (market + limit) containing OrderUid are the orders
+/// from the orderbook.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -103,17 +120,20 @@ pub enum LimitOrderId {
 /// Three different types of liquidity orders exist:
 /// 1. Protocol - liquidity orders from the auction model of solvable orders
 /// 2. ZeroEx  - liquidity orders from the zeroex api liquidity collector
-/// 3. Foreign - liquidity orders received as part of the solution from searchers
+/// 3. Foreign - liquidity orders received as part of the solution from
+/// searchers
 ///
-/// (1) and (2) are gathered when the auction is cut and they are sent to searchers
-/// (3) are received from searchers as part of the solution.
+/// (1) and (2) are gathered when the auction is cut and they are sent to
+/// searchers (3) are received from searchers as part of the solution.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
 pub enum LiquidityOrderId {
-    /// TODO: Split into different variants once we have a DTO of order model for `driver` in driver solver colocation
-    /// TODO: The only reason why is together now is because function `normalize_limit_order` can't diferentiate between these two
-    /// Contains protocol and foreign liquidity orders
+    /// TODO: Split into different variants once we have a DTO of order model
+    /// for `driver` in driver solver colocation TODO: The only reason why
+    /// is together now is because function `normalize_limit_order` can't
+    /// diferentiate between these two Contains protocol and foreign
+    /// liquidity orders
     Protocol(OrderUid),
     ZeroEx(String),
 }
@@ -154,20 +174,14 @@ pub struct LimitOrder {
     pub id: LimitOrderId,
     pub sell_token: H160,
     pub buy_token: H160,
+    /// The amount that can be sold to acquire the required `buy_token`.
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub unscaled_subsidized_fee: U256,
-    /// The scaled fee amount that the protocol pretends it is receiving.
-    ///
-    /// This is different than the actual signed fee in that it
-    /// does not have any subsidies applied and may be scaled by a constant
-    /// factor to make matching orders more valuable from an objective value
-    /// perspective.
-    pub scaled_unsubsidized_fee: U256,
-    /// Indicator if the order is mature at the creation of the Auction. Relevant to user orders.
-    pub is_mature: bool,
+    /// The fee that should be used for objective value computations.
+    /// Takes partiall fill into account.
+    pub solver_fee: U256,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
@@ -225,10 +239,8 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            unscaled_subsidized_fee: Default::default(),
-            scaled_unsubsidized_fee: Default::default(),
+            solver_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
-            is_mature: false,
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
             reward: Default::default(),
@@ -236,7 +248,8 @@ impl Default for LimitOrder {
     }
 }
 
-/// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
+/// 2 sided constant product automated market maker with equal reserve value and
+/// a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -249,6 +262,20 @@ pub struct ConstantProductOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
+impl ConstantProductOrder {
+    /// Creates a new constant product order from a Uniswap V2 pool and a
+    /// settlement handler implementation.
+    pub fn for_pool(pool: Pool, settlement_handling: Arc<dyn SettlementHandling<Self>>) -> Self {
+        Self {
+            address: pool.address,
+            tokens: pool.tokens,
+            reserves: pool.reserves,
+            fee: pool.fee,
+            settlement_handling,
+        }
+    }
+}
+
 impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Constant Product AMM {:?}", self.tokens)
@@ -258,17 +285,12 @@ impl std::fmt::Debug for ConstantProductOrder {
 #[cfg(test)]
 impl From<Pool> for ConstantProductOrder {
     fn from(pool: Pool) -> Self {
-        Self {
-            address: pool.address,
-            tokens: pool.tokens,
-            reserves: pool.reserves,
-            fee: pool.fee,
-            settlement_handling: tests::CapturingSettlementHandler::arc(),
-        }
+        Self::for_pool(pool, tests::CapturingSettlementHandler::arc())
     }
 }
 
-/// 2 sided weighted product automated market maker with weighted reserves and a trading fee (e.g. BalancerV2)
+/// 2 sided weighted product automated market maker with weighted reserves and a
+/// trading fee (e.g. BalancerV2)
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -323,8 +345,8 @@ pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AmmOrderExecution {
-    pub input_max: (H160, U256),
-    pub output: (H160, U256),
+    pub input_max: TokenAmount,
+    pub output: TokenAmount,
     pub internalizable: bool,
 }
 
@@ -423,9 +445,7 @@ impl Default for StablePoolOrder {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use maplit::hashmap;
-    use std::sync::Mutex;
+    use {super::*, maplit::hashmap, std::sync::Mutex};
 
     pub struct CapturingSettlementHandler<L>
     where
@@ -463,9 +483,13 @@ pub mod tests {
 
     impl<L> SettlementHandling<L> for CapturingSettlementHandler<L>
     where
-        L: Settleable,
+        L: Settleable + 'static,
         L::Execution: Send + Sync,
     {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn encode(&self, execution: L::Execution, _: &mut SettlementEncoder) -> Result<()> {
             self.calls.lock().unwrap().push(execution);
             Ok(())

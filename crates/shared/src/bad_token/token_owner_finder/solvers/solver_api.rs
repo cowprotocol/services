@@ -1,8 +1,10 @@
-use super::TokenOwnerSolverApi;
-use anyhow::Result;
-use ethcontract::H160;
-use reqwest::{Client, Url};
-use std::collections::HashMap;
+use {
+    super::TokenOwnerSolverApi,
+    anyhow::{Context, Result},
+    ethcontract::H160,
+    reqwest::{Client, Url},
+    std::collections::HashMap,
+};
 
 type Token = H160;
 type Owner = H160;
@@ -13,28 +15,16 @@ pub struct SolverConfiguration {
     pub client: Client,
 }
 
-impl SolverConfiguration {
-    /// Return type is `Token, Option<Owner>` because there are
-    /// entries containing `Null` instead of owner address.
-    async fn query(&self) -> Result<HashMap<Token, Option<Owner>>> {
-        Ok(self
+#[async_trait::async_trait]
+impl TokenOwnerSolverApi for SolverConfiguration {
+    async fn get_token_owner_pairs(&self) -> Result<HashMap<Token, Vec<Owner>>> {
+        let response = self
             .client
             .get(self.url.clone())
             .send()
             .await?
-            .json()
-            .await?)
-    }
-}
-
-#[async_trait::async_trait]
-impl TokenOwnerSolverApi for SolverConfiguration {
-    async fn get_token_owner_pairs(&self) -> Result<HashMap<Token, Vec<Owner>>> {
-        self.query().await.map(|token_owner_pairs| {
-            token_owner_pairs
-                .into_iter()
-                .filter_map(|(token, owner)| owner.map(|owner| (token, vec![owner])))
-                .collect()
-        })
+            .text()
+            .await?;
+        serde_json::from_str(&response).context(format!("bad query response: {response:?}"))
     }
 }

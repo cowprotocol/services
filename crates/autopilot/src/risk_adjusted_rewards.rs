@@ -1,22 +1,26 @@
 //! Implementation of CIP-14 risk adjusted solver rewards as described in https://forum.cow.fi/t/cip-14-risk-adjusted-solver-rewards/1132 .
 //!
-//! Note slight differences in the formulas due conversion of units (gas, gas price, COW to ETH)
-//! that are glossed over in the CIP.
+//! Note slight differences in the formulas due conversion of units (gas, gas
+//! price, COW to ETH) that are glossed over in the CIP.
 //!
-//! This module uses argument structs in order to better document and differentiate many arguments
-//! of the type f64 where it would be easy to mix them up when calling the function.
+//! This module uses argument structs in order to better document and
+//! differentiate many arguments of the type f64 where it would be easy to mix
+//! them up when calling the function.
 
-use std::sync::Arc;
-
-use anyhow::{ensure, Context, Result};
-use database::orders::Quote;
-use futures::StreamExt;
-use gas_estimation::GasPriceEstimating;
-use model::order::{Order, OrderClass, OrderUid};
-use primitive_types::H160;
-use shared::price_estimation::native::NativePriceEstimating;
-
-use crate::database::Postgres;
+use {
+    crate::database::Postgres,
+    anyhow::{ensure, Context, Result},
+    database::orders::Quote,
+    futures::StreamExt,
+    gas_estimation::GasPriceEstimating,
+    model::order::{Order, OrderClass, OrderUid},
+    primitive_types::H160,
+    shared::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    std::{
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    },
+};
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Configuration {
@@ -32,22 +36,45 @@ pub struct Configuration {
 }
 
 pub struct Calculator {
-    pub config: Configuration,
-    pub database: Postgres,
-    pub cow_token: H160,
-    pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub native_price: Arc<dyn NativePriceEstimating>,
+    config: Configuration,
+    database: Postgres,
+    gas_price: Arc<dyn GasPriceEstimating>,
+    native_price: BestEffortCowPriceEstimator,
 }
 
 impl Calculator {
+    /// Time limit for CoW token price cached in [BestEffortCowPriceEstimator].
+    /// Hardcoded to avoid bloating the service configuration.
+    const COW_PRICE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+
+    pub fn new(
+        config: Configuration,
+        database: Postgres,
+        cow_token: H160,
+        gas_price: Arc<dyn GasPriceEstimating>,
+        native_price: Arc<dyn NativePriceEstimating>,
+    ) -> Self {
+        Self {
+            config,
+            database,
+            gas_price,
+            native_price: BestEffortCowPriceEstimator::new(
+                native_price,
+                cow_token,
+                Self::COW_PRICE_MAX_AGE,
+            ),
+        }
+    }
+
     /// Returns the rewards in COW base units for several orders.
     ///
     /// An outer error indicates that no reward calculations were performed.
     ///
-    /// An inner error indicates that the reward for this order could not be calculated.
+    /// An inner error indicates that the reward for this order could not be
+    /// calculated.
     ///
-    /// The Ok-Vec has the same number of elements as the input orders-slice. Each element
-    /// corresponds to the order at the same index.
+    /// The Ok-Vec has the same number of elements as the input orders-slice.
+    /// Each element corresponds to the order at the same index.
     pub async fn calculate_many(&self, orders: &[Order]) -> Result<Vec<Result<f64>>> {
         if orders.is_empty() {
             return Ok(Vec::new());
@@ -62,11 +89,8 @@ impl Calculator {
         };
         let cow_price = async {
             self.native_price
-                .estimate_native_prices(std::slice::from_ref(&self.cow_token))
-                .next()
+                .get_price(Instant::now())
                 .await
-                .unwrap()
-                .1
                 .context("cow native price")
         };
         let (gas_price, cow_price) = futures::future::try_join(gas_price, cow_price).await?;
@@ -172,17 +196,96 @@ fn uncapped_reward_eth_atoms(
 ) -> f64 {
     let cost = gas * gas_price;
     // The way https://github.com/cowprotocol/risk_adjusted_rewards calculates the parameters gas is
-    // expressed in thousandth and gas price in gwei so we need to adjust our atom based values.
+    // expressed in thousandth and gas price in gwei so we need to adjust our atom
+    // based values.
     let exponent = -beta - alpha1 * (gas / 1e3) - alpha2 * (gas_price / 1e9);
     let revert_probability = 1. / (1. + exponent.exp());
     (profit + cost) / (1. - revert_probability) - cost
 }
 
+/// A caching wrapper over [NativePriceEstimating] used to estimate and cache
+/// CoW token price. Implemented to enable the [Calculator] produce rewards even
+/// when a fresh estimate is not available.
+struct BestEffortCowPriceEstimator {
+    inner: Arc<dyn NativePriceEstimating>,
+    cow_token: H160,
+    /// Cached value and a timestamp.
+    fallback_cache: Mutex<Option<(f64, Instant)>>,
+    /// How long is the value valid after being set.
+    max_age: Duration,
+}
+
+impl BestEffortCowPriceEstimator {
+    fn new(inner: Arc<dyn NativePriceEstimating>, cow_token: H160, max_age: Duration) -> Self {
+        Self {
+            inner,
+            cow_token,
+            fallback_cache: Mutex::new(None),
+            max_age,
+        }
+    }
+
+    /// Attempts to use the inner estimator to get a fresh price estimate.
+    /// If that fails, attempts to return the value from cache.
+    async fn get_price(&self, current_time: Instant) -> NativePriceEstimateResult {
+        let fresh = self
+            .inner
+            .estimate_native_prices(std::slice::from_ref(&self.cow_token))
+            .next()
+            .await
+            .unwrap()
+            .1;
+
+        match fresh {
+            Ok(price) => {
+                self.set_cached(price, current_time);
+                Ok(price)
+            }
+            Err(error) => {
+                let price = self.get_cached(current_time);
+                if let Some(price) = price {
+                    tracing::warn!(
+                        ?error,
+                        "Using an old CoW token price from a fallback cache, fetching a fresh \
+                         estimate failed"
+                    );
+                    Ok(price)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    fn get_cached(&self, current_time: Instant) -> Option<f64> {
+        let (price, timestamp) = (*self.fallback_cache.lock().unwrap())?;
+
+        if timestamp + self.max_age >= current_time {
+            Some(price)
+        } else {
+            None
+        }
+    }
+
+    fn set_cached(&self, price: f64, current_time: Instant) {
+        self.fallback_cache
+            .lock()
+            .unwrap()
+            .replace((price, current_time));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use approx::assert_relative_eq;
-
-    use super::*;
+    use {
+        super::*,
+        approx::assert_relative_eq,
+        shared::price_estimation::{
+            mocks::{FailingPriceEstimator, FakePriceEstimator},
+            native::NativePriceEstimator,
+            Estimate,
+        },
+    };
 
     // realistic values
     const CONFIG: Configuration = Configuration {
@@ -208,8 +311,8 @@ mod tests {
         };
         assert_eq!(uncapped_reward_eth_atoms(args), 4.);
 
-        // Now we want on average 1 profit. Reward is only paid out on success so has to be doubled
-        // to account for 0.5 prob.
+        // Now we want on average 1 profit. Reward is only paid out on success so has to
+        // be doubled to account for 0.5 prob.
         let args = UncappedEthArgs {
             beta: 0.,
             alpha1: 0.,
@@ -238,14 +341,14 @@ mod tests {
         let reward = uncapped_reward_eth_atoms(args);
         assert_relative_eq!(reward, 3.66e14, max_relative = 0.01);
 
-        // Include the target COW reward. This is significantly more than the revert cost so the
-        // reward goes to ~0.00284 ETH.
+        // Include the target COW reward. This is significantly more than the revert
+        // cost so the reward goes to ~0.00284 ETH.
         args.profit = CONFIG.profit * COW_BASE * COW_PRICE_IN_ETH;
         let reward_eth = uncapped_reward_eth_atoms(args);
         assert_relative_eq!(reward_eth, 2.84e15, max_relative = 0.01);
 
-        // Same parameters but with conversion to COW. The equivalent COW amount to the previous ETH
-        // is 44.
+        // Same parameters but with conversion to COW. The equivalent COW amount to the
+        // previous ETH is 44.
         let args = CappedCowArgs {
             gas: args.gas,
             gas_price: args.gas_price,
@@ -279,8 +382,8 @@ mod tests {
             cow_price: 1e-12,
         };
         let r0 = capped_reward_cow(CONFIG, args).unwrap();
-        // Despite gas being below cap we hit the maximum reward and increasing gas doesn't increase
-        // reward.
+        // Despite gas being below cap we hit the maximum reward and increasing gas
+        // doesn't increase reward.
         assert!(args.gas < CONFIG.gas_cap);
         assert_eq!(r0, CONFIG.reward_cap);
         args.gas *= 100.;
@@ -291,18 +394,18 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        shared::tracing::initialize_for_tests("autopilot=trace");
+        shared::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new(&std::env::var("DB_URL").unwrap())
             .await
             .unwrap();
-        let calc = Calculator {
-            config: CONFIG,
-            database: db.clone(),
-            cow_token: testlib::tokens::COW,
-            gas_price: Arc::new(gas_estimation::GasNowGasStation::new(
+        let calc = Calculator::new(
+            CONFIG,
+            db.clone(),
+            testlib::tokens::COW,
+            Arc::new(gas_estimation::GasNowGasStation::new(
                 shared::gas_price_estimation::Client(Default::default()),
             )),
-            native_price: Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
+            Arc::new(shared::price_estimation::native::NativePriceEstimator::new(
                 Arc::new(shared::price_estimation::zeroex::ZeroExPriceEstimator::new(
                     Arc::new(shared::zeroex_api::DefaultZeroExApi::with_default_url(
                         Default::default(),
@@ -314,7 +417,8 @@ mod tests {
                 testlib::tokens::WETH,
                 primitive_types::U256::from_f64_lossy(1e18),
             )),
-        };
+        );
+
         let min_valid_to = model::time::now_in_epoch_seconds();
         let orders = db
             .solvable_orders(min_valid_to, Default::default())
@@ -326,5 +430,63 @@ mod tests {
         for (order, result) in orders.iter().zip(results) {
             println!("{} {:?}", order.metadata.uid, result);
         }
+    }
+
+    #[tokio::test]
+    async fn best_effort_estimator() {
+        let fake_estimator = Arc::new(NativePriceEstimator::new(
+            Arc::new(FakePriceEstimator(Estimate {
+                out_amount: 20.into(),
+                gas: 100,
+            })),
+            [0; 20].into(),
+            10.into(),
+        ));
+        let failing_estimator = Arc::new(NativePriceEstimator::new(
+            Arc::new(FailingPriceEstimator),
+            [0; 20].into(),
+            10.into(),
+        ));
+        let mut estimator = BestEffortCowPriceEstimator::new(
+            failing_estimator.clone(),
+            [1; 20].into(),
+            Duration::from_millis(1000),
+        );
+
+        assert!(estimator.get_price(Instant::now()).await.is_err());
+
+        estimator.inner = fake_estimator.clone();
+        let cache_set_at = Instant::now();
+        let estimate = estimator.get_price(cache_set_at).await.unwrap();
+
+        estimator.inner = failing_estimator;
+        assert_eq!(estimator.get_price(cache_set_at).await.unwrap(), estimate);
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(500))
+                .await
+                .unwrap(),
+            estimate
+        );
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(1000))
+                .await
+                .unwrap(),
+            estimate
+        );
+        assert!(estimator
+            .get_price(cache_set_at + Duration::from_millis(1001))
+            .await
+            .is_err());
+
+        estimator.inner = fake_estimator;
+        assert_eq!(
+            estimator
+                .get_price(cache_set_at + Duration::from_millis(1002))
+                .await
+                .unwrap(),
+            estimate
+        );
     }
 }

@@ -28,11 +28,13 @@
 pub mod config;
 pub mod cow_token;
 
-use anyhow::Result;
-use ethcontract::{H160, U256};
-use futures::future;
-use model::app_id::AppId;
-use std::sync::Arc;
+use {
+    anyhow::Result,
+    ethcontract::{H160, U256},
+    futures::future,
+    model::app_id::AppId,
+    std::sync::Arc,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct SubsidyParameters {

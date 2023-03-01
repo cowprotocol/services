@@ -1,20 +1,24 @@
 //! Module implementing liquidity bootstrapping pool specific indexing logic.
 
-pub use super::weighted::{PoolState, TokenState};
-use super::{common, FactoryIndexing, PoolIndexing};
-use crate::{
-    ethrpc::Web3CallBatch,
-    sources::balancer_v2::{
-        graph_api::{PoolData, PoolType},
-        swap::fixed_point::Bfp,
+use {
+    super::{common, FactoryIndexing, PoolIndexing},
+    crate::{
+        ethrpc::Web3CallBatch,
+        sources::balancer_v2::{
+            graph_api::{PoolData, PoolType},
+            swap::fixed_point::Bfp,
+        },
     },
+    anyhow::Result,
+    contracts::{
+        BalancerV2LiquidityBootstrappingPool,
+        BalancerV2LiquidityBootstrappingPoolFactory,
+    },
+    ethcontract::BlockId,
+    futures::{future::BoxFuture, FutureExt as _},
 };
-use anyhow::Result;
-use contracts::{
-    BalancerV2LiquidityBootstrappingPool, BalancerV2LiquidityBootstrappingPoolFactory,
-};
-use ethcontract::BlockId;
-use futures::{future::BoxFuture, FutureExt as _};
+
+pub use super::weighted::{PoolState, TokenState};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -100,12 +104,14 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::graph_api::Token;
-    use ethcontract::{H160, H256};
-    use ethcontract_mock::Mock;
-    use futures::future;
-    use maplit::btreemap;
+    use {
+        super::*,
+        crate::sources::balancer_v2::graph_api::Token,
+        ethcontract::{H160, H256},
+        ethcontract_mock::Mock,
+        futures::future,
+        maplit::btreemap,
+    };
 
     #[tokio::test]
     async fn fetch_pool_state() {

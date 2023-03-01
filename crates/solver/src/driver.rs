@@ -1,50 +1,59 @@
 pub mod solver_settlements;
 
-use crate::{
-    auction_preprocessing,
-    driver_logger::DriverLogger,
-    in_flight_orders::InFlightOrders,
-    liquidity::order_converter::OrderConverter,
-    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::SolverMetrics,
-    orderbook::OrderBookApi,
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_ranker::SettlementRanker,
-    settlement_rater::SettlementRater,
-    settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
-    settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, Solver, Solvers},
-};
-use anyhow::{anyhow, Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::Account;
-use futures::future::join_all;
-use gas_estimation::GasPriceEstimating;
-use model::{
-    auction::{AuctionId, AuctionWithId},
-    order::{LimitOrderClass, OrderClass, OrderUid},
-    solver_competition::{
-        self, CompetitionAuction, Execution, Objective, SolverCompetitionDB, SolverSettlement,
+use {
+    crate::{
+        auction_preprocessing,
+        driver_logger::DriverLogger,
+        in_flight_orders::InFlightOrders,
+        liquidity::order_converter::OrderConverter,
+        liquidity_collector::{LiquidityCollecting, LiquidityCollector},
+        metrics::SolverMetrics,
+        orderbook::OrderBookApi,
+        settlement::{PriceCheckTokens, Settlement},
+        settlement_ranker::SettlementRanker,
+        settlement_rater::SettlementRater,
+        settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
+        settlement_submission::{SolutionSubmitter, SubmissionError},
+        solver::{Auction, Solver, Solvers},
     },
-    TokenPair,
+    anyhow::{anyhow, Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::Account,
+    futures::future::join_all,
+    gas_estimation::GasPriceEstimating,
+    itertools::Itertools,
+    model::{
+        auction::{AuctionId, AuctionWithId},
+        order::{LimitOrderClass, OrderClass, OrderUid},
+        solver_competition::{
+            self,
+            CompetitionAuction,
+            Execution,
+            Objective,
+            SolverCompetitionDB,
+            SolverSettlement,
+        },
+        TokenPair,
+    },
+    num::{rational::Ratio, BigInt, ToPrimitive},
+    primitive_types::{H160, U256},
+    shared::{
+        code_fetching::CodeFetching,
+        current_block::CurrentBlockStream,
+        ethrpc::Web3,
+        external_prices::ExternalPrices,
+        http_solver::model::{InternalizationStrategy, SolverRunError},
+        recent_block_cache::Block,
+        tenderly_api::TenderlyApi,
+    },
+    std::{
+        collections::HashSet,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    tracing::Instrument as _,
+    web3::types::TransactionReceipt,
 };
-use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::{H160, U256};
-use shared::{
-    code_fetching::CodeFetching,
-    current_block::CurrentBlockStream,
-    ethrpc::Web3,
-    http_solver::model::{InternalizationStrategy, SolverRunError},
-    recent_block_cache::Block,
-    tenderly_api::TenderlyApi,
-};
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tracing::Instrument as _;
-use web3::types::TransactionReceipt;
 
 pub struct Driver {
     liquidity_collector: LiquidityCollector,
@@ -54,13 +63,14 @@ pub struct Driver {
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
     solver_time_limit: Duration,
+    block_time: Duration,
+    additional_mining_deadline: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
-    fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
     web3: Web3,
@@ -75,22 +85,23 @@ impl Driver {
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
         native_token: H160,
-        min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
+        block_time: Duration,
+        additional_mining_deadline: Duration,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
         simulation_gas_limit: u128,
-        fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
+        enable_auction_rewards: bool,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
@@ -103,9 +114,9 @@ impl Driver {
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
-            min_order_age,
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
+            enable_auction_rewards,
         };
 
         let logger = DriverLogger {
@@ -125,14 +136,14 @@ impl Driver {
             native_token,
             metrics,
             solver_time_limit,
+            block_time,
+            additional_mining_deadline,
             block_stream,
             solution_submitter,
             run_id: 0,
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
-            fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
-                .unwrap(),
             settlement_ranker,
             logger,
             web3,
@@ -142,12 +153,13 @@ impl Driver {
 
     pub async fn run_forever(&mut self) -> ! {
         loop {
+            let start = Instant::now();
             match self.single_run().await {
                 Ok(()) => tracing::debug!("single run finished ok"),
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
             self.metrics.runloop_completed();
-            tokio::time::sleep(self.settle_interval).await;
+            tokio::time::sleep_until((start + self.settle_interval).into()).await;
         }
     }
 
@@ -166,7 +178,7 @@ impl Driver {
                         .await
                     {
                         Ok(inner) => {
-                            inner.map_err(|err| SolverRunError::Solving(format!("{:?}", err)))
+                            inner.map_err(|err| SolverRunError::Solving(format!("{err:?}")))
                         }
                         Err(_timeout) => Err(SolverRunError::Timeout),
                     };
@@ -190,8 +202,8 @@ impl Driver {
             .await
             .context("error retrieving current auction")?;
 
-        // It doesn't make sense to solve the same auction again because we wouldn't be able to
-        // store competition info etc.
+        // It doesn't make sense to solve the same auction again because we wouldn't be
+        // able to store competition info etc.
         if self.last_attempted_settlement == Some(auction.id) {
             tracing::debug!("skipping run because auction hasn't changed {}", auction.id);
             return Ok(());
@@ -227,7 +239,8 @@ impl Driver {
         let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
         if before_count != auction.orders.len() {
             tracing::debug!(
-                "reduced {} orders to {} because in flight at last seen block {}, orders in flight: {:?}",
+                "reduced {} orders to {} because in flight at last seen block {}, orders in \
+                 flight: {:?}",
                 before_count,
                 auction.orders.len(),
                 auction.latest_settlement_block,
@@ -268,14 +281,13 @@ impl Driver {
         tracing::info!(count =% orders.len(), ?orders, "got orders");
         self.metrics.orders_fetched(&orders);
 
+        let auction_prices = auction.prices.clone();
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders)
-            || !auction_preprocessing::has_at_least_one_mature_order(&orders)
-        {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
             return Ok(false);
         }
 
@@ -317,11 +329,11 @@ impl Driver {
             .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
             .await?;
 
-        // We don't know the exact block because simulation can happen over multiple blocks but
-        // this is a good approximation.
+        // We don't know the exact block because simulation can happen over multiple
+        // blocks but this is a good approximation.
         let block_during_simulation = self.block_stream.borrow().number;
 
-        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements);
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetitionDB {
@@ -334,20 +346,20 @@ impl Driver {
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
                     solver: solver.name().to_string(),
+                    solver_address: solver.account().address(),
                     objective: Objective {
                         total: rated_settlement
-                            .objective_value()
+                            .objective_value
                             .to_f64()
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement
-                            .scaled_unsubsidized_fee
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
+                        fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                         cost: rated_settlement.gas_estimate.to_f64_lossy()
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
+                    score: rated_settlement.score,
+                    ranking: rated_settlement.ranking,
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()
@@ -378,6 +390,16 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
+        // In transition period last settlement is not necessarily the one with the
+        // highest score. So we need to get the scores of all settlements and
+        // sort them.
+        // CIP20 TODO - add to if statement below, once the transition period is over.
+        let mut scores = rated_settlements
+            .iter()
+            .map(|(solver, rated_settlement, _)| {
+                (solver.account().address(), rated_settlement.score.score())
+            })
+            .sorted_unstable_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -421,6 +443,38 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
+            let (winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
+            let scores = model::solver_competition::Scores {
+                winner,
+                winning_score,
+                // second highest score, or 0 if there is only one score (see CIP20)
+                reference_score: scores.next().unwrap_or_default().1,
+                block_deadline: {
+                    let deadline = self.solver_time_limit
+                        + self.solution_submitter.max_confirm_time
+                        + self.additional_mining_deadline;
+                    let number_blocks = deadline.as_secs() / self.block_time.as_secs();
+                    block_during_simulation + number_blocks
+                },
+            };
+            let participants = solver_competition
+                .solutions
+                .iter()
+                .map(|solution| solution.solver_address)
+                .collect(); // to avoid duplicates
+
+            // external prices for all tokens contained in the trades of a settlement
+            let prices = winning_settlement
+                .settlement
+                .trades()
+                .flat_map(|trade| {
+                    let sell_token = trade.order.data.sell_token;
+                    let buy_token = trade.order.data.buy_token;
+                    let sell_price = auction_prices.get(&sell_token).cloned().unwrap_or_default();
+                    let buy_price = auction_prices.get(&buy_token).cloned().unwrap_or_default();
+                    [(sell_token, sell_price), (buy_token, buy_price)]
+                })
+                .collect();
             tracing::debug!(?transaction, "winning solution transaction");
 
             let solver_competition = model::solver_competition::Request {
@@ -428,9 +482,12 @@ impl Driver {
                 transaction,
                 competition: solver_competition,
                 executions,
+                scores,
+                participants,
+                prices,
             };
-            // This has to succeed in order to continue settling. Otherwise we can't be sure the
-            // competition info has been stored.
+            // This has to succeed in order to continue settling. Otherwise we can't be sure
+            // the competition info has been stored.
             self.send_solver_competition(&solver_competition).await?;
 
             self.metrics
@@ -526,9 +583,14 @@ pub async fn submit_settlement(
     let result = solution_submitter
         .settle(settlement.clone(), gas_estimate, account, nonce)
         .await;
-    logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &settlement, settlement_id, solver_name)
+        .log_submission_info(
+            &result,
+            &settlement,
+            settlement_id,
+            solver_name,
+            start.elapsed(),
+        )
         .await;
-    result
+    result.map(Into::into)
 }

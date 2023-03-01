@@ -1,14 +1,17 @@
-use crate::{
-    app_id::AppId,
-    order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    signature::SigningScheme,
-    time, u256_decimal,
+use {
+    crate::{
+        app_id::AppId,
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        signature::SigningScheme,
+        time,
+        u256_decimal,
+    },
+    anyhow::bail,
+    chrono::{DateTime, Utc},
+    primitive_types::{H160, U256},
+    serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
+    serde_with::serde_as,
 };
-use anyhow::bail;
-use chrono::{DateTime, Utc};
-use primitive_types::{H160, U256};
-use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -270,7 +273,8 @@ pub struct OrderQuoteResponse {
 }
 
 impl OrderQuoteRequest {
-    /// This method is used by the old, deprecated, fee endpoint to convert {Buy, Sell}Requests
+    /// This method is used by the old, deprecated, fee endpoint to convert
+    /// {Buy, Sell}Requests
     pub fn new(sell_token: H160, buy_token: H160, side: OrderQuoteSide) -> Self {
         Self {
             sell_token,
@@ -283,8 +287,7 @@ impl OrderQuoteRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use {super::*, serde_json::json};
 
     #[test]
     fn serialize_defaults() {

@@ -1,45 +1,53 @@
-use crate::{
-    driver::solver_settlements::{self, retain_mature_settlements, RatedSettlement},
-    metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
-    settlement_rater::{RatedSolverSettlement, SettlementRating},
-    settlement_simulation::call_data,
-    solver::{SimulationWithError, Solver},
+use {
+    crate::{
+        driver::solver_settlements::{self, RatedSettlement},
+        metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
+        settlement::{PriceCheckTokens, Settlement},
+        settlement_rater::{RatedSolverSettlement, SettlementRating},
+        settlement_simulation::call_data,
+        solver::{SimulationWithError, Solver},
+    },
+    anyhow::Result,
+    gas_estimation::GasPrice1559,
+    model::auction::AuctionId,
+    num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
+    rand::prelude::SliceRandom,
+    shared::{
+        external_prices::ExternalPrices,
+        http_solver::model::{
+            AuctionResult,
+            InternalizationStrategy,
+            SolverRejectionReason,
+            SolverRunError,
+            TransactionWithError,
+        },
+    },
+    std::{cmp::Ordering, collections::HashMap, sync::Arc},
 };
-use anyhow::Result;
-use gas_estimation::GasPrice1559;
-use itertools::enumerate;
-use model::auction::AuctionId;
-use num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive};
-use rand::prelude::SliceRandom;
-use shared::http_solver::model::{
-    AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
-    TransactionWithError,
-};
-use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
 // We require from solvers to have a bit more ETH balance then needed
 // at the moment of simulating the transaction, to cover the potential increase
-// of the cost of sending transaction onchain, because of the sudden gas price increase.
-// To simulate this sudden increase of gas price during simulation, we artificially multiply
-// the gas price with this factor.
+// of the cost of sending transaction onchain, because of the sudden gas price
+// increase. To simulate this sudden increase of gas price during simulation, we
+// artificially multiply the gas price with this factor.
 const SOLVER_BALANCE_MULTIPLIER: f64 = 3.;
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
-    // TODO: these should probably come from the autopilot to make the test parameters identical for
-    // everyone.
-    pub min_order_age: Duration,
+    // TODO: these should probably come from the autopilot to make the test parameters identical
+    // for everyone.
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
+    pub enable_auction_rewards: bool,
 }
 
 impl SettlementRanker {
-    /// Discards settlements without user orders and settlements which violate price checks.
-    /// Logs info and updates metrics about the out come of this run loop for each solver.
+    /// Discards settlements without user orders and settlements which violate
+    /// price checks. Logs info and updates metrics about the out come of
+    /// this run loop for each solver.
     fn discard_illegal_settlements(
         &self,
         solver: &Arc<dyn Solver>,
@@ -55,7 +63,7 @@ impl SettlementRanker {
 
                     // Do not continue with settlements that are empty or only liquidity orders.
                     if !solver_settlements::has_user_order(&settlement) {
-                        tracing::debug!(
+                        tracing::trace!(
                             solver_name = %name,
                             "settlement(s) filtered containing only liquidity orders",
                         );
@@ -109,7 +117,8 @@ impl SettlementRanker {
         }
     }
 
-    /// Computes a list of settlements which pass all pre-simulation sanity checks.
+    /// Computes a list of settlements which pass all pre-simulation sanity
+    /// checks.
     fn get_legal_settlements(
         &self,
         settlements: Vec<SolverResult>,
@@ -124,10 +133,7 @@ impl SettlementRanker {
                 solver_settlements.push((solver.clone(), settlement));
             }
         }
-
-        // TODO this needs to move into the autopilot eventually.
-        // filters out all non-mature settlements
-        retain_mature_settlements(self.min_order_age, solver_settlements, auction_id)
+        solver_settlements
     }
 
     /// Determines legal settlements and ranks them by simulating them.
@@ -145,9 +151,10 @@ impl SettlementRanker {
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
-        // log considered settlements. While we already log all found settlements, this additonal
-        // statement allows us to figure out which settlements were filtered out and which ones are
-        // going to be simulated and considered for competition.
+        // log considered settlements. While we already log all found settlements, this
+        // additonal statement allows us to figure out which settlements were
+        // filtered out and which ones are going to be simulated and considered
+        // for competition.
         for (solver, settlement) in &solver_settlements {
             let uninternalized_calldata = format!(
                 "0x{}",
@@ -169,12 +176,6 @@ impl SettlementRanker {
             .rate_settlements(solver_settlements, external_prices, gas_price)
             .await?;
 
-        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-        // preference to any specific solver when there is an objective value tie.
-        rated_settlements.shuffle(&mut rand::thread_rng());
-
-        rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
-
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
@@ -191,26 +192,74 @@ impl SettlementRanker {
                 )),
             );
         }
-        for (i, (solver, _, _)) in enumerate(&rated_settlements) {
-            let rank = rated_settlements.len() - i;
-            solver.notify_auction_result(auction_id, AuctionResult::Ranked(rank));
-            self.metrics
-                .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-        }
 
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we
+        // don't give preference to any specific solver when there is an
+        // objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
+
+        if self.enable_auction_rewards {
+            rated_settlements.sort_by_key(|s| s.1.score.score());
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = i + 1;
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                },
+            );
+        } else {
+            // TODO: remove this block of code once `auction-rewards` is implemented
+            rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
+
+            let auction_based_ranking = auction_based_ranking(
+                rated_settlements
+                    .iter()
+                    .map(|(_, settlement, _)| settlement)
+                    .collect(),
+            );
+
+            rated_settlements.iter_mut().rev().enumerate().for_each(
+                |(i, (solver, settlement, _))| {
+                    self.metrics
+                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                    settlement.ranking = auction_based_ranking
+                        .get(&settlement.id)
+                        .copied()
+                        .unwrap_or(0);
+                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+                },
+            );
+        }
         Ok((rated_settlements, errors))
     }
 }
 
+// TODO: remove this once `auction-rewards` is implemented
+// Sort settlements by `auction-rewards` rules and return hashmap of settlement
+// id to ranking
+fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
+    let mut settlements = settlements;
+    settlements.sort_by_key(|s| s.score.score());
+    settlements
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(i, settlement)| (settlement.id, i + 1))
+        .collect()
+}
+
+// TODO: remove this once `auction-rewards` is implemented
 fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
     let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
     let rounded_lhs = lhs
-        .objective_value()
+        .objective_value
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();
     let rounded_rhs = rhs
-        .objective_value()
+        .objective_value
         .checked_div(&precision)
         .expect("precision cannot be 0")
         .floor();
@@ -219,22 +268,13 @@ fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::U256;
-    use num::Zero;
-
-    use crate::driver::solver_settlements::RatedSettlement;
+    use {super::*, crate::driver::solver_settlements::RatedSettlement};
 
     impl RatedSettlement {
         fn with_objective(objective_value: f64) -> Self {
             Self {
-                id: 42,
-                settlement: Default::default(),
-                surplus: BigRational::from_float(objective_value).unwrap(),
-                unscaled_subsidized_fee: Zero::zero(),
-                scaled_unsubsidized_fee: Zero::zero(),
-                gas_estimate: U256::zero(),
-                gas_price: Zero::zero(),
+                objective_value: BigRational::from_f64(objective_value).unwrap(),
+                ..Default::default()
             }
         }
     }

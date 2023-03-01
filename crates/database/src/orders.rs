@@ -1,14 +1,20 @@
-use crate::{
-    onchain_broadcasted_orders::OnchainOrderPlacementError, Address, AppId, OrderUid,
-    TransactionHash,
-};
-use futures::stream::BoxStream;
-use sqlx::{
-    types::{
-        chrono::{DateTime, Utc},
-        BigDecimal,
+use {
+    crate::{
+        onchain_broadcasted_orders::OnchainOrderPlacementError,
+        Address,
+        AppId,
+        OrderUid,
+        TransactionHash,
     },
-    FromRow, PgConnection,
+    futures::stream::BoxStream,
+    sqlx::{
+        types::{
+            chrono::{DateTime, Utc},
+            BigDecimal,
+        },
+        FromRow,
+        PgConnection,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
@@ -55,7 +61,8 @@ pub enum SellTokenSource {
     External,
 }
 
-/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
+/// Destination for which the buyAmount should be transferred to order's
+/// receiver to upon fulfilment
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "BuyTokenDestination")]
 #[sqlx(rename_all = "lowercase")]
@@ -198,10 +205,10 @@ pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
 ) -> Result<(), sqlx::Error> {
-    // To be used only for the ethflow contract order placement, where reorgs force us to update
-    // orders
-    // Since each order has a unique UID even after a reorg onchain placed orders have the same
-    // data. Hence, we can disregard any conflicts.
+    // To be used only for the ethflow contract order placement, where reorgs force
+    // us to update orders
+    // Since each order has a unique UID even after a reorg onchain placed orders
+    // have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
     insert_order_execute_sqlx(QUERY, ex, order).await
 }
@@ -366,7 +373,8 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
-/// Order with extra information from other tables. Has all the information needed to construct a model::Order.
+/// Order with extra information from other tables. Has all the information
+/// needed to construct a model::Order.
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
     pub uid: OrderUid,
@@ -414,31 +422,33 @@ impl FullOrder {
     }
 }
 
-// When querying orders we have several specialized use cases working with their own filtering,
-// ordering, indexes. The parts that are shared between all queries are defined here so they can be
-// reused.
+// When querying orders we have several specialized use cases working with their
+// own filtering, ordering, indexes. The parts that are shared between all
+// queries are defined here so they can be reused.
 //
-// It might feel more natural to use aggregate, joins and group by to calculate trade data and
-// invalidations. The problem with that is that it makes the query inefficient when we wish to limit
-// or order the selected orders because postgres is unable to understand the query well enough.
-// For example if we want to select orders ordered by creation timestamp on which there is an index
-// with offset and limit then the group by causes postgres to not use the index for the ordering. So
-// it will select orders, aggregate them with trades grouped by uid, sort by timestamp and only then
-// apply the limit. Instead we would like to apply the limit first and only then aggregate but I
-// could not get this to happen without writing the query using sub queries. A similar situation is
-// discussed in https://dba.stackexchange.com/questions/88988/postgres-error-column-must-appear-in-the-group-by-clause-or-be-used-in-an-aggre .
+// It might feel more natural to use aggregate, joins and group by to calculate
+// trade data and invalidations. The problem with that is that it makes the
+// query inefficient when we wish to limit or order the selected orders because
+// postgres is unable to understand the query well enough. For example if we
+// want to select orders ordered by creation timestamp on which there is an
+// index with offset and limit then the group by causes postgres to not use the
+// index for the ordering. So it will select orders, aggregate them with trades
+// grouped by uid, sort by timestamp and only then apply the limit. Instead we
+// would like to apply the limit first and only then aggregate but I
+// could not get this to happen without writing the query using sub queries. A
+// similar situation is discussed in https://dba.stackexchange.com/questions/88988/postgres-error-column-must-appear-in-the-group-by-clause-or-be-used-in-an-aggre .
 //
 // To analyze queries take a look at https://www.postgresql.org/docs/13/using-explain.html . I also
 // find it useful to
 // SET enable_seqscan = false;
 // SET enable_nestloop = false;
-// to get a better idea of what indexes postgres *could* use even if it decides that with the
-// current amount of data this wouldn't be better.
+// to get a better idea of what indexes postgres *could* use even if it decides
+// that with the current amount of data this wouldn't be better.
 //
-// The pre_interactions are read as arrays of their fields: target, value, data. This is done
-// as sqlx does not support reading arrays of more complicated types than just one field.
-// The pre_interaction's data of target, value and data are composed to an array of
-// interactions later.
+// The pre_interactions are read as arrays of their fields: target, value, data.
+// This is done as sqlx does not support reading arrays of more complicated
+// types than just one field. The pre_interaction's data of target, value and
+// data are composed to an array of interactions later.
 const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -525,13 +535,14 @@ pub fn user_orders<'a>(
     offset: i64,
     limit: Option<i64>,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // As a future consideration for this query we could move from offset to an approach called
-    // keyset pagination where the offset is identified by "key" of the previous query. In our
-    // case that would be the lowest creation_timestamp. This way the database can start
-    // immediately at the offset through the index without enumerating the first N elements
+    // As a future consideration for this query we could move from offset to an
+    // approach called keyset pagination where the offset is identified by "key"
+    // of the previous query. In our case that would be the lowest
+    // creation_timestamp. This way the database can start immediately at the
+    // offset through the index without enumerating the first N elements
     // before as is the case with OFFSET.
-    // On the other hand that approach is less flexible so we will consider if we see that these
-    // queries are taking too long in practice.
+    // On the other hand that approach is less flexible so we will consider if we
+    // see that these queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
 "(SELECT ", ORDERS_SELECT,
@@ -602,44 +613,6 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-/// Groups valid orders with outdated `surplus_fee` together and returns the parameters required to
-/// update the `surplus_fee` of each group. This is because we update the `surplus_fee` of
-/// identical orders in bulk so in order to not do unnecessary price estimation requests during
-/// `surplus_fee` computations we only do it once per group.
-///
-/// The ordering by most outdated in combination with updating the timestamp when updating the fee
-/// fails is important. It ensures that we cannot get stuck on orders for which the update process
-/// keeps failing.
-pub fn order_parameters_with_most_outdated_fees(
-    ex: &mut PgConnection,
-    max_fee_timestamp: DateTime<Utc>,
-    min_valid_to: i64,
-    limit: i64,
-) -> BoxStream<'_, Result<OrderFeeSpecifier, sqlx::Error>> {
-    const QUERY: &str = const_format::concatcp!(
-        " WITH outdated_groups as (",
-        "   SELECT sell_token, buy_token, sell_amount,",
-        "          NULLIF(MIN(COALESCE(surplus_fee_timestamp, '-infinity'::timestamp)), '-infinity'::timestamp) as surplus_fee_timestamp",
-        "   FROM (",
-        OPEN_ORDERS,
-        "       AND class = 'limit'",
-        "       AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
-        "   ) as subquery",
-        "   GROUP BY sell_token, buy_token, sell_amount",
-        " )",
-        " SELECT sell_token, buy_token, sell_amount",
-        " FROM outdated_groups",
-        " ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
-        " LIMIT $3"
-    );
-
-    sqlx::query_as(QUERY)
-        .bind(min_valid_to)
-        .bind(max_fee_timestamp)
-        .bind(limit)
-        .fetch(ex)
-}
-
 /// Count the number of valid limit orders belonging to a particular user.
 pub async fn count_limit_orders_by_owner(
     ex: &mut PgConnection,
@@ -660,8 +633,9 @@ pub async fn count_limit_orders_by_owner(
         .await
 }
 
-/// These parameters have to match in an order for a [`FeeUpdate`] update to apply to it.
-#[derive(Debug, FromRow, PartialEq, Eq)]
+/// These parameters have to match in an order for a [`FeeUpdate`] update to
+/// apply to it.
+#[derive(Clone, Debug, FromRow, PartialEq, Eq, Hash)]
 pub struct OrderFeeSpecifier {
     pub sell_token: Address,
     pub buy_token: Address,
@@ -704,6 +678,44 @@ pub async fn update_limit_order_fees(
         .await
 }
 
+/// All data required to filter, select and update orders to update the
+/// `surplus_fee` for.
+#[derive(Debug, Clone, sqlx::FromRow, PartialEq, Eq, Default)]
+pub struct OrderQuotingData {
+    pub uid: OrderUid,
+    pub owner: Address,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub sell_token_balance: SellTokenSource,
+    pub partially_fillable: bool,
+    pub pre_interactions: i32,
+}
+
+/// Returns all limit orders that are currently waiting to be filled sorted
+/// by `surplus_fee_timestamp` with the most outdated ones coming first.
+pub fn open_limit_orders(
+    ex: &mut PgConnection,
+    max_fee_timestamp: DateTime<Utc>,
+    min_valid_to: i64,
+) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
+    const QUERY: &str = const_format::concatcp!(
+        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, \
+         partially_fillable, cardinality(pre_interactions) as pre_interactions",
+        " FROM (",
+        OPEN_ORDERS,
+        "     AND class = 'limit'",
+        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
+        " ) as subquery"
+    );
+
+    sqlx::query_as(QUERY)
+        .bind(min_valid_to)
+        .bind(max_fee_timestamp)
+        .fetch(ex)
+}
+
 /// Count the number of valid limit orders.
 pub async fn count_limit_orders(
     ex: &mut PgConnection,
@@ -721,8 +733,8 @@ pub async fn count_limit_orders(
         .await
 }
 
-/// Count the number of valid limit orders with outdated fee as would be returned by
-/// `limit_orders_with_most_outdated_fees`.
+/// Count the number of valid limit orders with outdated fee as would be
+/// returned by `limit_orders_with_most_outdated_fees`.
 pub async fn count_limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
@@ -744,21 +756,26 @@ pub async fn count_limit_orders_with_outdated_fees(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        byte_array::ByteArray,
-        ethflow_orders::{
-            insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            ethflow_orders::{
+                insert_or_overwrite_ethflow_order,
+                insert_refund_tx_hash,
+                EthOrderPlacement,
+                Refund,
+            },
+            events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+            onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+            onchain_invalidations::insert_onchain_invalidation,
+            PgTransaction,
         },
-        events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
-        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
-        onchain_invalidations::insert_onchain_invalidation,
-        PgTransaction,
+        bigdecimal::num_bigint::{BigInt, ToBigInt},
+        chrono::NaiveDateTime,
+        futures::{StreamExt, TryStreamExt},
+        sqlx::Connection,
     };
-    use bigdecimal::num_bigint::{BigInt, ToBigInt};
-    use chrono::NaiveDateTime;
-    use futures::{StreamExt, TryStreamExt};
-    use sqlx::Connection;
 
     #[tokio::test]
     #[ignore]
@@ -1058,13 +1075,16 @@ mod tests {
         assert_eq!(time, order.cancellation_timestamp.unwrap());
     }
 
-    // In the schema we set the type of executed amounts in individual events to a 78 decimal digit
-    // number. Summing over multiple events could overflow this because the smart contract only
-    // guarantees that the filled amount (which amount that is depends on order type) does not
-    // overflow a U256. This test shows that postgres does not error if this happens because
-    // inside the SUM the number can have more digits. In particular:
-    // - `executed_buy_amount` may overflow after repeated buys (since there is no upper bound)
-    // - `executed_sell_amount` (with fees) may overflow since the total fits into a `U512`.
+    // In the schema we set the type of executed amounts in individual events to a
+    // 78 decimal digit number. Summing over multiple events could overflow this
+    // because the smart contract only guarantees that the filled amount (which
+    // amount that is depends on order type) does not overflow a U256. This test
+    // shows that postgres does not error if this happens because inside the SUM
+    // the number can have more digits. In particular:
+    // - `executed_buy_amount` may overflow after repeated buys (since there is no
+    //   upper bound)
+    // - `executed_sell_amount` (with fees) may overflow since the total fits into a
+    //   `U512`.
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
@@ -1712,6 +1732,12 @@ mod tests {
         )
         .await
         .unwrap();
+
+        // Give the order a pre-interaction to test that the query finds it.
+        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
+            .await
+            .unwrap();
+
         // Expired limit order.
         insert_order(
             &mut db,
@@ -1809,30 +1835,15 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
 
         assert_eq!(orders.len(), 2);
-        // order with uid 5 (higher priority because it was never estimated)
-        assert_eq!(
-            orders[0],
-            OrderFeeSpecifier {
-                sell_token: ByteArray([3; 20]),
-                buy_token: ByteArray([4; 20]),
-                sell_amount: 1.into(),
-            }
-        );
-        // order with uid 1
-        assert_eq!(
-            orders[1],
-            OrderFeeSpecifier {
-                sell_token: ByteArray([1; 20]),
-                buy_token: ByteArray([2; 20]),
-                sell_amount: 1.into(),
-            }
-        );
+        assert_eq!(orders[0].uid, ByteArray([5; 56]));
+        assert_eq!(orders[1].uid, ByteArray([1; 56]),);
+        assert_eq!(orders[1].pre_interactions, 1);
 
         // Invalidate one of the orders through a trade.
         crate::events::insert_trade(
@@ -1847,11 +1858,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders: Vec<_> = order_parameters_with_most_outdated_fees(&mut db, timestamp, 2, 100)
+        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
         assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].uid, ByteArray([5; 56]));
     }
 
     #[tokio::test]

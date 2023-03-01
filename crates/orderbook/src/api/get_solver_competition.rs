@@ -1,10 +1,12 @@
-use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring};
-use anyhow::Result;
-use model::auction::AuctionId;
-use primitive_types::H256;
-use reqwest::StatusCode;
-use std::{convert::Infallible, sync::Arc};
-use warp::{reply::with_status, Filter, Rejection};
+use {
+    crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+    anyhow::Result,
+    model::auction::AuctionId,
+    primitive_types::H256,
+    reqwest::StatusCode,
+    std::{convert::Infallible, sync::Arc},
+    warp::{reply::with_status, Filter, Rejection},
+};
 
 fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
     warp::path!("v1" / "solver_competition" / AuctionId)
@@ -44,9 +46,11 @@ pub fn get(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::solver_competition::MockSolverCompetitionStoring;
-    use warp::{test::request, Reply};
+    use {
+        super::*,
+        crate::solver_competition::MockSolverCompetitionStoring,
+        warp::{test::request, Reply},
+    };
 
     #[tokio::test]
     async fn test() {
@@ -66,7 +70,12 @@ mod tests {
         dbg!(&response);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let request_ = request().path("/v1/solver_competition/by_tx_hash/0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5").method("GET");
+        let request_ = request()
+            .path(
+                "/v1/solver_competition/by_tx_hash/\
+                 0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5",
+            )
+            .method("GET");
         let response = request_.filter(&filter).await.unwrap().into_response();
         dbg!(&response);
         assert_eq!(response.status(), StatusCode::OK);

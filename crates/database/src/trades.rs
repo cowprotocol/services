@@ -1,7 +1,9 @@
-use crate::{Address, OrderUid, TransactionHash};
-use bigdecimal::BigDecimal;
-use futures::stream::BoxStream;
-use sqlx::PgConnection;
+use {
+    crate::{Address, OrderUid, TransactionHash},
+    bigdecimal::BigDecimal,
+    futures::stream::BoxStream,
+    sqlx::PgConnection,
+};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct TradesQueryRow {
@@ -64,16 +66,18 @@ ON o.uid = t.order_uid"#;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement, Trade},
-        onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
-        orders::Order,
-        PgTransaction,
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            events::{Event, EventIndex, Settlement, Trade},
+            onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
+            orders::Order,
+            PgTransaction,
+        },
+        futures::TryStreamExt,
+        sqlx::Connection,
     };
-    use futures::TryStreamExt;
-    use sqlx::Connection;
 
     async fn generate_owners_and_order_ids(
         num_owners: usize,
@@ -212,7 +216,7 @@ mod tests {
             .await
             .unwrap();
         let elapsed = now.elapsed();
-        println!("{:?}", elapsed);
+        println!("{elapsed:?}");
         assert!(elapsed < std::time::Duration::from_secs(1));
     }
 

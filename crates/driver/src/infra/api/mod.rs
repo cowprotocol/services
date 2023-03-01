@@ -1,32 +1,30 @@
 use {
-    crate::{domain::competition, infra, solver::Solver, Ethereum, Simulator},
+    crate::{
+        domain,
+        infra::{self, liquidity, solver::Solver, time, Ethereum, Mempool, Simulator},
+    },
+    error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
 
-mod execute;
-mod info;
-mod quote;
-mod solve;
+mod error;
+mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
-pub enum Addr {
-    /// Bind to a specific port and address.
-    Bind(SocketAddr),
-    /// Bind to 0.0.0.0 and any free port, then send the bound address down the
-    /// oneshot channel if specified.
-    Auto(Option<oneshot::Sender<SocketAddr>>),
-}
-
 pub struct Api {
     pub solvers: Vec<Solver>,
+    pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub eth: Ethereum,
+    pub mempools: Vec<Mempool>,
     pub now: infra::time::Now,
-    pub quote_config: competition::quote::Config,
-    pub addr: Addr,
+    pub addr: SocketAddr,
+    /// If this channel is specified, the bound address will be sent to it. This
+    /// allows the driver to bind to 0.0.0.0:0 during testing.
+    pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
 }
 
 impl Api {
@@ -44,75 +42,70 @@ impl Api {
         );
 
         // Multiplex each solver as part of the API.
-        let shared = Arc::new(SharedState {
-            simulator: self.simulator,
-            eth: self.eth,
-            now: self.now,
-            quote_config: self.quote_config,
-        });
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();
-            let router = solve::route(router);
-            let router = info::route(router);
-            let router = router.with_state(State {
-                solver,
-                shared: Arc::clone(&shared),
-            });
+            let router = routes::info(router);
+            let router = routes::quote(router);
+            let router = routes::solve(router);
+            let router = routes::settle(router);
+            let router = router.with_state(State(Arc::new(Inner {
+                eth: self.eth.clone(),
+                solver: solver.clone(),
+                competition: domain::Competition {
+                    solver,
+                    eth: self.eth.clone(),
+                    liquidity: self.liquidity.clone(),
+                    simulator: self.simulator.clone(),
+                    now: self.now,
+                    mempools: self.mempools.clone(),
+                    settlement: Default::default(),
+                },
+                liquidity: self.liquidity.clone(),
+                now: self.now,
+            })));
             app = app.nest(&format!("/{name}"), router);
         }
 
         // Start the server.
-
-        let server = match self.addr {
-            Addr::Bind(addr) => axum::Server::bind(&addr).serve(app.into_make_service()),
-            Addr::Auto(addr_sender) => {
-                let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap())
-                    .serve(app.into_make_service());
-                if let Some(addr_sender) = addr_sender {
-                    addr_sender.send(server.local_addr()).unwrap();
-                }
-                server
-            }
-        };
-
+        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        if let Some(addr_sender) = self.addr_sender {
+            addr_sender.send(server.local_addr()).unwrap();
+        }
         server.with_graceful_shutdown(shutdown).await
     }
 }
 
 #[derive(Debug, Clone)]
-struct State {
-    solver: Solver,
-    shared: Arc<SharedState>,
-}
+struct State(Arc<Inner>);
 
 impl State {
-    fn solver(&self) -> Solver {
-        self.solver.clone()
+    fn eth(&self) -> &Ethereum {
+        &self.0.eth
     }
 
-    fn simulator(&self) -> &Simulator {
-        &self.shared.simulator
+    fn solver(&self) -> &Solver {
+        &self.0.solver
     }
 
-    fn ethereum(&self) -> &Ethereum {
-        &self.shared.eth
+    fn competition(&self) -> &domain::Competition {
+        &self.0.competition
     }
 
-    fn now(&self) -> infra::time::Now {
-        self.shared.now
+    fn liquidity(&self) -> &liquidity::Fetcher {
+        &self.0.liquidity
     }
 
-    fn quote_config(&self) -> &competition::quote::Config {
-        &self.shared.quote_config
+    fn now(&self) -> time::Now {
+        self.0.now
     }
 }
 
-/// State which is shared among all multiplexed solvers.
 #[derive(Debug)]
-struct SharedState {
-    simulator: Simulator,
+struct Inner {
     eth: Ethereum,
-    now: infra::time::Now,
-    quote_config: competition::quote::Config,
+    solver: Solver,
+    competition: domain::Competition,
+    liquidity: liquidity::Fetcher,
+    now: time::Now,
 }

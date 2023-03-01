@@ -3,6 +3,7 @@ use {
         domain::{
             competition::{auction::Auction, solution::Solution, SolverTimeout},
             eth,
+            liquidity,
         },
         infra,
         util,
@@ -47,6 +48,7 @@ impl std::fmt::Display for Name {
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
+    now: infra::time::Now,
 }
 
 #[derive(Debug, Clone)]
@@ -56,13 +58,12 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
-    /// The address of this solver.
-    pub address: eth::Address,
-    pub now: infra::time::Now,
+    /// The private key of this solver.
+    pub private_key: eth::PrivateKey,
 }
 
 impl Solver {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, now: infra::time::Now) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -76,6 +77,7 @@ impl Solver {
                 .build()
                 .unwrap(),
             config,
+            now,
         }
     }
 
@@ -90,7 +92,12 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.address
+        self.config.private_key.public_address().into()
+    }
+
+    /// The private key of this solver.
+    pub fn private_key(&self) -> eth::PrivateKey {
+        self.config.private_key.clone()
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -98,12 +105,11 @@ impl Solver {
     pub async fn solve(
         &self,
         auction: &Auction,
+        liquidity: &[liquidity::Liquidity],
         timeout: SolverTimeout,
     ) -> Result<Solution, Error> {
         let body = serde_json::to_string(&dto::Auction::from_domain(
-            auction,
-            timeout,
-            self.config.now,
+            auction, liquidity, timeout, self.now,
         ))
         .unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
@@ -115,7 +121,8 @@ impl Solver {
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
-        res.into_domain(auction, self.clone()).map_err(Into::into)
+        res.into_domain(auction, liquidity, self.clone())
+            .map_err(Into::into)
     }
 }
 

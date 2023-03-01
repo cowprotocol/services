@@ -1,42 +1,7 @@
-// TODO remove this once the crate stabilizes a bit.
-#![allow(dead_code)]
-
-#[cfg(unix)]
-use tokio::signal::unix::{self, SignalKind};
-
-mod api;
-mod boundary;
-mod domain;
-mod util;
-
 #[tokio::main]
 async fn main() {
-    run().await;
-}
+    solvers::boundary::exit_process_on_panic::set_panic_hook();
 
-async fn run() {
-    api::Api {
-        addr: "127.0.0.1:7872".parse().unwrap(),
-    }
-    .serve(shutdown_signal())
-    .await
-    .unwrap();
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown.
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
-    let mut interrupt = unix::signal(SignalKind::interrupt()).unwrap();
-    let mut terminate = unix::signal(SignalKind::terminate()).unwrap();
-    tokio::select! {
-        _ = interrupt.recv() => (),
-        _ = terminate.recv() => (),
-    };
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // We don't support signal handling on Windows.
-    std::future::pending().await
+    // TODO implement Display for the arguments
+    solvers::run::run(std::env::args(), None).await;
 }

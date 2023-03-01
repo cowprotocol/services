@@ -23,18 +23,23 @@ chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
+derivative = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
+hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 model = { path = "../model" }
+num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["gzip", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

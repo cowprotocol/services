@@ -6,38 +6,46 @@
 //! Please be aware of the following subtlety for buy orders:
 //! 0x's API is adding the defined slippage on the sellAmount of a buy order
 //! and then returns the surplus in the buy amount to the user.
-//! I.e. if the user defines a 5% slippage, they will sell 5% more, and receive 5%
-//! more buy-tokens than ordered. Here is on example tx:
+//! I.e. if the user defines a 5% slippage, they will sell 5% more, and receive
+//! 5% more buy-tokens than ordered. Here is on example tx:
 //! https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block=12735030&blockIndex=0&from=0xa6ddbd0de6b310819b49f680f65871bee85f517e&gas=8000000&gasPrice=0&value=0&contractAddress=0x3328f5f2cecaf00a2443082b657cedeaf70bfaef&rawFunctionInput=0x13d79a0b000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000003600000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000029143e200000000000000000000000000000000000000000000000000470de4df820000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000036416d81e590ff67370e4523b9cd3257aa0a853c000000000000000000000000000000000000000000000000000000000291f64800000000000000000000000000000000000000000000000000470de4df8200000000000000000000000000000000000000000000000000000000000060dc5839000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000003dc140000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000029143e2000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000410a7f27a6638cc9cdaba8266a15acef4cf7e1e1c9b9b2059391b7230b67bdfeb21f1d3aa45852f527a5040d3d7a190b92764a2c854f334b7eed579b390b85fd3f1b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000003800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000120000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000128d9627aa400000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000002b220e100000000000000000000000000000000000000000000000000470de4df82000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2869584cd000000000000000000000000100000000000000000000000000000000000001100000000000000000000000000000000000000000000003239e38b8a60dc53b70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000&network=1
-//! This behavior has the following risks: The additional sell tokens from the slippage
-//! are not provided by the user, hence the additional tokens might be not available in
-//! the settlement contract. For smaller amounts this is unlikely, as we always charge the
-//! fees also in the sell token, though, the fee's might not always be sufficient.
-//! This risk should be covered in a future PR.
+//! This behavior has the following risks: The additional sell tokens from the
+//! slippage are not provided by the user, hence the additional tokens might be
+//! not available in the settlement contract. For smaller amounts this is
+//! unlikely, as we always charge the fees also in the sell token, though, the
+//! fee's might not always be sufficient. This risk should be covered in a
+//! future PR.
 //!
-//! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
+//! Sell orders are unproblematic, especially, since the positive slippage is
+//! handed back from 0x
 
-use super::{
-    single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+use {
+    super::{
+        single_order_solver::{
+            execution_respects_order,
+            SettlementError,
+            SingleOrderSettlement,
+            SingleOrderSolving,
+        },
+        Auction,
     },
-    Auction,
-};
-use crate::{
-    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::{slippage::SlippageCalculator, LimitOrder},
-};
-use anyhow::{anyhow, ensure, Result};
-use contracts::GPv2Settlement;
-use ethcontract::Account;
-use model::order::OrderKind;
-use shared::{
-    ethrpc::Web3,
-    zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
-};
-use std::{
-    fmt::{self, Display, Formatter},
-    sync::Arc,
+    crate::{
+        interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+        liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
+    },
+    anyhow::{anyhow, ensure, Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::Account,
+    model::order::OrderKind,
+    num::{BigRational, ToPrimitive, Zero},
+    shared::{
+        ethrpc::Web3,
+        zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
+    },
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+    },
 };
 
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
@@ -118,26 +126,58 @@ impl SingleOrderSolving for ZeroExSolver {
             return Ok(None);
         }
 
-        let mut settlement = SingleOrderSettlement {
-            sell_token_price: swap.price.buy_amount,
-            buy_token_price: swap.price.sell_amount,
-            interactions: Vec::new(),
-        };
-
-        if let Some(approval) = self
+        let approval = self
             .allowance_fetcher
             .get_approval(&ApprovalRequest {
                 token: order.sell_token,
                 spender: swap.price.allowance_target,
                 amount: swap.price.sell_amount,
             })
-            .await?
-        {
-            settlement.interactions.push(Box::new(approval));
-        }
-        settlement.interactions.push(Box::new(swap));
+            .await
+            .context("get_approval")?;
 
-        Ok(Some(settlement))
+        let create_settlement = || {
+            let mut settlement = SingleOrderSettlement {
+                sell_token_price: swap.price.buy_amount,
+                buy_token_price: swap.price.sell_amount,
+                interactions: Vec::new(),
+            };
+            if let Some(approval) = &approval {
+                settlement.interactions.push(Box::new(*approval));
+            }
+            settlement.interactions.push(Box::new(swap.clone()));
+            settlement
+        };
+
+        let settlement = create_settlement()
+            .into_settlement(&order)
+            .context("into_settlement")?;
+
+        let gas_price = BigRational::from_float(auction.gas_price).expect("Invalid gas price.");
+        let inputs = crate::objective_value::Inputs::from_settlement(
+            &settlement,
+            &auction.external_prices,
+            &gas_price,
+            &swap.price.estimated_gas.into(),
+        );
+        let objective_value = inputs.objective_value();
+        if objective_value < BigRational::zero() {
+            let uid = match order.id {
+                LimitOrderId::Market(uid) => uid,
+                LimitOrderId::Limit(uid) => uid,
+                // Shouldn't happen. This is just for logging so use default.
+                _ => Default::default(),
+            };
+            let objective_value = objective_value.to_f64().unwrap_or(f64::NAN);
+            tracing::debug!(
+                %uid,
+                %objective_value,
+                "skipping solution because it has negative objective value"
+            );
+            return Ok(None);
+        }
+
+        Ok(Some(create_settlement()))
     }
 
     fn account(&self) -> &Account {
@@ -166,19 +206,22 @@ impl Display for ZeroExSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        liquidity::LimitOrder,
-        test::account,
-    };
-    use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::{futures::FutureExt as _, Web3, H160, U256};
-    use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind};
-    use shared::{
-        ethrpc::{create_env_test_transport, create_test_transport},
-        zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+    use {
+        super::*,
+        crate::{
+            interactions::allowances::{Approval, MockAllowanceManaging},
+            liquidity::LimitOrder,
+            test::account,
+        },
+        contracts::{GPv2Settlement, WETH9},
+        ethcontract::{futures::FutureExt as _, Web3, H160, U256},
+        mockall::{predicate::*, Sequence},
+        model::order::{Order, OrderData, OrderKind, OrderMetadata},
+        shared::{
+            ethrpc::{create_env_test_transport, create_test_transport},
+            external_prices::ExternalPrices,
+            zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+        },
     };
 
     #[tokio::test]
@@ -220,7 +263,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 
     #[tokio::test]
@@ -262,7 +305,7 @@ mod tests {
             .await
             .unwrap();
 
-        println!("{:#?}", settlement);
+        println!("{settlement:#?}");
     }
 
     #[tokio::test]
@@ -479,5 +522,76 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result.interactions.len(), 1)
+    }
+
+    #[tokio::test]
+    async fn does_not_settle_negative_objective_value() {
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(move |_| Ok(None));
+
+        let mut client = MockZeroExApi::new();
+        client.expect_get_swap().returning(move |_| {
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 1.into(),
+                        buy_amount: 1.into(),
+                        estimated_gas: 1,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            }
+            .boxed()
+        });
+
+        let solver = ZeroExSolver {
+            account: account(),
+            api: Arc::new(client),
+            allowance_fetcher,
+            excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
+        };
+
+        let order = |fee: U256| {
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
+                    fee_amount: fee,
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    solver_fee: fee,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        };
+
+        let auction = Auction {
+            gas_price: 1.,
+            external_prices: ExternalPrices::new(Default::default(), Default::default()).unwrap(),
+            ..Default::default()
+        };
+
+        // It costs 1 unit to settle the order and the order earns 1 unit fee.
+        // Objective value is 0.
+        let result = solver
+            .try_settle_order(order(1.into()), &auction)
+            .await
+            .unwrap();
+        assert!(result.is_some());
+
+        // It costs 1 unit to settle the order and the order earns 0 unit fee.
+        // Objective value is -1.
+        let result = solver
+            .try_settle_order(order(0.into()), &auction)
+            .await
+            .unwrap();
+        assert!(result.is_none());
     }
 }

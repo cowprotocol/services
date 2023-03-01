@@ -1,14 +1,18 @@
-use super::SettlementSimulating;
-use crate::settlement::Settlement;
-use shared::token_list::AutoUpdatingTokenList;
+use {
+    super::SettlementSimulating,
+    crate::settlement::Settlement,
+    shared::token_list::AutoUpdatingTokenList,
+};
 
-/// If a settlement only trades trusted tokens try to optimize it by trading with internal buffers.
+/// If a settlement only trades trusted tokens try to optimize it by trading
+/// with internal buffers.
 pub async fn optimize_buffer_usage(
     settlement: Settlement,
     market_makable_token_list: AutoUpdatingTokenList,
     settlement_simulator: &impl SettlementSimulating,
 ) -> Settlement {
-    // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
+    // We don't want to buy tokens that we don't trust. If no list is set, we settle
+    // with external liquidity.
     if !is_only_selling_trusted_tokens(&settlement, &market_makable_token_list) {
         return settlement;
     }
@@ -30,7 +34,7 @@ fn is_only_selling_trusted_tokens(
     settlement: &Settlement,
     market_makable_token_list: &AutoUpdatingTokenList,
 ) -> bool {
-    let market_makable_token_list = market_makable_token_list.addresses();
+    let market_makable_token_list = market_makable_token_list.all();
     !settlement
         .traded_orders()
         .any(|order| !market_makable_token_list.contains(&order.data.sell_token))
@@ -38,12 +42,12 @@ fn is_only_selling_trusted_tokens(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::settlement::Trade;
-    use maplit::hashmap;
-    use model::order::{Order, OrderData};
-    use primitive_types::H160;
-    use shared::token_list::Token;
+    use {
+        super::*,
+        crate::settlement::Trade,
+        model::order::{Order, OrderData},
+        primitive_types::H160,
+    };
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {
@@ -51,20 +55,8 @@ mod tests {
         let another_good_token = H160::from_low_u64_be(2);
         let bad_token = H160::from_low_u64_be(3);
 
-        let token_list = AutoUpdatingTokenList::new(hashmap! {
-            good_token => Token {
-                address: good_token,
-                symbol: "Foo".into(),
-                name: "FooCoin".into(),
-                decimals: 18,
-            },
-            another_good_token => Token {
-                address: another_good_token,
-                symbol: "Bar".into(),
-                name: "BarCoin".into(),
-                decimals: 18,
-            }
-        });
+        let token_list =
+            AutoUpdatingTokenList::new([good_token, another_good_token].into_iter().collect());
 
         let trade = |token| Trade {
             order: Order {

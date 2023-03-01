@@ -2,16 +2,18 @@
 //!
 //! <https://docs.gelato.network/developer-services/relay/quick-start/api>
 
-use crate::http_client::HttpClientFactory;
-use anyhow::{ensure, Result};
-use chrono::{DateTime, Utc};
-use derivative::Derivative;
-use ethcontract::{H160, H256, U256};
-use model::u256_decimal::DecimalU256;
-use reqwest::Url;
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, skip_serializing_none};
-use std::fmt::{self, Display, Formatter};
+use {
+    crate::http_client::HttpClientFactory,
+    anyhow::{ensure, Result},
+    chrono::{DateTime, Utc},
+    derivative::Derivative,
+    ethcontract::{H160, H256, U256},
+    model::u256_decimal::DecimalU256,
+    reqwest::Url,
+    serde::{Deserialize, Serialize},
+    serde_with::{serde_as, skip_serializing_none},
+    std::fmt::{self, Display, Formatter},
+};
 
 pub struct GelatoClient {
     client: reqwest::Client,
@@ -164,10 +166,12 @@ struct TaskResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::{create_env_test_transport, Web3};
-    use contracts::WETH9;
-    use std::time::Duration;
+    use {
+        super::*,
+        crate::ethrpc::{create_env_test_transport, Web3},
+        contracts::WETH9,
+        std::time::Duration,
+    };
 
     #[ignore]
     #[tokio::test]

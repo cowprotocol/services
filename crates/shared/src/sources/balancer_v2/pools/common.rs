@@ -1,20 +1,22 @@
 //! Module with data types and logic common to multiple Balancer pool types
 
-use super::{FactoryIndexing, Pool, PoolIndexing as _, PoolStatus};
-use crate::{
-    ethrpc::Web3CallBatch,
-    sources::balancer_v2::{
-        graph_api::{PoolData, PoolType},
-        swap::fixed_point::Bfp,
+use {
+    super::{FactoryIndexing, Pool, PoolIndexing as _, PoolStatus},
+    crate::{
+        ethrpc::Web3CallBatch,
+        sources::balancer_v2::{
+            graph_api::{PoolData, PoolType},
+            swap::fixed_point::Bfp,
+        },
+        token_info::TokenInfoFetching,
     },
-    token_info::TokenInfoFetching,
+    anyhow::{anyhow, ensure, Context, Result},
+    contracts::{BalancerV2BasePool, BalancerV2Vault},
+    ethcontract::{BlockId, Bytes, H160, H256, U256},
+    futures::{future::BoxFuture, FutureExt as _},
+    std::{collections::BTreeMap, future::Future, sync::Arc},
+    tokio::sync::oneshot,
 };
-use anyhow::{anyhow, ensure, Context, Result};
-use contracts::{BalancerV2BasePool, BalancerV2Vault};
-use ethcontract::{BlockId, Bytes, H160, H256, U256};
-use futures::{future::BoxFuture, FutureExt as _};
-use std::{collections::BTreeMap, future::Future, sync::Arc};
-use tokio::sync::oneshot;
 
 /// Trait for fetching pool data that is generic on a factory type.
 #[mockall::automock]
@@ -331,21 +333,23 @@ fn share_common_pool_state(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        sources::balancer_v2::{
-            graph_api::{PoolType, Token},
-            pools::{weighted, MockFactoryIndexing, PoolKind},
+    use {
+        super::*,
+        crate::{
+            sources::balancer_v2::{
+                graph_api::{PoolType, Token},
+                pools::{weighted, MockFactoryIndexing, PoolKind},
+            },
+            token_info::{MockTokenInfoFetching, TokenInfo},
         },
-        token_info::{MockTokenInfoFetching, TokenInfo},
+        anyhow::bail,
+        contracts::BalancerV2WeightedPool,
+        ethcontract::U256,
+        ethcontract_mock::Mock,
+        futures::future,
+        maplit::{btreemap, hashmap},
+        mockall::predicate,
     };
-    use anyhow::bail;
-    use contracts::BalancerV2WeightedPool;
-    use ethcontract::U256;
-    use ethcontract_mock::Mock;
-    use futures::future;
-    use maplit::{btreemap, hashmap};
-    use mockall::predicate;
 
     #[tokio::test]
     async fn fetch_common_pool_info() {

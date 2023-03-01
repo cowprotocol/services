@@ -31,8 +31,7 @@ pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Erro
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

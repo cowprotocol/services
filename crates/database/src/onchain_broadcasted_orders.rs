@@ -1,6 +1,8 @@
-use super::events::EventIndex;
-use crate::{Address, OrderUid, PgTransaction};
-use sqlx::{Executor, PgConnection};
+use {
+    super::events::EventIndex,
+    crate::{Address, OrderUid, PgTransaction},
+    sqlx::{Executor, PgConnection},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
@@ -13,6 +15,21 @@ pub enum OnchainOrderPlacementError {
     InvalidOrderData,
     InsufficientFee,
     Other,
+}
+
+impl OnchainOrderPlacementError {
+    pub fn to_metrics_label(&self) -> &str {
+        match self {
+            Self::QuoteNotFound => "no_quote",
+            Self::InvalidQuote => "invalid_quote",
+            Self::PreValidationError => "invalid_order",
+            Self::DisabledOrderClass => "disabled_class",
+            Self::ValidToTooFarInFuture => "expired",
+            Self::InvalidOrderData => "invalid_data",
+            Self::InsufficientFee => "low_fee",
+            Self::Other => "unspecified",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -114,10 +131,7 @@ pub async fn read_order(
 
 #[cfg(test)]
 mod tests {
-    use crate::byte_array::ByteArray;
-
-    use super::*;
-    use sqlx::Connection;
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]

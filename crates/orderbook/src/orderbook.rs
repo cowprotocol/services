@@ -1,23 +1,30 @@
-use crate::database::orders::{InsertionError, OrderStoring};
-use anyhow::{Context, Result};
-use chrono::Utc;
-use ethcontract::H256;
-use model::{
-    auction::AuctionWithId,
-    order::{
-        Order, OrderCancellation, OrderClass, OrderCreation, OrderStatus, OrderUid,
-        SignedOrderCancellations,
+use {
+    crate::database::orders::{InsertionError, OrderStoring},
+    anyhow::{Context, Result},
+    chrono::Utc,
+    ethcontract::H256,
+    model::{
+        auction::AuctionWithId,
+        order::{
+            Order,
+            OrderCancellation,
+            OrderClass,
+            OrderCreation,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
+        },
+        quote::QuoteId,
+        DomainSeparator,
     },
-    quote::QuoteId,
-    DomainSeparator,
+    primitive_types::H160,
+    shared::{
+        metrics::LivenessChecking,
+        order_validation::{OrderValidating, ValidationError},
+    },
+    std::sync::Arc,
+    thiserror::Error,
 };
-use primitive_types::H160;
-use shared::{
-    metrics::LivenessChecking,
-    order_validation::{OrderValidating, ValidationError},
-};
-use std::sync::Arc;
-use thiserror::Error;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "orderbook")]
@@ -32,20 +39,47 @@ enum OrderOperation {
     Cancelled,
 }
 
+fn operation_label(op: &OrderOperation) -> &'static str {
+    match op {
+        OrderOperation::Created => "created",
+        OrderOperation::Cancelled => "cancelled",
+    }
+}
+
+fn order_class_label(class: &OrderClass) -> &'static str {
+    match class {
+        OrderClass::Market => "user",
+        OrderClass::Liquidity => "liquidity",
+        OrderClass::Limit(_) => "limit",
+    }
+}
+
 impl Metrics {
+    fn get() -> &'static Self {
+        Self::instance(global_metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance")
+    }
+
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let metrics = Self::instance(global_metrics::get_metric_storage_registry())
-            .expect("unexpected error getting metrics instance");
-        let kind = match order.metadata.class {
-            OrderClass::Market => "user",
-            OrderClass::Liquidity => "liquidity",
-            OrderClass::Limit(_) => "limit",
-        };
-        let op = match operation {
-            OrderOperation::Created => "created",
-            OrderOperation::Cancelled => "cancelled",
-        };
-        metrics.orders.with_label_values(&[kind, op]).inc();
+        let class = order_class_label(&order.metadata.class);
+        let op = operation_label(&operation);
+        Self::get().orders.with_label_values(&[class, op]).inc();
+    }
+
+    // Resets all the counters to 0 so we can always use them in Grafana queries.
+    fn initialize() {
+        let metrics = Self::get();
+        for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
+            let op = operation_label(op);
+            for class in &[
+                OrderClass::Market,
+                OrderClass::Liquidity,
+                OrderClass::Limit(Default::default()),
+            ] {
+                let class = order_class_label(class);
+                metrics.orders.with_label_values(&[class, op]).reset();
+            }
+        }
     }
 }
 
@@ -134,6 +168,7 @@ impl Orderbook {
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
     ) -> Self {
+        Metrics::initialize();
         Self {
             domain_separator,
             settlement_contract,
@@ -331,16 +366,18 @@ impl LivenessChecking for Orderbook {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::database::orders::MockOrderStoring;
-    use ethcontract::H160;
-    use mockall::predicate::eq;
-    use model::{
-        app_id::AppId,
-        order::{OrderData, OrderMetadata},
-        signature::Signature,
+    use {
+        super::*,
+        crate::database::orders::MockOrderStoring,
+        ethcontract::H160,
+        mockall::predicate::eq,
+        model::{
+            app_id::AppId,
+            order::{OrderData, OrderMetadata},
+            signature::Signature,
+        },
+        shared::order_validation::MockOrderValidating,
     };
-    use shared::order_validation::MockOrderValidating;
 
     #[tokio::test]
     #[ignore]

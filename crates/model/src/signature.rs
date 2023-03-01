@@ -1,14 +1,16 @@
-use crate::{bytes_hex, quote::QuoteSigningScheme, DomainSeparator};
-use anyhow::{ensure, Context as _, Result};
-use primitive_types::{H160, H256};
-use serde::{de, Deserialize, Serialize};
-use std::{
-    convert::TryInto as _,
-    fmt::{self, Debug, Formatter},
-};
-use web3::{
-    signing::{self, Key, SecretKeyRef},
-    types::Recovery,
+use {
+    crate::{bytes_hex, quote::QuoteSigningScheme, DomainSeparator},
+    anyhow::{ensure, Context as _, Result},
+    primitive_types::{H160, H256},
+    serde::{de, Deserialize, Serialize},
+    std::{
+        convert::TryInto as _,
+        fmt::{self, Debug, Formatter},
+    },
+    web3::{
+        signing::{self, Key, SecretKeyRef},
+        types::Recovery,
+    },
 };
 
 /// See [`Signature`].
@@ -34,7 +36,8 @@ impl From<QuoteSigningScheme> for SigningScheme {
 }
 
 /// Signature over the order data.
-/// All variants rely on the EIP-712 hash of the order data, referred to as the order hash.
+/// All variants rely on the EIP-712 hash of the order data, referred to as the
+/// order hash.
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
 pub enum Signature {
@@ -42,20 +45,22 @@ pub enum Signature {
     ///
     /// https://eips.ethereum.org/EIPS/eip-712
     Eip712(EcdsaSignature),
-    /// The order hash is signed according to EIP-191's personal_sign signature format.
+    /// The order hash is signed according to EIP-191's personal_sign signature
+    /// format.
     ///
     /// https://eips.ethereum.org/EIPS/eip-191
     EthSign(EcdsaSignature),
-    /// Signature verified according to EIP-1271, which facilitates a way for contracts to
-    /// verify signatures using an arbitrary method. This allows smart contracts to sign and
-    /// place orders. The order hash is passed to the verification method, along with this
-    /// signature.
+    /// Signature verified according to EIP-1271, which facilitates a way for
+    /// contracts to verify signatures using an arbitrary method. This
+    /// allows smart contracts to sign and place orders. The order hash is
+    /// passed to the verification method, along with this signature.
     ///
     /// https://eips.ethereum.org/EIPS/eip-1271
     Eip1271(Vec<u8>),
-    /// For these signatures, the user broadcasts a transaction onchain. This transaction contains
-    /// a signature of the order hash. Because this onchain transaction is also signed, it proves
-    /// that the user indeed signed the order.
+    /// For these signatures, the user broadcasts a transaction onchain. This
+    /// transaction contains a signature of the order hash. Because this
+    /// onchain transaction is also signed, it proves that the user indeed
+    /// signed the order.
     PreSign,
 }
 
@@ -384,7 +389,8 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(
                     formatter,
-                    "the 65 ecdsa signature bytes as a hex encoded string, ordered as r, s, v, where v is either 27 or 28"
+                    "the 65 ecdsa signature bytes as a hex encoded string, ordered as r, s, v, \
+                     where v is either 27 or 28"
                 )
             }
 
@@ -394,15 +400,14 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
             {
                 let s = s.strip_prefix("0x").ok_or_else(|| {
                     de::Error::custom(format!(
-                        "{:?} can't be decoded as hex ecdsa signature because it does not start with '0x'",
-                        s
+                        "{s:?} can't be decoded as hex ecdsa signature because it does not start \
+                         with '0x'"
                     ))
                 })?;
                 let mut bytes = [0u8; 65];
                 hex::decode_to_slice(s, &mut bytes).map_err(|err| {
                     de::Error::custom(format!(
-                        "failed to decode {:?} as hex ecdsa signature: {}",
-                        s, err
+                        "failed to decode {s:?} as hex ecdsa signature: {err}"
                     ))
                 })?;
                 Ok(EcdsaSignature::from_bytes(&bytes))
@@ -415,8 +420,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use {super::*, serde_json::json};
 
     #[test]
     fn onchain_signatures_cannot_recover_owners() {

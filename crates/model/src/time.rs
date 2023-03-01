@@ -3,7 +3,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// The current time in the same unit as `valid_to` for orders in the smart contract.
+/// The current time in the same unit as `valid_to` for orders in the smart
+/// contract.
 pub fn now_in_epoch_seconds() -> u32 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

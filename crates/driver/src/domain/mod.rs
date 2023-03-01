@@ -1,5 +1,6 @@
 pub mod competition;
 pub mod eth;
 pub mod liquidity;
+pub mod quote;
 
-pub use liquidity::Liquidity;
+pub use {competition::Competition, liquidity::Liquidity};

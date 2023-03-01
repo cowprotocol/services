@@ -1,6 +1,8 @@
-use super::{BadTokenDetecting, TokenQuality};
-use anyhow::Result;
-use primitive_types::H160;
+use {
+    super::{BadTokenDetecting, TokenQuality},
+    anyhow::Result,
+    primitive_types::H160,
+};
 
 /// If a token is neither in the allow nor the deny list treat it this way.
 pub enum UnknownTokenStrategy {
@@ -52,14 +54,14 @@ impl BadTokenDetecting for ListBasedDetector {
 
         if self.deny_list.contains(&token) {
             return Ok(TokenQuality::Bad {
-                reason: "deny listed".to_string(),
+                reason: "token is explicitly deny listed".to_string(),
             });
         }
 
         match &self.strategy {
             UnknownTokenStrategy::Allow => Ok(TokenQuality::Good),
             UnknownTokenStrategy::Deny => Ok(TokenQuality::Bad {
-                reason: "default deny".to_string(),
+                reason: "token is not allow listed".to_string(),
             }),
             UnknownTokenStrategy::Forward(inner) => inner.detect(token).await,
         }
@@ -68,9 +70,7 @@ impl BadTokenDetecting for ListBasedDetector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::bad_token::MockBadTokenDetecting;
-    use futures::FutureExt;
+    use {super::*, crate::bad_token::MockBadTokenDetecting, futures::FutureExt};
 
     #[test]
     fn uses_lists() {

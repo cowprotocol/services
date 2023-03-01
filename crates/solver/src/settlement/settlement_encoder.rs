@@ -1,21 +1,25 @@
-use super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution};
-use crate::{encoding::EncodedSettlement, interactions::UnwrapWethInteraction};
-use anyhow::{bail, ensure, Context as _, Result};
-use itertools::{Either, Itertools};
-use model::{
-    interaction::InteractionData,
-    order::{LimitOrderClass, Order, OrderClass, OrderKind},
-};
-use num::{BigRational, One};
-use number_conversions::big_rational_to_u256;
-use primitive_types::{H160, U256};
-use shared::{
-    conversions::U256Ext, http_solver::model::InternalizationStrategy, interaction::Interaction,
-};
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    iter,
-    sync::Arc,
+use {
+    super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution},
+    crate::{encoding::EncodedSettlement, interactions::UnwrapWethInteraction},
+    anyhow::{bail, ensure, Context as _, Result},
+    itertools::{Either, Itertools},
+    model::{
+        interaction::InteractionData,
+        order::{LimitOrderClass, Order, OrderClass, OrderKind},
+    },
+    num::{BigRational, One},
+    number_conversions::big_rational_to_u256,
+    primitive_types::{H160, U256},
+    shared::{
+        conversions::U256Ext,
+        http_solver::model::InternalizationStrategy,
+        interaction::Interaction,
+    },
+    std::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        iter,
+        sync::Arc,
+    },
 };
 
 /// An interaction paired with a flag indicating whether it can be omitted
@@ -123,11 +127,7 @@ impl SettlementEncoder {
         let mut result = Self::new(clearing_prices);
         for trade in trades {
             result
-                .add_trade(
-                    trade.order,
-                    trade.executed_amount,
-                    trade.scaled_unsubsidized_fee,
-                )
+                .add_trade(trade.order, trade.executed_amount, trade.solver_fee)
                 .unwrap();
         }
         result
@@ -196,13 +196,14 @@ impl SettlementEncoder {
             .any(|(_, internalizable)| !internalizable)
     }
 
-    /// Adds an order trade using the uniform clearing prices for sell and buy token.
-    /// Fails if any used token doesn't have a price or if executed amount is impossible.
+    /// Adds an order trade using the uniform clearing prices for sell and buy
+    /// token. Fails if any used token doesn't have a price or if executed
+    /// amount is impossible.
     fn add_market_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
-        scaled_unsubsidized_fee: U256,
+        solver_fee: U256,
     ) -> Result<TradeExecution> {
         verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
@@ -225,7 +226,7 @@ impl SettlementEncoder {
             data: Trade {
                 order: order.clone(),
                 executed_amount,
-                scaled_unsubsidized_fee,
+                solver_fee,
             },
             tokens: TokenReference::Indexed {
                 sell_token_index,
@@ -241,32 +242,31 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    /// Adds the passed trade to the execution plan. Handles specifics of market, limit and
-    /// liquidity orders internally.
+    /// Adds the passed trade to the execution plan. Handles specifics of
+    /// market, limit and liquidity orders internally.
     pub fn add_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
-        scaled_unsubsidized_fee: U256,
+        solver_fee: U256,
     ) -> Result<TradeExecution> {
         let interactions = order.interactions.clone();
         let execution = match &order.metadata.class {
-            OrderClass::Market => {
-                self.add_market_trade(order, executed_amount, scaled_unsubsidized_fee)?
-            }
+            OrderClass::Market => self.add_market_trade(order, executed_amount, solver_fee)?,
             OrderClass::Liquidity => {
                 let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
                 self.add_custom_price_trade(
                     order,
                     executed_amount,
-                    scaled_unsubsidized_fee,
+                    solver_fee,
                     sell_price,
                     buy_price,
                 )?
             }
             OrderClass::Limit(limit) => {
-                // Solvers calculate with slightly adjusted amounts compared to this order but because
-                // limit orders are fill-or-kill we can simply use the total original `sell_amount`.
+                // Solvers calculate with slightly adjusted amounts compared to this order but
+                // because limit orders are fill-or-kill we can simply use the
+                // total original `sell_amount`.
                 let executed_amount = match order.data.kind {
                     OrderKind::Sell => order.data.sell_amount,
                     OrderKind::Buy => order.data.buy_amount,
@@ -276,7 +276,7 @@ impl SettlementEncoder {
                 self.add_custom_price_trade(
                     order,
                     executed_amount,
-                    scaled_unsubsidized_fee,
+                    solver_fee,
                     sell_price,
                     buy_price,
                 )?
@@ -286,11 +286,12 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    /// Uses the uniform clearing prices to compute the individual buy token price to satisfy the
-    /// original limit order which was adjusted to account for the `surplus_fee` (see
+    /// Uses the uniform clearing prices to compute the individual buy token
+    /// price to satisfy the original limit order which was adjusted to
+    /// account for the `surplus_fee` (see
     /// `compute_synthetic_order_amounts_if_limit_order()`).
-    /// Returns an error if the UCP doesn't contain the traded tokens or if under- or overflows
-    /// happen during the computation.
+    /// Returns an error if the UCP doesn't contain the traded tokens or if
+    /// under- or overflows happen during the computation.
     fn custom_price_for_limit_order(
         &self,
         order: &Order,
@@ -301,11 +302,12 @@ impl SettlementEncoder {
             "this function should only be called for limit orders"
         );
         // The order passed into this function is the original order signed by the user.
-        // But the solver actually computed a solution for an order with `sell_amount -= surplus_fee`.
-        // To account for the `surplus_fee` we first have to compute the expected `sell_amount` and
-        // `buy_amount` adjusted for the order kind and `surplus_fee`.
-        // Afterwards we compute a slightly worse `buy_price` that allows us to buy the expected number
-        // of `buy_token`s while pocketing the `surplus_fee` from the `sell_token`s.
+        // But the solver actually computed a solution for an order with `sell_amount -=
+        // surplus_fee`. To account for the `surplus_fee` we first have to
+        // compute the expected `sell_amount` and `buy_amount` adjusted for the
+        // order kind and `surplus_fee`. Afterwards we compute a slightly worse
+        // `buy_price` that allows us to buy the expected number of `buy_token`s
+        // while pocketing the `surplus_fee` from the `sell_token`s.
         let uniform_buy_price = *self
             .clearing_prices
             .get(&order.data.buy_token)
@@ -315,7 +317,8 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
-        // Solvable limit orders always have a surplus fee. It would be nice if this was enforced in the API.
+        // Solvable limit orders always have a surplus fee. It would be nice if this was
+        // enforced in the API.
         let surplus_fee = limit.surplus_fee.unwrap();
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
@@ -361,7 +364,7 @@ impl SettlementEncoder {
         &mut self,
         order: Order,
         executed_amount: U256,
-        scaled_unsubsidized_fee: U256,
+        solver_fee: U256,
         sell_price: U256,
         buy_price: U256,
     ) -> Result<TradeExecution> {
@@ -370,7 +373,7 @@ impl SettlementEncoder {
             data: Trade {
                 order,
                 executed_amount,
-                scaled_unsubsidized_fee,
+                solver_fee,
             },
             tokens: TokenReference::CustomPrice {
                 sell_token_price: sell_price,
@@ -525,7 +528,8 @@ impl SettlementEncoder {
             .collect();
 
         {
-            // add tokens/prices for custom price orders, since they are not contained in the UCP vector
+            // add tokens/prices for custom price orders, since they are not contained in
+            // the UCP vector
             let (mut custom_price_order_tokens, mut custom_price_order_prices): (
                 Vec<H160>,
                 Vec<U256>,
@@ -607,8 +611,9 @@ impl SettlementEncoder {
     }
 
     // Merge other into self so that the result contains both settlements.
-    // Fails if the settlements cannot be merged for example because the same limit order is used in
-    // both or more than one token has a different clearing prices (a single token difference is scaled)
+    // Fails if the settlements cannot be merged for example because the same limit
+    // order is used in both or more than one token has a different clearing
+    // prices (a single token difference is scaled)
     pub fn merge(mut self, mut other: Self) -> Result<Self> {
         let scaling_factor = self.price_scaling_factor(&other);
         // Make sure we always scale prices up to avoid precision issues
@@ -675,12 +680,14 @@ impl SettlementEncoder {
     }
 
     /// Drops all UnwrapWethInteractions for the given token address.
-    /// This can be used in case the settlement contracts ETH buffer is big enough.
+    /// This can be used in case the settlement contracts ETH buffer is big
+    /// enough.
     pub fn drop_unwrap(&mut self, token: H160) {
         self.unwraps.retain(|unwrap| unwrap.weth.address() != token);
     }
 
-    /// Calculates how much of a given token this settlement will unwrap during the execution.
+    /// Calculates how much of a given token this settlement will unwrap during
+    /// the execution.
     pub fn amount_to_unwrap(&self, token: H160) -> U256 {
         self.unwraps.iter().fold(U256::zero(), |sum, unwrap| {
             if unwrap.weth.address() == token {
@@ -724,15 +731,17 @@ pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::settlement::NoopInteraction;
-    use contracts::WETH9;
-    use ethcontract::Bytes;
-    use maplit::hashmap;
-    use model::order::{OrderBuilder, OrderData};
-    use shared::{
-        dummy_contract,
-        interaction::{EncodedInteraction, Interaction},
+    use {
+        super::*,
+        crate::settlement::NoopInteraction,
+        contracts::WETH9,
+        ethcontract::Bytes,
+        maplit::hashmap,
+        model::order::{OrderBuilder, OrderData},
+        shared::{
+            dummy_contract,
+            interaction::{EncodedInteraction, Interaction},
+        },
     };
 
     #[test]
@@ -854,7 +863,8 @@ pub mod tests {
         assert!(settlement
             .add_trade(order01.clone(), 10.into(), 0.into())
             .is_ok());
-        // ensures that the output of add_liquidity_order is not changed after adding liquidity order
+        // ensures that the output of add_liquidity_order is not changed after adding
+        // liquidity order
         assert_eq!(settlement.tokens, vec![token(1)]);
         let finished_settlement =
             settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
@@ -1068,7 +1078,7 @@ pub mod tests {
                     data: Trade {
                         order: order13,
                         executed_amount: 11.into(),
-                        scaled_unsubsidized_fee: 0.into()
+                        solver_fee: 0.into()
                     },
                     tokens: TokenReference::Indexed {
                         sell_token_index: 0,
@@ -1079,7 +1089,7 @@ pub mod tests {
                     data: Trade {
                         order: order12,
                         executed_amount: 11.into(),
-                        scaled_unsubsidized_fee: 0.into()
+                        solver_fee: 0.into()
                     },
                     tokens: TokenReference::CustomPrice {
                         sell_token_price: 11.into(),
@@ -1090,7 +1100,7 @@ pub mod tests {
                     data: Trade {
                         order: order24,
                         executed_amount: 22.into(),
-                        scaled_unsubsidized_fee: 0.into()
+                        solver_fee: 0.into()
                     },
                     tokens: TokenReference::Indexed {
                         sell_token_index: 1,
@@ -1101,7 +1111,7 @@ pub mod tests {
                     data: Trade {
                         order: order23,
                         executed_amount: 11.into(),
-                        scaled_unsubsidized_fee: 0.into()
+                        solver_fee: 0.into()
                     },
                     tokens: TokenReference::CustomPrice {
                         sell_token_price: 11.into(),
@@ -1316,12 +1326,13 @@ pub mod tests {
                 data: Trade {
                     order,
                     executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
-                    scaled_unsubsidized_fee: U256::exp10(16)               // 0.01 WETH (10 USDC)
+                    solver_fee: U256::exp10(16)                            // 0.01 WETH (10 USDC)
                 },
                 tokens: TokenReference::CustomPrice {
                     sell_token_price: U256::exp10(9),
-                    // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had to sell
-                    // 1.01 WETH (to pocket the fee). This caused the USDC price to increase by 1%.
+                    // Instead of the (solver) anticipated 1 WETH required to buy 1_000 USDC we had
+                    // to sell 1.01 WETH (to pocket the fee). This caused the
+                    // USDC price to increase by 1%.
                     buy_token_price: 1_010_000_000_000_000_000u128.into()
                 },
             },
@@ -1372,12 +1383,13 @@ pub mod tests {
                 data: Trade {
                     order,
                     executed_amount: U256::exp10(18), // 1 WETH
-                    scaled_unsubsidized_fee: U256::exp10(7)  // 10 USDC
+                    solver_fee: U256::exp10(7)        // 10 USDC
                 },
                 tokens: TokenReference::CustomPrice {
                     sell_token_price: U256::exp10(18),
-                    // Instead of the (solver) anticipated 1_000 USDC required to buy 1 WETH we had to sell
-                    // 1_010 USDC (to pocket the fee). This caused the WETH price to increase by 1%.
+                    // Instead of the (solver) anticipated 1_000 USDC required to buy 1 WETH we had
+                    // to sell 1_010 USDC (to pocket the fee). This caused the
+                    // WETH price to increase by 1%.
                     buy_token_price: 1_010_000_000u128.into()
                 }
             },

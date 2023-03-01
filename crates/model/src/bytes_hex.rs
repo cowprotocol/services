@@ -1,8 +1,10 @@
 //! Serialization of Vec<u8> to 0x prefixed hex string
 
-use serde::{de::Error, Deserialize, Deserializer, Serializer};
-use serde_with::{DeserializeAs, SerializeAs};
-use std::borrow::Cow;
+use {
+    serde::{de::Error, Deserialize, Deserializer, Serializer},
+    serde_with::{DeserializeAs, SerializeAs},
+    std::borrow::Cow,
+};
 
 pub fn serialize<S, T>(bytes: T, serializer: S) -> Result<S::Ok, S::Error>
 where

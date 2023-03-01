@@ -1,6 +1,9 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{
+            competition::{self, solution},
+            eth,
+        },
         infra::time,
     },
     std::{num::ParseIntError, str::FromStr},
@@ -16,11 +19,21 @@ pub struct Auction {
     /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
     /// used for competition.
     pub id: Option<Id>,
+    // TODO Turn this into a HashSet
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
-    pub liquidity: Vec<liquidity::Liquidity>,
     pub gas_price: eth::EffectiveGasPrice,
     pub deadline: Deadline,
+}
+
+impl Auction {
+    pub fn is_trusted(&self, token: eth::TokenAddress) -> bool {
+        self.tokens
+            .iter()
+            .find(|t| t.address == token)
+            .map(|token| token.trusted)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Debug)]
@@ -28,11 +41,28 @@ pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
     pub address: eth::TokenAddress,
-    pub price: Option<competition::Price>,
+    pub price: Option<Price>,
     /// The balance of this token available in our settlement contract.
     pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
     pub trusted: bool,
+}
+
+/// The price of a token in wei. This represents how much wei is needed to buy
+/// 10**18 of another token.
+#[derive(Debug, Clone, Copy)]
+pub struct Price(pub eth::Ether);
+
+impl From<Price> for eth::U256 {
+    fn from(value: Price) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<eth::U256> for Price {
+    fn from(value: eth::U256) -> Self {
+        Self(value.into())
+    }
 }
 
 /// Each auction has a deadline, limiting the maximum time that can be allocated
@@ -41,15 +71,19 @@ pub struct Token {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
-    pub fn new(
-        deadline: chrono::DateTime<chrono::Utc>,
-        now: time::Now,
-    ) -> Result<Self, DeadlineExceeded> {
-        if deadline <= now.now() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(Self(deadline))
-        }
+    /// Computes the timeout for solving an auction.
+    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    }
+
+    pub fn time_buffer() -> chrono::Duration {
+        chrono::Duration::seconds(1)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Deadline {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
     }
 }
 

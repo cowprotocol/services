@@ -1,14 +1,16 @@
-use anyhow::{Context, Result};
-use model::order::{Order, OrderKind};
-use primitive_types::U256;
+use {
+    anyhow::{Context, Result},
+    model::order::{Order, OrderKind},
+    primitive_types::U256,
+};
 
 /// Calculates the remaining amounts for an order.
 ///
-/// For example, when a sell order has half of its sell amount already executed then the remaining
-/// buy and fee amounts are also half of their original.
+/// For example, when a sell order has half of its sell amount already executed
+/// then the remaining buy and fee amounts are also half of their original.
 ///
-/// Works like the smart contract by taking intermediate overflows into account for partially
-/// fillable orders.
+/// Works like the smart contract by taking intermediate overflows into account
+/// for partially fillable orders.
 pub struct Remaining {
     numerator: U256,
     denominator: U256,
@@ -25,9 +27,9 @@ impl Remaining {
     }
 
     pub fn from_fill_or_kill(has_executed: bool) -> Self {
-        // fill-or-kill orders do not have their amounts scaled in the contract so using the
-        // partially fillable logic would be wrong because it could error in `remaining` when the
-        // contract wouldn't.
+        // fill-or-kill orders do not have their amounts scaled in the contract so using
+        // the partially fillable logic would be wrong because it could error in
+        // `remaining` when the contract wouldn't.
         Self {
             numerator: if has_executed { 0.into() } else { 1.into() },
             denominator: 1.into(),
@@ -64,9 +66,11 @@ impl Remaining {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use model::order::{OrderData, OrderMetadata};
-    use num::BigUint;
+    use {
+        super::*,
+        model::order::{OrderData, OrderMetadata},
+        num::BigUint,
+    };
 
     #[test]
     fn computes_remaining_order_amounts() {

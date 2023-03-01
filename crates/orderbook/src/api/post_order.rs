@@ -1,15 +1,17 @@
-use crate::orderbook::{AddOrderError, Orderbook};
-use anyhow::Result;
-use model::{
-    order::{OrderCreation, OrderUid},
-    quote::QuoteId,
+use {
+    crate::orderbook::{AddOrderError, Orderbook},
+    anyhow::Result,
+    model::{
+        order::{OrderCreation, OrderUid},
+        quote::QuoteId,
+    },
+    shared::{
+        api::{error, extract_payload, ApiReply, IntoWarpReply},
+        order_validation::{OrderValidToError, PartialValidationError, ValidationError},
+    },
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
-use shared::{
-    api::{error, extract_payload, ApiReply, IntoWarpReply},
-    order_validation::{OrderValidToError, PartialValidationError, ValidationError},
-};
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
 {
@@ -77,8 +79,11 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 error("UnsupportedSignature", "signing scheme is not supported"),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::UnsupportedToken(token) => with_status(
-                error("UnsupportedToken", format!("Token address {token:?}")),
+            PartialValidationError::UnsupportedToken { token, reason } => with_status(
+                error(
+                    "UnsupportedToken",
+                    format!("Token {token:?} is unsupported: {reason}"),
+                ),
                 StatusCode::BAD_REQUEST,
             ),
             PartialValidationError::Other(err) => {
@@ -228,11 +233,13 @@ pub fn post_order(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use model::order::{OrderCreation, OrderUid};
-    use serde_json::json;
-    use shared::api::response_body;
-    use warp::{test::request, Reply};
+    use {
+        super::*,
+        model::order::{OrderCreation, OrderUid},
+        serde_json::json,
+        shared::api::response_body,
+        warp::{test::request, Reply},
+    };
 
     #[tokio::test]
     async fn create_order_request_ok() {

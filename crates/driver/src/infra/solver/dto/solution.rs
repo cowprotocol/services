@@ -1,8 +1,8 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, eth, liquidity},
+        infra::Solver,
         util::serialize,
-        Solver,
     },
     itertools::Itertools,
     serde::Deserialize,
@@ -14,9 +14,11 @@ impl Solution {
     pub fn into_domain(
         self,
         auction: &competition::Auction,
+        liquidity: &[liquidity::Liquidity],
         solver: Solver,
     ) -> Result<competition::Solution, super::Error> {
         Ok(competition::Solution {
+            id: competition::solution::Id::random(),
             trades: self
                 .trades
                 .into_iter()
@@ -149,8 +151,7 @@ impl Solution {
                         ))
                     }
                     Interaction::Liquidity(interaction) => {
-                        let liquidity = auction
-                            .liquidity
+                        let liquidity = liquidity
                             .iter()
                             .find(|liquidity| liquidity.id == interaction.id)
                             .ok_or(super::Error(
@@ -181,17 +182,17 @@ impl Solution {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     // TODO I also need to use this
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
-    // TODO I need to use this in the quote response
     interactions: Vec<Interaction>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -199,7 +200,7 @@ enum Trade {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
     order: [u8; 56],
@@ -209,6 +210,7 @@ struct Fulfillment {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct JitTrade {
     order: JitOrder,
     #[serde_as(as = "serialize::U256")]
@@ -217,6 +219,7 @@ struct JitTrade {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct JitOrder {
     sell_token: eth::H160,
     buy_token: eth::H160,
@@ -240,14 +243,14 @@ struct JitOrder {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -255,9 +258,10 @@ enum Interaction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LiquidityInteraction {
     internalize: bool,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     input_token: eth::H160,
     output_token: eth::H160,
@@ -269,7 +273,7 @@ struct LiquidityInteraction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CustomInteraction {
     internalize: bool,
     target: eth::H160,
@@ -284,6 +288,7 @@ struct CustomInteraction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Asset {
     token: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -292,6 +297,7 @@ struct Asset {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Allowance {
     token: eth::H160,
     spender: eth::H160,
@@ -300,7 +306,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -309,7 +315,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -317,7 +323,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,

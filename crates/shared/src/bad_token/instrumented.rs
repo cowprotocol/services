@@ -1,7 +1,9 @@
-use super::{BadTokenDetecting, TokenQuality};
-use anyhow::Result;
-use prometheus::IntCounterVec;
-use prometheus_metric_storage::MetricStorage;
+use {
+    super::{BadTokenDetecting, TokenQuality},
+    anyhow::Result,
+    prometheus::IntCounterVec,
+    prometheus_metric_storage::MetricStorage,
+};
 
 pub trait InstrumentedBadTokenDetectorExt {
     fn instrumented(self) -> InstrumentedBadTokenDetector;
@@ -18,7 +20,8 @@ impl<T: BadTokenDetecting + 'static> InstrumentedBadTokenDetectorExt for T {
 #[derive(MetricStorage, Clone, Debug)]
 #[metric(subsystem = "token_quality")]
 struct Metrics {
-    /// Tracks how many token detections result in good or bad token quality or an error.
+    /// Tracks how many token detections result in good or bad token quality or
+    /// an error.
     #[metric(labels("quality"))]
     results: IntCounterVec,
 }

@@ -1,6 +1,8 @@
-use anyhow::{ensure, Result};
-use num::{rational::Ratio, BigInt, BigRational};
-use primitive_types::U256;
+use {
+    anyhow::{ensure, Result},
+    num::{rational::Ratio, BigInt, BigRational},
+    primitive_types::U256,
+};
 
 pub fn into_gas_price(gas_price: &gas_estimation::GasPrice1559) -> ethcontract::GasPrice {
     (
@@ -38,6 +40,7 @@ impl U256Ext for U256 {
     fn to_big_int(&self) -> BigInt {
         number_conversions::u256_to_big_int(self)
     }
+
     fn to_big_rational(&self) -> BigRational {
         number_conversions::u256_to_big_rational(self)
     }
@@ -46,6 +49,7 @@ impl U256Ext for U256 {
         self.checked_add(other.checked_sub(1.into())?)?
             .checked_div(*other)
     }
+
     fn ceil_div(&self, other: &Self) -> Self {
         self.checked_ceil_div(other)
             .expect("ceiling division arithmetic error")

@@ -1,28 +1,36 @@
 //! A trade finder that uses an external driver.
-use crate::{
-    price_estimation::{
-        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+use {
+    crate::{
+        price_estimation::{
+            rate_limited,
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
+            Query,
+        },
+        rate_limiter::RateLimiter,
+        request_sharing::RequestSharing,
+        trade_finding::{Quote, Trade, TradeError, TradeFinding},
     },
-    rate_limiter::RateLimiter,
-    request_sharing::RequestSharing,
-    trade_finding::{Quote, Trade, TradeError, TradeFinding},
+    anyhow::Context,
+    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
+    reqwest::{header, Client},
+    std::sync::Arc,
+    url::Url,
 };
-use anyhow::Context;
-use futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt};
-use reqwest::{header, Client};
-use std::sync::Arc;
-use url::Url;
 
 pub struct ExternalTradeFinder {
     /// URL to call to in the driver to get a quote with call data for a trade.
     quote_endpoint: Url,
 
-    /// Utility to make sure no 2 identical requests are in-flight at the same time.
-    /// Instead of issuing a duplicated request this awaits the response of the in-flight request.
+    /// Utility to make sure no 2 identical requests are in-flight at the same
+    /// time. Instead of issuing a duplicated request this awaits the
+    /// response of the in-flight request.
     sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, TradeError>>>,
 
-    /// Utility to temporarily drop requests when the driver responds too slowly to not slow down
-    /// the whole price estimation logic.
+    /// Utility to temporarily drop requests when the driver responds too slowly
+    /// to not slow down the whole price estimation logic.
     rate_limiter: Arc<RateLimiter>,
 
     /// Client to issue http requests with.
@@ -40,8 +48,8 @@ impl ExternalTradeFinder {
         }
     }
 
-    /// Queries the `/quote` endpoint of the configured driver and deserializes the result into a
-    /// Quote or Trade.
+    /// Queries the `/quote` endpoint of the configured driver and deserializes
+    /// the result into a Quote or Trade.
     async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
         let body = serde_json::to_string(&query).context("failed to encode body")?;
 
@@ -69,8 +77,8 @@ impl ExternalTradeFinder {
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        // The driver only has a single endpoint to compute trades so we can simply reuse the same
-        // logic here.
+        // The driver only has a single endpoint to compute trades so we can simply
+        // reuse the same logic here.
         let trade = self.get_trade(query).await?;
         Ok(Quote {
             out_amount: trade.out_amount,

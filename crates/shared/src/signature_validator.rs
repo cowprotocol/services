@@ -1,17 +1,19 @@
-use crate::{
-    ethcontract_error::EthcontractErrorType,
-    ethrpc::{Web3, MAX_BATCH_SIZE},
+use {
+    crate::{
+        ethcontract_error::EthcontractErrorType,
+        ethrpc::{Web3, MAX_BATCH_SIZE},
+    },
+    contracts::ERC1271SignatureValidator,
+    ethcontract::{
+        batch::CallBatch,
+        errors::{ExecutionError, MethodError},
+        Bytes,
+    },
+    futures::future,
+    hex_literal::hex,
+    primitive_types::H160,
+    thiserror::Error,
 };
-use contracts::ERC1271SignatureValidator;
-use ethcontract::{
-    batch::CallBatch,
-    errors::{ExecutionError, MethodError},
-    Bytes,
-};
-use futures::future;
-use hex_literal::hex;
-use primitive_types::H160;
-use thiserror::Error;
 
 const TRANSACTION_INITIALIZATION_GAS_AMOUNT: u64 = 21_000u64;
 

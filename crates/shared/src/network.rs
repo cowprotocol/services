@@ -1,7 +1,8 @@
-// Maps (NetworkId, ChainId) to the network name.
-// Contents of the "match" block obtained via:
-// wget -O - -o /dev/null https://chainid.network/chains.json | jq -r '.[] | [.networkId, .chainId, .name] | @tsv' | gawk '{print("(\""$1"\", "$2") => \""$3"\",")}'
+use std::time::Duration;
 
+/// Maps (NetworkId, ChainId) to the network name.
+/// Contents of the "match" block obtained via:
+/// wget -O - -o /dev/null https://chainid.network/chains.json | jq -r '.[] | [.networkId, .chainId, .name] | @tsv' | gawk '{print("(\""$1"\", "$2") => \""$3"\",")}'
 pub fn network_name(network_id: &str, chain_id: u64) -> &'static str {
     match (network_id, chain_id) {
         ("1", 1) => "Ethereum / Mainnet",
@@ -157,4 +158,14 @@ pub fn network_name(network_id: &str, chain_id: u64) -> &'static str {
         ("999", 999) => "Wanchain",
         _ => "<unknown>",
     }
+}
+
+/// The expected time between blocks on the network.
+pub fn block_interval(network_id: &str, chain_id: u64) -> Option<Duration> {
+    Some(Duration::from_secs(match (network_id, chain_id) {
+        ("1", 1) => 12,
+        ("5", 5) => 12,
+        ("100", 100) => 5,
+        _ => return None,
+    }))
 }

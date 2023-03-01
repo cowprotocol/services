@@ -1,4 +1,4 @@
-use crate::settlement::{external_prices::ExternalPrices, Settlement};
+use {crate::settlement::Settlement, shared::external_prices::ExternalPrices};
 
 // Takes the settlements of a single solver and adds a merged settlement.
 pub fn merge_settlements(
@@ -15,8 +15,8 @@ pub fn merge_settlements(
     }
 }
 
-// Goes through the settlements in order and tries to merge a number of them. Keeps going on merge
-// error.
+// Goes through the settlements in order and tries to merge a number of them.
+// Keeps going on merge error.
 fn merge_at_most_settlements(
     max_merges: usize,
     mut settlements: impl Iterator<Item = Settlement>,
@@ -46,15 +46,16 @@ fn merge_at_most_settlements(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
-    use crate::settlement::{external_prices::externalprices, Trade};
-
-    use super::*;
-    use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
-    use num::{BigRational, One};
-    use primitive_types::{H160, U256};
+    use {
+        super::*,
+        crate::settlement::Trade,
+        maplit::hashmap,
+        model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid},
+        num::{BigRational, One},
+        primitive_types::{H160, U256},
+        shared::externalprices,
+        std::collections::HashSet,
+    };
 
     #[test]
     fn merges_settlements_with_highest_objective_value() {

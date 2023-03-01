@@ -1,10 +1,12 @@
-use crate::orderbook::{Orderbook, ReplaceOrderError};
-use anyhow::Result;
-use model::order::{OrderCreation, OrderUid};
-use reqwest::StatusCode;
-use shared::api::{extract_payload, IntoWarpReply};
-use std::{convert::Infallible, sync::Arc};
-use warp::{reply, Filter, Rejection};
+use {
+    crate::orderbook::{Orderbook, ReplaceOrderError},
+    anyhow::Result,
+    model::order::{OrderCreation, OrderUid},
+    reqwest::StatusCode,
+    shared::api::{extract_payload, IntoWarpReply},
+    std::{convert::Infallible, sync::Arc},
+    warp::{reply, Filter, Rejection},
+};
 
 fn request() -> impl Filter<Extract = (OrderUid, OrderCreation), Error = Rejection> + Clone {
     warp::path!("v1" / "orders" / OrderUid)

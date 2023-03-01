@@ -1,22 +1,25 @@
-// This application observes the order book api and tries to determine if the solver is down. It
-// does this by checking if no trades have been made recently and if so checking if it finds a
-// matchable order according to an external price api (0x). If this is the case it alerts.
+// This application observes the order book api and tries to determine if the
+// solver is down. It does this by checking if no trades have been made recently
+// and if so checking if it finds a matchable order according to an external
+// price api (0x). If this is the case it alerts.
 
-use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
-use clap::Parser;
-use model::{
-    order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
-    u256_decimal,
+use {
+    anyhow::{Context, Result},
+    chrono::{DateTime, Utc},
+    clap::Parser,
+    model::{
+        order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+        u256_decimal,
+    },
+    primitive_types::{H160, U256},
+    prometheus::IntGauge,
+    reqwest::Client,
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
+    url::Url,
 };
-use primitive_types::{H160, U256};
-use prometheus::IntGauge;
-use reqwest::Client;
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
-use url::Url;
 
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -92,7 +95,7 @@ impl OrderBookApi {
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
-        let url = self.base.join(&format!("api/v1/orders/{}", uid)).unwrap();
+        let url = self.base.join(&format!("api/v1/orders/{uid}")).unwrap();
         self.client
             .get(url)
             .send()
@@ -103,7 +106,8 @@ impl OrderBookApi {
     }
 }
 
-// Converts the eth placeholder address to weth. Leaves other addresses untouched.
+// Converts the eth placeholder address to weth. Leaves other addresses
+// untouched.
 fn convert_eth_to_weth(token: H160) -> H160 {
     let weth: H160 = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
         .parse()
@@ -142,7 +146,7 @@ impl ZeroExApi {
         let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
             .append_pair("sellToken", &format!("{:#x}", order.sell_token))
-            .append_pair("buyToken", &format!("{:#x}", buy_token))
+            .append_pair("buyToken", &format!("{buy_token:#x}"))
             .append_pair(amount_name, &amount.to_string());
 
         #[derive(Debug, serde::Deserialize)]
@@ -186,8 +190,8 @@ struct Alerter {
     // Expose a prometheus metric so that we can use our Grafana alert infrastructure.
     //
     // Set to 0 or 1 depending on whether our alert condition is satisfied which is that there
-    // hasn't been a trade for some time and that there is an order that has been matchable for some
-    // time.
+    // hasn't been a trade for some time and that there is an order that has been matchable for
+    // some time.
     no_trades_but_matchable_order: IntGauge,
     api_get_order_min_interval: Duration,
 }
@@ -246,8 +250,8 @@ impl Alerter {
         let mut closed_orders: Vec<Order> = orders.into_values().map(|(order, _)| order).collect();
         // Keep only orders that were open last update and are not open this update.
         closed_orders.retain(|order| !self.open_orders.contains_key(&order.uid));
-        // We're trying to find an order that has been filled. Try market orders first because they
-        // are more likely to be.
+        // We're trying to find an order that has been filled. Try market orders first
+        // because they are more likely to be.
         closed_orders.sort_unstable_by_key(|order| match order.class {
             OrderClass::Market => 0u8,
             OrderClass::Limit(_) => 1,
@@ -278,13 +282,15 @@ impl Alerter {
             self.no_trades_but_matchable_order.set(0);
             // Delete all matchable timestamps.
             //
-            // If we didn't do this what could happen is that first we mark an order as matchable
-            // at t0. Then a trade happens so we skip the matchable update loop below because if
-            // there was a recent trade we don't want to alert anyway. Then no trade happens for
-            // long enough that we want to alert and the order is again matchable.
-            // In this case we would alert immediately even though it could be the case that the
-            // order wasn't matchable and just now became matchable again. We would wrongly assume
-            // it has been matchable since t0 but we did not check this between now and then.
+            // If we didn't do this what could happen is that first we mark an order as
+            // matchable at t0. Then a trade happens so we skip the matchable
+            // update loop below because if there was a recent trade we don't
+            // want to alert anyway. Then no trade happens for long enough that
+            // we want to alert and the order is again matchable. In this case
+            // we would alert immediately even though it could be the case that the
+            // order wasn't matchable and just now became matchable again. We would wrongly
+            // assume it has been matchable since t0 but we did not check this
+            // between now and then.
             for (_, instant) in self.open_orders.values_mut() {
                 *instant = None;
             }
@@ -325,9 +331,8 @@ impl Alerter {
 impl AlertConfig {
     fn alert(&self, order: &Order) {
         tracing::error!(
-            "No orders have been settled in the last {} seconds \
-             even though order {} is solvable and has a price that \
-             allows it to be settled according to 0x.",
+            "No orders have been settled in the last {} seconds even though order {} is solvable \
+             and has a price that allows it to be settled according to 0x.",
             self.time_without_trade.as_secs(),
             order.uid,
         );
@@ -372,8 +377,8 @@ struct Arguments {
     )]
     min_alert_interval: Duration,
 
-    /// How many errors in the update loop (fetching solvable orders or querying 0x) in a row
-    /// must happen before we alert about them.
+    /// How many errors in the update loop (fetching solvable orders or querying
+    /// 0x) in a row must happen before we alert about them.
     #[clap(long, env, default_value = "5")]
     errors_in_a_row_before_alert: u32,
 
@@ -383,7 +388,8 @@ struct Arguments {
     #[clap(long, env, default_value = "9588")]
     metrics_port: u16,
 
-    /// Minimum time between get order requests to the api. Without this the api can rate limit us.
+    /// Minimum time between get order requests to the api. Without this the api
+    /// can rate limit us.
     #[clap(long, env, default_value = "0.2", value_parser = shared::arguments::duration_from_seconds)]
     api_get_order_min_interval: Duration,
 }

@@ -1,11 +1,16 @@
-//! Types for communicating with drivers as defined in `crates/driver/openapi.yml`.
+//! Types for communicating with drivers as defined in
+//! `crates/driver/openapi.yml`.
+
+// TODO: parse proper error type with kind and description, that driver returns.
 
 pub mod quote {
-    use model::u256_decimal;
-    use primitive_types::{H160, U256};
-    use serde::{Deserialize, Serialize};
+    use {
+        model::u256_decimal,
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+    };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         pub sell_token: H160,
@@ -15,7 +20,7 @@ pub mod quote {
         pub amount: U256,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Kind {
         #[default]
@@ -23,8 +28,8 @@ pub mod quote {
         Sell,
     }
 
-    #[derive(Clone, Debug, Deserialize, Serialize)]
-    #[serde(untagged, rename_all = "camelCase")]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
     pub enum Response {
         Successful {
             #[serde(with = "u256_decimal")]
@@ -40,57 +45,112 @@ pub mod quote {
 }
 
 pub mod solve {
-    use bigdecimal::num_bigint::BigUint;
-    use chrono::{DateTime, Utc};
-    use primitive_types::H160;
-    use serde::{Deserialize, Serialize};
-    use serde_with::{serde_as, DisplayFromStr};
-    use std::collections::BTreeMap;
+    use {
+        chrono::{DateTime, Utc},
+        model::{
+            app_id::AppId,
+            order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
+            signature::Signature,
+            u256_decimal::DecimalU256,
+        },
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+        serde_with::{serde_as, DisplayFromStr},
+    };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct Request {
-        pub auction: Auction,
+        pub id: i64,
+        pub tokens: Vec<Token>,
+        pub orders: Vec<Order>,
         pub deadline: DateTime<Utc>,
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-    pub struct Auction {
-        pub id: u64,
-        pub block: u64,
-        pub orders: Vec<Order>,
-        #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub prices: BTreeMap<H160, BigUint>,
+    #[derive(Clone, Debug, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Token {
+        pub address: H160,
+        #[serde_as(as = "Option<DisplayFromStr>")]
+        pub price: Option<U256>,
+        pub trusted: bool,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[serde_as]
+    #[derive(Clone, Debug, Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct Order {
-        // TODO: what fields? Needs to be documented in openapi too.
+        pub uid: OrderUid,
+        pub sell_token: H160,
+        pub buy_token: H160,
+        #[serde_as(as = "DecimalU256")]
+        pub sell_amount: U256,
+        #[serde_as(as = "DecimalU256")]
+        pub buy_amount: U256,
+        #[serde_as(as = "DecimalU256")]
+        pub solver_fee: U256,
+        #[serde_as(as = "DecimalU256")]
+        pub user_fee: U256,
+        pub valid_to: u32,
+        pub kind: OrderKind,
+        pub receiver: Option<H160>,
+        pub owner: H160,
+        pub partially_fillable: bool,
+        #[serde_as(as = "DecimalU256")]
+        pub executed: U256,
+        pub pre_interactions: Vec<()>,
+        pub sell_token_balance: SellTokenSource,
+        pub buy_token_balance: BuyTokenDestination,
+        pub class: Class,
+        #[serde_as(as = "Option<DecimalU256>")]
+        pub surplus_fee: Option<U256>,
+        pub app_data: AppId,
+        pub reward: f64,
+        #[serde(flatten)]
+        pub signature: Signature,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Serialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Class {
+        Market,
+        Limit,
+        Liquidity,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub struct Response {
-        pub objective: f64,
-        pub signature: String,
+        pub id: String,
+        pub score: f64,
     }
 }
 
 pub mod execute {
-    use model::{bytes_hex, order::OrderUid, u256_decimal};
-    use primitive_types::{H160, U256};
-    use serde::{Deserialize, Serialize};
-    use serde_with::{serde_as, DisplayFromStr};
-    use std::collections::BTreeMap;
+    use {
+        derivative::Derivative,
+        model::{bytes_hex, order::OrderUid, u256_decimal},
+        primitive_types::{H160, U256},
+        serde::{Deserialize, Serialize},
+        serde_with::{serde_as, DisplayFromStr},
+        std::collections::BTreeMap,
+    };
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Derivative, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
+    #[derivative(Debug)]
     pub struct Request {
-        pub auction_id: u64,
+        pub auction_id: i64,
+        #[serde(with = "bytes_hex")]
+        #[derivative(Debug(format_with = "shared::debug_bytes"))]
+        pub transaction_identifier: Vec<u8>,
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "camelCase")]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub account: H160,
         pub nonce: u64,
@@ -103,8 +163,8 @@ pub mod execute {
         pub signature: String,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-    #[serde(rename_all = "camelCase")]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Trade {
         pub uid: OrderUid,
         #[serde(with = "u256_decimal")]
@@ -112,7 +172,8 @@ pub mod execute {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct InternalizedInteraction {
         #[serde(with = "bytes_hex")]
         pub calldata: Vec<u8>,

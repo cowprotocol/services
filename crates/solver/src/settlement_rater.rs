@@ -1,33 +1,43 @@
-use crate::{
-    driver::solver_settlements::RatedSettlement,
-    settlement::{external_prices::ExternalPrices, Settlement},
-    settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
-    settlement_simulation::{call_data, settle_method, simulate_and_estimate_gas_at_current_block},
-    solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+use {
+    crate::{
+        driver::solver_settlements::RatedSettlement,
+        settlement::Settlement,
+        settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
+        settlement_simulation::{
+            call_data,
+            settle_method,
+            simulate_and_estimate_gas_at_current_block,
+        },
+        solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+    },
+    anyhow::{Context, Result},
+    contracts::GPv2Settlement,
+    ethcontract::errors::ExecutionError,
+    futures::future::join_all,
+    gas_estimation::GasPrice1559,
+    itertools::{Either, Itertools},
+    model::solver_competition::Score,
+    num::BigRational,
+    number_conversions::big_rational_to_u256,
+    primitive_types::U256,
+    shared::{
+        code_fetching::CodeFetching,
+        ethrpc::Web3,
+        external_prices::ExternalPrices,
+        http_solver::model::{InternalizationStrategy, SimulatedTransaction},
+    },
+    std::{borrow::Borrow, sync::Arc},
+    web3::types::AccessList,
 };
-use anyhow::{Context, Result};
-use contracts::GPv2Settlement;
-use ethcontract::errors::ExecutionError;
-use futures::future::join_all;
-use gas_estimation::GasPrice1559;
-use itertools::{Either, Itertools};
-use num::BigRational;
-use primitive_types::U256;
-use shared::{
-    code_fetching::CodeFetching,
-    ethrpc::Web3,
-    http_solver::model::{InternalizationStrategy, SimulatedTransaction},
-};
-use std::{borrow::Borrow, sync::Arc};
-use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
 pub struct SimulationWithResult {
     pub simulation: Simulation,
-    /// The outcome of the simulation. Contains either how much gas the settlement used or the
-    /// reason why the transaction reverted during the simulation.
+    /// The outcome of the simulation. Contains either how much gas the
+    /// settlement used or the reason why the transaction reverted during
+    /// the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
 }
 
@@ -42,8 +52,8 @@ pub trait SettlementRating: Send + Sync {
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)>;
 
-    /// Simulates the settlements and returns the gas used (or reason for revert) as well as
-    /// the access list for each settlement.
+    /// Simulates the settlements and returns the gas used (or reason for
+    /// revert) as well as the access list for each settlement.
     async fn simulate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
@@ -163,7 +173,8 @@ impl SettlementRating for SettlementRater {
             )
             .await?;
 
-        // split simulations into succeeded and failed groups, then do the rating only for succeeded settlements
+        // split simulations into succeeded and failed groups, then do the rating only
+        // for succeeded settlements
         let (settlements, simulations_failed): (Vec<_>, Vec<_>) = simulations
             .into_iter()
             .partition_map(|simulation| match simulation.gas_estimate {
@@ -174,7 +185,8 @@ impl SettlementRating for SettlementRater {
                 Err(_) => Either::Right(simulation),
             });
 
-        // since rating is done with internalizations, repeat the simulations for previously succeeded simulations
+        // since rating is done with internalizations, repeat the simulations for
+        // previously succeeded simulations
         let mut simulations = self
             .simulate_settlements(
                 settlements,
@@ -186,18 +198,37 @@ impl SettlementRating for SettlementRater {
         let gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
-        let rate_settlement = |id, settlement: Settlement, gas_estimate| {
-            let surplus = settlement.total_surplus(prices);
-            let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
-            let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
+        let rate_settlement = |id, settlement: Settlement, gas_estimate: U256| {
+            let earned_fees = settlement.total_earned_fees(prices);
+            let inputs = crate::objective_value::Inputs::from_settlement(
+                &settlement,
+                prices,
+                &gas_price,
+                &gas_estimate,
+            );
+            let objective_value = inputs.objective_value();
+            let score = match &settlement.score {
+                Some(score) => match score {
+                    shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
+                    shared::http_solver::model::Score::Discount(discount) => Score::Discounted(
+                        big_rational_to_u256(&objective_value)
+                            .unwrap_or_default()
+                            .saturating_sub(*discount),
+                    ),
+                },
+                None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
+            };
             RatedSettlement {
                 id,
                 settlement,
-                surplus,
-                unscaled_subsidized_fee,
-                scaled_unsubsidized_fee: scaled_solver_fees,
+                surplus: inputs.surplus_given,
+                earned_fees,
+                solver_fees: inputs.solver_fees,
                 gas_estimate,
                 gas_price: gas_price.clone(),
+                objective_value,
+                score,
+                ranking: Default::default(),
             }
         };
 

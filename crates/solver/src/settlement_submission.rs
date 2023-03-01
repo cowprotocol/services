@@ -2,36 +2,46 @@ mod dry_run;
 pub mod gelato;
 pub mod submitter;
 
-use crate::{
-    metrics::SettlementSubmissionOutcome, settlement::Settlement,
-    settlement_access_list::AccessListEstimating,
+use {
+    self::gelato::GelatoSubmitter,
+    crate::{
+        metrics::SettlementSubmissionOutcome,
+        settlement::Settlement,
+        settlement_access_list::AccessListEstimating,
+    },
+    anyhow::{anyhow, Result},
+    contracts::GPv2Settlement,
+    ethcontract::{
+        errors::{ExecutionError, MethodError},
+        Account,
+        Address,
+        TransactionHash,
+    },
+    futures::FutureExt,
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    primitive_types::{H256, U256},
+    shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference},
+    std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    },
+    submitter::{
+        DisabledReason,
+        Strategy,
+        Submitter,
+        SubmitterGasPriceEstimator,
+        SubmitterParams,
+        TransactionHandle,
+        TransactionSubmitting,
+    },
+    tracing::Instrument,
+    web3::types::TransactionReceipt,
 };
-use anyhow::{anyhow, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{
-    errors::{ExecutionError, MethodError},
-    Account, Address, TransactionHash,
-};
-use futures::FutureExt;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use primitive_types::{H256, U256};
-use shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
-use submitter::{
-    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
-    TransactionHandle, TransactionSubmitting,
-};
-use tracing::Instrument;
-use web3::types::TransactionReceipt;
-
-use self::gelato::GelatoSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
+#[derive(Debug)]
 pub struct SubTxPool {
     pub strategy: Strategy,
     // Key (Address, U256) represents pair (sender, nonce)
@@ -39,7 +49,7 @@ pub struct SubTxPool {
 }
 type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct GlobalTxPool {
     pub pools: TxPool,
 }
@@ -60,8 +70,8 @@ impl GlobalTxPool {
     }
 }
 
-/// Currently used to access only specific sub tx pool (indexed one) in the list of pools.
-/// Can be used to access other sub tx pools if needed.
+/// Currently used to access only specific sub tx pool (indexed one) in the list
+/// of pools. Can be used to access other sub tx pools if needed.
 #[derive(Default, Clone)]
 pub struct SubTxPoolRef {
     pools: TxPool,
@@ -96,6 +106,18 @@ impl SubTxPoolRef {
         self.pools.lock().unwrap()[self.index]
             .pools
             .insert((sender, nonce), transactions);
+    }
+}
+
+pub struct SubmissionReceipt {
+    pub tx: TransactionReceipt,
+    /// Strategy used for the mined transaction. Needed for metric purposes.
+    pub strategy: &'static str,
+}
+
+impl From<SubmissionReceipt> for TransactionReceipt {
+    fn from(value: SubmissionReceipt) -> Self {
+        value.tx
     }
 }
 
@@ -137,6 +159,16 @@ impl TransactionStrategy {
             TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
         }
     }
+
+    pub fn label(&self) -> &'static str {
+        match &self {
+            TransactionStrategy::Eden(_) => "Eden",
+            TransactionStrategy::Flashbots(_) => "Flashbots",
+            TransactionStrategy::PublicMempool(_) => "Mempool",
+            TransactionStrategy::Gelato(_) => "Gelato",
+            TransactionStrategy::DryRun => "DryRun",
+        }
+    }
 }
 
 impl SolutionSubmitter {
@@ -151,7 +183,7 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         account: Account,
         nonce: U256,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         // Other transaction strategies than the ones below, depend on an
         // account signing a raw transaction for a nonce, and waiting until that
         // nonce increases to detect that it actually mined. However, the
@@ -162,7 +194,13 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return Ok(dry_run::log_settlement(account, &self.contract, settlement).await?);
+                    return dry_run::log_settlement(account, &self.contract, settlement)
+                        .await
+                        .map(|tx| SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        })
+                        .map_err(Into::into);
                 }
                 TransactionStrategy::Gelato(gelato) => {
                     return tokio::time::timeout(
@@ -170,6 +208,12 @@ impl SolutionSubmitter {
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
+                    .map(|tx| {
+                        tx.map(|tx| SubmissionReceipt {
+                            tx,
+                            strategy: strategy.label(),
+                        })
+                    })
                     .map_err(|_| SubmissionError::Timeout)?;
                 }
                 _ => {}
@@ -245,7 +289,7 @@ impl SolutionSubmitter {
         network_id: String,
         settlement: Settlement,
         index: usize,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
                 if !matches!(account, Account::Offline(..)) {
@@ -265,6 +309,7 @@ impl SolutionSubmitter {
             deadline: Some(Instant::now() + self.max_confirm_time),
             retry_interval: self.retry_interval,
             network_id,
+            additional_call_data: Default::default(),
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
@@ -293,6 +338,10 @@ impl SolutionSubmitter {
                 i = index
             ))
             .await
+            .map(|tx| SubmissionReceipt {
+                tx,
+                strategy: strategy.label(),
+            })
     }
 }
 
@@ -309,9 +358,17 @@ pub enum SubmissionError {
     Canceled(TransactionHash),
     /// The submission is disabled
     Disabled(DisabledReason),
-    /// An error occured.
+    /// An error occurred.
     Other(anyhow::Error),
 }
+
+impl std::fmt::Display for SubmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for SubmissionError {}
 
 impl SubmissionError {
     /// Returns the outcome for use with metrics.
@@ -404,9 +461,7 @@ impl From<MethodError> for SubmissionError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ethcontract::H256;
-    use submitter::MockTransactionSubmitting;
+    use {super::*, ethcontract::H256, submitter::MockTransactionSubmitting};
 
     impl PartialEq for SubmissionError {
         fn eq(&self, other: &Self) -> bool {

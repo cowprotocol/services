@@ -1,36 +1,40 @@
-//! Pool Storage contains all the essential models required by the balancer module for operating
-//! between different knowledge-levels of pool information.
+//! Pool Storage contains all the essential models required by the balancer
+//! module for operating between different knowledge-levels of pool information.
 //!
 //! To briefly list and describe each of the models.
 //!
 //! 1. `PoolCreated`:
-//!     contains only the `pool_address` as this is the only information known about the pool
-//!     at the time of event emission from the pool's factory contract.
+//!     contains only the `pool_address` as this is the only information known
+//! about the pool     at the time of event emission from the pool's factory
+//! contract.
 //!
 //! 2. `Factory::PoolInfo`
-//!     contains all constant/static information about the pool (that which is not block-sensitive).
-//!     The exact information varies on the pool kind.
+//!     contains all constant/static information about the pool (that which is
+//! not block-sensitive).     The exact information varies on the pool kind.
 //!
 //! 3. `PoolStorage`:
-//!     This should be thought of as the Pool Registry's database which stores all static pool
-//!     information in data structures that provide efficient lookup searching for pools based
-//!     on token pairs.
+//!     This should be thought of as the Pool Registry's database which stores
+//! all static pool     information in data structures that provide efficient
+//! lookup searching for pools based     on token pairs.
 
-use crate::{
-    current_block::RangeInclusive,
-    event_handling::EventStoring,
-    sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
-};
-use anyhow::{Context, Result};
-use contracts::balancer_v2_base_pool_factory::{
-    event_data::PoolCreated, Event as BasePoolFactoryEvent,
-};
-use ethcontract::{Event, H160, H256};
-use model::TokenPair;
-use std::{
-    cmp,
-    collections::{HashMap, HashSet},
-    sync::Arc,
+use {
+    crate::{
+        current_block::RangeInclusive,
+        event_handling::EventStoring,
+        sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
+    },
+    anyhow::{Context, Result},
+    contracts::balancer_v2_base_pool_factory::{
+        event_data::PoolCreated,
+        Event as BasePoolFactoryEvent,
+    },
+    ethcontract::{Event, H160, H256},
+    model::TokenPair,
+    std::{
+        cmp,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 /// PoolStorage represents in-memory storage of all deployed Balancer Pools
@@ -166,8 +170,9 @@ where
     }
 
     pub fn last_event_block(&self) -> u64 {
-        // Technically we could keep this updated more effectively in a field on balancer pools,
-        // but the maintenance seems like more overhead that needs to be tested.
+        // Technically we could keep this updated more effectively in a field on
+        // balancer pools, but the maintenance seems like more overhead that
+        // needs to be tested.
         self.pools
             .values()
             .map(|pool| pool.common().block_created)
@@ -213,13 +218,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::sources::balancer_v2::{
-        pools::{common::MockPoolInfoFetching, weighted, MockFactoryIndexing},
-        swap::fixed_point::Bfp,
+    use {
+        super::*,
+        crate::sources::balancer_v2::{
+            pools::{common::MockPoolInfoFetching, weighted, MockFactoryIndexing},
+            swap::fixed_point::Bfp,
+        },
+        maplit::{hashmap, hashset},
+        mockall::predicate::eq,
     };
-    use maplit::{hashmap, hashset};
-    use mockall::predicate::eq;
 
     pub type PoolInitData = (
         Vec<H256>,

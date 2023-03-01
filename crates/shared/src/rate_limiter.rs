@@ -1,11 +1,13 @@
-use anyhow::{ensure, Result};
-use std::{
-    fmt::{Display, Formatter},
-    future::Future,
-    sync::{Arc, Mutex, MutexGuard},
-    time::{Duration, Instant},
+use {
+    anyhow::{ensure, Result},
+    std::{
+        fmt::{Display, Formatter},
+        future::Future,
+        sync::{Arc, Mutex, MutexGuard},
+        time::{Duration, Instant},
+    },
+    thiserror::Error,
 };
-use thiserror::Error;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "rate_limiter")]
@@ -95,17 +97,14 @@ impl RateLimitingStrategy {
             .back_off_growth_factor
             .powf(self.times_rate_limited as f64);
         let back_off_secs = self.min_back_off.as_secs_f64() * factor;
-        if !back_off_secs.is_normal() || back_off_secs < 0. || back_off_secs > u64::MAX as f64 {
-            // This would cause a panic in `Duration::from_secs_f64()`
-            // TODO refactor this when `Duration::try_from_secs_f64()` gets stabilized:
-            // https://doc.rust-lang.org/stable/std/time/struct.Duration.html#method.try_from_secs_f64
-            return self.max_back_off;
-        }
-        let current_back_off = Duration::from_secs_f64(back_off_secs);
-        std::cmp::min(self.max_back_off, current_back_off)
+        std::cmp::min(
+            Duration::try_from_secs_f64(back_off_secs).unwrap_or(self.max_back_off),
+            self.max_back_off,
+        )
     }
 
-    /// Returns updated back off if no other thread increased it in the mean time.
+    /// Returns updated back off if no other thread increased it in the mean
+    /// time.
     pub fn response_rate_limited(
         &mut self,
         previous_rate_limits: u64,
@@ -126,7 +125,8 @@ impl RateLimitingStrategy {
         Some(new_back_off)
     }
 
-    /// Returns number of times we got rate limited in a row if we are currently allowing requests.
+    /// Returns number of times we got rate limited in a row if we are currently
+    /// allowing requests.
     pub fn times_rate_limited(&self, now: Instant, name: &str) -> Option<u64> {
         if self.drop_requests_until > now {
             metrics().requests_dropped.with_label_values(&[name]).inc();
@@ -182,9 +182,10 @@ pub enum RateLimiterError {
 }
 
 impl RateLimiter {
-    /// If a task produces a result which indicates rate limiting is required future requests
-    /// will get dropped for some time. Every successive response like that increases that time exponentially.
-    /// When a task eventually returns a normal result again future tasks will no longer get
+    /// If a task produces a result which indicates rate limiting is required
+    /// future requests will get dropped for some time. Every successive
+    /// response like that increases that time exponentially. When a task
+    /// eventually returns a normal result again future tasks will no longer get
     /// dropped until the next rate limiting response occurs.
     pub async fn execute<T>(
         &self,
@@ -226,7 +227,8 @@ impl RateLimiter {
 pub mod back_off {
     use reqwest::Response;
 
-    /// Determines if the HTTP response indicates that the API should back off for a while.
+    /// Determines if the HTTP response indicates that the API should back off
+    /// for a while.
     pub fn on_http_429(response: &Result<Response, reqwest::Error>) -> bool {
         matches!(response, Ok(response) if response.status() == 429)
     }
@@ -234,9 +236,7 @@ pub mod back_off {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use futures::FutureExt;
-    use tokio::time::sleep;
+    use {super::*, futures::FutureExt, tokio::time::sleep};
 
     #[test]
     fn current_back_off_does_not_panic() {

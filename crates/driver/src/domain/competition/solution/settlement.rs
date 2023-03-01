@@ -1,7 +1,7 @@
 use crate::{
     boundary,
     domain::{competition, eth},
-    Ethereum,
+    infra::blockchain::Ethereum,
 };
 
 /// A transaction calling into our settlement contract on the blockchain.
@@ -11,8 +11,11 @@ use crate::{
 /// enough, it's an intermediate state between a solution and an onchain
 /// settlement. The intention with this type is to represent the settlement
 /// transaction itself, not an intermediate state.
-#[derive(Debug)]
-pub struct Settlement(boundary::Settlement);
+#[derive(Debug, Clone)]
+pub(super) struct Settlement {
+    id: super::Id,
+    boundary: boundary::Settlement,
+}
 
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
@@ -21,25 +24,56 @@ impl Settlement {
         auction: &competition::Auction,
         solution: &competition::Solution,
     ) -> anyhow::Result<Self> {
-        boundary::Settlement::encode(eth, solution, auction)
-            .await
-            .map(Self)
-    }
-
-    /// Calculate the score for this settlement. This method is here only
-    /// temporarily, in the future the entire scoring formula should operate on
-    /// a [`super::Solution`].
-    pub(super) async fn score(
-        self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-        gas: eth::Gas,
-    ) -> Result<super::Score, boundary::Error> {
-        self.0.score(eth, auction, gas).await
+        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
+        Ok(Self {
+            id: solution.id,
+            boundary,
+        })
     }
 
     /// The onchain transaction representing this settlement.
     pub fn tx(self) -> eth::Tx {
-        self.0.tx()
+        let mut tx = self.boundary.tx();
+        tx.input.extend(self.id.to_be_bytes());
+        tx
+    }
+}
+
+/// A settlement which has been verified to be correct. In particular:
+///
+/// - Simulation: the settlement has been simulated without reverting.
+/// - Asset flow: the sum of tokens into and out of the settlement are
+/// non-negative, meaning that the solver doesn't take any tokens out of the
+/// settlement contract.
+/// - Internalization: internalized interactions only use trusted tokens.
+///
+/// Such a settlement obeys the rules of the protocol and can be safely
+/// broadcast to the Ethereum network.
+#[derive(Debug, Clone)]
+pub struct Verified {
+    pub(super) inner: Settlement,
+    /// The access list used by the settlement.
+    pub access_list: eth::AccessList,
+    /// The gas used by the settlement.
+    pub gas: eth::Gas,
+}
+
+impl Verified {
+    /// Calculate the score for this settlement.
+    pub async fn score(
+        &self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+    ) -> Result<super::Score, boundary::Error> {
+        self.inner.boundary.score(eth, auction, self.gas).await
+    }
+
+    pub fn id(&self) -> super::Id {
+        self.inner.id
+    }
+
+    /// Necessary for the boundary integration, to allow executing settlements.
+    pub fn boundary(self) -> boundary::Settlement {
+        self.inner.boundary
     }
 }

@@ -1,8 +1,10 @@
-use crate::ethrpc::Web3;
-use anyhow::{Context, Result};
-use web3::{
-    types::{BlockNumber, BlockTrace, CallRequest, TraceType},
-    Transport,
+use {
+    crate::ethrpc::Web3,
+    anyhow::{Context, Result},
+    web3::{
+        types::{BlockNumber, BlockTrace, CallRequest, TraceType},
+        Transport,
+    },
 };
 
 // Use the trace_callMany api https://openethereum.github.io/JSONRPC-trace-module#trace_callmany
@@ -31,8 +33,8 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<B
     serde_json::from_value(response).context("failed to decode trace_callMany response")
 }
 
-// Check the return value of trace_many for whether all top level transactions succeeded (did not
-// revert).
+// Check the return value of trace_many for whether all top level transactions
+// succeeded (did not revert).
 // Err if the response is missing trace data.
 // Ok(true) if transactions simulate without reverting
 // Ok(false) if transactions simulate with at least one revert.
@@ -51,8 +53,7 @@ pub fn all_calls_succeeded(traces: &[BlockTrace]) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde_json::json;
+    use {super::*, serde_json::json};
 
     #[test]
     fn ok_true() {

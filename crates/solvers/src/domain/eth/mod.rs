@@ -1,4 +1,13 @@
-use ethereum_types::{H160, U256};
+mod chain;
+
+pub use {
+    self::chain::ChainId,
+    ethereum_types::{H160, U256},
+};
+
+/// A contract address.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContractAddress(pub H160);
 
 /// An ERC20 token address.
 ///
@@ -18,8 +27,12 @@ pub struct Asset {
     pub token: TokenAddress,
 }
 
+/// An Ether amount in wei.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ether(pub U256);
+
 /// Gas amount.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
 
 /// A 256-bit rational type.

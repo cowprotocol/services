@@ -1,6 +1,8 @@
-use anyhow::Context;
-use database::{auction_transaction::SettlementEvent, byte_array::ByteArray};
-use primitive_types::H160;
+use {
+    anyhow::Context,
+    database::{auction_transaction::SettlementEvent, byte_array::ByteArray},
+    primitive_types::H160,
+};
 
 impl super::Postgres {
     pub async fn update_settlement_tx_info(
@@ -44,5 +46,20 @@ impl super::Postgres {
             max_block_number,
         )
         .await
+    }
+
+    pub async fn get_auction_id(
+        &self,
+        tx_from: H160,
+        tx_nonce: i64,
+    ) -> Result<Option<i64>, sqlx::Error> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["get_auction_id"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
+            .await
     }
 }

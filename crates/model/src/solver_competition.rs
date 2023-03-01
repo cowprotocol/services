@@ -1,18 +1,21 @@
-use crate::{
-    auction::AuctionId,
-    bytes_hex::BytesHex,
-    order::OrderUid,
-    u256_decimal::{self, DecimalU256},
+use {
+    crate::{
+        auction::AuctionId,
+        bytes_hex::BytesHex,
+        order::OrderUid,
+        u256_decimal::{self, DecimalU256},
+    },
+    primitive_types::{H160, H256, U256},
+    serde::{Deserialize, Serialize},
+    serde_with::serde_as,
+    std::collections::{BTreeMap, HashSet},
 };
-use primitive_types::{H160, H256, U256};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use std::collections::BTreeMap;
 
-/// As a temporary measure the driver informs the api about per competition data that should be
-/// stored in the database. This goes to the api through an unlisted and authenticated http endpoint
-/// because we do not want the driver to have a database connection.
-/// Once autopilot is handling the competition this will no longer be needed.
+/// As a temporary measure the driver informs the api about per competition data
+/// that should be stored in the database. This goes to the api through an
+/// unlisted and authenticated http endpoint because we do not want the driver
+/// to have a database connection. Once autopilot is handling the competition
+/// this will no longer be needed.
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
@@ -20,6 +23,19 @@ pub struct Request {
     pub transaction: Transaction,
     pub competition: SolverCompetitionDB,
     pub executions: Vec<(OrderUid, Execution)>,
+    pub scores: Scores,
+    pub participants: HashSet<H160>,  // solver addresses
+    pub prices: BTreeMap<H160, U256>, // external prices for auction
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Scores {
+    pub winner: H160,
+    #[serde(with = "u256_decimal")]
+    pub winning_score: U256,
+    #[serde(with = "u256_decimal")]
+    pub reference_score: U256,
+    pub block_deadline: u64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -73,7 +89,15 @@ pub struct CompetitionAuction {
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
+    #[serde(default)]
+    pub solver_address: H160,
     pub objective: Objective,
+    #[serde(flatten)]
+    pub score: Score, // auction based score
+    // auction based ranking
+    // this is temporarily needed as the scored settlements are ordered by objective value ATM
+    // and this represents how they would be ranked after switching to the auction based scoring
+    pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
@@ -94,6 +118,40 @@ pub struct Objective {
     pub gas: u64,
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum Score {
+    /// The score is provided by the solver.
+    #[serde(rename = "score")]
+    #[serde(with = "u256_decimal")]
+    Solver(U256),
+    /// The score is calculated by the protocol (and equal to the objective
+    /// function).
+    #[serde(rename = "scoreProtocol")]
+    #[serde(with = "u256_decimal")]
+    Protocol(U256),
+    /// The score is calculated by the protocol, by applying a discount to the
+    /// `Self::Protocol` value.
+    #[serde(rename = "scoreDiscounted")]
+    #[serde(with = "u256_decimal")]
+    Discounted(U256),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::Protocol(Default::default())
+    }
+}
+
+impl Score {
+    pub fn score(&self) -> U256 {
+        match self {
+            Self::Solver(score) => *score,
+            Self::Protocol(score) => *score,
+            Self::Discounted(score) => *score,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
@@ -104,8 +162,7 @@ pub struct Order {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use maplit::btreemap;
+    use {super::*, maplit::btreemap};
 
     #[test]
     fn serialize() {
@@ -137,6 +194,7 @@ mod tests {
             "solutions": [
                 {
                     "solver": "2",
+                    "solverAddress": "0x2222222222222222222222222222222222222222",
                     "objective": {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
@@ -144,6 +202,8 @@ mod tests {
                         "cost": 6.0f64,
                         "gas": 7u64,
                     },
+                    "score": "1",
+                    "ranking": 1,
                     "clearingPrices": {
                         "0x2222222222222222222222222222222222222222": "8",
                     },
@@ -183,6 +243,7 @@ mod tests {
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
+                    solver_address: H160([0x22; 20]),
                     objective: Objective {
                         total: 3.,
                         surplus: 4.,
@@ -190,6 +251,8 @@ mod tests {
                         cost: 6.,
                         gas: 7,
                     },
+                    score: Score::Solver(1.into()),
+                    ranking: 1,
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),
                     },

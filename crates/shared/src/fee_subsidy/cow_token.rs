@@ -1,38 +1,41 @@
-use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
-use anyhow::{Context, Result};
-use cached::{Cached, TimedSizedCache};
-use contracts::{CowProtocolToken, CowProtocolVirtualToken};
-use primitive_types::{H160, U256};
-use std::{collections::BTreeMap, sync::Mutex, time::Duration};
+use {
+    super::{FeeSubsidizing, Subsidy, SubsidyParameters},
+    anyhow::{Context, Result},
+    cached::{Cached, TimedSizedCache},
+    contracts::{CowProtocolToken, CowProtocolVirtualToken},
+    primitive_types::{H160, U256},
+    std::{collections::BTreeMap, sync::Mutex, time::Duration},
+};
 
 const CACHE_SIZE: usize = 10_000;
 const CACHE_LIFESPAN: Duration = Duration::from_secs(60 * 60);
 
-/// Maps how many base units of COW someone must own at least in order to qualify for a given
-/// fee subsidy factor.
+/// Maps how many base units of COW someone must own at least in order to
+/// qualify for a given fee subsidy factor.
 #[derive(Clone, Debug, Default)]
 pub struct SubsidyTiers(BTreeMap<U256, f64>);
 
 impl std::str::FromStr for SubsidyTiers {
     type Err = anyhow::Error;
+
     fn from_str(serialized: &str) -> Result<Self, Self::Err> {
         let mut tiers = BTreeMap::default();
 
         for tier in serialized.split(',') {
             let (threshold, fee_factor) = tier
                 .split_once(':')
-                .with_context(|| format!("too few arguments for subsidy tier in \"{}\"", tier))?;
+                .with_context(|| format!("too few arguments for subsidy tier in \"{tier}\""))?;
 
             let threshold: u64 = threshold
                 .parse()
-                .with_context(|| format!("can not parse threshold \"{}\" as u64", threshold))?;
+                .with_context(|| format!("can not parse threshold \"{threshold}\" as u64"))?;
             let threshold = U256::from(threshold)
                 .checked_mul(U256::exp10(18))
                 .with_context(|| format!("threshold {threshold} would overflow U256"))?;
 
             let fee_factor: f64 = fee_factor
                 .parse()
-                .with_context(|| format!("can not parse fee factor \"{}\" as f64", fee_factor))?;
+                .with_context(|| format!("can not parse fee factor \"{fee_factor}\" as f64"))?;
 
             anyhow::ensure!(
                 (0.0..=1.0).contains(&fee_factor),
@@ -61,9 +64,9 @@ impl CowSubsidy {
         vtoken: CowProtocolVirtualToken,
         subsidy_tiers: SubsidyTiers,
     ) -> Self {
-        // NOTE: A long caching time might bite us should we ever start advertising that people can
-        // buy COW to reduce their fees. `CACHE_LIFESPAN` would have to pass after buying COW to
-        // qualify for the subsidy.
+        // NOTE: A long caching time might bite us should we ever start advertising that
+        // people can buy COW to reduce their fees. `CACHE_LIFESPAN` would have
+        // to pass after buying COW to qualify for the subsidy.
         let cache = TimedSizedCache::with_size_and_lifespan_and_refresh(
             CACHE_SIZE,
             CACHE_LIFESPAN.as_secs(),
@@ -113,14 +116,12 @@ impl FeeSubsidizing for CowSubsidy {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::ethrpc::Web3;
-    use hex_literal::hex;
+    use {super::*, crate::ethrpc::Web3, hex_literal::hex};
 
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        crate::tracing::initialize_for_tests("orderbook=debug");
+        crate::tracing::initialize_reentrant("orderbook=debug");
         let transport = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
@@ -138,7 +139,7 @@ mod tests {
         ] {
             let user = H160(user);
             let result = subsidy.cow_subsidy_factor(user).await;
-            println!("{:?} {:?}", user, result);
+            println!("{user:?} {result:?}");
         }
     }
 }

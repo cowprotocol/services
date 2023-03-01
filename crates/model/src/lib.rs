@@ -16,13 +16,15 @@ pub mod time;
 pub mod trade;
 pub mod u256_decimal;
 
-use hex::{FromHex, FromHexError};
-use lazy_static::lazy_static;
-use primitive_types::H160;
-use std::fmt;
-use web3::{
-    ethabi::{encode, Token},
-    signing,
+use {
+    hex::{FromHex, FromHexError},
+    lazy_static::lazy_static,
+    primitive_types::H160,
+    std::fmt,
+    web3::{
+        ethabi::{encode, Token},
+        signing,
+    },
 };
 
 /// Erc20 token pair specified by two contract addresses.
@@ -45,7 +47,8 @@ impl TokenPair {
         self.0 == *token || self.1 == *token
     }
 
-    /// Returns the token in the pair which is not the one passed in, or None if token passed in is not part of the pair
+    /// Returns the token in the pair which is not the one passed in, or None if
+    /// token passed in is not part of the pair
     pub fn other(&self, token: &H160) -> Option<H160> {
         if &self.0 == token {
             Some(self.1)
@@ -78,8 +81,8 @@ impl Default for TokenPair {
 }
 
 impl IntoIterator for TokenPair {
-    type Item = H160;
     type IntoIter = std::iter::Chain<std::iter::Once<H160>, std::iter::Once<H160>>;
+    type Item = H160;
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(self.0).chain(std::iter::once(self.1))
@@ -87,8 +90,8 @@ impl IntoIterator for TokenPair {
 }
 
 impl<'a> IntoIterator for &'a TokenPair {
-    type Item = &'a H160;
     type IntoIter = std::iter::Chain<std::iter::Once<&'a H160>, std::iter::Once<&'a H160>>;
+    type Item = &'a H160;
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(&self.0).chain(std::iter::once(&self.1))
@@ -151,9 +154,11 @@ pub struct SolvableOrders {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use hex_literal::hex;
-    use std::{cmp::Ordering, str::FromStr};
+    use {
+        super::*,
+        hex_literal::hex,
+        std::{cmp::Ordering, str::FromStr},
+    };
 
     #[test]
     fn domain_separator_from_str() {
@@ -168,7 +173,8 @@ mod tests {
         let contract_address: H160 = hex!("9008D19f58AAbD9eD0D60971565AA8510560ab41").into(); // new deployment
         let chain_id: u64 = 5;
         let domain_separator_goerli = DomainSeparator::new(chain_id, contract_address);
-        // domain separator is taken from goerli deployment at address 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+        // domain separator is taken from goerli deployment at address
+        // 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
         let expected_domain_separator = DomainSeparator(hex!(
             "fb378b35457022ecc5709ae5dafad9393c1387ae6d8ce24913a0c969074c07fb"
         ));

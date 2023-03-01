@@ -1,6 +1,8 @@
-use serde::{de, Deserialize, Deserializer, Serializer};
-use serde_with::{DeserializeAs, SerializeAs};
-use std::borrow::Cow;
+use {
+    serde::{de, Deserialize, Deserializer, Serializer},
+    serde_with::{DeserializeAs, SerializeAs},
+    std::borrow::Cow,
+};
 
 /// Serialize and deserialize [`ethereum_types::U256`] as a decimal string.
 #[derive(Debug)]

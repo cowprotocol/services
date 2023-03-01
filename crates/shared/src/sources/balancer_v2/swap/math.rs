@@ -1,5 +1,4 @@
-use super::error::Error;
-use ethcontract::U256;
+use {super::error::Error, ethcontract::U256};
 
 pub trait BalU256: Sized {
     fn bmul(self, other: Self) -> Result<Self, Error>;

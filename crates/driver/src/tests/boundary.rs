@@ -1,10 +1,7 @@
 //! Similar to [`crate::boundary`], but for test code.
 
+pub use model::{order::OrderUid, DomainSeparator};
 use {crate::domain::competition, secp256k1::SecretKey, web3::signing::SecretKeyRef};
-pub use {
-    model::{order::OrderUid, DomainSeparator},
-    shared::tracing::initialize_for_tests as initialize_tracing,
-};
 
 /// Order data used for calculating the order UID and signing.
 #[derive(Debug)]

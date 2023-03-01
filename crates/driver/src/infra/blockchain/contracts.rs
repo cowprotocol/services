@@ -1,6 +1,9 @@
-use {crate::domain::eth, ethcontract::Web3};
+use {
+    crate::{domain::eth, infra::blockchain::Ethereum},
+    ethcontract::dyns::DynWeb3,
+};
 
-pub use crate::boundary::contracts::{GPv2Settlement, ERC20, WETH9};
+pub use crate::boundary::contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20, WETH9};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -15,11 +18,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub(super) fn new(
-        web3: &Web3<web3::transports::Http>,
-        network_id: &eth::NetworkId,
-        addresses: Addresses,
-    ) -> Self {
+    pub(super) fn new(web3: &DynWeb3, network_id: &eth::NetworkId, addresses: Addresses) -> Self {
         let address = addresses.settlement.map(Into::into).unwrap_or_else(|| {
             contracts::GPv2Settlement::raw_contract()
                 .networks
@@ -45,5 +44,22 @@ impl Contracts {
 
     pub fn weth(&self) -> &contracts::WETH9 {
         &self.weth
+    }
+}
+
+/// A trait for initializing contract instances with dynamic addresses.
+pub trait ContractAt {
+    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
+}
+
+impl ContractAt for IUniswapLikeRouter {
+    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
+        Self::at(&eth.web3, address.0)
+    }
+}
+
+impl ContractAt for ERC20 {
+    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
+        ERC20::at(&eth.web3, address.into())
     }
 }

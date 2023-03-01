@@ -1,10 +1,12 @@
-use crate::orderbook::Orderbook;
-use anyhow::Result;
-use primitive_types::H160;
-use serde::Deserialize;
-use shared::api::ApiReply;
-use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
+use {
+    crate::orderbook::Orderbook,
+    anyhow::Result,
+    primitive_types::H160,
+    serde::Deserialize,
+    shared::api::ApiReply,
+    std::{convert::Infallible, sync::Arc},
+    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+};
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 struct Query {
@@ -34,7 +36,7 @@ pub fn get_user_orders(
                 return Ok(with_status(
                     super::error(
                         "LIMIT_OUT_OF_BOUNDS",
-                        format!("The pagination limit is [{},{}].", MIN_LIMIT, MAX_LIMIT),
+                        format!("The pagination limit is [{MIN_LIMIT},{MAX_LIMIT}]."),
                     ),
                     StatusCode::BAD_REQUEST,
                 ));
@@ -53,8 +55,7 @@ pub fn get_user_orders(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use shared::addr;
+    use {super::*, shared::addr};
 
     #[tokio::test]
     async fn request_() {
