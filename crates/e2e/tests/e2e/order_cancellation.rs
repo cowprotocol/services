@@ -17,7 +17,6 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::time::Duration,
     web3::signing::SecretKeyRef,
 };
 
@@ -144,7 +143,7 @@ async fn order_cancellation(web3: Web3) {
         place_order(1).await,
         place_order(2).await,
     ];
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 3
     })
     .await
@@ -158,7 +157,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 2
     })
     .await
@@ -175,7 +174,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
-    wait_for_condition(Duration::from_secs(10), || async {
+    wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })
     .await
