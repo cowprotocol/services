@@ -128,7 +128,10 @@ impl Mempool {
             },
         };
         let estimator = AccessListEstimator(settlement.access_list.clone());
-        let account = ethcontract::Account::Offline(solver.private_key(), None);
+        let account = ethcontract::Account::Offline(
+            solver.private_key(),
+            Some(self.eth.chain_id().0.low_u64()),
+        );
         let submitter = Submitter::new(
             self.eth.contracts().settlement(),
             &account,

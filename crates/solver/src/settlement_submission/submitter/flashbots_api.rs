@@ -1,14 +1,14 @@
 use {
     super::{
-        super::submitter::{TransactionHandle, TransactionSubmitting},
+        super::submitter::TransactionSubmitting,
         common::PrivateNetwork,
         AdditionalTip,
+        RawTransaction,
         Strategy,
         SubmissionLoopStatus,
     },
     crate::settlement::{Revertable, Settlement},
     anyhow::{Context, Result},
-    ethcontract::transaction::TransactionBuilder,
     reqwest::{Client, IntoUrl},
     shared::ethrpc::{http::HttpTransport, Web3, Web3Transport},
 };
@@ -33,10 +33,7 @@ impl FlashbotsApi {
 
 #[async_trait::async_trait]
 impl TransactionSubmitting for FlashbotsApi {
-    async fn submit_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
+    async fn submit_transaction(&self, tx: RawTransaction) -> Result<()> {
         self.rpc
             .api::<PrivateNetwork>()
             .submit_raw_transaction(tx)
@@ -44,10 +41,7 @@ impl TransactionSubmitting for FlashbotsApi {
     }
 
     // https://docs.flashbots.net/flashbots-protect/rpc/cancellations
-    async fn cancel_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
+    async fn cancel_transaction(&self, tx: RawTransaction) -> Result<()> {
         self.rpc
             .api::<PrivateNetwork>()
             .submit_raw_transaction(tx)

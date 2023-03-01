@@ -29,7 +29,11 @@ use {
     },
     anyhow::{anyhow, ensure, Context, Result},
     contracts::GPv2Settlement,
-    ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account},
+    ethcontract::{
+        contract::MethodBuilder,
+        transaction::{Transaction, TransactionBuilder},
+        Account,
+    },
     futures::FutureExt,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     primitive_types::{H256, U256},
@@ -99,26 +103,17 @@ pub enum DisabledReason {
     MevExtractable,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct TransactionHandle {
-    pub handle: H256,
-    pub tx_hash: H256,
-}
+#[derive(Clone)]
+pub struct RawTransaction(Vec<u8>);
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait TransactionSubmitting: Send + Sync {
     /// Submits transaction to the specific network (public mempool, eden,
     /// flashbots...). Returns transaction handle
-    async fn submit_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle>;
+    async fn submit_transaction(&self, tx: RawTransaction) -> Result<()>;
     /// Cancels already submitted transaction using the noop transaction
-    async fn cancel_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle>;
+    async fn cancel_transaction(&self, tx: RawTransaction) -> Result<()>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
     /// Returns type of the submitter.
@@ -320,15 +315,14 @@ impl<'a> Submitter<'a> {
                 MINED_TX_PROPAGATE_TIME.as_secs(),
             );
 
-            let transactions = transactions
+            let hashes = transactions
                 .into_iter()
-                .map(|(handle, _)| handle.tx_hash)
+                .map(|(hash, _)| hash)
                 .collect::<Vec<_>>();
 
             loop {
                 if let Some(receipt) =
-                    find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
-                        .await
+                    find_mined_transaction(&self.contract.raw_instance().web3(), &hashes).await
                 {
                     tracing::debug!("found mined transaction {:?}", receipt.transaction_hash);
                     track_mined_transactions(&format!("{name}"));
@@ -384,7 +378,7 @@ impl<'a> Submitter<'a> {
         &self,
         settlement: Settlement,
         params: SubmitterParams,
-        transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
+        transactions: &mut Vec<(H256, GasPrice1559)>,
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
@@ -493,10 +487,14 @@ impl<'a> Submitter<'a> {
             // execute transaction
 
             let label: &'static str = self.submit_api.name().into();
-            match self.submit_api.submit_transaction(method.tx).await {
+            let (hash, raw) = match method.tx.build().now_or_never().unwrap().unwrap() {
+                Transaction::Request(_) => unreachable!(),
+                Transaction::Raw { bytes, hash } => (hash, RawTransaction(bytes.0)),
+            };
+            transactions.push((hash, gas_price));
+            match self.submit_api.submit_transaction(raw).await {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
-                    transactions.push((handle, gas_price));
                     pending_gas_price = Some(gas_price);
                     track_submission_success(label, true);
                 }
@@ -599,24 +597,29 @@ impl<'a> Submitter<'a> {
         &self,
         gas_price: &GasPrice1559,
         nonce: U256,
-    ) -> TransactionBuilder<Web3Transport> {
-        TransactionBuilder::new(self.contract.raw_instance().web3())
+    ) -> (H256, RawTransaction) {
+        match TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
             .gas_price(into_gas_price(gas_price))
             .gas(21000.into())
+            .build()
+            .now_or_never()
+            .unwrap()
+            .unwrap()
+        {
+            Transaction::Request(_) => unreachable!(),
+            Transaction::Raw { bytes, hash } => (hash, RawTransaction(bytes.0)),
+        }
     }
 
     /// Prepare all data needed for cancellation of previously submitted
     /// transaction and execute cancellation
-    async fn cancel_transaction(
-        &self,
-        gas_price: &GasPrice1559,
-        nonce: U256,
-    ) -> Result<TransactionHandle> {
-        let noop_transaction = self.build_noop_transaction(gas_price, nonce);
-        self.submit_api.cancel_transaction(noop_transaction).await
+    async fn cancel_transaction(&self, gas_price: &GasPrice1559, nonce: U256) -> Result<H256> {
+        let (hash, raw) = self.build_noop_transaction(gas_price, nonce);
+        self.submit_api.cancel_transaction(raw).await?;
+        Ok(hash)
     }
 }
 

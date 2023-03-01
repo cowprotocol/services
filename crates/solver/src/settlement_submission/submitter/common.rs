@@ -1,8 +1,6 @@
 use {
-    super::super::submitter::TransactionHandle,
+    super::RawTransaction,
     anyhow::Result,
-    ethcontract::transaction::{Transaction, TransactionBuilder},
-    futures::FutureExt,
     shared::ethrpc::{Web3, Web3Transport},
     web3::{api::Namespace, types::Bytes},
 };
@@ -23,22 +21,12 @@ impl Namespace<Web3Transport> for PrivateNetwork {
 
 impl PrivateNetwork {
     /// Function for sending raw signed transaction to private networks
-    pub async fn submit_raw_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
-        let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
-            Transaction::Request(_) => unreachable!("verified offline account was used"),
-            Transaction::Raw { bytes, hash } => (bytes.0, hash),
-        };
-
-        let handle = self
-            .0
+    pub async fn submit_raw_transaction(&self, tx: RawTransaction) -> Result<()> {
+        self.0
             .eth()
-            .send_raw_transaction(Bytes(raw_signed_transaction))
+            .send_raw_transaction(Bytes(tx.0))
             .await
-            .map_err(anyhow::Error::new)?;
-
-        Ok(TransactionHandle { tx_hash, handle })
+            .map(|_| ())
+            .map_err(Into::into)
     }
 }

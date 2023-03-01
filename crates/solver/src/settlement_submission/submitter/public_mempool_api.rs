@@ -1,19 +1,17 @@
 use {
     super::{
-        super::submitter::{TransactionHandle, TransactionSubmitting},
+        super::submitter::TransactionSubmitting,
         AdditionalTip,
         DisabledReason,
+        RawTransaction,
         Strategy,
         SubmissionLoopStatus,
     },
     crate::settlement::{Revertable, Settlement},
     anyhow::{ensure, Context, Result},
-    ethcontract::{
-        transaction::{Transaction, TransactionBuilder},
-        H256,
-    },
+    ethcontract::H256,
     futures::FutureExt,
-    shared::ethrpc::{Web3, Web3Transport},
+    shared::ethrpc::Web3,
 };
 
 #[derive(Clone)]
@@ -33,15 +31,8 @@ impl PublicMempoolApi {
 
 #[async_trait::async_trait]
 impl TransactionSubmitting for PublicMempoolApi {
-    async fn submit_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
+    async fn submit_transaction(&self, tx: RawTransaction) -> Result<()> {
         tracing::debug!("public mempool submit transaction entered");
-        let transaction_request = tx.build().await.unwrap();
-        if let Transaction::Raw { hash, .. } = &transaction_request {
-            tracing::debug!(?hash, "creating transaction");
-        }
         let (notification_nodes, other_nodes) = self
             .nodes
             .iter()
@@ -62,10 +53,10 @@ impl TransactionSubmitting for PublicMempoolApi {
 
         // We are not interested in the response from a notification node.
         for (node, label) in notification_nodes {
-            let transaction_request = transaction_request.clone();
+            let tx = tx.clone();
             let node = node.clone();
             tokio::spawn(async move {
-                match submit_transaction(transaction_request, &node, &label).await {
+                match submit_transaction(tx, &node, &label).await {
                     Ok(tx_hash) => {
                         tracing::debug!(%label, "notification node reports transaction creation with hash: {:?}", tx_hash);
                     }
@@ -79,14 +70,8 @@ impl TransactionSubmitting for PublicMempoolApi {
         let mut futures = other_nodes
             .into_iter()
             .map(|(node, label)| {
-                let transaction_request = transaction_request.clone();
-                (async move {
-                    (
-                        submit_transaction(transaction_request, node, &label).await,
-                        label,
-                    )
-                })
-                .boxed()
+                let tx = tx.clone();
+                (async move { (submit_transaction(tx, node, &label).await, label) }).boxed()
             })
             .collect::<Vec<_>>();
         let mut errors = vec![];
@@ -96,10 +81,7 @@ impl TransactionSubmitting for PublicMempoolApi {
                 Ok(tx_hash) => {
                     super::track_submission_success(&label, true);
                     tracing::debug!(%label, "created transaction with hash: {:?}", tx_hash);
-                    return Ok(TransactionHandle {
-                        tx_hash,
-                        handle: tx_hash,
-                    });
+                    return Ok(());
                 }
                 Err(err) => {
                     let err = err.to_string();
@@ -130,10 +112,7 @@ impl TransactionSubmitting for PublicMempoolApi {
         }
     }
 
-    async fn cancel_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
+    async fn cancel_transaction(&self, tx: RawTransaction) -> Result<()> {
         self.submit_transaction(tx).await
     }
 
@@ -153,17 +132,12 @@ impl TransactionSubmitting for PublicMempoolApi {
 }
 
 async fn submit_transaction(
-    transaction_request: Transaction,
+    tx: RawTransaction,
     node: &SubmissionNode,
     label: &String,
 ) -> Result<H256, web3::Error> {
     tracing::debug!(%label, "sending transaction...");
-    match transaction_request {
-        Transaction::Request(tx) => node.web3.eth().send_transaction(tx).await,
-        Transaction::Raw { bytes, .. } => {
-            node.web3.eth().send_raw_transaction(bytes.0.into()).await
-        }
-    }
+    node.web3.eth().send_raw_transaction(tx.0.into()).await
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

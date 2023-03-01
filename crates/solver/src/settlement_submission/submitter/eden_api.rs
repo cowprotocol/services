@@ -1,6 +1,7 @@
 //! https://docs.edennetwork.io/for-traders/getting-started
 
 use {
+    super::RawTransaction,
     crate::{
         settlement::{Revertable, Settlement},
         settlement_submission::submitter::{
@@ -8,16 +9,12 @@ use {
             AdditionalTip,
             Strategy,
             SubmissionLoopStatus,
-            TransactionHandle,
             TransactionSubmitting,
         },
     },
-    anyhow::{bail, Context, Result},
-    ethcontract::{
-        transaction::{Transaction, TransactionBuilder},
-        H256,
-    },
-    futures::{FutureExt, TryFutureExt},
+    anyhow::{Context, Result},
+    ethcontract::H256,
+    futures::TryFutureExt,
     jsonrpc_core::types::Value,
     reqwest::{Client, IntoUrl, Url},
     serde::Deserialize,
@@ -34,6 +31,7 @@ pub struct EdenApi {
 
 #[derive(Debug, Clone, Deserialize)]
 struct EdenSuccess {
+    #[allow(dead_code)]
     result: H256,
 }
 
@@ -58,16 +56,8 @@ impl EdenApi {
     // When using `eth_sendSlotTxs` method, we must use native Client because the
     // response for this method is a non-standard json that can't be
     // automatically deserialized when `Transport` is used.
-    async fn submit_slot_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
-        let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
-            Transaction::Request(_) => unreachable!("verified offline account was used"),
-            Transaction::Raw { bytes, hash } => (bytes.0, hash),
-        };
-        let params =
-            serde_json::to_value(Bytes(raw_signed_transaction)).context("failed to serialize")?;
+    async fn submit_slot_transaction(&self, tx: RawTransaction) -> Result<()> {
+        let params = serde_json::to_value(Bytes(tx.0)).context("failed to serialize")?;
         let request =
             helpers::build_request(1, "eth_sendSlotTxs", vec![Value::Array(vec![params])]);
         tracing::debug!(?request, "sending Eden API request");
@@ -85,27 +75,17 @@ impl EdenApi {
         tracing::debug!(%response, "response from eden");
         let response = serde_json::from_str::<MultipleEdenSuccesses>(&response)
             .context("failed to deserialize")?;
-        let handle = response
+        response
             .result
             .first()
-            .context("response did not contain a result")?
-            .result;
-
-        Ok(TransactionHandle { tx_hash, handle })
+            .context("response did not contain a result")?;
+        Ok(())
     }
 }
 
 #[async_trait::async_trait]
 impl TransactionSubmitting for EdenApi {
-    async fn submit_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
-        match tx.clone().build().now_or_never() {
-            Some(Ok(Transaction::Raw { .. })) => (),
-            _ => bail!("Eden submission requires fully built raw transactions"),
-        };
-
+    async fn submit_transaction(&self, tx: RawTransaction) -> Result<()> {
         // try to submit with slot method
         self.submit_slot_transaction(tx.clone())
             .or_else(|err| async move {
@@ -117,13 +97,10 @@ impl TransactionSubmitting for EdenApi {
                     .submit_raw_transaction(tx)
                     .await
             })
-            .await as Result<TransactionHandle>
+            .await
     }
 
-    async fn cancel_transaction(
-        &self,
-        tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle> {
+    async fn cancel_transaction(&self, tx: RawTransaction) -> Result<()> {
         self.rpc
             .api::<PrivateNetwork>()
             .submit_raw_transaction(tx)

@@ -32,7 +32,6 @@ use {
         Submitter,
         SubmitterGasPriceEstimator,
         SubmitterParams,
-        TransactionHandle,
         TransactionSubmitting,
     },
     tracing::Instrument,
@@ -45,7 +44,7 @@ const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 pub struct SubTxPool {
     pub strategy: Strategy,
     // Key (Address, U256) represents pair (sender, nonce)
-    pub pools: HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>,
+    pub pools: HashMap<(Address, U256), Vec<(H256, GasPrice1559)>>,
 }
 type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
@@ -79,11 +78,7 @@ pub struct SubTxPoolRef {
 }
 
 impl SubTxPoolRef {
-    pub fn get(
-        &self,
-        sender: Address,
-        nonce: U256,
-    ) -> Option<Vec<(TransactionHandle, GasPrice1559)>> {
+    pub fn get(&self, sender: Address, nonce: U256) -> Option<Vec<(H256, GasPrice1559)>> {
         self.pools.lock().unwrap()[self.index]
             .pools
             .get(&(sender, nonce))
@@ -97,12 +92,7 @@ impl SubTxPoolRef {
             .retain(|key, _| key.1 >= nonce);
     }
 
-    pub fn update(
-        &self,
-        sender: Address,
-        nonce: U256,
-        transactions: Vec<(TransactionHandle, GasPrice1559)>,
-    ) {
+    pub fn update(&self, sender: Address, nonce: U256, transactions: Vec<(H256, GasPrice1559)>) {
         self.pools.lock().unwrap()[self.index]
             .pools
             .insert((sender, nonce), transactions);
@@ -290,17 +280,9 @@ impl SolutionSubmitter {
         settlement: Settlement,
         index: usize,
     ) -> Result<SubmissionReceipt, SubmissionError> {
-        match strategy {
-            TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
-                if !matches!(account, Account::Offline(..)) {
-                    return Err(SubmissionError::from(anyhow!(
-                        "Submission to private network requires offline account for signing"
-                    )));
-                }
-            }
-            TransactionStrategy::PublicMempool(_) => {}
-            _ => unreachable!(),
-        };
+        if !matches!(account, Account::Offline(..)) {
+            return Err(SubmissionError::from(anyhow!("must use offline account")));
+        }
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");
         let params = SubmitterParams {
@@ -535,7 +517,7 @@ mod tests {
     fn global_tx_pool() {
         let sender = Address::default();
         let nonce = U256::zero();
-        let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
+        let transactions: Vec<(H256, GasPrice1559)> = Default::default();
 
         let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::PublicMempool);
 
