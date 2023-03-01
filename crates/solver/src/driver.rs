@@ -399,7 +399,7 @@ impl Driver {
             .map(|(solver, rated_settlement, _)| {
                 (solver.account().address(), rated_settlement.score.score())
             })
-            .sorted_unstable_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
+            .sorted_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -486,6 +486,8 @@ impl Driver {
                 participants,
                 prices,
             };
+            tracing::debug!(?solver_competition, "submitting competition info");
+
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.
             self.send_solver_competition(&solver_competition).await?;
