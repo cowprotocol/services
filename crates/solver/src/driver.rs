@@ -487,7 +487,7 @@ impl Driver {
                 prices,
             };
             tracing::debug!(?solver_competition, "submitting competition info");
-            
+
             // This has to succeed in order to continue settling. Otherwise we can't be sure
             // the competition info has been stored.
             self.send_solver_competition(&solver_competition).await?;
