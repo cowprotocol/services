@@ -5,17 +5,21 @@ use {
     number_conversions::u256_to_big_decimal,
 };
 
-#[derive(Debug, Clone)]
-pub struct SettlementUpdate {
-    pub block_number: i64,
-    pub log_index: i64,
-    pub auction_id: i64,
-    pub tx_from: H160,
-    pub tx_nonce: i64,
+#[derive(Debug, Default, Clone)]
+pub struct AuctionData {
     pub gas_used: U256,
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SettlementUpdate {
+    pub block_number: i64,
+    pub log_index: i64,
+    pub tx_from: H160,
+    pub tx_nonce: i64,
+    pub auction_data: Option<AuctionData>,
 }
 
 impl super::Postgres {
@@ -41,20 +45,22 @@ impl super::Postgres {
         .await
         .context("insert_settlement_tx_info")?;
 
-        // update settlement_observations
-        database::settlement_observations::insert(
-            &mut ex,
-            Observation {
-                block_number: settlement_update.block_number,
-                log_index: settlement_update.log_index,
-                gas_used: u256_to_big_decimal(&settlement_update.gas_used),
-                effective_gas_price: u256_to_big_decimal(&settlement_update.effective_gas_price),
-                surplus: u256_to_big_decimal(&settlement_update.surplus),
-                fee: u256_to_big_decimal(&settlement_update.fee),
-            },
-        )
-        .await
-        .context("insert_settlement_observations")?;
+        // update settlement_observations if exist
+        if let Some(auction_data) = settlement_update.auction_data {
+            database::settlement_observations::insert(
+                &mut ex,
+                Observation {
+                    block_number: settlement_update.block_number,
+                    log_index: settlement_update.log_index,
+                    gas_used: u256_to_big_decimal(&auction_data.gas_used),
+                    effective_gas_price: u256_to_big_decimal(&auction_data.effective_gas_price),
+                    surplus: u256_to_big_decimal(&auction_data.surplus),
+                    fee: u256_to_big_decimal(&auction_data.fee),
+                },
+            )
+            .await
+            .context("insert_settlement_observations")?;
+        }
 
         ex.commit().await?;
         Ok(())
