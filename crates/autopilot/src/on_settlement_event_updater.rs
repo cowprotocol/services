@@ -32,7 +32,10 @@
 
 use {
     crate::{
-        database::{on_settlement_event_updater::SettlementUpdate, Postgres},
+        database::{
+            on_settlement_event_updater::{AuctionData, SettlementUpdate},
+            Postgres,
+        },
         decoded_settlement::{DecodedSettlement, FeeConfiguration},
     },
     anyhow::{anyhow, Context, Result},
@@ -116,7 +119,6 @@ impl OnSettlementEventUpdater {
         let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
-            auction_id,
             tx_from,
             tx_nonce,
             ..Default::default()
@@ -174,10 +176,12 @@ impl OnSettlementEventUpdater {
             let surplus = settlement.total_surplus(&external_prices);
             let fee = settlement.total_fees(&external_prices, &orders, &configuration);
 
-            update.surplus = surplus;
-            update.fee = fee;
-            update.gas_used = gas_used;
-            update.effective_gas_price = effective_gas_price;
+            update.auction_data = Some(AuctionData {
+                surplus,
+                fee,
+                gas_used,
+                effective_gas_price,
+            });
         }
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
