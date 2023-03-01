@@ -121,7 +121,7 @@ impl OnSettlementEventUpdater {
             log_index: event.log_index,
             tx_from,
             tx_nonce,
-            ..Default::default()
+            auction_data: None,
         };
 
         // It is possible that auction_id does not exist for a transaction.
