@@ -104,6 +104,7 @@ pub struct FeeConfiguration {
     pub fee_objective_scaling_factor: BigRational,
 }
 
+#[derive(Debug)]
 pub struct Order {
     pub full_fee_amount: U256,
     pub kind: OrderKind,
@@ -251,7 +252,9 @@ fn fee(
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
     let full_fee_amount = u256_to_big_rational(&order.full_fee_amount);
+    tracing::trace!(?full_fee_amount, ?order.full_fee_amount, "full_fee_amount");
     let scaled_fee_amount = full_fee_amount * configuration.fee_objective_scaling_factor.clone();
+    tracing::trace!(?scaled_fee_amount, ?configuration.fee_objective_scaling_factor, "scaled_fee_amount");
 
     let fee = match order.kind {
         model::order::OrderKind::Buy => {
@@ -263,8 +266,9 @@ fn fee(
                 / u256_to_big_rational(&order.sell_amount)
         }
     };
-
+    tracing::trace!(?fee, "fee before conversion to native token");
     let fee = external_prices.try_get_native_amount(order.sell_token, fee)?;
+    tracing::trace!(?fee, "fee after conversion to native token");
     big_rational_to_u256(&fee).ok()
 }
 

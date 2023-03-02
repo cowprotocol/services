@@ -165,7 +165,7 @@ impl OnSettlementEventUpdater {
                 .collect::<Result<Vec<_>>>()?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
-                auction_external_prices,
+                auction_external_prices.clone(),
             )?;
 
             // surplus and fees calculation
@@ -182,6 +182,14 @@ impl OnSettlementEventUpdater {
                 gas_used,
                 effective_gas_price,
             });
+
+            tracing::trace!(
+                ?auction_id,
+                ?auction_external_prices,
+                ?orders,
+                ?external_prices,
+                "observations input"
+            );
         }
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
