@@ -51,7 +51,7 @@ pub struct Execution {
     #[serde_as(as = "Option<DecimalU256>")]
     pub surplus_fee: Option<U256>,
     #[serde_as(as = "DecimalU256")]
-    pub full_fee_amount: U256,
+    pub solver_fee: U256,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

@@ -91,12 +91,12 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount,
-        executed_full_fee_amount: order
-            .executed_full_fee_amount
+        solver_fee,
+        executed_solver_fee: order
+            .executed_solver_fee
             .as_ref()
             .and_then(big_decimal_to_u256)
-            .unwrap_or(full_fee_amount),
-        solver_fee,
+            .unwrap_or_default(),
         ethflow_data,
         onchain_user,
         onchain_order_data,

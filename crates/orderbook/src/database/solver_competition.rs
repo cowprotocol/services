@@ -47,7 +47,7 @@ impl SolverCompetitionStoring for Postgres {
                 request.auction,
                 execution.reward,
                 surplus_fee.as_ref(),
-                &u256_to_big_decimal(&execution.full_fee_amount),
+                &u256_to_big_decimal(&execution.solver_fee),
             )
             .await
             .context("order_rewards::save")?;

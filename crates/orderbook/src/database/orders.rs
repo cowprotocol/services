@@ -373,8 +373,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
-    let full_fee_amount =
-        big_decimal_to_u256(&order.full_fee_amount).context("full_fee_amount is not U256")?;
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -398,15 +396,16 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount,
-        executed_full_fee_amount: order
-            .executed_full_fee_amount
-            .as_ref()
-            .and_then(big_decimal_to_u256)
-            .unwrap_or(full_fee_amount),
+        full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
+            .context("full_fee_amount is not U256")?,
         // Initialize unscaled and scale later when required.
         solver_fee: big_decimal_to_u256(&order.full_fee_amount)
             .context("solver_fee is not U256")?,
+        executed_solver_fee: order
+            .executed_solver_fee
+            .as_ref()
+            .and_then(big_decimal_to_u256)
+            .unwrap_or_default(),
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -513,7 +512,7 @@ mod tests {
             surplus_fee: Default::default(),
             surplus_fee_timestamp: Default::default(),
             executed_surplus_fee: Default::default(),
-            executed_full_fee_amount: Default::default(),
+            executed_solver_fee: Default::default(),
         };
 
         // Open - sell (filled - 0%)
