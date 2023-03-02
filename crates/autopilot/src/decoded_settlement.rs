@@ -106,7 +106,7 @@ pub struct FeeConfiguration {
 
 #[derive(Debug)]
 pub struct Order {
-    pub full_fee_amount: U256,
+    pub executed_full_fee_amount: U256,
     pub kind: OrderKind,
     pub sell_token: H160,
     pub buy_token: H160,
@@ -121,7 +121,7 @@ impl TryFrom<model::order::Order> for Order {
 
     fn try_from(order: model::order::Order) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            full_fee_amount: order.metadata.full_fee_amount,
+            executed_full_fee_amount: order.metadata.executed_full_fee_amount,
             kind: order.data.kind,
             sell_token: order.data.sell_token,
             buy_token: order.data.buy_token,
@@ -251,8 +251,8 @@ fn fee(
     order: &Order,
     configuration: &FeeConfiguration,
 ) -> Option<U256> {
-    let full_fee_amount = u256_to_big_rational(&order.full_fee_amount);
-    tracing::trace!(?full_fee_amount, ?order.full_fee_amount, "full_fee_amount");
+    let full_fee_amount = u256_to_big_rational(&order.executed_full_fee_amount);
+    tracing::trace!(?full_fee_amount, ?order.executed_full_fee_amount, "executed_full_fee_amount");
     let scaled_fee_amount = full_fee_amount * configuration.fee_objective_scaling_factor.clone();
     tracing::trace!(?scaled_fee_amount, ?configuration.fee_objective_scaling_factor, "scaled_fee_amount");
 
@@ -539,7 +539,7 @@ mod tests {
 
         let orders = vec![
             Order {
-                full_fee_amount: 48263037u128.into(),
+                executed_full_fee_amount: 48263037u128.into(),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
@@ -549,7 +549,7 @@ mod tests {
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             Order {
-                full_fee_amount: 127253135942751092736u128.into(),
+                executed_full_fee_amount: 127253135942751092736u128.into(),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),

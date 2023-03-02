@@ -220,6 +220,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         },
         metadata: OrderMetadata {
             full_fee_amount: Default::default(),
+            executed_full_fee_amount: Default::default(),
             solver_fee: order.fee.solver.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,

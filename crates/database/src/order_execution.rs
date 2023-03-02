@@ -10,9 +10,10 @@ pub async fn save(
     auction: AuctionId,
     reward: f64,
     surplus_fee: Option<&BigDecimal>,
+    full_fee_amount: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee)
+INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, full_fee_amount)
 VALUES ($1, $2, $3, $4)
     ;"#;
     sqlx::query(QUERY)
@@ -20,6 +21,7 @@ VALUES ($1, $2, $3, $4)
         .bind(auction)
         .bind(reward)
         .bind(surplus_fee)
+        .bind(full_fee_amount)
         .execute(ex)
         .await?;
     Ok(())
@@ -36,7 +38,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        save(&mut db, &Default::default(), 0, 0., None)
+        save(&mut db, &Default::default(), 0, 0., None, &Default::default())
             .await
             .unwrap();
 
@@ -46,6 +48,7 @@ mod tests {
             1,
             0.,
             Some(&Default::default()),
+            &Default::default(),
         )
         .await
         .unwrap();

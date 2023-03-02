@@ -605,6 +605,9 @@ pub struct OrderMetadata {
     /// Does not take partial fill into account.
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
+    /// equal to full_fee_amount at the moment of execution
+    #[serde(default, with = "u256_decimal")]
+    pub executed_full_fee_amount: U256,
     /// The fee amount that should be used for objective value computations.
     ///
     /// This is different than the actual signed fee in that it
@@ -920,6 +923,7 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "executedFullFeeAmount": "1",
             "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
@@ -955,6 +959,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
+                executed_full_fee_amount: 1.into(),
                 solver_fee: U256::MAX,
                 ..Default::default()
             },
