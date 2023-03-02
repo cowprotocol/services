@@ -167,7 +167,6 @@ impl OnSettlementEventUpdater {
                 self.native_token,
                 auction_external_prices.clone(),
             )?;
-            tracing::debug!(?auction_id, ?auction_external_prices, ?orders, ?external_prices, "temp_fee_log");
 
             // surplus and fees calculation
             let configuration = FeeConfiguration {
@@ -183,6 +182,14 @@ impl OnSettlementEventUpdater {
                 gas_used,
                 effective_gas_price,
             });
+
+            tracing::trace!(
+                ?auction_id,
+                ?auction_external_prices,
+                ?orders,
+                ?external_prices,
+                "observations input"
+            );
         }
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
