@@ -165,8 +165,9 @@ impl OnSettlementEventUpdater {
                 .collect::<Result<Vec<_>>>()?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
-                auction_external_prices,
+                auction_external_prices.clone(),
             )?;
+            tracing::debug!(?auction_id, ?auction_external_prices, ?orders, ?external_prices, "temp_fee_log");
 
             // surplus and fees calculation
             let configuration = FeeConfiguration {
