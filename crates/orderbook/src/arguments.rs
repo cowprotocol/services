@@ -144,10 +144,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub allow_placing_fill_or_kill_limit_orders: bool,
 
-    #[clap(long, env, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub allow_placing_partially_fillable_limit_orders: bool,
 
     /// Max number of limit orders per user.

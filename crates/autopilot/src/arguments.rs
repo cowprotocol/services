@@ -148,10 +148,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub process_fill_or_kill_limit_orders: bool,
 
-    #[clap(long, env, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub process_partially_fillable_limit_orders: bool,
 
     /// How many quotes the limit order quoter updates in parallel.
