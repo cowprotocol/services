@@ -391,15 +391,18 @@ impl Driver {
 
         let mut settlement_transaction_attempted = false;
         // In transition period last settlement is not necessarily the one with the
-        // highest score. So we need to get the scores of all settlements and
-        // sort them.
+        // highest score. So we need to use the score ranking to determine the winner.
         // CIP20 TODO - add to if statement below, once the transition period is over.
         let mut scores = rated_settlements
             .iter()
             .map(|(solver, rated_settlement, _)| {
-                (solver.account().address(), rated_settlement.score.score())
+                (
+                    rated_settlement.ranking,
+                    solver.account().address(),
+                    rated_settlement.score.score(),
+                )
             })
-            .sorted_by_key(|(_, score)| std::cmp::Reverse(*score)); // descending
+            .sorted_by_key(|(ranking, _, _)| *ranking);
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -443,12 +446,12 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
-            let (winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
+            let (_, winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
             let scores = model::solver_competition::Scores {
                 winner,
                 winning_score,
                 // second highest score, or 0 if there is only one score (see CIP20)
-                reference_score: scores.next().unwrap_or_default().1,
+                reference_score: scores.next().unwrap_or_default().2,
                 block_deadline: {
                     let deadline = self.solver_time_limit
                         + self.solution_submitter.max_confirm_time
