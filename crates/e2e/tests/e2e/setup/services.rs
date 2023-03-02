@@ -80,7 +80,6 @@ impl<'a> Services<'a> {
             "--auction-update-interval=1".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync".to_string(),
-            "--enable-limit-orders".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -98,7 +97,6 @@ impl<'a> Services<'a> {
             "orderbook",
             "--enable-presign-orders",
             "--enable-eip1271-orders",
-            "--enable-limit-orders",
         ]
         .into_iter()
         .map(ToString::to_string)
