@@ -79,7 +79,7 @@ impl<'a> Services<'a> {
             "autopilot".to_string(),
             "--auction-update-interval=1".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-            "--skip-event-sync".to_string(),
+            "--skip-event-sync=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -95,8 +95,8 @@ impl<'a> Services<'a> {
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args = [
             "orderbook",
-            "--enable-presign-orders",
-            "--enable-eip1271-orders",
+            "--enable-presign-orders=true",
+            "--enable-eip1271-orders=true",
         ]
         .into_iter()
         .map(ToString::to_string)
