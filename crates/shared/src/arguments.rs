@@ -266,7 +266,7 @@ pub struct Arguments {
     pub zeroex_api_key: Option<String>,
 
     /// If solvers should use internal buffers to improve solution quality.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
 
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
