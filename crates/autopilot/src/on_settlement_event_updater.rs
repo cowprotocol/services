@@ -36,11 +36,10 @@ use {
             on_settlement_event_updater::{AuctionData, SettlementUpdate},
             Postgres,
         },
-        decoded_settlement::{DecodedSettlement, FeeConfiguration},
+        decoded_settlement::DecodedSettlement,
     },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
-    num::BigRational,
     primitive_types::{H160, H256},
     shared::{
         current_block::CurrentBlockStream,
@@ -58,7 +57,6 @@ pub struct OnSettlementEventUpdater {
     pub native_token: H160,
     pub db: Postgres,
     pub current_block: CurrentBlockStream,
-    pub fee_objective_scaling_factor: BigRational,
 }
 
 impl OnSettlementEventUpdater {
@@ -169,12 +167,9 @@ impl OnSettlementEventUpdater {
             )?;
 
             // surplus and fees calculation
-            let configuration = FeeConfiguration {
-                fee_objective_scaling_factor: self.fee_objective_scaling_factor.clone(),
-            };
             let settlement = DecodedSettlement::new(&transaction.input.0)?;
             let surplus = settlement.total_surplus(&external_prices);
-            let fee = settlement.total_fees(&external_prices, &orders, &configuration);
+            let fee = settlement.total_fees(&external_prices, &orders);
 
             update.auction_data = Some(AuctionData {
                 surplus,
@@ -207,7 +202,6 @@ impl OnSettlementEventUpdater {
 mod tests {
     use {
         super::*,
-        bigdecimal::One,
         database::{auction_prices::AuctionPrice, settlement_observations::Observation},
         sqlx::Executor,
         std::sync::Arc,
@@ -237,7 +231,6 @@ mod tests {
             native_token,
             current_block,
             contract,
-            fee_objective_scaling_factor: BigRational::one(),
         };
 
         assert!(!updater.update().await.unwrap());
