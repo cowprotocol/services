@@ -10,14 +10,15 @@ use {
 pub struct Inputs {
     pub surplus_given: BigRational,
     pub solver_fees: BigRational,
-    pub settlement_cost: BigRational,
+    pub gas_price: BigRational,
+    pub gas_amount: BigRational,
 }
 
 impl Inputs {
     pub fn from_settlement(
         settlement: &Settlement,
         prices: &ExternalPrices,
-        gas_price: &BigRational,
+        gas_price: BigRational,
         gas_amount: &U256,
     ) -> Self {
         let gas_amount = u256_to_big_rational(gas_amount);
@@ -25,12 +26,13 @@ impl Inputs {
         Self {
             surplus_given: settlement.total_surplus(prices),
             solver_fees: settlement.total_solver_fees(prices),
-            settlement_cost: gas_amount * gas_price,
+            gas_price,
+            gas_amount,
         }
     }
 
     pub fn objective_value(&self) -> BigRational {
-        &self.surplus_given + &self.solver_fees - &self.settlement_cost
+        &self.surplus_given + &self.solver_fees - &self.gas_price * &self.gas_amount
     }
 }
 

@@ -185,7 +185,7 @@ impl Settlement {
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
-            &gas_price,
+            gas_price,
             &gas.into(),
         );
         Ok(inputs.objective_value().into())

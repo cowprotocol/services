@@ -1,5 +1,9 @@
 use shared::external_prices::ExternalPrices;
 
+use crate::objective_value::Inputs;
+
+use super::score_computation::ScoreCalculator;
+
 mod merge;
 
 use {
@@ -114,6 +118,7 @@ pub struct SingleOrderSolver {
     max_merged_settlements: usize,
     max_settlements_per_solver: usize,
     order_prioritization_config: Arguments,
+    score_calculator: ScoreCalculator,
 }
 
 impl SingleOrderSolver {
@@ -123,6 +128,7 @@ impl SingleOrderSolver {
         max_settlements_per_solver: usize,
         max_merged_settlements: usize,
         order_prioritization_config: Arguments,
+        score_calculator: ScoreCalculator,
     ) -> Self {
         Self {
             inner,
@@ -130,6 +136,7 @@ impl SingleOrderSolver {
             max_merged_settlements,
             max_settlements_per_solver,
             order_prioritization_config,
+            score_calculator,
         }
     }
 }
@@ -203,6 +210,12 @@ impl Solver for SingleOrderSolver {
             &auction.external_prices,
             &mut settlements,
         );
+
+        settlements.iter_mut().for_each(|s| {
+            let inputs = Inputs::from_settlement(s, &auction.external_prices, );
+            let score = self.score_calculator.calculate_score(&inputs);
+            s.score = Some(score);
+        });
 
         Ok(settlements)
     }
@@ -364,6 +377,7 @@ mod tests {
             max_merged_settlements: 5,
             max_settlements_per_solver: 5,
             order_prioritization_config: Default::default(),
+            score_calculator: Default::default(),
         }
     }
 

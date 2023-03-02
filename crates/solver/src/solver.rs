@@ -1,3 +1,5 @@
+use crate::solver::score_computation::ScoreCalculator;
+
 use {
     self::{
         baseline_solver::BaselineSolver,
@@ -70,6 +72,7 @@ pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
+pub mod score_computation;
 pub mod single_order_solver;
 mod zeroex_solver;
 
@@ -361,13 +364,14 @@ pub fn create(
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
         .map(|(account, solver_type)| {
-            let single_order = |inner: Box<dyn SingleOrderSolving>| {
+            let single_order = |inner: Box<dyn SingleOrderSolving>, score_calculator: ScoreCalculator| {
                 SingleOrderSolver::new(
                     inner,
                     solver_metrics.clone(),
                     max_merged_settlements,
                     max_settlements_per_solver,
                     order_prioritization_config.clone(),
+                    score_calculator,
                 )
             };
 
@@ -416,7 +420,7 @@ pub fn create(
                         one_inch_referrer_address,
                     )
                     .unwrap(),
-                ))),
+                ), ScoreCalculator::OneInch)),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,
