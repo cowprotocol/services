@@ -10,7 +10,6 @@ use {
     itertools::Itertools,
     model::quote::{OrderQuoteSide, SellAmount},
     number_conversions::big_decimal_to_u256,
-    primitive_types::U256,
     shared::{
         account_balances::{BalanceFetching, Query},
         db_order_conversions::sell_token_source_from,
@@ -209,10 +208,8 @@ async fn orders_with_sufficient_balance(
 
     orders.retain(|order| {
         if let Some(balance) = balances.get(&query_from(order)) {
-            let has_sufficient_balance = match order.partially_fillable {
-                true => balance >= &U256::one(), // any amount would be enough
-                false => balance >= &big_decimal_to_u256(&order.sell_amount).unwrap(),
-            };
+            let has_sufficient_balance =
+                balance >= &big_decimal_to_u256(&order.sell_amount).unwrap();
 
             // It's possible that a pre_interaction transfers the owner the required balance
             // so we want to keep them even if the balance is insufficient at the moment.
@@ -262,6 +259,7 @@ mod tests {
         super::*,
         database::byte_array::ByteArray,
         number_conversions::u256_to_big_decimal,
+        primitive_types::U256,
         shared::account_balances::{MockBalanceFetching, Query},
     };
 
@@ -275,16 +273,13 @@ mod tests {
 
     #[tokio::test]
     async fn removes_orders_with_insufficient_balance() {
-        let order = |sell_token, sell_amount: U256, partially_fillable, pre_interactions| {
-            OrderQuotingData {
-                owner: ByteArray([1; 20]),
-                sell_token: ByteArray([sell_token; 20]),
-                sell_amount: u256_to_big_decimal(&sell_amount),
-                sell_token_balance: database::orders::SellTokenSource::Erc20,
-                partially_fillable,
-                pre_interactions,
-                ..Default::default()
-            }
+        let order = |sell_token, sell_amount: U256, pre_interactions| OrderQuotingData {
+            owner: ByteArray([1; 20]),
+            sell_token: ByteArray([sell_token; 20]),
+            sell_amount: u256_to_big_decimal(&sell_amount),
+            sell_token_balance: database::orders::SellTokenSource::Erc20,
+            pre_interactions,
+            ..Default::default()
         };
 
         let mut balance_fetcher = MockBalanceFetching::new();
@@ -294,30 +289,21 @@ mod tests {
                 arg == [
                     // Only 1 query for token 1 because identical balance queries get deduplicated.
                     query(1),
-                    query(2),
                     query(3),
                 ]
             })
-            .returning(|_| {
-                vec![
-                    Ok(1_000.into()),
-                    Ok(1.into()),
-                    Err(anyhow::anyhow!("some error")),
-                ]
-            });
+            .returning(|_| vec![Ok(1_000.into()), Err(anyhow::anyhow!("some error"))]);
 
         let orders = vec![
             // Balance is sufficient.
-            order(1, 1_000.into(), false, 0),
+            order(1, 1_000.into(), 0),
             // Balance is 1 short.
-            order(1, 1_001.into(), false, 0),
-            // For partially fillable orders a single atom is enough.
-            order(2, U256::MAX, true, 0),
+            order(1, 1_001.into(), 0),
             // We always keep orders with pre_interactions in case they
             // would transfer enough money to the owner before settling the order.
-            order(2, U256::MAX, false, 1),
+            order(2, U256::MAX, 1),
             // We always keep orders where our balance request fails.
-            order(3, U256::MAX, false, 0),
+            order(3, U256::MAX, 0),
         ];
 
         let filtered_orders = orders_with_sufficient_balance(&balance_fetcher, orders).await;
@@ -325,10 +311,9 @@ mod tests {
         assert_eq!(
             filtered_orders,
             vec![
-                order(1, 1_000.into(), false, 0),
-                order(2, U256::MAX, true, 0),
-                order(2, U256::MAX, false, 1),
-                order(3, U256::MAX, false, 0),
+                order(1, 1_000.into(), 0),
+                order(2, U256::MAX, 1),
+                order(3, U256::MAX, 0),
             ]
         );
     }
