@@ -144,9 +144,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
+    /// Note that fill or kill liquidity limit orders are always allowed.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub allow_placing_fill_or_kill_limit_orders: bool,
 
+    /// Note that partially fillable liquidity limit orders are always allowed.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub allow_placing_partially_fillable_limit_orders: bool,
 
