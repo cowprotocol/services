@@ -130,7 +130,6 @@ pub struct Execution {
     pub buy: eth::Asset,
 }
 
-/// The amounts executed by a trade.
 #[derive(Debug, Clone, Copy)]
 struct ExecutionParams {
     side: order::Side,

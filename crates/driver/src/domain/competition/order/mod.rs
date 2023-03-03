@@ -215,10 +215,10 @@ pub enum BuyTokenBalance {
 /// [`Order`].
 #[derive(Debug)]
 pub struct Jit {
-    /// The maximum amount this order is allowed to sell when completely filled.
+    /// The amount this order wants to sell when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
     pub sell: eth::Asset,
-    /// The minimum amount this order must buy when completely filled.
+    /// The amount this order wants to buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
     pub fee: SellAmount,
