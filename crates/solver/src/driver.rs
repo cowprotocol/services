@@ -421,13 +421,12 @@ impl Driver {
                         OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => surplus_fee,
                         _ => None,
                     };
-                    let solver_fee = trade.solver_fee;
                     // Log in case something goes wrong with storing the rewards in the database.
                     tracing::debug!(%uid, %reward, "winning solution reward");
                     let execution = Execution {
                         reward,
                         surplus_fee,
-                        solver_fee,
+                        solver_fee: trade.solver_fee,
                     };
                     (*uid, execution)
                 })

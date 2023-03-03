@@ -404,8 +404,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         executed_solver_fee: order
             .executed_solver_fee
             .as_ref()
-            .and_then(big_decimal_to_u256)
-            .unwrap_or_default(),
+            .and_then(big_decimal_to_u256),
         ethflow_data,
         onchain_user,
         onchain_order_data,

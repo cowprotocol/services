@@ -102,7 +102,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 
 #[derive(Debug)]
 pub struct Order {
-    pub executed_solver_fee: U256,
+    pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
     pub buy_token: H160,
@@ -238,7 +238,7 @@ fn surplus(
 }
 
 fn fee(external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
-    let solver_fee = u256_to_big_rational(&order.executed_solver_fee);
+    let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
     tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
 
     let fee = match order.kind {
@@ -523,7 +523,7 @@ mod tests {
 
         let orders = vec![
             Order {
-                executed_solver_fee: 48263037u128.into(),
+                executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
@@ -533,7 +533,7 @@ mod tests {
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             Order {
-                executed_solver_fee: 127253135942751092736u128.into(),
+                executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
