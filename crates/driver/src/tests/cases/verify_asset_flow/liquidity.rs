@@ -456,8 +456,6 @@ async fn valid_liquidity_asset_flow() {
             )
             .await;
 
-        //debug(&web3).await;
-
         // Assert.
         if valid {
             assert_eq!(status, hyper::StatusCode::OK);
