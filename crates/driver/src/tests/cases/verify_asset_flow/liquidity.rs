@@ -33,6 +33,11 @@ struct TestCase {
 async fn valid_liquidity_asset_flow() {
     crate::boundary::initialize_tracing("debug,hyper=warn");
 
+    // The test setup below makes a uniswap interaction for a certain buy and sell
+    // amount. The market order included in the auction is 50 sell tokens and 50
+    // buy tokens less than the interaction. For the asset flow to be valid, the
+    // liquidity orders specified in these test cases are supposed to make up
+    // for that difference.
     let test_cases = [
         TestCase {
             // Single sell order which is not partially fillable.
