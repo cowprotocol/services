@@ -1,4 +1,12 @@
+use {
+    crate::solver::score_computation::ScoreCalculator,
+    anyhow::Result,
+    ethcontract::U256,
+    shared::external_prices::ExternalPrices,
+};
+
 pub mod optimize_buffer_usage;
+pub mod optimize_score;
 pub mod optimize_unwrapping;
 
 use {
@@ -11,6 +19,7 @@ use {
     ethcontract::Account,
     gas_estimation::GasPrice1559,
     optimize_buffer_usage::optimize_buffer_usage,
+    optimize_score::optimize_score,
     optimize_unwrapping::optimize_unwrapping,
     primitive_types::H160,
     shared::{
@@ -24,7 +33,7 @@ use {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool;
+    async fn settlement_would_succeed(&self, settlement: Settlement) -> Result<U256>;
 }
 
 pub struct SettlementSimulator {
@@ -36,15 +45,18 @@ pub struct SettlementSimulator {
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
+    async fn settlement_would_succeed(&self, settlement: Settlement) -> Result<U256> {
         let settlement = settlement.encode(self.internalization);
         let result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
             self.gas_price,
         )
-        .await;
-        matches!(result, Ok(results) if results[0].is_ok())
+        .await?;
+        match result.first().unwrap() {
+            Ok(gas_estimate) => Ok(*gas_estimate),
+            Err(_) => Err(anyhow::anyhow!("no simulation result")),
+        }
     }
 }
 
@@ -58,6 +70,8 @@ pub trait PostProcessing: Send + Sync + 'static {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
+        score_calculator: Option<&ScoreCalculator>,
+        prices: &ExternalPrices,
     ) -> Settlement;
 }
 
@@ -97,6 +111,8 @@ impl PostProcessing for PostProcessingPipeline {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
+        score_calculator: Option<&ScoreCalculator>,
+        prices: &ExternalPrices,
     ) -> Settlement {
         let simulator = SettlementSimulator {
             settlement_contract: self.settlement_contract.clone(),
@@ -113,13 +129,27 @@ impl PostProcessing for PostProcessingPipeline {
         .await;
 
         // an error will leave the settlement unmodified
-        optimize_unwrapping(
+        let optimized_solution = optimize_unwrapping(
             optimized_solution,
             &simulator,
             &self.buffer_retriever,
             &self.weth,
             self.unwrap_factor,
         )
-        .await
+        .await;
+
+        match score_calculator {
+            Some(score_calculator) => {
+                optimize_score(
+                    optimized_solution,
+                    &simulator,
+                    &score_calculator,
+                    gas_price,
+                    prices,
+                )
+                .await
+            }
+            None => optimized_solution,
+        }
     }
 }

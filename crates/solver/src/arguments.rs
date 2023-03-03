@@ -323,6 +323,7 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub additional_mining_deadline: Duration,
+    //pub score_params: score_computation::Arguments,
 }
 
 impl std::fmt::Display for Arguments {

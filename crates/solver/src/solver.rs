@@ -1,5 +1,3 @@
-use crate::solver::score_computation::ScoreCalculator;
-
 use {
     self::{
         baseline_solver::BaselineSolver,
@@ -364,14 +362,13 @@ pub fn create(
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
         .map(|(account, solver_type)| {
-            let single_order = |inner: Box<dyn SingleOrderSolving>, score_calculator: ScoreCalculator| {
+            let single_order = |inner: Box<dyn SingleOrderSolving>| {
                 SingleOrderSolver::new(
                     inner,
                     solver_metrics.clone(),
                     max_merged_settlements,
                     max_settlements_per_solver,
                     order_prioritization_config.clone(),
-                    score_calculator,
                 )
             };
 
@@ -379,6 +376,12 @@ pub fn create(
             tracing::debug!(
                 solver = ?solver_type, slippage = ?slippage_calculator,
                 "configured slippage",
+            );
+
+            let score_calculator = None; //score_configuration.get_calculator(solver_type);
+            tracing::debug!(
+                solver = ?solver_type, score = ?score_calculator,
+                "configured score",
             );
 
             let solver = match solver_type {
@@ -420,7 +423,7 @@ pub fn create(
                         one_inch_referrer_address,
                     )
                     .unwrap(),
-                ), ScoreCalculator::OneInch)),
+                ))),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,
@@ -468,6 +471,7 @@ pub fn create(
             shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
+                score_calculator,
             })
         })
         .collect();

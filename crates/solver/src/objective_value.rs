@@ -66,7 +66,8 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate1.clone() * gas_price.clone(),
+            gas_amount: gas_estimate1.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 
@@ -79,7 +80,8 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate2.clone() * gas_price.clone(),
+            gas_amount: gas_estimate2.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 
@@ -99,7 +101,8 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate1.clone() * gas_price.clone(),
+            gas_amount: gas_estimate1.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 
@@ -112,7 +115,8 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate2.clone() * gas_price.clone(),
+            gas_amount: gas_estimate2.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 
@@ -132,7 +136,8 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate1.clone() * gas_price.clone(),
+            gas_amount: gas_estimate1.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 
@@ -145,7 +150,8 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            settlement_cost: gas_estimate2.clone() * gas_price.clone(),
+            gas_amount: gas_estimate2.clone(),
+            gas_price: gas_price.clone(),
         }
         .objective_value();
 

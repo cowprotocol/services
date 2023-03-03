@@ -40,3 +40,7 @@ impl ScoreCalculator {
         Some(U256::from_f64_lossy(score))
     }
 }
+
+pub struct Arguments {
+    // todo
+}

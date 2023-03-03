@@ -22,6 +22,7 @@ pub async fn optimize_buffer_usage(
     if settlement_simulator
         .settlement_would_succeed(optimized_settlement.clone())
         .await
+        .is_ok()
     {
         tracing::debug!("settlement without onchain liquidity");
         return optimized_settlement;
