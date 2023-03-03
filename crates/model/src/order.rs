@@ -614,8 +614,7 @@ pub struct OrderMetadata {
     /// Does not take partial fill into account.
     #[serde(default, with = "u256_decimal")]
     pub solver_fee: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DecimalU256>")]
+    #[serde(skip)]
     pub executed_solver_fee: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
@@ -923,7 +922,6 @@ mod tests {
             "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "executedSolverFee": "1",
             "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "class": "limit",
@@ -959,7 +957,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
-                executed_solver_fee: Some(1.into()),
+                executed_solver_fee: None,
                 solver_fee: U256::MAX,
                 ..Default::default()
             },
