@@ -129,9 +129,9 @@ impl Trade {
                             token: buy.token,
                         },
                         sell: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(sell.amount)
+                            amount: sell
+                                .amount
+                                .checked_mul(executed.0)
                                 .ok_or(Error::Overflow)?
                                 .checked_div(buy.amount)
                                 .ok_or(Error::Overflow)?,
@@ -144,11 +144,11 @@ impl Trade {
                             token: sell.token,
                         },
                         buy: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(buy.amount)
+                            amount: buy
+                                .amount
+                                .checked_mul(executed.0)
                                 .ok_or(Error::Overflow)?
-                                .checked_ceil_div(&sell.amount)
+                                .checked_div(sell.amount)
                                 .ok_or(Error::Overflow)?,
                             token: buy.token,
                         },
