@@ -409,6 +409,7 @@ pub struct FullOrder {
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
+    pub executed_solver_fee: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -474,7 +475,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
+(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee,
+(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -1901,7 +1903,8 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, None);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee))
+        let solver_fee: BigDecimal = 2.into();
+        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
             .await
             .unwrap();
 
@@ -1910,6 +1913,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, Some(fee));
+        assert_eq!(order.executed_solver_fee, Some(solver_fee));
     }
 
     #[tokio::test]

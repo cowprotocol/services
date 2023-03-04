@@ -507,6 +507,7 @@ mod tests {
             surplus_fee: Default::default(),
             surplus_fee_timestamp: Default::default(),
             executed_surplus_fee: Default::default(),
+            executed_solver_fee: Default::default(),
         };
 
         // Open - sell (filled - 0%)

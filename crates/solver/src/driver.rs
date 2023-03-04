@@ -426,6 +426,7 @@ impl Driver {
                     let execution = Execution {
                         reward,
                         surplus_fee,
+                        solver_fee: trade.solver_fee,
                     };
                     (*uid, execution)
                 })
