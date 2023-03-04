@@ -1,6 +1,6 @@
 use {
     crate::solver::score_computation::ScoreCalculator,
-    anyhow::Result,
+    anyhow::{Context, Result},
     ethcontract::U256,
     shared::external_prices::ExternalPrices,
 };
@@ -30,6 +30,7 @@ use {
 };
 
 /// Determines whether a settlement would be executed successfully.
+/// If the settlement would succeed, the gas estimate is returned.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
@@ -47,16 +48,15 @@ pub struct SettlementSimulator {
 impl SettlementSimulating for SettlementSimulator {
     async fn settlement_would_succeed(&self, settlement: Settlement) -> Result<U256> {
         let settlement = settlement.encode(self.internalization);
-        let result = simulate_and_estimate_gas_at_current_block(
+        simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
             self.gas_price,
         )
-        .await?;
-        match result.first().unwrap() {
-            Ok(gas_estimate) => Ok(*gas_estimate),
-            Err(_) => Err(anyhow::anyhow!("no simulation result")),
-        }
+        .await?
+        .pop()
+        .context("empty result")?
+        .map_err(Into::into)
     }
 }
 

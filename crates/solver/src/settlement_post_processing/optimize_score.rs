@@ -17,11 +17,16 @@ pub async fn optimize_score(
     gas_price: GasPrice1559,
     prices: &ExternalPrices,
 ) -> Settlement {
+    if settlement.score.is_some() {
+        return settlement;
+    }
+
     let gas_amount = match settlement_simulator
         .settlement_would_succeed(settlement.clone())
         .await
     {
-        Ok(gas_amount) => gas_amount, // todo multiply with 0.9 for more real value
+        Ok(gas_amount) => gas_amount * 9 / 10, /* multiply with 0.9 to get more realistic gas
+                                                 * amount */
         Err(_) => return settlement,
     };
 
@@ -37,7 +42,7 @@ pub async fn optimize_score(
         .map(Score::Score);
 
     Settlement {
-        score: settlement.score.or(score), // overwrite score if it was not set before
+        score,
         ..settlement
     }
 }
