@@ -333,6 +333,7 @@ pub async fn run(args: Arguments) {
         post_processing_pipeline,
         &domain,
         s3_instance_uploader,
+        &args.score_params,
     )
     .expect("failure creating solvers");
 

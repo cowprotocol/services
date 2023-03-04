@@ -143,7 +143,7 @@ impl PostProcessing for PostProcessingPipeline {
                 optimize_score(
                     optimized_solution,
                     &simulator,
-                    &score_calculator,
+                    score_calculator,
                     gas_price,
                     prices,
                 )

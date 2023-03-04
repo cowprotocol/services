@@ -303,6 +303,7 @@ pub fn create(
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
+    score_configuration: &score_computation::Arguments,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -378,7 +379,7 @@ pub fn create(
                 "configured slippage",
             );
 
-            let score_calculator = None; //score_configuration.get_calculator(solver_type);
+            let score_calculator = score_configuration.get_calculator(solver_type);
             tracing::debug!(
                 solver = ?solver_type, score = ?score_calculator,
                 "configured score",

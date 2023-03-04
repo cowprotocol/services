@@ -3,7 +3,13 @@ use {
         liquidity::slippage,
         s3_instance_upload_arguments::S3UploadArguments,
         settlement_access_list::AccessListEstimatorType,
-        solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
+        solver::{
+            score_computation,
+            single_order_solver,
+            ExternalSolverArg,
+            SolverAccountArg,
+            SolverType,
+        },
     },
     primitive_types::H160,
     reqwest::Url,
@@ -323,7 +329,9 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub additional_mining_deadline: Duration,
-    //pub score_params: score_computation::Arguments,
+
+    #[clap(flatten)]
+    pub score_params: score_computation::Arguments,
 }
 
 impl std::fmt::Display for Arguments {
@@ -451,6 +459,7 @@ impl std::fmt::Display for Arguments {
             "additional_mining_deadline: {:?}",
             self.additional_mining_deadline
         )?;
+        writeln!(f, "{}", self.score_params)?;
         Ok(())
     }
 }

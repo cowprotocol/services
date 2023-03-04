@@ -25,8 +25,8 @@ pub async fn optimize_score(
         .settlement_would_succeed(settlement.clone())
         .await
     {
-        Ok(gas_amount) => gas_amount * 9 / 10, /* multiply with 0.9 to get more realistic gas
-                                                 * amount */
+        Ok(gas_amount) => gas_amount * 9 / 10, /* multiply with 0.9 to get more realistic gas */
+        // amount
         Err(_) => return settlement,
     };
 
