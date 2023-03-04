@@ -6,10 +6,14 @@ use {
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
-    model::order::OrderKind,
+    model::{order::OrderKind, signature::Signature},
     num::BigRational,
-    number_conversions::{big_rational_to_u256, big_uint_to_u256, u256_to_big_rational},
-    shared::{conversions::U256Ext, external_prices::ExternalPrices},
+    number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
+    shared::{
+        conversions::U256Ext,
+        db_order_conversions::{order_kind_from, signing_scheme_from},
+        external_prices::ExternalPrices,
+    },
     web3::ethabi::{Function, Token},
 };
 
@@ -100,13 +104,9 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
     }
 }
 
-pub struct FeeConfiguration {
-    pub fee_objective_scaling_factor: BigRational,
-}
-
 #[derive(Debug)]
 pub struct Order {
-    pub full_fee_amount: U256,
+    pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
     pub buy_token: H160,
@@ -116,25 +116,34 @@ pub struct Order {
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl TryFrom<model::order::Order> for Order {
+impl TryFrom<database::orders::FullOrder> for Order {
     type Error = anyhow::Error;
 
-    fn try_from(order: model::order::Order) -> std::result::Result<Self, Self::Error> {
+    fn try_from(order: database::orders::FullOrder) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            full_fee_amount: order.metadata.full_fee_amount,
-            kind: order.data.kind,
-            sell_token: order.data.sell_token,
-            buy_token: order.data.buy_token,
-            sell_amount: order.data.sell_amount,
-            buy_amount: order.data.buy_amount,
-            executed_amount: match order.data.kind {
-                OrderKind::Buy => big_uint_to_u256(&order.metadata.executed_buy_amount)?,
-                OrderKind::Sell => order.metadata.executed_sell_amount_before_fees,
+            executed_solver_fee: order
+                .executed_solver_fee
+                .as_ref()
+                .and_then(big_decimal_to_u256),
+            kind: order_kind_from(order.kind),
+            sell_token: H160(order.sell_token.0),
+            buy_token: H160(order.buy_token.0),
+            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
+            buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
+            executed_amount: match order_kind_from(order.kind) {
+                OrderKind::Buy => {
+                    big_decimal_to_u256(&order.sum_buy).context("executed_buy_amount")?
+                }
+                OrderKind::Sell => big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
+                    .context("executed_sell_amount_before_fees")?,
             },
-            signature: order
-                .signature
-                .encode_for_settlement(order.metadata.owner)
-                .to_vec(),
+            signature: {
+                let signing_scheme = signing_scheme_from(order.signing_scheme);
+                let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
+                signature
+                    .encode_for_settlement(H160(order.owner.0))
+                    .to_vec()
+            },
         })
     }
 }
@@ -169,19 +178,14 @@ impl DecodedSettlement {
     // Needs rework to support partially fillable orders.
     // Tricky because the decoded settlement is using FILLED `orders` so we don't
     // always know the executed amount in case of partial fill.
-    pub fn total_fees(
-        &self,
-        external_prices: &ExternalPrices,
-        orders: &[Order],
-        configuration: &FeeConfiguration,
-    ) -> U256 {
+    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders
                 .iter()
                 .find(|order| order.signature == trade.signature.0)
             {
                 Some(order) => {
-                    acc + match fee(external_prices, order, configuration) {
+                    acc + match fee(external_prices, order) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -246,23 +250,17 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
-fn fee(
-    external_prices: &ExternalPrices,
-    order: &Order,
-    configuration: &FeeConfiguration,
-) -> Option<U256> {
-    let full_fee_amount = u256_to_big_rational(&order.full_fee_amount);
-    tracing::trace!(?full_fee_amount, ?order.full_fee_amount, "full_fee_amount");
-    let scaled_fee_amount = full_fee_amount * configuration.fee_objective_scaling_factor.clone();
-    tracing::trace!(?scaled_fee_amount, ?configuration.fee_objective_scaling_factor, "scaled_fee_amount");
+fn fee(external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
+    let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
+    tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
 
     let fee = match order.kind {
         model::order::OrderKind::Buy => {
-            scaled_fee_amount * u256_to_big_rational(&order.executed_amount)
+            solver_fee * u256_to_big_rational(&order.executed_amount)
                 / u256_to_big_rational(&order.buy_amount)
         }
         model::order::OrderKind::Sell => {
-            scaled_fee_amount * u256_to_big_rational(&order.executed_amount)
+            solver_fee * u256_to_big_rational(&order.executed_amount)
                 / u256_to_big_rational(&order.sell_amount)
         }
     };
@@ -371,7 +369,6 @@ pub fn decode_function_input(function: &Function, input: &[u8]) -> Result<Vec<To
 mod tests {
     use {
         super::*,
-        bigdecimal::One,
         ethcontract::H160,
         shared::ethrpc::Web3,
         std::{collections::BTreeMap, str::FromStr},
@@ -539,7 +536,7 @@ mod tests {
 
         let orders = vec![
             Order {
-                full_fee_amount: 48263037u128.into(),
+                executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
@@ -549,7 +546,7 @@ mod tests {
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             Order {
-                full_fee_amount: 127253135942751092736u128.into(),
+                executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
@@ -559,11 +556,8 @@ mod tests {
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
             }
         ];
-        let configuration = FeeConfiguration {
-            fee_objective_scaling_factor: BigRational::one(),
-        };
         let fees = settlement
-            .total_fees(&external_prices, &orders, &configuration)
+            .total_fees(&external_prices, &orders)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);

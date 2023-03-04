@@ -37,7 +37,6 @@ use {
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
-    num::BigRational,
     shared::{
         account_balances::Web3BalanceFetcher,
         bad_token::{
@@ -626,10 +625,6 @@ pub async fn main(args: arguments::Arguments) {
             native_token: native_token.address(),
             db: db.clone(),
             current_block: current_block_stream.clone(),
-            fee_objective_scaling_factor: BigRational::from_float(
-                args.fee_objective_scaling_factor,
-            )
-            .unwrap(),
         };
     tokio::task::spawn(
         on_settlement_event_updater
