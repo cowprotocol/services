@@ -6,10 +6,14 @@ use {
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
-    model::order::OrderKind,
+    model::{order::OrderKind, signature::Signature},
     num::BigRational,
-    number_conversions::{big_rational_to_u256, big_uint_to_u256, u256_to_big_rational},
-    shared::{conversions::U256Ext, external_prices::ExternalPrices},
+    number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
+    shared::{
+        conversions::U256Ext,
+        db_order_conversions::{order_kind_from, signing_scheme_from},
+        external_prices::ExternalPrices,
+    },
     web3::ethabi::{Function, Token},
 };
 
@@ -112,25 +116,34 @@ pub struct Order {
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl TryFrom<model::order::Order> for Order {
+impl TryFrom<database::orders::FullOrder> for Order {
     type Error = anyhow::Error;
 
-    fn try_from(order: model::order::Order) -> std::result::Result<Self, Self::Error> {
+    fn try_from(order: database::orders::FullOrder) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            executed_solver_fee: order.metadata.executed_solver_fee,
-            kind: order.data.kind,
-            sell_token: order.data.sell_token,
-            buy_token: order.data.buy_token,
-            sell_amount: order.data.sell_amount,
-            buy_amount: order.data.buy_amount,
-            executed_amount: match order.data.kind {
-                OrderKind::Buy => big_uint_to_u256(&order.metadata.executed_buy_amount)?,
-                OrderKind::Sell => order.metadata.executed_sell_amount_before_fees,
+            executed_solver_fee: order
+                .executed_solver_fee
+                .as_ref()
+                .and_then(big_decimal_to_u256),
+            kind: order_kind_from(order.kind),
+            sell_token: H160(order.sell_token.0),
+            buy_token: H160(order.buy_token.0),
+            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
+            buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
+            executed_amount: match order_kind_from(order.kind) {
+                OrderKind::Buy => {
+                    big_decimal_to_u256(&order.sum_buy).context("executed_buy_amount")?
+                }
+                OrderKind::Sell => big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
+                    .context("executed_sell_amount_before_fees")?,
             },
-            signature: order
-                .signature
-                .encode_for_settlement(order.metadata.owner)
-                .to_vec(),
+            signature: {
+                let signing_scheme = signing_scheme_from(order.signing_scheme);
+                let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
+                signature
+                    .encode_for_settlement(H160(order.owner.0))
+                    .to_vec()
+            },
         })
     }
 }

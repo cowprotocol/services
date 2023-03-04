@@ -614,8 +614,6 @@ pub struct OrderMetadata {
     /// Does not take partial fill into account.
     #[serde(default, with = "u256_decimal")]
     pub solver_fee: U256,
-    #[serde(skip)]
-    pub executed_solver_fee: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -957,7 +955,6 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
-                executed_solver_fee: None,
                 solver_fee: U256::MAX,
                 ..Default::default()
             },

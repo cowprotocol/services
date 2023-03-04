@@ -401,10 +401,6 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         // Initialize unscaled and scale later when required.
         solver_fee: big_decimal_to_u256(&order.full_fee_amount)
             .context("solver_fee is not U256")?,
-        executed_solver_fee: order
-            .executed_solver_fee
-            .as_ref()
-            .and_then(big_decimal_to_u256),
         ethflow_data,
         onchain_user,
         onchain_order_data,
