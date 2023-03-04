@@ -36,9 +36,10 @@ pub async fn optimize_score(
         BigRational::from_f64(gas_price.effective_gas_price()).unwrap(),
         &gas_amount,
     );
+    let nmb_orders = settlement.trades().count();
 
     let score = score_calculator
-        .compute_score(inputs, settlement.trades().count())
+        .calculate(inputs, nmb_orders)
         .map(Score::Score);
 
     Settlement {

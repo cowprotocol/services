@@ -36,11 +36,7 @@ impl ScoreCalculator {
         Self { a, b, c, x }
     }
 
-    pub fn compute_score(
-        &self,
-        inputs: objective_value::Inputs,
-        nmb_orders: usize,
-    ) -> Option<U256> {
+    pub fn calculate(&self, inputs: objective_value::Inputs, nmb_orders: usize) -> Option<U256> {
         let surplus = inputs.surplus_given.to_f64()?;
         let fees = inputs.solver_fees.to_f64()?;
         let gas_amount = inputs.gas_amount.to_f64()?;
