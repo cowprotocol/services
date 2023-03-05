@@ -1,10 +1,5 @@
 use {
-    crate::{
-        debug_bytes,
-        interaction::Interaction,
-        rate_limiter::{back_off, RateLimiter, RateLimiterError},
-        trade_finding::EncodedInteraction,
-    },
+    crate::{debug_bytes, interaction::Interaction, trade_finding::EncodedInteraction},
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
@@ -37,7 +32,6 @@ pub trait ParaswapApi: Send + Sync + 'static {
 pub struct DefaultParaswapApi {
     pub client: Client,
     pub partner: String,
-    pub rate_limiter: Option<RateLimiter>,
 }
 
 #[async_trait::async_trait]
@@ -47,10 +41,7 @@ impl ParaswapApi for DefaultParaswapApi {
         tracing::trace!("Querying Paraswap price API: {}", url);
         let request = self.client.get(url).send();
 
-        let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
-            _ => request.await?,
-        };
+        let response = request.await?;
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
@@ -66,10 +57,7 @@ impl ParaswapApi for DefaultParaswapApi {
             partner: &self.partner,
         };
         let request = query.into_request(&self.client).send();
-        let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
-            _ => request.await?,
-        };
+        let response = request.await?;
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
@@ -106,7 +94,7 @@ pub enum ParaswapResponseError {
     Other(#[from] anyhow::Error),
 
     #[error("rate limited")]
-    RateLimited(#[from] RateLimiterError),
+    RateLimited,
 }
 
 impl ParaswapResponseError {
@@ -132,9 +120,7 @@ where
     if status == StatusCode::TOO_MANY_REQUESTS {
         // This custom treatment is required as the text field is empty for these
         // responses
-        return Err(ParaswapResponseError::RateLimited(
-            RateLimiterError::RateLimited,
-        ));
+        return Err(ParaswapResponseError::RateLimited);
     }
     match serde_json::from_str::<RawResponse<T>>(response_text)? {
         RawResponse::ResponseOk(response) => Ok(response),
@@ -766,9 +752,7 @@ mod tests {
 
         assert!(matches!(
             parse(StatusCode::TOO_MANY_REQUESTS, ""),
-            Err(ParaswapResponseError::RateLimited(
-                RateLimiterError::RateLimited
-            ))
+            Err(ParaswapResponseError::RateLimited)
         ));
     }
 
@@ -797,7 +781,6 @@ mod tests {
         let api = DefaultParaswapApi {
             client: Client::new(),
             partner: "Test".into(),
-            rate_limiter: None,
         };
 
         let good_query = TransactionBuilderQuery {

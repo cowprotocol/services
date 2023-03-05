@@ -797,7 +797,6 @@ mod tests {
             code_fetching::MockCodeFetching,
             dummy_contract,
             order_quoting::MockOrderQuoting,
-            rate_limiter::RateLimiterError,
             signature_validator::MockSignatureValidating,
         },
         anyhow::anyhow,
@@ -2077,9 +2076,7 @@ mod tests {
             ValidationError::PriceForQuote(_)
         );
         assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::RateLimited(
-                RateLimiterError::RateLimited
-            )),
+            CalculateQuoteError::Price(PriceEstimationError::RateLimited),
             ValidationError::PriceForQuote(_)
         );
     }
