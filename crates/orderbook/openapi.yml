@@ -582,9 +582,10 @@ components:
         uid:
           $ref: "#/components/schemas/UID"
         availableBalance:
-          description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance or if the order status isn't Open."
+          description: Unused field that is currently always set to null and will be removed in the future.
           $ref: "#/components/schemas/TokenAmount"
           nullable: true
+          deprecated: true
         executedSellAmount:
           description: "The total amount of sellToken that has been executed for this order including fees."
           $ref: "#/components/schemas/BigUint"
