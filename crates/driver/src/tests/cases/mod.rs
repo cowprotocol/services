@@ -1,6 +1,7 @@
 //! Test cases.
 
 pub mod example_config;
+pub mod limit_order;
 pub mod quote;
 pub mod settle;
 pub mod solve;
