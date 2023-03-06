@@ -58,10 +58,7 @@ impl Competition {
             return Ok((solution.id, solution::Score::zero()));
         }
 
-        // TODO(#1009) Keep in mind that the driver needs to make sure that the solution
-        // doesn't fail simulation. Currently this is the case, but this needs to stay
-        // the same as this code changes.
-        tracing::trace!("simulating");
+        tracing::trace!("verifying");
         let settlement = solution.verify(&self.eth, &self.simulator, auction).await?;
         tracing::trace!("scoring");
         let score = settlement.score(&self.eth, auction).await?;
@@ -70,7 +67,6 @@ impl Competition {
         Ok((id, score))
     }
 
-    // TODO Rename this to settle()?
     /// Execute (settle) a solution generated as part of this competition.
     pub async fn settle(&self, solution_id: solution::Id) -> Result<(), Error> {
         let settlement = match self.settlement.lock().unwrap().take() {

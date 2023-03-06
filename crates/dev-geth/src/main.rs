@@ -94,6 +94,7 @@ struct Processes {
 impl Processes {
     async fn start(&self) -> Port {
         let port = self.next_port();
+        println!("starting {port}");
         let datadir = format!("/{port}");
         let status = tokio::process::Command::new("cp")
             .arg("-r")
@@ -120,10 +121,12 @@ impl Processes {
             .unwrap();
         Self::wait_for_geth(&port).await;
         self.children.insert(port, child);
+        println!("started {port}");
         port
     }
 
     async fn stop(&self, port: Port) {
+        println!("stopping {port}");
         let (_, mut process) = self
             .children
             .remove(&port)
@@ -132,6 +135,7 @@ impl Processes {
         tokio::fs::remove_dir_all(format!("/{}", port.0))
             .await
             .expect("failed to delete the datadir");
+        println!("stopped {port}");
     }
 
     fn next_port(&self) -> Port {
@@ -142,6 +146,7 @@ impl Processes {
     }
 
     async fn wait_for_geth(port: &Port) {
+        println!("waiting for {port} to come online");
         let web3 = web3::Web3::new(
             web3::transports::Http::new(&format!("http://localhost:{}", port.0))
                 .expect("valid URL"),
@@ -161,6 +166,7 @@ impl Processes {
         })
         .await
         .expect("timed out while waiting for geth to become reachable");
+        println!("{port} has come online");
     }
 }
 
