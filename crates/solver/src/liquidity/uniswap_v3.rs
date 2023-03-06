@@ -17,6 +17,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
     },
@@ -35,7 +36,7 @@ pub struct UniswapV3Liquidity {
     settlement_allowances: Box<dyn AllowanceManaging>,
 }
 pub struct Inner {
-    router: UniswapV3SwapRouter,
+    pub router: UniswapV3SwapRouter,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement
     // contract
@@ -43,8 +44,26 @@ pub struct Inner {
 }
 
 pub struct UniswapV3SettlementHandler {
-    inner: Arc<Inner>,
-    fee: Option<u32>,
+    pub inner: Arc<Inner>,
+    pub fee: u32,
+}
+
+impl UniswapV3SettlementHandler {
+    pub fn new(
+        router: UniswapV3SwapRouter,
+        gpv2_settlement: GPv2Settlement,
+        allowances: Mutex<Allowances>,
+        fee: Ratio<u32>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                router,
+                gpv2_settlement,
+                allowances,
+            }),
+            fee: ratio_to_u32(fee).unwrap(),
+        }
+    }
 }
 
 /// Highly corelated to Uniswap V3 only.
@@ -124,7 +143,7 @@ impl LiquidityCollecting for UniswapV3Liquidity {
                 tokens: token_pair,
                 settlement_handling: Arc::new(UniswapV3SettlementHandler {
                     inner: self.inner.clone(),
-                    fee: Some(ratio_to_u32(pool.state.fee)?),
+                    fee: ratio_to_u32(pool.state.fee)?,
                 }),
                 pool,
             }))
@@ -135,35 +154,32 @@ impl LiquidityCollecting for UniswapV3Liquidity {
 }
 
 impl UniswapV3SettlementHandler {
-    fn settle(
+    pub fn settle(
         &self,
-        (token_in, amount_in_max): (H160, U256),
-        (token_out, amount_out): (H160, U256),
-        fee: u32,
+        token_amount_in_max: TokenAmount,
+        token_amount_out: TokenAmount,
     ) -> (Option<Approval>, UniswapV3Interaction) {
         let approval = self
             .inner
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_in, amount_in_max);
+            .approve_token_or_default(token_amount_in_max.clone());
 
         (
             approval,
             UniswapV3Interaction {
                 router: self.inner.router.clone(),
                 params: ExactOutputSingleParams {
-                    token_in,
-                    token_out,
-                    fee,
+                    token_amount_in_max,
+                    token_amount_out,
+                    fee: self.fee,
                     recipient: self.inner.gpv2_settlement.address(),
                     deadline: {
                         model::time::now_in_epoch_seconds()
                             .saturating_add(TIMEOUT)
                             .into()
                     },
-                    amount_out,
-                    amount_in_max,
                     sqrt_price_limit_x96: U256::zero(),
                 },
             },
@@ -179,11 +195,7 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     // Creates the required interaction to convert the given input into output.
     // Assumes slippage is already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let (approval, swap) = self.settle(
-            execution.input_max,
-            execution.output,
-            self.fee.context("missing fee")?,
-        );
+        let (approval, swap) = self.settle(execution.input_max, execution.output);
         if let Some(approval) = approval {
             encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
         }
@@ -197,14 +209,14 @@ mod tests {
     use {super::*, num::rational::Ratio, shared::dummy_contract, std::collections::HashMap};
 
     impl UniswapV3SettlementHandler {
-        fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
+        fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {
             Self {
                 inner: Arc::new(Inner {
                     router: dummy_contract!(UniswapV3SwapRouter, H160::zero()),
                     gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
                     allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
                 }),
-                fee: None,
+                fee,
             }
         }
     }
@@ -218,48 +230,70 @@ mod tests {
             token_b => 200.into(),
         };
 
-        let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances);
+        let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances, 10);
 
         // Token A below, equal, above
-        let (approval, _) =
-            settlement_handler.settle((token_a, 50.into()), (token_b, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_a,
+                amount: 50.into(),
+            },
+            TokenAmount {
+                token: token_b,
+                amount: 100.into(),
+            },
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) =
-            settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_a,
+                amount: 99.into(),
+            },
+            TokenAmount {
+                token: token_b,
+                amount: 100.into(),
+            },
+        );
         assert_eq!(approval, None);
 
         // Token B below, equal, above
-        let (approval, _) =
-            settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_b,
+                amount: 150.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
+        );
         assert_eq!(approval, None);
 
-        let (approval, _) =
-            settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
+        let (approval, _) = settlement_handler.settle(
+            TokenAmount {
+                token: token_b,
+                amount: 199.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
+        );
         assert_eq!(approval, None);
 
         // Untracked token
         let (approval, _) = settlement_handler.settle(
-            (H160::from_low_u64_be(3), 1.into()),
-            (token_a, 100.into()),
-            10,
+            TokenAmount {
+                token: H160::from_low_u64_be(3),
+                amount: 1.into(),
+            },
+            TokenAmount {
+                token: token_a,
+                amount: 100.into(),
+            },
         );
         assert_ne!(approval, None);
-    }
-
-    #[test]
-    fn test_encode() {
-        let settlement_handler = UniswapV3SettlementHandler::new_dummy(Default::default());
-        let execution = AmmOrderExecution {
-            input_max: (H160::default(), U256::zero()),
-            output: (H160::default(), U256::zero()),
-            internalizable: false,
-        };
-        let mut encoder = SettlementEncoder::new(Default::default());
-        let encoded = settlement_handler
-            .encode(execution, &mut encoder)
-            .unwrap_err();
-        assert!(encoded.to_string() == "missing fee");
     }
 
     #[test]

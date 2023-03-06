@@ -17,7 +17,7 @@ pub async fn load(path: &Path) -> infra::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     let config: file::Config = toml::de::from_str(&data)
-        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
+        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
     infra::Config {
         solvers: config
             .solvers
@@ -46,6 +46,15 @@ pub async fn load(path: &Path) -> infra::Config {
                 .map(|config| liquidity::config::UniswapV2 {
                     router: config.router.into(),
                     pool_code: config.pool_code.into(),
+                })
+                .collect(),
+            uniswap_v3: config
+                .liquidity
+                .uniswap_v3
+                .into_iter()
+                .map(|config| liquidity::config::UniswapV3 {
+                    router: config.router.into(),
+                    max_pools_to_initialize: config.max_pools_to_initialize,
                 })
                 .collect(),
         },

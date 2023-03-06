@@ -3,10 +3,7 @@ use {
         buffers::{BufferRetrievalError, BufferRetrieving},
         settlement::SettlementContext,
     },
-    crate::{
-        liquidity::{Exchange, LimitOrder, Liquidity},
-        settlement::external_prices::ExternalPrices,
-    },
+    crate::liquidity::{Exchange, LimitOrder, Liquidity},
     anyhow::{Context, Result},
     ethcontract::{errors::ExecutionError, U256},
     itertools::{Either, Itertools as _},
@@ -15,6 +12,7 @@ use {
     num::{BigInt, BigRational},
     primitive_types::H160,
     shared::{
+        external_prices::ExternalPrices,
         http_solver::{gas_model::GasModel, model::*},
         sources::balancer_v2::pools::common::compute_scaling_rate,
         token_info::{TokenInfo, TokenInfoFetching},
@@ -65,7 +63,7 @@ impl InstanceCreator {
                 });
         orders.extend(limit_orders);
 
-        let market_makable_token_list = self.market_makable_token_list.addresses();
+        let market_makable_token_list = self.market_makable_token_list.all();
 
         let tokens = map_tokens_for_solver(&orders, &amms, &market_makable_token_list);
         let (token_infos, buffers_result) = futures::join!(
@@ -187,17 +185,6 @@ fn map_tokens_for_solver(
     Vec::from_iter(token_set)
 }
 
-fn order_fee(order: &LimitOrder) -> TokenAmount {
-    let amount = match order.is_liquidity_order() {
-        true => order.unscaled_subsidized_fee,
-        false => order.scaled_unsubsidized_fee,
-    };
-    TokenAmount {
-        amount,
-        token: order.sell_token,
-    }
-}
-
 fn token_models(
     token_infos: &HashMap<H160, TokenInfo>,
     price_estimates: &HashMap<H160, f64>,
@@ -258,13 +245,16 @@ fn order_models(
                     buy_amount: order.buy_amount,
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
-                    fee: order_fee(order),
+                    fee: TokenAmount {
+                        amount: order.solver_fee,
+                        token: order.sell_token,
+                    },
                     cost,
                     is_liquidity_order: order.is_liquidity_order(),
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,
-                    is_mature: order.is_mature,
+                    is_mature: true,
                 },
             ))
         })
@@ -406,11 +396,10 @@ mod tests {
         super::*,
         crate::{
             liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder},
-            settlement::external_prices::externalprices,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
         model::TokenPair,
-        shared::token_info::MockTokenInfoFetching,
+        shared::{externalprices, token_info::MockTokenInfoFetching},
     };
 
     #[tokio::test]

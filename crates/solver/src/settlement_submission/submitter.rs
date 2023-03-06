@@ -330,7 +330,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::debug!("found mined transaction {:?}", receipt);
+                    tracing::debug!("found mined transaction {:?}", receipt.transaction_hash);
                     track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
@@ -722,7 +722,7 @@ mod tests {
             .transaction_count(account.address(), None)
             .await
             .unwrap();
-        let contract = crate::get_settlement_contract(&web3).await.unwrap();
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let flashbots_api = FlashbotsApi::new(Client::new(), "https://rpc.flashbots.net").unwrap();
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(

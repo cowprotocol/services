@@ -52,19 +52,31 @@ impl Fetcher {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
             block_stream_retriever_strategy: BlockRetrieverStrategy::EthCall,
-        }
-        .stream(boundary::web3(eth))
-        .await?;
+        };
 
-        let liquidity_sources = future::join_all(
+        let block_stream = blocks.stream(boundary::web3(eth)).await?;
+        let block_retriever = blocks.retriever(boundary::web3(eth));
+
+        let uni_v3: Vec<_> = future::join_all(
             config
-                .uniswap_v2
+                .uniswap_v3
                 .iter()
-                .map(|config| async { uniswap::v2::collector(eth, &blocks, config).await }),
+                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
         )
         .await
         .into_iter()
         .try_collect()?;
+
+        let uni_v2: Vec<_> = future::join_all(
+            config
+                .uniswap_v2
+                .iter()
+                .map(|config| uniswap::v2::collector(eth, &block_stream, config)),
+        )
+        .await
+        .into_iter()
+        .try_collect()?;
+
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),
             &config
@@ -76,9 +88,9 @@ impl Fetcher {
         );
 
         Ok(Self {
-            blocks,
+            blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources,
+                liquidity_sources: [uni_v2, uni_v3].into_iter().flatten().collect(),
                 base_tokens: Arc::new(base_tokens),
             },
         })
@@ -106,14 +118,14 @@ impl Fetcher {
         let liquidity = liquidity
             .into_iter()
             .enumerate()
-            .map(|(index, liquidity)| {
+            .filter_map(|(index, liquidity)| {
                 let id = liquidity::Id(index);
                 match liquidity {
-                    Liquidity::ConstantProduct(pool) => uniswap::v2::to_domain(id, pool),
+                    Liquidity::ConstantProduct(pool) => Some(uniswap::v2::to_domain(id, pool)),
                     Liquidity::BalancerWeighted(_) => unreachable!(),
                     Liquidity::BalancerStable(_) => unreachable!(),
                     Liquidity::LimitOrder(_) => unreachable!(),
-                    Liquidity::Concentrated(_) => unreachable!(),
+                    Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),
                 }
             })
             .collect();

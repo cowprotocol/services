@@ -19,7 +19,7 @@ use {
         },
         metrics::SolverMetrics,
         s3_instance_upload::S3InstanceUploader,
-        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement::Settlement,
         settlement_post_processing::PostProcessing,
         solver::{
             balancer_sor_solver::BalancerSorSolver,
@@ -42,6 +42,7 @@ use {
         baseline_solver::BaseTokens,
         conversions::U256Ext,
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_client::HttpClientFactory,
         http_solver::{
             model::{AuctionResult, SimulatedTransaction},
@@ -65,7 +66,7 @@ use {
 pub mod balancer_sor_solver;
 mod baseline_solver;
 pub mod http_solver;
-mod naive_solver;
+pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
@@ -342,6 +343,7 @@ pub fn create(
                 network_name: network_id.clone(),
                 chain_id,
                 base: url,
+                solve_path: "solve".to_owned(),
                 client: http_factory.create(),
                 config,
             },
@@ -585,9 +587,10 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 mod tests {
     use {
         super::*,
-        crate::{liquidity::LimitOrder, settlement::external_prices::externalprices},
+        crate::liquidity::LimitOrder,
         model::order::OrderKind,
         num::One as _,
+        shared::externalprices,
     };
 
     /// Dummy solver returning no settlements

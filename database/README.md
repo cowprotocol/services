@@ -1,6 +1,6 @@
 This document explains the database that the orderbook api uses.
 
-We need to store orders persistently even if the orderbook service goes. For this we use a PostgreSQL database. The schema can be found in `schema.sql`.
+We need to store orders persistently even if the orderbook service goes down. For this we use a PostgreSQL database. The schema can be found in `schema.sql`.
 
 In addition to the orders, we also store trade events. This allows us to keep track of filled amounts.
 

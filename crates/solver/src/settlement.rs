@@ -1,8 +1,6 @@
-pub mod external_prices;
 mod settlement_encoder;
 
 use {
-    self::external_prices::ExternalPrices,
     crate::{
         encoding::{self, EncodedSettlement, EncodedTrade},
         liquidity::Settleable,
@@ -28,7 +26,7 @@ pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, Settleme
 pub struct Trade {
     pub order: Order,
     pub executed_amount: U256,
-    pub scaled_unsubsidized_fee: U256,
+    pub solver_fee: U256,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -140,14 +138,20 @@ impl Trade {
         self.compute_fee_execution(self.order.data.fee_amount)
     }
 
-    /// Returns the scaled unsubsidized fee amount that should be used for
-    /// objective value computation.
-    pub fn executed_scaled_unsubsidized_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.scaled_unsubsidized_fee)
+    /// Returns the solver fee used for computing the objective value adjusted
+    /// for partial fills.
+    pub fn executed_solver_fee(&self) -> Option<U256> {
+        self.compute_fee_execution(self.solver_fee)
     }
 
-    pub fn executed_unscaled_subsidized_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.order.data.fee_amount)
+    /// Returns the actual fees taken by the protocol.
+    pub fn executed_earned_fee(&self) -> Option<U256> {
+        let surplus_fee = match &self.order.metadata.class {
+            // TODO adjust this when limit orders become partially fillable.
+            OrderClass::Limit(details) => details.surplus_fee.unwrap_or_default(),
+            _ => 0.into(),
+        };
+        self.compute_fee_execution(self.order.data.fee_amount + surplus_fee)
     }
 
     fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
@@ -208,6 +212,10 @@ impl Trade {
 
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
+use {
+    model::order::OrderClass,
+    shared::{external_prices::ExternalPrices, http_solver::model::Score},
+};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -222,7 +230,9 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference,
+    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
+                                          * struct */
+    pub score: Option<Score>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -270,6 +280,7 @@ impl Settlement {
         Self {
             encoder,
             submitter: self.submitter.clone(),
+            score: self.score.clone(),
         }
     }
 
@@ -415,27 +426,28 @@ impl Settlement {
             })
     }
 
-    // Computes the total scaled unsubsidized fee of all protocol trades (in wei
-    // ETH).
-    pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
+    /// Computes the total solver fees (in wei) used to compute the objective
+    /// value.
+    pub fn total_solver_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.user_trades()
             .filter_map(|trade| {
                 external_prices.try_get_native_amount(
                     trade.order.data.sell_token,
-                    trade.executed_scaled_unsubsidized_fee()?.to_big_rational(),
+                    trade.executed_solver_fee()?.to_big_rational(),
                 )
             })
             .sum()
     }
 
-    // Computes the total scaled unsubsidized fee of all protocol trades (in wei
-    // ETH).
-    pub fn total_unscaled_subsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
+    // Computes the total subsidized fee of all protocol trades adjusted for partial
+    // fills (in wei ETH). These are the fees that actually get taken by the
+    // protocol.
+    pub fn total_earned_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.user_trades()
             .filter_map(|trade| {
                 external_prices.try_get_native_amount(
                     trade.order.data.sell_token,
-                    trade.executed_unscaled_subsidized_fee()?.to_big_rational(),
+                    trade.executed_earned_fee()?.to_big_rational(),
                 )
             })
             .sum()
@@ -448,6 +460,12 @@ impl Settlement {
         Ok(Self {
             encoder: merged,
             submitter: self.submitter,
+            score: match (self.score, other.score) {
+                (Some(Score::Score(left)), Some(Score::Score(right))) => {
+                    Some(Score::Score(left + right))
+                }
+                _ => None,
+            },
         })
     }
 
@@ -551,11 +569,11 @@ fn surplus_ratio(
 pub mod tests {
     use {
         super::*,
-        crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices},
+        crate::liquidity::SettlementHandling,
         maplit::hashmap,
         model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
         num::FromPrimitive,
-        shared::addr,
+        shared::{addr, externalprices},
     };
 
     pub fn assert_settlement_encoded_with<L, S>(
@@ -1214,7 +1232,7 @@ pub mod tests {
             // Note that the scaled fee amount is different than the order's
             // signed fee amount. This happens for subsidized orders, and when
             // a fee objective scaling factor is configured.
-            scaled_unsubsidized_fee: 5.into(),
+            solver_fee: 5.into(),
         };
         let trade1 = Trade {
             order: Order {
@@ -1228,7 +1246,7 @@ pub mod tests {
                 ..Default::default()
             },
             executed_amount: 10.into(),
-            scaled_unsubsidized_fee: 2.into(),
+            solver_fee: 2.into(),
         };
 
         let clearing_prices = hashmap! {token0 => 5.into(), token1 => 10.into()};
@@ -1240,14 +1258,14 @@ pub mod tests {
 
         // Fee in sell tokens
         assert_eq!(trade0.executed_fee().unwrap(), 1.into());
-        assert_eq!(trade0.executed_scaled_unsubsidized_fee().unwrap(), 5.into());
+        assert_eq!(trade0.executed_solver_fee().unwrap(), 5.into());
         assert_eq!(trade1.executed_fee().unwrap(), 2.into());
-        assert_eq!(trade1.executed_scaled_unsubsidized_fee().unwrap(), 2.into());
+        assert_eq!(trade1.executed_solver_fee().unwrap(), 2.into());
 
         // Fee in wei of ETH
         let settlement = test_settlement(clearing_prices, vec![trade0, trade1]);
         assert_eq!(
-            settlement.total_scaled_unsubsidized_fees(&external_prices),
+            settlement.total_solver_fees(&external_prices),
             BigRational::from_integer(45.into())
         );
     }
@@ -1274,7 +1292,7 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // This is what matters for the objective value
-                    scaled_unsubsidized_fee: 42.into(),
+                    solver_fee: 42.into(),
                 },
                 Trade {
                     order: Order {
@@ -1294,13 +1312,13 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // Doesn't count because it is a "liquidity order"
-                    scaled_unsubsidized_fee: 1337.into(),
+                    solver_fee: 1337.into(),
                 },
             ],
         );
 
         assert_eq!(
-            settlement.total_scaled_unsubsidized_fees(&externalprices! { native_token: token0 }),
+            settlement.total_solver_fees(&externalprices! { native_token: token0 }),
             r(42),
         );
     }
@@ -1326,7 +1344,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 executed_amount: 99760667014_u128.into(),
-                scaled_unsubsidized_fee: 239332986_u128.into(),
+                solver_fee: 239332986_u128.into(),
             }],
         );
 
@@ -1351,7 +1369,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    scaled_unsubsidized_fee: 239332986_u128.into(),
+                    solver_fee: 239332986_u128.into(),
                 },
                 Trade {
                     order: Order {
@@ -1371,7 +1389,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    scaled_unsubsidized_fee: 77577144_u128.into(),
+                    solver_fee: 77577144_u128.into(),
                 },
             ],
         );
@@ -1388,7 +1406,7 @@ pub mod tests {
         let gas_price = 105386573044;
         let objective_value = |settlement: &Settlement, gas: u128| {
             settlement.total_surplus(&external_prices)
-                + settlement.total_scaled_unsubsidized_fees(&external_prices)
+                + settlement.total_solver_fees(&external_prices)
                 - r(gas * gas_price)
         };
 
@@ -1437,7 +1455,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 100_000_u128.into(),
-                    scaled_unsubsidized_fee: 1_000_u128.into(),
+                    solver_fee: 1_000_u128.into(),
                 }],
             );
 
@@ -1471,7 +1489,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 100_000_u128.into(),
-                    scaled_unsubsidized_fee: 1_000_u128.into(),
+                    solver_fee: 1_000_u128.into(),
                 }],
             );
 
@@ -1512,7 +1530,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 executed_amount: 100_000_u128.into(),
-                scaled_unsubsidized_fee: 1_000_u128.into(),
+                solver_fee: 1_000_u128.into(),
             }],
         )
         .encode(InternalizationStrategy::SkipInternalizableInteraction);

@@ -1,4 +1,4 @@
-use crate::settlement::{external_prices::ExternalPrices, Settlement};
+use {crate::settlement::Settlement, shared::external_prices::ExternalPrices};
 
 // Takes the settlements of a single solver and adds a merged settlement.
 pub fn merge_settlements(
@@ -48,11 +48,12 @@ fn merge_at_most_settlements(
 mod tests {
     use {
         super::*,
-        crate::settlement::{external_prices::externalprices, Trade},
+        crate::settlement::Trade,
         maplit::hashmap,
         model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid},
         num::{BigRational, One},
         primitive_types::{H160, U256},
+        shared::externalprices,
         std::collections::HashSet,
     };
 

@@ -211,7 +211,6 @@ mod tests {
         crate::{
             interactions::allowances::{Approval, MockAllowanceManaging},
             liquidity::LimitOrder,
-            settlement::external_prices::ExternalPrices,
             test::account,
         },
         contracts::{GPv2Settlement, WETH9},
@@ -220,6 +219,7 @@ mod tests {
         model::order::{Order, OrderData, OrderKind, OrderMetadata},
         shared::{
             ethrpc::{create_env_test_transport, create_test_transport},
+            external_prices::ExternalPrices,
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
     };
@@ -565,7 +565,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    full_fee_amount: fee,
+                    solver_fee: fee,
                     ..Default::default()
                 },
                 ..Default::default()

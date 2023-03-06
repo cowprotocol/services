@@ -1,3 +1,5 @@
+use crate::bad_token::TokenQuality;
+
 pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
@@ -133,6 +135,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub yearn_solver_url: Option<Url>,
 
+    /// The API path to use for solving.
+    #[clap(long, env, default_value = "solve")]
+    pub yearn_solver_path: String,
+
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
@@ -141,7 +147,9 @@ pub struct Arguments {
     /// This ensures that the proposed trade calldata gets simulated, thus
     /// avoiding invalid calldata mistakenly advertising unachievable prices
     /// when quoting, as well as more robustly identifying unsupported
-    /// tokens.
+    /// tokens. The `Web3` simulator requires the `--simulation-node_url`
+    /// parameter to be set. The `Tenderly` simulator requires `--tenderly-*`
+    /// parameters to be set.
     #[clap(long, env)]
     pub trade_simulator: Option<TradeValidatorKind>,
 
@@ -190,6 +198,7 @@ impl Display for Arguments {
         )?;
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
+        writeln!(f, "yearn_solver_path: {}", self.yearn_solver_path)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,
@@ -211,8 +220,8 @@ impl Display for Arguments {
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
-    #[error("Token {0:?} not supported")]
-    UnsupportedToken(H160),
+    #[error("token {token:?} is not supported: {reason:}")]
+    UnsupportedToken { token: H160, reason: String },
 
     #[error("No liquidity")]
     NoLiquidity,
@@ -233,7 +242,10 @@ pub enum PriceEstimationError {
 impl Clone for PriceEstimationError {
     fn clone(&self) -> Self {
         match self {
-            Self::UnsupportedToken(token) => Self::UnsupportedToken(*token),
+            Self::UnsupportedToken { token, reason } => Self::UnsupportedToken {
+                token: *token,
+                reason: reason.clone(),
+            },
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
@@ -357,12 +369,9 @@ pub async fn ensure_token_supported(
     bad_token_detector: &dyn BadTokenDetecting,
 ) -> Result<(), PriceEstimationError> {
     match bad_token_detector.detect(token).await {
-        Ok(quality) => {
-            if quality.is_good() {
-                Ok(())
-            } else {
-                Err(PriceEstimationError::UnsupportedToken(token))
-            }
+        Ok(TokenQuality::Good) => Ok(()),
+        Ok(TokenQuality::Bad { reason }) => {
+            Err(PriceEstimationError::UnsupportedToken { token, reason })
         }
         Err(err) => Err(PriceEstimationError::Other(err)),
     }

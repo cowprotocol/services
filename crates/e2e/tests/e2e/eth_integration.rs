@@ -1,139 +1,74 @@
 use {
-    crate::{
-        onchain_components::{deploy_token_with_weth_uniswap_pool, to_wei, WethPoolConfig},
-        services::{
-            create_orderbook_api,
-            setup_naive_solver_uniswapv2_driver,
-            wait_for_solvable_orders,
-            OrderbookServices,
-            API_HOST,
-        },
-        tx,
-    },
-    ethcontract::{
-        prelude::{Account, Address, PrivateKey, U256},
-        transaction::TransactionBuilder,
-    },
+    crate::setup::*,
+    ethcontract::prelude::{Address, U256},
     model::{
         order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    serde_json::json,
-    shared::{ethrpc::Web3, http_client::HttpClientFactory, maintenance::Maintaining},
+    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
-
-const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
-const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
-
-const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 #[ignore]
 async fn local_node_eth_integration() {
-    crate::local_node::test(eth_integration).await;
+    run_test(eth_integration).await;
 }
 
 async fn eth_integration(web3: Web3) {
-    shared::tracing::initialize_reentrant("warn,orderbook=debug,solver=debug,autopilot=debug");
-    shared::exit_process_on_panic::set_panic_hook();
-    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
-    let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let solver_account = Account::Local(accounts[0], None);
-    let trader_buy_eth_a =
-        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_A_PK).unwrap(), None);
-    let trader_buy_eth_b =
-        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
-
-    for trader in [&trader_buy_eth_a, &trader_buy_eth_b] {
-        TransactionBuilder::new(web3.clone())
-            .value(to_wei(1))
-            .to(trader.address())
-            .send()
-            .await
-            .unwrap();
-    }
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
 
     // Create & mint tokens to trade, pools for fee connections
-    let token = deploy_token_with_weth_uniswap_pool(
-        &web3,
-        &contracts,
-        WethPoolConfig {
-            token_amount: to_wei(100_000),
-            weth_amount: to_wei(100_000),
-        },
-    )
-    .await;
-
-    token.mint(trader_buy_eth_a.address(), to_wei(51)).await;
-    token.mint(trader_buy_eth_b.address(), to_wei(51)).await;
-    let token = token.contract;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .await;
+    token.mint(trader_a.address(), to_wei(51)).await;
+    token.mint(trader_b.address(), to_wei(51)).await;
 
     // Approve GPv2 for trading
     tx!(
-        trader_buy_eth_a,
-        token.approve(contracts.allowance, to_wei(51))
+        trader_a.account(),
+        token.approve(onchain.contracts().allowance, to_wei(51))
     );
     tx!(
-        trader_buy_eth_b,
-        token.approve(contracts.allowance, to_wei(51))
+        trader_b.account(),
+        token.approve(onchain.contracts().allowance, to_wei(51))
     );
 
-    let trader_a_eth_balance_before = web3
-        .eth()
-        .balance(trader_buy_eth_a.address(), None)
-        .await
-        .unwrap();
-    let trader_b_eth_balance_before = web3
-        .eth()
-        .balance(trader_buy_eth_b.address(), None)
-        .await
-        .unwrap();
+    let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
+    let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
-    let OrderbookServices {
-        maintenance,
-        block_stream,
-        solvable_orders_cache,
-        base_tokens,
-        ..
-    } = OrderbookServices::new(&web3, &contracts, false).await;
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
 
-    let http_factory = HttpClientFactory::default();
-    let client = http_factory.create();
-
-    // Test quote
-    let client_ref = &client;
-    let quote = |sell_token, buy_token| async move {
-        let body = json!({
-                "sellToken": sell_token,
-                "buyToken": buy_token,
-                "from": Address::default(),
-                "kind": "sell",
-                "sellAmountAfterFee": to_wei(42).to_string(),
-        });
-        client_ref
-            .post(&format!("{}{}", API_HOST, "/api/v1/quote",))
-            .json(&body)
-            .send()
-            .await
-            .unwrap()
+    let quote = |sell_token, buy_token| {
+        let services = &services;
+        async move {
+            let request = OrderQuoteRequest {
+                sell_token,
+                buy_token,
+                from: Address::default(),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee { value: to_wei(43) },
+                },
+                ..Default::default()
+            };
+            services.submit_quote(&request).await
+        }
     };
-    let response = quote(token.address(), BUY_ETH_ADDRESS).await;
-    if response.status() != 200 {
-        tracing::error!("{}", response.text().await.unwrap());
-        panic!("bad status");
-    }
+    quote(token.address(), BUY_ETH_ADDRESS).await.unwrap();
     // Eth is only supported as the buy token
-    let response = quote(BUY_ETH_ADDRESS, token.address()).await;
-    if response.status() != 400 {
-        tracing::error!("{}", response.text().await.unwrap());
-        panic!("bad status");
-    }
+    let (status, body) = quote(BUY_ETH_ADDRESS, token.address()).await.unwrap_err();
+    assert_eq!(status, 400, "{body}");
 
     // Place Orders
-    assert_ne!(contracts.weth.address(), BUY_ETH_ADDRESS);
+    assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
     let order_buy_eth_a = OrderBuilder::default()
         .with_kind(OrderKind::Buy)
         .with_sell_token(token.address())
@@ -144,17 +79,12 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_A_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_buy_eth_a)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderBuilder::default()
         .with_kind(OrderKind::Sell)
         .with_sell_token(token.address())
@@ -165,42 +95,30 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &contracts.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_B_PK).unwrap()),
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
         )
         .build()
         .into_order_creation();
-    let placement = client
-        .post(&format!("{API_HOST}{ORDER_PLACEMENT_ENDPOINT}"))
-        .json(&order_buy_eth_b)
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    services.create_order(&order_buy_eth_b).await.unwrap();
 
-    wait_for_solvable_orders(&client, 2).await.unwrap();
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
+        .await
+        .unwrap();
 
-    // Drive solution
-    let mut driver = setup_naive_solver_uniswapv2_driver(
-        &web3,
-        &contracts,
-        base_tokens,
-        block_stream,
-        solver_account,
-    )
-    .await;
-    driver.single_run().await.unwrap();
+    services.start_old_driver(solver.private_key(), vec![]);
+
+    let trade_happened = || async {
+        let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
+        let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
+        balance_a != trader_a_eth_balance_before && balance_b != trader_b_eth_balance_before
+    };
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
-    let trader_a_eth_balance_after = web3
-        .eth()
-        .balance(trader_buy_eth_a.address(), None)
-        .await
-        .unwrap();
-    let trader_b_eth_balance_after = web3
-        .eth()
-        .balance(trader_buy_eth_b.address(), None)
-        .await
-        .unwrap();
+    let trader_a_eth_balance_after = web3.eth().balance(trader_a.address(), None).await.unwrap();
+    let trader_b_eth_balance_after = web3.eth().balance(trader_b.address(), None).await.unwrap();
     assert_eq!(
         trader_a_eth_balance_after - trader_a_eth_balance_before,
         to_wei(49)
@@ -209,11 +127,4 @@ async fn eth_integration(web3: Web3) {
         trader_b_eth_balance_after - trader_b_eth_balance_before,
         49_800_747_827_208_136_744_u128.into()
     );
-
-    // Drive orderbook in order to check that all orders were settled
-    maintenance.run_maintenance().await.unwrap();
-    solvable_orders_cache.update(0).await.unwrap();
-
-    let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.auction.orders.is_empty());
 }

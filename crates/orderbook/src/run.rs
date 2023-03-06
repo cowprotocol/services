@@ -10,11 +10,11 @@ use {
         BalancerV2Vault,
         CowProtocolToken,
         CowProtocolVirtualToken,
-        GPv2Settlement,
         IUniswapV3Factory,
         WETH9,
     },
     ethcontract::errors::DeployError,
+    futures::StreamExt,
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
     shared::{
         account_balances::Web3BalanceFetcher,
@@ -54,7 +54,7 @@ use {
                 BalancerFactoryKind,
                 BalancerPoolFetcher,
             },
-            uniswap_v2::pool_cache::PoolCache,
+            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,
@@ -75,23 +75,38 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
-    let settlement_contract = GPv2Settlement::deployed(&web3)
-        .await
-        .expect("Couldn't load deployed settlement");
-    let vault_relayer = settlement_contract
-        .vault_relayer()
-        .call()
-        .await
-        .expect("Couldn't get vault relayer address");
-    let native_token = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
+
     let chain_id = web3
         .eth()
         .chain_id()
         .await
         .expect("Could not get chainId")
         .as_u64();
+    if let Some(expected_chain_id) = args.shared.chain_id {
+        assert_eq!(
+            chain_id, expected_chain_id,
+            "connected to node with incorrect chain ID",
+        );
+    }
+
+    let settlement_contract = match args.shared.settlement_contract_address {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => contracts::GPv2Settlement::deployed(&web3)
+            .await
+            .expect("load settlement contract"),
+    };
+    let vault_relayer = settlement_contract
+        .vault_relayer()
+        .call()
+        .await
+        .expect("Couldn't get vault relayer address");
+    let native_token = match args.shared.native_token_address {
+        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
+        None => WETH9::deployed(&web3)
+            .await
+            .expect("load native token contract"),
+    };
+
     let network = web3
         .net()
         .version()
@@ -101,13 +116,18 @@ pub async fn run(args: Arguments) {
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
-    let vault = match BalancerV2Vault::deployed(&web3).await {
-        Ok(contract) => Some(contract),
-        Err(DeployError::NotFound(_)) => {
-            tracing::warn!("balancer contracts are not deployed on this network");
-            None
-        }
-        Err(err) => panic!("failed to get balancer vault contract: {err}"),
+    let vault = match args.shared.balancer_v2_vault_address {
+        Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
+            &web3, address, None,
+        )),
+        None => match BalancerV2Vault::deployed(&web3).await {
+            Ok(contract) => Some(contract),
+            Err(DeployError::NotFound(_)) => {
+                tracing::warn!("balancer contracts are not deployed on this network");
+                None
+            }
+            Err(err) => panic!("failed to get balancer vault contract: {err}"),
+        },
     };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
@@ -139,13 +159,22 @@ pub async fn run(args: Arguments) {
         sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
-        sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
-            .await
-            .expect("failed to load baseline source pair providers")
-            .values()
-            .cloned()
-            .unzip();
+    let univ2_sources = baseline_sources
+        .iter()
+        .filter_map(|source: &BaselineSource| {
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+        })
+        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
+    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
+        .then(|source: UniV2BaselineSourceParameters| {
+            let web3 = &web3;
+            async move {
+                let source = source.into_source(web3).await.unwrap();
+                (source.pair_provider, source.pool_fetching)
+            }
+        })
+        .unzip()
+        .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
         native_token.address(),
@@ -294,11 +323,16 @@ pub async fn run(args: Arguments) {
     )
     .map(Arc::new);
 
+    let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
         factory::Network {
             web3: web3.clone(),
+            simulation_web3,
             name: network_name.to_string(),
             chain_id,
             native_token: native_token.address(),
@@ -433,7 +467,8 @@ pub async fn run(args: Arguments) {
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
         )
-        .with_limit_orders(args.enable_limit_orders)
+        .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
+        .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
         .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments),
     );
     let orderbook = Arc::new(Orderbook::new(

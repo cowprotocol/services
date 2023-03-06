@@ -1,14 +1,15 @@
 use {
-    crate::settlement::{external_prices::ExternalPrices, Settlement},
+    crate::settlement::Settlement,
     num::BigRational,
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
+    shared::external_prices::ExternalPrices,
 };
 
 #[derive(Debug)]
 pub struct Inputs {
     pub surplus_given: BigRational,
-    pub fees_taken: BigRational,
+    pub solver_fees: BigRational,
     pub settlement_cost: BigRational,
 }
 
@@ -23,13 +24,13 @@ impl Inputs {
 
         Self {
             surplus_given: settlement.total_surplus(prices),
-            fees_taken: settlement.total_scaled_unsubsidized_fees(prices),
+            solver_fees: settlement.total_solver_fees(prices),
             settlement_cost: gas_amount * gas_price,
         }
     }
 
     pub fn objective_value(&self) -> BigRational {
-        &self.surplus_given + &self.fees_taken - &self.settlement_cost
+        &self.surplus_given + &self.solver_fees - &self.settlement_cost
     }
 }
 
@@ -62,7 +63,7 @@ mod tests {
         // Objective value 1 is 1.004 - 3e5 * 10e-9 = 1.001 ETH
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
@@ -75,7 +76,7 @@ mod tests {
         // Objective value 2 is 1.01 - 5e5 * 10e-9 = 1.005 ETH
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();
@@ -95,7 +96,7 @@ mod tests {
         // Objective value 1 is 1.004 - 3e5 * 30e-9 = 0.995 ETH
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
@@ -108,7 +109,7 @@ mod tests {
         // Objective value 2 is 1.01 - 5e5 * 30e-9 = 0.995 ETH
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();
@@ -128,7 +129,7 @@ mod tests {
         // Objective value 1 is 1.004 - 3e5 * 50e-9 = 0.989 ETH
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
@@ -141,7 +142,7 @@ mod tests {
         // Objective value 2 is 1.01 - 5e5 * 50e-9 = 0.985 ETH
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
-            fees_taken: solver_fees.clone(),
+            solver_fees: solver_fees.clone(),
             settlement_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();

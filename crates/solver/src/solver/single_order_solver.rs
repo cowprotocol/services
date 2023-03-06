@@ -1,10 +1,12 @@
+use shared::external_prices::ExternalPrices;
+
 mod merge;
 
 use {
     crate::{
         liquidity::{LimitOrder, LimitOrderId},
         metrics::SolverMetrics,
-        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement::Settlement,
         solver::{Auction, Solver},
     },
     anyhow::{Error, Result},

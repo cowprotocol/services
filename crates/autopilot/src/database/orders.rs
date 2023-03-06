@@ -1,9 +1,13 @@
 use {
     super::Postgres,
+    crate::decoded_settlement::Order,
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
-    database::orders::{OrderFeeSpecifier, OrderQuotingData, Quote},
-    ethcontract::U256,
+    database::{
+        byte_array::ByteArray,
+        orders::{OrderFeeSpecifier, OrderQuotingData, Quote},
+    },
+    ethcontract::{H256, U256},
     futures::{StreamExt, TryStreamExt},
     model::time::now_in_epoch_seconds,
     number_conversions::u256_to_big_decimal,
@@ -156,5 +160,21 @@ impl Postgres {
             now_in_epoch_seconds().into(),
         )
         .await?)
+    }
+
+    pub async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["orders_for_tx"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
+            .map(|result| match result {
+                Ok(order) => order.try_into().map_err(Into::into),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await
     }
 }

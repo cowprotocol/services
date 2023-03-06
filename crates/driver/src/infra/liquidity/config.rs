@@ -11,6 +11,10 @@ pub struct Config {
     /// The collection of Uniswap V2 compatible exchanges to fetch liquidity
     /// for.
     pub uniswap_v2: Vec<UniswapV2>,
+
+    /// The collection of Uniswap V3 compatible exchanges to fetch liquidity
+    /// for.
+    pub uniswap_v3: Vec<UniswapV3>,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.
@@ -21,4 +25,14 @@ pub struct UniswapV2 {
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
     pub pool_code: eth::CodeDigest,
+}
+
+/// Uniswap V3 liquidity fetching options.
+#[derive(Clone, Copy, Debug)]
+pub struct UniswapV3 {
+    /// The address of the Uniswap V3 compatible router contract.
+    pub router: eth::ContractAddress,
+
+    /// How many pools should be initialized during start up.
+    pub max_pools_to_initialize: u64,
 }

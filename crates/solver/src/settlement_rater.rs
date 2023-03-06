@@ -1,7 +1,7 @@
 use {
     crate::{
         driver::solver_settlements::RatedSettlement,
-        settlement::{external_prices::ExternalPrices, Settlement},
+        settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
             call_data,
@@ -16,11 +16,14 @@ use {
     futures::future::join_all,
     gas_estimation::GasPrice1559,
     itertools::{Either, Itertools},
+    model::solver_competition::Score,
     num::BigRational,
+    number_conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
         code_fetching::CodeFetching,
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
     std::{borrow::Borrow, sync::Arc},
@@ -196,7 +199,7 @@ impl SettlementRating for SettlementRater {
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
         let rate_settlement = |id, settlement: Settlement, gas_estimate: U256| {
-            let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
+            let earned_fees = settlement.total_earned_fees(prices);
             let inputs = crate::objective_value::Inputs::from_settlement(
                 &settlement,
                 prices,
@@ -204,15 +207,28 @@ impl SettlementRating for SettlementRater {
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
+            let score = match &settlement.score {
+                Some(score) => match score {
+                    shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
+                    shared::http_solver::model::Score::Discount(discount) => Score::Discounted(
+                        big_rational_to_u256(&objective_value)
+                            .unwrap_or_default()
+                            .saturating_sub(*discount),
+                    ),
+                },
+                None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
+            };
             RatedSettlement {
                 id,
                 settlement,
                 surplus: inputs.surplus_given,
-                unscaled_subsidized_fee,
-                scaled_unsubsidized_fee: inputs.fees_taken,
+                earned_fees,
+                solver_fees: inputs.solver_fees,
                 gas_estimate,
                 gas_price: gas_price.clone(),
                 objective_value,
+                score,
+                ranking: Default::default(),
             }
         };
 

@@ -8,7 +8,7 @@ use {
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
     num::BigInt,
-    reqwest::{Client, IntoUrl, Url},
+    reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
 };
@@ -46,10 +46,11 @@ impl BalancerSorApi for DefaultBalancerSorApi {
             .post(self.url.clone())
             .json(&query)
             .send()
-            .await?
-            .text()
             .await?;
-        tracing::debug!(%response, "received Balancer SOR quote");
+        let status = response.status();
+        let response = response.text().await?;
+        tracing::debug!(%response, %status, "received Balancer SOR quote");
+        anyhow::ensure!(status != StatusCode::TOO_MANY_REQUESTS, "rate limited");
 
         let quote = serde_json::from_str::<Quote>(&response)?;
         if quote.is_empty() {
@@ -141,8 +142,10 @@ pub struct Swap {
     /// The ID of the pool swapping in this step.
     pub pool_id: H256,
     /// The index in `token_addresses` for the input token.
+    #[serde(with = "value_or_string")]
     pub asset_in_index: usize,
     /// The index in `token_addresses` for the ouput token.
+    #[serde(with = "value_or_string")]
     pub asset_out_index: usize,
     /// The amount to swap.
     #[serde(with = "u256_decimal")]
@@ -181,6 +184,36 @@ mod address_default_when_empty {
             return Ok(H160::default());
         }
         value.parse().map_err(de::Error::custom)
+    }
+}
+
+/// Tries to either parse the `T` directly or tries to convert the value in case
+/// it's a string. This is intended for deserializing number/string but is
+/// generic enough to be used for any value that can be converted from a string.
+mod value_or_string {
+    use {
+        serde::{de, Deserialize, Deserializer},
+        std::borrow::Cow,
+    };
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de> + std::str::FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Display,
+    {
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Content<'a, T> {
+            Value(T),
+            String(Cow<'a, str>),
+        }
+
+        match <Content<T>>::deserialize(deserializer) {
+            Ok(Content::Value(value)) => Ok(value),
+            Ok(Content::String(s)) => s.parse().map_err(de::Error::custom),
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -355,5 +388,18 @@ mod tests {
             .unwrap()
             .unwrap();
         println!("Buy {:.4} BAL for 100.0 DAI", base(buy_quote.return_amount));
+    }
+
+    #[test]
+    fn deserialize_value_or_string() {
+        #[derive(Deserialize)]
+        struct TestType {
+            #[serde(with = "value_or_string")]
+            value: usize,
+        }
+        let from_string: TestType = serde_json::from_value(json!({"value": "12"})).unwrap();
+        assert_eq!(from_string.value, 12);
+        let from_number: TestType = serde_json::from_value(json!({"value": 12})).unwrap();
+        assert_eq!(from_number.value, 12);
     }
 }

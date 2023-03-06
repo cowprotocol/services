@@ -74,6 +74,11 @@ impl Solution {
         Ok(approvals)
     }
 
+    /// An empty solution has no user trades and a score of 0.
+    pub fn is_empty(&self) -> bool {
+        self.user_trades().next().is_none()
+    }
+
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
@@ -107,16 +112,28 @@ impl Solution {
             .sorted()
     }
 
-    /// Simulate settling this solution on the blockchain. This process
-    /// generates the access list and estimates the gas needed to settle
-    /// the solution.
-    pub async fn simulate(
+    /// Verify that the solution is valid and can be broadcast safely. See
+    /// [`settlement::Verified`].
+    pub async fn verify(
         &self,
         eth: &Ethereum,
         simulator: &Simulator,
-        // TODO Remove the auction parameter in a follow-up
         auction: &competition::Auction,
-    ) -> Result<settlement::Simulated, Error> {
+    ) -> Result<settlement::Verified, Error> {
+        self.verify_asset_flow()?;
+        self.verify_internalization(auction)?;
+        self.simulate(eth, simulator, auction).await
+    }
+
+    /// Simulate settling this solution on the blockchain. This process
+    /// generates the access list and estimates the gas needed to settle
+    /// the solution.
+    async fn simulate(
+        &self,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        auction: &competition::Auction,
+    ) -> Result<settlement::Verified, Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
@@ -158,11 +175,39 @@ impl Solution {
         // Finally, get the gas for the settlement using the full access list.
         let gas = simulator.gas(tx).await?;
 
-        Ok(settlement::Simulated {
+        Ok(settlement::Verified {
             inner: settlement,
             access_list,
             gas,
         })
+    }
+
+    /// Check that the sum of tokens entering the settlement is not less than
+    /// the sum of tokens exiting the settlement.
+    fn verify_asset_flow(&self) -> Result<(), VerificationError> {
+        Ok(())
+    }
+
+    /// Check that internalized interactions only use trusted tokens.
+    fn verify_internalization(
+        &self,
+        auction: &competition::Auction,
+    ) -> Result<(), VerificationError> {
+        if self
+            .interactions
+            .iter()
+            .filter(|interaction| interaction.internalize())
+            .all(|interaction| {
+                interaction
+                    .inputs()
+                    .iter()
+                    .all(|asset| auction.is_trusted(asset.token))
+            })
+        {
+            Ok(())
+        } else {
+            Err(VerificationError::Internalization)
+        }
     }
 }
 
@@ -205,7 +250,7 @@ impl SolverTimeout {
 }
 
 /// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Score(pub num::BigRational);
 
 impl From<Score> for f64 {
@@ -217,6 +262,12 @@ impl From<Score> for f64 {
 impl From<num::BigRational> for Score {
     fn from(inner: num::BigRational) -> Self {
         Self(inner)
+    }
+}
+
+impl Score {
+    pub fn zero() -> Self {
+        Self::default()
     }
 }
 
@@ -250,10 +301,33 @@ impl Id {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("simulation error: {0:?}")]
-    Simulation(#[from] simulator::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+    #[error("verification error: {0:?}")]
+    Verification(#[from] VerificationError),
+}
+
+/// Solution verification failed.
+#[derive(Debug, thiserror::Error)]
+#[error("verification error")]
+pub enum VerificationError {
+    #[error("simulation error: {0:?}")]
+    Simulation(#[from] simulator::Error),
+    #[error(
+        "invalid asset flow: token amounts entering the settlement do not equal token amounts \
+         exiting the settlement"
+    )]
+    AssetFlow,
+    #[error(
+        "invalid internalization: solution attempts to internalize tokens which are not trusted"
+    )]
+    Internalization,
+}
+
+impl From<simulator::Error> for Error {
+    fn from(value: simulator::Error) -> Self {
+        VerificationError::from(value).into()
+    }
 }

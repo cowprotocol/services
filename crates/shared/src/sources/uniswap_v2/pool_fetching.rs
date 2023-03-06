@@ -34,9 +34,7 @@ pub trait PoolFetching: Send + Sync {
 }
 
 /// Trait for abstracting the on-chain reading logic for pool state.
-pub trait PoolReading: Sized + Send + Sync {
-    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self;
-
+pub trait PoolReading: Send + Sync {
     /// Read the pool state for the specified token pair.
     ///
     /// The caller specifies a Web3 call back to queue RPC requests into as well
@@ -52,6 +50,17 @@ pub trait PoolReading: Sized + Send + Sync {
         batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'_, Result<Option<Pool>>>;
+}
+
+impl PoolReading for Box<dyn PoolReading> {
+    fn read_state(
+        &self,
+        pair: TokenPair,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'_, Result<Option<Pool>>> {
+        (**self).read_state(pair, batch, block)
+    }
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
@@ -243,13 +252,6 @@ pub struct DefaultPoolReader {
 }
 
 impl PoolReading for DefaultPoolReader {
-    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self {
-        Self {
-            pair_provider,
-            web3,
-        }
-    }
-
     fn read_state(
         &self,
         pair: TokenPair,
