@@ -379,6 +379,7 @@ components:
   schemas:
     TransactionHash:
       description: 32 byte digest encoded as a hex with `0x` prefix.
+      type: string
       example: "0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5"
     Address:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
@@ -386,6 +387,7 @@ components:
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
     AppData:
       description: 32 bytes encoded as hex with `0x` prefix.
+      type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
     BigUint:
       description: A big unsigned integer encoded in decimal.
@@ -396,6 +398,7 @@ components:
       type: string
       example: "1234567890"
     OnchainOrderData:
+      type: object
       properties:
         sender:
           description: |
@@ -409,13 +412,7 @@ components:
               successful. This could happen, for example, if the
               valid_to is too high, or no valid quote was found or generated
           type: string
-          enum:
-            [
-              QuoteNotFound,
-              ValidToTooFarInFuture,
-              PreValidationError,
-              ...,
-            ]
+          enum: [ QuoteNotFound, ValidToTooFarInFuture, PreValidationError ]
       required:
         - sender
     EthflowData:
@@ -455,10 +452,14 @@ components:
       required:
         - expiration
         - amount
-    OrderType:
+    OrderKind:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
+    OrderClass:
+      description: Order class
+      type: string
+      enum: [ market, limit, liquidity ]
     SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
@@ -507,13 +508,14 @@ components:
             Arbitrary application specific data that can be added to an order. This can
             also be used to ensure uniqueness between two orders with otherwise the
             exact same parameters.
+          type: string
           $ref: "#/components/schemas/AppData"
         feeAmount:
           description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
           $ref: "#/components/schemas/TokenAmount"
         kind:
           description: "The kind is either a buy or sell order"
-          $ref: "#/components/schemas/OrderType"
+          $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
@@ -569,13 +571,15 @@ components:
         but not provided by users when creating orders.
       type: object
       properties:
-        creationTime:
+        creationDate:
           description: Creation time of the order. Encoded as ISO 8601 UTC.
           type: string
           example: "2020-12-03T18:35:18.814523Z"
+        class:
+          $ref: "#/components/schemas/OrderClass"
         owner:
           $ref: "#/components/schemas/Address"
-        UID:
+        uid:
           $ref: "#/components/schemas/UID"
         availableBalance:
           description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance or if the order status isn't Open."
@@ -617,6 +621,11 @@ components:
             For ethflow orders - order that are placed onchain with native eth -, this field
             contains a struct with two variables user_valid_to and is_refunded
           $ref: "#/components/schemas/EthflowData"
+        onchainUser:
+          description: |
+            This represents the actual trader of an on-chain order.
+            In that case, the owner would be the EthFlow contract in the case of EthFlow orders and not the actual trader.
+          $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
             There is some data only available for orders that are placed onchain. This data
@@ -627,14 +636,16 @@ components:
           $ref: "#/components/schemas/BigUint"
           nullable: true
       required:
-        - creationTime
+        - creationDate
+        - class
         - owner
-        - UID
+        - uid
         - executedSellAmount
         - executedSellAmountBeforeFees
         - executedBuyAmount
         - executedFeeAmount
         - invalidated
+        - status
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
@@ -749,7 +760,7 @@ components:
         buyAmount:
           description: "Total amount of buyToken received in this trade."
           $ref: "#/components/schemas/TokenAmount"
-        transactionHash:
+        txHash:
           description: "Hash of the corresponding settlement transaction containing the trade (if available)."
           $ref: "#/components/schemas/TransactionHash"
           nullable: true
@@ -763,7 +774,7 @@ components:
         - sellAmount
         - sellAmountBeforeFees
         - buyAmount
-        - transactionHash
+        - txHash
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
@@ -1036,6 +1047,9 @@ components:
             Order ID linked to a quote to enable providing more metadata when analyzing
             order slippage.
           type: integer
+      required:
+        - quote
+        - expiration
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.
@@ -1047,6 +1061,7 @@ components:
           type: integer
           description: The id of the auction the competition info is for.
         transactionHash:
+          type: string
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
