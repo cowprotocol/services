@@ -22,7 +22,6 @@ use {
     model::{
         order::{
             BuyTokenDestination,
-            LimitOrderClass,
             Order,
             OrderClass,
             OrderCreation,
@@ -197,6 +196,7 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: H160) -> Result<u64>;
 }
 
+#[derive(Clone)]
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
@@ -210,7 +210,8 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    enable_limit_orders: bool,
+    enable_fill_or_kill_limit_orders: bool,
+    enable_partially_fillable_limit_orders: bool,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
@@ -292,7 +293,8 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
-            enable_limit_orders: false,
+            enable_fill_or_kill_limit_orders: false,
+            enable_partially_fillable_limit_orders: false,
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
@@ -300,8 +302,13 @@ impl OrderValidator {
         }
     }
 
-    pub fn with_limit_orders(mut self, enable: bool) -> Self {
-        self.enable_limit_orders = enable;
+    pub fn with_fill_or_kill_limit_orders(mut self, enable: bool) -> Self {
+        self.enable_fill_or_kill_limit_orders = enable;
+        self
+    }
+
+    pub fn with_partially_fillable_limit_orders(mut self, enable: bool) -> Self {
+        self.enable_partially_fillable_limit_orders = enable;
         self
     }
 
@@ -336,8 +343,21 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::Forbidden);
         }
 
-        if order.partially_fillable && order.class != OrderClass::Liquidity {
-            return Err(PartialValidationError::UnsupportedOrderType);
+        match order.class {
+            OrderClass::Market => {
+                if order.partially_fillable {
+                    return Err(PartialValidationError::UnsupportedOrderType);
+                }
+            }
+            OrderClass::Limit(_) => {
+                if order.partially_fillable && !self.enable_partially_fillable_limit_orders {
+                    return Err(PartialValidationError::UnsupportedOrderType);
+                }
+                if !order.partially_fillable && !self.enable_fill_or_kill_limit_orders {
+                    return Err(PartialValidationError::UnsupportedOrderType);
+                }
+            }
+            OrderClass::Liquidity => (),
         }
 
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
@@ -430,27 +450,16 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let class = if self.liquidity_order_owners.contains(&owner) {
-            OrderClass::Liquidity
-        } else if self.enable_limit_orders && order.data.fee_amount.is_zero() {
-            // intentionally not Default so that we notice if we change the type
-            OrderClass::Limit(LimitOrderClass {
-                surplus_fee: None,
-                surplus_fee_timestamp: None,
-                executed_surplus_fee: None,
-            })
-        } else {
-            OrderClass::Market
-        };
-
-        self.partial_validate(PreOrderData::from_order_creation(
+        let pre_order = PreOrderData::from_order_creation(
             owner,
             &order.data,
             signing_scheme,
-            class == OrderClass::Liquidity,
-        ))
-        .await
-        .map_err(ValidationError::Partial)?;
+            self.liquidity_order_owners.contains(&owner),
+        );
+        let class = pre_order.class;
+        self.partial_validate(pre_order)
+            .await
+            .map_err(ValidationError::Partial)?;
 
         let quote_parameters = QuoteSearchParameters {
             sell_token: order.data.sell_token,
@@ -626,7 +635,7 @@ pub enum OrderValidToError {
 }
 
 /// Signature configuration that is accepted by the orderbook.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignatureConfiguration {
     pub eip1271: bool,
     pub eip1271_skip_creation_validation: bool,
@@ -897,15 +906,16 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
         );
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    partially_fillable: true,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::UnsupportedOrderType)
-        ));
+        let result = validator
+            .partial_validate(PreOrderData {
+                partially_fillable: true,
+                ..Default::default()
+            })
+            .await;
+        assert!(
+            matches!(result, Err(PartialValidationError::UnsupportedOrderType)),
+            "{result:?}"
+        );
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -970,20 +980,23 @@ mod tests {
                 OrderValidToError::Excessive,
             ))
         ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to
-                        + validity_configuration.max_limit.as_secs() as u32
-                        + 1,
-                    class: OrderClass::Limit(Default::default()),
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Excessive,
-            ))
-        ));
+        {
+            let validator = validator.clone().with_fill_or_kill_limit_orders(true);
+            assert!(matches!(
+                validator
+                    .partial_validate(PreOrderData {
+                        valid_to: legit_valid_to
+                            + validity_configuration.max_limit.as_secs() as u32
+                            + 1,
+                        class: OrderClass::Limit(Default::default()),
+                        ..Default::default()
+                    })
+                    .await,
+                Err(PartialValidationError::ValidTo(
+                    OrderValidToError::Excessive,
+                ))
+            ));
+        }
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -1051,7 +1064,9 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
-        );
+        )
+        .with_fill_or_kill_limit_orders(true)
+        .with_partially_fillable_limit_orders(true);
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
@@ -1144,15 +1159,15 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()
         };
-        let (order, _) = validator
+        validator
             .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
             .await
             .unwrap();
-        assert_eq!(order.metadata.full_fee_amount, order.data.fee_amount);
 
         let domain_separator = DomainSeparator::default();
         let creation = OrderCreation {
@@ -1206,16 +1221,32 @@ mod tests {
             .await
             .is_ok());
 
-        let creation = OrderCreation {
+        let creation_ = OrderCreation {
             data: OrderData {
                 fee_amount: U256::zero(),
                 ..creation.data
             },
+            ..creation.clone()
+        };
+        let validator = validator.with_fill_or_kill_limit_orders(true);
+        let (order, quote) = validator
+            .validate_and_construct_order(creation_, &domain_separator, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(quote, None);
+        assert!(order.metadata.class.is_limit());
+
+        let creation_ = OrderCreation {
+            data: OrderData {
+                fee_amount: U256::zero(),
+                partially_fillable: true,
+                ..creation.data
+            },
             ..creation
         };
-        let validator = validator.with_limit_orders(true);
+        let validator = validator.with_partially_fillable_limit_orders(true);
         let (order, quote) = validator
-            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .validate_and_construct_order(creation_, &domain_separator, Default::default())
             .await
             .unwrap();
         assert_eq!(quote, None);
@@ -1264,7 +1295,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
         )
-        .with_limit_orders(true);
+        .with_fill_or_kill_limit_orders(true);
 
         let creation = OrderCreation {
             data: OrderData {
@@ -1280,7 +1311,10 @@ mod tests {
         let res = validator
             .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
             .await;
-        assert!(matches!(res, Err(ValidationError::TooManyLimitOrders)));
+        assert!(
+            matches!(res, Err(ValidationError::TooManyLimitOrders)),
+            "{res:?}"
+        );
     }
 
     #[tokio::test]
@@ -1320,6 +1354,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(0),
                 sell_amount: U256::from(0),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()
@@ -1378,7 +1413,15 @@ mod tests {
         let result = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
-        assert!(matches!(result, Err(ValidationError::InsufficientFee)));
+        assert!(
+            matches!(
+                result,
+                Err(ValidationError::Partial(
+                    PartialValidationError::UnsupportedOrderType
+                ))
+            ),
+            "{result:?}"
+        );
     }
 
     #[tokio::test]
@@ -1479,6 +1522,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             from: Some(Default::default()),
@@ -1578,6 +1622,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()
@@ -1681,6 +1726,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             ..Default::default()
@@ -1734,6 +1780,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: U256::from(1),
                 sell_amount: U256::from(1),
+                fee_amount: U256::from(1),
                 ..Default::default()
             },
             from: Some(H160([1; 20])),
@@ -1788,7 +1835,8 @@ mod tests {
                     .with_sell_token(H160::from_low_u64_be(1))
                     .with_sell_amount(1.into())
                     .with_buy_token(H160::from_low_u64_be(2))
-                    .with_buy_amount(1.into());
+                    .with_buy_amount(1.into())
+                    .with_fee_amount(1.into());
 
                 for signing_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
                     assert!(matches!(
