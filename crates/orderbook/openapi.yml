@@ -623,7 +623,8 @@ components:
           $ref: "#/components/schemas/EthflowData"
         onchainUser:
           description: |
-            TODO: smth related to ETH flow
+            This represents the actual trader of an on-chain order.
+            In that case, the owner would be the EthFlow contract in the case of EthFlow orders and not the actual trader.
           $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
