@@ -29,6 +29,10 @@ pub struct Fulfillment {
 #[derive(Debug)]
 pub struct Jit {
     pub order: order::Jit,
+    /// The amount executed by this JIT trade. See
+    /// [`competition::order::Jit::partially_fillable`]. If the order is not
+    /// partially fillable, the executed amount must equal the amount from the
+    /// order.
     pub executed: competition::order::TargetAmount,
 }
 
@@ -115,8 +119,111 @@ impl Trade {
                     },
                 }
             }
-            order::Kind::Liquidity => todo!(),
-            order::Kind::Limit { .. } => todo!(),
+            order::Kind::Liquidity => {
+                // Liquidity orders (including JIT) compute the executed amounts by linearly
+                // scaling the buy/sell amounts in the order.
+                match side {
+                    order::Side::Buy => Execution {
+                        buy: eth::Asset {
+                            amount: executed.into(),
+                            token: buy.token,
+                        },
+                        sell: eth::Asset {
+                            amount: sell
+                                .amount
+                                .checked_mul(executed.into())
+                                .ok_or(Error::Overflow)?
+                                .checked_div(buy.amount)
+                                .ok_or(Error::Overflow)?,
+                            token: sell.token,
+                        },
+                    },
+                    order::Side::Sell => Execution {
+                        sell: eth::Asset {
+                            amount: executed.into(),
+                            token: sell.token,
+                        },
+                        buy: eth::Asset {
+                            amount: buy
+                                .amount
+                                .checked_mul(executed.into())
+                                .ok_or(Error::Overflow)?
+                                .checked_div(sell.amount)
+                                .ok_or(Error::Overflow)?,
+                            token: buy.token,
+                        },
+                    },
+                }
+            }
+            order::Kind::Limit { surplus_fee } => {
+                // Warning: calculating executed amounts for limit orders is complex and
+                // confusing. To understand why the calculations work, it is important to note
+                // that the solver doesn't receive limit orders with the same amounts that were
+                // specified by the users when placing the orders. Instead, the sell amount for
+                // each limit order is reduced by the surplus fee, which is the fee taken by
+                // the network to settle the order. These are referred to as "synthetic" limit
+                // orders. The surplus fees are calculated when cutting the auction.
+                //
+                // See also [`order::Kind::Limit`].
+                //
+                // Similar to market orders, the executed amounts for limit orders are
+                // calculated using the clearing prices.
+                let sell_price = clearing_prices
+                    .0
+                    .get(&sell.token)
+                    .ok_or(Error::ClearingPriceMissing)?
+                    .to_owned();
+                let buy_price = clearing_prices
+                    .0
+                    .get(&buy.token)
+                    .ok_or(Error::ClearingPriceMissing)?
+                    .to_owned();
+                match side {
+                    order::Side::Buy => Execution {
+                        buy: eth::Asset {
+                            amount: executed.into(),
+                            token: buy.token,
+                        },
+                        sell: eth::Asset {
+                            amount: executed
+                                .0
+                                .checked_mul(buy_price)
+                                .ok_or(Error::Overflow)?
+                                .checked_div(sell_price)
+                                .ok_or(Error::Overflow)?
+                                // Because of how "synthetic" limit orders are constructed as
+                                // explained above, we need to simply increase the executed sell
+                                // price by the surplus fee. We know that the user placed an order
+                                // big enough to cover the surplus fee.
+                                .checked_add(surplus_fee.into())
+                                .ok_or(Error::Overflow)?,
+                            token: sell.token,
+                        },
+                    },
+                    order::Side::Sell => Execution {
+                        sell: eth::Asset {
+                            amount: executed.into(),
+                            token: sell.token,
+                        },
+                        buy: eth::Asset {
+                            amount: executed
+                                .0
+                                // Because of how "synthetic" limit orders are constructed as
+                                // explained above, the solver received the sell amount
+                                // reduced by the surplus fee. That's why we're have to reduce the
+                                // executed amount by the surplus fee when calculating the
+                                // executed buy amount.
+                                .checked_sub(surplus_fee.into())
+                                .ok_or(Error::Overflow)?
+                                .checked_mul(sell_price)
+                                .ok_or(Error::Overflow)?
+                                .checked_ceil_div(&buy_price)
+                                .ok_or(Error::Overflow)?,
+                            token: buy.token,
+                        },
+                    },
+                }
+            }
         })
     }
 }
