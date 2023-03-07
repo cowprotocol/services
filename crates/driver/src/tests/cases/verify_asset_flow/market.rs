@@ -1,16 +1,14 @@
-//! Test that the asset flow verification behaves as expected. See
-//! [`competition::solution::settlement::Verified`].
+//! Test that the asset flow verification behaves as expected for market orders.
+//! See [`competition::solution::settlement::Verified`].
 
-/*
 use {
-    super::SOLVER_NAME,
     crate::{
         domain::{
             competition::{self, auction},
             eth,
         },
         infra,
-        tests::{self, hex_address, setup},
+        tests::{self, cases::SOLVER_NAME, hex_address, setup},
     },
     itertools::Itertools,
     serde_json::json,
@@ -62,13 +60,13 @@ async fn verify_asset_flow() {
         TestCase {
             flow: |sell, buy, idx| match idx {
                 0 => Flow {
-                    // The output is higher than the input, meaning that the settlement
-                    // takes money out of the contract, which is illegal.
-                    inputs: vec![sell],
-                    outputs: vec![eth::Asset {
-                        token: buy.token,
-                        amount: buy.amount + eth::U256::from(12),
+                    // The interaction input is higher than the output, meaning that
+                    // the settlement takes money out of the contract, which is illegal.
+                    inputs: vec![eth::Asset {
+                        token: sell.token,
+                        amount: sell.amount + eth::U256::from(12),
                     }],
+                    outputs: vec![buy],
                 },
                 1 => Default::default(),
                 _ => unreachable!(),
@@ -78,13 +76,13 @@ async fn verify_asset_flow() {
         TestCase {
             flow: |sell, buy, idx| match idx {
                 0 => Flow {
-                    // The input is higher than the output, leaving money in the settlement
-                    // contract. This is OK!
-                    inputs: vec![eth::Asset {
-                        token: sell.token,
-                        amount: sell.amount + eth::U256::from(12),
+                    // The interaction output is higher than the input, leaving money in the
+                    // settlement contract. This is OK!
+                    inputs: vec![sell],
+                    outputs: vec![eth::Asset {
+                        token: buy.token,
+                        amount: buy.amount + eth::U256::from(12),
                     }],
-                    outputs: vec![buy],
                 },
                 1 => Default::default(),
                 _ => unreachable!(),
@@ -132,14 +130,14 @@ async fn verify_asset_flow() {
                     }],
                 },
                 1 => Flow {
+                    // More money coming out of the contract - illegal!
                     inputs: vec![eth::Asset {
                         token: sell.token,
-                        amount: 20.into(),
+                        amount: 30.into(),
                     }],
-                    // More money coming out - illegal!
                     outputs: vec![eth::Asset {
                         token: buy.token,
-                        amount: 40.into(),
+                        amount: 30.into(),
                     }],
                 },
                 _ => unreachable!(),
@@ -160,14 +158,14 @@ async fn verify_asset_flow() {
                     }],
                 },
                 1 => Flow {
+                    // Less money taken out of the contract - OK!
                     inputs: vec![eth::Asset {
                         token: sell.token,
-                        amount: 20.into(),
+                        amount: 10.into(),
                     }],
-                    // Less money coming out - OK!
                     outputs: vec![eth::Asset {
                         token: buy.token,
-                        amount: 20.into(),
+                        amount: 30.into(),
                     }],
                 },
                 _ => unreachable!(),
@@ -213,6 +211,7 @@ async fn verify_asset_flow() {
             secret_key: admin_secret_key,
             domain_separator,
             owner: admin,
+            partially_fillable: false,
         };
         let gas_price = web3.eth().gas_price().await.unwrap().to_string();
         let now = infra::time::Now::Fake(chrono::Utc::now());
@@ -220,7 +219,7 @@ async fn verify_asset_flow() {
         let interactions = interactions
             .into_iter()
             .enumerate()
-            .map(|(idx, (address, interaction))| {
+            .map(|(idx, interaction)| {
                 let flow = flow(
                     eth::Asset {
                         token: sell_token.into(),
@@ -235,9 +234,9 @@ async fn verify_asset_flow() {
                 json!({
                     "kind": "custom",
                     "internalize": false,
-                    "target": hex_address(address),
+                    "target": hex_address(interaction.address),
                     "value": "0",
-                    "callData": format!("0x{}", hex::encode(interaction)),
+                    "callData": format!("0x{}", hex::encode(interaction.calldata)),
                     "allowances": [],
                     "inputs": flow.inputs.iter().map(|asset| json!({
                         "token": hex_address(asset.token.into()),
@@ -337,13 +336,11 @@ async fn verify_asset_flow() {
                     {
                         "address": hex_address(sell_token),
                         "price": "1",
-                        "availableBalance": "0",
                         "trusted": false,
                     },
                     {
                         "address": hex_address(buy_token),
                         "price": "2",
-                        "availableBalance": "0",
                         "trusted": false,
                     }
                 ],
@@ -392,4 +389,3 @@ async fn verify_asset_flow() {
         }
     }
 }
-*/

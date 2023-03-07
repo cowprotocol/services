@@ -409,6 +409,7 @@ pub struct FullOrder {
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
+    pub executed_solver_fee: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -474,7 +475,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
+(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee,
+(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -688,12 +690,12 @@ pub struct OrderQuotingData {
     pub buy_token: Address,
     pub sell_amount: BigDecimal,
     pub sell_token_balance: SellTokenSource,
-    pub partially_fillable: bool,
     pub pre_interactions: i32,
 }
 
-/// Returns all limit orders that are currently waiting to be filled sorted
-/// by `surplus_fee_timestamp` with the most outdated ones coming first.
+/// Returns all fill or kill limit orders that are currently waiting to be
+/// filled sorted by `surplus_fee_timestamp` with the most outdated ones coming
+/// first.
 pub fn open_limit_orders(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
@@ -701,11 +703,12 @@ pub fn open_limit_orders(
 ) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, \
-         partially_fillable, cardinality(pre_interactions) as pre_interactions",
+         cardinality(pre_interactions) as pre_interactions",
         " FROM (",
         OPEN_ORDERS,
         "     AND class = 'limit'",
         "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
+        "     AND NOT partially_fillable",
         "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " ) as subquery"
     );
@@ -1715,19 +1718,27 @@ mod tests {
 
         let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
         // Valid limit order with an outdated surplus fee.
+        let order = Order {
+            uid: ByteArray([1; 56]),
+            class: OrderClass::Limit,
+            valid_to: 3,
+            surplus_fee: Some(0.into()),
+            surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 1.into(),
+            buy_amount: 1.into(),
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+
+        // Like previous order but partially fillable so shouldn't get included.
         insert_order(
             &mut db,
             &Order {
-                uid: ByteArray([1; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
-                sell_token: ByteArray([1; 20]),
-                buy_token: ByteArray([2; 20]),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
+                uid: ByteArray([8; 56]),
+                partially_fillable: true,
+                ..order
             },
         )
         .await
@@ -1892,7 +1903,8 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, None);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee))
+        let solver_fee: BigDecimal = 2.into();
+        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
             .await
             .unwrap();
 
@@ -1901,6 +1913,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, Some(fee));
+        assert_eq!(order.executed_solver_fee, Some(solver_fee));
     }
 
     #[tokio::test]

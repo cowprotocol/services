@@ -124,11 +124,11 @@ pub struct Arguments {
     pub pool_cache_lru_size: NonZeroUsize,
 
     /// Enable EIP-1271 orders.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_eip1271_orders: bool,
 
     /// Skip EIP-1271 order signature validation on creation.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub eip1271_skip_creation_validation: bool,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database
@@ -136,7 +136,7 @@ pub struct Arguments {
     /// turned off if malicious users are abusing the database by inserting
     /// a bunch of order rows that won't ever be valid. This flag can be
     /// removed once DDoS protection is implemented.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully updated in this many blocks
@@ -144,17 +144,20 @@ pub struct Arguments {
     #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
-    /// Enable limit orders. Once the full limit order flow is implemented, this
-    /// can be removed.
-    #[clap(long, env, default_value = "false")]
-    pub enable_limit_orders: bool,
+    /// Note that fill or kill liquidity limit orders are always allowed.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub allow_placing_fill_or_kill_limit_orders: bool,
+
+    /// Note that partially fillable liquidity limit orders are always allowed.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub allow_placing_partially_fillable_limit_orders: bool,
 
     /// Max number of limit orders per user.
     #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
 
     /// Enable buy ETH orders paying to smart contract wallets.
-    #[clap(long, env, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_eth_smart_contract_payments: bool,
 }
 
@@ -215,7 +218,16 @@ impl std::fmt::Display for Arguments {
             "fast_price_estimation_results_required: {}",
             self.fast_price_estimation_results_required
         )?;
-        writeln!(f, "enable_limit_orders: {}", self.enable_limit_orders)?;
+        writeln!(
+            f,
+            "allow_placing_fill_or_kill_limit_orders: {}",
+            self.allow_placing_fill_or_kill_limit_orders
+        )?;
+        writeln!(
+            f,
+            "allow_placing_partially_fillable_limit_orders: {}",
+            self.allow_placing_partially_fillable_limit_orders
+        )?;
         writeln!(
             f,
             "max_limit_orders_per_user: {}",

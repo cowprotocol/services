@@ -213,11 +213,7 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let mut orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
-        for order in &mut orders {
-            let query = Query::from_order(order);
-            order.metadata.available_balance = new_balances.get(&query).copied();
-        }
+        let orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
         counter.checkpoint("insufficient_balance", &orders);
 
         // create auction

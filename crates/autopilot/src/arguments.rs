@@ -58,7 +58,7 @@ pub struct Arguments {
     pub db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,
 
     /// List of token addresses that should be allowed regardless of whether the
@@ -148,9 +148,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    /// Enable background quoting for limit orders.
-    #[clap(long, env)]
-    pub enable_limit_orders: bool,
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub process_fill_or_kill_limit_orders: bool,
+
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub process_partially_fillable_limit_orders: bool,
 
     /// How many quotes the limit order quoter updates in parallel.
     #[clap(long, env, default_value = "5")]
@@ -196,7 +198,7 @@ pub struct Arguments {
     pub trusted_tokens_update_interval: Duration,
 
     /// Enable the colocation run loop.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_colocation: bool,
 
     /// Driver base URLs.
@@ -254,7 +256,16 @@ impl std::fmt::Display for Arguments {
             "limit_order_price_factor: {:?}",
             self.limit_order_price_factor
         )?;
-        writeln!(f, "enable_limit_orders: {:?}", self.enable_limit_orders)?;
+        writeln!(
+            f,
+            "process_fill_or_kill_limit_orders: {:?}",
+            self.process_fill_or_kill_limit_orders
+        )?;
+        writeln!(
+            f,
+            "process_partially_fillable_limit_orders: {:?}",
+            self.process_partially_fillable_limit_orders
+        )?;
         writeln!(
             f,
             "limit_order_quoter_parallelism: {:?}",

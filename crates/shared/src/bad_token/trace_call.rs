@@ -29,7 +29,7 @@ pub struct TraceCallDetector {
 impl BadTokenDetecting for TraceCallDetector {
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
         let quality = self.detect_impl(token).await?;
-        tracing::debug!("token {:?} quality {:?}", token, quality);
+        tracing::debug!(?token, ?quality, "determined token quality");
         Ok(quality)
     }
 }
@@ -60,10 +60,10 @@ impl TraceCallDetector {
                 (address, amount)
             }
             None => {
-                return Ok(TokenQuality::bad(
+                return Ok(TokenQuality::bad(format!(
                     "Could not find on chain source of the token with at least {MIN_AMOUNT} \
                      balance.",
-                ))
+                )))
             }
         };
 
@@ -189,42 +189,42 @@ impl TraceCallDetector {
         let computed_balance_after_in = match balance_before_in.checked_add(amount) {
             Some(amount) => amount,
             None => {
-                return Ok(TokenQuality::bad(
-                    "Transferring {amount} into settlement contract would overflow its balance.",
-                ))
+                return Ok(TokenQuality::bad(format!(
+                    "Transferring {amount} into settlement contract would overflow its balance."
+                )))
             }
         };
         if balance_after_in != computed_balance_after_in {
-            return Ok(TokenQuality::bad(
+            return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into settlement contract was expected to result in a \
-                 balance of {computer_balance_after_in} but actually resulted in \
+                 balance of {computed_balance_after_in} but actually resulted in \
                  {balance_after_in}. A common cause for this is that the token takes a fee on \
-                 transfer.",
-            ));
+                 transfer."
+            )));
         }
         if balance_after_out != balance_before_in {
-            return Ok(TokenQuality::bad(
+            return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} out of settlement contract was expected to result in the \
                  original balance of {balance_before_in} but actually resulted in \
-                 {balance_after_out}.",
-            ));
+                 {balance_after_out}."
+            )));
         }
         let computed_balance_recipient_after = match balance_recipient_before.checked_add(amount) {
             Some(amount) => amount,
             None => {
-                return Ok(TokenQuality::bad(
+                return Ok(TokenQuality::bad(format!(
                     "Transferring {amount} into arbitrary recipient {arbitrary:?} would overflow \
-                     its balance.",
-                ))
+                     its balance."
+                )))
             }
         };
         if computed_balance_recipient_after != balance_recipient_after {
-            return Ok(TokenQuality::bad(
+            return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
-                 result in a balance of {computer_balance_recipient_after} but actually resulted \
+                 result in a balance of {computed_balance_recipient_after} but actually resulted \
                  in {balance_recipient_after}. A common cause for this is that the token takes a \
-                 fee on transfer.",
-            ));
+                 fee on transfer."
+            )));
         }
 
         if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {

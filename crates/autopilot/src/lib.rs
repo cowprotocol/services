@@ -37,7 +37,6 @@ use {
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
-    num::BigRational,
     shared::{
         account_balances::Web3BalanceFetcher,
         bad_token::{
@@ -626,10 +625,6 @@ pub async fn main(args: arguments::Arguments) {
             native_token: native_token.address(),
             db: db.clone(),
             current_block: current_block_stream.clone(),
-            fee_objective_scaling_factor: BigRational::from_float(
-                args.fee_objective_scaling_factor,
-            )
-            .unwrap(),
         };
     tokio::task::spawn(
         on_settlement_event_updater
@@ -637,7 +632,7 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
-    if args.enable_limit_orders {
+    if args.process_fill_or_kill_limit_orders {
         let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
         LimitOrderQuoter {
             limit_order_age,

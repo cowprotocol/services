@@ -1,5 +1,6 @@
 use {
     super::Postgres,
+    crate::decoded_settlement::Order,
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::{
@@ -8,9 +9,9 @@ use {
     },
     ethcontract::{H256, U256},
     futures::{StreamExt, TryStreamExt},
-    model::{order::Order, time::now_in_epoch_seconds},
+    model::time::now_in_epoch_seconds,
     number_conversions::u256_to_big_decimal,
-    shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters},
+    shared::fee_subsidy::FeeParameters,
 };
 
 /// New fee data to update a limit order with.
@@ -170,7 +171,7 @@ impl Postgres {
         let mut ex = self.0.acquire().await?;
         database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
             .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
+                Ok(order) => order.try_into().map_err(Into::into),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
