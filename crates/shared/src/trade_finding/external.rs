@@ -27,7 +27,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, TradeError>>>,
+    sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>,
 
     /// Utility to temporarily drop requests when the driver responds too slowly
     /// to not slow down the whole price estimation logic.
@@ -61,9 +61,12 @@ impl ExternalTradeFinder {
             .body(body);
 
         let future = async {
-            let response = request.send().await.map_err(TradeError::from)?;
-            let text = response.text().await.map_err(TradeError::from)?;
-            serde_json::from_str::<Trade>(&text).map_err(TradeError::from)
+            let response = request.send().await.map_err(PriceEstimationError::from)?;
+            if response.status() == 429 {
+                return Err(PriceEstimationError::RateLimited);
+            }
+            let text = response.text().await.map_err(PriceEstimationError::from)?;
+            serde_json::from_str::<Trade>(&text).map_err(PriceEstimationError::from)
         };
 
         let future = rate_limited(self.rate_limiter.clone(), future);
@@ -88,18 +91,6 @@ impl TradeFinding for ExternalTradeFinder {
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
         self.shared_query(query).await
-    }
-}
-
-impl From<reqwest::Error> for TradeError {
-    fn from(error: reqwest::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
-    }
-}
-
-impl From<serde_json::Error> for TradeError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
     }
 }
 
