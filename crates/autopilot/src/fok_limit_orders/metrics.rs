@@ -35,7 +35,7 @@ impl LimitOrderMetrics {
                     Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
 
                 loop {
-                    let limit_orders = self.database.count_limit_orders().await.unwrap();
+                    let limit_orders = self.database.count_fok_limit_orders().await.unwrap();
                     let awaiting_quote = self
                         .database
                         .count_limit_orders_with_outdated_fees(self.quoting_age)
