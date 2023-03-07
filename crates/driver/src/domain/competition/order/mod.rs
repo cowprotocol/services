@@ -18,7 +18,11 @@ pub struct Order {
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
+    /// The maximum amount this order is allowed to sell when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub sell: eth::Asset,
+    /// The minimum amount this order must buy when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
     pub side: Side,
     pub fee: Fee,
@@ -38,7 +42,7 @@ pub struct Order {
 
 /// An amount denominated in the sell token of an [`Order`].
 #[derive(Debug, Default, Clone, Copy)]
-pub struct SellAmount(eth::U256);
+pub struct SellAmount(pub eth::U256);
 
 impl From<eth::U256> for SellAmount {
     fn from(value: eth::U256) -> Self {
@@ -52,19 +56,10 @@ impl From<SellAmount> for eth::U256 {
     }
 }
 
-impl SellAmount {
-    pub fn to_asset(self, order: &Order) -> eth::Asset {
-        eth::Asset {
-            amount: self.0,
-            token: order.sell.token,
-        }
-    }
-}
-
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct TargetAmount(eth::U256);
+pub struct TargetAmount(pub eth::U256);
 
 impl From<eth::U256> for TargetAmount {
     fn from(value: eth::U256) -> Self {
@@ -75,18 +70,6 @@ impl From<eth::U256> for TargetAmount {
 impl From<TargetAmount> for eth::U256 {
     fn from(value: TargetAmount) -> Self {
         value.0
-    }
-}
-
-impl TargetAmount {
-    pub fn to_asset(self, order: &Order) -> eth::Asset {
-        eth::Asset {
-            amount: self.0,
-            token: match order.side {
-                Side::Buy => order.buy.token,
-                Side::Sell => order.sell.token,
-            },
-        }
     }
 }
 
@@ -160,9 +143,11 @@ impl PartialEq<[u8; 56]> for Uid {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
-    /// Buy an exact amount.
+    /// Buy an exact amount. The sell amount can vary due to e.g. partial fills
+    /// or slippage.
     Buy,
-    /// Sell an exact amount.
+    /// Sell an exact amount. The buy amount can vary due to e.g. partial fills
+    /// or slippage.
     Sell,
 }
 
@@ -201,8 +186,11 @@ pub enum Kind {
     /// Order intended to be immediately executed. This is the "regular" type of
     /// order.
     Market,
-    /// Order intended to be executed possibly far into the future, when the
-    /// price is such that the order can be executed.
+    /// Order intended to be fulfilled possibly far into the future, when the
+    /// price is such that the order can be executed. Because the fulfillment
+    /// can happen any time into the future, it's impossible to calculate
+    /// the order fees ahead of time, so the fees are taken from the order
+    /// surplus instead.
     Limit {
         /// The fee to be taken from the order surplus.
         surplus_fee: SellAmount,
@@ -232,7 +220,11 @@ pub enum BuyTokenBalance {
 /// [`Order`].
 #[derive(Debug)]
 pub struct Jit {
+    /// The amount this order wants to sell when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub sell: eth::Asset,
+    /// The amount this order wants to buy when completely filled.
+    /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
     pub fee: SellAmount,
     pub receiver: eth::Address,

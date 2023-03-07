@@ -13,7 +13,9 @@ use {
             time,
             Simulator,
         },
+        util,
     },
+    bigdecimal::Signed,
     futures::future::try_join_all,
     itertools::Itertools,
     num::ToPrimitive,
@@ -36,15 +38,7 @@ pub struct Solution {
     pub id: Id,
     /// Trades settled by this solution.
     pub trades: Vec<Trade>,
-    /// Token prices for this solution, expressed using an arbitrary reference
-    /// unit chosen by the solver. These values are only meaningful in relation
-    /// to each others.
-    ///
-    /// The rule which relates two prices for tokens X and Y is:
-    /// ```
-    /// amount_x * price_x = amount_y * price_y
-    /// ```
-    pub prices: HashMap<eth::TokenAddress, eth::U256>,
+    pub prices: ClearingPrices,
     pub interactions: Vec<Interaction>,
     /// The solver which generated this solution.
     pub solver: Solver,
@@ -185,7 +179,42 @@ impl Solution {
     /// Check that the sum of tokens entering the settlement is not less than
     /// the sum of tokens exiting the settlement.
     fn verify_asset_flow(&self) -> Result<(), VerificationError> {
-        Ok(())
+        let mut flow: HashMap<eth::TokenAddress, num::BigInt> = Default::default();
+
+        // Interaction inputs represent flow out of the contract, i.e. negative flow.
+        for input in self
+            .interactions
+            .iter()
+            .flat_map(|interaction| interaction.inputs())
+        {
+            *flow.entry(input.token).or_default() -= util::conv::u256::to_big_int(input.amount);
+        }
+
+        // Interaction outputs represent flow into the contract, i.e. positive flow.
+        for output in self
+            .interactions
+            .iter()
+            .flat_map(|interaction| interaction.outputs())
+        {
+            *flow.entry(output.token).or_default() += util::conv::u256::to_big_int(output.amount);
+        }
+
+        // For trades, the sold amounts are always entering the contract (positive
+        // flow), whereas the buy amounts are always exiting the contract
+        // (negative flow).
+        for trade in self.trades.iter() {
+            let trade::Execution { sell, buy } = trade
+                .execution(&self.prices)
+                .map_err(|_| VerificationError::AssetFlow)?;
+            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(sell.amount);
+            *flow.entry(buy.token).or_default() -= util::conv::u256::to_big_int(buy.amount);
+        }
+
+        if flow.values().any(|v| v.is_negative()) {
+            Err(VerificationError::AssetFlow)
+        } else {
+            Ok(())
+        }
     }
 
     /// Check that internalized interactions only use trusted tokens.
@@ -208,6 +237,26 @@ impl Solution {
         } else {
             Err(VerificationError::Internalization)
         }
+    }
+}
+
+/// Token prices for this solution, expressed using an arbitrary reference
+/// unit chosen by the solver. These values are only meaningful in relation
+/// to each others.
+///
+/// The rule which relates two prices for tokens X and Y is:
+/// ```
+/// amount_x * price_x = amount_y * price_y
+/// ```
+#[derive(Debug)]
+pub struct ClearingPrices(pub HashMap<eth::TokenAddress, eth::U256>);
+
+impl FromIterator<(eth::TokenAddress, eth::U256)> for ClearingPrices {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (eth::TokenAddress, eth::U256)>,
+    {
+        Self(iter.into_iter().collect())
     }
 }
 

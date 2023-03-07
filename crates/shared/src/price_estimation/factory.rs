@@ -413,11 +413,6 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
                     .paraswap_partner
                     .clone()
                     .unwrap_or_default(),
-                rate_limiter: factory
-                    .shared_args
-                    .paraswap_rate_limiter
-                    .clone()
-                    .map(|strategy| RateLimiter::from_strategy(strategy, "paraswap_api".into())),
             }),
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
