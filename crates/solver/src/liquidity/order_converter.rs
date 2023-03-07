@@ -109,7 +109,11 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
-        if is_native_token_buy_order {
+        if is_native_token_buy_order && self.order.is_user_order() {
+            // This ensures that we associate the same UCP with `BUY_ETH_ADDRESS` as with
+            // the native token. Under certain circumstances this would not work for
+            // liquidity orders but since they always settle at their limit
+            // price anyway we don't need to have a UCP for `BUY_ETH_ADDRESS`.
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
