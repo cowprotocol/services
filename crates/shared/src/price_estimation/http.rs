@@ -208,7 +208,7 @@ impl HttpPriceEstimator {
             )
             .await
             .map_err(|err| match err {
-                ApiError::RateLimited => PriceEstimationError::RateLimited(Default::default()),
+                ApiError::RateLimited => PriceEstimationError::RateLimited,
                 ApiError::Other(err) => PriceEstimationError::Other(err),
             })
         };

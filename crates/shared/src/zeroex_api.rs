@@ -452,6 +452,9 @@ pub enum ZeroExResponseError {
     // Connectivity or non-response error
     #[error("Failed on send")]
     Send(reqwest::Error),
+
+    #[error("Rate limited")]
+    RateLimited,
 }
 
 #[async_trait::async_trait]
@@ -533,6 +536,7 @@ impl DefaultZeroExApi {
                 // Validation Error
                 100 => Err(ZeroExResponseError::InsufficientLiquidity),
                 500..=599 => Err(ZeroExResponseError::ServerError(format!("{url:?}"))),
+                429 => Err(ZeroExResponseError::RateLimited),
                 _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
             },
             Err(err) => Err(ZeroExResponseError::DeserializeError(
