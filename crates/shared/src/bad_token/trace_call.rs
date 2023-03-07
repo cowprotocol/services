@@ -29,7 +29,7 @@ pub struct TraceCallDetector {
 impl BadTokenDetecting for TraceCallDetector {
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
         let quality = self.detect_impl(token).await?;
-        tracing::debug!("token {:?} quality {:?}", token, quality);
+        tracing::debug!(?token, ?quality, "determined token quality");
         Ok(quality)
     }
 }
@@ -60,10 +60,10 @@ impl TraceCallDetector {
                 (address, amount)
             }
             None => {
-                return Ok(TokenQuality::bad(
+                return Ok(TokenQuality::bad(format!(
                     "Could not find on chain source of the token with at least {MIN_AMOUNT} \
                      balance.",
-                ))
+                )))
             }
         };
 

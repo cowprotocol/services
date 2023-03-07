@@ -6,7 +6,7 @@ fn to_big_uint(value: eth::U256) -> num::BigUint {
     num::BigUint::from_bytes_be(&bytes)
 }
 
-fn to_big_int(value: eth::U256) -> num::BigInt {
+pub fn to_big_int(value: eth::U256) -> num::BigInt {
     num::BigInt::from_biguint(num::bigint::Sign::Plus, to_big_uint(value))
 }
 

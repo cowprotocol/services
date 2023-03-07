@@ -1,5 +1,5 @@
 use {
-    crate::tests::boundary,
+    crate::{domain::eth, tests::boundary},
     ethcontract::{transport::DynTransport, Web3},
     secp256k1::SecretKey,
 };
@@ -18,10 +18,18 @@ pub struct Uniswap {
     pub token_b_out_amount: ethcontract::U256,
     pub user_fee: ethcontract::U256,
     /// Interactions needed for the solution.
-    pub interactions: Vec<(ethcontract::H160, Vec<u8>)>,
+    pub interactions: Vec<Interaction>,
     pub solver_address: ethcontract::H160,
     pub solver_secret_key: SecretKey,
     pub geth: super::Geth,
+}
+
+#[derive(Debug)]
+pub struct Interaction {
+    pub address: ethcontract::H160,
+    pub calldata: Vec<u8>,
+    pub inputs: Vec<eth::Asset>,
+    pub outputs: Vec<eth::Asset>,
 }
 
 /// Set up a Uniswap V2 pair ready for the following swap:
@@ -314,8 +322,24 @@ pub async fn setup() -> Uniswap {
 
     Uniswap {
         interactions: vec![
-            (token_a.address(), transfer_interaction),
-            (uniswap_pair.address(), swap_interaction),
+            Interaction {
+                address: token_a.address(),
+                calldata: transfer_interaction,
+                inputs: Default::default(),
+                outputs: Default::default(),
+            },
+            Interaction {
+                address: uniswap_pair.address(),
+                calldata: swap_interaction,
+                inputs: vec![eth::Asset {
+                    token: token_a.address().into(),
+                    amount: token_a_in_amount,
+                }],
+                outputs: vec![eth::Asset {
+                    token: token_b.address().into(),
+                    amount: token_b_out_amount,
+                }],
+            },
         ],
         admin,
         token_a,
