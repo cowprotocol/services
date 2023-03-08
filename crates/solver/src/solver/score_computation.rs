@@ -28,7 +28,7 @@ pub struct ScoreCalculator {
     gas_amount_factor: f64,
     gas_price_factor: f64,
     nmb_orders_factor: f64,
-    x: f64,
+    intercept: f64,
 }
 
 impl ScoreCalculator {
@@ -36,13 +36,13 @@ impl ScoreCalculator {
         gas_amount_factor: f64,
         gas_price_factor: f64,
         nmb_orders_factor: f64,
-        x: f64,
+        intercept: f64,
     ) -> Self {
         Self {
             gas_amount_factor,
             gas_price_factor,
             nmb_orders_factor,
-            x,
+            intercept,
         }
     }
 
@@ -52,7 +52,7 @@ impl ScoreCalculator {
         let gas_amount = inputs.gas_amount.to_f64()?;
         let gas_price = inputs.gas_price.to_f64()?;
 
-        let exponent = self.x.neg()
+        let exponent = self.intercept.neg()
             - self.gas_amount_factor * gas_amount
             - self.gas_price_factor * gas_price
             - self.nmb_orders_factor * nmb_orders as f64;
@@ -83,7 +83,7 @@ pub struct Arguments {
     /// The format is a list of semicolon separated solver parameters.
     /// Each solver parameter is a comma separated list of parameters:
     /// [solver name],[gas amount factor],[gas price factor],[number of orders
-    /// factor],[x parameter]
+    /// factor],[intercept parameter]
     #[clap(long, env, default_value = DEFAULT_SCORE_PARAMETERS)]
     score_parameters: ScoreParameters,
 }
