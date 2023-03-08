@@ -1,20 +1,22 @@
+//! Test that a buy limit order behaves as expected.
+
 use {
-    super::SOLVER_NAME,
     crate::{
-        domain::competition::{self, auction},
+        domain::{
+            competition::{self, auction},
+            eth,
+        },
         infra,
-        tests::{self, hex_address, setup},
+        tests::{self, cases::SOLVER_NAME, hex_address, setup},
     },
     itertools::Itertools,
     serde_json::json,
-    web3::types::TransactionId,
 };
 
-/// Test that the /settle endpoint behaves as expected.
 #[tokio::test]
 #[ignore]
 async fn test() {
-    crate::boundary::initialize_tracing("driver=trace");
+    crate::boundary::initialize_tracing("warn");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
         web3,
@@ -23,7 +25,6 @@ async fn test() {
         token_b,
         admin,
         domain_separator,
-        user_fee,
         token_a_in_amount,
         token_b_out_amount,
         weth,
@@ -32,12 +33,14 @@ async fn test() {
         solver_address,
         geth,
         solver_secret_key,
+        ..
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
     let buy_token = token_b.address();
-    let sell_amount = token_a_in_amount;
+    let surplus_fee = eth::U256::from(10);
+    let sell_amount = token_a_in_amount + surplus_fee;
     let buy_amount = token_b_out_amount;
     let valid_to = u32::MAX;
     let boundary = tests::boundary::Order {
@@ -46,13 +49,14 @@ async fn test() {
         sell_amount,
         buy_amount,
         valid_to,
-        user_fee,
-        side: competition::order::Side::Sell,
+        user_fee: 0.into(),
+        side: competition::order::Side::Buy,
         secret_key: admin_secret_key,
         domain_separator,
         owner: admin,
         partially_fillable: false,
     };
+    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -112,29 +116,29 @@ async fn test() {
                         "uid": boundary.uid(),
                         "sellToken": hex_address(sell_token),
                         "buyToken": hex_address(buy_token),
-                        "sellAmount": sell_amount.to_string(),
+                        "sellAmount": (sell_amount - surplus_fee).to_string(),
                         "buyAmount": buy_amount.to_string(),
                         "feeAmount": "0",
-                        "kind": "sell",
+                        "kind": "buy",
                         "partiallyFillable": false,
-                        "class": "market",
+                        "class": "limit",
                         "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": "243044758",
+                "effectiveGasPrice": gas_price,
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
                     hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): sell_amount.to_string(),
+                    hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
                 },
                 "trades": [
                     {
                         "kind": "fulfillment",
                         "order": boundary.uid(),
-                        "executedAmount": sell_amount.to_string(),
+                        "executedAmount": buy_amount.to_string(),
                     }
                 ],
                 "interactions": interactions
@@ -183,14 +187,15 @@ async fn test() {
                         "sellAmount": sell_amount.to_string(),
                         "buyAmount": buy_amount.to_string(),
                         "solverFee": "0",
-                        "userFee": user_fee.to_string(),
+                        "userFee": "0",
                         "validTo": valid_to,
-                        "kind": "sell",
+                        "kind": "buy",
                         "owner": hex_address(admin),
                         "partiallyFillable": false,
                         "executed": "0",
                         "preInteractions": [],
-                        "class": "market",
+                        "class": "limit",
+                        "surplusFee": surplus_fee.to_string(),
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "reward": 0.1,
                         "signingScheme": "eip712",
@@ -204,35 +209,27 @@ async fn test() {
 
     // Assert that the solution is valid.
     assert_eq!(status, hyper::StatusCode::OK);
+    assert!(solution.is_object());
+    assert_eq!(solution.as_object().unwrap().len(), 2);
+    assert!(solution.get("id").is_some());
+    assert!(solution.get("score").is_some());
+    let score = solution.get("score").unwrap().as_f64().unwrap();
+    approx::assert_relative_eq!(score, -58130959128924.0, max_relative = 0.01);
 
-    let solution_id = solution.get("id").unwrap().as_str().unwrap();
-    let block_number = web3.eth().block_number().await.unwrap();
-    let old_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
 
     // Call /settle.
-    setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
+    setup::blockchain::wait_for(
+        &web3,
+        client.settle(SOLVER_NAME, solution.get("id").unwrap().as_str().unwrap()),
+    )
+    .await;
 
     // Assert that the settlement is valid.
-    let new_balance = web3.eth().balance(solver_address, None).await.unwrap();
     let new_token_a = token_a.balance_of(admin).call().await.unwrap();
     let new_token_b = token_b.balance_of(admin).call().await.unwrap();
-    // ETH balance is lower due to transaction fees.
-    assert!(new_balance < old_balance);
     // The balance of the trader changes according to the swap.
-    assert_eq!(new_token_a, old_token_a - token_a_in_amount - user_fee);
+    assert_eq!(new_token_a, old_token_a - token_a_in_amount - surplus_fee);
     assert_eq!(new_token_b, old_token_b + token_b_out_amount);
-
-    // Check that the solution ID is included in the settlement.
-    let tx = web3
-        .eth()
-        .transaction(TransactionId::Block((block_number + 1).into(), 0.into()))
-        .await
-        .unwrap()
-        .unwrap();
-    let input = tx.input.0;
-    let len = input.len();
-    let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
-    assert_eq!(tx_solution_id.to_string(), solution_id);
 }
