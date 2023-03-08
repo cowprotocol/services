@@ -117,7 +117,7 @@ impl PostProcessing for PostProcessingPipeline {
         let simulator = SettlementSimulator {
             settlement_contract: self.settlement_contract.clone(),
             gas_price,
-            solver_account,
+            solver_account: solver_account.clone(),
             internalization: InternalizationStrategy::SkipInternalizableInteraction,
         };
 
@@ -146,6 +146,7 @@ impl PostProcessing for PostProcessingPipeline {
                     score_calculator,
                     gas_price,
                     prices,
+                    &solver_account.address(),
                 )
                 .await
             }
