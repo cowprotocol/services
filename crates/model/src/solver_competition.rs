@@ -95,11 +95,11 @@ pub struct SolverSettlement {
     pub solver_address: H160,
     pub objective: Objective,
     #[serde(flatten)]
-    pub score: Score, // auction based score
+    pub score: Option<Score>, // auction based score
     // auction based ranking
     // this is temporarily needed as the scored settlements are ordered by objective value ATM
     // and this represents how they would be ranked after switching to the auction based scoring
-    pub ranking: usize,
+    pub ranking: Option<usize>,
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
@@ -253,8 +253,8 @@ mod tests {
                         cost: 6.,
                         gas: 7,
                     },
-                    score: Score::Solver(1.into()),
-                    ranking: 1,
+                    score: Some(Score::Solver(1.into())),
+                    ranking: Some(1),
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),
                     },
