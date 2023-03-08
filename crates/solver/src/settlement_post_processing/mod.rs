@@ -5,9 +5,9 @@ use {
     shared::external_prices::ExternalPrices,
 };
 
-pub mod optimize_buffer_usage;
-pub mod optimize_score;
-pub mod optimize_unwrapping;
+mod optimize_buffer_usage;
+mod optimize_score;
+mod optimize_unwrapping;
 
 use {
     crate::{
@@ -19,7 +19,7 @@ use {
     ethcontract::Account,
     gas_estimation::GasPrice1559,
     optimize_buffer_usage::optimize_buffer_usage,
-    optimize_score::optimize_score,
+    optimize_score::compute_score,
     optimize_unwrapping::optimize_unwrapping,
     primitive_types::H160,
     shared::{
@@ -34,7 +34,7 @@ use {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> Result<U256>;
+    async fn estimate_gas(&self, settlement: Settlement) -> Result<U256>;
 }
 
 pub struct SettlementSimulator {
@@ -46,7 +46,7 @@ pub struct SettlementSimulator {
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> Result<U256> {
+    async fn estimate_gas(&self, settlement: Settlement) -> Result<U256> {
         let settlement = settlement.encode(self.internalization);
         simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
@@ -140,7 +140,7 @@ impl PostProcessing for PostProcessingPipeline {
 
         match score_calculator {
             Some(score_calculator) => {
-                optimize_score(
+                compute_score(
                     optimized_solution,
                     &simulator,
                     score_calculator,

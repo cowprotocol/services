@@ -25,15 +25,25 @@ use {
 
 #[derive(Debug, Default, Clone)]
 pub struct ScoreCalculator {
-    a: f64,
-    b: f64,
-    c: f64,
+    gas_amount_factor: f64,
+    gas_price_factor: f64,
+    nmb_orders_factor: f64,
     x: f64,
 }
 
 impl ScoreCalculator {
-    pub fn new(a: f64, b: f64, c: f64, x: f64) -> Self {
-        Self { a, b, c, x }
+    pub fn new(
+        gas_amount_factor: f64,
+        gas_price_factor: f64,
+        nmb_orders_factor: f64,
+        x: f64,
+    ) -> Self {
+        Self {
+            gas_amount_factor,
+            gas_price_factor,
+            nmb_orders_factor,
+            x,
+        }
     }
 
     pub fn calculate(&self, inputs: objective_value::Inputs, nmb_orders: usize) -> Option<U256> {
@@ -42,27 +52,38 @@ impl ScoreCalculator {
         let gas_amount = inputs.gas_amount.to_f64()?;
         let gas_price = inputs.gas_price.to_f64()?;
 
-        let exponent =
-            self.x.neg() - self.a * gas_amount - self.b * gas_price - self.c * nmb_orders as f64;
-        let revert_probability = 1. / (1. + exponent.exp());
-        let score = revert_probability * (surplus + fees) - gas_amount * gas_price;
+        let exponent = self.x.neg()
+            - self.gas_amount_factor * gas_amount
+            - self.gas_price_factor * gas_price
+            - self.nmb_orders_factor * nmb_orders as f64;
+        let success_probability = 1. / (1. + exponent.exp());
+        let score = success_probability * (surplus + fees) - gas_amount * gas_price;
         Some(U256::from_f64_lossy(score))
     }
 }
 
-const DEFAULT_SCORE_PARAMETERS: &str =
-    "\
-    Naive,0.5604082285267333,0.00285114179288399,0.06499875450001853,3.3987949311136787;Baseline,\
-     -0.24391894879979226,-0.05809501139187965,-0.000013222507455295696,4.27946195371547;CowDexAg,\
-     -0.9613998308805674,-0.14435150204689684,0.13923418474574772,2.7565258390467178;OneInch,-0.\
-     32674185936325467,-0.05930446215554123,-0.33031769043234466,3.144609301500272;Paraswap,-0.\
-     7815504846264341,-0.06965336115721313,0.0701725936991023,3.2617622830143453;ZeroEx,-1.\
-     399997494341399,-0.04522233479453635,0.11066085229796373,2.7150950015915676;BalancerSor,-0.\
-     7070951919365344,-0.1841886790519467,0.34189609422313544,3.6849833670945027";
+// The code for collecting the data and training the model can be found here:
+// https://github.com/cowprotocol/risk_adjusted_rewards
+// The data for each solver can be found here.
+// https://drive.google.com/drive/u/1/folders/19yoL808qkp_os3BpLIYQahI3mQrNyx5T
+#[rustfmt::skip]
+const DEFAULT_SCORE_PARAMETERS: &str = "\
+    Naive,0.5604082285267333,0.00285114179288399,0.06499875450001853,3.3987949311136787;\
+    Baseline,-0.24391894879979226,-0.05809501139187965,-0.000013222507455295696,4.27946195371547;\
+    CowDexAg,-0.9613998308805674,-0.14435150204689684,0.13923418474574772,2.7565258390467178;\
+    OneInch,-0.32674185936325467,-0.05930446215554123,-0.33031769043234466,3.144609301500272;\
+    Paraswap,-0.7815504846264341,-0.06965336115721313,0.0701725936991023,3.2617622830143453;\
+    ZeroEx,-1.399997494341399,-0.04522233479453635,0.11066085229796373,2.7150950015915676;\
+    BalancerSor,-0.7070951919365344,-0.1841886790519467,0.34189609422313544,3.6849833670945027";
 
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct Arguments {
+    /// Parameters for the score computation for each solver.
+    /// The format is a list of semicolon separated solver parameters.
+    /// Each solver parameter is a comma separated list of parameters:
+    /// [solver name],[gas amount factor],[gas price factor],[number of orders
+    /// factor],[x parameter]
     #[clap(long, env, default_value = DEFAULT_SCORE_PARAMETERS)]
     score_parameters: ScoreParameters,
 }
@@ -82,8 +103,6 @@ impl Display for Arguments {
 #[derive(Debug, Clone)]
 pub struct ScoreParameters(HashMap<SolverType, ScoreCalculator>);
 
-// expected string format:
-// "Naive,2.3,3,4.5,7;Baseline,1.2,3.4,5.6,8"
 impl FromStr for ScoreParameters {
     type Err = anyhow::Error;
 

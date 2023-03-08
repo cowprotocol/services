@@ -380,10 +380,6 @@ pub fn create(
             );
 
             let score_calculator = score_configuration.get_calculator(solver_type);
-            tracing::debug!(
-                solver = ?solver_type, score = ?score_calculator,
-                "configured score",
-            );
 
             let solver = match solver_type {
                 SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),

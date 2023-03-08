@@ -10,7 +10,7 @@ use {
     shared::{external_prices::ExternalPrices, http_solver::model::Score},
 };
 
-pub async fn optimize_score(
+pub async fn compute_score(
     settlement: Settlement,
     settlement_simulator: &impl SettlementSimulating,
     score_calculator: &ScoreCalculator,
@@ -21,12 +21,11 @@ pub async fn optimize_score(
         return settlement;
     }
 
-    let gas_amount = match settlement_simulator
-        .settlement_would_succeed(settlement.clone())
-        .await
-    {
-        Ok(gas_amount) => gas_amount * 9 / 10, /* multiply with 0.9 to get more realistic gas */
-        // amount
+    let gas_amount = match settlement_simulator.estimate_gas(settlement.clone()).await {
+        // Multiply by 0.9 to get more realistic gas amount.
+        // This is because the gas estimation is not accurate enough and does not take the
+        // EVM gas refund into account.
+        Ok(gas_amount) => gas_amount * 9 / 10,
         Err(_) => return settlement,
     };
 

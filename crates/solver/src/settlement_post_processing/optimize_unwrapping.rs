@@ -30,7 +30,7 @@ pub async fn optimize_unwrapping(
     optimized_settlement.encoder.drop_unwrap(weth.address());
 
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone())
+        .estimate_gas(optimized_settlement.clone())
         .await
         .is_ok()
     {
@@ -63,7 +63,7 @@ pub async fn optimize_unwrapping(
     // the proposed solution is no longer possible. That's why a simulation is
     // necessary.
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone())
+        .estimate_gas(optimized_settlement.clone())
         .await
         .is_ok()
     {
@@ -118,7 +118,7 @@ mod tests {
 
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
             .returning(|_| Ok(Default::default()));
 
@@ -149,11 +149,11 @@ mod tests {
 
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("simulation failed")));
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
             .returning(|_| Ok(Default::default()));
 
@@ -182,7 +182,7 @@ mod tests {
         // more than 10 WETH).
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(2)
             .returning(|_| Err(anyhow::anyhow!("simulation failed")));
 

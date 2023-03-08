@@ -20,7 +20,7 @@ pub async fn optimize_buffer_usage(
     let optimized_settlement = settlement.clone().without_onchain_liquidity();
 
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone())
+        .estimate_gas(optimized_settlement.clone())
         .await
         .is_ok()
     {
