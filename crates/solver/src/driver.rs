@@ -358,8 +358,8 @@ impl Driver {
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
-                    score: rated_settlement.score,
-                    ranking: rated_settlement.ranking,
+                    score: Some(rated_settlement.score),
+                    ranking: Some(rated_settlement.ranking),
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()
