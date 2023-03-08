@@ -7,7 +7,7 @@ pub mod paraswap;
 pub mod zeroex;
 
 use {
-    crate::{price_estimation::Query, rate_limiter::RateLimiterError},
+    crate::price_estimation::{PriceEstimationError, Query},
     contracts::ERC20,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     serde::Deserialize,
@@ -112,11 +112,23 @@ pub enum TradeError {
     #[error("Unsupported Order Type")]
     UnsupportedOrderType,
 
-    #[error(transparent)]
-    RateLimited(#[from] RateLimiterError),
+    #[error("Rate limited")]
+    RateLimited,
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<PriceEstimationError> for TradeError {
+    fn from(err: PriceEstimationError) -> Self {
+        match err {
+            PriceEstimationError::NoLiquidity => Self::NoLiquidity,
+            PriceEstimationError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            PriceEstimationError::RateLimited => Self::RateLimited,
+            PriceEstimationError::Other(err) => Self::Other(err),
+            _ => Self::Other(anyhow::anyhow!(err.to_string())),
+        }
+    }
 }
 
 impl Clone for TradeError {
@@ -124,7 +136,7 @@ impl Clone for TradeError {
         match self {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
-            Self::RateLimited(err) => Self::RateLimited(err.clone()),
+            Self::RateLimited => Self::RateLimited,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }

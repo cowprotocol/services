@@ -62,7 +62,7 @@ impl LimitOrderQuoter {
     async fn update(&self) -> Result<bool> {
         let orders = self
             .database
-            .open_limit_orders(self.limit_order_age)
+            .open_fok_limit_orders(self.limit_order_age)
             .await?;
 
         let orders = match self.strategies.contains(&QuotingStrategy::SkipUnfunded) {
@@ -151,7 +151,7 @@ impl LimitOrderQuoter {
         };
         match self
             .database
-            .update_limit_order_fees(order_spec, &update)
+            .update_fok_limit_order_fees(order_spec, &update)
             .await
         {
             Ok(_) => {

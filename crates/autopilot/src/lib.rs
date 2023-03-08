@@ -6,7 +6,7 @@ pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
-pub mod limit_orders;
+pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
 pub mod risk_adjusted_rewards;
 pub mod run_loop;
@@ -24,7 +24,7 @@ use {
             Postgres,
         },
         event_updater::{EventUpdater, GPv2SettlementContract},
-        limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
+        fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
     contracts::{

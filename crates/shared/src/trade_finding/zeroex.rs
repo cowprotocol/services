@@ -98,6 +98,7 @@ impl From<ZeroExResponseError> for TradeError {
     fn from(err: ZeroExResponseError) -> Self {
         match err {
             ZeroExResponseError::InsufficientLiquidity => TradeError::NoLiquidity,
+            ZeroExResponseError::RateLimited => TradeError::RateLimited,
             ZeroExResponseError::ServerError(_)
             | ZeroExResponseError::UnknownZeroExError(_)
             | ZeroExResponseError::DeserializeError(_, _)

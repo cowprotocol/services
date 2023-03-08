@@ -230,7 +230,6 @@ mod tests {
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
             partner: "Test".to_string(),
-            rate_limiter: None,
         };
         let finder = ParaswapTradeFinder::new(Arc::new(paraswap), Arc::new(tokens), Vec::new());
 

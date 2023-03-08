@@ -200,6 +200,7 @@ impl Inner {
 impl From<OneInchError> for TradeError {
     fn from(err: OneInchError) -> Self {
         match err {
+            OneInchError::Api(err) if err.status_code == 429 => Self::RateLimited,
             err if err.is_insuffucient_liquidity() => Self::NoLiquidity,
             err => Self::Other(err.into()),
         }

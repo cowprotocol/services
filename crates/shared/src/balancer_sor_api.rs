@@ -4,7 +4,8 @@
 //! https://dev.balancer.fi/resources/smart-order-router
 
 use {
-    anyhow::{ensure, Result},
+    crate::price_estimation::PriceEstimationError,
+    anyhow::{ensure, Context, Result},
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
     num::BigInt,
@@ -18,7 +19,7 @@ use {
 #[async_trait::async_trait]
 pub trait BalancerSorApi: Send + Sync + 'static {
     /// Quotes a price.
-    async fn quote(&self, query: Query) -> Result<Option<Quote>>;
+    async fn quote(&self, query: Query) -> Result<Option<Quote>, Error>;
 }
 
 /// Balancer SOR API.
@@ -37,22 +38,43 @@ impl DefaultBalancerSorApi {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+
+    #[error("Rate limited")]
+    RateLimited,
+}
+
+impl From<Error> for PriceEstimationError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::RateLimited => Self::RateLimited,
+            Error::Other(err) => Self::Other(err),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl BalancerSorApi for DefaultBalancerSorApi {
-    async fn quote(&self, query: Query) -> Result<Option<Quote>> {
+    async fn quote(&self, query: Query) -> Result<Option<Quote>, Error> {
         tracing::debug!(url =% self.url, ?query, "querying Balancer SOR");
         let response = self
             .client
             .post(self.url.clone())
             .json(&query)
             .send()
-            .await?;
+            .await
+            .context("request failed")?;
         let status = response.status();
-        let response = response.text().await?;
+        let response = response.text().await.context("fetching content failed")?;
         tracing::debug!(%response, %status, "received Balancer SOR quote");
-        anyhow::ensure!(status != StatusCode::TOO_MANY_REQUESTS, "rate limited");
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(Error::RateLimited);
+        }
 
-        let quote = serde_json::from_str::<Quote>(&response)?;
+        let quote = serde_json::from_str::<Quote>(&response).context("deserialization failed")?;
         if quote.is_empty() {
             return Ok(None);
         }
