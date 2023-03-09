@@ -200,13 +200,21 @@ impl Solution {
         }
 
         // For trades, the sold amounts are always entering the contract (positive
-        // flow), whereas the buy amounts are always exiting the contract
+        // flow), whereas the bought amounts are always exiting the contract
         // (negative flow).
         for trade in self.trades.iter() {
             let trade::Execution { sell, buy } = trade
                 .execution(&self.prices)
                 .map_err(|_| VerificationError::AssetFlow)?;
-            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(sell.amount);
+            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(
+                // Surplus fees need to stay inside the settlement contract. They are not
+                // available to the solver, so deduct them from the positive flow.
+                if let Some(surplus_fee) = trade.surplus_fee() {
+                    sell.amount - surplus_fee.0
+                } else {
+                    sell.amount
+                },
+            );
             *flow.entry(buy.token).or_default() -= util::conv::u256::to_big_int(buy.amount);
         }
 

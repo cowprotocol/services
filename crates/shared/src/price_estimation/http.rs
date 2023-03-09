@@ -68,6 +68,7 @@ pub struct HttpPriceEstimator {
     base_tokens: Arc<BaseTokens>,
     network_name: String,
     rate_limiter: Arc<RateLimiter>,
+    use_liquidity: bool,
 }
 
 impl HttpPriceEstimator {
@@ -83,6 +84,7 @@ impl HttpPriceEstimator {
         base_tokens: Arc<BaseTokens>,
         network_name: String,
         rate_limiter: Arc<RateLimiter>,
+        use_liquidity: bool,
     ) -> Self {
         Self {
             api,
@@ -96,6 +98,7 @@ impl HttpPriceEstimator {
             base_tokens,
             network_name,
             rate_limiter,
+            use_liquidity,
         }
     }
 
@@ -141,22 +144,25 @@ impl HttpPriceEstimator {
             gas_price: gas_price.to_f64_lossy(),
         };
 
-        let (uniswap_pools, balancer_pools, uniswap_v3_pools) = futures::try_join!(
-            self.uniswap_pools(pairs.clone(), &gas_model),
-            self.balancer_pools(pairs.clone(), &gas_model),
-            self.uniswap_v3_pools(pairs.clone(), &gas_model)
-        )?;
-        let amms: BTreeMap<H160, AmmModel> = uniswap_pools
-            .into_iter()
-            .chain(balancer_pools)
-            .chain(uniswap_v3_pools)
-            .map(|amm| (amm.address, amm))
-            .collect();
+        let mut amms: BTreeMap<H160, AmmModel> = Default::default();
+        if self.use_liquidity {
+            let (uniswap_pools, balancer_pools, uniswap_v3_pools) = futures::try_join!(
+                self.uniswap_pools(pairs.clone(), &gas_model),
+                self.balancer_pools(pairs.clone(), &gas_model),
+                self.uniswap_v3_pools(pairs.clone(), &gas_model)
+            )?;
+            for pools in [uniswap_pools, balancer_pools, uniswap_v3_pools] {
+                for pool in pools {
+                    amms.insert(pool.address, pool);
+                }
+            }
+        }
 
         let mut tokens: HashSet<H160> = Default::default();
         tokens.insert(query.sell_token);
         tokens.insert(query.buy_token);
         tokens.insert(self.native_token);
+
         for amm in amms.values() {
             match &amm.parameters {
                 AmmParameters::ConstantProduct(params) => tokens.extend(params.reserves.keys()),
@@ -167,6 +173,7 @@ impl HttpPriceEstimator {
                 }
             }
         }
+
         let tokens: Vec<_> = tokens.drain().collect();
         let token_infos = self.token_info.get_token_infos(&tokens).await;
         let tokens = tokens
@@ -483,6 +490,7 @@ mod tests {
             Arc::new(BaseTokens::new(native_token, &[])),
             "test".into(),
             RateLimiter::test(),
+            true,
         );
 
         let sell_order = estimator
@@ -535,6 +543,7 @@ mod tests {
             Arc::new(BaseTokens::new(native_token, &[])),
             "test".into(),
             RateLimiter::test(),
+            true,
         );
         let err = estimator
             .estimate(&Query {
@@ -578,6 +587,7 @@ mod tests {
             Arc::new(BaseTokens::new(native_token, &[])),
             "test".into(),
             RateLimiter::test(),
+            true,
         );
 
         let err = estimator
@@ -671,6 +681,7 @@ mod tests {
             Arc::new(BaseTokens::new(native_token, &[])),
             "test".into(),
             RateLimiter::test(),
+            true,
         );
 
         let query = Query {
@@ -799,6 +810,7 @@ mod tests {
                 "test".into(),
             )),
             uniswap_v3_pools: Some(uniswap_v3_pool_fetcher),
+            use_liquidity: true,
         };
 
         let result = estimator
