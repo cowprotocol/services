@@ -107,39 +107,52 @@ impl FromStr for ScoreParameters {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let score_parameters = s
-            .split(';')
-            .map(|part| {
-                let (solver, parameters) = part
-                    .split_once(',')
-                    .context("malformed solver score parameters")?;
-                let mut parameters = parameters.split(',');
-                let a = parameters
-                    .next()
-                    .context("missing a parameter for score")?
-                    .parse()?;
-                let b = parameters
-                    .next()
-                    .context("missing b parameter for score")?
-                    .parse()?;
-                let c = parameters
-                    .next()
-                    .context("missing c parameter for score")?
-                    .parse()?;
-                let x = parameters
-                    .next()
-                    .context("missing x parameter for score")?
-                    .parse()?;
-                Ok((
-                    SolverType::from_str(solver, true)
-                        .map_err(|message| anyhow::anyhow!(message))?,
-                    ScoreCalculator::new(a, b, c, x),
-                ))
+        // parse user provided parameters (or default if none are provided)
+        let user_score_parameters = parse_calculators(s)?;
+        // parse default parameters and override them with the ones provided by the user
+        let score_parameters = parse_calculators(DEFAULT_SCORE_PARAMETERS)?
+            .into_iter()
+            .map(|(solver, default_score_parameter)| {
+                if let Some(user_score_parameter) = user_score_parameters.get(&solver) {
+                    (solver, user_score_parameter.clone())
+                } else {
+                    (solver, default_score_parameter)
+                }
             })
-            .collect::<Result<HashMap<_, _>>>()?;
-
+            .collect();
         Ok(Self(score_parameters))
     }
+}
+
+fn parse_calculators(s: &str) -> Result<HashMap<SolverType, ScoreCalculator>> {
+    s.split(';')
+        .map(|part| {
+            let (solver, parameters) = part
+                .split_once(',')
+                .context("malformed solver score parameters")?;
+            let mut parameters = parameters.split(',');
+            let a = parameters
+                .next()
+                .context("missing a parameter for score")?
+                .parse()?;
+            let b = parameters
+                .next()
+                .context("missing b parameter for score")?
+                .parse()?;
+            let c = parameters
+                .next()
+                .context("missing c parameter for score")?
+                .parse()?;
+            let x = parameters
+                .next()
+                .context("missing x parameter for score")?
+                .parse()?;
+            Ok((
+                SolverType::from_str(solver, true).map_err(|message| anyhow::anyhow!(message))?,
+                ScoreCalculator::new(a, b, c, x),
+            ))
+        })
+        .collect::<Result<HashMap<_, _>>>()
 }
 
 #[cfg(test)]
