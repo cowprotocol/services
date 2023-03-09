@@ -41,6 +41,9 @@ async fn sell_too_low() {
     let sell_token = token_a.address();
     let buy_token = token_b.address();
     let surplus_fee = eth::U256::from(10);
+    // For the limit order to get settled, this needs to be token_a_in_amount +
+    // surplus_fee. Because it's lower by surplus_fee, the asset flow verification
+    // fails.
     let sell_amount = token_a_in_amount;
     let buy_amount = token_b_out_amount;
     let valid_to = u32::MAX;
@@ -208,7 +211,7 @@ async fn sell_too_low() {
         )
         .await;
 
-    // Assert that the solution is valid.
+    // Assert.
     assert_eq!(status, hyper::StatusCode::BAD_REQUEST);
     assert!(result.is_object());
     assert_eq!(result.as_object().unwrap().len(), 2);
@@ -246,6 +249,9 @@ async fn buy_too_high() {
     let buy_token = token_b.address();
     let surplus_fee = eth::U256::from(10);
     let sell_amount = token_a_in_amount + surplus_fee;
+    // For the limit order to get settled, this needs to be token_b_out_amount.
+    // Because it's higher by surplus_fee, the asset flow verification
+    // fails.
     let buy_amount = token_b_out_amount + surplus_fee;
     let valid_to = u32::MAX;
     let boundary = tests::boundary::Order {
@@ -412,7 +418,7 @@ async fn buy_too_high() {
         )
         .await;
 
-    // Assert that the solution is valid.
+    // Assert.
     assert_eq!(status, hyper::StatusCode::BAD_REQUEST);
     assert!(result.is_object());
     assert_eq!(result.as_object().unwrap().len(), 2);
