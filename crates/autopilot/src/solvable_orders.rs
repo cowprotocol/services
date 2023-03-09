@@ -181,7 +181,7 @@ impl SolvableOrdersCache {
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         counter.checkpoint("invalid_signature", &orders);
 
-        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
+        let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
         counter.checkpoint("insufficient_sell", &orders);
 
         // If we update due to an explicit notification we can reuse existing balances
@@ -590,12 +590,16 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
-fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    // Unwrap because solvable orders always have a surplus fee.
-    orders.retain(|order| match &order.metadata.class {
-        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee.unwrap(),
-        _ => true,
-    });
+fn filter_fok_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    // Unwrap because solvable fok orders always have a surplus fee.
+    orders.retain(
+        |order| match (&order.metadata.class, order.data.partially_fillable) {
+            (OrderClass::Limit(limit), false) => {
+                order.data.sell_amount > limit.surplus_fee.unwrap()
+            }
+            _ => true,
+        },
+    );
     orders
 }
 
@@ -607,8 +611,8 @@ fn filter_mispriced_limit_orders(
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
-        let surplus_fee = match &order.metadata.class {
-            OrderClass::Limit(limit) => limit.surplus_fee,
+        let surplus_fee = match (&order.metadata.class, order.data.partially_fillable) {
+            (OrderClass::Limit(limit), false) => limit.surplus_fee,
             _ => return true,
         };
 
@@ -1225,7 +1229,7 @@ mod tests {
         ];
 
         assert_eq!(
-            filter_limit_orders_with_insufficient_sell_amount(orders),
+            filter_fok_limit_orders_with_insufficient_sell_amount(orders),
             [order(100, 10)]
         );
     }
