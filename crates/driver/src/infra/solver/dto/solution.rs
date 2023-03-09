@@ -15,6 +15,7 @@ impl Solution {
         self,
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
+        weth: eth::WethAddress,
         solver: Solver,
     ) -> Result<competition::Solution, super::Error> {
         Ok(competition::Solution {
@@ -176,6 +177,7 @@ impl Solution {
                     }
                 })
                 .try_collect()?,
+            weth,
             solver,
         })
     }

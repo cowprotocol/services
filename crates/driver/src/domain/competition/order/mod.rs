@@ -8,11 +8,6 @@ pub mod signature;
 
 pub use signature::Signature;
 
-/// Address used in place of an actual buy token address in an order which buys
-/// ETH.
-const BUY_ETH_ADDRESS: eth::TokenAddress =
-    eth::TokenAddress(eth::ContractAddress(eth::H160([0xee; 20])));
-
 /// An order in the auction.
 #[derive(Debug, Clone)]
 pub struct Order {
@@ -95,7 +90,7 @@ impl Order {
 
     /// Does this order buy ETH?
     pub fn buys_eth(&self) -> bool {
-        self.buy.token == BUY_ETH_ADDRESS
+        self.buy.token == eth::ETH_ADDRESS
     }
 
     /// The address which will receive the output of this order. If a custom

@@ -110,12 +110,9 @@ impl Solver {
         liquidity: &[liquidity::Liquidity],
         timeout: SolverTimeout,
     ) -> Result<Solution, Error> {
+        let weth = self.eth.contracts().weth_address();
         let body = serde_json::to_string(&dto::Auction::from_domain(
-            auction,
-            liquidity,
-            timeout,
-            self.eth.contracts().weth_address(),
-            self.now,
+            auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
@@ -127,7 +124,7 @@ impl Solver {
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
-        res.into_domain(auction, liquidity, self.clone())
+        res.into_domain(auction, liquidity, weth, self.clone())
             .map_err(Into::into)
     }
 }

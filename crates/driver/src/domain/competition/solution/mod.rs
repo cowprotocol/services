@@ -40,6 +40,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub prices: ClearingPrices,
     pub interactions: Vec<Interaction>,
+    pub weth: eth::WethAddress,
     /// The solver which generated this solution.
     pub solver: Solver,
 }
@@ -48,7 +49,7 @@ impl Solution {
     pub async fn approvals(
         &self,
         eth: &Ethereum,
-    ) -> Result<impl Iterator<Item = eth::allowance::Approval>, blockchain::Error> {
+    ) -> Result<impl Iterator<Item = eth::allowance::Approval>, Error> {
         let settlement_contract = &eth.contracts().settlement();
         let allowances = try_join_all(self.allowances().map(|required| async move {
             eth.allowance(settlement_contract.address().into(), required.0.spender)
@@ -259,6 +260,54 @@ impl Solution {
             Err(VerificationError::Internalization)
         }
     }
+
+    /// The clearing prices, represented as a list of assets.
+    pub fn prices(&self) -> Result<Vec<eth::Asset>, Error> {
+        let prices = self
+            .prices
+            .0
+            .iter()
+            .map(|(&token, &amount)| eth::Asset { token, amount });
+
+        // The solution contains an order which buys ETH. Solvers only produce solutions
+        // for ERC20 tokens, while the driver adds special [`Interaction`]s to
+        // wrap/unwrap the ETH tokens and sends WETH orders to the driver. Afterwards, a
+        // clearing price for ETH needs to be added, equal to the WETH clearing price.
+        if self.user_trades().any(|trade| trade.order.buys_eth()) {
+            // If no order buys WETH, the WETH price is not necessary, only the ETH price is
+            // needed. Remove the WETH price to slightly reduce gas used by the settlement.
+            let mut prices = if self
+                .user_trades()
+                .all(|trade| trade.order.buy.token != self.weth.0)
+            {
+                prices
+                    .filter(|price| price.token != self.weth.0)
+                    .collect_vec()
+            } else {
+                prices.collect_vec()
+            };
+
+            // Add a clearing price for ETH equal to WETH.
+            prices.push(eth::Asset {
+                token: eth::ETH_ADDRESS,
+                amount: self
+                    .prices
+                    .0
+                    .get(&self.weth.into())
+                    .ok_or(Error::MissingWethClearingPrice)?
+                    .to_owned(),
+            });
+
+            return Ok(prices);
+        }
+
+        Ok(prices.collect_vec())
+    }
+
+    /// Clearing price for the given token.
+    pub fn price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
+        self.prices.0.get(&token).map(ToOwned::to_owned)
+    }
 }
 
 /// Token prices for this solution, expressed using an arbitrary reference
@@ -270,7 +319,7 @@ impl Solution {
 /// amount_x * price_x = amount_y * price_y
 /// ```
 #[derive(Debug)]
-pub struct ClearingPrices(pub HashMap<eth::TokenAddress, eth::U256>);
+pub struct ClearingPrices(HashMap<eth::TokenAddress, eth::U256>);
 
 impl ClearingPrices {
     pub fn new(prices: HashMap<eth::TokenAddress, eth::U256>) -> Self {
@@ -374,6 +423,8 @@ pub enum Error {
     Boundary(#[from] boundary::Error),
     #[error("verification error: {0:?}")]
     Verification(#[from] VerificationError),
+    #[error("missing weth clearing price")]
+    MissingWethClearingPrice,
     #[error("insufficient solver account Ether balance")]
     InsufficientBalance,
 }

@@ -31,17 +31,11 @@ pub struct Quote {
 impl Quote {
     fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
-            .prices
-            .0
-            .get(&order.tokens.sell)
-            .ok_or(Error::QuotingFailed)?
-            .to_owned();
+            .price(order.tokens.sell)
+            .ok_or(Error::QuotingFailed)?;
         let buy_price = solution
-            .prices
-            .0
-            .get(&order.tokens.buy)
-            .ok_or(Error::QuotingFailed)?
-            .to_owned();
+            .price(order.tokens.buy)
+            .ok_or(Error::QuotingFailed)?;
         let amount = match order.side {
             order::Side::Sell => conv::u256::from_big_rational(
                 &(conv::u256::to_big_rational(order.amount.into())
