@@ -553,15 +553,14 @@ async fn logged_query<D>(client: &Client, url: Url) -> Result<D, OneInchError>
 where
     D: DeserializeOwned,
 {
-    tracing::trace!("Query 1inch API for url {}", url);
+    tracing::trace!(%url, "Query 1inch API");
     let response = client.get(url).send().await?.text().await?;
+    tracing::trace!(%response, "Received 1Inch API response");
+
     match serde_json::from_str::<RestResponse<D>>(&response)? {
-        RestResponse::Ok(result) => {
-            tracing::trace!("Response from 1inch API: {:?}", response);
-            Ok(result)
-        }
+        RestResponse::Ok(result) => Ok(result),
         RestResponse::Err(err) => {
-            tracing::warn!("Failed to parse response from 1inch API: {:?}", response);
+            tracing::warn!(?err, "1inch API error");
             Err(err.into())
         }
     }
