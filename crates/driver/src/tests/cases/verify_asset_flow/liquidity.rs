@@ -212,7 +212,7 @@ async fn test() {
     } in test_cases
     {
         // Set up the uniswap swap.
-        let setup::blockchain::Uniswap {
+        let setup::blockchain::uniswap_a_b::Uniswap {
             web3,
             settlement,
             token_a,
@@ -228,7 +228,7 @@ async fn test() {
             solver_address,
             geth,
             solver_secret_key,
-        } = setup::blockchain::uniswap::setup().await;
+        } = setup::blockchain::uniswap_a_b::setup().await;
 
         // Values for the auction.
         let sell_token = token_a.address();

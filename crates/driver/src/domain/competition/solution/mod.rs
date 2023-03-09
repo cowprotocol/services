@@ -271,8 +271,10 @@ impl Solution {
 
         // The solution contains an order which buys ETH. Solvers only produce solutions
         // for ERC20 tokens, while the driver adds special [`Interaction`]s to
-        // wrap/unwrap the ETH tokens and sends WETH orders to the driver. Afterwards, a
-        // clearing price for ETH needs to be added, equal to the WETH clearing price.
+        // wrap/unwrap the ETH tokens into WETH, and sends orders to the driver with
+        // WETH instead of ETH. Once the driver receives the solution which fulfills an
+        // ETH order, a clearing price for ETH needs to be added, equal to the
+        // WETH clearing price.
         if self.user_trades().any(|trade| trade.order.buys_eth()) {
             // If no order buys WETH, the WETH price is not necessary, only the ETH price is
             // needed. Remove the WETH price to slightly reduce gas used by the settlement.
