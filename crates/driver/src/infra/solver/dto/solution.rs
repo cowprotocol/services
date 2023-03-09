@@ -101,11 +101,12 @@ impl Solution {
                     )),
                 })
                 .try_collect()?,
-            prices: self
-                .prices
-                .into_iter()
-                .map(|(address, price)| (address.into(), price))
-                .collect(),
+            prices: competition::solution::ClearingPrices::new(
+                self.prices
+                    .into_iter()
+                    .map(|(address, price)| (address.into(), price))
+                    .collect(),
+            ),
             interactions: self
                 .interactions
                 .into_iter()

@@ -71,8 +71,8 @@ impl AccessList {
 struct StorageKey(pub H256);
 
 impl From<H256> for StorageKey {
-    fn from(inner: H256) -> Self {
-        Self(inner)
+    fn from(value: H256) -> Self {
+        Self(value)
     }
 }
 
@@ -87,9 +87,10 @@ impl AccessList {
 }
 
 impl From<web3::types::AccessList> for AccessList {
-    fn from(list: web3::types::AccessList) -> Self {
+    fn from(value: web3::types::AccessList) -> Self {
         Self(
-            list.into_iter()
+            value
+                .into_iter()
                 .map(|item| {
                     (
                         item.address.into(),
@@ -105,8 +106,9 @@ impl From<web3::types::AccessList> for AccessList {
 }
 
 impl From<AccessList> for web3::types::AccessList {
-    fn from(list: AccessList) -> Self {
-        list.0
+    fn from(value: AccessList) -> Self {
+        value
+            .0
             .into_iter()
             .sorted_by_key(|&(address, _)| address)
             .map(|(address, storage_keys)| web3::types::AccessListItem {
@@ -122,14 +124,14 @@ impl From<AccessList> for web3::types::AccessList {
 pub struct Address(pub H160);
 
 impl From<H160> for Address {
-    fn from(inner: H160) -> Self {
-        Self(inner)
+    fn from(value: H160) -> Self {
+        Self(value)
     }
 }
 
 impl From<Address> for H160 {
-    fn from(address: Address) -> Self {
-        address.0
+    fn from(value: Address) -> Self {
+        value.0
     }
 }
 
@@ -152,14 +154,14 @@ impl From<ContractAddress> for H160 {
 }
 
 impl From<ContractAddress> for ethereum_types::H160 {
-    fn from(contract: ContractAddress) -> Self {
-        contract.0 .0.into()
+    fn from(value: ContractAddress) -> Self {
+        value.0 .0.into()
     }
 }
 
 impl From<ContractAddress> for Address {
-    fn from(contract: ContractAddress) -> Self {
-        contract.0.into()
+    fn from(value: ContractAddress) -> Self {
+        value.0.into()
     }
 }
 
@@ -169,21 +171,37 @@ impl From<ContractAddress> for Address {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAddress(pub ContractAddress);
 
+/// The address of the WETH contract.
+#[derive(Debug, Clone, Copy)]
+pub struct WethAddress(pub TokenAddress);
+
+impl From<WethAddress> for TokenAddress {
+    fn from(value: WethAddress) -> Self {
+        value.0
+    }
+}
+
+impl From<H160> for WethAddress {
+    fn from(value: H160) -> Self {
+        WethAddress(value.into())
+    }
+}
+
 impl From<H160> for TokenAddress {
-    fn from(inner: H160) -> Self {
-        Self(inner.into())
+    fn from(value: H160) -> Self {
+        Self(value.into())
     }
 }
 
 impl From<TokenAddress> for H160 {
-    fn from(token: TokenAddress) -> Self {
-        token.0.into()
+    fn from(value: TokenAddress) -> Self {
+        value.0.into()
     }
 }
 
 impl From<TokenAddress> for ContractAddress {
-    fn from(token: TokenAddress) -> Self {
-        token.0
+    fn from(value: TokenAddress) -> Self {
+        value.0
     }
 }
 
@@ -200,22 +218,22 @@ pub struct Asset {
 pub struct Ether(pub U256);
 
 impl From<U256> for Ether {
-    fn from(inner: U256) -> Self {
-        Self(inner)
+    fn from(value: U256) -> Self {
+        Self(value)
     }
 }
 
 impl From<Ether> for num::BigInt {
-    fn from(ether: Ether) -> Self {
+    fn from(value: Ether) -> Self {
         let mut bytes = [0; 32];
-        ether.0.to_big_endian(&mut bytes);
+        value.0.to_big_endian(&mut bytes);
         num::BigUint::from_bytes_be(&bytes).into()
     }
 }
 
 impl From<Ether> for U256 {
-    fn from(ether: Ether) -> Self {
-        ether.0
+    fn from(value: Ether) -> Self {
+        value.0
     }
 }
 

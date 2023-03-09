@@ -272,12 +272,9 @@ impl Solution {
 #[derive(Debug)]
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, eth::U256>);
 
-impl FromIterator<(eth::TokenAddress, eth::U256)> for ClearingPrices {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = (eth::TokenAddress, eth::U256)>,
-    {
-        Self(iter.into_iter().collect())
+impl ClearingPrices {
+    pub fn new(prices: HashMap<eth::TokenAddress, eth::U256>) -> Self {
+        Self(prices)
     }
 }
 
