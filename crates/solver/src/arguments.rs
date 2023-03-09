@@ -5,6 +5,7 @@ use {
         settlement_access_list::AccessListEstimatorType,
         solver::{single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType},
     },
+    chrono::{DateTime, Utc},
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -311,8 +312,8 @@ pub struct Arguments {
 
     /// Enable ranking of settlements by score
     /// /// CIP20 TODO - remove after transition period is over
-    #[clap(long, env, default_value = "false")]
-    pub enable_auction_rewards: bool,
+    #[clap(long, env, default_value = "2023-03-14T00:00:00+00:00")]
+    pub auction_rewards_activation_timestamp: DateTime<Utc>,
 
     /// Additional time to wait for a transaction to appear onchain before
     /// considering the solution invalid and setting the reward to 0.
@@ -444,7 +445,11 @@ impl std::fmt::Display for Arguments {
             self.token_list_restriction_for_price_checks
         )?;
         writeln!(f, "{}", self.s3_upload)?;
-        writeln!(f, "enable_auction_rewards: {}", self.enable_auction_rewards)?;
+        writeln!(
+            f,
+            "auction_rewards_activation_timestamp: {}",
+            self.auction_rewards_activation_timestamp
+        )?;
         writeln!(
             f,
             "additional_mining_deadline: {:?}",
@@ -462,4 +467,18 @@ pub enum TransactionStrategyArg {
     Flashbots,
     Gelato,
     DryRun,
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, chrono::NaiveDate, std::str::FromStr};
+
+    #[test]
+    fn test_parsing_date_time() {
+        let dt = DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2023, 3, 14).and_hms(0, 0, 0), Utc);
+        let stringified = dt.to_rfc3339();
+        println!("stringified: {}", stringified);
+        let dt2 = DateTime::<Utc>::from_str(&stringified).unwrap();
+        assert_eq!(dt, dt2);
+    }
 }

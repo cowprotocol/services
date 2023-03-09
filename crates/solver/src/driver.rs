@@ -17,6 +17,7 @@ use {
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
+    chrono::{DateTime, Utc},
     contracts::GPv2Settlement,
     ethcontract::Account,
     futures::future::join_all,
@@ -101,7 +102,7 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
-        enable_auction_rewards: bool,
+        auction_rewards_activation_timestamp: DateTime<Utc>,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
@@ -116,7 +117,7 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
-            enable_auction_rewards,
+            auction_rewards_activation_timestamp,
         };
 
         let logger = DriverLogger {
