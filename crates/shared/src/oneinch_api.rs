@@ -561,7 +561,7 @@ where
             Ok(result)
         }
         RestResponse::Err(err) => {
-            tracing::warn!("Failed to parse response from 1inch API: {:?}", response);
+            tracing::warn!("Received 1inch API error: {:?}", response);
             Err(err.into())
         }
     }
