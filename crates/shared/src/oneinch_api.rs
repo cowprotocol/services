@@ -554,14 +554,23 @@ where
     D: DeserializeOwned,
 {
     tracing::trace!(%url, "Query 1inch API");
-    let response = client.get(url).send().await?.text().await?;
-    tracing::trace!(%response, "Received 1Inch API response");
+    let response = client.get(url).send().await?;
+    let status_code = response.status();
+    let response = response.text().await?;
+    tracing::trace!(%response, ?status_code, "Received 1Inch API response");
 
-    match serde_json::from_str::<RestResponse<D>>(&response)? {
-        RestResponse::Ok(result) => Ok(result),
-        RestResponse::Err(err) => {
+    match serde_json::from_str::<RestResponse<D>>(&response) {
+        Ok(RestResponse::Ok(result)) => Ok(result),
+        Ok(RestResponse::Err(err)) => {
             tracing::warn!(?err, "1inch API error");
             Err(err.into())
+        }
+        Err(err) => {
+            tracing::warn!(?err, "failed to parse response");
+            Err(OneInchError::Api(RestError {
+                status_code: status_code.as_u16().into(),
+                description: "failed to parse response".to_owned(),
+            }))
         }
     }
 }
