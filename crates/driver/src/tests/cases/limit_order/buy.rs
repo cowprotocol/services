@@ -1,4 +1,4 @@
-//! Test that a buy limit order behaves as expected.
+//! Test that a valid buy limit order is settled correctly.
 
 use {
     crate::{

@@ -14,6 +14,8 @@ use {
     serde_json::json,
 };
 
+/// Test that asset flow verification fails for a sell limit order which tries
+/// to sell an amount that doesn't cover the surplus fee.
 #[tokio::test]
 #[ignore]
 async fn sell_too_low() {
@@ -221,6 +223,8 @@ async fn sell_too_low() {
     assert_eq!(kind, "InvalidAssetFlow");
 }
 
+/// Test that asset flow verification fails for a sell limit order which tries
+/// to buy an amount that's higher than the uniswap interaction fulfilling it.
 #[tokio::test]
 #[ignore]
 async fn buy_too_high() {
