@@ -210,26 +210,30 @@ impl<'a> PriceEstimatorFactory<'a> {
             }
             PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                (
-                    self.args
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
                         .quasimodo_solver_url
                         .clone()
                         .context("quasimodo solver url not specified")?,
-                    "solve".to_owned(),
-                ),
+                    solve_path: "solve".to_owned(),
+                    use_liquidity: true,
+                },
             ),
             PriceEstimatorType::OneInch => {
                 self.create_estimator_entry::<OneInchPriceEstimator>(kind, ())
             }
             PriceEstimatorType::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                (
-                    self.args
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
                         .yearn_solver_url
                         .clone()
                         .context("yearn solver url not specified")?,
-                    self.args.yearn_solver_path.clone(),
-                ),
+                    solve_path: self.args.yearn_solver_path.clone(),
+                    use_liquidity: false,
+                },
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
         }
@@ -496,21 +500,28 @@ impl PriceEstimatorCreating for BalancerSor {
     }
 }
 
+#[derive(Debug, Clone)]
+struct HttpPriceEstimatorParams {
+    base: Url,
+    solve_path: String,
+    use_liquidity: bool,
+}
+
 impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = (Url, String);
+    type Params = HttpPriceEstimatorParams;
 
     fn init(
         factory: &PriceEstimatorFactory,
         kind: PriceEstimatorType,
-        (base, solve_path): Self::Params,
+        params: Self::Params,
     ) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
             Arc::new(DefaultHttpSolverApi {
                 name: kind.name(),
                 network_name: factory.network.name.clone(),
                 chain_id: factory.network.chain_id,
-                base,
-                solve_path,
+                base: params.base,
+                solve_path: params.solve_path,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
                     use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
@@ -527,6 +538,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
             factory.network.base_tokens.clone(),
             factory.network.name.clone(),
             factory.rate_limiter(kind),
+            params.use_liquidity,
         ))
     }
 }
