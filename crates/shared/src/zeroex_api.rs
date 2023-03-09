@@ -19,6 +19,7 @@ use {
         header::{HeaderMap, HeaderValue},
         Client,
         IntoUrl,
+        StatusCode,
         Url,
     },
     serde::Deserialize,
@@ -521,14 +522,18 @@ impl DefaultZeroExApi {
         tracing::trace!("Querying 0x API: {}", url);
 
         let request = self.client.get(url.clone());
-        let response_text = request
-            .send()
-            .await
-            .map_err(ZeroExResponseError::Send)?
+        let response = request.send().await.map_err(ZeroExResponseError::Send)?;
+
+        let status = response.status();
+        let response_text = response
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
         tracing::trace!("Response from 0x API: {}", response_text);
+
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroExResponseError::RateLimited);
+        }
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),
@@ -536,7 +541,6 @@ impl DefaultZeroExApi {
                 // Validation Error
                 100 => Err(ZeroExResponseError::InsufficientLiquidity),
                 500..=599 => Err(ZeroExResponseError::ServerError(format!("{url:?}"))),
-                429 => Err(ZeroExResponseError::RateLimited),
                 _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
             },
             Err(err) => Err(ZeroExResponseError::DeserializeError(
