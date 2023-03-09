@@ -278,7 +278,7 @@ pub async fn setup() -> Uniswap {
     super::wait_for(
         &web3,
         token_a
-            .mint(admin, token_a_in_amount + user_fee)
+            .mint(admin, eth::U256::from(2) * token_a_in_amount + user_fee)
             .from(admin_account.clone())
             .send(),
     )

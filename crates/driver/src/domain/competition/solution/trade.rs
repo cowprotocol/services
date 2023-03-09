@@ -37,8 +37,8 @@ pub struct Jit {
 }
 
 impl Trade {
-    /// Calculate the settlement contract input and output amounts executed by
-    /// this trade.
+    /// Calculate the final sold and bought amounts that are transferred to and
+    /// from the settlement contract when the settlement is executed.
     pub fn execution(&self, clearing_prices: &ClearingPrices) -> Result<Execution, Error> {
         // Values needed to calculate the executed amounts.
         let ExecutionParams {
@@ -75,7 +75,8 @@ impl Trade {
         // which reverts on overflow.
         Ok(match kind {
             order::Kind::Market => {
-                // Market orders use clearing prices to calculate the executed amounts.
+                // Market orders use clearing prices to calculate the executed amounts. See the
+                // [`competition::Solution::prices`] field for an explanation of how these work.
                 let sell_price = clearing_prices
                     .0
                     .get(&sell.token)
@@ -159,10 +160,12 @@ impl Trade {
                 // Warning: calculating executed amounts for limit orders is complex and
                 // confusing. To understand why the calculations work, it is important to note
                 // that the solver doesn't receive limit orders with the same amounts that were
-                // specified by the users when placing the orders. Instead, the sell amount for
-                // each limit order is reduced by the surplus fee, which is the fee taken by
-                // the network to settle the order. These are referred to as "synthetic" limit
-                // orders. The surplus fees are calculated when cutting the auction.
+                // specified by the users when placing the orders. Instead, the limit order sell
+                // amount is reduced by the surplus fee, which is the fee taken
+                // by the network to settle the order. These are referred to as
+                // "synthetic" limit orders. The surplus fees are calculated by the autopilot
+                // when cutting the auction. This is implemented in
+                // [`competition::Order::solver_sell`].
                 //
                 // See also [`order::Kind::Limit`].
                 //
@@ -193,7 +196,7 @@ impl Trade {
                                 .ok_or(Error::Overflow)?
                                 // Because of how "synthetic" limit orders are constructed as
                                 // explained above, we need to simply increase the executed sell
-                                // price by the surplus fee. We know that the user placed an order
+                                // amount by the surplus fee. We know that the user placed an order
                                 // big enough to cover the surplus fee.
                                 .checked_add(surplus_fee.into())
                                 .ok_or(Error::Overflow)?,
@@ -210,7 +213,7 @@ impl Trade {
                                 .0
                                 // Because of how "synthetic" limit orders are constructed as
                                 // explained above, the solver received the sell amount
-                                // reduced by the surplus fee. That's why we're have to reduce the
+                                // reduced by the surplus fee. That's why we have to reduce the
                                 // executed amount by the surplus fee when calculating the
                                 // executed buy amount.
                                 .checked_sub(surplus_fee.into())

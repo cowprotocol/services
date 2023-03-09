@@ -1,10 +1,12 @@
-use crate::{domain::eth, util};
+use crate::{
+    domain::eth,
+    infra::{blockchain, Ethereum},
+    util,
+};
 
 pub mod signature;
 
 pub use signature::Signature;
-
-use crate::infra::{blockchain, Ethereum};
 
 /// Address used in place of an actual buy token address in an order which buys
 /// ETH.
@@ -18,12 +20,10 @@ pub struct Order {
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
     pub valid_to: util::Timestamp,
-    /// The maximum amount this order is allowed to sell when completely filled.
-    /// The actual executed amount depends on partial fills and the order side.
-    pub sell: eth::Asset,
     /// The minimum amount this order must buy when completely filled.
-    /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
+    /// The maximum amount this order is allowed to sell when completely filled.
+    pub sell: eth::Asset,
     pub side: Side,
     pub fee: Fee,
     pub kind: Kind,
@@ -105,6 +105,31 @@ impl Order {
     pub fn receiver(&self) -> eth::Address {
         self.receiver.unwrap_or(self.signature.signer)
     }
+
+    pub fn is_liquidity(&self) -> bool {
+        matches!(self.kind, Kind::Liquidity)
+    }
+
+    /// The sell amount to pass to the solver. This is a special case due to
+    /// limit orders. For limit orders, the interaction produced by the
+    /// solver needs to leave the surplus fee inside the settlement
+    /// contract, since that's the fee taken by the protocol. For that
+    /// reason, the solver solves for the sell amount reduced by the surplus
+    /// fee; then, the settlement transaction will move the sell amount from
+    /// the order *into* the settlement contract, while the interaction
+    /// produced by the solver will move (sell amount - surplus fee) *out*
+    /// of the settlement contract and into the AMMs, hence leaving the
+    /// surplus fee inside the contract.
+    pub fn solver_sell(&self) -> eth::Asset {
+        if let Kind::Limit { surplus_fee } = self.kind {
+            eth::Asset {
+                amount: self.sell.amount - surplus_fee.0,
+                token: self.sell.token,
+            }
+        } else {
+            self.sell
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -117,12 +142,6 @@ pub enum Partial {
         executed: TargetAmount,
     },
     No,
-}
-
-impl Order {
-    pub fn is_liquidity(&self) -> bool {
-        matches!(self.kind, Kind::Liquidity)
-    }
 }
 
 /// UID of an order.
@@ -141,6 +160,7 @@ impl PartialEq<[u8; 56]> for Uid {
     }
 }
 
+// TODO These doc comments are incorrect for limit orders
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     /// Buy an exact amount. The sell amount can vary due to e.g. partial fills
@@ -190,9 +210,12 @@ pub enum Kind {
     /// price is such that the order can be executed. Because the fulfillment
     /// can happen any time into the future, it's impossible to calculate
     /// the order fees ahead of time, so the fees are taken from the order
-    /// surplus instead.
+    /// surplus instead. (The order surplus is the additional money that the
+    /// solver managed to solve for, above what the user specified in the
+    /// order.)
     Limit {
-        /// The fee to be taken from the order surplus.
+        /// The fee to be taken from the order surplus. The surplus is always
+        /// taken from the sell amount.
         surplus_fee: SellAmount,
     },
     /// An order submitted by a privileged user, which provides liquidity for

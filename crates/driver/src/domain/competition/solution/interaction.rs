@@ -18,8 +18,8 @@ impl Interaction {
         }
     }
 
-    /// The assets going into the settlement contract as part of this
-    /// interaction.
+    /// The assets consumed by this interaction. These assets are taken from the
+    /// settlement contract when the interaction executes.
     pub fn inputs(&self) -> Vec<eth::Asset> {
         match self {
             Interaction::Custom(custom) => custom.inputs.clone(),
@@ -27,8 +27,8 @@ impl Interaction {
         }
     }
 
-    /// The assets leaving the settlement contract as part of this
-    /// interaction.
+    /// The assets output by this interaction. These assets are sent into the
+    /// settlement contract when the interaction executes.
     pub fn outputs(&self) -> Vec<eth::Asset> {
         match self {
             Interaction::Custom(custom) => custom.outputs.clone(),
@@ -70,7 +70,9 @@ pub struct Custom {
     pub value: eth::Ether,
     pub call_data: Vec<u8>,
     pub allowances: Vec<eth::allowance::Required>,
+    /// See the [`Interaction::inputs`] method.
     pub inputs: Vec<eth::Asset>,
+    /// See the [`Interaction::outputs`] method.
     pub outputs: Vec<eth::Asset>,
     /// Can the interaction be executed using the liquidity of our settlement
     /// contract?
@@ -82,9 +84,11 @@ pub struct Custom {
 #[derive(Debug)]
 pub struct Liquidity {
     pub liquidity: domain::Liquidity,
+    /// See the [`Interaction::inputs`] method.
     pub input: eth::Asset,
+    /// See the [`Interaction::outputs`] method.
     pub output: eth::Asset,
-    /// Can the interaction be executed using the liquidity of our settlement
-    /// contract?
+    /// Can the interaction be executed using the funds which belong to our
+    /// settlement contract?
     pub internalize: bool,
 }
