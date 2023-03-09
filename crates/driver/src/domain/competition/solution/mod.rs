@@ -206,17 +206,16 @@ impl Solution {
             let trade::Execution { sell, buy } = trade
                 .execution(&self.prices)
                 .map_err(|_| VerificationError::AssetFlow)?;
-            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(sell.amount);
+            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(
+                // Surplus fees need to stay inside the settlement contract. They are not
+                // available to the solver, so deduct them from the positive flow.
+                if let Some(surplus_fee) = trade.surplus_fee() {
+                    sell.amount - surplus_fee.0
+                } else {
+                    sell.amount
+                },
+            );
             *flow.entry(buy.token).or_default() -= util::conv::u256::to_big_int(buy.amount);
-        }
-
-        // The surplus fees need to stay inside the contract, so count them as negative
-        // flow.
-        for trade in self.user_trades() {
-            if let order::Kind::Limit { surplus_fee } = trade.order.kind {
-                *flow.entry(trade.order.sell.token).or_default() -=
-                    util::conv::u256::to_big_int(surplus_fee.into());
-            }
         }
 
         if flow.values().any(|v| v.is_negative()) {
