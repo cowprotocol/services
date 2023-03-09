@@ -30,7 +30,7 @@ struct TestCase {
 
 #[tokio::test]
 #[ignore]
-async fn valid_liquidity_asset_flow() {
+async fn test() {
     crate::boundary::initialize_tracing("debug,hyper=warn");
 
     // The test setup below makes a uniswap interaction for a certain buy and sell

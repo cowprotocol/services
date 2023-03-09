@@ -37,6 +37,22 @@ pub struct Jit {
 }
 
 impl Trade {
+    /// The surplus fee associated with this trade, if any.
+    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
+        match self {
+            // Surplus fees only apply to trades which fulfill limit orders.
+            &Self::Fulfillment(Fulfillment {
+                order:
+                    competition::Order {
+                        kind: order::Kind::Limit { surplus_fee },
+                        ..
+                    },
+                ..
+            }) => Some(surplus_fee),
+            _ => None,
+        }
+    }
+
     /// Calculate the final sold and bought amounts that are transferred to and
     /// from the settlement contract when the settlement is executed.
     pub fn execution(&self, clearing_prices: &ClearingPrices) -> Result<Execution, Error> {

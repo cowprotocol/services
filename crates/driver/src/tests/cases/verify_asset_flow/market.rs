@@ -27,7 +27,7 @@ struct TestCase {
 
 #[tokio::test]
 #[ignore]
-async fn verify_asset_flow() {
+async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
 
     let cases = [
