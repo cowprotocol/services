@@ -113,11 +113,13 @@ impl FromStr for ScoreParameters {
         let score_parameters = parse_calculators(DEFAULT_SCORE_PARAMETERS)?
             .into_iter()
             .map(|(solver, default_score_parameter)| {
-                if let Some(user_score_parameter) = user_score_parameters.get(&solver) {
-                    (solver, user_score_parameter.clone())
-                } else {
-                    (solver, default_score_parameter)
-                }
+                (
+                    solver,
+                    user_score_parameters
+                        .get(&solver)
+                        .cloned()
+                        .unwrap_or(default_score_parameter),
+                )
             })
             .collect();
         Ok(Self(score_parameters))
