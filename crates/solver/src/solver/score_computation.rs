@@ -25,33 +25,18 @@ use {
 
 #[derive(Debug, Default, Clone)]
 pub struct ScoreCalculator {
-    gas_amount_factor: f64,
-    gas_price_factor: f64,
-    nmb_orders_factor: f64,
-    intercept: f64,
+    pub gas_amount_factor: f64,
+    pub gas_price_factor: f64,
+    pub nmb_orders_factor: f64,
+    pub intercept: f64,
 }
 
 impl ScoreCalculator {
-    pub fn new(
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
-    ) -> Self {
-        Self {
-            gas_amount_factor,
-            gas_price_factor,
-            nmb_orders_factor,
-            intercept,
-        }
-    }
-
     pub fn calculate(&self, inputs: &objective_value::Inputs, nmb_orders: usize) -> Option<U256> {
         let surplus = inputs.surplus_given.to_f64()?;
         let fees = inputs.solver_fees.to_f64()?;
         let gas_amount = inputs.gas_amount.to_f64()?;
         let gas_price = inputs.gas_price.to_f64()?;
-
         let exponent = self.intercept.neg()
             - self.gas_amount_factor * gas_amount
             - self.gas_price_factor * gas_price
@@ -133,25 +118,30 @@ fn parse_calculators(s: &str) -> Result<HashMap<SolverType, ScoreCalculator>> {
                 .split_once(',')
                 .context("malformed solver score parameters")?;
             let mut parameters = parameters.split(',');
-            let a = parameters
+            let gas_amount_factor = parameters
                 .next()
                 .context("missing a parameter for score")?
                 .parse()?;
-            let b = parameters
+            let gas_price_factor = parameters
                 .next()
                 .context("missing b parameter for score")?
                 .parse()?;
-            let c = parameters
+            let nmb_orders_factor = parameters
                 .next()
                 .context("missing c parameter for score")?
                 .parse()?;
-            let x = parameters
+            let intercept = parameters
                 .next()
                 .context("missing x parameter for score")?
                 .parse()?;
             Ok((
                 SolverType::from_str(solver, true).map_err(|message| anyhow::anyhow!(message))?,
-                ScoreCalculator::new(a, b, c, x),
+                ScoreCalculator {
+                    gas_amount_factor,
+                    gas_price_factor,
+                    nmb_orders_factor,
+                    intercept,
+                },
             ))
         })
         .collect::<Result<HashMap<_, _>>>()
@@ -159,11 +149,32 @@ fn parse_calculators(s: &str) -> Result<HashMap<SolverType, ScoreCalculator>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, number_conversions::u256_to_big_rational};
 
     #[test]
     fn score_parameters_test() {
         let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
         assert_eq!(score_parameters.0.len(), 7);
+    }
+
+    #[test]
+    fn compute_score_test() {
+        // tx hash 0x201c948ad94d7f93ad2d3c13fa4b6bbd4270533fbfedcb8be60e68c8e709d2b6
+        // objective_score = 251547381429604400
+        let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
+        let inputs = objective_value::Inputs {
+            surplus_given: u256_to_big_rational(&U256::from(237248548166961920u128)),
+            solver_fees: u256_to_big_rational(&U256::from(45972570277472210u128)),
+            gas_amount: u256_to_big_rational(&U256::from(765096u128)),
+            gas_price: u256_to_big_rational(&U256::from(41398382700u128)),
+        };
+        let nmb_orders = 1;
+        let score = score_parameters
+            .0
+            .get(&SolverType::Paraswap)
+            .unwrap()
+            .calculate(&inputs, nmb_orders)
+            .unwrap();
+        dbg!(score);
     }
 }

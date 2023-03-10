@@ -12,29 +12,28 @@ use {
 };
 
 pub async fn compute_score(
-    settlement: Settlement,
+    settlement: &Settlement,
     settlement_simulator: &impl SettlementSimulating,
     score_calculator: &ScoreCalculator,
     gas_price: GasPrice1559,
     prices: &ExternalPrices,
     solver: &Address,
-) -> Settlement {
-    if settlement.score.is_some() {
-        return settlement;
-    }
-
-    let gas_amount = match settlement_simulator.estimate_gas(settlement.clone()).await {
-        // Multiply by 0.9 to get more realistic gas amount.
-        // This is because the gas estimation is not accurate enough and does not take the
-        // EVM gas refund into account.
-        Ok(gas_amount) => gas_amount * 9 / 10,
-        Err(_) => return settlement,
-    };
+) -> Option<Score> {
+    let gas_amount = settlement_simulator
+        .estimate_gas(settlement.clone())
+        .await
+        .map(|gas_amount| {
+            // Multiply by 0.9 to get more realistic gas amount.
+            // This is because the gas estimation is not accurate enough and does not take
+            // the EVM gas refund into account.
+            gas_amount * 9 / 10
+        })
+        .ok()?;
 
     let inputs = Inputs::from_settlement(
-        &settlement,
+        settlement,
         prices,
-        BigRational::from_f64(gas_price.effective_gas_price()).unwrap(),
+        BigRational::from_f64(gas_price.effective_gas_price())?,
         &gas_amount,
     );
     let nmb_orders = settlement.trades().count();
@@ -49,8 +48,6 @@ pub async fn compute_score(
         inputs.objective_value(),
         score
     );
-    Settlement {
-        score,
-        ..settlement
-    }
+
+    score
 }

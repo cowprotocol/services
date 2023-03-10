@@ -1,10 +1,3 @@
-use {
-    crate::solver::score_computation::ScoreCalculator,
-    anyhow::{Context, Result},
-    ethcontract::U256,
-    shared::external_prices::ExternalPrices,
-};
-
 mod optimize_buffer_usage;
 mod optimize_score;
 mod optimize_unwrapping;
@@ -13,10 +6,11 @@ use {
     crate::{
         settlement::Settlement,
         settlement_simulation::simulate_and_estimate_gas_at_current_block,
-        solver::http_solver::buffers::BufferRetriever,
+        solver::{http_solver::buffers::BufferRetriever, score_computation::ScoreCalculator},
     },
+    anyhow::{Context, Result},
     contracts::{GPv2Settlement, WETH9},
-    ethcontract::Account,
+    ethcontract::{Account, U256},
     gas_estimation::GasPrice1559,
     optimize_buffer_usage::optimize_buffer_usage,
     optimize_score::compute_score,
@@ -24,6 +18,7 @@ use {
     primitive_types::H160,
     shared::{
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_solver::model::InternalizationStrategy,
         token_list::AutoUpdatingTokenList,
     },
@@ -138,19 +133,20 @@ impl PostProcessing for PostProcessingPipeline {
         )
         .await;
 
-        match score_calculator {
-            Some(score_calculator) => {
-                compute_score(
-                    optimized_solution,
+        match (optimized_solution.score, score_calculator) {
+            (None, Some(score_calculator)) => Settlement {
+                score: compute_score(
+                    &optimized_solution,
                     &simulator,
                     score_calculator,
                     gas_price,
                     prices,
                     &solver_account.address(),
                 )
-                .await
-            }
-            None => optimized_solution,
+                .await,
+                ..optimized_solution
+            },
+            _ => optimized_solution,
         }
     }
 }
