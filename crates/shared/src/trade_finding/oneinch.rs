@@ -89,23 +89,37 @@ impl OneInchTradeFinder {
         self.shared_quote(query, allowed_protocols).await
     }
 
-    // TODO used `shared_swaps`
     async fn swap(&self, query: &Query) -> Result<Trade, TradeError> {
         let allowed_protocols = self.inner.verify_query_and_get_protocols(query).await?;
-        let (spender, swap) = futures::try_join!(
-            self.inner.spender(),
-            self.inner.swap(query, allowed_protocols),
-        )?;
+        let query = InternalQuery {
+            data: *query,
+            allowed_protocols,
+        };
 
-        Ok(Trade {
-            out_amount: swap.to_token_amount,
-            approval: Some((query.sell_token, spender)),
-            interaction: Interaction {
-                target: swap.tx.to,
-                value: swap.tx.value,
-                data: swap.tx.data,
-            },
-        })
+        self.shared_swaps
+            .shared_or_else(query, move |query| {
+                let inner = self.inner.clone();
+                let query = query.clone();
+
+                async move {
+                    let (spender, swap) = futures::try_join!(
+                        inner.spender(),
+                        inner.swap(&query.data, query.allowed_protocols),
+                    )?;
+
+                    Ok(Trade {
+                        out_amount: swap.to_token_amount,
+                        approval: Some((query.data.sell_token, spender)),
+                        interaction: Interaction {
+                            target: swap.tx.to,
+                            value: swap.tx.value,
+                            data: swap.tx.data,
+                        },
+                    })
+                }
+                .boxed()
+            })
+            .await
     }
 }
 
