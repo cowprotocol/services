@@ -36,7 +36,7 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
-        trade_finding::external::ExternalTradeFinder,
+        trade_finding::external::ExternalPriceEstimator,
         zeroex_api::ZeroExApi,
     },
     anyhow::{Context as _, Result},
@@ -259,10 +259,11 @@ impl<'a> PriceEstimatorFactory<'a> {
                 rate_limiting_strategy,
                 format!("{}_estimator", driver.name),
             ));
-            let estimator = Arc::new(ExternalTradeFinder::new(
+            let estimator = Arc::new(ExternalPriceEstimator::new(
                 driver.url.clone(),
                 self.components.http_factory.create(),
                 rate_limiter,
+                self.network.settlement,
             ));
             let entry = EstimatorEntry {
                 optimal: estimator.clone(),

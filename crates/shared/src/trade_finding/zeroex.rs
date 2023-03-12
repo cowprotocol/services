@@ -9,8 +9,8 @@ use {
     },
     futures::FutureExt as _,
     model::order::OrderKind,
+    primitive_types::{H160, U256},
     std::sync::Arc,
-    primitive_types::{U256, H160},
 };
 
 pub struct ZeroExTradeFinder {

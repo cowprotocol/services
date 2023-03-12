@@ -1,9 +1,9 @@
 //! A trade finder that uses an external driver.
+
 use {
     crate::{
         price_estimation::{
-            rate_limited,
-            Estimate,
+            trade_finder::{TradeEstimator, TradeVerifier},
             PriceEstimateResult,
             PriceEstimating,
             PriceEstimationError,
@@ -14,12 +14,41 @@ use {
         trade_finding::{Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::Context,
-    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
+    futures::{future::BoxFuture, FutureExt},
+    primitive_types::H160,
     reqwest::{header, Client},
     std::sync::Arc,
     url::Url,
 };
 
+pub struct ExternalPriceEstimator(TradeEstimator);
+
+impl ExternalPriceEstimator {
+    pub fn new(
+        driver: Url,
+        client: Client,
+        rate_limiter: Arc<RateLimiter>,
+        settlement: H160,
+    ) -> Self {
+        let trade_finder = Arc::new(ExternalTradeFinder::new(driver, client));
+        Self(TradeEstimator::new(settlement, trade_finder, rate_limiter))
+    }
+
+    pub fn verified(&self, verifier: TradeVerifier) -> Self {
+        Self(self.0.clone().with_verifier(verifier))
+    }
+}
+
+impl PriceEstimating for ExternalPriceEstimator {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
+        self.0.estimates(queries)
+    }
+}
+
+#[derive(Clone)]
 pub struct ExternalTradeFinder {
     /// URL to call to in the driver to get a quote with call data for a trade.
     quote_endpoint: Url,
@@ -27,11 +56,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>,
-
-    /// Utility to temporarily drop requests when the driver responds too slowly
-    /// to not slow down the whole price estimation logic.
-    rate_limiter: Arc<RateLimiter>,
+    sharing: Arc<RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -39,11 +64,10 @@ pub struct ExternalTradeFinder {
 
 impl ExternalTradeFinder {
     #[allow(dead_code)]
-    pub fn new(driver: Url, client: Client, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(driver: Url, client: Client) -> Self {
         Self {
             quote_endpoint: driver.join("/quote").unwrap(),
             sharing: Default::default(),
-            rate_limiter,
             client,
         }
     }
@@ -69,7 +93,6 @@ impl ExternalTradeFinder {
             serde_json::from_str::<Trade>(&text).map_err(PriceEstimationError::from)
         };
 
-        let future = rate_limited(self.rate_limiter.clone(), future);
         self.sharing
             .shared(*query, future.boxed())
             .await
@@ -79,36 +102,17 @@ impl ExternalTradeFinder {
 
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
-    async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        // TODO: this means we'll also not be able to use 0x, paraswap, 1inch to get unverified
-        // quotes when switching to the co-located drivers.
-        // This could be dealt with by returning the `gas_used` from the `/quote` endpoint
-        return Err(TradeError::Other(anyhow::anyhow!("unverified quotes are unsupported for driver based price estimators")));
+    async fn get_quote(&self, _query: &Query) -> Result<Quote, TradeError> {
+        // TODO: this means we'll also not be able to use 0x, paraswap, 1inch to get
+        // unverified quotes when switching to the co-located drivers.
+        // This could be dealt with by returning the `gas_used` from the `/quote`
+        // endpoint
+        return Err(TradeError::Other(anyhow::anyhow!(
+            "unverified quotes are unsupported for driver based price estimators"
+        )));
     }
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
         self.shared_query(query).await
-    }
-}
-
-// TODO Replace this by integrating the `ExternalTradeFinder` in the generic `TradeFinder` wrapper.
-#[async_trait::async_trait]
-impl PriceEstimating for ExternalTradeFinder {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-        todo!()
-        // futures::stream::iter(queries)
-        //     .then(|query| self.shared_query(query))
-        //     .map(|result| match result {
-        //         Ok(trade) => Ok(Estimate {
-        //             out_amount: trade.out_amount,
-        //             gas: trade.gas_estimate,
-        //         }),
-        //         Err(err) => Err(PriceEstimationError::from(err)),
-        //     })
-        //     .enumerate()
-        //     .boxed()
     }
 }

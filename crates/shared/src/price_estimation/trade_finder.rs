@@ -103,9 +103,7 @@ impl Inner {
         match &self.verifier {
             Some(verifier) => {
                 let trade = self.finder.get_trade(&finder_query).await?;
-                let verification = verifier
-                    .verify(query, trade)
-                    .await;
+                let verification = verifier.verify(query, trade).await;
 
                 match verification {
                     // TODO ideally use a rate limiting strategy that immediately uses `quote` when
@@ -116,9 +114,9 @@ impl Inner {
                             out_amount: quote.out_amount,
                             gas: quote.gas_estimate,
                         })
-                    },
+                    }
                     Err(err) => Err(err.into()),
-                    Ok(estimate) => Ok(estimate)
+                    Ok(estimate) => Ok(estimate),
                 }
             }
             None => {
@@ -139,7 +137,7 @@ enum Error {
 }
 
 impl From<Error> for PriceEstimationError {
-    fn from(err: Error) -> Self  {
+    fn from(err: Error) -> Self {
         match err {
             Error::SimulationError(err) => Self::Other(err),
             Error::TransportError(err) => Self::Other(err),

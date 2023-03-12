@@ -512,10 +512,7 @@ mod tests {
             .await;
 
         let trade = result.unwrap();
-        println!(
-            "1 WETH buys {} GNO",
-            trade.out_amount.to_f64_lossy() / 1e18,
-        );
+        println!("1 WETH buys {} GNO", trade.out_amount.to_f64_lossy() / 1e18,);
     }
 
     #[tokio::test]
