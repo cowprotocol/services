@@ -27,7 +27,8 @@ use {
 
 pub struct OneInchTradeFinder {
     inner: Arc<Inner>,
-    sharing: BoxRequestSharing<InternalQuery, Result<Quote, TradeError>>,
+    shared_quotes: BoxRequestSharing<InternalQuery, Result<Quote, TradeError>>,
+    shared_swaps: BoxRequestSharing<InternalQuery, Result<Trade, TradeError>>,
 }
 
 struct Inner {
@@ -61,7 +62,8 @@ impl OneInchTradeFinder {
                 referrer_address,
                 SPENDER_MAX_AGE,
             )),
-            sharing: Default::default(),
+            shared_swaps: Default::default(),
+            shared_quotes: Default::default(),
         }
     }
 
@@ -75,7 +77,7 @@ impl OneInchTradeFinder {
             allowed_protocols,
         };
 
-        self.sharing.shared_or_else(query, move |query| {
+        self.shared_quotes.shared_or_else(query, move |query| {
             let inner = self.inner.clone();
             let query = query.clone();
             async move { inner.perform_quote(query).await }.boxed()
@@ -87,17 +89,16 @@ impl OneInchTradeFinder {
         self.shared_quote(query, allowed_protocols).await
     }
 
+    // TODO used `shared_swaps`
     async fn swap(&self, query: &Query) -> Result<Trade, TradeError> {
         let allowed_protocols = self.inner.verify_query_and_get_protocols(query).await?;
-        let (quote, spender, swap) = futures::try_join!(
-            self.shared_quote(query, allowed_protocols.clone()),
+        let (spender, swap) = futures::try_join!(
             self.inner.spender(),
             self.inner.swap(query, allowed_protocols),
         )?;
 
         Ok(Trade {
-            out_amount: quote.out_amount,
-            gas_estimate: quote.gas_estimate,
+            out_amount: swap.to_token_amount,
             approval: Some((query.sell_token, spender)),
             interaction: Interaction {
                 target: swap.tx.to,
@@ -369,7 +370,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 808_069_760_400_778_577u128.into());
-        assert!(trade.gas_estimate > 189_386);
         assert_eq!(
             trade.interaction,
             Interaction {
@@ -513,9 +513,8 @@ mod tests {
 
         let trade = result.unwrap();
         println!(
-            "1 WETH buys {} GNO, costing {} gas",
+            "1 WETH buys {} GNO",
             trade.out_amount.to_f64_lossy() / 1e18,
-            trade.gas_estimate,
         );
     }
 

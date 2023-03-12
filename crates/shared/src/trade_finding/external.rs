@@ -80,13 +80,10 @@ impl ExternalTradeFinder {
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        // The driver only has a single endpoint to compute trades so we can simply
-        // reuse the same logic here.
-        let trade = self.get_trade(query).await?;
-        Ok(Quote {
-            out_amount: trade.out_amount,
-            gas_estimate: trade.gas_estimate,
-        })
+        // TODO: this means we'll also not be able to use 0x, paraswap, 1inch to get unverified
+        // quotes when switching to the co-located drivers.
+        // This could be dealt with by returning the `gas_used` from the `/quote` endpoint
+        return Err(TradeError::Other(anyhow::anyhow!("unverified quotes are unsupported for driver based price estimators")));
     }
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
@@ -94,22 +91,24 @@ impl TradeFinding for ExternalTradeFinder {
     }
 }
 
+// TODO Replace this by integrating the `ExternalTradeFinder` in the generic `TradeFinder` wrapper.
 #[async_trait::async_trait]
 impl PriceEstimating for ExternalTradeFinder {
     fn estimates<'a>(
         &'a self,
         queries: &'a [Query],
     ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-        futures::stream::iter(queries)
-            .then(|query| self.shared_query(query))
-            .map(|result| match result {
-                Ok(trade) => Ok(Estimate {
-                    out_amount: trade.out_amount,
-                    gas: trade.gas_estimate,
-                }),
-                Err(err) => Err(PriceEstimationError::from(err)),
-            })
-            .enumerate()
-            .boxed()
+        todo!()
+        // futures::stream::iter(queries)
+        //     .then(|query| self.shared_query(query))
+        //     .map(|result| match result {
+        //         Ok(trade) => Ok(Estimate {
+        //             out_amount: trade.out_amount,
+        //             gas: trade.gas_estimate,
+        //         }),
+        //         Err(err) => Err(PriceEstimationError::from(err)),
+        //     })
+        //     .enumerate()
+        //     .boxed()
     }
 }

@@ -10,11 +10,12 @@ use {
     futures::FutureExt as _,
     model::order::OrderKind,
     std::sync::Arc,
+    primitive_types::{U256, H160},
 };
 
 pub struct ZeroExTradeFinder {
     inner: Inner,
-    sharing: BoxRequestSharing<Query, Result<Trade, TradeError>>,
+    sharing: BoxRequestSharing<Query, Result<Swap, TradeError>>,
 }
 
 #[derive(Clone)]
@@ -34,17 +35,25 @@ impl ZeroExTradeFinder {
         }
     }
 
-    fn shared_quote(&self, query: &Query) -> BoxShared<Result<Trade, TradeError>> {
+    fn shared_swap(&self, query: &Query) -> BoxShared<Result<Swap, TradeError>> {
         self.sharing.shared_or_else(*query, |_| {
             let inner = self.inner.clone();
             let query = *query;
-            async move { inner.quote(&query).await }.boxed()
+            async move { inner.swap(&query).await }.boxed()
         })
     }
 }
 
+#[derive(Debug, Clone)]
+struct Swap {
+    out_amount: U256,
+    gas_estimate: u64,
+    approval: Option<(H160, H160)>,
+    interaction: Interaction,
+}
+
 impl Inner {
-    async fn quote(&self, query: &Query) -> Result<Trade, TradeError> {
+    async fn swap(&self, query: &Query) -> Result<Swap, TradeError> {
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (None, Some(query.in_amount)),
             OrderKind::Sell => (Some(query.in_amount), None),
@@ -63,7 +72,7 @@ impl Inner {
             })
             .await?;
 
-        Ok(Trade {
+        Ok(Swap {
             out_amount: match query.kind {
                 OrderKind::Buy => swap.price.sell_amount,
                 OrderKind::Sell => swap.price.buy_amount,
@@ -82,15 +91,20 @@ impl Inner {
 #[async_trait::async_trait]
 impl TradeFinding for ZeroExTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        let trade = self.shared_quote(query).await?;
+        let swap = self.shared_swap(query).await?;
         Ok(Quote {
-            out_amount: trade.out_amount,
-            gas_estimate: trade.gas_estimate,
+            out_amount: swap.out_amount,
+            gas_estimate: swap.gas_estimate,
         })
     }
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
-        self.shared_quote(query).await
+        let swap = self.shared_swap(query).await?;
+        Ok(Trade {
+            out_amount: swap.out_amount,
+            approval: swap.approval,
+            interaction: swap.interaction,
+        })
     }
 }
 
@@ -167,7 +181,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 1110165823572443613u64.into());
-        assert!(trade.gas_estimate > 111000);
         assert_eq!(
             trade.approval,
             Some((weth, addr!("def1c0ded9bec7f1a1670819833240f027b25eff"))),
@@ -227,7 +240,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 8986186353137488u64.into());
-        assert!(trade.gas_estimate > 111000);
         assert_eq!(trade.interaction.data, [5, 6, 7, 8]);
     }
 
@@ -272,7 +284,6 @@ mod tests {
 
         let gno = trade.out_amount.to_f64_lossy() / 1e18;
         println!("1.0 ETH buys {gno} GNO");
-        println!("gas:  {}", trade.gas_estimate);
         println!("data: 0x{}", hex::encode(&trade.interaction.data));
     }
 }

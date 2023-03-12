@@ -18,7 +18,7 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Trade, TradeError, TradeFinding},
     },
-    anyhow::{bail, ensure, Context as _, Result},
+    anyhow::{Context as _, Result},
     contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader},
     ethcontract::{tokens::Tokenize, H160, I256, U256},
     futures::{
@@ -103,10 +103,23 @@ impl Inner {
         match &self.verifier {
             Some(verifier) => {
                 let trade = self.finder.get_trade(&finder_query).await?;
-                verifier
+                let verification = verifier
                     .verify(query, trade)
-                    .await
-                    .map_err(PriceEstimationError::Other)
+                    .await;
+
+                match verification {
+                    // TODO ideally use a rate limiting strategy that immediately uses `quote` when
+                    // we get a lot of `TransportError`s.
+                    Err(Error::TransportError(_)) => {
+                        let quote = self.finder.get_quote(&finder_query).await?;
+                        Ok(Estimate {
+                            out_amount: quote.out_amount,
+                            gas: quote.gas_estimate,
+                        })
+                    },
+                    Err(err) => Err(err.into()),
+                    Ok(estimate) => Ok(estimate)
+                }
             }
             None => {
                 let quote = self.finder.get_quote(&finder_query).await?;
@@ -115,6 +128,21 @@ impl Inner {
                     gas: quote.gas_estimate,
                 })
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Error {
+    SimulationError(anyhow::Error),
+    TransportError(anyhow::Error),
+}
+
+impl From<Error> for PriceEstimationError {
+    fn from(err: Error) -> Self  {
+        match err {
+            Error::SimulationError(err) => Self::Other(err),
+            Error::TransportError(err) => Self::Other(err),
         }
     }
 }
@@ -137,9 +165,13 @@ impl TradeVerifier {
         }
     }
 
-    async fn verify(&self, query: Query, trade: Trade) -> Result<Estimate> {
+    async fn verify(&self, query: Query, trade: Trade) -> Result<Estimate, Error> {
         let trader = dummy_contract!(Trader, query.from.unwrap_or(Self::DEFAULT_TRADER));
-        let sell_token_code = self.code_fetcher.code(query.sell_token).await?;
+        let sell_token_code = self
+            .code_fetcher
+            .code(query.sell_token)
+            .await
+            .map_err(Error::TransportError)?;
 
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Sell => (query.in_amount, slippage::sub(trade.out_amount)),
@@ -190,46 +222,46 @@ impl TradeVerifier {
         };
 
         let return_data = match self.simulator.simulate(call, overrides).await {
-            Ok(data) => data,
-            Err(SimulationError::Other(err)) => {
-                // In case we have a simulator error (network, service is down,
-                // etc.), we optimistically return the quote estimate without
-                // simulation. This is so we don't accidentally stop allowing
-                // all quotes because the API we use for simulations is down.
-                tracing::warn!(?err, "trade simulation error");
-                return Ok(Estimate {
-                    out_amount: trade.out_amount,
-                    gas: trade.gas_estimate,
-                });
+            Err(SimulationError::Revert(err)) => {
+                return Err(Error::SimulationError(anyhow::anyhow!(
+                    err.unwrap_or_else(|| "unknown simulation error".to_owned())
+                )))
             }
-            Err(err) => bail!(err),
+            Err(SimulationError::Other(err)) => return Err(Error::TransportError(err)),
+            Ok(data) => data,
         };
-        let output = SettleOutput::decode(&return_data)?;
+
+        let output = SettleOutput::decode(&return_data).map_err(Error::SimulationError)?;
 
         let trader_amounts = output
             .trader_amounts()
-            .context("trade simulation output missing trader token balances")?;
-        ensure!(
-            trader_amounts == (sell_amount, buy_amount),
-            "mismatched amounts transferred to trader"
-        );
+            .context("trade simulation output missing trader token balances")
+            .map_err(Error::SimulationError)?;
+        if trader_amounts == (sell_amount, buy_amount) {
+            return Err(Error::SimulationError(anyhow::anyhow!(
+                "mismatched amounts transferred to trader"
+            )));
+        }
 
         let (executed_sell_amount, executed_buy_amount) = output
             .executed_amounts()
-            .context("trade simulation output missing settlement token balances")?;
+            .context("trade simulation output missing settlement token balances")
+            .map_err(Error::SimulationError)?;
         let out_amount = match query.kind {
             OrderKind::Sell => {
-                ensure!(
-                    executed_sell_amount <= query.in_amount,
-                    "trade simulation sold more than input"
-                );
+                if executed_sell_amount > query.in_amount {
+                    return Err(Error::SimulationError(anyhow::anyhow!(
+                        "trade simulation sold more than input"
+                    )));
+                }
                 executed_buy_amount
             }
             OrderKind::Buy => {
-                ensure!(
-                    executed_buy_amount >= query.in_amount,
-                    "trade simulation bought less than input"
-                );
+                if executed_buy_amount < query.in_amount {
+                    return Err(Error::SimulationError(anyhow::anyhow!(
+                        "trade simulation bought less than input"
+                    )));
+                }
                 executed_sell_amount
             }
         };
@@ -434,7 +466,6 @@ mod tests {
         };
         let trade = Trade {
             out_amount: 2_000_000_u128.into(),
-            gas_estimate: 133_700,
             approval: None,
             interaction: Interaction {
                 target: H160([0x7; 20]),
@@ -723,7 +754,6 @@ mod tests {
         };
         let trade = Trade {
             out_amount: 2_000_000_u128.into(),
-            gas_estimate: 133_700,
             ..Default::default()
         };
 

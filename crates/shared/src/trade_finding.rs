@@ -32,11 +32,11 @@ pub struct Quote {
     pub gas_estimate: u64,
 }
 
-/// A trade.
+/// Enough information to simulate a trade. Important information like gas used
+/// or output token amount can be recovered from the simulation.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct Trade {
     pub out_amount: U256,
-    pub gas_estimate: u64,
     pub approval: Option<(H160, H160)>,
     pub interaction: Interaction,
 }
@@ -150,7 +150,6 @@ mod tests {
     fn encode_trade_to_interactions() {
         let trade = Trade {
             out_amount: Default::default(),
-            gas_estimate: 0,
             approval: Some((H160([0xdd; 20]), H160([0xee; 20]))),
             interaction: Interaction {
                 target: H160([0xaa; 20]),
