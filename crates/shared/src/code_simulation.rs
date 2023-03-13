@@ -178,6 +178,39 @@ impl TryFrom<StateOverride> for StateObject {
     }
 }
 
+/// A code simulator that uses Web3 in the general case, but will create and
+/// save failed simulations on Tenderly to facilitate debugging.
+pub struct Web3ThenTenderly {
+    web3: Web3,
+    tenderly: TenderlyCodeSimulator,
+}
+
+impl Web3ThenTenderly {
+    pub fn new(web3: Web3, tenderly: TenderlyCodeSimulator) -> Self {
+        Self {
+            web3,
+            tenderly: tenderly.save(true, true),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CodeSimulating for Web3ThenTenderly {
+    async fn simulate(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+    ) -> Result<Vec<u8>, SimulationError> {
+        match self.web3.simulate(call.clone(), overrides.clone()).await {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                tracing::warn!(?err, "web3 code simulation failed");
+                self.tenderly.simulate(call, overrides).await
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -237,10 +270,14 @@ mod tests {
         let network_id = web3.net().version().await.unwrap();
 
         for simulator in [
-            Arc::new(web3) as Arc<dyn CodeSimulating>,
+            Arc::new(web3.clone()) as Arc<dyn CodeSimulating>,
             Arc::new(TenderlyCodeSimulator::new(
                 TenderlyHttpApi::test_from_env(),
-                network_id,
+                network_id.clone(),
+            )),
+            Arc::new(Web3ThenTenderly::new(
+                web3,
+                TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id),
             )),
         ] {
             let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
