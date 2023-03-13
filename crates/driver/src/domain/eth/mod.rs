@@ -177,6 +177,17 @@ impl From<ContractAddress> for Address {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAddress(pub ContractAddress);
 
+impl TokenAddress {
+    /// If the token is ETH, return WETH, thereby "wrapping" it.
+    pub fn wrap(self, weth: WethAddress) -> Self {
+        if self == ETH_TOKEN {
+            weth.into()
+        } else {
+            self
+        }
+    }
+}
+
 /// The address of the WETH contract.
 #[derive(Debug, Clone, Copy)]
 pub struct WethAddress(pub TokenAddress);

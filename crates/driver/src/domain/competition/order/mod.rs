@@ -130,21 +130,16 @@ impl Order {
     /// orders which buy ETH. The settlement contract only works with ERC20
     /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
     /// provide a seamless user experience for ETH trades, so the driver
-    /// will encode the settlement to automatically wrap the traders' ETH
-    /// into WETH and automatically unwrap the WETH into ETH after the trade is
-    /// done.
+    /// will encode the settlement to automatically unwrap the WETH into ETH
+    /// after the trade is done.
     ///
-    /// This wrapping and unwrapping implies that we want the solvers to
-    /// solve the orders which buy ETH as if they were buying WETH, and then
-    /// add our wrapping and unwrapping to that solution.
+    /// For this reason, we want the solvers to solve the orders which buy ETH
+    /// as if they were buying WETH, and then add our unwrap interaction to that
+    /// solution.
     pub fn solver_buy(&self, weth: eth::WethAddress) -> eth::Asset {
-        if self.buys_eth() {
-            eth::Asset {
-                amount: self.buy.amount,
-                token: weth.into(),
-            }
-        } else {
-            self.buy
+        eth::Asset {
+            amount: self.buy.amount,
+            token: self.buy.token.wrap(weth),
         }
     }
 }

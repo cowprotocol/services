@@ -133,7 +133,7 @@ impl Solution {
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
         //
-        // This failure happens is because the Ethereum protocol sets a hard gas limit
+        // This failure happens because the Ethereum protocol sets a hard gas limit
         // on transferring ETH into a smart contract, which some contracts exceed unless
         // the access list is already specified.
 
@@ -229,15 +229,10 @@ impl Solution {
                     sell.amount
                 },
             );
-            // Orders which buy ETH are wrapped into WETH, and hence contribute to WETH
-            // flow.
-            *flow
-                .entry(if buy.token == eth::ETH_TOKEN {
-                    self.weth.into()
-                } else {
-                    buy.token
-                })
-                .or_default() -= util::conv::u256::to_big_int(buy.amount);
+            // Within the settlement contract, the orders which buy ETH are wrapped into
+            // WETH, and hence contribute to WETH flow.
+            *flow.entry(buy.token.wrap(self.weth)).or_default() -=
+                util::conv::u256::to_big_int(buy.amount);
         }
 
         if flow.values().any(|v| v.is_negative()) {
@@ -269,7 +264,8 @@ impl Solution {
         }
     }
 
-    /// The clearing prices, represented as a list of assets.
+    /// The clearing prices, represented as a list of assets. If there are any
+    /// orders which buy ETH, this will contain the correct ETH price.
     pub fn prices(&self) -> Result<Vec<eth::Asset>, Error> {
         let prices = self
             .prices
@@ -279,13 +275,14 @@ impl Solution {
 
         // The solution contains an order which buys ETH. Solvers only produce solutions
         // for ERC20 tokens, while the driver adds special [`Interaction`]s to
-        // wrap/unwrap the ETH tokens into WETH, and sends orders to the driver with
+        // wrap/unwrap the ETH tokens into WETH, and sends orders to the solver with
         // WETH instead of ETH. Once the driver receives the solution which fulfills an
         // ETH order, a clearing price for ETH needs to be added, equal to the
         // WETH clearing price.
         if self.user_trades().any(|trade| trade.order.buys_eth()) {
             // If no order buys WETH, the WETH price is not necessary, only the ETH price is
-            // needed. Remove the WETH price to slightly reduce gas used by the settlement.
+            // needed. Remove the unneeded WETH price, which slightly reduces gas used by
+            // the settlement.
             let mut prices = if self
                 .user_trades()
                 .all(|trade| trade.order.buy.token != self.weth.0)
@@ -316,11 +313,8 @@ impl Solution {
 
     /// Clearing price for the given token.
     pub fn price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
-        let token = if token == eth::ETH_TOKEN {
-            self.weth.into()
-        } else {
-            token
-        };
+        // The clearing price of ETH is equal to WETH.
+        let token = token.wrap(self.weth);
         self.prices.0.get(&token).map(ToOwned::to_owned)
     }
 }

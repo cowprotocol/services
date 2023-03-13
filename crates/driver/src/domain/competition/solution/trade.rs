@@ -85,8 +85,6 @@ impl Trade {
             },
         };
 
-        // TODO Use the solution to get the prices
-
         // For operations which require division, the rounding always happens in favor
         // of the user.
         // Errors are returned on 256-bit overflow in certain cases, even though
