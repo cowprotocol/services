@@ -220,19 +220,27 @@ mod tests {
         maplit::hashmap,
     };
 
-    #[ignore]
-    #[tokio::test]
-    async fn can_simulate_contract_code() {
+    async fn test_simulators() -> Vec<Arc<dyn CodeSimulating>> {
         let web3 = Web3::new(create_env_test_transport());
         let network_id = web3.net().version().await.unwrap();
 
-        for simulator in [
-            Arc::new(web3) as Arc<dyn CodeSimulating>,
+        vec![
+            Arc::new(web3.clone()),
             Arc::new(TenderlyCodeSimulator::new(
                 TenderlyHttpApi::test_from_env(),
-                network_id,
+                network_id.clone(),
             )),
-        ] {
+            Arc::new(Web3ThenTenderly::new(
+                web3,
+                TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id),
+            )),
+        ]
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn can_simulate_contract_code() {
+        for simulator in test_simulators().await {
             let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
             let output = simulator
                 .simulate(
@@ -266,20 +274,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn errors_on_reverts() {
-        let web3 = Web3::new(create_env_test_transport());
-        let network_id = web3.net().version().await.unwrap();
-
-        for simulator in [
-            Arc::new(web3.clone()) as Arc<dyn CodeSimulating>,
-            Arc::new(TenderlyCodeSimulator::new(
-                TenderlyHttpApi::test_from_env(),
-                network_id.clone(),
-            )),
-            Arc::new(Web3ThenTenderly::new(
-                web3,
-                TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id),
-            )),
-        ] {
+        for simulator in test_simulators().await {
             let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
             let result = simulator
                 .simulate(
