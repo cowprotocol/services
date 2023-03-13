@@ -22,7 +22,7 @@ pub use {
 /// it does not implement the ERC20 interface, but this address is used by
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
-pub const ETH_ADDRESS: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20])));
+pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20])));
 
 /// Chain ID as defined by EIP-155.
 ///

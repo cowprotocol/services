@@ -5,8 +5,10 @@ use {
         infra,
         tests::{self, hex_address, setup},
     },
+    ethcontract::{transport::DynTransport, Web3},
     itertools::Itertools,
     serde_json::json,
+    std::str::FromStr,
     web3::types::TransactionId,
 };
 
@@ -14,7 +16,7 @@ use {
 #[tokio::test]
 #[ignore]
 async fn test() {
-    crate::boundary::initialize_tracing("driver=trace");
+    crate::boundary::initialize_tracing("error");
     // Set up the uniswap swap.
     let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
@@ -33,6 +35,15 @@ async fn test() {
         geth,
         solver_secret_key,
     } = setup::blockchain::uniswap_a_b::setup().await;
+
+    dbg!(solver_address);
+    dbg!(admin);
+    dbg!(settlement.address());
+
+    println!();
+
+    dbg!(token_a.address());
+    dbg!(weth.address());
 
     // Values for the auction.
     let sell_token = token_a.address();
@@ -235,4 +246,56 @@ async fn test() {
     let len = input.len();
     let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
     assert_eq!(tx_solution_id.to_string(), solution_id);
+
+    debug(&web3).await;
+}
+
+async fn debug(web3: &Web3<DynTransport>) {
+    println!();
+    let block = web3
+        .eth()
+        .block_with_txs(ethcontract::BlockId::Number(
+            ethcontract::BlockNumber::Latest,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let tx = &block.transactions[0];
+    let receipt = web3
+        .eth()
+        .transaction_receipt(tx.hash)
+        .await
+        .unwrap()
+        .unwrap();
+    for log in receipt.logs.iter() {
+        if log.topics[0]
+            == ethcontract::H256::from_str(
+                "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+            )
+            .unwrap()
+        {
+            println!("transfer");
+        } else if log.topics[0]
+            == ethcontract::H256::from_str(
+                "7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65",
+            )
+            .unwrap()
+        {
+            println!("withdrawal");
+        } else if log.topics[0]
+            == ethcontract::H256::from_str(
+                "e1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c",
+            )
+            .unwrap()
+        {
+            println!("deposit");
+        } else {
+            continue;
+        }
+        dbg!(log.address);
+        dbg!(&log.topics);
+        let data = hex::encode(&log.data.0);
+        dbg!(data);
+        println!();
+    }
 }

@@ -90,7 +90,7 @@ impl Order {
 
     /// Does this order buy ETH?
     pub fn buys_eth(&self) -> bool {
-        self.buy.token == eth::ETH_ADDRESS
+        self.buy.token == eth::ETH_TOKEN
     }
 
     /// The address which will receive the output of this order. If a custom

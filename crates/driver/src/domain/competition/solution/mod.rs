@@ -218,7 +218,7 @@ impl Solution {
         // (negative flow).
         for trade in self.trades.iter() {
             let trade::Execution { sell, buy } = trade
-                .execution(&self.prices)
+                .execution(self)
                 .map_err(|_| VerificationError::AssetFlow)?;
             *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(
                 // Surplus fees need to stay inside the settlement contract. They are not
@@ -229,7 +229,15 @@ impl Solution {
                     sell.amount
                 },
             );
-            *flow.entry(buy.token).or_default() -= util::conv::u256::to_big_int(buy.amount);
+            // Orders which buy ETH are wrapped into WETH, and hence contribute to WETH
+            // flow.
+            *flow
+                .entry(if buy.token == eth::ETH_TOKEN {
+                    self.weth.into()
+                } else {
+                    buy.token
+                })
+                .or_default() -= util::conv::u256::to_big_int(buy.amount);
         }
 
         if flow.values().any(|v| v.is_negative()) {
@@ -291,7 +299,7 @@ impl Solution {
 
             // Add a clearing price for ETH equal to WETH.
             prices.push(eth::Asset {
-                token: eth::ETH_ADDRESS,
+                token: eth::ETH_TOKEN,
                 amount: self
                     .prices
                     .0
@@ -308,6 +316,11 @@ impl Solution {
 
     /// Clearing price for the given token.
     pub fn price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
+        let token = if token == eth::ETH_TOKEN {
+            self.weth.into()
+        } else {
+            token
+        };
         self.prices.0.get(&token).map(ToOwned::to_owned)
     }
 }
