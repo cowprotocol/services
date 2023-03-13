@@ -4,11 +4,12 @@ use {
         settlement::{PricedTrade, Settlement},
     },
     anyhow::Result,
+    itertools::Itertools,
     liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
     model::order::OrderKind,
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv},
     number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int},
-    primitive_types::U256,
+    primitive_types::{H160, U256},
     shared::{
         conversions::{RatioExt, U256Ext},
         http_solver::model::TokenAmount,
@@ -54,7 +55,7 @@ pub fn solve(
         if let Some(valid_solution) =
             solve_orders(slippage, &orders, pool, &context_a, &context_b).filter(is_valid_solution)
         {
-            return Some(valid_solution);
+            return Some(valid_solution.into());
         } else {
             // remove order with worst limit price that is selling excess token (to make it
             // less excessive) and try again
@@ -92,7 +93,7 @@ fn solve_orders(
     pool: &ConstantProductOrder,
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> Option<Settlement> {
+) -> Option<NaiveSolution> {
     if context_a.is_excess_after_fees(context_b, pool.fee) {
         solve_with_uniswap(slippage, orders, pool, context_b, context_a)
     } else if context_b.is_excess_after_fees(context_a, pool.fee) {
@@ -109,16 +110,22 @@ fn solve_without_uniswap(
     orders: &[LimitOrder],
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> Result<Settlement> {
-    let mut settlement = Settlement::new(maplit::hashmap! {
-        context_a.address => context_b.reserve,
-        context_b.address => context_a.reserve,
-    });
-    for order in orders {
-        settlement.with_liquidity(order, order.full_execution_amount())?;
-    }
+) -> Result<NaiveSolution> {
+    let prices = [
+        (context_a.address, context_b.reserve),
+        (context_b.address, context_a.reserve),
+    ]
+    .into_iter()
+    .collect();
 
-    Ok(settlement)
+    Ok(NaiveSolution {
+        orders: orders
+            .iter()
+            .map(|o| (o.clone(), o.full_execution_amount()))
+            .collect(),
+        interaction: None,
+        prices,
+    })
 }
 
 ///
@@ -131,7 +138,7 @@ fn solve_with_uniswap(
     pool: &ConstantProductOrder,
     shortage: &TokenContext,
     excess: &TokenContext,
-) -> Option<Settlement> {
+) -> Option<NaiveSolution> {
     let uniswap_in_token = excess.address;
     let uniswap_out_token = shortage.address;
 
@@ -140,16 +147,6 @@ fn solve_with_uniswap(
 
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
     let uniswap_in = big_rational_to_u256(&uniswap_in).ok()?;
-
-    let mut settlement = Settlement::new(maplit::hashmap! {
-        uniswap_in_token => uniswap_out,
-        uniswap_out_token => uniswap_in,
-    });
-    for order in orders {
-        settlement
-            .with_liquidity(order, order.full_execution_amount())
-            .ok()?;
-    }
 
     // Because the smart contracts round in the favour of the traders, it could
     // be that we actually require a bit more from the Uniswap pool in order to
@@ -194,20 +191,31 @@ fn solve_with_uniswap(
     // would have otherwise received.
     let uniswap_out_with_rounding = uniswap_out_required_by_orders.max(uniswap_out);
 
-    settlement
-        .with_liquidity(
-            pool,
-            slippage
-                .apply_to_amm_execution(AmmOrderExecution {
-                    input_max: TokenAmount::new(uniswap_in_token, uniswap_in),
-                    output: TokenAmount::new(uniswap_out_token, uniswap_out_with_rounding),
-                    internalizable: false,
-                })
-                .ok()?,
-        )
+    let amm_execution = slippage
+        .apply_to_amm_execution(AmmOrderExecution {
+            input_max: TokenAmount::new(uniswap_in_token, uniswap_in),
+            output: TokenAmount::new(uniswap_out_token, uniswap_out_with_rounding),
+            internalizable: false,
+        })
         .ok()?;
 
-    Some(settlement)
+    let interaction = (pool.clone(), amm_execution);
+
+    let prices = [
+        (uniswap_in_token, uniswap_out),
+        (uniswap_out_token, uniswap_in),
+    ]
+    .into_iter()
+    .collect();
+
+    Some(NaiveSolution {
+        orders: orders
+            .iter()
+            .map(|o| (o.clone(), o.full_execution_amount()))
+            .collect(),
+        interaction: Some(interaction),
+        prices,
+    })
 }
 
 impl ConstantProductOrder {
@@ -257,7 +265,10 @@ fn split_into_contexts(
         }
     }
     assert_eq!(contexts.len(), 2, "Orders contain more than two tokens");
-    let mut contexts = contexts.drain().map(|(_, v)| v);
+    let mut contexts = contexts
+        .drain()
+        .map(|(_, v)| v)
+        .sorted_by_key(|v| std::cmp::Reverse(v.address));
     (contexts.next().unwrap(), contexts.next().unwrap())
 }
 
@@ -311,42 +322,68 @@ fn compute_uniswap_in(
 /// Returns true if for each trade the executed price is not smaller than the
 /// limit price Thus we ensure that `buy_token_price / sell_token_price >=
 /// limit_buy_amount / limit_sell_amount`
-fn is_valid_solution(solution: &Settlement) -> bool {
-    for PricedTrade {
-        data,
-        sell_token_price,
-        buy_token_price,
-    } in solution.encoder.all_trades()
-    {
-        let order = &data.order.data;
+fn is_valid_solution(solution: &NaiveSolution) -> bool {
+    todo!();
+    // /// TODO fixup
+    // for PricedTrade {
+    //     data,
+    //     sell_token_price,
+    //     buy_token_price,
+    // } in solution.encoder.all_trades()
+    // {
+    //     let order = &data.order.data;
 
-        // Check execution respects individual order's limit price
-        match (
-            order.sell_amount.checked_mul(sell_token_price),
-            order.buy_amount.checked_mul(buy_token_price),
-        ) {
-            (Some(sell_volume), Some(buy_volume)) if sell_volume >= buy_volume => (),
-            _ => return false,
-        }
+    //     // Check execution respects individual order's limit price
+    //     match (
+    //         order.sell_amount.checked_mul(sell_token_price),
+    //         order.buy_amount.checked_mul(buy_token_price),
+    //     ) {
+    //         (Some(sell_volume), Some(buy_volume)) if sell_volume >=
+    // buy_volume => (),         _ => return false,
+    //     }
 
-        // Check individual order's execution price satisfies uniform clearing price
-        // E.g. liquidity orders may have a different executed price.
-        let clearing_prices = solution.encoder.clearing_prices();
-        match (
-            clearing_prices
-                .get(&order.buy_token)
-                .map(|clearing_sell_price| clearing_sell_price.checked_mul(sell_token_price)),
-            clearing_prices
-                .get(&order.sell_token)
-                .map(|clearing_buy_price| clearing_buy_price.checked_mul(buy_token_price)),
-        ) {
-            (Some(execution_sell_value), Some(clearing_buy_value))
-                if execution_sell_value <= clearing_buy_value => {}
-            _ => return false,
-        }
+    //     // Check individual order's execution price satisfies uniform
+    // clearing price     // E.g. liquidity orders may have a different
+    // executed price.     let clearing_prices =
+    // solution.encoder.clearing_prices();     match (
+    //         clearing_prices
+    //             .get(&order.buy_token)
+    //             .map(|clearing_sell_price|
+    // clearing_sell_price.checked_mul(sell_token_price)),
+    //         clearing_prices
+    //             .get(&order.sell_token)
+    //             .map(|clearing_buy_price|
+    // clearing_buy_price.checked_mul(buy_token_price)),     ) {
+    //         (Some(execution_sell_value), Some(clearing_buy_value))
+    //             if execution_sell_value <= clearing_buy_value => {}
+    //         // there might not be a clearing price in case of a liquidity
+    // order         // How do we get the clearing price that is equivalent
+    // here?         _ => return false,
+    //     }
+    // }
+
+    // true
+}
+
+/// A solution settling multiple orders trading the same token pair that gets
+/// the missing liquidity from a liquidity pool.
+struct NaiveSolution {
+    /// List of orders with their executed amount settled in this solution.
+    /// They are supposed to trade the same token pair.
+    orders: Vec<(LimitOrder, U256)>,
+    /// Uniswap interaction providing the missing liquidity. `None` in case of a
+    /// perfect CoW.
+    interaction: Option<(ConstantProductOrder, AmmOrderExecution)>,
+
+    /// Uniform clearing prices with all tokens traded by user orders in this
+    /// solution.
+    prices: HashMap<H160, U256>,
+}
+
+impl From<NaiveSolution> for Settlement {
+    fn from(solution: NaiveSolution) -> Self {
+        todo!()
     }
-
-    true
 }
 
 #[cfg(test)]
@@ -738,7 +775,6 @@ mod tests {
         let result = solve(&SlippageContext::default(), orders, &pool).unwrap();
 
         assert_eq!(result.traded_orders().count(), 2);
-        assert!(is_valid_solution(&result));
     }
 
     #[test]
@@ -816,15 +852,17 @@ mod tests {
             },
         ];
 
-        let settlement_with_prices = |prices: HashMap<Address, U256>| {
-            let mut settlement = Settlement::new(prices);
-            for order in orders.iter().cloned() {
-                let limit_order = LimitOrder::from(order);
-                settlement
-                    .with_liquidity(&limit_order, limit_order.full_execution_amount())
-                    .unwrap();
-            }
-            settlement
+        let settlement_with_prices = |prices: HashMap<Address, U256>| NaiveSolution {
+            orders: orders
+                .iter()
+                .map(|o| {
+                    let limit_order = LimitOrder::from(o.clone());
+                    let executed_amount = limit_order.full_execution_amount();
+                    (limit_order, executed_amount)
+                })
+                .collect(),
+            prices,
+            interaction: None,
         };
 
         // Price in the middle is ok

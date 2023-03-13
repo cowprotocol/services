@@ -328,6 +328,7 @@ mod tests {
                 .normalize_limit_order(Order {
                     data: OrderData {
                         sell_token: H160([2; 20]),
+                        // there will be no clearing price for this order
                         buy_token: BUY_ETH_ADDRESS,
                         sell_amount: 1_000_000_000_u128.into(),
                         buy_amount: 900_000_000_u128.into(),
