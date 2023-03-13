@@ -612,12 +612,14 @@ fn filter_mispriced_limit_orders(
 ) -> Vec<Order> {
     orders.retain(|order| {
         let surplus_fee = match (&order.metadata.class, order.data.partially_fillable) {
-            (OrderClass::Limit(limit), false) => limit.surplus_fee,
+            // Solvable fok limit orders always have a surplus fee.
+            (OrderClass::Limit(limit), false) => limit.surplus_fee.unwrap(),
+            // Partially fillable limit orders do not have a surplus fee.
+            (OrderClass::Limit(_), true) => 0.into(),
             _ => return true,
         };
 
-        // Unwrap because solvable orders always have a surplus fee.
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee.unwrap());
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
         if effective_sell_amount.is_zero() {
             return false;
         }
@@ -1292,6 +1294,14 @@ mod tests {
         assert_eq!(
             filter_mispriced_limit_orders(orders, &prices, &price_factor),
             valid_orders,
+        );
+
+        let mut order = order(10, 21, 0);
+        order.data.partially_fillable = true;
+        let orders = vec![order];
+        assert_eq!(
+            filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
+            1
         );
     }
 

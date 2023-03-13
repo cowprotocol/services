@@ -155,7 +155,7 @@ impl Order {
     fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
         let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
             .expect("sell != buy by construction");
-        iter::once(pair).into_iter().collect()
+        iter::once(pair).collect()
     }
 }
 
