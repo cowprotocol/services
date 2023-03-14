@@ -1,7 +1,7 @@
 use {
     crate::{
         liquidity::{self, slippage::SlippageContext},
-        settlement::{PricedTrade, Settlement},
+        settlement::Settlement,
     },
     anyhow::Result,
     itertools::Itertools,
