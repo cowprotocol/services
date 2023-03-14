@@ -132,7 +132,8 @@ impl Solution {
             auction,
             settlement::Internalization::Disable,
         )
-        .await?;
+        .await
+        .map_err(|_| VerificationError::FailingInternalization)?;
         // For the solution to be valid, the settlement with internalized interactions
         // must simulate, just like the non-internalized case above.
         self.simulate(eth, simulator, auction, settlement::Internalization::Enable)
@@ -280,7 +281,7 @@ impl Solution {
         {
             Ok(())
         } else {
-            Err(VerificationError::Internalization)
+            Err(VerificationError::UntrustedInternalization)
         }
     }
 
@@ -473,7 +474,9 @@ pub enum VerificationError {
     #[error(
         "invalid internalization: solution attempts to internalize tokens which are not trusted"
     )]
-    Internalization,
+    UntrustedInternalization,
+    #[error("invalid internalization: solution attempts to internalize failing interactions")]
+    FailingInternalization,
 }
 
 impl From<simulator::Error> for Error {
