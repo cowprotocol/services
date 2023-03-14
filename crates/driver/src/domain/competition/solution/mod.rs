@@ -46,6 +46,7 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Approval interactions necessary for encoding the settlement.
     pub async fn approvals(
         &self,
         eth: &Ethereum,
@@ -117,7 +118,25 @@ impl Solution {
     ) -> Result<settlement::Verified, Error> {
         self.verify_asset_flow()?;
         self.verify_internalization(auction)?;
-        self.simulate(eth, simulator, auction).await
+        // Some rules which are enforced by the settlement contract for non-internalized
+        // interactions are not enforced for internalized interactions (in order to save
+        // gas). However, publishing a settlement with interactions that violate
+        // these rules constitutes a punishable offense for the solver, even if
+        // the interactions are internalized. To ensure that this doesn't happen, check
+        // that the settlement simulates even when internalizations are disabled.
+        //
+        // See also the [`competition::Order::reward`] field.
+        self.simulate(
+            eth,
+            simulator,
+            auction,
+            settlement::Internalization::Disable,
+        )
+        .await?;
+        // For the solution to be valid, the settlement with internalized interactions
+        // must simulate, just like the non-internalized case above.
+        self.simulate(eth, simulator, auction, settlement::Internalization::Enable)
+            .await
     }
 
     /// Simulate settling this solution on the blockchain. This process
@@ -128,6 +147,7 @@ impl Solution {
         eth: &Ethereum,
         simulator: &Simulator,
         auction: &competition::Auction,
+        internalization: settlement::Internalization,
     ) -> Result<settlement::Verified, Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
@@ -158,7 +178,7 @@ impl Solution {
             .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
 
         // Encode the settlement with the partial access list.
-        let settlement = Settlement::encode(eth, auction, self).await?;
+        let settlement = Settlement::encode(eth, auction, self, internalization).await?;
         let tx = settlement.clone().tx().set_access_list(partial_access_list);
 
         // Second, simulate the full access list, passing the partial access

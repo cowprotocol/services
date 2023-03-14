@@ -17,14 +17,24 @@ pub(super) struct Settlement {
     boundary: boundary::Settlement,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Internalization {
+    /// Internalize interactions which have the `internalize` flag set.
+    Enable,
+    /// Do not internalize any interactions.
+    Disable,
+}
+
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
     pub async fn encode(
         eth: &Ethereum,
         auction: &competition::Auction,
         solution: &competition::Solution,
+        internalization: Internalization,
     ) -> anyhow::Result<Self> {
-        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
+        let boundary =
+            boundary::Settlement::encode(eth, solution, auction, internalization).await?;
         Ok(Self {
             id: solution.id,
             boundary,
