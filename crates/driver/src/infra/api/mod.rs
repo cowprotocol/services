@@ -64,7 +64,9 @@ impl Api {
                 liquidity: self.liquidity.clone(),
                 now: self.now,
             })));
-            app = app.nest(&format!("/{name}"), router);
+            let path = format!("/{name}");
+            tracing::debug!("mounting {path}");
+            app = app.nest(&path, router);
         }
 
         // Start the server.

@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() {
-    driver::run::main().await;
+    driver::main().await;
 }
