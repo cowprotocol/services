@@ -176,16 +176,6 @@ impl OnSettlementEventUpdater {
                     return Err(err.into());
                 }
             }
-            let settlement = DecodedSettlement::new(&transaction.input.0)?;
-            let surplus = settlement.total_surplus(&external_prices);
-            let fee = settlement.total_fees(&external_prices, &orders);
-
-            update.auction_data = Some(AuctionData {
-                surplus,
-                fee,
-                gas_used,
-                effective_gas_price,
-            });
 
             tracing::trace!(
                 ?auction_id,
