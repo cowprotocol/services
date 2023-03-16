@@ -383,7 +383,7 @@ pub fn decode_function_input(
 ) -> Result<Vec<Token>, DecodingError> {
     let input = input
         .strip_prefix(&function.selector())
-        .context("input does not start with function selector")?;
+        .ok_or(DecodingError::InvalidSelector)?;
     let decoded_input = function
         .decode_input(input)
         .context("decode input failed")?;
