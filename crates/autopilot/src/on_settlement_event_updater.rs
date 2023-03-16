@@ -36,7 +36,7 @@ use {
             on_settlement_event_updater::{AuctionData, SettlementUpdate},
             Postgres,
         },
-        decoded_settlement::DecodedSettlement,
+        decoded_settlement::{DecodedSettlement, DecodingError},
     },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
@@ -155,6 +155,27 @@ impl OnSettlementEventUpdater {
             )?;
 
             // surplus and fees calculation
+            match DecodedSettlement::new(&transaction.input.0) {
+                Ok(settlement) => {
+                    let surplus = settlement.total_surplus(&external_prices);
+                    let fee = settlement.total_fees(&external_prices, &orders);
+
+                    update.auction_data = Some(AuctionData {
+                        surplus,
+                        fee,
+                        gas_used,
+                        effective_gas_price,
+                    });
+                }
+                Err(err) if matches!(err, DecodingError::InvalidSelector) => {
+                    // we indexed a transaction initiated by solver, that was not a settlement
+                    // for this case we want to have the entry in observations table but with zeros
+                    update.auction_data = Some(Default::default());
+                }
+                Err(err) => {
+                    return Err(err.into());
+                }
+            }
             let settlement = DecodedSettlement::new(&transaction.input.0)?;
             let surplus = settlement.total_surplus(&external_prices);
             let fee = settlement.total_fees(&external_prices, &orders);
