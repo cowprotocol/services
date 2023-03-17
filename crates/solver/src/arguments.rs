@@ -334,7 +334,7 @@ pub struct Arguments {
     #[clap(flatten)]
     pub score_params: score_computation::Arguments,
 
-    /// Should we consider settlements with zero score for submission
+    /// Should we skip settlements with zero score for submission
     #[clap(long, env, default_value = "true")]
     pub skip_zero_score_settlements: bool,
 }
