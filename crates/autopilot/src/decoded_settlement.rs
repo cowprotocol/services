@@ -149,7 +149,7 @@ impl TryFrom<database::orders::FullOrder> for Order {
 }
 
 impl DecodedSettlement {
-    pub fn new(input: &[u8]) -> Result<Self> {
+    pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
             .abi
             .function("settle")
@@ -158,6 +158,7 @@ impl DecodedSettlement {
         <DecodedSettlementTokenized>::from_token(Token::Tuple(decoded_input))
             .map(Into::into)
             .context("failed to decode settlement")
+            .map_err(From::from)
     }
 
     /// Returns the total surplus denominated in the native asset for the
@@ -352,13 +353,37 @@ fn order_kind(flags: &U256) -> OrderKind {
     }
 }
 
+#[derive(Debug)]
+pub enum DecodingError {
+    InvalidSelector,
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for DecodingError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+impl From<DecodingError> for anyhow::Error {
+    fn from(err: DecodingError) -> Self {
+        match err {
+            DecodingError::InvalidSelector => anyhow::anyhow!("invalid function selector"),
+            DecodingError::Other(err) => err,
+        }
+    }
+}
+
 /// `input` is the raw call data from the transaction receipt.
 /// Example: `13d79a0b00000000` where `13d79a0b` is the function selector for
 /// `settle` function in case of GPv2Settlement contract.
-pub fn decode_function_input(function: &Function, input: &[u8]) -> Result<Vec<Token>> {
+pub fn decode_function_input(
+    function: &Function,
+    input: &[u8],
+) -> Result<Vec<Token>, DecodingError> {
     let input = input
         .strip_prefix(&function.selector())
-        .context("input does not start with function selector")?;
+        .ok_or(DecodingError::InvalidSelector)?;
     let decoded_input = function
         .decode_input(input)
         .context("decode input failed")?;
