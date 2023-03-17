@@ -129,6 +129,7 @@ struct IntermediateSettlement<'a> {
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
     submitter: SubmissionPreference,
+    score: Option<Score>,
 }
 
 // Conversion error happens during building a settlement from a solution
@@ -207,6 +208,7 @@ impl<'a> IntermediateSettlement<'a> {
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
         let submitter = settled.submitter;
+        let score = settled.score;
 
         if duplicate_coordinates(&executions) {
             return Err(ConversionError::InvalidExecutionPlans(anyhow!(
@@ -220,12 +222,14 @@ impl<'a> IntermediateSettlement<'a> {
             approvals,
             slippage,
             submitter,
+            score,
         })
     }
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
         settlement.submitter = self.submitter;
+        settlement.score = self.score;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
