@@ -38,8 +38,8 @@ impl ScoreCalculator {
         let gas_amount = inputs.gas_amount.to_f64()?;
         let gas_price = inputs.gas_price.to_f64()?;
         let exponent = self.intercept.neg()
-            - self.gas_amount_factor * gas_amount
-            - self.gas_price_factor * gas_price
+            - self.gas_amount_factor * gas_amount / 1_000_000.
+            - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
         let score = success_probability * (surplus + fees) - gas_amount * gas_price;
