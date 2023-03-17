@@ -422,6 +422,20 @@ impl<'a> Submitter<'a> {
                     continue;
                 }
             };
+            // if solver provided gas price is higher than the estimated gas price, use it
+            let gas_price = if settlement.gas_price.max_fee_per_gas > gas_price.max_fee_per_gas
+                && settlement.gas_price.max_priority_fee_per_gas
+                    > gas_price.max_priority_fee_per_gas
+            {
+                tracing::debug!(
+                    "using solver provided gas price: {}, {}",
+                    settlement.gas_price.max_fee_per_gas,
+                    settlement.gas_price.max_priority_fee_per_gas
+                );
+                settlement.gas_price
+            } else {
+                gas_price
+            };
 
             // create transaction
 

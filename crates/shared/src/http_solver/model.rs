@@ -217,6 +217,8 @@ pub struct SettledBatchAuctionModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub score: Option<Score>,
+    pub max_fee_per_gas: Option<U256>,
+    pub max_priority_fee_per_gas: Option<U256>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 

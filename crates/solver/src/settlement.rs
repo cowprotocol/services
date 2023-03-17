@@ -213,6 +213,7 @@ impl Trade {
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
 use {
+    gas_estimation::GasPrice1559,
     model::order::OrderClass,
     shared::{external_prices::ExternalPrices, http_solver::model::Score},
 };
@@ -230,9 +231,11 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
+    pub submitter: SubmissionPreference, /* todo - extract submitter and score and gas price
+                                          * sinto a separate
                                           * struct */
     pub score: Option<Score>,
+    pub gas_price: GasPrice1559,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -281,6 +284,7 @@ impl Settlement {
             encoder,
             submitter: self.submitter.clone(),
             score: self.score.clone(),
+            gas_price: self.gas_price,
         }
     }
 
@@ -465,6 +469,14 @@ impl Settlement {
                     Some(Score::Score(left + right))
                 }
                 _ => None,
+            },
+            gas_price: if other.gas_price.max_fee_per_gas > self.gas_price.max_fee_per_gas
+                && other.gas_price.max_priority_fee_per_gas
+                    > self.gas_price.max_priority_fee_per_gas
+            {
+                other.gas_price
+            } else {
+                self.gas_price
             },
         })
     }
