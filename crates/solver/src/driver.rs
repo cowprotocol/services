@@ -66,6 +66,7 @@ pub struct Driver {
     solver_time_limit: Duration,
     block_time: Duration,
     additional_mining_deadline: Duration,
+    skip_zero_score_settlements: bool,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -92,6 +93,7 @@ impl Driver {
         solver_time_limit: Duration,
         block_time: Duration,
         additional_mining_deadline: Duration,
+        skip_zero_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -139,6 +141,7 @@ impl Driver {
             solver_time_limit,
             block_time,
             additional_mining_deadline,
+            skip_zero_score_settlements,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -391,6 +394,18 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
+
+        if Utc::now() > self.settlement_ranker.auction_rewards_activation_timestamp // CIP20 activated
+        && self.skip_zero_score_settlements
+        {
+            // After ranking the settlements and saving the whole competition data,
+            // filter out the settlements with a score of 0, since we don't want to submit
+            // settlements with a score of 0 (settlements with negative objective values)
+            rated_settlements
+                .retain(|(_, rated_settlement, _)| rated_settlement.score.score() > 0.into());
+            DriverLogger::print_settlements(&rated_settlements);
+        }
+
         // In transition period last settlement is not necessarily the one with the
         // highest score. So we need to use the score ranking to determine the winner.
         // CIP20 TODO - add to if statement below, once the transition period is over.

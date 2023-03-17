@@ -333,6 +333,10 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub score_params: score_computation::Arguments,
+
+    /// Should we consider settlements with zero score for submission
+    #[clap(long, env, default_value = "true")]
+    pub skip_zero_score_settlements: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -465,6 +469,7 @@ impl std::fmt::Display for Arguments {
             self.additional_mining_deadline
         )?;
         writeln!(f, "{}", self.score_params)?;
+        writeln!(f, "{}", self.skip_zero_score_settlements)?;
         Ok(())
     }
 }
