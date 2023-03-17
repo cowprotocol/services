@@ -49,5 +49,5 @@ pub async fn compute_score(
         score
     );
 
-    score
+    score.ok()
 }
