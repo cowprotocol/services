@@ -170,7 +170,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             PriceEstimationError::NoLiquidity => 2,
             PriceEstimationError::Other(_) => 3,
             PriceEstimationError::UnsupportedOrderType => 4,
-            PriceEstimationError::RateLimited(_) => 5,
+            PriceEstimationError::RateLimited => 5,
             // lowest priority
         }
     }

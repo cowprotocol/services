@@ -315,7 +315,6 @@ pub async fn run(args: Arguments) {
         args.shared.disabled_one_inch_protocols,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
-        args.shared.paraswap_rate_limiter,
         &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
@@ -535,7 +534,7 @@ pub async fn run(args: Arguments) {
             .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
-        args.enable_auction_rewards,
+        args.auction_rewards_activation_timestamp,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);

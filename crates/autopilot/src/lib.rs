@@ -6,7 +6,7 @@ pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
-pub mod limit_orders;
+pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
 pub mod risk_adjusted_rewards;
 pub mod run_loop;
@@ -24,7 +24,7 @@ use {
             Postgres,
         },
         event_updater::{EventUpdater, GPv2SettlementContract},
-        limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
+        fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
     contracts::{
@@ -37,7 +37,6 @@ use {
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
-    num::BigRational,
     shared::{
         account_balances::Web3BalanceFetcher,
         bad_token::{
@@ -626,10 +625,6 @@ pub async fn main(args: arguments::Arguments) {
             native_token: native_token.address(),
             db: db.clone(),
             current_block: current_block_stream.clone(),
-            fee_objective_scaling_factor: BigRational::from_float(
-                args.fee_objective_scaling_factor,
-            )
-            .unwrap(),
         };
     tokio::task::spawn(
         on_settlement_event_updater

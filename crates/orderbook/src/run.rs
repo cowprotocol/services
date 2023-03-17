@@ -467,7 +467,8 @@ pub async fn run(args: Arguments) {
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
         )
-        .with_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
+        .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
+        .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
         .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments),
     );
     let orderbook = Arc::new(Orderbook::new(

@@ -265,7 +265,7 @@ impl IntoWarpReply for PriceEstimationError {
                 tracing::error!("PriceEstimaton::UnsupportedOrderType");
                 internal_error_reply()
             }
-            Self::RateLimited(_) => internal_error_reply(),
+            Self::RateLimited => internal_error_reply(),
             Self::Other(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()

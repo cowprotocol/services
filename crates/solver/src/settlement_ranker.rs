@@ -8,6 +8,7 @@ use {
         solver::{SimulationWithError, Solver},
     },
     anyhow::Result,
+    chrono::{DateTime, Utc},
     gas_estimation::GasPrice1559,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
@@ -41,7 +42,7 @@ pub struct SettlementRanker {
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
-    pub enable_auction_rewards: bool,
+    pub auction_rewards_activation_timestamp: DateTime<Utc>,
 }
 
 impl SettlementRanker {
@@ -198,7 +199,7 @@ impl SettlementRanker {
         // objective value tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
 
-        if self.enable_auction_rewards {
+        if Utc::now() > self.auction_rewards_activation_timestamp {
             rated_settlements.sort_by_key(|s| s.1.score.score());
 
             rated_settlements.iter_mut().rev().enumerate().for_each(

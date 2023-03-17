@@ -19,6 +19,7 @@ use {
         header::{HeaderMap, HeaderValue},
         Client,
         IntoUrl,
+        StatusCode,
         Url,
     },
     serde::Deserialize,
@@ -452,6 +453,9 @@ pub enum ZeroExResponseError {
     // Connectivity or non-response error
     #[error("Failed on send")]
     Send(reqwest::Error),
+
+    #[error("Rate limited")]
+    RateLimited,
 }
 
 #[async_trait::async_trait]
@@ -518,14 +522,18 @@ impl DefaultZeroExApi {
         tracing::trace!("Querying 0x API: {}", url);
 
         let request = self.client.get(url.clone());
-        let response_text = request
-            .send()
-            .await
-            .map_err(ZeroExResponseError::Send)?
+        let response = request.send().await.map_err(ZeroExResponseError::Send)?;
+
+        let status = response.status();
+        let response_text = response
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
         tracing::trace!("Response from 0x API: {}", response_text);
+
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroExResponseError::RateLimited);
+        }
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),

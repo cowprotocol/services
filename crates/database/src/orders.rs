@@ -409,6 +409,7 @@ pub struct FullOrder {
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
+    pub executed_solver_fee: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -474,7 +475,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee
+(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee,
+(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -549,13 +551,13 @@ pub fn user_orders<'a>(
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
 " WHERE o.owner = $1",
-" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
+" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
 " UNION ",
 " (SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
 " WHERE onchain_o.sender = $1 ",
-" ORDER BY creation_timestamp DESC LIMIT $2 * ($3 + 1) ) ",
+" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
 " ORDER BY creation_timestamp DESC ",
 " LIMIT $2 ",
 " OFFSET $3 ",
@@ -569,7 +571,13 @@ pub fn user_orders<'a>(
 
 /// The base solvable orders query used in specialized queries. Parametrized by valid_to.
 ///
-/// Does not take limit order surplus fee into account.
+/// Excludes orders for the following conditions:
+/// - valid_to is in the past
+/// - fully executed
+/// - cancelled on chain
+/// - cancelled through API
+/// - pending pre-signature
+/// - ethflow specific invalidation conditions
 #[rustfmt::skip]
 const OPEN_ORDERS: &str = const_format::concatcp!(
 "SELECT * FROM ( ",
@@ -590,6 +598,8 @@ WHERE
 "#
 );
 
+/// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
+/// surplus fee.
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -597,7 +607,8 @@ pub fn solvable_orders(
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::concatcp!(
         OPEN_ORDERS,
-        " AND (class <> 'limit' OR (surplus_fee IS NOT NULL AND surplus_fee_timestamp > $2))"
+        " AND (class <> 'limit' OR partially_fillable OR (surplus_fee IS NOT NULL AND \
+         surplus_fee_timestamp > $2))"
     );
     sqlx::query_as(QUERY)
         .bind(min_valid_to)
@@ -613,7 +624,8 @@ FROM settlements
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
-/// Count the number of valid limit orders belonging to a particular user.
+/// Counts the number of limit orders with the conditions of OPEN_ORDERS. Used
+/// to enforce a maximum number of limit orders per user.
 pub async fn count_limit_orders_by_owner(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -649,7 +661,7 @@ pub struct FeeUpdate {
 }
 
 /// Updates the `surplus_fee` of multiple orders and returns their `uid`s.
-pub async fn update_limit_order_fees(
+pub async fn update_fok_limit_order_fees(
     ex: &mut PgConnection,
     order_spec: &OrderFeeSpecifier,
     update: &FeeUpdate,
@@ -694,7 +706,7 @@ pub struct OrderQuotingData {
 /// Returns all fill or kill limit orders that are currently waiting to be
 /// filled sorted by `surplus_fee_timestamp` with the most outdated ones coming
 /// first.
-pub fn open_limit_orders(
+pub fn open_fok_limit_orders(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
@@ -705,8 +717,8 @@ pub fn open_limit_orders(
         " FROM (",
         OPEN_ORDERS,
         "     AND class = 'limit'",
-        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
         "     AND NOT partially_fillable",
+        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
         "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
         " ) as subquery"
     );
@@ -717,8 +729,8 @@ pub fn open_limit_orders(
         .fetch(ex)
 }
 
-/// Count the number of valid limit orders.
-pub async fn count_limit_orders(
+/// Count the number of open limit orders. Used for metrics.
+pub async fn count_fok_limit_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
 ) -> Result<i64, sqlx::Error> {
@@ -726,6 +738,7 @@ pub async fn count_limit_orders(
         "SELECT COUNT (*) FROM (",
         OPEN_ORDERS,
         " AND class = 'limit'",
+        " AND NOT partially_fillable",
         ") AS subquery"
     );
     sqlx::query_scalar(QUERY)
@@ -734,9 +747,9 @@ pub async fn count_limit_orders(
         .await
 }
 
-/// Count the number of valid limit orders with outdated fee as would be
-/// returned by `limit_orders_with_most_outdated_fees`.
-pub async fn count_limit_orders_with_outdated_fees(
+/// Count the number of open fok limit orders with outdated fee as would be
+/// returned by `open_fok_limit_orders`.
+pub async fn count_fok_limit_orders_with_outdated_fees(
     ex: &mut PgConnection,
     max_fee_timestamp: DateTime<Utc>,
     min_valid_to: i64,
@@ -745,6 +758,7 @@ pub async fn count_limit_orders_with_outdated_fees(
         "SELECT COUNT (*) FROM (",
         OPEN_ORDERS,
         " AND class = 'limit'",
+        " AND NOT partially_fillable",
         " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
         ") AS subquery"
     );
@@ -1688,7 +1702,7 @@ mod tests {
             ),
             full_fee_amount: 1337.into(),
         };
-        let updated_uids = update_limit_order_fees(&mut db, &order_spec, &update)
+        let updated_uids = update_fok_limit_order_fees(&mut db, &order_spec, &update)
             .await
             .unwrap();
         assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
@@ -1844,7 +1858,7 @@ mod tests {
         .await
         .unwrap();
 
-        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
+        let orders: Vec<_> = open_fok_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
@@ -1867,7 +1881,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let orders: Vec<_> = open_limit_orders(&mut db, timestamp, 2)
+        let orders: Vec<_> = open_fok_limit_orders(&mut db, timestamp, 2)
             .try_collect()
             .await
             .unwrap();
@@ -1901,7 +1915,8 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, None);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee))
+        let solver_fee: BigDecimal = 2.into();
+        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
             .await
             .unwrap();
 
@@ -1910,6 +1925,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, Some(fee));
+        assert_eq!(order.executed_solver_fee, Some(solver_fee));
     }
 
     #[tokio::test]
@@ -2001,9 +2017,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(count_limit_orders(&mut db, 2).await.unwrap(), 2);
+        assert_eq!(count_fok_limit_orders(&mut db, 2).await.unwrap(), 2);
         assert_eq!(
-            count_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
+            count_fok_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
                 .await
                 .unwrap(),
             1

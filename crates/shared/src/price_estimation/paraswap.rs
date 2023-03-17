@@ -72,7 +72,6 @@ mod tests {
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
             partner: "Test".to_string(),
-            rate_limiter: None,
         };
         let estimator = ParaswapPriceEstimator::new(
             Arc::new(paraswap),

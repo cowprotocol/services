@@ -181,7 +181,7 @@ impl SolvableOrdersCache {
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         counter.checkpoint("invalid_signature", &orders);
 
-        let orders = filter_limit_orders_with_insufficient_sell_amount(orders);
+        let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
         counter.checkpoint("insufficient_sell", &orders);
 
         // If we update due to an explicit notification we can reuse existing balances
@@ -213,11 +213,7 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let mut orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
-        for order in &mut orders {
-            let query = Query::from_order(order);
-            order.metadata.available_balance = new_balances.get(&query).copied();
-        }
+        let orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
         counter.checkpoint("insufficient_balance", &orders);
 
         // create auction
@@ -594,12 +590,16 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
-fn filter_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    // Unwrap because solvable orders always have a surplus fee.
-    orders.retain(|order| match &order.metadata.class {
-        OrderClass::Limit(limit) => order.data.sell_amount > limit.surplus_fee.unwrap(),
-        _ => true,
-    });
+fn filter_fok_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
+    // Unwrap because solvable fok orders always have a surplus fee.
+    orders.retain(
+        |order| match (&order.metadata.class, order.data.partially_fillable) {
+            (OrderClass::Limit(limit), false) => {
+                order.data.sell_amount > limit.surplus_fee.unwrap()
+            }
+            _ => true,
+        },
+    );
     orders
 }
 
@@ -611,13 +611,15 @@ fn filter_mispriced_limit_orders(
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
-        let surplus_fee = match &order.metadata.class {
-            OrderClass::Limit(limit) => limit.surplus_fee,
+        let surplus_fee = match (&order.metadata.class, order.data.partially_fillable) {
+            // Solvable fok limit orders always have a surplus fee.
+            (OrderClass::Limit(limit), false) => limit.surplus_fee.unwrap(),
+            // Partially fillable limit orders do not have a surplus fee.
+            (OrderClass::Limit(_), true) => 0.into(),
             _ => return true,
         };
 
-        // Unwrap because solvable orders always have a surplus fee.
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee.unwrap());
+        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
         if effective_sell_amount.is_zero() {
             return false;
         }
@@ -1229,7 +1231,7 @@ mod tests {
         ];
 
         assert_eq!(
-            filter_limit_orders_with_insufficient_sell_amount(orders),
+            filter_fok_limit_orders_with_insufficient_sell_amount(orders),
             [order(100, 10)]
         );
     }
@@ -1292,6 +1294,14 @@ mod tests {
         assert_eq!(
             filter_mispriced_limit_orders(orders, &prices, &price_factor),
             valid_orders,
+        );
+
+        let mut order = order(10, 21, 0);
+        order.data.partially_fillable = true;
+        let orders = vec![order];
+        assert_eq!(
+            filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
+            1
         );
     }
 

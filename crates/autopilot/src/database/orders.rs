@@ -1,5 +1,6 @@
 use {
     super::Postgres,
+    crate::decoded_settlement::Order,
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::{
@@ -8,9 +9,9 @@ use {
     },
     ethcontract::{H256, U256},
     futures::{StreamExt, TryStreamExt},
-    model::{order::Order, time::now_in_epoch_seconds},
+    model::time::now_in_epoch_seconds,
     number_conversions::u256_to_big_decimal,
-    shared::{db_order_conversions::full_order_into_model_order, fee_subsidy::FeeParameters},
+    shared::fee_subsidy::FeeParameters,
 };
 
 /// New fee data to update a limit order with.
@@ -50,7 +51,7 @@ pub struct LimitOrderQuote {
 
 impl Postgres {
     /// Returns all limit orders that are waiting to be filled.
-    pub async fn open_limit_orders(&self, age: Duration) -> Result<Vec<OrderQuotingData>> {
+    pub async fn open_fok_limit_orders(&self, age: Duration) -> Result<Vec<OrderQuotingData>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["open_limit_orders"])
@@ -58,7 +59,7 @@ impl Postgres {
 
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        database::orders::open_limit_orders(&mut ex, timestamp, now_in_epoch_seconds().into())
+        database::orders::open_fok_limit_orders(&mut ex, timestamp, now_in_epoch_seconds().into())
             .map(|result| result.map_err(anyhow::Error::from))
             .try_collect()
             .await
@@ -66,7 +67,7 @@ impl Postgres {
 
     /// Updates the `surplus_fee` of all limit orders matching the
     /// [`OrderFeeSpecifier`] and stores a quote for each one.
-    pub async fn update_limit_order_fees(
+    pub async fn update_fok_limit_order_fees(
         &self,
         order_spec: &OrderFeeSpecifier,
         update: &FeeUpdate,
@@ -119,7 +120,7 @@ impl Postgres {
             .start_timer();
         let mut ex = self.0.begin().await?;
         let updated_order_uids =
-            database::orders::update_limit_order_fees(&mut ex, order_spec, &update)
+            database::orders::update_fok_limit_order_fees(&mut ex, order_spec, &update)
                 .await
                 .context("update_limit_order_fee")?;
         if let Some(quote) = quote {
@@ -137,13 +138,16 @@ impl Postgres {
         Ok(())
     }
 
-    pub async fn count_limit_orders(&self) -> Result<i64> {
+    pub async fn count_fok_limit_orders(&self) -> Result<i64> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["count_limit_orders"])
             .start_timer();
         let mut ex = self.0.acquire().await?;
-        Ok(database::orders::count_limit_orders(&mut ex, now_in_epoch_seconds().into()).await?)
+        Ok(
+            database::orders::count_fok_limit_orders(&mut ex, now_in_epoch_seconds().into())
+                .await?,
+        )
     }
 
     pub async fn count_limit_orders_with_outdated_fees(&self, age: Duration) -> Result<i64> {
@@ -153,7 +157,7 @@ impl Postgres {
             .start_timer();
         let mut ex = self.0.acquire().await?;
         let timestamp = Utc::now() - age;
-        Ok(database::orders::count_limit_orders_with_outdated_fees(
+        Ok(database::orders::count_fok_limit_orders_with_outdated_fees(
             &mut ex,
             timestamp,
             now_in_epoch_seconds().into(),
@@ -170,7 +174,7 @@ impl Postgres {
         let mut ex = self.0.acquire().await?;
         database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
             .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
+                Ok(order) => order.try_into().map_err(Into::into),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()

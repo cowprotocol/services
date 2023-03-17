@@ -40,26 +40,26 @@ async fn test() {
     let deadline = now.now() + chrono::Duration::seconds(2);
     let interactions = uniswap_interactions
         .iter()
-        .map(|(address, interaction)| {
+        .map(|interaction| {
             json!({
                 "kind": "custom",
                 "internalize": false,
-                "target": hex_address(address.to_owned()),
+                "target": hex_address(interaction.address),
                 "value": "0",
-                "callData": format!("0x{}", hex::encode(interaction)),
+                "callData": format!("0x{}", hex::encode(&interaction.calldata)),
                 "allowances": [],
-                "inputs": [
-                    {
-                        "token": hex_address(sell_token),
-                        "amount": sell_amount.to_string(),
-                    }
-                ],
-                "outputs": [
-                    {
-                        "token": hex_address(buy_token),
-                        "amount": buy_amount.to_string(),
-                    }
-                ],
+                "inputs": interaction.inputs.iter().map(|input| {
+                    json!({
+                        "token": hex_address(input.token.into()),
+                        "amount": input.amount.to_string(),
+                    })
+                }).collect_vec(),
+                "outputs": interaction.outputs.iter().map(|output| {
+                    json!({
+                        "token": hex_address(output.token.into()),
+                        "amount": output.amount.to_string(),
+                    })
+                }).collect_vec(),
             })
         })
         .collect_vec();
@@ -152,15 +152,15 @@ async fn test() {
 
     let interactions = result.get("interactions").unwrap().as_array().unwrap();
     assert_eq!(interactions.len(), uniswap_interactions.len());
-    for (interaction, (target, call_data)) in interactions.iter().zip(uniswap_interactions) {
+    for (actual, expected) in interactions.iter().zip(uniswap_interactions) {
         assert_eq!(
-            interaction.get("target").unwrap(),
-            hex_address(target).as_str()
+            actual.get("target").unwrap(),
+            hex_address(expected.address).as_str()
         );
-        assert_eq!(interaction.get("value").unwrap(), "0");
+        assert_eq!(actual.get("value").unwrap(), "0");
         assert_eq!(
-            interaction.get("callData").unwrap(),
-            &format!("0x{}", hex::encode(call_data))
+            actual.get("callData").unwrap(),
+            &format!("0x{}", hex::encode(expected.calldata))
         );
     }
 }

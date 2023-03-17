@@ -20,7 +20,7 @@ use {
         arguments::display_option,
         bad_token::BadTokenDetecting,
         conversions::U256Ext,
-        rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
+        rate_limiter::{RateLimiter, RateLimitingStrategy},
     },
     anyhow::Result,
     clap::ValueEnum,
@@ -235,8 +235,20 @@ pub enum PriceEstimationError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
-    #[error(transparent)]
-    RateLimited(#[from] RateLimiterError),
+    #[error("Rate limited")]
+    RateLimited,
+}
+
+impl From<reqwest::Error> for PriceEstimationError {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Other(anyhow::anyhow!(error.to_string()))
+    }
+}
+
+impl From<serde_json::Error> for PriceEstimationError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Other(anyhow::anyhow!(error.to_string()))
+    }
 }
 
 impl Clone for PriceEstimationError {
@@ -249,7 +261,7 @@ impl Clone for PriceEstimationError {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
-            Self::RateLimited(err) => Self::RateLimited(err.clone()),
+            Self::RateLimited => Self::RateLimited,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
@@ -389,28 +401,27 @@ pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRation
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
 
-pub async fn rate_limited<T, E>(
+pub async fn rate_limited<T>(
     rate_limiter: Arc<RateLimiter>,
-    estimation: impl Future<Output = Result<T, E>>,
-) -> Result<T, E>
-where
-    E: From<anyhow::Error>,
-    E: From<RateLimiterError>,
-{
+    estimation: impl Future<Output = Result<T, PriceEstimationError>>,
+) -> Result<T, PriceEstimationError> {
     let timed_estimation = async move {
         let start = Instant::now();
         let result = estimation.await;
         (start.elapsed(), result)
     };
-    let rate_limited_estimation = rate_limiter.execute(timed_estimation, |(estimation_time, _)| {
-        *estimation_time > HEALTHY_PRICE_ESTIMATION_TIME
-    });
+    let rate_limited_estimation =
+        rate_limiter.execute(timed_estimation, |(estimation_time, result)| {
+            let too_slow = *estimation_time > HEALTHY_PRICE_ESTIMATION_TIME;
+            let api_rate_limited = matches!(result, Err(PriceEstimationError::RateLimited));
+            too_slow || api_rate_limited
+        });
     match rate_limited_estimation.await {
         Ok((_estimation_time, Ok(result))) => Ok(result),
         // return original PriceEstimationError
         Ok((_estimation_time, Err(err))) => Err(err),
         // convert the RateLimiterError to a PriceEstimationError
-        Err(err) => Err(E::from(err)),
+        Err(_) => Err(PriceEstimationError::RateLimited),
     }
 }
 
