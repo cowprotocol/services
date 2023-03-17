@@ -203,7 +203,7 @@ impl SettlementRating for SettlementRater {
             let inputs = crate::objective_value::Inputs::from_settlement(
                 &settlement,
                 prices,
-                &gas_price,
+                gas_price.clone(),
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();

@@ -1,5 +1,3 @@
-use shared::external_prices::ExternalPrices;
-
 mod merge;
 
 use {
@@ -16,7 +14,7 @@ use {
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
     rand::prelude::SliceRandom,
-    shared::interaction::Interaction,
+    shared::{external_prices::ExternalPrices, interaction::Interaction},
     std::{
         collections::VecDeque,
         fmt::{self, Display, Formatter},

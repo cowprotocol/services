@@ -30,8 +30,9 @@ pub async fn optimize_unwrapping(
     optimized_settlement.encoder.drop_unwrap(weth.address());
 
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone())
+        .estimate_gas(optimized_settlement.clone())
         .await
+        .is_ok()
     {
         tracing::debug!("use internal buffer for unwraps");
         return optimized_settlement;
@@ -62,8 +63,9 @@ pub async fn optimize_unwrapping(
     // the proposed solution is no longer possible. That's why a simulation is
     // necessary.
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone())
+        .estimate_gas(optimized_settlement.clone())
         .await
+        .is_ok()
     {
         tracing::debug!(
             ?amount_to_unwrap,
@@ -116,9 +118,9 @@ mod tests {
 
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
-            .returning(|_| true);
+            .returning(|_| Ok(Default::default()));
 
         let settlement = optimize_unwrapping(
             settlement_with_unwrap(&weth, to_wei(1)),
@@ -147,13 +149,13 @@ mod tests {
 
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
-            .returning(|_| false);
+            .returning(|_| Err(anyhow::anyhow!("simulation failed")));
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(1)
-            .returning(|_| true);
+            .returning(|_| Ok(Default::default()));
 
         let settlement = optimize_unwrapping(
             settlement_with_unwrap(&weth, to_wei(10)),
@@ -180,9 +182,9 @@ mod tests {
         // more than 10 WETH).
         let mut settlement_simulator = MockSettlementSimulating::new();
         settlement_simulator
-            .expect_settlement_would_succeed()
+            .expect_estimate_gas()
             .times(2)
-            .returning(|_| false);
+            .returning(|_| Err(anyhow::anyhow!("simulation failed")));
 
         let weth = dummy_contract!(WETH9, [0x42; 20]);
         let weth_address = weth.address();

@@ -182,7 +182,7 @@ impl Interaction for InteractionData {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Score {
     /// The score used for ranking.
