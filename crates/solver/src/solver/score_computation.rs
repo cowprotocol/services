@@ -175,6 +175,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        dbg!(score);
+        assert_eq!(score, 228957825032329696u128.into());
     }
 }
