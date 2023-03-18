@@ -1,30 +1,35 @@
-pub mod optimize_buffer_usage;
-pub mod optimize_unwrapping;
+mod optimize_buffer_usage;
+mod optimize_score;
+mod optimize_unwrapping;
 
 use {
     crate::{
         settlement::Settlement,
         settlement_simulation::simulate_and_estimate_gas_at_current_block,
-        solver::http_solver::buffers::BufferRetriever,
+        solver::{http_solver::buffers::BufferRetriever, score_computation::ScoreCalculator},
     },
+    anyhow::{Context, Result},
     contracts::{GPv2Settlement, WETH9},
-    ethcontract::Account,
+    ethcontract::{Account, U256},
     gas_estimation::GasPrice1559,
     optimize_buffer_usage::optimize_buffer_usage,
+    optimize_score::compute_score,
     optimize_unwrapping::optimize_unwrapping,
     primitive_types::H160,
     shared::{
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         http_solver::model::InternalizationStrategy,
         token_list::AutoUpdatingTokenList,
     },
 };
 
 /// Determines whether a settlement would be executed successfully.
+/// If the settlement would succeed, the gas estimate is returned.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool;
+    async fn estimate_gas(&self, settlement: Settlement) -> Result<U256>;
 }
 
 pub struct SettlementSimulator {
@@ -36,15 +41,17 @@ pub struct SettlementSimulator {
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
+    async fn estimate_gas(&self, settlement: Settlement) -> Result<U256> {
         let settlement = settlement.encode(self.internalization);
-        let result = simulate_and_estimate_gas_at_current_block(
+        simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
             self.gas_price,
         )
-        .await;
-        matches!(result, Ok(results) if results[0].is_ok())
+        .await?
+        .pop()
+        .context("empty result")?
+        .map_err(Into::into)
     }
 }
 
@@ -58,6 +65,8 @@ pub trait PostProcessing: Send + Sync + 'static {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
+        score_calculator: Option<&ScoreCalculator>,
+        prices: &ExternalPrices,
     ) -> Settlement;
 }
 
@@ -97,11 +106,13 @@ impl PostProcessing for PostProcessingPipeline {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
+        score_calculator: Option<&ScoreCalculator>,
+        prices: &ExternalPrices,
     ) -> Settlement {
         let simulator = SettlementSimulator {
             settlement_contract: self.settlement_contract.clone(),
             gas_price,
-            solver_account,
+            solver_account: solver_account.clone(),
             internalization: InternalizationStrategy::SkipInternalizableInteraction,
         };
 
@@ -113,13 +124,29 @@ impl PostProcessing for PostProcessingPipeline {
         .await;
 
         // an error will leave the settlement unmodified
-        optimize_unwrapping(
+        let optimized_solution = optimize_unwrapping(
             optimized_solution,
             &simulator,
             &self.buffer_retriever,
             &self.weth,
             self.unwrap_factor,
         )
-        .await
+        .await;
+
+        match (optimized_solution.score, score_calculator) {
+            (None, Some(score_calculator)) => Settlement {
+                score: compute_score(
+                    &optimized_solution,
+                    &simulator,
+                    score_calculator,
+                    gas_price,
+                    prices,
+                    &solver_account.address(),
+                )
+                .await,
+                ..optimized_solution
+            },
+            _ => optimized_solution,
+        }
     }
 }
