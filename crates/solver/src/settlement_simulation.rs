@@ -115,7 +115,13 @@ pub async fn simulate_and_error_with_tenderly_link(
         .into_iter()
         .map(|(future, transaction_builder)| {
             future.now_or_never().unwrap().map(|_| ()).map_err(|err| {
-                Error::new(err).context(tenderly_link(block, network_id, transaction_builder, None))
+                Error::new(err).context(tenderly_link(
+                    block,
+                    network_id,
+                    transaction_builder,
+                    Some(gas_price),
+                    None,
+                ))
             })
         })
         .collect()
@@ -217,6 +223,7 @@ pub fn tenderly_link(
     current_block: u64,
     network_id: &str,
     tx: TransactionBuilder<DynTransport>,
+    gas_price: Option<GasPrice1559>,
     access_list: Option<AccessList>,
 ) -> String {
     // Tenderly simulates transactions for block N at transaction index 0, while
@@ -225,10 +232,14 @@ pub fn tenderly_link(
     // to be as close as possible to the `eth_call`, we want to create it on the
     // next block (since `block_N{tx_last} ~= block_(N+1){tx_0}`).
     let next_block = current_block + 1;
+    let gas_price = gas_price
+        .map(|gas_price| U256::from_f64_lossy(gas_price.effective_gas_price()))
+        .unwrap_or_default();
     let link = format!(
-        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
+        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice={}&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
         next_block,
         tx.from.unwrap().address(),
+        gas_price,
         tx.to.unwrap(),
         network_id,
         hex::encode(tx.data.unwrap().0)
@@ -712,7 +723,7 @@ mod tests {
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
             "Tenderly simulation for generated tx: {:?}",
-            tenderly_link(13830346u64, &network_id, settlement, None)
+            tenderly_link(13830346u64, &network_id, settlement, None, None)
         );
     }
 
