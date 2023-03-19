@@ -336,7 +336,7 @@ pub struct Arguments {
 
     /// Should we skip settlements with non-positive score for solver
     /// competition?
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub skip_non_positive_score_settlements: bool,
 }
 

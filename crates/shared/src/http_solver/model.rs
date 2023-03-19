@@ -373,7 +373,7 @@ pub enum SolverRejectionReason {
     /// re-create simulation locally
     SimulationFailure(TransactionWithError),
 
-    /// The solution don't have a positive score. Currently this can happen
+    /// The solution doesn't have a positive score. Currently this can happen
     /// only if the objective value is negative.
     NonPositiveScore,
 }
