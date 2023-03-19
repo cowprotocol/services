@@ -334,7 +334,8 @@ pub struct Arguments {
     #[clap(flatten)]
     pub score_params: score_computation::Arguments,
 
-    /// Should we skip settlements with non-positive score for solver competition?
+    /// Should we skip settlements with non-positive score for solver
+    /// competition?
     #[clap(long, env, default_value = "true")]
     pub skip_non_positive_score_settlements: bool,
 }

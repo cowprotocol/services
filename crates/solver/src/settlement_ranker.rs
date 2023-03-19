@@ -210,7 +210,7 @@ impl SettlementRanker {
                         auction_id,
                         AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore),
                     );
-                    self.metrics.settlement_invalid_score(solver.name());
+                    self.metrics.settlement_non_positive_score(solver.name());
                 }
                 positive_score
             });
