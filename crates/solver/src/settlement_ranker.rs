@@ -43,7 +43,7 @@ pub struct SettlementRanker {
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
     pub auction_rewards_activation_timestamp: DateTime<Utc>,
-    pub skip_zero_score_settlements: bool,
+    pub skip_non_positive_score_settlements: bool,
 }
 
 impl SettlementRanker {
@@ -197,7 +197,7 @@ impl SettlementRanker {
 
         // Filter out settlements with non-positive score.
         if Utc::now() > self.auction_rewards_activation_timestamp // CIP20 activated
-        && self.skip_zero_score_settlements
+        && self.skip_non_positive_score_settlements
         {
             rated_settlements.retain(|(solver, settlement, _)| {
                 let positive_score = settlement.score.score() > 0.into();

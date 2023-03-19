@@ -92,7 +92,7 @@ impl Driver {
         solver_time_limit: Duration,
         block_time: Duration,
         additional_mining_deadline: Duration,
-        skip_zero_score_settlements: bool,
+        skip_non_positive_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -119,7 +119,7 @@ impl Driver {
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
             auction_rewards_activation_timestamp,
-            skip_zero_score_settlements,
+            skip_non_positive_score_settlements,
         };
 
         let logger = DriverLogger {
@@ -393,7 +393,6 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
-
         // In transition period last settlement is not necessarily the one with the
         // highest score. So we need to use the score ranking to determine the winner.
         // CIP20 TODO - add to if statement below, once the transition period is over.
