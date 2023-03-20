@@ -182,14 +182,14 @@ impl TryFrom<StateOverride> for StateObject {
 /// save failed simulations on Tenderly to facilitate debugging.
 pub struct Web3ThenTenderly {
     web3: Web3,
-    tenderly: TenderlyCodeSimulator,
+    tenderly: Arc<TenderlyCodeSimulator>,
 }
 
 impl Web3ThenTenderly {
     pub fn new(web3: Web3, tenderly: TenderlyCodeSimulator) -> Self {
         Self {
             web3,
-            tenderly: tenderly.save(true, true),
+            tenderly: Arc::new(tenderly.save(true, true)),
         }
     }
 }
@@ -201,13 +201,20 @@ impl CodeSimulating for Web3ThenTenderly {
         call: CallRequest,
         overrides: StateOverrides,
     ) -> Result<Vec<u8>, SimulationError> {
-        match self.web3.simulate(call.clone(), overrides.clone()).await {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                tracing::warn!(?err, "web3 code simulation failed");
-                self.tenderly.simulate(call, overrides).await
-            }
+        let result = self.web3.simulate(call.clone(), overrides.clone()).await;
+
+        // Spawn a background thread to simulate on Tenderly. This allows us:
+        // 1. To return right away with the result form the Web3 simulator
+        // 2. Still simulate and save the simulation on Tenderly for debugging
+        //    purposes.
+        if let Err(err) = &result {
+            tracing::warn!(?err, "web3 code simulation failed, fallback to Tenderly");
+
+            let tenderly = self.tenderly.clone();
+            tokio::spawn(async move { tenderly.simulate(call, overrides).await });
         }
+
+        result
     }
 }
 
@@ -218,6 +225,7 @@ mod tests {
         crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
         hex_literal::hex,
         maplit::hashmap,
+        std::time::Duration,
     };
 
     async fn test_simulators() -> Vec<Arc<dyn CodeSimulating>> {
@@ -269,6 +277,10 @@ mod tests {
 
             assert_eq!(output, [42]);
         }
+
+        // Make sure to wait for background futures - `tokio::test` does not
+        // seem to do this.
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     #[ignore]
@@ -310,6 +322,10 @@ mod tests {
             // expected.
             assert!(matches!(result, Err(SimulationError::Revert(Some(_)))));
         }
+
+        // Make sure to wait for background futures - `tokio::test` does not
+        // seem to do this.
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     #[tokio::test]
