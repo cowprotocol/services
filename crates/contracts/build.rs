@@ -313,7 +313,9 @@ fn main() {
 
     // Support contracts used for trade and token simulations.
     generate_contract("AnyoneAuthenticator");
-    generate_contract("PhonyERC20");
+    generate_contract_with_config("PhonyERC20", |builder| {
+        builder.add_method_alias("burn(address,uint256)", "burn_2")
+    });
     generate_contract("Trader");
 
     // Support contract used for global block stream.

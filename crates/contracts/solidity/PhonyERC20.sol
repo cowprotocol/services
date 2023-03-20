@@ -79,6 +79,40 @@ contract PhonyERC20 {
         return true;
     }
 
+    /// @dev Destroy tokens held by `msg.sender`. This function will prefer
+    /// burning the implementation ERC20 balance and fallback to using internal
+    /// balances if needed. This way, we make sure to call the implementation's
+    /// `transfer` function whenever possible, for as much token as possible.
+    /// Note that we always call `burn(0)` when internal balances are
+    /// exclusively burnt, thus ensuring that the implementation does in fact
+    /// have a `burn` function.
+    function burn(uint256 value) external {
+        uint256 realAmount = _transferExcessInternally(msg.sender, address(0), value);
+        if (realAmount > 0) {
+            IMPLEMENTATION.doDelegatecall(abi.encodeWithSelector(hex"42966c68", realAmount))
+                .check("PhonyERC20: burn failed");
+        }
+    }
+
+    /// @dev See {burn}. This is the non-standard interface used by the DAI
+    /// token for example.
+    function burn(address from, uint256 value) external {
+        uint256 realAmount = _transferExcessInternally(from, address(0), value);
+        if (realAmount > 0) {
+            IMPLEMENTATION.doDelegatecall(abi.encodeWithSelector(hex"9dc29fac", from, realAmount))
+                .check("PhonyERC20: burn failed");
+        }
+    }
+
+    /// @dev See {burn}.
+    function burnFrom(address from, uint256 value) public {
+        uint256 realAmount = _transferExcessInternally(from, address(0), value);
+        if (realAmount > 0) {
+            IMPLEMENTATION.doDelegatecall(abi.encodeCall(this.burnFrom, (from, realAmount)))
+                .check("PhonyERC20: burnFrom failed");
+        }
+    }
+
     function mintPhonyTokens(address receiver, uint256 amount) external returns (bool) {
         _balancesSlot()[receiver] += amount;
         return true;
