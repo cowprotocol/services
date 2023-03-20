@@ -65,6 +65,7 @@ impl PriceEstimatorType {
 pub enum TradeValidatorKind {
     Web3,
     Tenderly,
+    Web3ThenTenderly,
 }
 
 /// Shared price estimation configuration arguments.
