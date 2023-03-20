@@ -520,6 +520,7 @@ pub async fn run(args: Arguments) {
         args.solver_time_limit,
         network_time_between_blocks,
         args.additional_mining_deadline,
+        args.skip_non_positive_score_settlements,
         current_block_stream.clone(),
         solution_submitter,
         api,

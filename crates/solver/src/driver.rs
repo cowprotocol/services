@@ -92,6 +92,7 @@ impl Driver {
         solver_time_limit: Duration,
         block_time: Duration,
         additional_mining_deadline: Duration,
+        skip_non_positive_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -118,6 +119,7 @@ impl Driver {
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
             auction_rewards_activation_timestamp,
+            skip_non_positive_score_settlements,
         };
 
         let logger = DriverLogger {

@@ -333,6 +333,11 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub score_params: score_computation::Arguments,
+
+    /// Should we skip settlements with non-positive score for solver
+    /// competition?
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub skip_non_positive_score_settlements: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -465,6 +470,7 @@ impl std::fmt::Display for Arguments {
             self.additional_mining_deadline
         )?;
         writeln!(f, "{}", self.score_params)?;
+        writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
         Ok(())
     }
 }

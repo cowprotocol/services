@@ -43,6 +43,7 @@ pub struct SettlementRanker {
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
     pub auction_rewards_activation_timestamp: DateTime<Utc>,
+    pub skip_non_positive_score_settlements: bool,
 }
 
 impl SettlementRanker {
@@ -192,6 +193,27 @@ impl SettlementRanker {
                     },
                 )),
             );
+        }
+
+        // Filter out settlements with non-positive score.
+        if Utc::now() > self.auction_rewards_activation_timestamp // CIP20 activated
+        && self.skip_non_positive_score_settlements
+        {
+            rated_settlements.retain(|(solver, settlement, _)| {
+                let positive_score = settlement.score.score() > 0.into();
+                if !positive_score {
+                    tracing::debug!(
+                        solver_name = %solver.name(),
+                        "settlement filtered for having non-positive score",
+                    );
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore),
+                    );
+                    self.metrics.settlement_non_positive_score(solver.name());
+                }
+                positive_score
+            });
         }
 
         // Before sorting, make sure to shuffle the settlements. This is to make sure we
