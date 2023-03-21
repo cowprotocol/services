@@ -1,5 +1,5 @@
 use {
-    crate::domain::{eth, order},
+    crate::domain::{dex, eth, order},
     std::{
         collections::HashMap,
         sync::Mutex,
@@ -17,39 +17,47 @@ pub struct PartialFiller {
 }
 
 impl PartialFiller {
-    /// Returns which `executed_amount` should be tried next for the given
-    /// order.
-    pub fn next_fill_amount(&self, order: &order::Order) -> eth::Asset {
-        let mut total_execution = match order.side {
-            order::Side::Buy => order.buy,
-            order::Side::Sell => order.sell,
-        };
-
+    /// Returns which dex query should be tried for the given order. Takes
+    /// information of previous partial fill attempts into account.
+    pub fn dex_order(&self, order: &order::Order) -> dex::Order {
         if !order.partially_fillable {
-            return total_execution;
+            return dex::Order::new(order);
         }
 
+        let (token, total_amount) = match order.side {
+            order::Side::Buy => (order.buy.token, order.buy.amount),
+            order::Side::Sell => (order.sell.token, order.sell.amount),
+        };
         let now = Instant::now();
-        let next_amount = match self.amounts.lock().unwrap().entry(order.uid) {
+
+        let amount = match self.amounts.lock().unwrap().entry(order.uid) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(CacheEntry {
-                    next_amount: total_execution.amount,
+                    next_amount: total_amount,
                     last_requested: now,
                 });
-                total_execution.amount
+                total_amount
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
-                // `total_execution.amount` might be lower than what we wanted to try next if
+                // `total_amount` might be lower than what we wanted to try next if
                 // some other solver partially filled the order in the mean time.
-                entry.next_amount = entry.next_amount.min(total_execution.amount);
+                entry.next_amount = entry.next_amount.min(total_amount);
                 entry.next_amount
             }
         };
 
-        total_execution.amount = next_amount;
-        total_execution
+        let (sell, buy) = match order.side {
+            order::Side::Buy => (order.sell, eth::Asset { token, amount }),
+            order::Side::Sell => (eth::Asset { token, amount }, order.buy),
+        };
+
+        dex::Order::new(&order::Order {
+            sell,
+            buy,
+            ..*order
+        })
     }
 
     /// Adjusts the next fill amount that should be tried. Always halfes the

@@ -12,6 +12,7 @@ use {
 
 mod balancer;
 mod baseline;
+mod dex;
 mod legacy;
 mod mock;
 mod naive;

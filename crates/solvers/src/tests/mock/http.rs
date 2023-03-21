@@ -61,7 +61,11 @@ pub enum Expectation {
 }
 
 /// Set up an mock external HTTP API.
-pub async fn setup(expectations: Vec<Expectation>) -> SocketAddr {
+pub async fn setup(mut expectations: Vec<Expectation>) -> SocketAddr {
+    // Reverse expectations so test can specify them in natural order while allowing
+    // us to simply `.pop()` the last element.
+    expectations.reverse();
+
     let state = Arc::new(Mutex::new(expectations));
     let app = axum::Router::new()
         .route(

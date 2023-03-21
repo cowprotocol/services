@@ -5,7 +5,7 @@ use {
     crate::{
         domain::{
             auction,
-            dex::{self, slippage},
+            dex::slippage,
             order,
             solution,
             solver::dex::partial_fill_handler::PartialFiller,
@@ -70,9 +70,8 @@ impl Dex {
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
-            let next_fill_amount = self.partial_fill_handler.next_fill_amount(&order);
-            let order = dex::Order::new(&order);
-            let slippage = self.slippage.relative(&next_fill_amount, prices);
+            let order = self.partial_fill_handler.dex_order(&order);
+            let slippage = self.slippage.relative(&order.amount(), prices);
             self.dex.swap(&order, &slippage, gas).await
         };
 
