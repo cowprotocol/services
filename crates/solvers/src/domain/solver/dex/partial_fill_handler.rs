@@ -91,6 +91,3 @@ struct CacheEntry {
     next_amount: eth::U256,
     last_requested: Instant,
 }
-
-// TODO Figure out current problems
-// Don't reduce fillable amount indefinitely and when to reset?

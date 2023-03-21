@@ -1,6 +1,5 @@
-//! Tests that dex solvers can make progress on partially fillable orders across
-//! multiple requests. We are using the balancer API here because that's the
-//! easies to mock.
+//! Tests that dex solvers consecutively decrease the amounts they try to fill partially fillable
+//! orders with across `/solve` requests to eventually find a fillable amount that works.
 
 use {
     crate::tests::{self, balancer, mock},
@@ -19,8 +18,7 @@ async fn test() {
         })
     };
 
-    // response returned when no route could be found
-    let inner_response_error = json!({
+    let no_swap_found_response = json!({
         "tokenAddresses": [],
         "swaps": [],
         "swapAmount": "0",
@@ -36,22 +34,22 @@ async fn test() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
         req: inner_request("16000000000000000000"),
-        res: inner_response_error.clone(),
+        res: no_swap_found_response.clone(),
     },
     mock::http::Expectation::Post {
         path: mock::http::Path::Any,
         req: inner_request("8000000000000000000"),
-        res: inner_response_error.clone(),
+        res: no_swap_found_response.clone(),
     },
     mock::http::Expectation::Post {
         path: mock::http::Path::Any,
         req: inner_request("4000000000000000000"),
-        res: inner_response_error.clone(),
+        res: no_swap_found_response.clone(),
     },
     mock::http::Expectation::Post {
         path: mock::http::Path::Any,
         req: inner_request("2000000000000000000"),
-        res: inner_response_error.clone(),
+        res: no_swap_found_response.clone(),
     },
     mock::http::Expectation::Post {
         path: mock::http::Path::Any,
@@ -141,6 +139,7 @@ async fn test() {
 
     let solution = engine.solve(auction.clone()).await;
 
+    // Solver finally found a solution after 5 tries.
     assert_eq!(
         solution,
         json!({

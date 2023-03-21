@@ -23,8 +23,6 @@ pub struct Dex {
     slippage: slippage::Limits,
 
     /// Helps to manage the strategy to settle partially fillable orders.
-    // Should this be moved into the solver directly as most other solvers will use a different
-    // mechanism?
     partial_fill_handler: PartialFiller,
 }
 
