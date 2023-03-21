@@ -32,54 +32,57 @@ async fn test() {
         "marketSp": "0",
     });
 
-    let api = mock::http::setup(vec![mock::http::Expectation::Post {
-        path: mock::http::Path::Any,
-        req: inner_request("16000000000000000000"),
-        res: no_swap_found_response.clone(),
-    },
-    mock::http::Expectation::Post {
-        path: mock::http::Path::Any,
-        req: inner_request("8000000000000000000"),
-        res: no_swap_found_response.clone(),
-    },
-    mock::http::Expectation::Post {
-        path: mock::http::Path::Any,
-        req: inner_request("4000000000000000000"),
-        res: no_swap_found_response.clone(),
-    },
-    mock::http::Expectation::Post {
-        path: mock::http::Path::Any,
-        req: inner_request("2000000000000000000"),
-        res: no_swap_found_response.clone(),
-    },
-    mock::http::Expectation::Post {
-        path: mock::http::Path::Any,
-        req: inner_request("1000000000000000000"),
-        res: json!({
-            "tokenAddresses": [
-                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                "0xba100000625a3754423978a60c9317c58a424e3d"
-            ],
-            "swaps": [
-                {
-                    "poolId": "0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014",
-                    "assetInIndex": 0,
-                    "assetOutIndex": 1,
-                    "amount": "1000000000000000000",
-                    "userData": "0x",
-                    "returnAmount": "227598784442065388110"
-                }
-            ],
-            "swapAmount": "1000000000000000000",
-            "swapAmountForSwaps": "1000000000000000000",
-            "returnAmount": "227598784442065388110",
-            "returnAmountFromSwaps": "227598784442065388110",
-            "returnAmountConsideringFees": "227307710853355710706",
-            "tokenIn": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-            "tokenOut": "0xba100000625a3754423978a60c9317c58a424e3d",
-            "marketSp": "0.004393607339632106",
-        }),
-    }])
+    let api = mock::http::setup(vec![
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("16000000000000000000"),
+            res: no_swap_found_response.clone(),
+        },
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("8000000000000000000"),
+            res: no_swap_found_response.clone(),
+        },
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("4000000000000000000"),
+            res: no_swap_found_response.clone(),
+        },
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("2000000000000000000"),
+            res: no_swap_found_response.clone(),
+        },
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("1000000000000000000"),
+            res: json!({
+                "tokenAddresses": [
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                    "0xba100000625a3754423978a60c9317c58a424e3d"
+                ],
+                "swaps": [
+                    {
+                        "poolId": "0x5c6ee304399dbdb9c8ef030ab642b10820\
+                            db8f56000200000000000000000014",
+                        "assetInIndex": 0,
+                        "assetOutIndex": 1,
+                        "amount": "1000000000000000000",
+                        "userData": "0x",
+                        "returnAmount": "227598784442065388110"
+                    }
+                ],
+                "swapAmount": "1000000000000000000",
+                "swapAmountForSwaps": "1000000000000000000",
+                "returnAmount": "227598784442065388110",
+                "returnAmountFromSwaps": "227598784442065388110",
+                "returnAmountConsideringFees": "227307710853355710706",
+                "tokenIn": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                "tokenOut": "0xba100000625a3754423978a60c9317c58a424e3d",
+                "marketSp": "0.004393607339632106",
+            }),
+        },
+    ])
     .await;
 
     let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
