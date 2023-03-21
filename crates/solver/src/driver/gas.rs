@@ -36,7 +36,10 @@ impl Estimator {
     /// This method panics if the `timing` parameter contains 0-durations or the
     /// run duration is too long relative to the block duration.
     pub fn new(inner: Arc<dyn GasPriceEstimating>, timing: Timing) -> Self {
-        let max_fee_factor = MAX_BASE_GAS_FEE_INCREASE_PER_BLOCK.powi(timing.blocks_per_run() as _);
+        let max_fee_factor = MAX_BASE_GAS_FEE_INCREASE_PER_BLOCK
+            .powi(timing.blocks_per_run() as _)
+            .min(MAX_FEE_FACTOR);
+
         Self {
             inner,
             max_fee_factor,
@@ -97,6 +100,12 @@ pub struct Timing {
 /// [Block 12998225](https://etherscan.io/block/12998225) with base fee of `43.353224173` and ~100% over the gas target.
 /// Next [block 12998226](https://etherscan.io/block/12998226) has base fee of `48.771904644` which is an increase of ~12.5%.
 const MAX_BASE_GAS_FEE_INCREASE_PER_BLOCK: f64 = 1.125;
+
+/// The maximum `max_fee_factor` to use. This is to prevent exceedingly high
+/// `max_fee_factor` values on networks with very short block intervals (like
+/// on Gnosis Chain, which would require a factor of 30 for the currently
+/// configured solution timing values.
+const MAX_FEE_FACTOR: f64 = 5.;
 
 impl Timing {
     fn blocks_per_run(&self) -> u16 {

@@ -148,7 +148,7 @@ impl Mempool {
                 settlement.boundary().inner,
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
-                    gas_estimate: gas.limit.into(),
+                    gas_estimate: gas.estimate.into(),
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
                     network_id: self.eth.network_id().to_string(),
