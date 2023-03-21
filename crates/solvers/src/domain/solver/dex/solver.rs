@@ -8,6 +8,7 @@ use {
             dex::{self, slippage},
             order,
             solution,
+            solver::dex::partial_fill_handler::PartialFiller,
         },
         infra,
     },
@@ -16,13 +17,26 @@ use {
 
 pub struct Dex {
     /// The DEX API client.
-    pub dex: infra::dex::Dex,
+    dex: infra::dex::Dex,
 
     /// The slippage configuration to use for the solver.
-    pub slippage: slippage::Limits,
+    slippage: slippage::Limits,
+
+    /// Helps to manage the strategy to settle partially fillable orders.
+    // Should this be moved into the solver directly as most other solvers will use a different
+    // mechanism?
+    partial_fill_handler: PartialFiller,
 }
 
 impl Dex {
+    pub fn new(dex: infra::dex::Dex, slippage: slippage::Limits) -> Self {
+        Self {
+            dex,
+            slippage,
+            partial_fill_handler: Default::default(),
+        }
+    }
+
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         // TODO:
         // * order prioritization
@@ -44,6 +58,8 @@ impl Dex {
             }
         }
 
+        self.partial_fill_handler.collect_garbage();
+
         solutions
     }
 
@@ -54,14 +70,26 @@ impl Dex {
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
+            let next_fill_amount = self.partial_fill_handler.next_fill_amount(&order);
             let order = dex::Order::new(&order);
-            let slippage = self.slippage.relative(&order.amount(), prices);
+            let slippage = self.slippage.relative(&next_fill_amount, prices);
             self.dex.swap(&order, &slippage, gas).await
         };
 
         let swap = match swap {
             Ok(swap) => swap,
-            Err(err @ infra::dex::Error::NotFound | err @ infra::dex::Error::OrderNotSupported) => {
+            Err(err @ infra::dex::Error::NotFound) => {
+                if order.partially_fillable {
+                    // Only adjust the amount to try next if we are sure the API worked correctly
+                    // yet still wasn't able to provide a swap.
+                    self.partial_fill_handler.reduce_next_try(order.uid);
+                    tracing::debug!("decreased partial fill amount for next try");
+                } else {
+                    tracing::debug!(?err, "skipping order");
+                }
+                return None;
+            }
+            Err(err @ infra::dex::Error::OrderNotSupported) => {
                 tracing::debug!(?err, "skipping order");
                 return None;
             }

@@ -34,19 +34,19 @@ pub async fn run(
         }
         cli::Command::ZeroEx { config } => {
             let config = config::zeroex::file::load(&config).await;
-            Solver::Dex(solver::Dex {
-                dex: dex::Dex::ZeroEx(
+            Solver::Dex(solver::Dex::new(
+                dex::Dex::ZeroEx(
                     dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
                 ),
-                slippage: config.slippage,
-            })
+                config.slippage,
+            ))
         }
         cli::Command::Balancer { config } => {
             let config = config::balancer::file::load(&config).await;
-            Solver::Dex(solver::Dex {
-                dex: dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
-                slippage: config.slippage,
-            })
+            Solver::Dex(solver::Dex::new(
+                dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
+                config.slippage,
+            ))
         }
     };
 
