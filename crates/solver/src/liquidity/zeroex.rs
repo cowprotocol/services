@@ -370,7 +370,8 @@ pub mod tests {
             allowances: Arc::new(allowances),
         };
         let mut encoder = SettlementEncoder::default();
-        handler.encode(100.into(), &mut encoder).unwrap();
+        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        handler.encode(execution, &mut encoder).unwrap();
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
             .interactions;
@@ -409,7 +410,8 @@ pub mod tests {
             allowances: Arc::new(allowances),
         };
         let mut encoder = SettlementEncoder::default();
-        handler.encode(100.into(), &mut encoder).unwrap();
+        let execution = LimitOrderExecution::new(100.into(), 0.into());
+        handler.encode(execution, &mut encoder).unwrap();
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
             .interactions;

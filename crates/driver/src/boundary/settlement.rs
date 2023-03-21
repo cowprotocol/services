@@ -37,6 +37,7 @@ use {
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
             AmmOrderExecution,
+            LimitOrderExecution,
         },
         settlement_simulation::settle_method_builder,
     },
@@ -85,12 +86,26 @@ impl Settlement {
                         "unexpected empty execution",
                     );
 
-                    (to_boundary_order(&trade.order), trade.executed.into())
+                    let execution = LimitOrderExecution {
+                        filled_amount: trade.executed.into(),
+                        // TODO this needs to take partially fillable orders into account where the
+                        // solver computes the solver fee.
+                        executed_solver_fee: trade.order.fee.solver.0,
+                    };
+
+                    (to_boundary_order(&trade.order), execution)
                 }
-                competition::solution::Trade::Jit(trade) => (
-                    to_boundary_jit_order(&DomainSeparator(domain.0), &trade.order),
-                    trade.executed.into(),
-                ),
+                competition::solution::Trade::Jit(trade) => {
+                    let execution = LimitOrderExecution {
+                        filled_amount: trade.executed.into(),
+                        executed_solver_fee: 0.into(),
+                    };
+
+                    (
+                        to_boundary_jit_order(&DomainSeparator(domain.0), &trade.order),
+                        execution,
+                    )
+                }
             };
 
             let boundary_limit_order = order_converter.normalize_limit_order(boundary_order)?;

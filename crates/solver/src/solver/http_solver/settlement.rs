@@ -733,7 +733,10 @@ mod tests {
             }]
         );
 
-        assert_eq!(limit_handler.calls(), vec![7.into()]);
+        assert_eq!(
+            limit_handler.calls(),
+            vec![LimitOrderExecution::new(7.into(), 0.into())]
+        );
         assert_eq!(
             cp_amm_handler.calls(),
             vec![AmmOrderExecution {
@@ -1130,6 +1133,7 @@ mod tests {
             order: Default::default(),
             executed_buy_amount: U256::zero(),
             executed_sell_amount: U256::zero(),
+            executed_solver_fee: None,
             exec_plan: None,
         }];
         let merged_executions = merge_and_order_executions(

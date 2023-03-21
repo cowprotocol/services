@@ -192,7 +192,7 @@ pub mod tests {
         let sell_token = H160([0x21; 20]);
         let native_token = dummy_contract!(WETH9, native_token_address);
 
-        let executed_amount = U256::from(1337);
+        let execution = LimitOrderExecution::new(1337.into(), 0.into());
         let executed_buy_amount = U256::from(2 * 1337);
         let solver_fee = U256::from(1234);
 
@@ -215,13 +215,12 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token: native_token.clone(),
-            solver_fee,
         };
 
         assert_settlement_encoded_with(
             prices,
             order_settlement_handler,
-            executed_amount,
+            execution.clone(),
             |encoder| {
                 encoder
                     .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
@@ -231,7 +230,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, executed_amount, solver_fee)
+                    .add_trade(order, execution.filled_amount, solver_fee)
                     .is_ok());
             },
         );
@@ -251,7 +250,7 @@ pub mod tests {
             let native_token_address = H160([0x42; 20]);
             let sell_token = H160([0x21; 20]);
             let native_token = dummy_contract!(WETH9, native_token_address);
-            let executed_amount = U256::from(1337);
+            let execution = LimitOrderExecution::new(1337.into(), 0.into());
             let prices = hashmap! {
                 native_token.address() => U256::from(1),
                 sell_token => U256::from(2),
@@ -275,21 +274,22 @@ pub mod tests {
             let order_settlement_handler = OrderSettlementHandler {
                 order: order.clone(),
                 native_token: native_token.clone(),
-                solver_fee: 0.into(),
             };
 
             assert_settlement_encoded_with(
                 prices,
                 order_settlement_handler,
-                executed_amount,
+                execution.clone(),
                 |encoder| {
                     encoder
                         .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
                         .unwrap();
-                    assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
+                    assert!(encoder
+                        .add_trade(order, execution.filled_amount, 0.into())
+                        .is_ok());
                     encoder.add_unwrap(UnwrapWethInteraction {
                         weth: native_token,
-                        amount: executed_amount,
+                        amount: execution.filled_amount,
                     });
                 },
             );
@@ -304,7 +304,7 @@ pub mod tests {
         let not_buy_eth_address = H160([0xff; 20]);
         assert_ne!(not_buy_eth_address, BUY_ETH_ADDRESS);
 
-        let executed_amount = U256::from(1337);
+        let execution = LimitOrderExecution::new(1337.into(), 0.into());
         let prices = hashmap! {
             not_buy_eth_address => U256::from(100),
             sell_token => U256::from(200),
@@ -323,15 +323,16 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token,
-            solver_fee: 0.into(),
         };
 
         assert_settlement_encoded_with(
             prices,
             order_settlement_handler,
-            executed_amount,
+            execution.clone(),
             |encoder| {
-                assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
+                assert!(encoder
+                    .add_trade(order, execution.filled_amount, 0.into())
+                    .is_ok());
             },
         );
     }

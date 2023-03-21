@@ -212,7 +212,7 @@ impl LimitOrder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LimitOrderExecution {
     /// The amount that the order `side` (`buy`, `sell`) should be filled by
     /// this trade.
@@ -221,6 +221,15 @@ pub struct LimitOrderExecution {
     /// partially fillable limit orders or determined by the protocol for
     /// everything else.
     pub executed_solver_fee: U256,
+}
+
+impl LimitOrderExecution {
+    pub fn new(filled: U256, solver_fee: U256) -> Self {
+        Self {
+            filled_amount: filled,
+            executed_solver_fee: solver_fee,
+        }
+    }
 }
 
 impl Settleable for LimitOrder {

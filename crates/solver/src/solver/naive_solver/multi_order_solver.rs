@@ -826,9 +826,11 @@ mod tests {
             let mut settlement = Settlement::new(prices);
             for order in orders.iter().cloned() {
                 let limit_order = LimitOrder::from(order);
-                settlement
-                    .with_liquidity(&limit_order, limit_order.full_execution_amount())
-                    .unwrap();
+                let execution = LimitOrderExecution::new(
+                    limit_order.full_execution_amount(),
+                    limit_order.solver_fee,
+                );
+                settlement.with_liquidity(&limit_order, execution).unwrap();
             }
             settlement
         };
