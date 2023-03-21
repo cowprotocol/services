@@ -275,7 +275,7 @@ fn gas_price_for_simulation(gas_price: &GasPrice1559) -> GasPrice1559 {
     let max_priority_fee_per_gas = bumped_effective_gas_price - gas_price.base_fee_per_gas;
 
     GasPrice1559 {
-        max_fee_per_gas: gas_price.max_fee_per_gas.max(bumped_effective_gas_price),
+        max_fee_per_gas: gas_price.max_fee_per_gas * SOLVER_BALANCE_MULTIPLIER,
         max_priority_fee_per_gas,
         base_fee_per_gas: gas_price.base_fee_per_gas,
     }
@@ -295,7 +295,11 @@ mod tests {
         let bumped_gas_price = gas_price_for_simulation(&gas_price);
         assert_eq!(
             gas_price.effective_gas_price() * SOLVER_BALANCE_MULTIPLIER,
-            bumped_gas_price.effective_gas_price()
+            bumped_gas_price.effective_gas_price(),
+        );
+        assert_eq!(
+            gas_price.max_fee_per_gas * SOLVER_BALANCE_MULTIPLIER,
+            bumped_gas_price.max_fee_per_gas,
         );
     }
 }
