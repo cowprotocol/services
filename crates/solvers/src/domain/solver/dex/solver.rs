@@ -8,7 +8,7 @@ use {
             dex::slippage,
             order,
             solution,
-            solver::dex::partial_fill_handler::PartialFiller,
+            solver::dex::partial_fills::PartialFiller,
         },
         infra,
     },
