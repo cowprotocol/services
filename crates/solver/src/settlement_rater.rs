@@ -30,12 +30,16 @@ use {
     web3::types::AccessList,
 };
 
-// We require from solvers to have a bit more ETH balance then needed
-// at the moment of simulating the transaction, to cover the potential increase
-// of the cost of sending transaction onchain, because of the sudden gas price
-// increase. To simulate this sudden increase of gas price during simulation, we
-// artificially multiply the gas price with this factor.
-const SOLVER_BALANCE_MULTIPLIER: f64 = 5.;
+/// We require from solvers to have a bit more ETH balance then needed
+/// at the moment of simulating the transaction, to cover the potential increase
+/// of the cost of sending transaction onchain, because of the sudden gas price
+/// increase. To simulate this sudden increase of gas price during simulation,
+/// we artificially multiply the gas price with this factor.
+///
+/// We chose the multiplier of 3.25 to be approximately equal to the maximum
+/// increase in the ERC-1559 base gas price over 10 blocks, or ~120s. This maps
+/// exactly to the timeout we allow for any given transaction.
+const SOLVER_BALANCE_MULTIPLIER: f64 = 3.25;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
