@@ -22,7 +22,7 @@ use {
     ethcontract::{Account, Bytes, I256, U256},
     model::order::OrderKind,
     shared::{
-        balancer_sor_api::{BalancerSorApi, Query, Quote},
+        balancer_sor_api::{BalancerSorApi, Error as BalancerError, Query, Quote},
         interaction::{EncodedInteraction, Interaction},
     },
     std::sync::Arc,
@@ -54,6 +54,22 @@ impl BalancerSorSolver {
             api,
             allowance_fetcher,
             slippage_calculator,
+        }
+    }
+}
+
+impl From<BalancerError> for SettlementError {
+    fn from(err: BalancerError) -> Self {
+        match err {
+            BalancerError::Other(err) => Self {
+                inner: err,
+                retryable: false,
+            },
+            BalancerError::RateLimited => Self {
+                inner: anyhow::anyhow!("rate limited"),
+                // Technically this error is retryable but only after some time.
+                retryable: false,
+            },
         }
     }
 }

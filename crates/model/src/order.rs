@@ -580,6 +580,7 @@ pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
     pub owner: H160,
     pub uid: OrderUid,
+    /// deprecated, always set to null
     #[serde_as(as = "Option<DecimalU256>")]
     pub available_balance: Option<U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
@@ -902,7 +903,7 @@ mod tests {
             "creationDate": "1970-01-01T00:00:03Z",
             "owner": "0x0000000000000000000000000000000000000001",
             "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
-            "availableBalance": "100",
+            "availableBalance": null,
             "executedBuyAmount": "3",
             "executedSellAmount": "5",
             "executedSellAmountBeforeFees": "4",
@@ -946,7 +947,7 @@ mod tests {
                 }),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
-                available_balance: Some(100.into()),
+                available_balance: None,
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
                 executed_sell_amount_before_fees: 4.into(),

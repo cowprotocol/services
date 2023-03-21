@@ -16,6 +16,7 @@ pub struct Order {
     pub secret_key: SecretKey,
     pub domain_separator: DomainSeparator,
     pub owner: ethcontract::H160,
+    pub partially_fillable: bool,
 }
 
 impl Order {
@@ -39,6 +40,7 @@ impl Order {
                 competition::order::Side::Buy => model::order::OrderKind::Buy,
                 competition::order::Side::Sell => model::order::OrderKind::Sell,
             })
+            .with_partially_fillable(self.partially_fillable)
             .sign_with(
                 model::signature::EcdsaSigningScheme::Eip712,
                 &self.domain_separator,

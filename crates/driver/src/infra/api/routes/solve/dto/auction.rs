@@ -33,13 +33,13 @@ impl Auction {
                         uid: order.uid.into(),
                         receiver: order.receiver.map(Into::into),
                         valid_to: order.valid_to.into(),
-                        sell: eth::Asset {
-                            amount: order.sell_amount,
-                            token: order.sell_token.into(),
-                        },
                         buy: eth::Asset {
                             amount: order.buy_amount,
                             token: order.buy_token.into(),
+                        },
+                        sell: eth::Asset {
+                            amount: order.sell_amount,
+                            token: order.sell_token.into(),
                         },
                         side: match order.kind {
                             Kind::Sell => competition::order::Side::Sell,

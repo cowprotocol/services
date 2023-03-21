@@ -157,7 +157,7 @@ impl SingleOrderSolving for ZeroExSolver {
         let inputs = crate::objective_value::Inputs::from_settlement(
             &settlement,
             &auction.external_prices,
-            &gas_price,
+            gas_price,
             &swap.price.estimated_gas.into(),
         );
         let objective_value = inputs.objective_value();

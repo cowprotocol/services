@@ -23,7 +23,7 @@ use {
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+        code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
@@ -99,25 +99,34 @@ impl<'a> PriceEstimatorFactory<'a> {
         let trade_verifier = args
             .trade_simulator
             .map(|kind| -> Result<TradeVerifier> {
-                let simulator = match kind {
-                    TradeValidatorKind::Web3 => Arc::new(
-                        network
-                            .simulation_web3
-                            .clone()
-                            .context("missing simulation node configuration")?,
-                    ) as Arc<dyn CodeSimulating>,
-                    TradeValidatorKind::Tenderly => {
-                        let tenderly_api = shared_args
-                            .tenderly
-                            .get_api_instance(
-                                &components.http_factory,
-                                "price_estimation".to_owned(),
-                            )?
-                            .context("missing Tenderly configuration")?;
-                        let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id)
-                            .save(false, args.tenderly_save_failed_trade_simulations);
+                let web3_simulator = || {
+                    network
+                        .simulation_web3
+                        .clone()
+                        .context("missing simulation node configuration")
+                };
+                let tenderly_simulator = || -> anyhow::Result<_> {
+                    let tenderly_api = shared_args
+                        .tenderly
+                        .get_api_instance(&components.http_factory, "price_estimation".to_owned())?
+                        .context("missing Tenderly configuration")?;
+                    let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id);
+                    Ok(simulator)
+                };
 
-                        Arc::new(simulator)
+                let simulator = match kind {
+                    TradeValidatorKind::Web3 => {
+                        Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
+                    }
+                    TradeValidatorKind::Tenderly => Arc::new(
+                        tenderly_simulator()?
+                            .save(false, args.tenderly_save_failed_trade_simulations),
+                    ),
+                    TradeValidatorKind::Web3ThenTenderly => {
+                        Arc::new(code_simulation::Web3ThenTenderly::new(
+                            web3_simulator()?,
+                            tenderly_simulator()?,
+                        ))
                     }
                 };
                 let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(network.web3.clone())));
@@ -210,26 +219,30 @@ impl<'a> PriceEstimatorFactory<'a> {
             }
             PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                (
-                    self.args
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
                         .quasimodo_solver_url
                         .clone()
                         .context("quasimodo solver url not specified")?,
-                    "solve".to_owned(),
-                ),
+                    solve_path: "solve".to_owned(),
+                    use_liquidity: true,
+                },
             ),
             PriceEstimatorType::OneInch => {
                 self.create_estimator_entry::<OneInchPriceEstimator>(kind, ())
             }
             PriceEstimatorType::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 kind,
-                (
-                    self.args
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
                         .yearn_solver_url
                         .clone()
                         .context("yearn solver url not specified")?,
-                    self.args.yearn_solver_path.clone(),
-                ),
+                    solve_path: self.args.yearn_solver_path.clone(),
+                    use_liquidity: false,
+                },
             ),
             PriceEstimatorType::BalancerSor => self.create_estimator_entry::<BalancerSor>(kind, ()),
         }
@@ -413,11 +426,6 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
                     .paraswap_partner
                     .clone()
                     .unwrap_or_default(),
-                rate_limiter: factory
-                    .shared_args
-                    .paraswap_rate_limiter
-                    .clone()
-                    .map(|strategy| RateLimiter::from_strategy(strategy, "paraswap_api".into())),
             }),
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
@@ -501,21 +509,28 @@ impl PriceEstimatorCreating for BalancerSor {
     }
 }
 
+#[derive(Debug, Clone)]
+struct HttpPriceEstimatorParams {
+    base: Url,
+    solve_path: String,
+    use_liquidity: bool,
+}
+
 impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = (Url, String);
+    type Params = HttpPriceEstimatorParams;
 
     fn init(
         factory: &PriceEstimatorFactory,
         kind: PriceEstimatorType,
-        (base, solve_path): Self::Params,
+        params: Self::Params,
     ) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
             Arc::new(DefaultHttpSolverApi {
                 name: kind.name(),
                 network_name: factory.network.name.clone(),
                 chain_id: factory.network.chain_id,
-                base,
-                solve_path,
+                base: params.base,
+                solve_path: params.solve_path,
                 client: factory.components.http_factory.create(),
                 config: SolverConfig {
                     use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
@@ -532,6 +547,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
             factory.network.base_tokens.clone(),
             factory.network.name.clone(),
             factory.rate_limiter(kind),
+            params.use_liquidity,
         ))
     }
 }

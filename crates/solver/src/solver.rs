@@ -49,7 +49,6 @@ use {
             DefaultHttpSolverApi,
             SolverConfig,
         },
-        rate_limiter::{RateLimiter, RateLimitingStrategy},
         token_info::TokenInfoFetching,
         token_list::AutoUpdatingTokenList,
         zeroex_api::ZeroExApi,
@@ -70,6 +69,7 @@ pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
+pub mod score_computation;
 pub mod single_order_solver;
 mod zeroex_solver;
 
@@ -284,7 +284,6 @@ pub fn create(
     disabled_one_inch_protocols: Vec<String>,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
-    paraswap_rate_limiter: Option<RateLimitingStrategy>,
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
@@ -302,6 +301,7 @@ pub fn create(
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
+    score_configuration: &score_computation::Arguments,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -377,6 +377,8 @@ pub fn create(
                 "configured slippage",
             );
 
+            let score_calculator = score_configuration.get_calculator(solver_type);
+
             let solver = match solver_type {
                 SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),
                 SolverType::Baseline => shared(BaselineSolver::new(
@@ -438,9 +440,6 @@ pub fn create(
                     disabled_paraswap_dexs.clone(),
                     http_factory.create(),
                     paraswap_partner.clone(),
-                    paraswap_rate_limiter.clone().map(|strategy| {
-                        RateLimiter::from_strategy(strategy, "paraswap_solver".into())
-                    }),
                     slippage_calculator,
                 )))),
                 SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(
@@ -464,6 +463,7 @@ pub fn create(
             shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
+                score_calculator,
             })
         })
         .collect();

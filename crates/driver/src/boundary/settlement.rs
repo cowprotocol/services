@@ -68,6 +68,7 @@ impl Settlement {
 
         let clearing_prices = solution
             .prices
+            .0
             .iter()
             .map(|(&token, &amount)| (token.into(), amount))
             .collect();
@@ -185,7 +186,7 @@ impl Settlement {
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
-            &gas_price,
+            gas_price,
             &gas.into(),
         );
         Ok(inputs.objective_value().into())

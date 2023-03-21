@@ -178,7 +178,7 @@ mod tests {
                     solver_address: H160([1; 20]),
                     objective: Default::default(),
                     score: Default::default(),
-                    ranking: 1,
+                    ranking: Some(1),
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![Default::default()],
                     call_data: vec![1, 2],

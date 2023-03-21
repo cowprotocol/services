@@ -178,6 +178,46 @@ impl TryFrom<StateOverride> for StateObject {
     }
 }
 
+/// A code simulator that uses Web3 in the general case, but will create and
+/// save failed simulations on Tenderly to facilitate debugging.
+pub struct Web3ThenTenderly {
+    web3: Web3,
+    tenderly: Arc<TenderlyCodeSimulator>,
+}
+
+impl Web3ThenTenderly {
+    pub fn new(web3: Web3, tenderly: TenderlyCodeSimulator) -> Self {
+        Self {
+            web3,
+            tenderly: Arc::new(tenderly.save(true, true)),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CodeSimulating for Web3ThenTenderly {
+    async fn simulate(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+    ) -> Result<Vec<u8>, SimulationError> {
+        let result = self.web3.simulate(call.clone(), overrides.clone()).await;
+
+        // Spawn a background thread to simulate on Tenderly. This allows us:
+        // 1. To return right away with the result form the Web3 simulator
+        // 2. Still simulate and save the simulation on Tenderly for debugging
+        //    purposes.
+        if let Err(err) = &result {
+            tracing::warn!(?err, "web3 code simulation failed, fallback to Tenderly");
+
+            let tenderly = self.tenderly.clone();
+            tokio::spawn(async move { tenderly.simulate(call, overrides).await });
+        }
+
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -185,21 +225,30 @@ mod tests {
         crate::{ethrpc::create_env_test_transport, tenderly_api::TenderlyHttpApi},
         hex_literal::hex,
         maplit::hashmap,
+        std::time::Duration,
     };
+
+    async fn test_simulators() -> Vec<Arc<dyn CodeSimulating>> {
+        let web3 = Web3::new(create_env_test_transport());
+        let network_id = web3.net().version().await.unwrap();
+
+        vec![
+            Arc::new(web3.clone()),
+            Arc::new(TenderlyCodeSimulator::new(
+                TenderlyHttpApi::test_from_env(),
+                network_id.clone(),
+            )),
+            Arc::new(Web3ThenTenderly::new(
+                web3,
+                TenderlyCodeSimulator::new(TenderlyHttpApi::test_from_env(), network_id),
+            )),
+        ]
+    }
 
     #[ignore]
     #[tokio::test]
     async fn can_simulate_contract_code() {
-        let web3 = Web3::new(create_env_test_transport());
-        let network_id = web3.net().version().await.unwrap();
-
-        for simulator in [
-            Arc::new(web3) as Arc<dyn CodeSimulating>,
-            Arc::new(TenderlyCodeSimulator::new(
-                TenderlyHttpApi::test_from_env(),
-                network_id,
-            )),
-        ] {
+        for simulator in test_simulators().await {
             let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
             let output = simulator
                 .simulate(
@@ -228,21 +277,16 @@ mod tests {
 
             assert_eq!(output, [42]);
         }
+
+        // Make sure to wait for background futures - `tokio::test` does not
+        // seem to do this.
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     #[ignore]
     #[tokio::test]
     async fn errors_on_reverts() {
-        let web3 = Web3::new(create_env_test_transport());
-        let network_id = web3.net().version().await.unwrap();
-
-        for simulator in [
-            Arc::new(web3) as Arc<dyn CodeSimulating>,
-            Arc::new(TenderlyCodeSimulator::new(
-                TenderlyHttpApi::test_from_env(),
-                network_id,
-            )),
-        ] {
+        for simulator in test_simulators().await {
             let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
             let result = simulator
                 .simulate(
@@ -278,6 +322,10 @@ mod tests {
             // expected.
             assert!(matches!(result, Err(SimulationError::Revert(Some(_)))));
         }
+
+        // Make sure to wait for background futures - `tokio::test` does not
+        // seem to do this.
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     #[tokio::test]

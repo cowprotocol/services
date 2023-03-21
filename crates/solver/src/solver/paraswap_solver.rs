@@ -30,7 +30,6 @@ use {
             TradeAmount,
             TransactionBuilderQuery,
         },
-        rate_limiter::RateLimiter,
         token_info::{TokenInfo, TokenInfoFetching},
     },
     std::{collections::HashMap, sync::Arc},
@@ -64,7 +63,6 @@ impl ParaswapSolver {
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
-        rate_limiter: Option<RateLimiter>,
         slippage_calculator: SlippageCalculator,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
@@ -77,7 +75,6 @@ impl ParaswapSolver {
             client: Box::new(DefaultParaswapApi {
                 client,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
-                rate_limiter,
             }),
             disabled_paraswap_dexs,
             slippage_calculator,
@@ -560,7 +557,6 @@ mod tests {
             token_info_fetcher,
             vec![],
             Client::new(),
-            None,
             None,
             SlippageCalculator::default(),
         );

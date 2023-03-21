@@ -32,11 +32,13 @@ impl Quote {
     fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .prices
+            .0
             .get(&order.tokens.sell)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
         let buy_price = solution
             .prices
+            .0
             .get(&order.tokens.buy)
             .ok_or(Error::QuotingFailed)?
             .to_owned();
@@ -97,8 +99,8 @@ impl Order {
                 uid: Default::default(),
                 receiver: None,
                 valid_to: util::Timestamp::MAX,
-                sell: self.sell(),
                 buy: self.buy(),
+                sell: self.sell(),
                 side: self.side,
                 fee: Default::default(),
                 kind: competition::order::Kind::Market,
@@ -153,7 +155,7 @@ impl Order {
     fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
         let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
             .expect("sell != buy by construction");
-        iter::once(pair).into_iter().collect()
+        iter::once(pair).collect()
     }
 }
 

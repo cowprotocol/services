@@ -88,6 +88,11 @@ impl SanitizedPriceEstimator {
                 }
             }
 
+            if query.in_amount.is_zero() {
+                results.push((*index, Err(PriceEstimationError::ZeroAmount)));
+                return false;
+            }
+
             if query.buy_token == query.sell_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount,
@@ -325,6 +330,14 @@ mod tests {
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
+            // Will throw `ZeroAmount` error in `sanitized_estimator`.
+            Query {
+                from: None,
+                sell_token: H160::from_low_u64_le(1),
+                buy_token: H160::from_low_u64_le(2),
+                in_amount: 0.into(),
+                kind: OrderKind::Buy,
+            },
         ];
 
         let expected_forwarded_queries = [
@@ -382,7 +395,7 @@ mod tests {
         };
 
         let result = vec_estimates(&sanitized_estimator, &queries).await;
-        assert_eq!(result.len(), 10);
+        assert_eq!(result.len(), 11);
         assert_eq!(
             result[0].as_ref().unwrap(),
             &Estimate {
@@ -450,6 +463,10 @@ mod tests {
         assert!(matches!(
             result[9].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken { .. }
+        ));
+        assert!(matches!(
+            result[10].as_ref().unwrap_err(),
+            PriceEstimationError::ZeroAmount,
         ));
     }
 

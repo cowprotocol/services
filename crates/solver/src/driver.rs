@@ -17,6 +17,7 @@ use {
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
+    chrono::{DateTime, Utc},
     contracts::GPv2Settlement,
     ethcontract::Account,
     futures::future::join_all,
@@ -91,6 +92,7 @@ impl Driver {
         solver_time_limit: Duration,
         block_time: Duration,
         additional_mining_deadline: Duration,
+        skip_non_positive_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -101,7 +103,7 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
-        enable_auction_rewards: bool,
+        auction_rewards_activation_timestamp: DateTime<Utc>,
     ) -> Self {
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
@@ -116,7 +118,8 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
-            enable_auction_rewards,
+            auction_rewards_activation_timestamp,
+            skip_non_positive_score_settlements,
         };
 
         let logger = DriverLogger {
@@ -358,8 +361,8 @@ impl Driver {
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
-                    score: rated_settlement.score,
-                    ranking: rated_settlement.ranking,
+                    score: Some(rated_settlement.score),
+                    ranking: Some(rated_settlement.ranking),
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()

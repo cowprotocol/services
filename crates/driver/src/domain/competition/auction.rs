@@ -19,7 +19,6 @@ pub struct Auction {
     /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
     /// used for competition.
     pub id: Option<Id>,
-    // TODO Turn this into a HashSet
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
     pub gas_price: eth::EffectiveGasPrice,

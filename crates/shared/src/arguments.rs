@@ -249,16 +249,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
     pub disabled_paraswap_dexs: Vec<String>,
 
-    /// Configures the back off strategy for the paraswap API when our requests
-    /// get rate limited. Requests issued while back off is active get
-    /// dropped entirely. Needs to be passed as
-    /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
-    /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: f64 in seconds
-    /// max_back_off: f64 in seconds
-    #[clap(long, env, verbatim_doc_comment)]
-    pub paraswap_rate_limiter: Option<RateLimitingStrategy>,
-
     #[clap(long, env)]
     pub zeroex_url: Option<String>,
 
@@ -443,7 +433,6 @@ impl Display for Arguments {
         )?;
         display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
-        display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
