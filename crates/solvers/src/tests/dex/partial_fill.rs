@@ -1,5 +1,6 @@
-//! Tests that dex solvers consecutively decrease the amounts they try to fill partially fillable
-//! orders with across `/solve` requests to eventually find a fillable amount that works.
+//! Tests that dex solvers consecutively decrease the amounts they try to fill
+//! partially fillable orders with across `/solve` requests to eventually find a
+//! fillable amount that works.
 
 use {
     crate::tests::{self, balancer, mock},
