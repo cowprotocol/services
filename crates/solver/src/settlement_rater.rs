@@ -30,6 +30,17 @@ use {
     web3::types::AccessList,
 };
 
+/// We require from solvers to have a bit more ETH balance then needed
+/// at the moment of simulating the transaction, to cover the potential increase
+/// of the cost of sending transaction onchain, because of the sudden gas price
+/// increase. To simulate this sudden increase of gas price during simulation,
+/// we artificially multiply the gas price with this factor.
+///
+/// We chose the multiplier of 3.25 to be approximately equal to the maximum
+/// increase in the ERC-1559 base gas price over 10 blocks, or ~120s. This maps
+/// exactly to the timeout we allow for any given transaction.
+const SOLVER_BALANCE_MULTIPLIER: f64 = 3.25;
+
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
@@ -164,11 +175,13 @@ impl SettlementRating for SettlementRater {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
+        let gas_price_for_simulation = gas_price_for_simulation(&gas_price);
+
         // first simulate settlements without internalizations to make sure they pass
         let simulations = self
             .simulate_settlements(
                 settlements,
-                gas_price,
+                gas_price_for_simulation,
                 InternalizationStrategy::EncodeAllInteractions,
             )
             .await?;
@@ -190,7 +203,7 @@ impl SettlementRating for SettlementRater {
         let mut simulations = self
             .simulate_settlements(
                 settlements,
-                gas_price,
+                gas_price_for_simulation,
                 InternalizationStrategy::SkipInternalizableInteraction,
             )
             .await?;
@@ -254,5 +267,35 @@ impl SettlementRating for SettlementRater {
                 }
             },
         ))
+    }
+}
+
+fn gas_price_for_simulation(gas_price: &GasPrice1559) -> GasPrice1559 {
+    let bumped_effective_gas_price = gas_price.effective_gas_price() * SOLVER_BALANCE_MULTIPLIER;
+    let max_priority_fee_per_gas = bumped_effective_gas_price - gas_price.base_fee_per_gas;
+
+    GasPrice1559 {
+        max_fee_per_gas: gas_price.max_fee_per_gas.max(bumped_effective_gas_price),
+        max_priority_fee_per_gas,
+        base_fee_per_gas: gas_price.base_fee_per_gas,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gas_price_for_simulation_is_bumped() {
+        let gas_price = GasPrice1559 {
+            max_fee_per_gas: 200.0,
+            max_priority_fee_per_gas: 10.0,
+            base_fee_per_gas: 90.0,
+        };
+        let bumped_gas_price = gas_price_for_simulation(&gas_price);
+        assert_eq!(
+            gas_price.effective_gas_price() * SOLVER_BALANCE_MULTIPLIER,
+            bumped_gas_price.effective_gas_price()
+        );
     }
 }
