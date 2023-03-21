@@ -1,6 +1,6 @@
 use {
     crate::{
-        liquidity::{self, slippage::SlippageContext},
+        liquidity::{self, slippage::SlippageContext, LimitOrderExecution},
         settlement::{PricedTrade, Settlement},
     },
     anyhow::Result,
@@ -115,7 +115,11 @@ fn solve_without_uniswap(
         context_b.address => context_a.reserve,
     });
     for order in orders {
-        settlement.with_liquidity(order, order.full_execution_amount())?;
+        let execution = LimitOrderExecution {
+            filled_amount: order.full_execution_amount(),
+            executed_solver_fee: order.solver_fee,
+        };
+        settlement.with_liquidity(order, execution)?;
     }
 
     Ok(settlement)
@@ -146,9 +150,11 @@ fn solve_with_uniswap(
         uniswap_out_token => uniswap_in,
     });
     for order in orders {
-        settlement
-            .with_liquidity(order, order.full_execution_amount())
-            .ok()?;
+        let execution = LimitOrderExecution {
+            filled_amount: order.full_execution_amount(),
+            executed_solver_fee: order.solver_fee,
+        };
+        settlement.with_liquidity(order, execution).ok()?;
     }
 
     // Because the smart contracts round in the favour of the traders, it could

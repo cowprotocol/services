@@ -5,7 +5,9 @@ use {
             order_converter::OrderConverter,
             slippage::SlippageContext,
             AmmOrderExecution,
+            Exchange,
             LimitOrder,
+            LimitOrderExecution,
             LimitOrderId,
             Liquidity,
         },
@@ -85,7 +87,27 @@ impl Execution {
         use Execution::*;
 
         match self {
-            LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
+            LimitOrder(order) => {
+                let solver_determines_fee = order.order.solver_fee.is_zero()
+                    && !order.order.is_liquidity_order()
+                    && order.order.exchange == Exchange::GnosisProtocol;
+
+                let executed_solver_fee = match solver_determines_fee {
+                    true => order.executed_solver_fee.unwrap_or_else(|| {
+                        tracing::warn!("no fee for partially fillable limit order");
+                        0.into()
+                    }),
+                    // This currently doesn't handle partially fillable market orders specifically.
+                    false => order.order.solver_fee,
+                };
+
+                let execution = LimitOrderExecution {
+                    filled_amount: order.executed_amount(),
+                    executed_solver_fee,
+                };
+
+                settlement.with_liquidity(&order.order, execution)
+            }
             Amm(executed_amm) => {
                 let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
                     input_max: executed_amm.input.clone(),
@@ -161,6 +183,7 @@ struct ExecutedLimitOrder {
     order: LimitOrder,
     executed_buy_amount: U256,
     executed_sell_amount: U256,
+    executed_solver_fee: Option<U256>,
     exec_plan: Option<ExecutionPlan>,
 }
 
@@ -276,6 +299,7 @@ fn match_prepared_and_settled_orders(
                 executed_buy_amount: settled.exec_buy_amount,
                 executed_sell_amount: settled.exec_sell_amount,
                 exec_plan: settled.exec_plan,
+                executed_solver_fee: settled.fee.map(|fee| fee.amount),
             })
         })
         .collect()
@@ -311,6 +335,7 @@ fn convert_foreign_liquidity_orders(
                 executed_sell_amount: liquidity.exec_sell_amount,
                 executed_buy_amount: liquidity.exec_buy_amount,
                 exec_plan: None,
+                executed_solver_fee: Some(0.into()),
             })
         })
         .collect()

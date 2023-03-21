@@ -1,5 +1,5 @@
 use {
-    super::{LimitOrderId, LiquidityOrderId, SettlementHandling},
+    super::{LimitOrderExecution, LimitOrderId, LiquidityOrderId, SettlementHandling},
     crate::{
         interactions::{
             allowances::{AllowanceManager, AllowanceManaging, Allowances},
@@ -188,18 +188,23 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         self
     }
 
-    fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
-        if executed_amount > u128::MAX.into() {
+    fn encode(
+        &self,
+        execution: LimitOrderExecution,
+        encoder: &mut SettlementEncoder,
+    ) -> Result<()> {
+        if execution.filled_amount > u128::MAX.into() {
             anyhow::bail!("0x only supports executed amounts of size u128");
         }
-        if let Some(approval) = self
-            .allowances
-            .approve_token(TokenAmount::new(self.order.taker_token, executed_amount))?
-        {
+        let approval = self.allowances.approve_token(TokenAmount::new(
+            self.order.taker_token,
+            execution.filled_amount,
+        ))?;
+        if let Some(approval) = approval {
             encoder.append_to_execution_plan(approval);
         }
         encoder.append_to_execution_plan(ZeroExInteraction {
-            taker_token_fill_amount: executed_amount.as_u128(),
+            taker_token_fill_amount: execution.filled_amount.as_u128(),
             order: self.order.clone(),
             zeroex: self.zeroex.clone(),
         });

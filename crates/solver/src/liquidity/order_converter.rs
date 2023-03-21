@@ -1,5 +1,12 @@
 use {
-    super::{Exchange, LimitOrder, LimitOrderId, LiquidityOrderId, SettlementHandling},
+    super::{
+        Exchange,
+        LimitOrder,
+        LimitOrderExecution,
+        LimitOrderId,
+        LiquidityOrderId,
+        SettlementHandling,
+    },
     crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
     anyhow::{Context, Result},
     contracts::WETH9,
@@ -63,7 +70,6 @@ impl OrderConverter {
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token,
-                solver_fee,
             }),
             exchange: Exchange::GnosisProtocol,
             // TODO: It would be nicer to set this here too but we need #529 first.
@@ -75,7 +81,6 @@ impl OrderConverter {
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
-    solver_fee: U256,
 }
 
 /// Returns the `sell_amount` adjusted for limit orders.
@@ -107,13 +112,21 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         self
     }
 
-    fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
+    fn encode(
+        &self,
+        execution: LimitOrderExecution,
+        encoder: &mut SettlementEncoder,
+    ) -> Result<()> {
         let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
         if is_native_token_buy_order {
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = encoder.add_trade(self.order.clone(), executed_amount, self.solver_fee)?;
+        let trade = encoder.add_trade(
+            self.order.clone(),
+            execution.filled_amount,
+            execution.executed_solver_fee,
+        )?;
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {

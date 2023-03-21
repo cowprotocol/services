@@ -6,6 +6,7 @@ use {
             AmmOrderExecution,
             ConstantProductOrder,
             LimitOrder,
+            LimitOrderExecution,
             Liquidity,
             WeightedProductOrder,
         },
@@ -282,7 +283,11 @@ impl Solution {
             order.buy_token => self.executed_sell_amount,
         });
 
-        settlement.with_liquidity(order, order.full_execution_amount())?;
+        let execution = LimitOrderExecution {
+            filled_amount: order.full_execution_amount(),
+            executed_solver_fee: order.solver_fee,
+        };
+        settlement.with_liquidity(order, execution)?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
         for amm in self.path {
