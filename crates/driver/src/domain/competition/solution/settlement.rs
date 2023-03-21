@@ -54,8 +54,8 @@ pub struct Verified {
     pub(super) inner: Settlement,
     /// The access list used by the settlement.
     pub access_list: eth::AccessList,
-    /// The gas used by the settlement.
-    pub gas: eth::Gas,
+    /// The gas parameters used by the settlement.
+    pub gas: Gas,
 }
 
 impl Verified {
@@ -65,7 +65,10 @@ impl Verified {
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Result<super::Score, boundary::Error> {
-        self.inner.boundary.score(eth, auction, self.gas).await
+        self.inner
+            .boundary
+            .score(eth, auction, self.gas.limit)
+            .await
     }
 
     pub fn id(&self) -> super::Id {
@@ -75,5 +78,22 @@ impl Verified {
     /// Necessary for the boundary integration, to allow executing settlements.
     pub fn boundary(self) -> boundary::Settlement {
         self.inner.boundary
+    }
+}
+
+/// Gas parameters associated with a settlement.
+#[derive(Clone, Copy, Debug)]
+pub struct Gas {
+    /// The gas limit, in gas units, required for a settlement transaction.
+    pub limit: eth::Gas,
+    /// The maximum fee per unit of gas for a given settlement.
+    pub price: eth::MaxFeePerGas,
+}
+
+impl Gas {
+    /// Returns the minimum required balance in Ether that an account needs in
+    /// order to afford the specified gas parameters.
+    pub fn required_balance(&self) -> eth::Ether {
+        self.limit * self.price
     }
 }

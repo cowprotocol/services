@@ -130,7 +130,6 @@ pub struct SolutionSubmitter {
     pub target_confirm_time: Duration,
     pub max_confirm_time: Duration,
     pub retry_interval: Duration,
-    pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
     pub code_fetcher: Arc<dyn CodeFetching>,
 }
@@ -181,6 +180,7 @@ impl SolutionSubmitter {
         &self,
         settlement: Settlement,
         gas_estimate: U256,
+        max_fee_per_gas: f64,
         account: Account,
         nonce: U256,
     ) -> Result<SubmissionReceipt, SubmissionError> {
@@ -257,6 +257,7 @@ impl SolutionSubmitter {
                     &account,
                     nonce,
                     gas_estimate,
+                    max_fee_per_gas,
                     network_id.clone(),
                     settlement.clone(),
                     i,
@@ -286,6 +287,7 @@ impl SolutionSubmitter {
         account: &Account,
         nonce: U256,
         gas_estimate: U256,
+        max_fee_per_gas: f64,
         network_id: String,
         settlement: Settlement,
         index: usize,
@@ -313,7 +315,7 @@ impl SolutionSubmitter {
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
-            gas_price_cap: self.gas_price_cap,
+            max_fee_per_gas,
             additional_tip_percentage_of_max_fee: Some(
                 strategy_args.additional_tip_percentage_of_max_fee,
             ),

@@ -491,7 +491,6 @@ pub async fn run(args: Arguments) {
         target_confirm_time: args.target_confirm_time,
         max_confirm_time: args.max_submission_seconds,
         retry_interval: args.submission_retry_interval_seconds,
-        gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
         code_fetcher: code_fetcher.clone(),

@@ -166,13 +166,20 @@ impl Solution {
         let access_list = simulator.access_list(tx.clone()).await?;
         let tx = tx.set_access_list(access_list.clone());
 
-        // Finally, get the gas for the settlement using the full access list.
-        let gas = simulator.gas(tx).await?;
+        // Third, get the gas for the settlement using the full access list.
+        let gas_limit = simulator.gas(tx).await?;
+
+        // Finally, compute an upper bound for `max_fee_per_gas` for the given
+        // settlement.
+        let gas_price = eth.gas_price().await?;
 
         Ok(settlement::Verified {
             inner: settlement,
             access_list,
-            gas,
+            gas: settlement::Gas {
+                limit: gas_limit,
+                price: gas_price.max,
+            },
         })
     }
 
