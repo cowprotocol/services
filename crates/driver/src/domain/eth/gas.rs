@@ -31,13 +31,13 @@ impl From<Gas> for U256 {
 #[derive(Debug, Clone, Copy)]
 pub struct GasPrice {
     /// The maximum total fee that should be charged.
-    pub max: MaxFeePerGas,
+    pub max: FeePerGas,
     /// The maximum priority fee (i.e. the tip to the block proposer) that
     /// can be charged.
-    pub tip: MaxPriorityFeePerGas,
+    pub tip: FeePerGas,
     /// The current base gas price that will be charged to all accounts on the
     /// next block.
-    pub base: BaseFeePerGas,
+    pub base: FeePerGas,
 }
 
 impl GasPrice {
@@ -60,65 +60,28 @@ impl From<EffectiveGasPrice> for GasPrice {
     }
 }
 
-/// The `max_fee_per_gas` as defined by EIP-1559.
-///
-/// https://eips.ethereum.org/EIPS/eip-1559#specification
+/// A measurement of an of Ether to pay as fees for a single gas unit. This is
+/// `{max,max_priority,base}_fee_per_gas` as defined by EIP-1559.
 #[derive(Debug, Clone, Copy)]
-pub struct MaxFeePerGas(pub Ether);
+pub struct FeePerGas(pub Ether);
 
-impl From<U256> for MaxFeePerGas {
+impl From<U256> for FeePerGas {
     fn from(value: U256) -> Self {
         Self(value.into())
     }
 }
 
-impl From<MaxFeePerGas> for U256 {
-    fn from(value: MaxFeePerGas) -> Self {
+impl From<FeePerGas> for U256 {
+    fn from(value: FeePerGas) -> Self {
         value.0.into()
     }
 }
 
-impl ops::Mul<MaxFeePerGas> for Gas {
+impl ops::Mul<FeePerGas> for Gas {
     type Output = Ether;
 
-    fn mul(self, rhs: MaxFeePerGas) -> Self::Output {
+    fn mul(self, rhs: FeePerGas) -> Self::Output {
         (self.0 * rhs.0 .0).into()
-    }
-}
-
-/// The `max_priority_fee_per_gas` as defined by EIP-1559.
-///
-/// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
-pub struct MaxPriorityFeePerGas(pub Ether);
-
-impl From<U256> for MaxPriorityFeePerGas {
-    fn from(value: U256) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<MaxPriorityFeePerGas> for U256 {
-    fn from(value: MaxPriorityFeePerGas) -> Self {
-        value.0.into()
-    }
-}
-
-/// The `base_fee_per_gas` as defined by EIP-1559.
-///
-/// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
-pub struct BaseFeePerGas(pub Ether);
-
-impl From<U256> for BaseFeePerGas {
-    fn from(value: U256) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<BaseFeePerGas> for U256 {
-    fn from(value: BaseFeePerGas) -> Self {
-        value.0.into()
     }
 }
 

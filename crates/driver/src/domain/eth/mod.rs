@@ -11,7 +11,7 @@ pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
     ethcontract::PrivateKey,
-    gas::{BaseFeePerGas, EffectiveGasPrice, Gas, GasPrice, MaxFeePerGas, MaxPriorityFeePerGas},
+    gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     primitive_types::{H160, H256, U256},
 };
 
