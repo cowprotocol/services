@@ -91,7 +91,7 @@ pub struct Gas {
     /// variations in the actual gas that gets used.
     pub limit: eth::Gas,
     /// The maximum fee per unit of gas for a given settlement.
-    pub price: eth::MaxFeePerGas,
+    pub price: eth::FeePerGas,
 }
 
 impl Gas {
