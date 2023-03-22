@@ -25,7 +25,7 @@ ethereum-types = "0.14"
 hex = "0.4"
 reqwest = "0.11"
 thiserror = "1.0"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["clock"], default-features = false }
 tower = "0.4"
 tower-http = { version = "0.3", features = ["limit", "trace"] }
 hyper = "0.14"

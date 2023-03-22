@@ -887,7 +887,7 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
-        chrono::NaiveDateTime,
+        chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
         primitive_types::H256,
@@ -939,7 +939,7 @@ mod tests {
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
             metadata: OrderMetadata {
-                creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
+                creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
                 class: OrderClass::Limit(LimitOrderClass {
                     surplus_fee: Some(U256::MAX),
                     surplus_fee_timestamp: Some(Default::default()),
@@ -1222,10 +1222,7 @@ mod tests {
             .with_partially_fillable(true)
             .with_sell_token_balance(SellTokenSource::External)
             .with_buy_token_balance(BuyTokenDestination::Internal)
-            .with_creation_date(DateTime::<Utc>::from_utc(
-                NaiveDateTime::from_timestamp(3, 0),
-                Utc,
-            ))
+            .with_creation_date(Utc.timestamp_opt(3, 0).unwrap())
             .with_presign(H160::from_low_u64_be(1))
             .with_kind(OrderKind::Sell)
             .sign_with(
