@@ -56,7 +56,6 @@ async fn test() {
         owner: admin,
         partially_fillable: false,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -126,7 +125,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": "247548525",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -214,7 +213,7 @@ async fn test() {
     assert!(solution.get("id").is_some());
     assert!(solution.get("score").is_some());
     let score = solution.get("score").unwrap().as_f64().unwrap();
-    approx::assert_relative_eq!(score, -58130959128924.0, max_relative = 0.01);
+    approx::assert_relative_eq!(score, -59208161112450.0, max_relative = 0.01);
 
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
