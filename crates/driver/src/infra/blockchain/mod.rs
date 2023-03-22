@@ -93,7 +93,15 @@ impl Ethereum {
 
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
-        let tx = Self::into_request(tx);
+        let tx = web3::types::TransactionRequest {
+            from: tx.from.into(),
+            to: Some(tx.to.into()),
+            gas_price: Some(eth::U256::zero()),
+            value: Some(tx.value.into()),
+            data: Some(tx.input.into()),
+            access_list: Some(tx.access_list.into()),
+            ..Default::default()
+        };
         let json = self
             .web3
             .transport()
@@ -118,6 +126,7 @@ impl Ethereum {
                 web3::types::CallRequest {
                     from: Some(tx.from.into()),
                     to: Some(tx.to.into()),
+                    gas_price: Some(eth::U256::zero()),
                     value: Some(tx.value.into()),
                     data: Some(tx.input.into()),
                     access_list: Some(tx.access_list.into()),
@@ -142,15 +151,14 @@ impl Ethereum {
             .map_err(Error::Gas)
     }
 
-    fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {
-        web3::types::TransactionRequest {
-            from: tx.from.into(),
-            to: Some(tx.to.into()),
-            value: Some(tx.value.into()),
-            data: Some(tx.input.into()),
-            access_list: Some(tx.access_list.into()),
-            ..Default::default()
-        }
+    /// Returns the current [`eth::Ether`] balance of the specified account.
+    pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
+        self.web3
+            .eth()
+            .balance(address.into(), None)
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
     }
 }
 

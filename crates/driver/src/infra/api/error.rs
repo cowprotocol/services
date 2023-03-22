@@ -24,6 +24,7 @@ enum Kind {
     QuoteSameTokens,
     InvalidAssetFlow,
     InvalidInternalization,
+    InsufficientBalance,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,6 +55,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                 "The solver returned a solution which internalizes interactions with untrusted \
                  tokens"
             }
+            Kind::InsufficientBalance => "Solver has insufficient Ether balance",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -92,6 +94,9 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::Solution(solution::Error::Verification(
                 solution::VerificationError::Internalization,
             )) => Kind::InvalidInternalization,
+            competition::Error::Solution(solution::Error::InsufficientBalance) => {
+                Kind::InsufficientBalance
+            }
             competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
             competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,

@@ -196,7 +196,7 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Ether(pub U256);
 
 impl From<U256> for Ether {

@@ -21,11 +21,12 @@ pub mod flashbots_api;
 pub mod public_mempool_api;
 
 use {
-    super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR},
+    super::{SubTxPoolRef, SubmissionError},
     crate::{
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::settle_method_builder,
+        settlement_submission::gas_limit_for_estimate,
     },
     anyhow::{anyhow, ensure, Context, Result},
     contracts::GPv2Settlement,
@@ -172,7 +173,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             .min(estimate.max_fee_per_gas);
         estimate = estimate.ceil();
 
-        ensure!(estimate.is_valid(), "invalid gas estimate {estimate:?}");
+        ensure!(estimate.is_valid(), "gas estimate exceeds cap {estimate:?}");
         Ok(estimate)
     }
 }
@@ -410,9 +411,7 @@ impl<'a> Submitter<'a> {
                     self.gas_price_estimator.clone()
                 }
             };
-            // Account for some buffer in the gas limit in case racing state changes result
-            // in slightly more heavy computation at execution time.
-            let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
+            let gas_limit = gas_limit_for_estimate(params.gas_estimate).to_f64_lossy();
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
             let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
                 Ok(gas_price) => gas_price,
@@ -800,6 +799,74 @@ mod tests {
         tracing::debug!("finished with result {:?}", result);
     }
 
+    #[tokio::test]
+    async fn gas_price_estimator_includes_additional_tip() {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(0.05),
+            max_additional_tip: Some(1000.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 11.,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn gas_price_estimator_additional_tip_gets_capped() {
+        // Capped by `max_additional_tip`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(0.05),
+            max_additional_tip: Some(5.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 6.,
+            }
+        );
+
+        // Capped by `max_fee_per_gas`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(5.),
+            max_additional_tip: Some(1000.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 200.,
+            }
+        );
+    }
+
     #[test]
     fn gas_price_estimator_no_tip_test() {
         let gas_price_estimator = SubmitterGasPriceEstimator {
@@ -809,7 +876,10 @@ mod tests {
             max_fee_per_gas: 0.,
         };
 
-        let gas_price_estimator = gas_price_estimator.with_additional_tip(None);
-        assert_eq!(gas_price_estimator.max_additional_tip, None);
+        assert!(gas_price_estimator
+            .with_additional_tip(None)
+            .max_additional_tip
+            .is_none());
+        assert!(gas_price_estimator.max_additional_tip.is_some());
     }
 }
