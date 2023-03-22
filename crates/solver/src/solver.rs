@@ -183,7 +183,15 @@ pub struct Simulation {
 
 pub struct SimulationWithError {
     pub simulation: Simulation,
-    pub error: ExecutionError,
+    pub error: SimulationError,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SimulationError {
+    #[error("web3 error: {0:?}")]
+    Web3(#[from] ExecutionError),
+    #[error("insufficient balance: needs {needs} has {has}")]
+    InsufficientBalance { needs: U256, has: U256 },
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
