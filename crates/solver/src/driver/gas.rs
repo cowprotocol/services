@@ -54,8 +54,12 @@ impl GasPriceEstimating for Estimator {
             .estimate_with_limits(gas_limit, time_limit)
             .await?;
 
-        estimate.max_fee_per_gas =
-            (estimate.base_fee_per_gas * MAX_FEE_FACTOR).min(self.gas_price_cap);
+        estimate.max_fee_per_gas = (estimate.base_fee_per_gas * MAX_FEE_FACTOR)
+            .max(estimate.base_fee_per_gas + estimate.max_priority_fee_per_gas)
+            .min(self.gas_price_cap);
+        estimate.max_priority_fee_per_gas = estimate
+            .max_priority_fee_per_gas
+            .min(estimate.max_fee_per_gas);
         estimate = estimate.ceil();
 
         ensure!(estimate.is_valid(), "invalid gas estimate {estimate:?}");
@@ -91,6 +95,41 @@ mod tests {
                 base_fee_per_gas: 10.,
                 max_fee_per_gas: 33.,
                 max_priority_fee_per_gas: 1.,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn respects_max_priority_fee() {
+        let estimator = Estimator::new(Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
+            base_fee_per_gas: 1.,
+            max_fee_per_gas: 200.,
+            max_priority_fee_per_gas: 99.,
+        })));
+
+        assert_eq!(
+            estimator
+                .estimate_with_limits(Default::default(), Default::default())
+                .await
+                .unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 1.,
+                max_fee_per_gas: 100.,
+                max_priority_fee_per_gas: 99.,
+            }
+        );
+
+        let estimator = estimator.with_gas_price_cap(50.);
+
+        assert_eq!(
+            estimator
+                .estimate_with_limits(Default::default(), Default::default())
+                .await
+                .unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 1.,
+                max_fee_per_gas: 50.,
+                max_priority_fee_per_gas: 50.,
             }
         );
     }

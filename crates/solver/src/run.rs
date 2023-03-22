@@ -511,6 +511,7 @@ pub async fn run(args: Arguments) {
         liquidity_collector,
         solver,
         gas_price_estimator,
+        args.gas_price_cap,
         args.settle_interval,
         native_token.address(),
         metrics.clone(),

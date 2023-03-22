@@ -85,6 +85,7 @@ impl Driver {
         liquidity_collector: LiquidityCollector,
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
+        gas_price_cap: f64,
         settle_interval: Duration,
         native_token: H160,
         metrics: Arc<dyn SolverMetrics>,
@@ -106,7 +107,8 @@ impl Driver {
         code_fetcher: Arc<dyn CodeFetching>,
         auction_rewards_activation_timestamp: DateTime<Utc>,
     ) -> Self {
-        let gas_price_estimator = gas::Estimator::new(gas_price_estimator);
+        let gas_price_estimator =
+            gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
 
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
