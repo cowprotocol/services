@@ -7,17 +7,14 @@ pub mod submitter;
 use {
     self::gelato::GelatoSubmitter,
     crate::{
-        metrics::SettlementSubmissionOutcome,
-        settlement::Settlement,
+        metrics::SettlementSubmissionOutcome, settlement::Settlement,
         settlement_access_list::AccessListEstimating,
     },
     anyhow::{anyhow, Result},
     contracts::GPv2Settlement,
     ethcontract::{
         errors::{ExecutionError, MethodError},
-        Account,
-        Address,
-        TransactionHash,
+        Account, Address, TransactionHash,
     },
     futures::FutureExt,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
@@ -29,13 +26,8 @@ use {
         time::{Duration, Instant},
     },
     submitter::{
-        DisabledReason,
-        Strategy,
-        Submitter,
-        SubmitterGasPriceEstimator,
-        SubmitterParams,
-        TransactionHandle,
-        TransactionSubmitting,
+        DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
+        TransactionHandle, TransactionSubmitting,
     },
     tracing::Instrument,
     web3::types::TransactionReceipt,
@@ -268,8 +260,12 @@ impl SolutionSubmitter {
                     max_fee_per_gas,
                     network_id.clone(),
                     settlement.clone(),
-                    i,
                 )
+                .instrument(tracing::info_span!(
+                    "submission",
+                    name = %strategy.label(),
+                    i
+                ))
                 .boxed()
             })
             .collect::<Vec<_>>();
@@ -298,7 +294,6 @@ impl SolutionSubmitter {
         max_fee_per_gas: f64,
         network_id: String,
         settlement: Settlement,
-        index: usize,
     ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -316,15 +311,14 @@ impl SolutionSubmitter {
 
         // No extra tip required if there is no revert risk
         let (additional_tip_percentage_of_max_fee, max_additional_tip) =
-            if shared::gas_price_estimation::is_mainnet(&network_id)
-                && settlement.revertable() == Revertable::NoRisk
-            {
+            if settlement.revertable() == Revertable::NoRisk {
+                tracing::debug!("Disabling additional tip because of NoRisk settlement");
+                (0., 0.)
+            } else {
                 (
                     strategy_args.additional_tip_percentage_of_max_fee,
                     strategy_args.max_additional_tip,
                 )
-            } else {
-                (0., 0.)
             };
 
         let params = SubmitterParams {
@@ -354,11 +348,6 @@ impl SolutionSubmitter {
         )?;
         submitter
             .submit(settlement, params)
-            .instrument(tracing::info_span!(
-                "submission",
-                name = %strategy_args.submit_api.name(),
-                i = index
-            ))
             .await
             .map(|tx| SubmissionReceipt {
                 tx,

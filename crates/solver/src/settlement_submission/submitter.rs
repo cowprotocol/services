@@ -72,7 +72,7 @@ pub struct SubmitterParams {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum SubmissionLoopStatus {
-    Enabled(),
+    Enabled,
     Disabled(DisabledReason),
 }
 
@@ -401,7 +401,7 @@ impl<'a> Submitter<'a> {
                     tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
-                SubmissionLoopStatus::Enabled() => self.gas_price_estimator.clone(),
+                SubmissionLoopStatus::Enabled => self.gas_price_estimator.clone(),
             };
             let gas_limit = gas_limit_for_estimate(params.gas_estimate).to_f64_lossy();
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());

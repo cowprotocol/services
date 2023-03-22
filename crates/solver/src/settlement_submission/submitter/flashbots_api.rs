@@ -2,8 +2,7 @@ use {
     super::{
         super::submitter::{TransactionHandle, TransactionSubmitting},
         common::PrivateNetwork,
-        Strategy,
-        SubmissionLoopStatus,
+        Strategy, SubmissionLoopStatus,
     },
     crate::settlement::Settlement,
     anyhow::{Context, Result},
@@ -58,7 +57,7 @@ impl TransactionSubmitting for FlashbotsApi {
         _settlement: &Settlement,
         _network_id: &str,
     ) -> SubmissionLoopStatus {
-        SubmissionLoopStatus::Enabled()
+        SubmissionLoopStatus::Enabled
     }
 
     fn name(&self) -> Strategy {

@@ -4,10 +4,7 @@ use {
     crate::{
         settlement::Settlement,
         settlement_submission::submitter::{
-            common::PrivateNetwork,
-            Strategy,
-            SubmissionLoopStatus,
-            TransactionHandle,
+            common::PrivateNetwork, Strategy, SubmissionLoopStatus, TransactionHandle,
             TransactionSubmitting,
         },
     },
@@ -134,7 +131,7 @@ impl TransactionSubmitting for EdenApi {
         _settlement: &Settlement,
         _network_id: &str,
     ) -> SubmissionLoopStatus {
-        SubmissionLoopStatus::Enabled()
+        SubmissionLoopStatus::Enabled
     }
 
     fn name(&self) -> Strategy {
