@@ -54,10 +54,9 @@ impl GasPriceEstimating for Estimator {
             .estimate_with_limits(gas_limit, time_limit)
             .await?;
 
-        estimate.max_fee_per_gas = (estimate.base_fee_per_gas * MAX_FEE_FACTOR).clamp(
-            estimate.base_fee_per_gas + estimate.max_priority_fee_per_gas,
-            self.gas_price_cap,
-        );
+        estimate.max_fee_per_gas = (estimate.base_fee_per_gas * MAX_FEE_FACTOR)
+            .max(estimate.base_fee_per_gas + estimate.max_priority_fee_per_gas)
+            .min(self.gas_price_cap);
         estimate.max_priority_fee_per_gas = estimate
             .max_priority_fee_per_gas
             .min(estimate.max_fee_per_gas);
