@@ -116,9 +116,10 @@ impl Mempool {
             .eth()
             .transaction_count(solver.address().into(), None)
             .await?;
+        let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
-            gas_price_cap: self.config.gas_price_cap,
+            max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
             additional_tip_percentage_of_max_fee: Some(self.config.additional_tip_percentage),
             max_additional_tip: match self.config.kind {
                 Kind::Public(_) => None,
@@ -147,7 +148,7 @@ impl Mempool {
                 settlement.boundary().inner,
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
-                    gas_estimate: gas.into(),
+                    gas_estimate: gas.estimate.into(),
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
                     network_id: self.eth.network_id().to_string(),

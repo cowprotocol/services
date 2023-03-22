@@ -166,8 +166,13 @@ impl Solution {
         let access_list = simulator.access_list(tx.clone()).await?;
         let tx = tx.set_access_list(access_list.clone());
 
-        // Finally, get the gas for the settlement using the full access list.
-        let gas = simulator.gas(tx).await?;
+        // Third, get the gas parameters for the settlement using the full
+        // access list.
+        let gas = {
+            let estimate = simulator.gas(tx).await?;
+            let price = eth.gas_price().await?;
+            settlement::Gas::new(estimate, price)
+        };
 
         Ok(settlement::Verified {
             inner: settlement,
