@@ -615,7 +615,7 @@ fn convert_onchain_order_placement(
     let order = database::orders::Order {
         uid: ByteArray(order_uid.0),
         owner: ByteArray(owner.0),
-        creation_timestamp: Utc.timestamp(event_timestamp, 0),
+        creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0),
         buy_token: ByteArray(order_data.buy_token.0),
         receiver: order_data.receiver.map(|h160| ByteArray(h160.0)),
@@ -1038,7 +1038,7 @@ mod test {
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
             owner: ByteArray(owner.0),
-            creation_timestamp: Utc.timestamp(event_timestamp, 0),
+            creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
             sell_token: ByteArray(expected_order_data.sell_token.0),
             buy_token: ByteArray(expected_order_data.buy_token.0),
             receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),

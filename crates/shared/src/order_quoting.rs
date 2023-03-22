@@ -82,7 +82,7 @@ impl QuoteHandler {
                 // We maintain an API guarantee that fast quotes always have an expiry of zero,
                 // because they're not very accurate and can be considered to
                 // expire immediately.
-                quote.data.expiration = Utc.timestamp(0, 0);
+                quote.data.expiration = Utc.timestamp_millis_opt(0).unwrap();
                 quote
             }
         };

@@ -283,7 +283,7 @@ mod tests {
                 uid: order_uid,
                 buy_amount: BigDecimal::from(1),
                 sell_amount: BigDecimal::from(100u32),
-                creation_timestamp: Utc.timestamp(1, 0),
+                creation_timestamp: Utc.timestamp_millis_opt(1_000).unwrap(),
                 ..Default::default()
             };
             let quote = Quote {

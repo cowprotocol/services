@@ -78,7 +78,7 @@ mod tests {
     use {
         super::*,
         anyhow::anyhow,
-        chrono::{DateTime, NaiveDateTime, Utc},
+        chrono::{TimeZone, Utc},
         ethcontract::{H160, U256},
         model::{
             app_id::AppId,
@@ -274,7 +274,7 @@ mod tests {
         let order_quote_response = OrderQuoteResponse {
             quote,
             from: H160::zero(),
-            expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+            expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
