@@ -799,6 +799,74 @@ mod tests {
         tracing::debug!("finished with result {:?}", result);
     }
 
+    #[tokio::test]
+    async fn gas_price_estimator_includes_additional_tip() {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(0.05),
+            max_additional_tip: Some(1000.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 11.,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn gas_price_estimator_additional_tip_gets_capped() {
+        // Capped by `max_additional_tip`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(0.05),
+            max_additional_tip: Some(5.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 6.,
+            }
+        );
+
+        // Capped by `max_fee_per_gas`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: Some(5.),
+            max_additional_tip: Some(1000.),
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 200.,
+            }
+        );
+    }
+
     #[test]
     fn gas_price_estimator_no_tip_test() {
         let gas_price_estimator = SubmitterGasPriceEstimator {
@@ -808,7 +876,10 @@ mod tests {
             max_fee_per_gas: 0.,
         };
 
-        let gas_price_estimator = gas_price_estimator.with_additional_tip(None);
-        assert_eq!(gas_price_estimator.max_additional_tip, None);
+        assert!(gas_price_estimator
+            .with_additional_tip(None)
+            .max_additional_tip
+            .is_none());
+        assert!(gas_price_estimator.max_additional_tip.is_some());
     }
 }
