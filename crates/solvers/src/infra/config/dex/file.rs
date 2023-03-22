@@ -42,27 +42,18 @@ fn default_smallest_partial_fill() -> eth::U256 {
     eth::U256::exp10(16) // 0.01 ETH
 }
 
-/// Deserializes the given TOML file to a `T`.
-///
-/// # Panics
-///
-/// This method panics if the config is invalid or on I/O errors.
-async fn parse<T: DeserializeOwned>(path: &Path) -> T {
-    let data = fs::read_to_string(path)
-        .await
-        .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-
-    toml::de::from_str::<T>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"))
-}
-
 /// Loads the base solver configuration from a TOML file.
 ///
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
 pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
-    let config: Config = parse(path).await;
+    let data = fs::read_to_string(path)
+        .await
+        .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
+
+    let config = toml::de::from_str::<Config>(&data)
+        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
 
     let dex: T = config
         .dex
