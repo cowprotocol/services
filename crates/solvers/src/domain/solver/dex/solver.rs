@@ -22,11 +22,11 @@ pub struct Dex {
 }
 
 impl Dex {
-    pub fn new(dex: infra::dex::Dex, slippage: slippage::Limits) -> Self {
+    pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
         Self {
             dex,
-            slippage,
-            order_fill_handler: Default::default(),
+            slippage: config.slippage,
+            order_fill_handler: Fills::new(config.smallest_partial_fill),
         }
     }
 
@@ -63,7 +63,7 @@ impl Dex {
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
-            let order = self.order_fill_handler.dex_order(&order);
+            let order = self.order_fill_handler.dex_order(&order, prices)?;
             let slippage = self.slippage.relative(&order.amount(), prices);
             self.dex.swap(&order, &slippage, gas).await
         };
@@ -75,7 +75,6 @@ impl Dex {
                     // Only adjust the amount to try next if we are sure the API worked correctly
                     // yet still wasn't able to provide a swap.
                     self.order_fill_handler.reduce_next_try(order.uid);
-                    tracing::debug!("decreased partial fill amount for next try");
                 } else {
                     tracing::debug!(?err, "skipping order");
                 }

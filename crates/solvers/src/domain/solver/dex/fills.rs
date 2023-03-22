@@ -1,5 +1,9 @@
 use {
-    crate::domain::{dex, eth, order},
+    crate::{
+        domain::{dex, eth, order},
+        util::conv,
+    },
+    bigdecimal::BigDecimal,
     std::{
         collections::HashMap,
         sync::Mutex,
@@ -9,26 +13,49 @@ use {
 
 /// Manages the search for a fillable amount for all order types but
 /// specifically for partially fillable orders.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Fills {
     /// Maps which fill amount should be tried next for a given order. For sell
     /// orders the amount refers to the `sell` asset and for buy orders it
     /// refers to the `buy` asset.
     amounts: Mutex<HashMap<order::Uid, CacheEntry>>,
+    /// The smallest value in ETH we consider trying a partially fillable order
+    /// with. If we move below this threshold we'll restart from 100% fill
+    /// amount to not eventually converge at 0.
+    smallest_fill: BigDecimal,
 }
 
+const ETH: eth::TokenAddress = eth::TokenAddress(eth::H160([0xee; 20]));
+
 impl Fills {
+    pub fn new(smallest_fill: eth::Ether) -> Self {
+        Self {
+            amounts: Default::default(),
+            smallest_fill: conv::ether_to_decimal(&smallest_fill),
+        }
+    }
+
     /// Returns which dex query should be tried for the given order. Takes
     /// information of previous partial fill attempts into account.
-    pub fn dex_order(&self, order: &order::Order) -> dex::Order {
+    pub fn dex_order(
+        &self,
+        order: &order::Order,
+        prices: &dex::slippage::Prices,
+    ) -> Option<dex::Order> {
         if !order.partially_fillable {
-            return dex::Order::new(order);
+            return Some(dex::Order::new(order));
         }
 
         let (token, total_amount) = match order.side {
             order::Side::Buy => (order.buy.token, order.buy.amount),
             order::Side::Sell => (order.sell.token, order.sell.amount),
         };
+
+        let smallest_fill =
+            self.smallest_fill.clone() * prices.0.get(&token)? / prices.0.get(&ETH)?;
+        let smallest_fill = conv::decimal_to_ether(&smallest_fill)?.0;
+        tracing::trace!(?smallest_fill, ?order, "least amount worth filling");
+
         let now = Instant::now();
 
         let amount = match self.amounts.lock().unwrap().entry(order.uid) {
@@ -42,23 +69,38 @@ impl Fills {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
-                // `total_amount` might be lower than what we wanted to try next if
-                // some other solver partially filled the order in the mean time.
-                entry.next_amount = entry.next_amount.min(total_amount);
+
+                entry.next_amount = if entry.next_amount < smallest_fill {
+                    tracing::trace!("target fill got too small; starting over");
+                    total_amount
+                } else if entry.next_amount > total_amount {
+                    tracing::trace!("partially filled; adjusting to new total amount");
+                    total_amount
+                } else {
+                    // The regular case where we do our normal attempt.
+                    entry.next_amount
+                };
+
                 entry.next_amount
             }
         };
+
+        if amount < smallest_fill {
+            tracing::trace!(?amount, "order no longer worth filling");
+            return None;
+        }
 
         let (sell, buy) = match order.side {
             order::Side::Buy => (order.sell, eth::Asset { token, amount }),
             order::Side::Sell => (eth::Asset { token, amount }, order.buy),
         };
 
-        dex::Order::new(&order::Order {
+        tracing::trace!(?amount, "trying to partially fill order");
+        Some(dex::Order::new(&order::Order {
             sell,
             buy,
             ..*order
-        })
+        }))
     }
 
     /// Adjusts the next fill amount that should be tried. Always halfes the
@@ -66,11 +108,10 @@ impl Fills {
     // TODO: make use of `price_impact` provided by some APIs to get a more optimal
     // next try.
     pub fn reduce_next_try(&self, uid: order::Uid) {
-        self.amounts
-            .lock()
-            .unwrap()
-            .entry(uid)
-            .and_modify(|entry| entry.next_amount /= 2);
+        self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
+            entry.next_amount /= 2;
+            tracing::trace!(next_try =? entry.next_amount, "adjusted next fill amount");
+        });
     }
 
     /// Removes entries that have not been requested for a long time. This

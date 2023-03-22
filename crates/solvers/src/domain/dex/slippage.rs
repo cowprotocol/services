@@ -103,7 +103,7 @@ impl Slippage {
 }
 
 /// Token reference prices for a specified auction.
-pub struct Prices(HashMap<eth::TokenAddress, BigDecimal>);
+pub struct Prices(pub HashMap<eth::TokenAddress, BigDecimal>);
 
 impl Prices {
     pub fn new(prices: impl IntoIterator<Item = (eth::TokenAddress, auction::Price)>) -> Self {
