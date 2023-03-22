@@ -3,11 +3,9 @@
 use {
     crate::{
         domain::{dex::slippage, eth},
-        infra::contracts,
         util::conv,
     },
     bigdecimal::BigDecimal,
-    ethereum_types::H160,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
     std::path::Path,
@@ -31,16 +29,6 @@ struct Config {
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
     smallest_partial_fill: eth::U256,
-}
-
-fn default_endpoint() -> reqwest::Url {
-    "https://api.0x.org/swap/v1/".parse().unwrap()
-}
-
-fn default_affiliate() -> H160 {
-    contracts::Contracts::for_chain(eth::ChainId::Mainnet)
-        .settlement
-        .0
 }
 
 fn default_relative_slippage() -> BigDecimal {
