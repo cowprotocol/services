@@ -2,5 +2,5 @@ pub mod file;
 
 pub struct Config {
     pub sor: crate::infra::dex::balancer::Config,
-    pub base: super::BaseConfig,
+    pub base: super::Config,
 }

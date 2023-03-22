@@ -11,7 +11,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The versioned URL endpoint for the 0x swap API.
     #[serde(default = "default_endpoint")]
@@ -56,7 +56,7 @@ fn default_affiliate() -> H160 {
 ///
 /// This method panics if the config is invalid or on I/O errors.
 pub async fn load(path: &Path) -> super::Config {
-    let config = file::parse::<Config>(path).await;
+    let (base, config) = file::load::<Config>(path).await;
 
     super::Config {
         zeroex: zeroex::Config {
@@ -66,6 +66,6 @@ pub async fn load(path: &Path) -> super::Config {
             affiliate: config.affiliate,
             enable_slippage_protection: config.enable_slippage_protection,
         },
-        base: file::load_base_config(path).await,
+        base,
     }
 }

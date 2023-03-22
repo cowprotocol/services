@@ -14,7 +14,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The relative slippage allowed by the solver.
     #[serde(default = "default_relative_slippage")]
@@ -29,6 +29,9 @@ struct Config {
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
     smallest_partial_fill: eth::U256,
+
+    /// Settings specific to the wrapped dex API.
+    dex: toml::Value,
 }
 
 fn default_relative_slippage() -> BigDecimal {
@@ -44,7 +47,7 @@ fn default_smallest_partial_fill() -> eth::U256 {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn parse<T: DeserializeOwned>(path: &Path) -> T {
+async fn parse<T: DeserializeOwned>(path: &Path) -> T {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -58,10 +61,15 @@ pub async fn parse<T: DeserializeOwned>(path: &Path) -> T {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load_base_config(path: &Path) -> super::BaseConfig {
+pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
     let config: Config = parse(path).await;
 
-    super::BaseConfig {
+    let dex: T = config
+        .dex
+        .try_into()
+        .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
+
+    let config = super::Config {
         slippage: slippage::Limits::new(
             config.relative_slippage,
             config.absolute_slippage.map(|value| {
@@ -70,5 +78,7 @@ pub async fn load_base_config(path: &Path) -> super::BaseConfig {
         )
         .expect("invalid slippage limits"),
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
-    }
+    };
+
+    (config, dex)
 }

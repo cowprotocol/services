@@ -11,7 +11,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The URL of the Balancer SOR API.
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -32,7 +32,7 @@ struct Config {
 ///
 /// This method panics if the config is invalid or on I/O errors.
 pub async fn load(path: &Path) -> super::Config {
-    let config: Config = file::parse(path).await;
+    let (base, config) = file::load::<Config>(path).await;
 
     // Balancer SOR solver only supports mainnet.
     let contracts = contracts::Contracts::for_chain(eth::ChainId::Mainnet);
@@ -49,6 +49,6 @@ pub async fn load(path: &Path) -> super::Config {
                 .map(eth::ContractAddress)
                 .unwrap_or(contracts.settlement),
         },
-        base: file::load_base_config(path).await,
+        base,
     }
 }
