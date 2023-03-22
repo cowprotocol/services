@@ -1,3 +1,5 @@
+use crate::settlement::Revertable;
+
 mod dry_run;
 pub mod gelato;
 pub mod submitter;
@@ -311,6 +313,20 @@ impl SolutionSubmitter {
         };
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");
+
+        // No extra tip required if there is no revert risk
+        let (additional_tip_percentage_of_max_fee, max_additional_tip) =
+            if shared::gas_price_estimation::is_mainnet(&network_id)
+                && settlement.revertable() == Revertable::NoRisk
+            {
+                (
+                    strategy_args.additional_tip_percentage_of_max_fee,
+                    strategy_args.max_additional_tip,
+                )
+            } else {
+                (0., 0.)
+            };
+
         let params = SubmitterParams {
             target_confirm_time: self.target_confirm_time,
             gas_estimate,
@@ -322,10 +338,8 @@ impl SolutionSubmitter {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas,
-            additional_tip_percentage_of_max_fee: Some(
-                strategy_args.additional_tip_percentage_of_max_fee,
-            ),
-            max_additional_tip: Some(strategy_args.max_additional_tip),
+            additional_tip_percentage_of_max_fee,
+            max_additional_tip,
         };
         let submitter = Submitter::new(
             &self.contract,
