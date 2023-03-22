@@ -1,4 +1,5 @@
-pub mod balancer;
 pub mod baseline;
+mod dex;
 pub mod legacy;
-pub mod zeroex;
+
+pub use dex::{balancer, zeroex};

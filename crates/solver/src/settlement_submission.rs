@@ -39,7 +39,13 @@ use {
     web3::types::TransactionReceipt,
 };
 
-const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
+/// Computes a gas limit from a gas estimate that accounts for some buffer in
+/// case racing state changes result in slightly more heavy computation at
+/// execution time.
+pub fn gas_limit_for_estimate(gas_estimate: U256) -> U256 {
+    const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
+    U256::from_f64_lossy(gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR)
+}
 
 #[derive(Debug)]
 pub struct SubTxPool {
