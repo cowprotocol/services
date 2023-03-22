@@ -3,13 +3,7 @@
 
 use {
     crate::{
-        domain::{
-            auction,
-            dex::slippage,
-            order,
-            solution,
-            solver::dex::partial_fills::PartialFiller,
-        },
+        domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
     tracing::Instrument,
@@ -22,8 +16,9 @@ pub struct Dex {
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
 
-    /// Helps to manage the strategy to settle partially fillable orders.
-    partial_fill_handler: PartialFiller,
+    /// Helps to manage the strategy to fill orders (especially partially
+    /// fillable orders).
+    order_fill_handler: Fills,
 }
 
 impl Dex {
@@ -31,7 +26,7 @@ impl Dex {
         Self {
             dex,
             slippage,
-            partial_fill_handler: Default::default(),
+            order_fill_handler: Default::default(),
         }
     }
 
@@ -56,7 +51,7 @@ impl Dex {
             }
         }
 
-        self.partial_fill_handler.collect_garbage();
+        self.order_fill_handler.collect_garbage();
 
         solutions
     }
@@ -68,7 +63,7 @@ impl Dex {
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
-            let order = self.partial_fill_handler.dex_order(&order);
+            let order = self.order_fill_handler.dex_order(&order);
             let slippage = self.slippage.relative(&order.amount(), prices);
             self.dex.swap(&order, &slippage, gas).await
         };
@@ -79,7 +74,7 @@ impl Dex {
                 if order.partially_fillable {
                     // Only adjust the amount to try next if we are sure the API worked correctly
                     // yet still wasn't able to provide a swap.
-                    self.partial_fill_handler.reduce_next_try(order.uid);
+                    self.order_fill_handler.reduce_next_try(order.uid);
                     tracing::debug!("decreased partial fill amount for next try");
                 } else {
                     tracing::debug!(?err, "skipping order");

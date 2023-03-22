@@ -7,16 +7,17 @@ use {
     },
 };
 
-/// Manages the search for a fillable amount for partially fillable orders.
+/// Manages the search for a fillable amount for all order types but
+/// specifically for partially fillable orders.
 #[derive(Debug, Default)]
-pub struct PartialFiller {
+pub struct Fills {
     /// Maps which fill amount should be tried next for a given order. For sell
     /// orders the amount refers to the `sell` asset and for buy orders it
     /// refers to the `buy` asset.
     amounts: Mutex<HashMap<order::Uid, CacheEntry>>,
 }
 
-impl PartialFiller {
+impl Fills {
     /// Returns which dex query should be tried for the given order. Takes
     /// information of previous partial fill attempts into account.
     pub fn dex_order(&self, order: &order::Order) -> dex::Order {
