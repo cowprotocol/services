@@ -106,13 +106,7 @@ impl Driver {
         code_fetcher: Arc<dyn CodeFetching>,
         auction_rewards_activation_timestamp: DateTime<Utc>,
     ) -> Self {
-        let gas_price_estimator = gas::Estimator::new(
-            gas_price_estimator,
-            gas::Timing {
-                block: block_time,
-                run: solver_time_limit + solution_submitter.max_confirm_time,
-            },
-        );
+        let gas_price_estimator = gas::Estimator::new(gas_price_estimator);
 
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),

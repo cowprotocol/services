@@ -167,6 +167,9 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
                     .additional_tip_percentage_of_max_fee
                     .unwrap_or_default(),
         );
+        estimate.max_priority_fee_per_gas = estimate
+            .max_priority_fee_per_gas
+            .min(estimate.max_fee_per_gas);
         estimate = estimate.ceil();
 
         ensure!(estimate.is_valid(), "invalid gas estimate {estimate:?}");
