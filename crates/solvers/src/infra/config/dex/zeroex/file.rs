@@ -1,15 +1,12 @@
 use {
     crate::{
-        domain::{dex::slippage, eth},
-        infra::{contracts, dex::zeroex},
-        util::conv,
+        domain::eth,
+        infra::{config::dex::file, contracts, dex::zeroex},
     },
-    bigdecimal::BigDecimal,
     ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
-    tokio::fs,
 };
 
 #[serde_as]
@@ -41,15 +38,6 @@ struct Config {
     /// would get with on-chain liquidity pools.
     #[serde(default)]
     enable_slippage_protection: bool,
-
-    /// The relative slippage allowed by the solver.
-    #[serde(default = "default_relative_slippage")]
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    relative_slippage: BigDecimal,
-
-    /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
-    absolute_slippage: Option<BigDecimal>,
 }
 
 fn default_endpoint() -> reqwest::Url {
@@ -62,21 +50,13 @@ fn default_affiliate() -> H160 {
         .0
 }
 
-fn default_relative_slippage() -> BigDecimal {
-    BigDecimal::new(1.into(), 2) // 1%
-}
-
 /// Load the 0x solver configuration from a TOML file.
 ///
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
 pub async fn load(path: &Path) -> super::Config {
-    let data = fs::read_to_string(path)
-        .await
-        .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let (base, config) = file::load::<Config>(path).await;
 
     super::Config {
         zeroex: zeroex::Config {
@@ -86,12 +66,6 @@ pub async fn load(path: &Path) -> super::Config {
             affiliate: config.affiliate,
             enable_slippage_protection: config.enable_slippage_protection,
         },
-        slippage: slippage::Limits::new(
-            config.relative_slippage,
-            config.absolute_slippage.map(|value| {
-                conv::decimal_to_ether(&value).expect("invalid absolute slippage Ether value")
-            }),
-        )
-        .expect("invalid slippage limits"),
+        base,
     }
 }
