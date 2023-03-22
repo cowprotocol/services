@@ -151,6 +151,7 @@ impl Ethereum {
             .map_err(Error::Gas)
     }
 
+    /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
             .eth()

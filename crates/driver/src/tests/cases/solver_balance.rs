@@ -3,7 +3,10 @@
 use {
     super::SOLVER_NAME,
     crate::{
-        domain::competition::{self, auction},
+        domain::{
+            competition::{self, auction},
+            eth,
+        },
         infra,
         tests::{self, hex_address, setup},
     },
@@ -11,7 +14,7 @@ use {
     serde_json::json,
 };
 
-/// Test that the /solve errors when solver balance is low.
+/// Test that the `/solve` request errors when solver balance is low.
 #[tokio::test]
 #[ignore]
 async fn test() {
@@ -161,6 +164,11 @@ async fn test() {
 
     // Transfer out all of the solver's funds.
     setup::blockchain::wait_for(&web3, {
+        // An empirically determined balance (from the `settle` test) that is
+        // more than enough to actually execute the settlement on-chain **but**
+        // too small to account for gas spikes.
+        let leftover = eth::U256::from(100_000_000_000_000_u128);
+
         let balance = web3.eth().balance(solver_address, None).await.unwrap();
         let gas_price = web3.eth().gas_price().await.unwrap();
 
@@ -169,7 +177,7 @@ async fn test() {
             .sign_transaction(
                 web3::types::TransactionParameters {
                     to: Some(Default::default()),
-                    value: balance - gas_price * 21000,
+                    value: balance - leftover - gas_price * 21000,
                     gas: 21000.into(),
                     gas_price: Some(gas_price),
                     ..Default::default()
