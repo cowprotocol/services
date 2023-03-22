@@ -51,7 +51,7 @@ fn default_smallest_partial_fill() -> eth::U256 {
     eth::U256::exp10(16) // 0.01 ETH
 }
 
-/// Load the base solver configuration from a TOML file.
+/// Deserializes the given TOML file to a `T`.
 ///
 /// # Panics
 ///
@@ -65,6 +65,11 @@ pub async fn parse<T: DeserializeOwned>(path: &Path) -> T {
         .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"))
 }
 
+/// Loads the base solver configuration from a TOML file.
+///
+/// # Panics
+///
+/// This method panics if the config is invalid or on I/O errors.
 pub async fn load_base_config(path: &Path) -> super::BaseConfig {
     let config: Config = parse(path).await;
 
