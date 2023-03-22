@@ -38,14 +38,14 @@ pub async fn run(
                 dex: dex::Dex::ZeroEx(
                     dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
                 ),
-                slippage: config.slippage,
+                slippage: config.base.slippage,
             })
         }
         cli::Command::Balancer { config } => {
             let config = config::balancer::file::load(&config).await;
             Solver::Dex(solver::Dex {
                 dex: dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
-                slippage: config.slippage,
+                slippage: config.base.slippage,
             })
         }
     };
