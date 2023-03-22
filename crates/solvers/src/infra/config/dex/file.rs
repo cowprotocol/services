@@ -16,7 +16,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// The relative slippage allowed by the solver.
     #[serde(default = "default_relative_slippage")]

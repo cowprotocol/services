@@ -11,7 +11,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// The URL of the Balancer SOR API.
     #[serde_as(as = "serde_with::DisplayFromStr")]

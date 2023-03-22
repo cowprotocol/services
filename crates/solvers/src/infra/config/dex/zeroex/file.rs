@@ -11,7 +11,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// The versioned URL endpoint for the 0x swap API.
     #[serde(default = "default_endpoint")]
