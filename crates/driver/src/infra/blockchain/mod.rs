@@ -1,32 +1,31 @@
 use {
     self::contracts::ContractAt,
-    crate::domain::eth,
+    crate::{boundary, domain::eth},
+    ethcontract::{dyns::DynWeb3, transport::DynTransport},
+    gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
+    std::{fmt, sync::Arc},
     thiserror::Error,
     web3::{Transport, Web3},
 };
 
 pub mod contracts;
 
-use ethcontract::{dyns::DynWeb3, transport::DynTransport};
-
 pub use self::contracts::Contracts;
 
 /// The Ethereum blockchain.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
     chain_id: eth::ChainId,
     network_id: eth::NetworkId,
     contracts: Contracts,
+    gas: Arc<NativeGasEstimator>,
 }
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
-    pub async fn ethrpc(
-        url: &url::Url,
-        addresses: contracts::Addresses,
-    ) -> Result<Self, web3::Error> {
+    pub async fn ethrpc(url: &url::Url, addresses: contracts::Addresses) -> Result<Self, Error> {
         // TODO Enable batching, reuse ethrpc? Put it in the boundary module?
         // I feel like what we have in shared::ethrpc could be simplified if we use
         // web3::transports::batch or something, but I haven't looked deep into it, just
@@ -37,11 +36,18 @@ impl Ethereum {
         let chain_id = web3.eth().chain_id().await?.into();
         let network_id = web3.net().version().await?.into();
         let contracts = Contracts::new(&web3, &network_id, addresses);
+        let gas = Arc::new(
+            NativeGasEstimator::new(web3.transport().clone(), None)
+                .await
+                .map_err(Error::Gas)?,
+        );
+
         Ok(Self {
             web3,
             chain_id,
             network_id,
             contracts,
+            gas,
         })
     }
 
@@ -124,13 +130,16 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    pub async fn gas_price(&self) -> Result<eth::EffectiveGasPrice, Error> {
-        self.web3
-            .eth()
-            .gas_price()
+    pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
+        self.gas
+            .estimate()
             .await
-            .map(Into::into)
-            .map_err(Into::into)
+            .map(|estimate| eth::GasPrice {
+                max: eth::U256::from_f64_lossy(estimate.max_fee_per_gas).into(),
+                tip: eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
+                base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
+            })
+            .map_err(Error::Gas)
     }
 
     fn into_request(tx: eth::Tx) -> web3::types::TransactionRequest {
@@ -145,12 +154,26 @@ impl Ethereum {
     }
 }
 
+impl fmt::Debug for Ethereum {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Ethereum")
+            .field("web3", &self.web3)
+            .field("chain_id", &self.chain_id)
+            .field("network_id", &self.network_id)
+            .field("contracts", &self.contracts)
+            .field("gas", &"Arc<NativeGasEstimator>")
+            .finish()
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("method error: {0:?}")]
     Method(#[from] ethcontract::errors::MethodError),
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("gas price estimation error: {0}")]
+    Gas(boundary::Error),
     #[error("web3 error returned in response: {0:?}")]
     Response(serde_json::Value),
 }

@@ -114,7 +114,7 @@ impl Auction {
                 })
                 .collect(),
             tokens,
-            effective_gas_price: auction.gas_price.into(),
+            effective_gas_price: auction.gas_price.effective().into(),
             deadline: timeout.deadline(now),
         }
     }

@@ -1,8 +1,12 @@
-use ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3};
+use {
+    crate::domain::eth,
+    ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
+    futures::Future,
+    gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
+};
 
 pub mod uniswap;
 
-use futures::Future;
 pub use uniswap::Uniswap;
 
 /// The URL to which a post request can be made to start and stop geth
@@ -13,6 +17,17 @@ pub fn web3(url: &str) -> DynWeb3 {
     Web3::new(DynTransport::new(
         web3::transports::Http::new(url).expect("valid URL"),
     ))
+}
+
+/// Compute the effective gas price estimate from a node.
+pub async fn effective_gas_price(web3: &DynWeb3) -> eth::U256 {
+    let estimate = NativeGasEstimator::new(web3.transport().clone(), None)
+        .await
+        .unwrap()
+        .estimate()
+        .await
+        .unwrap();
+    eth::U256::from_f64_lossy(estimate.effective_gas_price())
 }
 
 /// Get the first account owned by the web3 node.

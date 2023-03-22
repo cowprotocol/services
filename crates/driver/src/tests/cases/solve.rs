@@ -16,7 +16,6 @@ async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
     let setup::blockchain::Uniswap {
-        web3,
         settlement,
         token_a,
         token_b,
@@ -31,6 +30,7 @@ async fn test() {
         solver_address,
         geth,
         solver_secret_key,
+        ..
     } = setup::blockchain::uniswap::setup().await;
 
     // Values for the auction.
@@ -52,7 +52,6 @@ async fn test() {
         owner: admin,
         partially_fillable: false,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -122,7 +121,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": "247548525",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -209,5 +208,5 @@ async fn test() {
     assert!(result.get("id").is_some());
     assert!(result.get("score").is_some());
     let score = result.get("score").unwrap().as_f64().unwrap();
-    approx::assert_relative_eq!(score, -57863609895124.0, max_relative = 0.01);
+    approx::assert_relative_eq!(score, -58935857734950.0, max_relative = 0.01);
 }
