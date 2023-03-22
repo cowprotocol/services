@@ -5,6 +5,7 @@ pub mod limit_order;
 pub mod quote;
 pub mod settle;
 pub mod solve;
+pub mod solver_balance;
 pub mod verify_asset_flow;
 pub mod verify_internalization;
 

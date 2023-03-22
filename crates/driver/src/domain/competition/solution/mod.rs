@@ -174,6 +174,14 @@ impl Solution {
             settlement::Gas::new(estimate, price)
         };
 
+        // Finally, ensure that the solver account has enough Ether balance to
+        // mine the transaction. Simulations failing on insufficient gas is not
+        // guaranteed by all nodes.
+        let balance = eth.balance(self.solver.address()).await?;
+        if balance < gas.required_balance() {
+            return Err(Error::InsufficientBalance);
+        }
+
         Ok(settlement::Verified {
             inner: settlement,
             access_list,
@@ -369,6 +377,8 @@ pub enum Error {
     Boundary(#[from] boundary::Error),
     #[error("verification error: {0:?}")]
     Verification(#[from] VerificationError),
+    #[error("insufficient solver account Ether balance")]
+    InsufficientBalance,
 }
 
 /// Solution verification failed.
