@@ -24,7 +24,7 @@ impl Estimator {
     /// - Don't need to over-estimate a `max_fee_per_gas` value to account for
     ///   gas spikes, meaning we won't disregard solvers with lower, but
     ///   sufficient balances
-    /// - Will only ever chose a solver IIF it will have enough balance to
+    /// - Will only ever chose a solver IFF it will have enough balance to
     ///   execute a settlement up until `max_fee_per_gas`, preventing settlement
     ///   submissions being stopped part-way through because of insufficient
     ///   balance for executing a transaction

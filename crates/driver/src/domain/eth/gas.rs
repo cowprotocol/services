@@ -3,7 +3,10 @@ use {
     std::ops,
 };
 
-/// Gas amount.
+/// Gas amount in gas units.
+///
+/// The amount of Ether that is paid in transaction fees is proportional to this
+/// amount as well as the transaction's [`EffectiveGasPrice`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Gas(pub U256);
 
