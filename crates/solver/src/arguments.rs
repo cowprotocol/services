@@ -491,7 +491,13 @@ mod tests {
 
     #[test]
     fn test_parsing_date_time() {
-        let dt = DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2023, 3, 14).and_hms(0, 0, 0), Utc);
+        let dt = DateTime::<Utc>::from_utc(
+            NaiveDate::from_ymd_opt(2023, 3, 14)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            Utc,
+        );
         let stringified = dt.to_rfc3339();
         println!("stringified: {}", stringified);
         let dt2 = DateTime::<Utc>::from_str(&stringified).unwrap();

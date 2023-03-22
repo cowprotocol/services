@@ -5,11 +5,13 @@ use {
 
 pub mod allowance;
 mod eip712;
+mod gas;
 
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
     ethcontract::PrivateKey,
+    gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     primitive_types::{H160, H256, U256},
 };
 
@@ -49,46 +51,6 @@ impl From<String> for NetworkId {
 impl std::fmt::Display for NetworkId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-/// Gas amount.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Gas(pub U256);
-
-impl From<U256> for Gas {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
-impl From<u64> for Gas {
-    fn from(value: u64) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<Gas> for U256 {
-    fn from(value: Gas) -> Self {
-        value.0
-    }
-}
-
-/// `effective_gas_price` as defined by EIP-1559.
-///
-/// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
-pub struct EffectiveGasPrice(pub Ether);
-
-impl From<U256> for EffectiveGasPrice {
-    fn from(value: U256) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<EffectiveGasPrice> for U256 {
-    fn from(value: EffectiveGasPrice) -> Self {
-        value.0.into()
     }
 }
 

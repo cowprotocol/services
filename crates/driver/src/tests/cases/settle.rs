@@ -122,7 +122,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": "243044758",
+                "effectiveGasPrice": "247548525",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({

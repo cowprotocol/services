@@ -136,7 +136,7 @@ pub struct SubmitterGasPriceEstimator<'a> {
     /// Maximum max_priority_fee_per_gas additional increase
     pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
-    pub gas_price_cap: f64,
+    pub max_fee_per_gas: f64,
 }
 
 impl SubmitterGasPriceEstimator<'_> {
@@ -155,25 +155,25 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         gas_limit: f64,
         time_limit: Duration,
     ) -> Result<GasPrice1559> {
-        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
-            Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
-                // boost miner tip to increase our chances of being included in a block
-                gas_price.max_priority_fee_per_gas +=
-                    self.max_additional_tip.unwrap_or_default().min(
-                        gas_price.max_fee_per_gas
-                            * self
-                                .additional_tip_percentage_of_max_fee
-                                .unwrap_or_default(),
-                    );
-                Ok(gas_price)
-            }
-            Ok(gas_price) => Err(anyhow!(
-                "gas station gas price {} is larger than cap {}",
-                gas_price.max_fee_per_gas,
-                self.gas_price_cap
-            )),
-            Err(err) => Err(err),
-        }
+        let mut estimate = self
+            .inner
+            .estimate_with_limits(gas_limit, time_limit)
+            .await?;
+
+        estimate.max_fee_per_gas = estimate.max_fee_per_gas.min(self.max_fee_per_gas);
+        estimate.max_priority_fee_per_gas += self.max_additional_tip.unwrap_or_default().min(
+            estimate.max_fee_per_gas
+                * self
+                    .additional_tip_percentage_of_max_fee
+                    .unwrap_or_default(),
+        );
+        estimate.max_priority_fee_per_gas = estimate
+            .max_priority_fee_per_gas
+            .min(estimate.max_fee_per_gas);
+        estimate = estimate.ceil();
+
+        ensure!(estimate.is_valid(), "invalid gas estimate {estimate:?}");
+        Ok(estimate)
     }
 }
 
@@ -739,7 +739,7 @@ mod tests {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &gas_price_estimator,
             max_additional_tip: Some(3.0),
-            gas_price_cap: 100e9,
+            max_fee_per_gas: 100e9,
             additional_tip_percentage_of_max_fee: Some(0.05),
         };
         let access_list_estimator = Arc::new(
@@ -806,7 +806,7 @@ mod tests {
             inner: &FakeGasPriceEstimator::default(),
             additional_tip_percentage_of_max_fee: Some(5.),
             max_additional_tip: Some(10.),
-            gas_price_cap: 0.,
+            max_fee_per_gas: 0.,
         };
 
         let gas_price_estimator = gas_price_estimator.with_additional_tip(None);

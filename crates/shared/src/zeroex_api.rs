@@ -11,7 +11,7 @@ use {
         interaction::{EncodedInteraction, Interaction},
     },
     anyhow::{Context, Result},
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
     model::u256_decimal,
@@ -506,8 +506,7 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
-        let expiry = NaiveDateTime::from_timestamp(order.order.expiry as i64, 0);
-        let expiry: DateTime<Utc> = DateTime::from_utc(expiry, Utc);
+        let expiry = Utc.timestamp_opt(order.order.expiry as i64, 0).unwrap();
 
         // only keep orders which are still valid and unique
         expiry > now && included_orders.insert(order.metadata.order_hash.clone())
@@ -553,7 +552,11 @@ impl DefaultZeroExApi {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::addr, chrono::TimeZone};
+    use {
+        super::*,
+        crate::addr,
+        chrono::{DateTime, NaiveDate},
+    };
 
     #[tokio::test]
     #[ignore]
@@ -718,7 +721,7 @@ mod tests {
                                 "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
                             ).unwrap(),
                         remaining_fillable_taker_amount: 262467000000000000u128,
-                        created_at: Utc.ymd(2022, 2, 26).and_hms_milli(6, 59, 0, 440)
+                        created_at: DateTime::from_utc(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
                     },
                     order: Order {
                         chain_id: 1u64,

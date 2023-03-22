@@ -54,8 +54,8 @@ pub struct Verified {
     pub(super) inner: Settlement,
     /// The access list used by the settlement.
     pub access_list: eth::AccessList,
-    /// The gas used by the settlement.
-    pub gas: eth::Gas,
+    /// The gas parameters used by the settlement.
+    pub gas: Gas,
 }
 
 impl Verified {
@@ -65,7 +65,10 @@ impl Verified {
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Result<super::Score, boundary::Error> {
-        self.inner.boundary.score(eth, auction, self.gas).await
+        self.inner
+            .boundary
+            .score(eth, auction, self.gas.estimate)
+            .await
     }
 
     pub fn id(&self) -> super::Id {
@@ -75,5 +78,61 @@ impl Verified {
     /// Necessary for the boundary integration, to allow executing settlements.
     pub fn boundary(self) -> boundary::Settlement {
         self.inner.boundary
+    }
+}
+
+/// Gas parameters associated with a settlement.
+#[derive(Clone, Copy, Debug)]
+pub struct Gas {
+    /// The gas estimate, in gas units, for executing a settlement transaction.
+    pub estimate: eth::Gas,
+    /// The gas limit, in gas units, for a settlement transaction. This is
+    /// computed by adding a buffer to the gas estimate to allow for small
+    /// variations in the actual gas that gets used.
+    pub limit: eth::Gas,
+    /// The maximum fee per unit of gas for a given settlement.
+    pub price: eth::FeePerGas,
+}
+
+impl Gas {
+    /// Computes settlement gas parameters given estimates for gas and gas
+    /// price.
+    pub fn new(estimate: eth::Gas, price: eth::GasPrice) -> Self {
+        // Compute an upper bound for `max_fee_per_gas` for the given
+        // settlement. We multiply a fixed factor of the current base fee per
+        // gas, which is chosen to be the maximum possible increase to the base
+        // fee per gas over 10 blocks.
+        //
+        // This is computed as an approximation of:
+        //      MAX_FEE_FACTOR = MAX_GAS_INCREASE_PER_BLOCK **
+        // SUBMISSION_DEADLINE_IN_BLOCKS                     = 1.125 ** 10
+        //
+        // The value of `MAX_GAS_INCREASE_PER_BLOCK` comes from EIP-1559, which
+        // dictates that the block base fee can increase by a maximum of 12.5%
+        // from one block to another.
+        const MAX_FEE_FACTOR: f64 = 3.25;
+        let price =
+            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(price.base.into()) * MAX_FEE_FACTOR)
+                .into();
+
+        // Specify a different gas limit than the estimated gas when executing a
+        // settlement transaction. This allows the transaction to be resilient
+        // to small variations in actual gas usage.
+        const GAS_LIMIT_FACTOR: f64 = 1.2;
+        let limit =
+            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
+                .into();
+
+        Self {
+            estimate,
+            limit,
+            price,
+        }
+    }
+
+    /// Returns the minimum required balance in Ether that an account needs in
+    /// order to afford the specified gas parameters.
+    pub fn required_balance(&self) -> eth::Ether {
+        self.limit * self.price
     }
 }

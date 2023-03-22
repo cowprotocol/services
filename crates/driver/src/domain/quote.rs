@@ -116,7 +116,7 @@ impl Order {
                 },
                 reward: FAKE_AUCTION_REWARD,
             }],
-            gas_price: self.gas_price,
+            gas_price: self.gas_price.into(),
             deadline: Default::default(),
         }
     }

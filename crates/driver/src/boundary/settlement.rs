@@ -182,7 +182,7 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let gas_price = u256_to_big_rational(&auction.gas_price.into());
+        let gas_price = u256_to_big_rational(&auction.gas_price.effective().into());
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
