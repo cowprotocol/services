@@ -1,13 +1,13 @@
 use {
     crate::{
         domain::{
-            competition::{self, order},
+            competition::{self, order, solution},
             eth,
             liquidity,
         },
         infra::Ethereum,
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     model::{
         app_id::AppId,
         interaction::InteractionData,
@@ -54,7 +54,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
-    ) -> Result<Self> {
+    ) -> Result<Self, Error> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
@@ -66,13 +66,13 @@ impl Settlement {
             settlement_contract.clone().address().into(),
         );
 
-        let clearing_prices = solution
-            .prices
-            .0
-            .iter()
-            .map(|(&token, &amount)| (token.into(), amount))
-            .collect();
-        let mut settlement = solver::settlement::Settlement::new(clearing_prices);
+        let mut settlement = solver::settlement::Settlement::new(
+            solution
+                .prices()?
+                .into_iter()
+                .map(|asset| (asset.token.into(), asset.amount))
+                .collect(),
+        );
 
         for trade in &solution.trades {
             let (boundary_order, executed_amount) = match trade {
@@ -80,10 +80,9 @@ impl Settlement {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
-                    anyhow::ensure!(
-                        !eth::U256::from(trade.executed).is_zero(),
-                        "unexpected empty execution",
-                    );
+                    if eth::U256::from(trade.executed).is_zero() {
+                        return Err(Error::Boundary(anyhow!("unexpected empty execution")));
+                    }
 
                     (to_boundary_order(&trade.order), trade.executed.into())
                 }
@@ -93,8 +92,12 @@ impl Settlement {
                 ),
             };
 
-            let boundary_limit_order = order_converter.normalize_limit_order(boundary_order)?;
-            settlement.with_liquidity(&boundary_limit_order, executed_amount)?;
+            let boundary_limit_order = order_converter
+                .normalize_limit_order(boundary_order)
+                .map_err(Error::Boundary)?;
+            settlement
+                .with_liquidity(&boundary_limit_order, executed_amount)
+                .map_err(Error::Boundary)?;
         }
 
         let approvals = solution.approvals(eth).await?;
@@ -123,7 +126,8 @@ impl Settlement {
                         .map(|price| (token.address.into(), price.into()))
                 })
                 .collect(),
-        )?;
+        )
+        .map_err(Error::Boundary)?;
         let slippage_context = slippage_calculator.context(&external_prices);
 
         for interaction in &solution.interactions {
@@ -131,7 +135,8 @@ impl Settlement {
                 &slippage_context,
                 settlement_contract.address().into(),
                 interaction,
-            )?;
+            )
+            .map_err(Error::Boundary)?;
             settlement.encoder.append_to_execution_plan_internalizable(
                 boundary_interaction,
                 interaction.internalize(),
@@ -392,4 +397,12 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("boundary error: {0:?}")]
+    Boundary(anyhow::Error),
+    #[error("solution error: {0:?}")]
+    Solution(#[from] solution::Error),
 }

@@ -18,7 +18,7 @@ async fn valid_internalization() {
     crate::boundary::initialize_tracing("driver=trace");
 
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
         settlement,
         token_a,
@@ -34,7 +34,7 @@ async fn valid_internalization() {
         solver_address,
         geth,
         solver_secret_key,
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
@@ -219,7 +219,7 @@ async fn invalid_internalization() {
     crate::boundary::initialize_tracing("driver=trace");
 
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
         settlement,
         token_a,
@@ -235,7 +235,7 @@ async fn invalid_internalization() {
         solver_address,
         geth,
         solver_secret_key,
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
