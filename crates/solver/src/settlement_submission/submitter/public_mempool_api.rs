@@ -1,7 +1,9 @@
 use {
     super::{
         super::submitter::{TransactionHandle, TransactionSubmitting},
-        DisabledReason, Strategy, SubmissionLoopStatus,
+        DisabledReason,
+        Strategy,
+        SubmissionLoopStatus,
     },
     crate::settlement::{Revertable, Settlement},
     anyhow::{ensure, Context, Result},

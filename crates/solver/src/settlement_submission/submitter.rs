@@ -690,7 +690,8 @@ mod tests {
         gas_estimation::blocknative::BlockNative,
         reqwest::Client,
         shared::{
-            code_fetching::MockCodeFetching, ethrpc::create_env_test_transport,
+            code_fetching::MockCodeFetching,
+            ethrpc::create_env_test_transport,
             gas_price_estimation::FakeGasPriceEstimator,
         },
         std::sync::Arc,

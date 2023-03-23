@@ -2,7 +2,8 @@ use {
     super::{
         super::submitter::{TransactionHandle, TransactionSubmitting},
         common::PrivateNetwork,
-        Strategy, SubmissionLoopStatus,
+        Strategy,
+        SubmissionLoopStatus,
     },
     crate::settlement::Settlement,
     anyhow::{Context, Result},
