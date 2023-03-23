@@ -799,8 +799,8 @@ mod tests {
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
             }),
-            additional_tip_percentage_of_max_fee: Some(0.05),
-            max_additional_tip: Some(1000.),
+            additional_tip_percentage_of_max_fee: 0.05,
+            max_additional_tip: 1000.,
             max_fee_per_gas: 200.,
         };
 
@@ -823,8 +823,8 @@ mod tests {
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
             }),
-            additional_tip_percentage_of_max_fee: Some(0.05),
-            max_additional_tip: Some(5.),
+            additional_tip_percentage_of_max_fee: 0.5,
+            max_additional_tip: 5.,
             max_fee_per_gas: 200.,
         };
 
@@ -844,8 +844,8 @@ mod tests {
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
             }),
-            additional_tip_percentage_of_max_fee: Some(5.),
-            max_additional_tip: Some(1000.),
+            additional_tip_percentage_of_max_fee: 5.,
+            max_additional_tip: 1000.,
             max_fee_per_gas: 200.,
         };
 
@@ -870,10 +870,10 @@ mod tests {
 
         assert_eq!(
             gas_price_estimator
-                .with_additional_tip(None)
+                .with_additional_tip(0.)
                 .max_additional_tip,
             0.
         );
-        assert_eq!(gas_price_estimator.max_additional_tip, 10,);
+        assert_eq!(gas_price_estimator.max_additional_tip, 10.);
     }
 }
