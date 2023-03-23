@@ -50,7 +50,7 @@ pub fn u256_to_bigdecimal(i: &U256) -> BigDecimal {
 }
 
 pub fn bigint_to_u256(i: &BigInt) -> Option<U256> {
-    if i.sign() != num::bigint::Sign::Plus {
+    if i.sign() == num::bigint::Sign::Minus {
         return None;
     }
     biguint_to_u256(i.magnitude())
