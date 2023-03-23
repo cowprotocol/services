@@ -1,14 +1,14 @@
-//! Tests that dex solvers consecutively decrease the amounts they try to fill
-//! partially fillable orders with across `/solve` requests to eventually find a
-//! fillable amount that works.
-
 use {
     crate::tests::{self, balancer, mock},
     serde_json::json,
 };
 
+/// Tests that dex solvers consecutively decrease the amounts they try to fill
+/// partially fillable orders with across `/solve` requests to eventually find a
+/// fillable amount that works.
 #[tokio::test]
-async fn test() {
+async fn tested_amounts_decrease() {
+    shared::tracing::initialize_reentrant("solvers=trace");
     let inner_request = |amount| {
         json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -82,8 +82,7 @@ async fn test() {
                 "marketSp": "0.004393607339632106",
             }),
         },
-    ])
-    .await;
+    ]);
 
     let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
 
@@ -94,14 +93,21 @@ async fn test() {
                 "decimals": 18,
                 "symbol": "BAL",
                 "referencePrice": "4327903683155778",
-                "availableBalance": "1583034704488033979459",
+                "availableBalance": "0",
                 "trusted": true
             },
             "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                 "decimals": 18,
                 "symbol": "WETH",
                 "referencePrice": "1000000000000000000",
-                "availableBalance": "482725140468789680",
+                "availableBalance": "0",
+                "trusted": true
+            },
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+                "decimals": 18,
+                "symbol": "ETH",
+                "referencePrice": "1000000000000000000",
+                "availableBalance": "0",
                 "trusted": true
             },
         },
@@ -212,4 +218,108 @@ async fn test() {
             ]
         })
     );
+}
+
+/// Tests that we don't converge to 0 with the amounts we try to fill. Instead
+/// we start over when our tried amount would be worth less than 0.01 ETH.
+#[tokio::test]
+async fn tested_amounts_wrap_around() {
+    // Test is set up such that 16 BAL or roughly 0.06 ETH.
+    // And the lowest amount we are willing to fill is 0.01 ETH.
+    let fill_attempts = [
+        "16000000000000000000", // ~0.06 ETH
+        "8000000000000000000",  // ~0.03 ETH
+        "4000000000000000000",  // ~0.015 ETH
+        // At this point we start over
+        "16000000000000000000", // ~0.06 ETH
+    ]
+    .into_iter()
+    .map(|amount| mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
+        req: json!({
+            "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
+            "orderKind": "buy",
+            "amount": amount,
+            "gasPrice": "15000000000",
+        }),
+        res: json!({
+            "tokenAddresses": [],
+            "swaps": [],
+            "swapAmount": "0",
+            "swapAmountForSwaps": "0",
+            "returnAmount": "0",
+            "returnAmountFromSwaps": "0",
+            "returnAmountConsideringFees": "0",
+            "tokenIn": "0x0000000000000000000000000000000000000000",
+            "tokenOut": "0x0000000000000000000000000000000000000000",
+            "marketSp": "0",
+        }),
+    })
+    .collect();
+
+    let api = mock::http::setup(fill_attempts).await;
+
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+
+    let auction = json!({
+        "id": null,
+        "tokens": {
+            "0xba100000625a3754423978a60c9317c58a424e3D": {
+                "decimals": 18,
+                "symbol": "BAL",
+                "referencePrice": "3739000000000000",
+                "availableBalance": "0",
+                "trusted": true
+            },
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
+                "decimals": 18,
+                "symbol": "WETH",
+                "referencePrice": "1000000000000000000",
+                "availableBalance": "0",
+                "trusted": true
+            },
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+                "decimals": 18,
+                "symbol": "ETH",
+                "referencePrice": "1000000000000000000",
+                "availableBalance": "0",
+                "trusted": true
+            },
+        },
+        "orders": [
+            {
+                "uid": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                          2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                          2a2a2a2a",
+                "sellToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                "buyToken": "0xba100000625a3754423978a60c9317c58a424e3D",
+                "sellAmount": "60000000000000000",
+                "buyAmount": "16000000000000000000",
+                // Let's just assume 0 fee to not further complicate the math.
+                "feeAmount": "0",
+                "kind": "buy",
+                "partiallyFillable": true,
+                "class": "market",
+                "reward": 0.
+            }
+        ],
+        "liquidity": [],
+        "effectiveGasPrice": "15000000000",
+        "deadline": "2106-01-01T00:00:00.000Z"
+    });
+
+    for _ in 0..4 {
+        let solution = engine.solve(auction.clone()).await;
+
+        // No solution could be found so we'll try with a lower fill amount next time.
+        assert_eq!(
+            solution,
+            json!({
+                "prices": {},
+                "trades": [],
+                "interactions": [],
+            }),
+        );
+    }
 }
