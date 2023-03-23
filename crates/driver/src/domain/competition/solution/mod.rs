@@ -280,13 +280,12 @@ impl Solution {
         // ETH order, a clearing price for ETH needs to be added, equal to the
         // WETH clearing price.
         if self.user_trades().any(|trade| trade.order.buys_eth()) {
-            // If no order buys WETH, the WETH price is not necessary, only the ETH price is
-            // needed. Remove the unneeded WETH price, which slightly reduces gas used by
-            // the settlement.
-            let mut prices = if self
-                .user_trades()
-                .all(|trade| trade.order.buy.token != self.weth.0)
-            {
+            // If no order trades WETH, the WETH price is not necessary, only the ETH
+            // price is needed. Remove the unneeded WETH price, which slightly reduces
+            // gas used by the settlement.
+            let mut prices = if self.user_trades().all(|trade| {
+                trade.order.sell.token != self.weth.0 && trade.order.buy.token != self.weth.0
+            }) {
                 prices
                     .filter(|price| price.token != self.weth.0)
                     .collect_vec()
@@ -307,6 +306,8 @@ impl Solution {
 
             return Ok(prices);
         }
+
+        // TODO: We should probably filter out all unused prices.
 
         Ok(prices.collect_vec())
     }
