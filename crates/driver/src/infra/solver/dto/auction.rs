@@ -15,6 +15,7 @@ impl Auction {
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         timeout: competition::SolverTimeout,
+        weth: eth::WethAddress,
         now: infra::time::Now,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
@@ -42,9 +43,9 @@ impl Auction {
                 .map(|order| Order {
                     uid: order.uid.into(),
                     sell_token: order.solver_sell().token.into(),
-                    buy_token: order.buy.token.into(),
+                    buy_token: order.solver_buy(weth).token.into(),
                     sell_amount: order.solver_sell().amount,
-                    buy_amount: order.buy.amount,
+                    buy_amount: order.solver_buy(weth).amount,
                     fee_amount: order.fee.solver.into(),
                     kind: match order.side {
                         competition::order::Side::Buy => Kind::Buy,

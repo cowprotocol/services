@@ -5,7 +5,7 @@ use {
             eth,
             liquidity,
         },
-        infra,
+        infra::{self, blockchain::Ethereum},
         util,
     },
     thiserror::Error,
@@ -48,6 +48,7 @@ impl std::fmt::Display for Name {
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
+    eth: Ethereum,
     now: infra::time::Now,
 }
 
@@ -63,7 +64,7 @@ pub struct Config {
 }
 
 impl Solver {
-    pub fn new(config: Config, now: infra::time::Now) -> Self {
+    pub fn new(config: Config, eth: Ethereum, now: infra::time::Now) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -77,6 +78,7 @@ impl Solver {
                 .build()
                 .unwrap(),
             config,
+            eth,
             now,
         }
     }
@@ -108,8 +110,9 @@ impl Solver {
         liquidity: &[liquidity::Liquidity],
         timeout: SolverTimeout,
     ) -> Result<Solution, Error> {
+        let weth = self.eth.contracts().weth_address();
         let body = serde_json::to_string(&dto::Auction::from_domain(
-            auction, liquidity, timeout, self.now,
+            auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();
         tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
@@ -121,7 +124,7 @@ impl Solver {
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
         let res: dto::Solution = serde_json::from_str(&res?)?;
-        res.into_domain(auction, liquidity, self.clone())
+        res.into_domain(auction, liquidity, weth, self.clone())
             .map_err(Into::into)
     }
 }

@@ -1,3 +1,5 @@
+use crate::settlement::Revertable;
+
 mod dry_run;
 pub mod gelato;
 pub mod submitter;
@@ -266,8 +268,12 @@ impl SolutionSubmitter {
                     max_fee_per_gas,
                     network_id.clone(),
                     settlement.clone(),
-                    i,
                 )
+                .instrument(tracing::info_span!(
+                    "submission",
+                    name = %strategy.label(),
+                    i
+                ))
                 .boxed()
             })
             .collect::<Vec<_>>();
@@ -296,7 +302,6 @@ impl SolutionSubmitter {
         max_fee_per_gas: f64,
         network_id: String,
         settlement: Settlement,
-        index: usize,
     ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -311,6 +316,19 @@ impl SolutionSubmitter {
         };
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");
+
+        // No extra tip required if there is no revert risk
+        let (additional_tip_percentage_of_max_fee, max_additional_tip) =
+            if settlement.revertable() == Revertable::NoRisk {
+                tracing::debug!("Disabling additional tip because of NoRisk settlement");
+                (0., 0.)
+            } else {
+                (
+                    strategy_args.additional_tip_percentage_of_max_fee,
+                    strategy_args.max_additional_tip,
+                )
+            };
+
         let params = SubmitterParams {
             target_confirm_time: self.target_confirm_time,
             gas_estimate,
@@ -322,10 +340,8 @@ impl SolutionSubmitter {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas,
-            additional_tip_percentage_of_max_fee: Some(
-                strategy_args.additional_tip_percentage_of_max_fee,
-            ),
-            max_additional_tip: Some(strategy_args.max_additional_tip),
+            additional_tip_percentage_of_max_fee,
+            max_additional_tip,
         };
         let submitter = Submitter::new(
             &self.contract,
@@ -340,11 +356,6 @@ impl SolutionSubmitter {
         )?;
         submitter
             .submit(settlement, params)
-            .instrument(tracing::info_span!(
-                "submission",
-                name = %strategy_args.submit_api.name(),
-                i = index
-            ))
             .await
             .map(|tx| SubmissionReceipt {
                 tx,

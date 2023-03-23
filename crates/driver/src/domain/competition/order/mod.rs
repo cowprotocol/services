@@ -8,11 +8,6 @@ pub mod signature;
 
 pub use signature::Signature;
 
-/// Address used in place of an actual buy token address in an order which buys
-/// ETH.
-const BUY_ETH_ADDRESS: eth::TokenAddress =
-    eth::TokenAddress(eth::ContractAddress(eth::H160([0xee; 20])));
-
 /// An order in the auction.
 #[derive(Debug, Clone)]
 pub struct Order {
@@ -95,7 +90,7 @@ impl Order {
 
     /// Does this order buy ETH?
     pub fn buys_eth(&self) -> bool {
-        self.buy.token == BUY_ETH_ADDRESS
+        self.buy.token == eth::ETH_TOKEN
     }
 
     /// The address which will receive the output of this order. If a custom
@@ -110,7 +105,7 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
-    /// The sell amount to pass to the solver. This is a special case due to
+    /// The sell asset to pass to the solver. This is a special case due to
     /// limit orders. For limit orders, the interaction produced by the
     /// solver needs to leave the surplus fee inside the settlement
     /// contract, since that's the fee taken by the protocol. For that
@@ -128,6 +123,23 @@ impl Order {
             }
         } else {
             self.sell
+        }
+    }
+
+    /// The buy asset to pass to the solver. This is a special case due to
+    /// orders which buy ETH. The settlement contract only works with ERC20
+    /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
+    /// provide a seamless user experience for ETH trades, so the driver
+    /// will encode the settlement to automatically unwrap the WETH into ETH
+    /// after the trade is done.
+    ///
+    /// For this reason, we want the solvers to solve the orders which buy ETH
+    /// as if they were buying WETH, and then add our unwrap interaction to that
+    /// solution.
+    pub fn solver_buy(&self, weth: eth::WethAddress) -> eth::Asset {
+        eth::Asset {
+            amount: self.buy.amount,
+            token: self.buy.token.wrap(weth),
         }
     }
 }

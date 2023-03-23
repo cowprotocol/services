@@ -1,5 +1,3 @@
-//! Test that verifies solver balance are verified for solutions.
-
 use {
     super::SOLVER_NAME,
     crate::{
@@ -12,42 +10,42 @@ use {
     },
     itertools::Itertools,
     serde_json::json,
+    web3::types::TransactionId,
 };
 
-/// Test that the `/solve` request errors when solver balance is low.
+/// Test that an order which buys ETH results in a settlement transaction
+/// being broadcast, automatically unwrapping the WETH from the settlement.
 #[tokio::test]
 #[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
-
     // Set up the uniswap swap.
-    let setup::blockchain::uniswap_a_b::Uniswap {
+    let setup::blockchain::uniswap_weth::Uniswap {
         web3,
         settlement,
         token_a,
-        token_b,
         admin,
         domain_separator,
         user_fee,
         token_a_in_amount,
-        token_b_out_amount,
         weth,
         admin_secret_key,
         interactions,
         solver_address,
         geth,
         solver_secret_key,
-    } = setup::blockchain::uniswap_a_b::setup().await;
+        weth_out_amount,
+    } = setup::blockchain::uniswap_weth::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
-    let buy_token = token_b.address();
+    let buy_token = eth::ETH_TOKEN;
     let sell_amount = token_a_in_amount;
-    let buy_amount = token_b_out_amount;
+    let buy_amount = weth_out_amount;
     let valid_to = u32::MAX;
     let boundary = tests::boundary::Order {
         sell_token,
-        buy_token,
+        buy_token: buy_token.into(),
         sell_amount,
         buy_amount,
         valid_to,
@@ -100,14 +98,14 @@ async fn test() {
                     hex_address(sell_token): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": "1",
+                        "referencePrice": "2",
                         "availableBalance": "0",
                         "trusted": false,
                     },
-                    hex_address(buy_token): {
+                    hex_address(buy_token.into()): {
                         "decimals": null,
                         "symbol": null,
-                        "referencePrice": "2",
+                        "referencePrice": "1000000000000000000",
                         "availableBalance": "0",
                         "trusted": false,
                     }
@@ -116,7 +114,8 @@ async fn test() {
                     {
                         "uid": boundary.uid(),
                         "sellToken": hex_address(sell_token),
-                        "buyToken": hex_address(buy_token),
+                        // The solver receives WETH rather than ETH.
+                        "buyToken": hex_address(weth.address()),
                         "sellAmount": sell_amount.to_string(),
                         "buyAmount": buy_amount.to_string(),
                         "feeAmount": "0",
@@ -127,13 +126,13 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": "247548525",
+                "effectiveGasPrice": "244532310",
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
                 "prices": {
                     hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): sell_amount.to_string(),
+                    hex_address(weth.address()): sell_amount.to_string(),
                 },
                 "trades": [
                     {
@@ -162,43 +161,8 @@ async fn test() {
     })
     .await;
 
-    // Transfer out all of the solver's funds.
-    setup::blockchain::wait_for(&web3, {
-        // An empirically determined balance (from the `settle` test) that is
-        // more than enough to actually execute the settlement on-chain **but**
-        // too small to account for gas spikes.
-        let leftover = eth::U256::from(100_000_000_000_000_u128);
-
-        let balance = web3.eth().balance(solver_address, None).await.unwrap();
-        let gas_price = web3.eth().gas_price().await.unwrap();
-
-        let tx = web3
-            .accounts()
-            .sign_transaction(
-                web3::types::TransactionParameters {
-                    to: Some(Default::default()),
-                    value: balance - leftover - gas_price * 21000,
-                    gas: 21000.into(),
-                    gas_price: Some(gas_price),
-                    ..Default::default()
-                },
-                &solver_secret_key,
-            )
-            .await
-            .unwrap();
-
-        let web3 = web3.clone();
-        async move {
-            web3.eth()
-                .send_raw_transaction(tx.raw_transaction)
-                .await
-                .unwrap()
-        }
-    })
-    .await;
-
     // Call /solve.
-    let (status, result) = client
+    let (status, solution) = client
         .solve(
             SOLVER_NAME,
             json!({
@@ -206,12 +170,12 @@ async fn test() {
                 "tokens": [
                     {
                         "address": hex_address(sell_token),
-                        "price": "1",
+                        "price": "2",
                         "trusted": false,
                     },
                     {
-                        "address": hex_address(buy_token),
-                        "price": "2",
+                        "address": hex_address(buy_token.into()),
+                        "price": "1000000000000000000",
                         "trusted": false,
                     }
                 ],
@@ -219,7 +183,7 @@ async fn test() {
                     {
                         "uid": boundary.uid(),
                         "sellToken": hex_address(sell_token),
-                        "buyToken": hex_address(buy_token),
+                        "buyToken": hex_address(buy_token.into()),
                         "sellAmount": sell_amount.to_string(),
                         "buyAmount": buy_amount.to_string(),
                         "solverFee": "0",
@@ -242,12 +206,40 @@ async fn test() {
         )
         .await;
 
-    // Assert.
-    assert_eq!(status, hyper::StatusCode::BAD_REQUEST);
-    assert!(result.is_object());
-    assert_eq!(result.as_object().unwrap().len(), 2);
-    assert!(result.get("kind").is_some());
-    assert!(result.get("description").is_some());
-    let kind = result.get("kind").unwrap().as_str().unwrap();
-    assert_eq!(kind, "InsufficientBalance");
+    // Assert that the solution is valid.
+    assert_eq!(status, hyper::StatusCode::OK);
+
+    let solution_id = solution.get("id").unwrap().as_str().unwrap();
+    let block_number = web3.eth().block_number().await.unwrap();
+    let old_solver_eth = web3.eth().balance(solver_address, None).await.unwrap();
+    let old_trader_eth = web3.eth().balance(admin, None).await.unwrap();
+    let old_trader_token_a = token_a.balance_of(admin).call().await.unwrap();
+
+    // Call /settle.
+    setup::blockchain::wait_for(&web3, client.settle(SOLVER_NAME, solution_id)).await;
+
+    // Assert that the settlement is valid.
+    let new_solver_eth = web3.eth().balance(solver_address, None).await.unwrap();
+    let new_trader_eth = web3.eth().balance(admin, None).await.unwrap();
+    let new_trader_token_a = token_a.balance_of(admin).call().await.unwrap();
+    // Solver ETH balance is lower due to transaction fees.
+    assert!(new_solver_eth < old_solver_eth);
+    // The balance of the trader changes according to the swap.
+    assert_eq!(
+        new_trader_token_a,
+        old_trader_token_a - token_a_in_amount - user_fee
+    );
+    assert_eq!(new_trader_eth, old_trader_eth + weth_out_amount);
+
+    // Check that the solution ID is included in the settlement.
+    let tx = web3
+        .eth()
+        .transaction(TransactionId::Block((block_number + 1).into(), 0.into()))
+        .await
+        .unwrap()
+        .unwrap();
+    let input = tx.input.0;
+    let len = input.len();
+    let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
+    assert_eq!(tx_solution_id.to_string(), solution_id);
 }
