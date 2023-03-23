@@ -119,9 +119,17 @@ impl Solution {
         self.verify_asset_flow()?;
         self.verify_internalization(auction)?;
 
-        let verified = self
+        let settlement = self
             .simulate(eth, simulator, auction, settlement::Internalization::Enable)
             .await?;
+
+        // Ensure that the solver account has enough Ether balance to mine the
+        // transaction. Simulations failing on insufficient gas is not
+        // guaranteed by all nodes.
+        let balance = eth.balance(self.solver.address()).await?;
+        if balance < settlement.gas.required_balance() {
+            return Err(Error::InsufficientBalance);
+        }
 
         // Some rules which are enforced by the settlement contract for non-internalized
         // interactions are not enforced for internalized interactions (in order to save
@@ -146,7 +154,7 @@ impl Solution {
             .map_err(|_| VerificationError::FailingInternalization)?;
         }
 
-        Ok(verified)
+        Ok(settlement)
     }
 
     /// Simulate settling this solution on the blockchain. This process
@@ -204,14 +212,6 @@ impl Solution {
             let price = eth.gas_price().await?;
             settlement::Gas::new(estimate, price)
         };
-
-        // Finally, ensure that the solver account has enough Ether balance to
-        // mine the transaction. Simulations failing on insufficient gas is not
-        // guaranteed by all nodes.
-        let balance = eth.balance(self.solver.address()).await?;
-        if balance < gas.required_balance() {
-            return Err(Error::InsufficientBalance);
-        }
 
         Ok(settlement::Verified {
             inner: settlement,
@@ -484,7 +484,7 @@ pub enum VerificationError {
         "invalid internalization: solution attempts to internalize tokens which are not trusted"
     )]
     UntrustedInternalization,
-    #[error("invalid internalization: solution attempts to internalize failing interactions")]
+    #[error("invalid internalization: uninternalized solution fails to simulate")]
     FailingInternalization,
 }
 
