@@ -51,8 +51,6 @@ impl Fills {
             order::Side::Sell => (order.sell.token, order.sell.amount),
         };
 
-        // 2500000000000000000 * p == 10000000000000000 * 1000000000000000000
-
         let smallest_fill =
             self.smallest_fill.clone() * prices.0.get(&ETH)? / prices.0.get(&token)?;
         let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
@@ -72,16 +70,13 @@ impl Fills {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
 
-                entry.next_amount = if entry.next_amount < smallest_fill {
+                if entry.next_amount < smallest_fill {
                     tracing::trace!("target fill got too small; starting over");
-                    total_amount
+                    entry.next_amount = total_amount;
                 } else if entry.next_amount > total_amount {
                     tracing::trace!("partially filled; adjusting to new total amount");
-                    total_amount
-                } else {
-                    // The regular case where we do our normal attempt.
-                    entry.next_amount
-                };
+                    entry.next_amount = total_amount;
+                }
 
                 entry.next_amount
             }
