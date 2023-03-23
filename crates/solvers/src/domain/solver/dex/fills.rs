@@ -31,7 +31,7 @@ impl Fills {
     pub fn new(smallest_fill: eth::Ether) -> Self {
         Self {
             amounts: Default::default(),
-            smallest_fill: conv::ether_to_decimal(&smallest_fill),
+            smallest_fill: conv::u256_to_bigdecimal(&smallest_fill.0),
         }
     }
 
@@ -51,10 +51,12 @@ impl Fills {
             order::Side::Sell => (order.sell.token, order.sell.amount),
         };
 
+        // 2500000000000000000 * p == 10000000000000000 * 1000000000000000000
+
         let smallest_fill =
-            self.smallest_fill.clone() * prices.0.get(&token)? / prices.0.get(&ETH)?;
-        let smallest_fill = conv::decimal_to_ether(&smallest_fill)?.0;
-        tracing::trace!(?smallest_fill, ?order, "least amount worth filling");
+            self.smallest_fill.clone() * prices.0.get(&ETH)? / prices.0.get(&token)?;
+        let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
+        tracing::trace!(?smallest_fill, "least amount worth filling");
 
         let now = Instant::now();
 

@@ -8,7 +8,7 @@ use {
 /// fillable amount that works.
 #[tokio::test]
 async fn tested_amounts_decrease() {
-    shared::tracing::initialize_reentrant("solvers=trace");
+    // shared::tracing::initialize_reentrant("solvers=trace");
     let inner_request = |amount| {
         json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -82,9 +82,10 @@ async fn tested_amounts_decrease() {
                 "marketSp": "0.004393607339632106",
             }),
         },
-    ]);
+    ])
+    .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let auction = json!({
         "id": null,
@@ -136,7 +137,6 @@ async fn tested_amounts_decrease() {
     for _ in 0..4 {
         let solution = engine.solve(auction.clone()).await;
 
-        // No solution could be found so we'll try with a lower fill amount next time.
         assert_eq!(
             solution,
             json!({
@@ -224,14 +224,15 @@ async fn tested_amounts_decrease() {
 /// we start over when our tried amount would be worth less than 0.01 ETH.
 #[tokio::test]
 async fn tested_amounts_wrap_around() {
-    // Test is set up such that 16 BAL or roughly 0.06 ETH.
+    // Test is set up such that 2.5 BAL or exactly 0.01 ETH.
     // And the lowest amount we are willing to fill is 0.01 ETH.
     let fill_attempts = [
-        "16000000000000000000", // ~0.06 ETH
-        "8000000000000000000",  // ~0.03 ETH
-        "4000000000000000000",  // ~0.015 ETH
-        // At this point we start over
-        "16000000000000000000", // ~0.06 ETH
+        "16000000000000000000", // 16 BAL == 0.064 ETH
+        "8000000000000000000",  // 8  BAL == 0.032 ETH
+        "4000000000000000000",  // 4  BAL == 0.016 ETH
+        // Next would be 2 BAL == 0.008 ETH which is below
+        // the minimum fill of 0.01 ETH so instead we start over.
+        "16000000000000000000", // 16 BAL == 0.06 ETH
     ]
     .into_iter()
     .map(|amount| mock::http::Expectation::Post {
@@ -260,7 +261,7 @@ async fn tested_amounts_wrap_around() {
 
     let api = mock::http::setup(fill_attempts).await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let auction = json!({
         "id": null,
@@ -268,7 +269,7 @@ async fn tested_amounts_wrap_around() {
             "0xba100000625a3754423978a60c9317c58a424e3D": {
                 "decimals": 18,
                 "symbol": "BAL",
-                "referencePrice": "3739000000000000",
+                "referencePrice": "4000000000000000",
                 "availableBalance": "0",
                 "trusted": true
             },
@@ -311,8 +312,6 @@ async fn tested_amounts_wrap_around() {
 
     for _ in 0..4 {
         let solution = engine.solve(auction.clone()).await;
-
-        // No solution could be found so we'll try with a lower fill amount next time.
         assert_eq!(
             solution,
             json!({
