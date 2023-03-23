@@ -466,7 +466,7 @@ async fn non_internalized_simulation_fails() {
         owner: admin,
         partially_fillable: false,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
+    let gas_price = setup::blockchain::effective_gas_price(&web3).await;
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -537,7 +537,7 @@ async fn non_internalized_simulation_fails() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({

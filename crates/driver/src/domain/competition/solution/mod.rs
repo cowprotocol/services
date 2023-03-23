@@ -118,6 +118,11 @@ impl Solution {
     ) -> Result<settlement::Verified, Error> {
         self.verify_asset_flow()?;
         self.verify_internalization(auction)?;
+
+        let verified = self
+            .simulate(eth, simulator, auction, settlement::Internalization::Enable)
+            .await?;
+
         // Some rules which are enforced by the settlement contract for non-internalized
         // interactions are not enforced for internalized interactions (in order to save
         // gas). However, publishing a settlement with interactions that violate
@@ -126,18 +131,22 @@ impl Solution {
         // that the settlement simulates even when internalizations are disabled.
         //
         // See also the [`competition::Order::reward`] field.
-        self.simulate(
-            eth,
-            simulator,
-            auction,
-            settlement::Internalization::Disable,
-        )
-        .await
-        .map_err(|_| VerificationError::FailingInternalization)?;
-        // For the solution to be valid, the settlement with internalized interactions
-        // must simulate, just like the non-internalized case above.
-        self.simulate(eth, simulator, auction, settlement::Internalization::Enable)
+        if self
+            .interactions
+            .iter()
+            .any(|interaction| interaction.internalize())
+        {
+            self.simulate(
+                eth,
+                simulator,
+                auction,
+                settlement::Internalization::Disable,
+            )
             .await
+            .map_err(|_| VerificationError::FailingInternalization)?;
+        }
+
+        Ok(verified)
     }
 
     /// Simulate settling this solution on the blockchain. This process
