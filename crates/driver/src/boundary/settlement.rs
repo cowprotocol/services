@@ -1,7 +1,11 @@
 use {
     crate::{
         domain::{
-            competition::{self, order, solution},
+            competition::{
+                self,
+                order,
+                solution::{self, settlement},
+            },
             eth,
             liquidity,
         },
@@ -47,6 +51,7 @@ pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
     solver: eth::Address,
+    internalization: settlement::Internalization,
 }
 
 impl Settlement {
@@ -54,6 +59,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
+        internalization: settlement::Internalization,
     ) -> Result<Self, Error> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
@@ -147,13 +153,17 @@ impl Settlement {
             inner: settlement,
             contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
+            internalization,
         })
     }
 
     pub fn tx(self) -> eth::Tx {
-        let encoded_settlement = self
-            .inner
-            .encode(InternalizationStrategy::SkipInternalizableInteraction);
+        let encoded_settlement = self.inner.encode(match self.internalization {
+            settlement::Internalization::Enable => {
+                InternalizationStrategy::SkipInternalizableInteraction
+            }
+            settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
+        });
         let builder = settle_method_builder(
             &self.contract,
             encoded_settlement,

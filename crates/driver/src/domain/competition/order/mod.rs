@@ -30,8 +30,14 @@ pub struct Order {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
-    /// The reward that will be received by the solver denominated in CoW
-    /// tokens.
+    /// The reward that will be received by the solver if it successfully
+    /// fulfills this order. The reward is denominated in CoW tokens.
+    ///
+    /// There are well-established rules that every solution must abide by. Some
+    /// of these rules are enforced automatically by the protocol, while
+    /// some are agreed to verbally and manually enforced by the solver
+    /// team. In the case that a rule is broken, the reward received by the
+    /// solver will be reduced, which is referred to as "slashing" the reward.
     pub reward: f64,
 }
 
