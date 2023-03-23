@@ -120,12 +120,12 @@ impl Mempool {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
-            additional_tip_percentage_of_max_fee: Some(self.config.additional_tip_percentage),
+            additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
             max_additional_tip: match self.config.kind {
-                Kind::Public(_) => None,
+                Kind::Public(_) => 0.,
                 Kind::Flashbots {
                     max_additional_tip, ..
-                } => Some(max_additional_tip),
+                } => max_additional_tip,
             },
         };
         let estimator = AccessListEstimator(settlement.access_list.clone());

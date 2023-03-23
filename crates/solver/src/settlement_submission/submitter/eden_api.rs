@@ -2,10 +2,9 @@
 
 use {
     crate::{
-        settlement::{Revertable, Settlement},
+        settlement::Settlement,
         settlement_submission::submitter::{
             common::PrivateNetwork,
-            AdditionalTip,
             Strategy,
             SubmissionLoopStatus,
             TransactionHandle,
@@ -130,16 +129,12 @@ impl TransactionSubmitting for EdenApi {
             .await
     }
 
-    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
-        // disable strategy if there is a high possibility for a transaction to be
-        // reverted (check done only for mainnet)
-        if shared::gas_price_estimation::is_mainnet(network_id) {
-            if let Revertable::NoRisk = settlement.revertable() {
-                return SubmissionLoopStatus::Enabled(AdditionalTip::Off);
-            }
-        }
-
-        SubmissionLoopStatus::Enabled(AdditionalTip::On)
+    fn submission_status(
+        &self,
+        _settlement: &Settlement,
+        _network_id: &str,
+    ) -> SubmissionLoopStatus {
+        SubmissionLoopStatus::Enabled
     }
 
     fn name(&self) -> Strategy {
