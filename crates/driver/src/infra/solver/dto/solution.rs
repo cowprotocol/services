@@ -15,6 +15,7 @@ impl Solution {
         self,
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
+        weth: eth::WethAddress,
         solver: Solver,
     ) -> Result<competition::Solution, super::Error> {
         Ok(competition::Solution {
@@ -101,11 +102,12 @@ impl Solution {
                     )),
                 })
                 .try_collect()?,
-            prices: self
-                .prices
-                .into_iter()
-                .map(|(address, price)| (address.into(), price))
-                .collect(),
+            prices: competition::solution::ClearingPrices::new(
+                self.prices
+                    .into_iter()
+                    .map(|(address, price)| (address.into(), price))
+                    .collect(),
+            ),
             interactions: self
                 .interactions
                 .into_iter()
@@ -175,6 +177,7 @@ impl Solution {
                     }
                 })
                 .try_collect()?,
+            weth,
             solver,
         })
     }

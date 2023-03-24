@@ -33,7 +33,7 @@ async fn test() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({

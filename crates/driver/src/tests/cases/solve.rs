@@ -9,13 +9,13 @@ use {
     serde_json::json,
 };
 
-/// Test that the /solve endpoint behaves as expected.
+/// Test that the /solve endpoint calculates the correct score.
 #[tokio::test]
 #[ignore]
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         settlement,
         token_a,
         token_b,
@@ -31,7 +31,7 @@ async fn test() {
         geth,
         solver_secret_key,
         ..
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();

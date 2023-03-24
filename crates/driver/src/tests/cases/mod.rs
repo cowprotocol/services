@@ -1,5 +1,6 @@
 //! Test cases.
 
+pub mod buy_eth;
 pub mod example_config;
 pub mod limit_order;
 pub mod quote;

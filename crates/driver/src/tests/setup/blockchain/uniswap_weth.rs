@@ -1,3 +1,10 @@
+//! Set up a Uniswap V2 pair ready for the following swap:
+//!
+//!  /--->(1. SELL 0.5 A for WETH)---\
+//!  |                               |
+//!  |                               v
+//! (Uniswap Pair 1000 A / 600.000 WETH)
+
 use {
     crate::{domain::eth, tests::boundary},
     ethcontract::{transport::DynTransport, Web3},
@@ -10,12 +17,13 @@ pub struct Uniswap {
     pub admin: ethcontract::H160,
     pub admin_secret_key: SecretKey,
     pub token_a: contracts::ERC20Mintable,
-    pub token_b: contracts::ERC20Mintable,
     pub settlement: contracts::GPv2Settlement,
     pub domain_separator: boundary::DomainSeparator,
     pub weth: contracts::WETH9,
+    /// Amount of token A going into the Uniswap pair.
     pub token_a_in_amount: ethcontract::U256,
-    pub token_b_out_amount: ethcontract::U256,
+    /// Amount of WETH going into the Uniswap pair.
+    pub weth_out_amount: ethcontract::U256,
     pub user_fee: ethcontract::U256,
     /// Interactions needed for the solution.
     pub interactions: Vec<Interaction>,
@@ -32,12 +40,6 @@ pub struct Interaction {
     pub outputs: Vec<eth::Asset>,
 }
 
-/// Set up a Uniswap V2 pair ready for the following swap:
-///
-///  /--->(1. SELL 0.5 A for B)----\
-///  |                             |
-///  |                             v
-/// (Uniswap Pair 1000 A / 600.000 B)
 pub async fn setup() -> Uniswap {
     let geth = super::geth().await;
     let web3 = super::web3(&geth.url());
@@ -72,7 +74,7 @@ pub async fn setup() -> Uniswap {
             .send_transaction(web3::types::TransactionRequest {
                 from: super::primary_address(&web3).await,
                 to: Some(admin),
-                value: Some(balance / 3),
+                value: Some(balance / 2),
                 ..Default::default()
             }),
     )
@@ -84,7 +86,7 @@ pub async fn setup() -> Uniswap {
             .send_transaction(web3::types::TransactionRequest {
                 from: super::primary_address(&web3).await,
                 to: Some(solver_address),
-                value: Some(balance / 3),
+                value: Some(balance / 5),
                 ..Default::default()
             }),
     )
@@ -157,18 +159,22 @@ pub async fn setup() -> Uniswap {
     .await
     .unwrap();
 
+    // Fund WETH for the admin.
+    super::wait_for(
+        &web3,
+        ethcontract::transaction::TransactionBuilder::new(web3.clone())
+            .from(admin_account.clone())
+            .to(weth.address())
+            .value(balance / 3)
+            .send(),
+    )
+    .await
+    .unwrap();
+
     let domain_separator =
         boundary::DomainSeparator(settlement.domain_separator().call().await.unwrap().0);
 
     let token_a = super::wait_for(
-        &web3,
-        contracts::ERC20Mintable::builder(&web3)
-            .from(admin_account.clone())
-            .deploy(),
-    )
-    .await
-    .unwrap();
-    let token_b = super::wait_for(
         &web3,
         contracts::ERC20Mintable::builder(&web3)
             .from(admin_account.clone())
@@ -188,7 +194,7 @@ pub async fn setup() -> Uniswap {
     super::wait_for(
         &web3,
         uniswap_factory
-            .create_pair(token_a.address(), token_b.address())
+            .create_pair(token_a.address(), weth.address())
             .from(admin_account.clone())
             .send(),
     )
@@ -197,14 +203,16 @@ pub async fn setup() -> Uniswap {
     let uniswap_pair = contracts::IUniswapLikePair::at(
         &web3,
         uniswap_factory
-            .get_pair(token_a.address(), token_b.address())
+            .get_pair(token_a.address(), weth.address())
             .call()
             .await
             .unwrap(),
     );
 
+    dbg!(uniswap_pair.address());
+
     let token_a_reserve = ethcontract::U256::from_dec_str("1000000000000000000000").unwrap();
-    let token_b_reserve = ethcontract::U256::from_dec_str("600000000000").unwrap();
+    let weth_reserve = ethcontract::U256::from_dec_str("600000000000").unwrap();
 
     // Fund the uniswap pair.
     super::wait_for(
@@ -218,8 +226,7 @@ pub async fn setup() -> Uniswap {
     .unwrap();
     super::wait_for(
         &web3,
-        token_b
-            .mint(uniswap_pair.address(), token_b_reserve)
+        weth.transfer(uniswap_pair.address(), weth_reserve)
             .from(admin_account.clone())
             .send(),
     )
@@ -251,8 +258,7 @@ pub async fn setup() -> Uniswap {
     .unwrap();
     super::wait_for(
         &web3,
-        token_b
-            .mint(settlement.address(), token_b_reserve)
+        weth.transfer(settlement.address(), weth_reserve)
             .from(admin_account.clone())
             .send(),
     )
@@ -272,7 +278,7 @@ pub async fn setup() -> Uniswap {
 
     let token_a_in_amount = ethcontract::U256::from_dec_str("500000000000000000").unwrap();
     // The out amount according to the constant AMM formula.
-    let token_b_out_amount = ethcontract::U256::from_dec_str("298950972").unwrap();
+    let weth_out_amount = ethcontract::U256::from_dec_str("298950972").unwrap();
     let user_fee = ethcontract::U256::from_dec_str("1000000000000000").unwrap();
 
     super::wait_for(
@@ -304,9 +310,9 @@ pub async fn setup() -> Uniswap {
         .0;
     let (amount_0_out, amount_1_out) =
         if uniswap_pair.token_0().call().await.unwrap() == token_a.address() {
-            (0.into(), token_b_out_amount)
+            (0.into(), weth_out_amount)
         } else {
-            (token_b_out_amount, 0.into())
+            (weth_out_amount, 0.into())
         };
     let swap_interaction = uniswap_pair
         .swap(
@@ -336,18 +342,17 @@ pub async fn setup() -> Uniswap {
                     amount: token_a_in_amount,
                 }],
                 outputs: vec![eth::Asset {
-                    token: token_b.address().into(),
-                    amount: token_b_out_amount,
+                    token: weth.address().into(),
+                    amount: weth_out_amount,
                 }],
             },
         ],
         admin,
         token_a,
-        token_b,
         settlement,
         domain_separator,
         token_a_in_amount,
-        token_b_out_amount,
+        weth_out_amount,
         user_fee,
         weth,
         web3,

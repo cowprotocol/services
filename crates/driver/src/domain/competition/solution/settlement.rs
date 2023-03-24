@@ -17,14 +17,30 @@ pub(super) struct Settlement {
     boundary: boundary::Settlement,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Internalization {
+    /// Internalize interactions which have the `internalize` flag set.
+    ///
+    /// Since the settlement contract holds balances of multiple tokens, solvers
+    /// are in certain cases allowed to "internalize" an AMM interaction, in
+    /// order to save on gas.
+    ///
+    /// <https://docs.cow.fi/off-chain-services/in-depth-solver-specification/output-batch-auction-solutions#using-internal-buffers>
+    Enable,
+    /// Do not internalize any interactions.
+    Disable,
+}
+
 impl Settlement {
     /// Encode a solution into an onchain settlement transaction.
     pub async fn encode(
         eth: &Ethereum,
         auction: &competition::Auction,
         solution: &competition::Solution,
+        internalization: Internalization,
     ) -> anyhow::Result<Self> {
-        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
+        let boundary =
+            boundary::Settlement::encode(eth, solution, auction, internalization).await?;
         Ok(Self {
             id: solution.id,
             boundary,
@@ -41,14 +57,16 @@ impl Settlement {
 
 /// A settlement which has been verified to be correct. In particular:
 ///
-/// - Simulation: the settlement has been simulated without reverting.
+/// - Simulation: the settlement has been simulated without reverting, including
+///   the case where no interactions were internalized.
 /// - Asset flow: the sum of tokens into and out of the settlement are
-/// non-negative, meaning that the solver doesn't take any tokens out of the
-/// settlement contract.
+///   non-negative, meaning that the solver doesn't take any tokens out of the
+///   settlement contract.
 /// - Internalization: internalized interactions only use trusted tokens.
 ///
-/// Such a settlement obeys the rules of the protocol and can be safely
-/// broadcast to the Ethereum network.
+/// Such a settlement is verified to obey some of the rules of the protocol that
+/// could result in slashing, and is ready to broadcast to the Ethereum network.
+/// See the [`competition::Order::reward`] field for more about slashing.
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub(super) inner: Settlement,

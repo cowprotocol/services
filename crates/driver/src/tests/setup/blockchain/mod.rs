@@ -5,9 +5,8 @@ use {
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
 };
 
-pub mod uniswap;
-
-pub use uniswap::Uniswap;
+pub mod uniswap_a_b;
+pub mod uniswap_weth;
 
 /// The URL to which a post request can be made to start and stop geth
 /// instances. See the `dev-geth` crate.
