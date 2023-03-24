@@ -1,7 +1,6 @@
 use {
     anyhow::{Context, Result},
     model::order::{Order, OrderKind},
-    num::BigUint,
     primitive_types::U256,
 };
 
