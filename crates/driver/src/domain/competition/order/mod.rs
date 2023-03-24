@@ -148,6 +148,10 @@ impl Order {
             token: self.buy.token.wrap(weth),
         }
     }
+
+    pub fn solver_determines_fee(&self) -> bool {
+        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

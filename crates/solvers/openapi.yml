@@ -575,6 +575,7 @@ components:
                 "sellToken" for sell orders, and "buyToken" for buy orders.
               allOf:
                 - $ref: "#/components/schemas/TokenAmount"
+            # Add optional `fee` for partially fillable limit orders
 
     LiquidityInteraction:
       description: |

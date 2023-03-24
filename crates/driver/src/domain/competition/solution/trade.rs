@@ -21,7 +21,16 @@ pub struct Fulfillment {
     /// The amount executed by this fulfillment. See
     /// [`competition::order::Partial`]. If the order is not partial, the
     /// executed amount must equal the amount from the order.
-    pub executed: competition::order::TargetAmount,
+    pub execution: OrderExecution,
+}
+
+/// Describes how an order should be executed.
+/// In case a solver was required to compute a fee for the order it is
+/// guaranteed to exist.
+#[derive(Debug)]
+pub struct OrderExecution {
+    pub fee: Option<competition::order::SellAmount>,
+    pub filled: competition::order::TargetAmount,
 }
 
 /// A trade which adds a JIT order. See [`order::Jit`].
@@ -65,13 +74,18 @@ impl Trade {
             sell,
             buy,
             executed,
+            solver_determined_fee,
         } = match self {
             Trade::Fulfillment(trade) => ExecutionParams {
                 side: trade.order.side,
                 kind: trade.order.kind,
                 sell: trade.order.sell,
                 buy: trade.order.buy,
-                executed: trade.executed,
+                executed: trade.execution.filled,
+                solver_determined_fee: match trade.order.solver_determines_fee() {
+                    true => trade.execution.fee,
+                    false => None,
+                },
             },
             Trade::Jit(trade) => ExecutionParams {
                 side: trade.order.side,
@@ -82,6 +96,7 @@ impl Trade {
                 sell: trade.order.sell,
                 buy: trade.order.buy,
                 executed: trade.executed,
+                solver_determined_fee: None,
             },
         };
 
@@ -187,6 +202,16 @@ impl Trade {
                 //
                 // Similar to market orders, the executed amounts for limit orders are
                 // calculated using the clearing prices.
+
+                // In case of partially fillable limit orders the protocol computed
+                // `surplus_fee` will always be 0. For those orders it's the
+                // solver's responsibility to compute a reasonble fee. The `fee` here is
+                // guaranteed to exist iff it was the solvers responsibility to
+                // compute a fee.
+                let surplus_fee = solver_determined_fee
+                    .map(|fee| fee.0)
+                    .unwrap_or(surplus_fee.into());
+
                 let sell_price = solution
                     .price(sell.token)
                     .ok_or(ExecutionError::ClearingPriceMissing)?
@@ -212,7 +237,7 @@ impl Trade {
                                 // explained above, we need to simply increase the executed sell
                                 // amount by the surplus fee. We know that the user placed an order
                                 // big enough to cover the surplus fee.
-                                .checked_add(surplus_fee.into())
+                                .checked_add(surplus_fee)
                                 .ok_or(ExecutionError::Overflow)?,
                             token: sell.token,
                         },
@@ -230,7 +255,7 @@ impl Trade {
                                 // reduced by the surplus fee. That's why we have to reduce the
                                 // executed amount by the surplus fee when calculating the
                                 // executed buy amount.
-                                .checked_sub(surplus_fee.into())
+                                .checked_sub(surplus_fee)
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_mul(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
@@ -261,6 +286,8 @@ struct ExecutionParams {
     sell: eth::Asset,
     buy: eth::Asset,
     executed: order::TargetAmount,
+    // Guaranteed to exist when required.
+    solver_determined_fee: Option<order::SellAmount>,
 }
 
 #[derive(Debug, thiserror::Error)]

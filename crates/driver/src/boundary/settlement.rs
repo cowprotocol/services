@@ -87,15 +87,21 @@ impl Settlement {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
-                    if eth::U256::from(trade.executed).is_zero() {
+                    if eth::U256::from(trade.execution.filled).is_zero() {
                         return Err(Error::Boundary(anyhow!("unexpected empty execution")));
                     }
 
+                    let executed_solver_fee = match trade.order.solver_determines_fee() {
+                        true => trade.execution.fee.expect("API ensures fee exists").0,
+                        false => {
+                            // TODO scale fee based on fill amount
+                            trade.order.fee.solver.0
+                        }
+                    };
+
                     let execution = LimitOrderExecution {
-                        filled_amount: trade.executed.into(),
-                        // TODO this needs to take partially fillable orders into account where the
-                        // solver computes the solver fee.
-                        executed_solver_fee: trade.order.fee.solver.0,
+                        filled_amount: trade.execution.filled.into(),
+                        executed_solver_fee,
                     };
 
                     (to_boundary_order(&trade.order), execution)

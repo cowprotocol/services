@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{competition, competition::solution::trade::OrderExecution, eth, liquidity},
         infra::Solver,
         util::serialize,
     },
@@ -25,17 +25,39 @@ impl Solution {
                 .into_iter()
                 .map(|trade| match trade {
                     Trade::Fulfillment(fulfillment) => {
+                        let order = auction
+                            .orders
+                            .iter()
+                            .find(|order| order.uid == fulfillment.order)
+                            // TODO this error should reference the UID
+                            .ok_or(super::Error("invalid order UID specified in fulfillment"))?
+                            .clone();
+
                         Ok(competition::solution::Trade::Fulfillment(
                             competition::solution::trade::Fulfillment {
-                                order: auction
-                                    .orders
-                                    .iter()
-                                    .find(|order| order.uid == fulfillment.order)
-                                    .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment",
-                                    ))?
-                                    .clone(),
-                                executed: fulfillment.executed_amount.into(),
+                                execution: match (order.solver_determines_fee(), fulfillment.fee) {
+                                    (true, Some(fee)) => OrderExecution {
+                                        fee: Some(competition::order::SellAmount(fee)),
+                                        filled: fulfillment.executed_amount.into(),
+                                    },
+                                    (true, None) => {
+                                        // TODO this error should reference the UID
+                                        return Err(super::Error("solver did not determine a fee"));
+                                    }
+                                    (false, fee) => {
+                                        if fee.is_some() {
+                                            tracing::debug!(
+                                                "solver computed a fee when it was not required \
+                                                 so it will be ignored"
+                                            );
+                                        }
+                                        OrderExecution {
+                                            fee: None,
+                                            filled: fulfillment.executed_amount.into(),
+                                        }
+                                    }
+                                },
+                                order,
                             },
                         ))
                     }
@@ -209,6 +231,8 @@ struct Fulfillment {
     order: [u8; 56],
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
+    #[serde_as(as = "Option<serialize::U256>")]
+    fee: Option<eth::U256>,
 }
 
 #[serde_as]
