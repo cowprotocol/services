@@ -5,7 +5,6 @@ use {
             order_converter::OrderConverter,
             slippage::SlippageContext,
             AmmOrderExecution,
-            Exchange,
             LimitOrder,
             LimitOrderExecution,
             LimitOrderId,
@@ -88,9 +87,8 @@ impl Execution {
 
         match self {
             LimitOrder(order) => {
-                let solver_determines_fee = order.order.solver_fee.is_zero()
-                    && !order.order.is_liquidity_order()
-                    && order.order.exchange == Exchange::GnosisProtocol;
+                let solver_determines_fee = matches!(order.order.id, LimitOrderId::Limit(_))
+                    && order.order.partially_fillable;
 
                 let executed_solver_fee = match solver_determines_fee {
                     true => order
