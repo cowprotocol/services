@@ -1,13 +1,17 @@
 use {
     crate::{
         domain::{
-            competition::{self, order},
+            competition::{
+                self,
+                order,
+                solution::{self, settlement},
+            },
             eth,
             liquidity,
         },
         infra::Ethereum,
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     model::{
         app_id::AppId,
         interaction::InteractionData,
@@ -48,6 +52,7 @@ pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     contract: contracts::GPv2Settlement,
     solver: eth::Address,
+    internalization: settlement::Internalization,
 }
 
 impl Settlement {
@@ -55,7 +60,8 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
-    ) -> Result<Self> {
+        internalization: settlement::Internalization,
+    ) -> Result<Self, Error> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
@@ -67,13 +73,13 @@ impl Settlement {
             settlement_contract.clone().address().into(),
         );
 
-        let clearing_prices = solution
-            .prices
-            .0
-            .iter()
-            .map(|(&token, &amount)| (token.into(), amount))
-            .collect();
-        let mut settlement = solver::settlement::Settlement::new(clearing_prices);
+        let mut settlement = solver::settlement::Settlement::new(
+            solution
+                .prices()?
+                .into_iter()
+                .map(|asset| (asset.token.into(), asset.amount))
+                .collect(),
+        );
 
         for trade in &solution.trades {
             let (boundary_order, executed_amount) = match trade {
@@ -81,10 +87,9 @@ impl Settlement {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
-                    anyhow::ensure!(
-                        !eth::U256::from(trade.executed).is_zero(),
-                        "unexpected empty execution",
-                    );
+                    if eth::U256::from(trade.executed).is_zero() {
+                        return Err(Error::Boundary(anyhow!("unexpected empty execution")));
+                    }
 
                     let execution = LimitOrderExecution {
                         filled_amount: trade.executed.into(),
@@ -108,8 +113,12 @@ impl Settlement {
                 }
             };
 
-            let boundary_limit_order = order_converter.normalize_limit_order(boundary_order)?;
-            settlement.with_liquidity(&boundary_limit_order, executed_amount)?;
+            let boundary_limit_order = order_converter
+                .normalize_limit_order(boundary_order)
+                .map_err(Error::Boundary)?;
+            settlement
+                .with_liquidity(&boundary_limit_order, executed_amount)
+                .map_err(Error::Boundary)?;
         }
 
         let approvals = solution.approvals(eth).await?;
@@ -138,7 +147,8 @@ impl Settlement {
                         .map(|price| (token.address.into(), price.into()))
                 })
                 .collect(),
-        )?;
+        )
+        .map_err(Error::Boundary)?;
         let slippage_context = slippage_calculator.context(&external_prices);
 
         for interaction in &solution.interactions {
@@ -146,7 +156,8 @@ impl Settlement {
                 &slippage_context,
                 settlement_contract.address().into(),
                 interaction,
-            )?;
+            )
+            .map_err(Error::Boundary)?;
             settlement.encoder.append_to_execution_plan_internalizable(
                 boundary_interaction,
                 interaction.internalize(),
@@ -157,13 +168,17 @@ impl Settlement {
             inner: settlement,
             contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
+            internalization,
         })
     }
 
     pub fn tx(self) -> eth::Tx {
-        let encoded_settlement = self
-            .inner
-            .encode(InternalizationStrategy::SkipInternalizableInteraction);
+        let encoded_settlement = self.inner.encode(match self.internalization {
+            settlement::Internalization::Enable => {
+                InternalizationStrategy::SkipInternalizableInteraction
+            }
+            settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
+        });
         let builder = settle_method_builder(
             &self.contract,
             encoded_settlement,
@@ -197,7 +212,7 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let gas_price = u256_to_big_rational(&auction.gas_price.into());
+        let gas_price = u256_to_big_rational(&auction.gas_price.effective().into());
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
@@ -407,4 +422,12 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("boundary error: {0:?}")]
+    Boundary(anyhow::Error),
+    #[error("solution error: {0:?}")]
+    Solution(#[from] solution::Error),
 }

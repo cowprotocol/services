@@ -6,9 +6,9 @@ use {
 };
 
 /// Tries to do one of 2 optimizations.
-/// 1) Drop WETH unwraps and instead pay ETH with the settlment contract's
+/// 1) Drop WETH unwraps and instead pay ETH with the settlement contract's
 /// buffer. 2) Top up settlement contract's ETH buffer by unwrapping way more
-/// WETH than this settlement    needs. This will cause the next few settlements
+/// WETH than this settlement needs. This will cause the next few settlements
 /// to use optimization 1.
 pub async fn optimize_unwrapping(
     settlement: Settlement,

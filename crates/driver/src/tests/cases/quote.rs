@@ -15,7 +15,7 @@ use {
 async fn test() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
         settlement,
         token_a,
@@ -28,14 +28,14 @@ async fn test() {
         solver_address,
         solver_secret_key,
         ..
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
     let buy_token = token_b.address();
     let sell_amount = token_a_in_amount;
     let buy_amount = token_b_out_amount;
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
+    let gas_price = setup::blockchain::effective_gas_price(&web3).await;
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::seconds(2);
     let interactions = uniswap_interactions
@@ -90,7 +90,7 @@ async fn test() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline - quote::Deadline::time_buffer(),
             }),
             res: json!({
@@ -134,7 +134,7 @@ async fn test() {
                 "buyToken": hex_address(buy_token),
                 "amount": sell_amount.to_string(),
                 "kind": "sell",
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline,
             }),
         )

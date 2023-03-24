@@ -737,7 +737,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
-        chrono::{DateTime, NaiveDateTime, Utc},
+        chrono::{TimeZone, Utc},
         futures::{FutureExt, StreamExt},
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::eq,
@@ -767,7 +767,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
+                    creation_date: Utc.timestamp_opt(2, 0).unwrap(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -779,7 +779,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+                    creation_date: Utc.timestamp_opt(0, 0).unwrap(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -790,8 +790,7 @@ mod tests {
         let orders_ = solvable_orders(orders.clone(), &balances, None);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
-        orders[1].metadata.creation_date =
-            DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
+        orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
         let orders_ = solvable_orders(orders.clone(), &balances, None);
         assert_eq!(orders_, orders[1..]);
     }
@@ -806,7 +805,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
+                creation_date: Utc.timestamp_opt(2, 0).unwrap(),
                 owner: ethflow_address,
                 ..Default::default()
             },

@@ -1,7 +1,6 @@
 use {
     super::{
         super::submitter::{TransactionHandle, TransactionSubmitting},
-        AdditionalTip,
         DisabledReason,
         Strategy,
         SubmissionLoopStatus,
@@ -144,7 +143,7 @@ impl TransactionSubmitting for PublicMempoolApi {
             return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
         }
 
-        SubmissionLoopStatus::Enabled(AdditionalTip::Off)
+        SubmissionLoopStatus::Enabled
     }
 
     fn name(&self) -> Strategy {
@@ -226,7 +225,7 @@ mod tests {
         let submitter = PublicMempoolApi::new(vec![], false);
         assert_eq!(
             submitter.submission_status(&high_risk_settlement, ""),
-            SubmissionLoopStatus::Enabled(AdditionalTip::Off),
+            SubmissionLoopStatus::Enabled,
         );
 
         let submitter = PublicMempoolApi::new(vec![], true);

@@ -8,12 +8,13 @@ use {
             settle_method,
             simulate_and_estimate_gas_at_current_block,
         },
-        solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+        settlement_submission::gas_limit_for_estimate,
+        solver::{SettlementWithSolver, Simulation, SimulationError, SimulationWithError, Solver},
     },
     anyhow::{Context, Result},
     contracts::GPv2Settlement,
     ethcontract::errors::ExecutionError,
-    futures::future::join_all,
+    futures::{future, future::join_all},
     gas_estimation::GasPrice1559,
     itertools::{Either, Itertools},
     model::solver_competition::Score,
@@ -26,20 +27,13 @@ use {
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
-    std::{borrow::Borrow, sync::Arc},
+    std::{
+        borrow::Borrow,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     web3::types::AccessList,
 };
-
-/// We require from solvers to have a bit more ETH balance then needed
-/// at the moment of simulating the transaction, to cover the potential increase
-/// of the cost of sending transaction onchain, because of the sudden gas price
-/// increase. To simulate this sudden increase of gas price during simulation,
-/// we artificially multiply the gas price with this factor.
-///
-/// We chose the multiplier of 3.25 to be approximately equal to the maximum
-/// increase in the ERC-1559 base gas price over 10 blocks, or ~120s. This maps
-/// exactly to the timeout we allow for any given transaction.
-const SOLVER_BALANCE_MULTIPLIER: f64 = 3.25;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
@@ -62,15 +56,6 @@ pub trait SettlementRating: Send + Sync {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)>;
-
-    /// Simulates the settlements and returns the gas used (or reason for
-    /// revert) as well as the access list for each settlement.
-    async fn simulate_settlements(
-        &self,
-        settlements: Vec<SolverSettlement>,
-        gas_price: GasPrice1559,
-        internalization: InternalizationStrategy,
-    ) -> Result<Vec<SimulationWithResult>>;
 }
 
 pub struct SettlementRater {
@@ -113,10 +98,9 @@ impl SettlementRater {
         )
         .await
     }
-}
 
-#[async_trait::async_trait]
-impl SettlementRating for SettlementRater {
+    /// Simulates the settlements and returns the gas used (or reason for
+    /// revert) as well as the access list for each settlement.
     async fn simulate_settlements(
         &self,
         settlements: Vec<(Arc<dyn Solver>, Settlement)>,
@@ -168,20 +152,21 @@ impl SettlementRating for SettlementRater {
             .collect();
         Ok(details)
     }
+}
 
+#[async_trait::async_trait]
+impl SettlementRating for SettlementRater {
     async fn rate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
-        let gas_price_for_simulation = gas_price_for_simulation(&gas_price);
-
         // first simulate settlements without internalizations to make sure they pass
         let simulations = self
             .simulate_settlements(
                 settlements,
-                gas_price_for_simulation,
+                gas_price,
                 InternalizationStrategy::EncodeAllInteractions,
             )
             .await?;
@@ -203,12 +188,12 @@ impl SettlementRating for SettlementRater {
         let mut simulations = self
             .simulate_settlements(
                 settlements,
-                gas_price_for_simulation,
+                gas_price,
                 InternalizationStrategy::SkipInternalizableInteraction,
             )
             .await?;
 
-        let gas_price =
+        let effective_gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
         let rate_settlement = |id, settlement: Settlement, gas_estimate: U256| {
@@ -216,7 +201,7 @@ impl SettlementRating for SettlementRater {
             let inputs = crate::objective_value::Inputs::from_settlement(
                 &settlement,
                 prices,
-                gas_price.clone(),
+                effective_gas_price.clone(),
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
@@ -238,12 +223,36 @@ impl SettlementRating for SettlementRater {
                 earned_fees,
                 solver_fees: inputs.solver_fees,
                 gas_estimate,
-                gas_price: gas_price.clone(),
+                gas_price: effective_gas_price.clone(),
                 objective_value,
                 score,
                 ranking: Default::default(),
             }
         };
+
+        let solver_balances = future::join_all(
+            simulations
+                .iter()
+                .filter(|result| result.gas_estimate.is_ok())
+                .map(|result| result.simulation.solver.account().address())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|solver_address| {
+                    let web3 = self.web3.clone();
+                    async move {
+                        (
+                            solver_address,
+                            web3.eth()
+                                .balance(solver_address, None)
+                                .await
+                                .unwrap_or_default(),
+                        )
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
         simulations.extend(simulations_failed);
         Ok((simulations.into_iter().enumerate()).partition_map(
@@ -255,47 +264,37 @@ impl SettlementRating for SettlementRater {
                 },
             )| {
                 match gas_estimate {
-                    Ok(gas_estimate) => Either::Left((
-                        simulation.solver,
-                        rate_settlement(i, simulation.settlement, gas_estimate),
-                        simulation.transaction.access_list,
-                    )),
+                    Ok(gas_estimate) => {
+                        let gas_limit = gas_limit_for_estimate(gas_estimate);
+                        let required_balance = gas_limit
+                            .saturating_mul(U256::from_f64_lossy(gas_price.max_fee_per_gas));
+                        let solver_balance = solver_balances
+                            .get(&simulation.solver.account().address())
+                            .copied()
+                            .unwrap_or_default();
+
+                        if solver_balance >= required_balance {
+                            Either::Left((
+                                simulation.solver,
+                                rate_settlement(i, simulation.settlement, gas_estimate),
+                                simulation.transaction.access_list,
+                            ))
+                        } else {
+                            Either::Right(SimulationWithError {
+                                simulation,
+                                error: SimulationError::InsufficientBalance {
+                                    needs: required_balance,
+                                    has: solver_balance,
+                                },
+                            })
+                        }
+                    }
                     Err(err) => Either::Right(SimulationWithError {
                         simulation,
-                        error: err,
+                        error: err.into(),
                     }),
                 }
             },
         ))
-    }
-}
-
-fn gas_price_for_simulation(gas_price: &GasPrice1559) -> GasPrice1559 {
-    let bumped_effective_gas_price = gas_price.effective_gas_price() * SOLVER_BALANCE_MULTIPLIER;
-    let max_priority_fee_per_gas = bumped_effective_gas_price - gas_price.base_fee_per_gas;
-
-    GasPrice1559 {
-        max_fee_per_gas: gas_price.max_fee_per_gas.max(bumped_effective_gas_price),
-        max_priority_fee_per_gas,
-        base_fee_per_gas: gas_price.base_fee_per_gas,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn gas_price_for_simulation_is_bumped() {
-        let gas_price = GasPrice1559 {
-            max_fee_per_gas: 200.0,
-            max_priority_fee_per_gas: 10.0,
-            base_fee_per_gas: 90.0,
-        };
-        let bumped_gas_price = gas_price_for_simulation(&gas_price);
-        assert_eq!(
-            gas_price.effective_gas_price() * SOLVER_BALANCE_MULTIPLIER,
-            bumped_gas_price.effective_gas_price()
-        );
     }
 }

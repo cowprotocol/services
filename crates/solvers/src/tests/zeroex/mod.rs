@@ -9,6 +9,7 @@ mod out_of_price;
 pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
+[dex]
 endpoint = 'http://{solver_addr}/swap/v1/'
         ",
     ))

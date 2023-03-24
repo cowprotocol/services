@@ -43,7 +43,7 @@ pub async fn run(
     let eth = ethereum(&config, &args).await;
     let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
-        solvers: solvers(&config, now),
+        solvers: solvers(&config, &eth, now),
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: join_all(
@@ -113,11 +113,11 @@ async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {
     .expect("initialize ethereum RPC API")
 }
 
-fn solvers(config: &config::Config, now: infra::time::Now) -> Vec<Solver> {
+fn solvers(config: &config::Config, eth: &Ethereum, now: infra::time::Now) -> Vec<Solver> {
     config
         .solvers
         .iter()
-        .map(|config| Solver::new(config.clone(), now))
+        .map(|config| Solver::new(config.clone(), eth.clone(), now))
         .collect()
 }
 

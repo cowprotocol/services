@@ -181,13 +181,15 @@ async fn test() {
         "zeroex",
         tests::Config::String(format!(
             "
-endpoint = 'http://{api}/swap/v1/'
+relative-slippage = '0.1'
+[dex]
+endpoint = 'http://{}/swap/v1/'
 api-key = 'abc123'
 excluded-sources = ['Uniswap_V2', 'Balancer_V2']
 affiliate = '0x0123456789012345678901234567890123456789'
 enable-slippage-protection = true
-relative-slippage = '0.1'
-            "
+            ",
+            api.address
         )),
     )
     .await;
