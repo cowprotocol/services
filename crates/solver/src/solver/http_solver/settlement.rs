@@ -93,10 +93,9 @@ impl Execution {
                     && order.order.exchange == Exchange::GnosisProtocol;
 
                 let executed_solver_fee = match solver_determines_fee {
-                    true => order.executed_solver_fee.unwrap_or_else(|| {
-                        tracing::warn!("no fee for partially fillable limit order");
-                        0.into()
-                    }),
+                    true => order
+                        .executed_solver_fee
+                        .context("no fee for partially fillable limit order")?,
                     // This currently doesn't handle partially fillable market orders specifically.
                     false => order.order.solver_fee,
                 };
