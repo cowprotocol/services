@@ -65,7 +65,7 @@ async fn test() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver)).await;
+    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver.address)).await;
 
     let solution = engine
         .solve(json!({
