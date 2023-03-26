@@ -649,6 +649,7 @@ impl SettlementEncoder {
         self.sort_tokens_and_update_indices();
 
         self.execution_plan.append(&mut other.execution_plan);
+        self.pre_interactions.append(&mut other.pre_interactions);
 
         for unwrap in other.unwraps {
             self.add_unwrap(unwrap);
