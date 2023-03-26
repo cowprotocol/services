@@ -1128,6 +1128,50 @@ pub mod tests {
     }
 
     #[test]
+    fn merge_preserves_pre_interactions() {
+        let mut encoder0 = SettlementEncoder::new(Default::default());
+        encoder0.pre_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+
+        let mut encoder1 = SettlementEncoder::new(Default::default());
+        encoder1.pre_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+        encoder1.pre_interactions.push(InteractionData {
+            target: H160([2; 20]),
+            value: U256::one(),
+            call_data: vec![0xb],
+        });
+
+        let merged = encoder0.merge(encoder1).unwrap();
+        assert_eq!(
+            merged.pre_interactions,
+            vec![
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([2; 20]),
+                    value: U256::one(),
+                    call_data: vec![0xb],
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn merge_fails_because_price_is_different() {
         let prices = hashmap! { token(1) => 1.into(), token(2) => 2.into() };
         let encoder0 = SettlementEncoder::new(prices);
