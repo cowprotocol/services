@@ -353,29 +353,24 @@ pub async fn run(args: Arguments) {
     }
 
     if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        match UniswapV3PoolFetcher::new(
-            chain_id,
+        let uniswap_v3_pool_fetcher = Arc::new(
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                web3.clone(),
+                http_factory.create(),
+                block_retriever,
+                args.shared.max_pools_to_initialize_cache,
+            )
+            .await
+            .expect("error innitializing Uniswap V3 pool fetcher"),
+        );
+        maintainers.push(uniswap_v3_pool_fetcher.clone());
+        liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
+            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+            settlement_contract.clone(),
             web3.clone(),
-            http_factory.create(),
-            block_retriever,
-            args.shared.max_pools_to_initialize_cache,
-        )
-        .await
-        {
-            Ok(uniswap_v3_pool_fetcher) => {
-                let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
-                maintainers.push(uniswap_v3_pool_fetcher.clone());
-                liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
-                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-                    settlement_contract.clone(),
-                    web3.clone(),
-                    uniswap_v3_pool_fetcher,
-                )));
-            }
-            Err(err) => {
-                tracing::error!("failed to create UniswapV3 pool fetcher in solver: {}", err);
-            }
-        }
+            uniswap_v3_pool_fetcher,
+        )));
     }
 
     let liquidity_collector = LiquidityCollector {
