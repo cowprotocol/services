@@ -33,6 +33,12 @@ pub struct Config {
     /// This is used by 0x for tracking and analytic purposes.
     pub affiliate: H160,
 
+    /// The address of the settlement contract.
+    pub settlement: eth::ContractAddress,
+
+    /// Wether or not to enable RFQ-T liquidity.
+    pub enable_rfqt: bool,
+
     /// Whether or not to enable slippage protection.
     pub enable_slippage_protection: bool,
 }
@@ -54,7 +60,10 @@ impl ZeroEx {
             None => reqwest::Client::new(),
         };
         let defaults = dto::Query {
+            taker_address: Some(config.settlement.0),
             excluded_sources: config.excluded_sources,
+            skip_validation: true,
+            intent_on_filling: config.enable_rfqt,
             affiliate_address: config.affiliate,
             enable_slippage_protection: config.enable_slippage_protection,
             ..Default::default()
