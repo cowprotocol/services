@@ -284,24 +284,17 @@ pub async fn run(args: Arguments) {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        match UniswapV3PoolFetcher::new(
-            chain_id,
-            web3.clone(),
-            http_factory.create(),
-            block_retriver,
-            args.shared.max_pools_to_initialize_cache,
-        )
-        .await
-        {
-            Ok(uniswap_v3_pool_fetcher) => Some(Arc::new(uniswap_v3_pool_fetcher)),
-            Err(err) => {
-                tracing::error!(
-                    "failed to create UniswapV3 pool fetcher in orderbook: {}",
-                    err,
-                );
-                None
-            }
-        }
+        Some(Arc::new(
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                web3.clone(),
+                http_factory.create(),
+                block_retriver,
+                args.shared.max_pools_to_initialize_cache,
+            )
+            .await
+            .expect("error innitializing Uniswap V3 pool fetcher"),
+        ))
     } else {
         None
     };
