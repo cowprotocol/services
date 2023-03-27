@@ -580,9 +580,8 @@ components:
             fee:
               description: |
                 The sell token amount that should be taken as a fee for this
-                trade. This should only be returned for partially fillable
-                limit orders and should only refer to the filled amount by
-                this trade and not to the whole amount of the order.
+                trade. This only gets returned for partially fillable limit
+                orders and only refers to the actual amount filled by the trade.
 
     LiquidityInteraction:
       description: |
