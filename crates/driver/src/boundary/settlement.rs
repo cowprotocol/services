@@ -93,7 +93,7 @@ impl Settlement {
 
                     let executed_solver_fee = match trade.order.solver_determines_fee() {
                         true => trade.execution.fee.expect("API ensures fee exists").0,
-                        false => trade.order.fee.solver.0
+                        false => trade.order.fee.solver.0,
                     };
 
                     let execution = LimitOrderExecution {

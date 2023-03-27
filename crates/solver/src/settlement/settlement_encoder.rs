@@ -271,7 +271,7 @@ impl SettlementEncoder {
                     OrderKind::Sell => order.data.sell_amount,
                     OrderKind::Buy => order.data.buy_amount,
                 };
-                let (fee_to_collect, solver_fee) = match order.data.partially_fillable {
+                let (fee_to_collect, fee_for_objective) = match order.data.partially_fillable {
                     // Solver determines fees for partially fillable orders.
                     true => (solver_fee, solver_fee),
                     // Protocol determines fees for fok orders.
@@ -283,7 +283,7 @@ impl SettlementEncoder {
                 self.add_custom_price_trade(
                     order,
                     executed_amount,
-                    solver_fee,
+                    fee_for_objective,
                     sell_price,
                     buy_price,
                 )?

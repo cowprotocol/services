@@ -105,6 +105,10 @@ impl Order {
             OrderClass::Liquidity => false,
         }
     }
+
+    pub fn solver_determines_fee(&self) -> bool {
+        self.data.partially_fillable && matches!(self.metadata.class, OrderClass::Limit(_))
+    }
 }
 
 /// Remaining order buy, sell and fee amounts.

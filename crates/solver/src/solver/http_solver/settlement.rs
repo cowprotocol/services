@@ -94,7 +94,6 @@ impl Execution {
                     true => order
                         .executed_solver_fee
                         .context("no fee for partially fillable limit order")?,
-                    // This currently doesn't handle partially fillable market orders specifically.
                     false => order.order.solver_fee,
                 };
 
