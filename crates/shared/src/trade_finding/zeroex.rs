@@ -58,7 +58,9 @@ impl Inner {
                 sell_amount,
                 buy_amount,
                 slippage_percentage: None,
+                taker_address: None,
                 excluded_sources: self.excluded_sources.clone(),
+                intent_on_filling: false,
                 enable_slippage_protection: false,
             })
             .await?;

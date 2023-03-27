@@ -35,7 +35,7 @@ use {
     },
     anyhow::{anyhow, ensure, Context, Result},
     contracts::GPv2Settlement,
-    ethcontract::Account,
+    ethcontract::{Account, H160},
     model::order::OrderKind,
     num::{BigRational, ToPrimitive, Zero},
     shared::{
@@ -55,6 +55,9 @@ pub struct ZeroExSolver {
     allowance_fetcher: Box<dyn AllowanceManaging>,
     excluded_sources: Vec<String>,
     slippage_calculator: SlippageCalculator,
+    settlement: H160,
+    enable_rfqt: bool,
+    enable_slippage_protection: bool,
 }
 
 /// Chain ID for Mainnet.
@@ -81,7 +84,20 @@ impl ZeroExSolver {
             api,
             excluded_sources,
             slippage_calculator,
+            settlement: settlement_contract.address(),
+            enable_rfqt: false,
+            enable_slippage_protection: false,
         })
+    }
+
+    pub fn with_rfqt(mut self, enable: bool) -> Self {
+        self.enable_rfqt = enable;
+        self
+    }
+
+    pub fn with_slippage_protection(mut self, enable: bool) -> Self {
+        self.enable_slippage_protection = enable;
+        self
     }
 }
 
@@ -107,8 +123,10 @@ impl SingleOrderSolving for ZeroExSolver {
                     .relative_for_order(&order)?
                     .as_factor(),
             )),
+            taker_address: Some(self.settlement),
             excluded_sources: self.excluded_sources.clone(),
-            enable_slippage_protection: false,
+            intent_on_filling: self.enable_rfqt,
+            enable_slippage_protection: self.enable_slippage_protection,
         };
         let swap = match self.api.get_swap(query).await {
             Ok(swap) => swap,
@@ -356,6 +374,9 @@ mod tests {
             allowance_fetcher,
             excluded_sources: Default::default(),
             slippage_calculator: Default::default(),
+            settlement: testlib::protocol::SETTLEMENT,
+            enable_rfqt: false,
+            enable_slippage_protection: false,
         };
 
         let buy_order_passing_limit = LimitOrder {
@@ -497,6 +518,9 @@ mod tests {
             allowance_fetcher,
             excluded_sources: Default::default(),
             slippage_calculator: Default::default(),
+            settlement: testlib::protocol::SETTLEMENT,
+            enable_rfqt: false,
+            enable_slippage_protection: false,
         };
 
         let order = LimitOrder {
@@ -553,6 +577,9 @@ mod tests {
             allowance_fetcher,
             excluded_sources: Default::default(),
             slippage_calculator: Default::default(),
+            settlement: testlib::protocol::SETTLEMENT,
+            enable_rfqt: false,
+            enable_slippage_protection: false,
         };
 
         let order = |fee: U256| {
