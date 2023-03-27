@@ -225,10 +225,14 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
+        let mut blockscout = BlockscoutTokenOwnerFinder::try_with_network(
             http_factory.configure(|builder| builder.timeout(args.blockscout_http_timeout)),
             chain_id,
-        )?));
+        )?;
+        if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
+            blockscout.with_rate_limiter(strategy);
+        }
+        proposers.push(Arc::new(blockscout));
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Ethplorer) {

@@ -649,6 +649,7 @@ impl SettlementEncoder {
         self.sort_tokens_and_update_indices();
 
         self.execution_plan.append(&mut other.execution_plan);
+        self.pre_interactions.append(&mut other.pre_interactions);
 
         for unwrap in other.unwraps {
             self.add_unwrap(unwrap);
@@ -1124,6 +1125,50 @@ pub mod tests {
         assert_eq!(merged.trades.len(), 4);
         assert_eq!(merged.execution_plan.len(), 2);
         assert_eq!(merged.unwraps[0].amount, 3.into());
+    }
+
+    #[test]
+    fn merge_preserves_pre_interactions() {
+        let mut encoder0 = SettlementEncoder::new(Default::default());
+        encoder0.pre_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+
+        let mut encoder1 = SettlementEncoder::new(Default::default());
+        encoder1.pre_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+        encoder1.pre_interactions.push(InteractionData {
+            target: H160([2; 20]),
+            value: U256::one(),
+            call_data: vec![0xb],
+        });
+
+        let merged = encoder0.merge(encoder1).unwrap();
+        assert_eq!(
+            merged.pre_interactions,
+            vec![
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([2; 20]),
+                    value: U256::one(),
+                    call_data: vec![0xb],
+                },
+            ]
+        );
     }
 
     #[test]
