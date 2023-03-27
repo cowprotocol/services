@@ -27,6 +27,8 @@ include_contracts! {
     BalancerV2WeightedPool2TokensFactory;
     BalancerV2WeightedPool;
     BalancerV2WeightedPoolFactory;
+    BalancerV2WeightedPoolFactoryV2;
+    BalancerV2WeightedPoolFactoryV3;
     BaoswapFactory;
     BaoswapRouter;
     CoWSwapEthFlow;
