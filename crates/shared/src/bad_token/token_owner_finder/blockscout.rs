@@ -1,5 +1,6 @@
 use {
     super::TokenOwnerProposing,
+    crate::rate_limiter::{back_off, RateLimiter, RateLimitingStrategy},
     anyhow::{bail, Result},
     ethcontract::H160,
     prometheus::IntCounterVec,
@@ -13,6 +14,7 @@ const BASE: &str = "https://blockscout.com/";
 pub struct BlockscoutTokenOwnerFinder {
     client: Client,
     base: Url,
+    rate_limiter: Option<RateLimiter>,
 }
 
 impl BlockscoutTokenOwnerFinder {
@@ -31,7 +33,16 @@ impl BlockscoutTokenOwnerFinder {
                 .expect("Invalid Blockscout URL Segement")
                 .join("mainnet/api")
                 .expect("Invalid Blockscout URL Segement"),
+            rate_limiter: None,
         })
+    }
+
+    pub fn with_rate_limiter(&mut self, strategy: RateLimitingStrategy) -> &mut Self {
+        self.rate_limiter = Some(RateLimiter::from_strategy(
+            strategy,
+            "blockscout".to_owned(),
+        ));
+        self
     }
 
     async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
@@ -43,7 +54,11 @@ impl BlockscoutTokenOwnerFinder {
 
         tracing::debug!(%url, "Querying Blockscout API");
 
-        let response = self.client.get(url).send().await?;
+        let request = self.client.get(url).send();
+        let response = match &self.rate_limiter {
+            Some(limiter) => limiter.execute(request, back_off::on_http_429).await??,
+            _ => request.await?,
+        };
         let status = response.status();
         let status_result = response.error_for_status_ref().map(|_| ());
         let body = response.text().await?;
