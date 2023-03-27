@@ -37,30 +37,18 @@ impl Remaining {
     }
 
     pub fn from_order(order: &Order) -> Result<Self> {
-        Self::from_components(
-            order.data.kind,
-            order.data.buy_amount,
-            number_conversions::big_uint_to_u256(&order.metadata.executed_buy_amount)
-                .context("buy order executed amount overflows a u256")?,
-            order.data.sell_amount,
-            order.metadata.executed_sell_amount_before_fees,
-            order.data.partially_fillable,
-        )
-    }
-
-    pub fn from_components(
-        kind: OrderKind,
-        total_buy: U256,
-        executed_buy: U256,
-        total_sell: U256,
-        executed_sell_amount_before_fees: U256,
-        partially_fillable: bool,
-    ) -> Result<Self> {
-        let (total, executed) = match kind {
-            OrderKind::Buy => (total_buy, executed_buy),
-            OrderKind::Sell => (total_sell, executed_sell_amount_before_fees),
+        let (total, executed) = match order.data.kind {
+            OrderKind::Buy => (
+                order.data.buy_amount,
+                number_conversions::big_uint_to_u256(&order.metadata.executed_buy_amount)
+                    .context("buy order executed amount overflows a u256")?,
+            ),
+            OrderKind::Sell => (
+                order.data.sell_amount,
+                order.metadata.executed_sell_amount_before_fees,
+            ),
         };
-        if partially_fillable {
+        if order.data.partially_fillable {
             Self::from_partially_fillable(total, executed)
         } else {
             Ok(Self::from_fill_or_kill(!executed.is_zero()))

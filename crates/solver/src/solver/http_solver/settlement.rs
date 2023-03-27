@@ -94,17 +94,8 @@ impl Execution {
                     true => order
                         .executed_solver_fee
                         .context("no fee for partially fillable limit order")?,
-                    false => {
-                        let remaining = shared::remaining_amounts::Remaining::from_components(
-                            order.order.kind,
-                            order.order.buy_amount,
-                            order.executed_buy_amount,
-                            order.order.sell_amount,
-                            order.executed_sell_amount,
-                            order.order.partially_fillable,
-                        )?;
-                        remaining.remaining(order.order.solver_fee)?
-                    }
+                    // This currently doesn't handle partially fillable market orders specifically.
+                    false => order.order.solver_fee,
                 };
 
                 let execution = LimitOrderExecution {
