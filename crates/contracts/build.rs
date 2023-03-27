@@ -89,34 +89,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("BalancerV2WeightedPoolFactoryV2", |builder| {
-        builder
-            .contract_mod_override("balancer_v2_weighted_pool_factory_v2")
-            .add_network(
-                MAINNET,
-                Network {
-                    address: addr("0xcC508a455F5b0073973107Db6a878DdBDab957bC"),
-                    // <https://etherscan.io/tx/0x43fec4d228a0ed7c9c8d94da33b5bd5a30dd812630d89235f8b0222b35d33cab>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(15497271)),
-                },
-            )
-            .add_network(
-                GOERLI,
-                Network {
-                    address: addr("0x94f68b54191F62f781Fe8298A8A5Fa3ed772d227"),
-                    // <https://goerli.etherscan.io/tx/0x1c7435e7341b103f10e662e200b1c3a7623787630c905406c0682a7d2dd8ee16>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(7553858)),
-                },
-            )
-            .add_network(
-                GNOSIS,
-                Network {
-                    address: addr("0xf302f9F50958c5593770FDf4d4812309fF77414f"),
-                    // <https://gnosisscan.io/tx/0xa3467dfc41e61cd0fe77cb185f87d44cfccb8f6590a9089ac98d97dc62d5023f>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(25414470)),
-                },
-            )
-    });
     generate_contract_with_config("BalancerV2WeightedPoolFactoryV3", |builder| {
         builder
             .contract_mod_override("balancer_v2_weighted_pool_factory_v3")
@@ -142,6 +114,34 @@ fn main() {
                     address: addr("0xC128a9954e6c874eA3d62ce62B468bA073093F25"),
                     // <https://gnosisscan.io/tx/0x2ac3d873b6f43de6dd77525c7e5b68a8fc3a1dee40303e1b6a680b0285b26091>
                     deployment_information: Some(DeploymentInformation::BlockNumber(26226256)),
+                },
+            )
+    });
+    generate_contract_with_config("BalancerV2WeightedPoolFactoryV4", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_weighted_pool_factory_v4")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x897888115Ada5773E02aA29F775430BFB5F34c51"),
+                    // <https://etherscan.io/tx/0xa5e6d73befaacc6fff0a4b99fd4eaee58f49949bcfb8262d91c78f24667fbfc9>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16878323)),
+                },
+            )
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"),
+                    // <https://goerli.etherscan.io/tx/0xf573046881049ffeb65210adc5b76f41adbd2202f46593d22767e8bbd6c6198d>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8694778)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x6CaD2ea22BFA7F4C14Aae92E47F510Cd5C509bc7"),
+                    // <https://gnosisscan.io/tx/0xcb6768bd92add227d46668357291e1d67c864769d353f9f0041c59ad2a3b21bf>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(27055829)),
                 },
             )
     });

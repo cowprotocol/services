@@ -13,8 +13,8 @@ use {
     contracts::{
         BalancerV2WeightedPool,
         BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV2,
         BalancerV2WeightedPoolFactoryV3,
+        BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{BlockId, H160},
     futures::{future::BoxFuture, FutureExt as _},
@@ -107,7 +107,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2WeightedPoolFactoryV2 {
+impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -129,7 +129,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactoryV2 {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
+impl FactoryIndexing for BalancerV2WeightedPoolFactoryV4 {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
