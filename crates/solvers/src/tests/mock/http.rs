@@ -91,6 +91,11 @@ pub struct ServerHandle {
 
 impl Drop for ServerHandle {
     fn drop(&mut self) {
+        // Don't cause mass hysteria!
+        if std::thread::panicking() {
+            return;
+        }
+
         let server_panicked = self.assert_failed.load(std::sync::atomic::Ordering::SeqCst);
         // Panics happening in the server task might not cause the test to fail and only
         // show up if some assertion fails in the main task. This accomplishes that.
