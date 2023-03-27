@@ -182,7 +182,7 @@ impl Interaction for InteractionData {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Score {
     /// The score used for ranking.
@@ -372,6 +372,10 @@ pub enum SolverRejectionReason {
     /// The solution didn't pass simulation. Includes all data needed to
     /// re-create simulation locally
     SimulationFailure(TransactionWithError),
+
+    /// The solution doesn't have a positive score. Currently this can happen
+    /// only if the objective value is negative.
+    NonPositiveScore,
 }
 
 #[derive(Debug, Serialize)]

@@ -236,6 +236,7 @@ struct CustomInteraction {
     target: H160,
     #[serde_as(as = "serialize::U256")]
     value: U256,
+    #[serde(rename = "callData")]
     #[serde_as(as = "serialize::Hex")]
     calldata: Vec<u8>,
     allowances: Vec<Allowance>,
@@ -252,6 +253,7 @@ struct OrderInteraction {
     target: H160,
     #[serde_as(as = "serialize::U256")]
     value: U256,
+    #[serde(rename = "callData")]
     #[serde_as(as = "serialize::Hex")]
     calldata: Vec<u8>,
 }

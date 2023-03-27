@@ -279,7 +279,7 @@ impl Settlement {
         Self {
             encoder,
             submitter: self.submitter.clone(),
-            score: self.score.clone(),
+            score: self.score,
         }
     }
 

@@ -45,6 +45,10 @@ impl Contracts {
     pub fn weth(&self) -> &contracts::WETH9 {
         &self.weth
     }
+
+    pub fn weth_address(&self) -> eth::WethAddress {
+        self.weth.address().into()
+    }
 }
 
 /// A trait for initializing contract instances with dynamic addresses.

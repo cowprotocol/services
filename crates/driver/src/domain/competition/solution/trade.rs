@@ -1,5 +1,4 @@
 use {
-    super::ClearingPrices,
     crate::domain::{
         competition::{self, order},
         eth,
@@ -38,7 +37,7 @@ pub struct Jit {
 
 impl Trade {
     /// The surplus fee associated with this trade, if any.
-    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
+    pub(super) fn surplus_fee(&self) -> Option<order::SellAmount> {
         match self {
             // Surplus fees only apply to trades which fulfill limit orders.
             &Self::Fulfillment(Fulfillment {
@@ -55,7 +54,10 @@ impl Trade {
 
     /// Calculate the final sold and bought amounts that are transferred to and
     /// from the settlement contract when the settlement is executed.
-    pub fn execution(&self, clearing_prices: &ClearingPrices) -> Result<Execution, Error> {
+    pub(super) fn execution(
+        &self,
+        solution: &competition::Solution,
+    ) -> Result<Execution, ExecutionError> {
         // Values needed to calculate the executed amounts.
         let ExecutionParams {
             side,
@@ -93,15 +95,13 @@ impl Trade {
             order::Kind::Market => {
                 // Market orders use clearing prices to calculate the executed amounts. See the
                 // [`competition::Solution::prices`] field for an explanation of how these work.
-                let sell_price = clearing_prices
-                    .0
-                    .get(&sell.token)
-                    .ok_or(Error::ClearingPriceMissing)?
+                let sell_price = solution
+                    .price(sell.token)
+                    .ok_or(ExecutionError::ClearingPriceMissing)?
                     .to_owned();
-                let buy_price = clearing_prices
-                    .0
-                    .get(&buy.token)
-                    .ok_or(Error::ClearingPriceMissing)?
+                let buy_price = solution
+                    .price(buy.token)
+                    .ok_or(ExecutionError::ClearingPriceMissing)?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -113,9 +113,9 @@ impl Trade {
                             amount: executed
                                 .0
                                 .checked_mul(buy_price)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_div(sell_price)
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: sell.token,
                         },
                     },
@@ -128,9 +128,9 @@ impl Trade {
                             amount: executed
                                 .0
                                 .checked_mul(sell_price)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_ceil_div(&buy_price)
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: buy.token,
                         },
                     },
@@ -149,9 +149,9 @@ impl Trade {
                             amount: sell
                                 .amount
                                 .checked_mul(executed.into())
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_div(buy.amount)
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: sell.token,
                         },
                     },
@@ -164,9 +164,9 @@ impl Trade {
                             amount: buy
                                 .amount
                                 .checked_mul(executed.into())
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_div(sell.amount)
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: buy.token,
                         },
                     },
@@ -187,15 +187,13 @@ impl Trade {
                 //
                 // Similar to market orders, the executed amounts for limit orders are
                 // calculated using the clearing prices.
-                let sell_price = clearing_prices
-                    .0
-                    .get(&sell.token)
-                    .ok_or(Error::ClearingPriceMissing)?
+                let sell_price = solution
+                    .price(sell.token)
+                    .ok_or(ExecutionError::ClearingPriceMissing)?
                     .to_owned();
-                let buy_price = clearing_prices
-                    .0
-                    .get(&buy.token)
-                    .ok_or(Error::ClearingPriceMissing)?
+                let buy_price = solution
+                    .price(buy.token)
+                    .ok_or(ExecutionError::ClearingPriceMissing)?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -207,15 +205,15 @@ impl Trade {
                             amount: executed
                                 .0
                                 .checked_mul(buy_price)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_div(sell_price)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 // Because of how "synthetic" limit orders are constructed as
                                 // explained above, we need to simply increase the executed sell
                                 // amount by the surplus fee. We know that the user placed an order
                                 // big enough to cover the surplus fee.
                                 .checked_add(surplus_fee.into())
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: sell.token,
                         },
                     },
@@ -233,11 +231,11 @@ impl Trade {
                                 // executed amount by the surplus fee when calculating the
                                 // executed buy amount.
                                 .checked_sub(surplus_fee.into())
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_mul(sell_price)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(ExecutionError::Overflow)?
                                 .checked_ceil_div(&buy_price)
-                                .ok_or(Error::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?,
                             token: buy.token,
                         },
                     },
@@ -266,7 +264,7 @@ struct ExecutionParams {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ExecutionError {
     #[error("overflow error")]
     Overflow,
     #[error("a required clearing price was missing")]

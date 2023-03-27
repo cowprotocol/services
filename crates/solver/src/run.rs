@@ -319,6 +319,8 @@ pub async fn run(args: Arguments) {
         metrics.clone(),
         zeroex_api.clone(),
         args.shared.disabled_zeroex_sources,
+        args.zeroex_enable_rfqt,
+        args.zeroex_enable_slippage_protection,
         args.shared.use_internal_buffers,
         args.shared.one_inch_url,
         args.shared.one_inch_referrer_address,
@@ -332,6 +334,7 @@ pub async fn run(args: Arguments) {
         post_processing_pipeline,
         &domain,
         s3_instance_uploader,
+        &args.score_params,
     )
     .expect("failure creating solvers");
 
@@ -352,29 +355,24 @@ pub async fn run(args: Arguments) {
     }
 
     if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        match UniswapV3PoolFetcher::new(
-            chain_id,
+        let uniswap_v3_pool_fetcher = Arc::new(
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                web3.clone(),
+                http_factory.create(),
+                block_retriever,
+                args.shared.max_pools_to_initialize_cache,
+            )
+            .await
+            .expect("error innitializing Uniswap V3 pool fetcher"),
+        );
+        maintainers.push(uniswap_v3_pool_fetcher.clone());
+        liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
+            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+            settlement_contract.clone(),
             web3.clone(),
-            http_factory.create(),
-            block_retriever,
-            args.shared.max_pools_to_initialize_cache,
-        )
-        .await
-        {
-            Ok(uniswap_v3_pool_fetcher) => {
-                let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
-                maintainers.push(uniswap_v3_pool_fetcher.clone());
-                liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
-                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-                    settlement_contract.clone(),
-                    web3.clone(),
-                    uniswap_v3_pool_fetcher,
-                )));
-            }
-            Err(err) => {
-                tracing::error!("failed to create UniswapV3 pool fetcher in solver: {}", err);
-            }
-        }
+            uniswap_v3_pool_fetcher,
+        )));
     }
 
     let liquidity_collector = LiquidityCollector {
@@ -490,7 +488,6 @@ pub async fn run(args: Arguments) {
         target_confirm_time: args.target_confirm_time,
         max_confirm_time: args.max_submission_seconds,
         retry_interval: args.submission_retry_interval_seconds,
-        gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
         code_fetcher: code_fetcher.clone(),
@@ -511,6 +508,7 @@ pub async fn run(args: Arguments) {
         liquidity_collector,
         solver,
         gas_price_estimator,
+        args.gas_price_cap,
         args.settle_interval,
         native_token.address(),
         metrics.clone(),
@@ -519,6 +517,7 @@ pub async fn run(args: Arguments) {
         args.solver_time_limit,
         network_time_between_blocks,
         args.additional_mining_deadline,
+        args.skip_non_positive_score_settlements,
         current_block_stream.clone(),
         solution_submitter,
         api,
@@ -533,7 +532,7 @@ pub async fn run(args: Arguments) {
             .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
-        args.enable_auction_rewards,
+        args.auction_rewards_activation_timestamp,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);

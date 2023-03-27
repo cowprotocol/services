@@ -1,3 +1,4 @@
+pub mod gas;
 pub mod solver_settlements;
 
 use {
@@ -12,11 +13,12 @@ use {
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
         settlement_rater::SettlementRater,
-        settlement_simulation::{self, MAX_BASE_GAS_FEE_INCREASE},
+        settlement_simulation,
         settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
+    chrono::{DateTime, Utc},
     contracts::GPv2Settlement,
     ethcontract::Account,
     futures::future::join_all,
@@ -58,7 +60,7 @@ use {
 pub struct Driver {
     liquidity_collector: LiquidityCollector,
     solvers: Solvers,
-    gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    gas_price_estimator: gas::Estimator,
     settle_interval: Duration,
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
@@ -83,6 +85,7 @@ impl Driver {
         liquidity_collector: LiquidityCollector,
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
+        gas_price_cap: f64,
         settle_interval: Duration,
         native_token: H160,
         metrics: Arc<dyn SolverMetrics>,
@@ -91,6 +94,7 @@ impl Driver {
         solver_time_limit: Duration,
         block_time: Duration,
         additional_mining_deadline: Duration,
+        skip_non_positive_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
@@ -101,8 +105,11 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
-        enable_auction_rewards: bool,
+        auction_rewards_activation_timestamp: DateTime<Utc>,
     ) -> Self {
+        let gas_price_estimator =
+            gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
+
         let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
@@ -116,7 +123,8 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
-            enable_auction_rewards,
+            auction_rewards_activation_timestamp,
+            skip_non_positive_score_settlements,
         };
 
         let logger = DriverLogger {
@@ -295,8 +303,7 @@ impl Driver {
             .gas_price_estimator
             .estimate()
             .await
-            .context("failed to estimate gas price")?
-            .bump(MAX_BASE_GAS_FEE_INCREASE);
+            .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
         let pairs: HashSet<_> = orders
@@ -508,6 +515,7 @@ impl Driver {
                 winning_solver.name(),
                 winning_settlement.settlement.clone(),
                 winning_settlement.gas_estimate,
+                gas_price.max_fee_per_gas,
                 Some(winning_settlement.id as u64),
             )
             .await
@@ -583,11 +591,18 @@ pub async fn submit_settlement(
     solver_name: &str,
     settlement: Settlement,
     gas_estimate: U256,
+    max_fee_per_gas: f64,
     settlement_id: Option<u64>,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
-        .settle(settlement.clone(), gas_estimate, account, nonce)
+        .settle(
+            settlement.clone(),
+            gas_estimate,
+            max_fee_per_gas,
+            account,
+            nonce,
+        )
         .await;
     logger
         .log_submission_info(

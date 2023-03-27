@@ -8,12 +8,13 @@ use {
             settle_method,
             simulate_and_estimate_gas_at_current_block,
         },
-        solver::{SettlementWithSolver, Simulation, SimulationWithError, Solver},
+        settlement_submission::gas_limit_for_estimate,
+        solver::{SettlementWithSolver, Simulation, SimulationError, SimulationWithError, Solver},
     },
     anyhow::{Context, Result},
     contracts::GPv2Settlement,
     ethcontract::errors::ExecutionError,
-    futures::future::join_all,
+    futures::{future, future::join_all},
     gas_estimation::GasPrice1559,
     itertools::{Either, Itertools},
     model::solver_competition::Score,
@@ -26,7 +27,11 @@ use {
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
-    std::{borrow::Borrow, sync::Arc},
+    std::{
+        borrow::Borrow,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     web3::types::AccessList,
 };
 
@@ -51,15 +56,6 @@ pub trait SettlementRating: Send + Sync {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)>;
-
-    /// Simulates the settlements and returns the gas used (or reason for
-    /// revert) as well as the access list for each settlement.
-    async fn simulate_settlements(
-        &self,
-        settlements: Vec<SolverSettlement>,
-        gas_price: GasPrice1559,
-        internalization: InternalizationStrategy,
-    ) -> Result<Vec<SimulationWithResult>>;
 }
 
 pub struct SettlementRater {
@@ -102,10 +98,9 @@ impl SettlementRater {
         )
         .await
     }
-}
 
-#[async_trait::async_trait]
-impl SettlementRating for SettlementRater {
+    /// Simulates the settlements and returns the gas used (or reason for
+    /// revert) as well as the access list for each settlement.
     async fn simulate_settlements(
         &self,
         settlements: Vec<(Arc<dyn Solver>, Settlement)>,
@@ -157,7 +152,10 @@ impl SettlementRating for SettlementRater {
             .collect();
         Ok(details)
     }
+}
 
+#[async_trait::async_trait]
+impl SettlementRating for SettlementRater {
     async fn rate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
@@ -195,7 +193,7 @@ impl SettlementRating for SettlementRater {
             )
             .await?;
 
-        let gas_price =
+        let effective_gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
         let rate_settlement = |id, settlement: Settlement, gas_estimate: U256| {
@@ -203,7 +201,7 @@ impl SettlementRating for SettlementRater {
             let inputs = crate::objective_value::Inputs::from_settlement(
                 &settlement,
                 prices,
-                &gas_price,
+                effective_gas_price.clone(),
                 &gas_estimate,
             );
             let objective_value = inputs.objective_value();
@@ -225,12 +223,36 @@ impl SettlementRating for SettlementRater {
                 earned_fees,
                 solver_fees: inputs.solver_fees,
                 gas_estimate,
-                gas_price: gas_price.clone(),
+                gas_price: effective_gas_price.clone(),
                 objective_value,
                 score,
                 ranking: Default::default(),
             }
         };
+
+        let solver_balances = future::join_all(
+            simulations
+                .iter()
+                .filter(|result| result.gas_estimate.is_ok())
+                .map(|result| result.simulation.solver.account().address())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|solver_address| {
+                    let web3 = self.web3.clone();
+                    async move {
+                        (
+                            solver_address,
+                            web3.eth()
+                                .balance(solver_address, None)
+                                .await
+                                .unwrap_or_default(),
+                        )
+                    }
+                }),
+        )
+        .await
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
         simulations.extend(simulations_failed);
         Ok((simulations.into_iter().enumerate()).partition_map(
@@ -242,14 +264,34 @@ impl SettlementRating for SettlementRater {
                 },
             )| {
                 match gas_estimate {
-                    Ok(gas_estimate) => Either::Left((
-                        simulation.solver,
-                        rate_settlement(i, simulation.settlement, gas_estimate),
-                        simulation.transaction.access_list,
-                    )),
+                    Ok(gas_estimate) => {
+                        let gas_limit = gas_limit_for_estimate(gas_estimate);
+                        let required_balance = gas_limit
+                            .saturating_mul(U256::from_f64_lossy(gas_price.max_fee_per_gas));
+                        let solver_balance = solver_balances
+                            .get(&simulation.solver.account().address())
+                            .copied()
+                            .unwrap_or_default();
+
+                        if solver_balance >= required_balance {
+                            Either::Left((
+                                simulation.solver,
+                                rate_settlement(i, simulation.settlement, gas_estimate),
+                                simulation.transaction.access_list,
+                            ))
+                        } else {
+                            Either::Right(SimulationWithError {
+                                simulation,
+                                error: SimulationError::InsufficientBalance {
+                                    needs: required_balance,
+                                    has: solver_balance,
+                                },
+                            })
+                        }
+                    }
                     Err(err) => Either::Right(SimulationWithError {
                         simulation,
-                        error: err,
+                        error: err.into(),
                     }),
                 }
             },

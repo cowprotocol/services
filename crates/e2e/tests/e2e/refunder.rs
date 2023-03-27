@@ -4,7 +4,7 @@ use {
         local_node::TestNodeApi,
         setup::*,
     },
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{TimeZone, Utc},
     ethcontract::{H160, U256},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     refunder::refund_service::RefundService,
@@ -73,10 +73,10 @@ async fn refunder_tx(web3: Web3) {
 
     let time_after_expiration = valid_to as i64 + 60;
     web3.api::<TestNodeApi<_>>()
-        .set_next_block_timestamp(&DateTime::from_utc(
-            NaiveDateTime::from_timestamp(time_after_expiration, 0),
-            Utc,
-        ))
+        .set_next_block_timestamp(
+            &Utc.timestamp_millis_opt(time_after_expiration * 1_000)
+                .unwrap(),
+        )
         .await
         .expect("Must be able to set block timestamp");
     // mine next block to push time forward

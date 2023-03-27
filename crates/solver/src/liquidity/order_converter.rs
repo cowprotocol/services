@@ -38,7 +38,7 @@ impl OrderConverter {
         let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
 
         let sell_amount = match &order.metadata.class {
-            OrderClass::Limit(limit) => {
+            OrderClass::Limit(limit) if !order.data.partially_fillable => {
                 compute_synthetic_order_amounts_for_limit_order(&order, limit)?
             }
             _ => order.data.sell_amount,
