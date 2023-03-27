@@ -40,8 +40,7 @@ fn main() {
         builder.contract_mod_override("balancer_v2_base_pool_factory")
     });
     // Balancer addresses can be obtained from:
-    // Mainnet: https://github.com/balancer-labs/balancer-subgraph-v2/blob/master/subgraph.yaml
-    // Görli: https://github.com/balancer-labs/balancer-subgraph-v2/blob/master/subgraph.goerli.yaml
+    // <https://github.com/balancer/balancer-subgraph-v2/blob/master/networks.yaml>
     generate_contract_with_config("BalancerV2Vault", |builder| {
         builder
             .contract_mod_override("balancer_v2_vault")
@@ -59,6 +58,14 @@ fn main() {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
                     // <https://goerli.etherscan.io/tx/0x116a2c379d6e496f7848d5704ed3fe0c6e1caa841dd1cac10f631b7bc71b0ec5>
                     deployment_information: Some(DeploymentInformation::BlockNumber(4648099)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
+                    // <https://gnosisscan.io/tx/0x21947751661e1b9197492f22779af1f5175b71dc7057869e5a8593141d40edf1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(24821598)),
                 },
             )
     });
@@ -79,6 +86,62 @@ fn main() {
                     address: addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
                     // <https://goerli.etherscan.io/tx/0x0ce1710e896fb090a2387e94a31e1ac40f3005de30388a63c44381f2c900d732>
                     deployment_information: Some(DeploymentInformation::BlockNumber(4648101)),
+                },
+            )
+    });
+    generate_contract_with_config("BalancerV2WeightedPoolFactoryV3", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_weighted_pool_factory_v3")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x5Dd94Da3644DDD055fcf6B3E1aa310Bb7801EB8b"),
+                    // <https://etherscan.io/tx/0x39f357b78c03954f0bcee2288bf3b223f454816c141ef20399a7bf38057254c4>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16520627)),
+                },
+            )
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x26575A44755E0aaa969FDda1E4291Df22C5624Ea"),
+                    // <https://goerli.etherscan.io/tx/0x20850573d9efcb8882046d116bc241f8ff9a5d925fcfa345441facb852366e74>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8456831)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0xC128a9954e6c874eA3d62ce62B468bA073093F25"),
+                    // <https://gnosisscan.io/tx/0x2ac3d873b6f43de6dd77525c7e5b68a8fc3a1dee40303e1b6a680b0285b26091>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(26226256)),
+                },
+            )
+    });
+    generate_contract_with_config("BalancerV2WeightedPoolFactoryV4", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_weighted_pool_factory_v4")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x897888115Ada5773E02aA29F775430BFB5F34c51"),
+                    // <https://etherscan.io/tx/0xa5e6d73befaacc6fff0a4b99fd4eaee58f49949bcfb8262d91c78f24667fbfc9>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16878323)),
+                },
+            )
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x230a59F4d9ADc147480f03B0D3fFfeCd56c3289a"),
+                    // <https://goerli.etherscan.io/tx/0xf573046881049ffeb65210adc5b76f41adbd2202f46593d22767e8bbd6c6198d>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8694778)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x6CaD2ea22BFA7F4C14Aae92E47F510Cd5C509bc7"),
+                    // <https://gnosisscan.io/tx/0xcb6768bd92add227d46668357291e1d67c864769d353f9f0041c59ad2a3b21bf>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(27055829)),
                 },
             )
     });
@@ -113,7 +176,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(12703127)),
                 },
             )
-        // Not deployed on Görli
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x44afeb87c871D8fEA9398a026DeA2BD3A13F5769"),
+                    // <https://goerli.etherscan.io/tx/0x4d8719fd92229abef303e47f3133155089b5ec4aff53524bca3a0b42936e458b>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(6992992)),
+                },
+            )
     });
     generate_contract_with_config("BalancerV2StablePoolFactoryV2", |builder| {
         builder
@@ -126,7 +196,22 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(14934936)),
                 },
             )
-        // Not deployed on Görli
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0xD360B8afb3d7463bE823bE1Ec3c33aA173EbE86e"),
+                    // <https://goerli.etherscan.io/tx/0x71bdf2cb1d2cf4c1521d82f6821aa0bee2c144252c3ae0dd7d651cb5bbcbc860>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7169381)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0xf23b4DB826DbA14c0e857029dfF076b1c0264843"),
+                    // <https://gnosisscan.io/tx/0xe062237f0c8583375b10cf514d091781bfcd52d9ababbd324180770a5efbc6b1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(25415344)),
+                },
+            )
     });
     generate_contract_with_config("BalancerV2LiquidityBootstrappingPoolFactory", |builder| {
         builder
