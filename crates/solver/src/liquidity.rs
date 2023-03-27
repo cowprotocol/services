@@ -225,7 +225,7 @@ pub struct LimitOrderExecution {
     pub filled: U256,
     /// The fee (for the objective value) associated with this order.
     /// For partially fillable limit orders this value gets computed by the
-    /// solver already refers to the `filled_amount`. In this case no
+    /// solver already refers to the `filled` amount. In this case no
     /// further scaling is necessary for partial fills. For all other orders
     /// this is the `solver_fee` for the entire order and will get scaled
     /// correctly by the [`SettlementEncoder`].
