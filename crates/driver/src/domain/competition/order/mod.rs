@@ -149,6 +149,8 @@ impl Order {
         }
     }
 
+    /// For some orders the protocol doesn't precompute a fee. Instead solvers
+    /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
         self.is_partial() && matches!(self.kind, Kind::Limit { .. })
     }
