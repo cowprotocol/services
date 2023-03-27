@@ -115,7 +115,7 @@ async fn test() {
                 {
                     "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
                     "value": "0",
-                    "calldata": "0x",
+                    "callData": "0x",
                     "inputs": [],
                     "outputs": [],
                     "internalize": true,
@@ -125,7 +125,7 @@ async fn test() {
                 {
                     "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
                     "value": "0",
-                    "calldata": "0x",
+                    "callData": "0x",
                     "inputs": [],
                     "outputs": [],
                     "internalize": false,
