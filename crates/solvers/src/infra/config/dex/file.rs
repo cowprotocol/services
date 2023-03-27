@@ -25,7 +25,7 @@ struct Config {
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     absolute_slippage: Option<BigDecimal>,
 
-    /// The amount of eth a partially fillable order should be filled for at
+    /// The amount of Ether a partially fillable order should be filled for at
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
     smallest_partial_fill: eth::U256,
