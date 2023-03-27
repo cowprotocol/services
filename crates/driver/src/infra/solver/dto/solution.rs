@@ -42,7 +42,10 @@ impl Solution {
                                     },
                                     (true, None) => {
                                         // TODO this error should reference the UID
-                                        return Err(super::Error("solver did not determine a fee"));
+                                        return Err(super::Error(
+                                            "solver did not determine a fee for a partially \
+                                             fillable limit order",
+                                        ));
                                     }
                                     (false, fee) => {
                                         if fee.is_some() {

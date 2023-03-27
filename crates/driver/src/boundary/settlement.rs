@@ -91,22 +91,22 @@ impl Settlement {
                         return Err(Error::Boundary(anyhow!("unexpected empty execution")));
                     }
 
-                    let executed_solver_fee = match trade.order.solver_determines_fee() {
+                    let solver_fee = match trade.order.solver_determines_fee() {
                         true => trade.execution.fee.expect("API ensures fee exists").0,
                         false => trade.order.fee.solver.0,
                     };
 
                     let execution = LimitOrderExecution {
-                        filled_amount: trade.execution.filled.into(),
-                        executed_solver_fee,
+                        filled: trade.execution.filled.into(),
+                        solver_fee,
                     };
 
                     (to_boundary_order(&trade.order), execution)
                 }
                 competition::solution::Trade::Jit(trade) => {
                     let execution = LimitOrderExecution {
-                        filled_amount: trade.executed.into(),
-                        executed_solver_fee: 0.into(),
+                        filled: trade.executed.into(),
+                        solver_fee: 0.into(),
                     };
 
                     (

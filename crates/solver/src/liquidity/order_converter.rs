@@ -122,11 +122,8 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = encoder.add_trade(
-            self.order.clone(),
-            execution.filled_amount,
-            execution.executed_solver_fee,
-        )?;
+        let trade =
+            encoder.add_trade(self.order.clone(), execution.filled, execution.solver_fee)?;
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {
@@ -230,7 +227,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, execution.filled_amount, solver_fee)
+                    .add_trade(order, execution.filled, solver_fee)
                     .is_ok());
             },
         );
@@ -284,12 +281,10 @@ pub mod tests {
                     encoder
                         .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
                         .unwrap();
-                    assert!(encoder
-                        .add_trade(order, execution.filled_amount, 0.into())
-                        .is_ok());
+                    assert!(encoder.add_trade(order, execution.filled, 0.into()).is_ok());
                     encoder.add_unwrap(UnwrapWethInteraction {
                         weth: native_token,
-                        amount: execution.filled_amount,
+                        amount: execution.filled,
                     });
                 },
             );
@@ -330,9 +325,7 @@ pub mod tests {
             order_settlement_handler,
             execution.clone(),
             |encoder| {
-                assert!(encoder
-                    .add_trade(order, execution.filled_amount, 0.into())
-                    .is_ok());
+                assert!(encoder.add_trade(order, execution.filled, 0.into()).is_ok());
             },
         );
     }

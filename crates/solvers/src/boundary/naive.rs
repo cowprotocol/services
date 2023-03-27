@@ -213,11 +213,7 @@ impl SettlementHandling<LimitOrder> for OrderHandler {
         execution: LimitOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> anyhow::Result<()> {
-        encoder.add_trade(
-            self.order.clone(),
-            execution.filled_amount,
-            execution.executed_solver_fee,
-        )?;
+        encoder.add_trade(self.order.clone(), execution.filled, execution.solver_fee)?;
         Ok(())
     }
 }

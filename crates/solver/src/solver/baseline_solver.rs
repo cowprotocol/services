@@ -284,8 +284,9 @@ impl Solution {
         });
 
         let execution = LimitOrderExecution {
-            filled_amount: order.full_execution_amount(),
-            executed_solver_fee: order.solver_fee,
+            filled: order.full_execution_amount(),
+            // TODO: We still need to compute a `solver_fee` for partially fillable limit orders.
+            solver_fee: order.solver_fee,
         };
         settlement.with_liquidity(order, execution)?;
 

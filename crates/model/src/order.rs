@@ -106,6 +106,8 @@ impl Order {
         }
     }
 
+    /// For some orders the protocol doesn't precompute a fee. Instead solvers
+    /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
         self.data.partially_fillable && matches!(self.metadata.class, OrderClass::Limit(_))
     }

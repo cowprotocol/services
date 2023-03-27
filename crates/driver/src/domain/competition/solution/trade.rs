@@ -25,10 +25,10 @@ pub struct Fulfillment {
 }
 
 /// Describes how an order should be executed.
-/// In case a solver was required to compute a fee for the order it is
-/// guaranteed to exist.
 #[derive(Debug)]
 pub struct OrderExecution {
+    /// The fee computed by the solver. If a solver was requried to compute a
+    /// fee this value is guaranteed to exist.
     pub fee: Option<competition::order::SellAmount>,
     pub filled: competition::order::TargetAmount,
 }
@@ -233,7 +233,7 @@ impl Trade {
                                 // explained above, we need to simply increase the executed sell
                                 // amount by the surplus fee. We know that the user placed an order
                                 // big enough to cover the surplus fee.
-                                .checked_add(surplus_fee.0)
+                                .checked_add(surplus_fee.into())
                                 .ok_or(ExecutionError::Overflow)?,
                             token: sell.token,
                         },
@@ -251,7 +251,7 @@ impl Trade {
                                 // reduced by the surplus fee. That's why we have to reduce the
                                 // executed amount by the surplus fee when calculating the
                                 // executed buy amount.
-                                .checked_sub(surplus_fee.0)
+                                .checked_sub(surplus_fee.into())
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_mul(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
