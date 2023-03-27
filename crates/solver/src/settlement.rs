@@ -6,7 +6,6 @@ use {
         liquidity::Settleable,
     },
     anyhow::{ensure, Result},
-    itertools::Itertools,
     model::order::{Order, OrderKind},
     num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero},
     primitive_types::{H160, U256},
@@ -354,8 +353,9 @@ impl Settlement {
         }
     }
 
-    // Checks whether the settlement prices do not deviate more than
-    // max_settlement_price_deviation from the auction prices on certain pairs.
+    // Checks for all user trades whether their settlement prices do not negatively
+    // deviate more than max_settlement_price_deviation from the auction prices
+    // on certain pairs.
     pub fn satisfies_price_checks(
         &self,
         solver_name: &str,
@@ -367,26 +367,13 @@ impl Settlement {
         {
             return true;
         }
-        // The following check is quadratic in run-time, although a similar check with
-        // linear run-time would also be possible. For the linear
-        // implementation, one would have to find a unique scaling factor that scales
-        // the external prices into the settlement prices. Though, this scaling
-        // factor is not easy to define, if reference tokens like ETH are missing.
-        // Since the checks would heavily depend on this scaling factor, and its
-        // derivation is non-trivial, we decided to go for the implementation with
-        // quadratic run time. Settlements will not have enough tokens, such
-        // that the run-time is important.
-        self
-            .clearing_prices()
-            .iter()
-            .combinations(2)
-            .all(|clearing_price_vector_combination| {
-                let (sell_token, sell_price) = clearing_price_vector_combination[0];
-                let clearing_price_sell_token = sell_price.to_big_rational();
-                let (buy_token, buy_price) = clearing_price_vector_combination[1];
-                let clearing_price_buy_token = buy_price.to_big_rational();
+        self.user_trades().all(|trade| {
+            let sell_token = &trade.order.data.sell_token;
+            let buy_token = &trade.order.data.buy_token;
+            let clearing_price_sell_token = self.clearing_price(*sell_token).expect("Every traded token has a clearing price").to_big_rational();
+            let clearing_price_buy_token = self.clearing_price(*buy_token).expect("Every traded token has a clearing price").to_big_rational();
 
-                if matches!(tokens_to_satisfy_price_test, PriceCheckTokens::Tokens(token_list) if (!token_list.contains(sell_token)) || !token_list.contains(buy_token))
+            if matches!(tokens_to_satisfy_price_test, PriceCheckTokens::Tokens(token_list) if (!token_list.contains(sell_token)) || !token_list.contains(buy_token))
                 {
                     return true;
                 }
@@ -400,19 +387,18 @@ impl Settlement {
                 };
                 // Condition to check: Deviation of clearing prices is bigger than max_settlement_price deviation
                 //
-                // |clearing_price_sell_token / clearing_price_buy_token - external_price_sell_token / external_price_buy_token)|
-                // |----------------------------------------------------------------------------------------------------------|
-                // |                     clearing_price_sell_token / clearing_price_buy_token                                 |
+                // external_price_sell_token / external_price_buy_token - clearing_price_sell_token / clearing_price_buy_token
+                // ----------------------------------------------------------------------------------------------------------
+                //                      clearing_price_sell_token / clearing_price_buy_token                                 
                 // is bigger than:
                 // max_settlement_price_deviation
                 //
                 // This is equal to: |clearing_price_sell_token * external_price_buy_token - external_price_sell_token * clearing_price_buy_token|>
                 // max_settlement_price_deviation * clearing_price_buy_token * external_price_buy_token * clearing_price_sell_token
 
-                let price_check_result = clearing_price_sell_token
-                    .clone()
-                    .mul(external_price_buy_token)
-                    .sub(&external_price_sell_token.mul(&clearing_price_buy_token)).abs()
+                let price_check_result = clearing_price_buy_token
+                    .mul(external_price_sell_token)
+                    .sub(&external_price_buy_token.mul(&clearing_price_sell_token))
                     .lt(&max_settlement_price_deviation
                     .mul(&external_price_buy_token.mul(&clearing_price_sell_token)));
                 if !price_check_result {
@@ -423,7 +409,7 @@ impl Settlement {
                     );
                 }
                 price_check_result
-            })
+        })
     }
 
     /// Computes the total solver fees (in wei) used to compute the objective
@@ -623,7 +609,40 @@ pub mod tests {
         let max_price_deviation = Ratio::from_float(0.02f64).unwrap();
         let clearing_prices =
             hashmap! {token0 => 50i32.into(), token1 => 100i32.into(), token2 => 103i32.into()};
-        let settlement = test_settlement(clearing_prices, vec![]);
+
+        let order1 = Order {
+            data: OrderData {
+                sell_token: token0,
+                sell_amount: 10.into(),
+                buy_token: token1,
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let order2 = Order {
+            data: OrderData {
+                sell_token: token1,
+                sell_amount: 10.into(),
+                buy_token: token2,
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let trades = vec![
+            Trade {
+                order: order1.clone(),
+                executed_amount: order1.data.sell_amount,
+                ..Default::default()
+            },
+            Trade {
+                order: order2.clone(),
+                executed_amount: order2.data.sell_amount,
+                ..Default::default()
+            },
+        ];
+        let settlement = test_settlement(clearing_prices, trades);
 
         let external_prices = ExternalPrices::new(
             native_token,
@@ -721,6 +740,69 @@ pub mod tests {
             &external_prices,
             &max_price_deviation,
             &Some(vec!()).into()
+        ));
+    }
+
+    #[test]
+    fn invalid_price_check_does_not_filter_out_solutions_that_dont_negatively_affect_any_trader() {
+        let native_token = H160::from_low_u64_be(0);
+        let usd = H160::from_low_u64_be(1);
+        let external_prices = ExternalPrices::new(
+            native_token,
+            hashmap! {native_token => BigRational::one(), usd => BigRational::from_float(0.000625).unwrap()},
+        )
+        .unwrap();
+
+        // User wants to sell ether, external price is 1600, but clearing 1700.
+        // Price check should not complain here, since it's good for the trades
+        let order = Order {
+            data: OrderData {
+                sell_token: native_token,
+                sell_amount: 10.into(),
+                buy_token: usd,
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut trades = vec![Trade {
+            order: order.clone(),
+            executed_amount: order.data.sell_amount,
+            ..Default::default()
+        }];
+        let clearing_prices = hashmap! {native_token => 1700.into(), usd => U256::one()};
+        let settlement = test_settlement(clearing_prices.clone(), trades.clone());
+
+        assert!(settlement.satisfies_price_checks(
+            "test_solver",
+            &external_prices,
+            &Ratio::from_float(0.02f64).unwrap(),
+            &PriceCheckTokens::All
+        ));
+
+        // Adding a counter order makes this check fail (because the deviation is bad
+        // for the counter order)
+        let counter_order = Order {
+            data: OrderData {
+                sell_token: usd,
+                sell_amount: 10.into(),
+                buy_token: native_token,
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        trades.push(Trade {
+            order: counter_order.clone(),
+            executed_amount: counter_order.data.sell_amount,
+            ..Default::default()
+        });
+        let settlement = test_settlement(clearing_prices, trades);
+        assert!(!settlement.satisfies_price_checks(
+            "test_solver",
+            &external_prices,
+            &Ratio::from_float(0.02f64).unwrap(),
+            &PriceCheckTokens::All
         ));
     }
 
