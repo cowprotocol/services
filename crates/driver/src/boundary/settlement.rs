@@ -82,7 +82,7 @@ impl Settlement {
         );
 
         for trade in &solution.trades {
-            let (boundary_order, executed_amount) = match trade {
+            let (boundary_order, execution) = match trade {
                 competition::solution::Trade::Fulfillment(trade) => {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
@@ -123,7 +123,7 @@ impl Settlement {
                 .normalize_limit_order(boundary_order)
                 .map_err(Error::Boundary)?;
             settlement
-                .with_liquidity(&boundary_limit_order, executed_amount)
+                .with_liquidity(&boundary_limit_order, execution)
                 .map_err(Error::Boundary)?;
         }
 
