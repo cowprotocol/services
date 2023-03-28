@@ -57,7 +57,6 @@ async fn quote() {
                     "has_atomic_execution": false,
                     "id": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
                     "is_liquidity_order": false,
-                    "is_mature": true,
                     "is_sell_order": true,
                     // Mandatory is true when request contains no auction id because that marks a
                     // /quote request.
@@ -257,7 +256,6 @@ async fn solve() {
                     "has_atomic_execution": false,
                     "id": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
                     "is_liquidity_order": false,
-                    "is_mature": true,
                     "is_sell_order": true,
                     "mandatory": false,
                     "reward": 42.42,

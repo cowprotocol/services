@@ -254,7 +254,6 @@ fn order_models(
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: order.reward,
-                    is_mature: true,
                 },
             ))
         })
