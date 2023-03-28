@@ -353,9 +353,6 @@ pub enum SolverRejectionReason {
     /// The solution candidate didn't include any user orders
     NoUserOrders,
 
-    /// The solution candidate didn't include any mature user orders
-    NoMatureOrders,
-
     /// The solution violated a price constraint (ie. max deviation to external
     /// price vector)
     PriceViolation,
