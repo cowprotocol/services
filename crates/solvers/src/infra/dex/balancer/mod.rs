@@ -29,6 +29,12 @@ pub struct Config {
 }
 
 impl Sor {
+    /// An approximate gas an individual Balancer swap uses.
+    ///
+    /// This value was determined heuristically using a Dune query that has been
+    /// lost to time... See <https://github.com/cowprotocol/services/pull/171>.
+    const GAS_PER_SWAP: u64 = 88_892;
+
     pub fn new(config: Config) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -89,6 +95,7 @@ impl Sor {
             order::Side::Sell => (input, slippage.sub(output)),
         };
 
+        let gas = U256::from(quote.swaps.len()) * Self::GAS_PER_SWAP;
         let call = {
             let kind = match order.side {
                 order::Side::Sell => vault::SwapKind::GivenIn,
@@ -152,6 +159,7 @@ impl Sor {
                 spender: self.vault.address(),
                 amount: dex::Amount::new(max_input),
             },
+            gas: eth::Gas(gas),
         })
     }
 }

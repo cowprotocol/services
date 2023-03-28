@@ -138,6 +138,7 @@ impl ZeroEx {
                     .map(eth::ContractAddress)?,
                 amount: dex::Amount::new(max_sell_amount),
             },
+            gas: eth::Gas(quote.estimated_gas),
         })
     }
 }
