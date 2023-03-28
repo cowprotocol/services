@@ -157,6 +157,7 @@ fn to_boundary_auction(
                 },
                 cost: gas.gp_order_cost(),
                 is_liquidity_order: order.class == order::Class::Liquidity,
+                is_mature: true,
                 // Auctions for a /quote request don't have an id and always contain exactly a
                 // single user order that is mandatory to be matched.
                 mandatory: auction.id.is_none(),
@@ -287,6 +288,7 @@ fn to_boundary_auction(
                         },
                         cost,
                         is_liquidity_order: true,
+                        is_mature: true,
                         mandatory: false,
                         has_atomic_execution: true,
                         reward: 0.,
