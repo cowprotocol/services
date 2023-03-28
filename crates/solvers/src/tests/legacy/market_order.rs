@@ -82,7 +82,7 @@ async fn quote() {
                     "decimals": null,
                     "external_price": 0.000053125132573502,
                     "internal_buffer": "740264138483556450389",
-                    "normalize_priority": null
+                    "normalize_priority": 0
                 }
             }
         }),
@@ -280,7 +280,7 @@ async fn solve() {
                     "decimals": null,
                     "external_price": 0.000053125132573502,
                     "internal_buffer": "740264138483556450389",
-                    "normalize_priority": null
+                    "normalize_priority": 0
                 }
             }
         }),

@@ -24,10 +24,10 @@ async fn test() {
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
                     "accepted_for_internalization": true,
                     "internal_buffer": "0",
-                    "decimals": null,
+                    "decimals": 18,
                     "alias": null,
                     "external_price": null,
-                    "normalize_priority": null,
+                    "normalize_priority": 1,
                 },
                 "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": {
                     "accepted_for_internalization": true,
@@ -35,7 +35,7 @@ async fn test() {
                     "decimals": null,
                     "alias": null,
                     "external_price": null,
-                    "normalize_priority": null,
+                    "normalize_priority": 0,
                 }
             }
         }),
