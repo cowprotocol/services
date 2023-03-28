@@ -553,6 +553,7 @@ mod tests {
         let executed_order = ExecutedOrderModel {
             exec_buy_amount: 6.into(),
             exec_sell_amount: 7.into(),
+            exec_fee_amount: None,
             cost: Default::default(),
             fee: Default::default(),
             exec_plan: None,
