@@ -5,7 +5,7 @@ pub mod dex;
 pub mod legacy;
 pub mod naive;
 
-pub use self::{baseline::Baseline, dex::Dex, legacy::Legacy, naive::Naive};
+pub use self::{baseline::Baseline, dex::solver::Dex, legacy::Legacy, naive::Naive};
 
 pub enum Solver {
     Baseline(Baseline),

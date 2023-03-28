@@ -23,7 +23,7 @@ use {
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        code_simulation::{CodeSimulating, TenderlyCodeSimulator},
+        code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
@@ -99,25 +99,34 @@ impl<'a> PriceEstimatorFactory<'a> {
         let trade_verifier = args
             .trade_simulator
             .map(|kind| -> Result<TradeVerifier> {
-                let simulator = match kind {
-                    TradeValidatorKind::Web3 => Arc::new(
-                        network
-                            .simulation_web3
-                            .clone()
-                            .context("missing simulation node configuration")?,
-                    ) as Arc<dyn CodeSimulating>,
-                    TradeValidatorKind::Tenderly => {
-                        let tenderly_api = shared_args
-                            .tenderly
-                            .get_api_instance(
-                                &components.http_factory,
-                                "price_estimation".to_owned(),
-                            )?
-                            .context("missing Tenderly configuration")?;
-                        let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id)
-                            .save(false, args.tenderly_save_failed_trade_simulations);
+                let web3_simulator = || {
+                    network
+                        .simulation_web3
+                        .clone()
+                        .context("missing simulation node configuration")
+                };
+                let tenderly_simulator = || -> anyhow::Result<_> {
+                    let tenderly_api = shared_args
+                        .tenderly
+                        .get_api_instance(&components.http_factory, "price_estimation".to_owned())?
+                        .context("missing Tenderly configuration")?;
+                    let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id);
+                    Ok(simulator)
+                };
 
-                        Arc::new(simulator)
+                let simulator = match kind {
+                    TradeValidatorKind::Web3 => {
+                        Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
+                    }
+                    TradeValidatorKind::Tenderly => Arc::new(
+                        tenderly_simulator()?
+                            .save(false, args.tenderly_save_failed_trade_simulations),
+                    ),
+                    TradeValidatorKind::Web3ThenTenderly => {
+                        Arc::new(code_simulation::Web3ThenTenderly::new(
+                            web3_simulator()?,
+                            tenderly_simulator()?,
+                        ))
                     }
                 };
                 let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(network.web3.clone())));

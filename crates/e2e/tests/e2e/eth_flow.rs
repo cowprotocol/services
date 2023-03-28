@@ -2,7 +2,7 @@ use {
     crate::{local_node::TestNodeApi, setup::*},
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     hex_literal::hex,
@@ -154,10 +154,10 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .include_slippage_bps(300);
     sumbit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
     web3.api::<TestNodeApi<_>>()
-        .set_next_block_timestamp(&DateTime::from_utc(
-            NaiveDateTime::from_timestamp(valid_to as i64 + 1, 0),
-            Utc,
-        ))
+        .set_next_block_timestamp(
+            &Utc.timestamp_millis_opt((valid_to as i64 + 1) * 1_000)
+                .unwrap(),
+        )
         .await
         .expect("Must be able to set block timestamp");
     dummy_order

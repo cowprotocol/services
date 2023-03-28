@@ -183,7 +183,15 @@ pub struct Simulation {
 
 pub struct SimulationWithError {
     pub simulation: Simulation,
-    pub error: ExecutionError,
+    pub error: SimulationError,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SimulationError {
+    #[error("web3 error: {0:?}")]
+    Web3(#[from] ExecutionError),
+    #[error("insufficient balance: needs {needs} has {has}")]
+    InsufficientBalance { needs: U256, has: U256 },
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
@@ -287,7 +295,9 @@ pub fn create(
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
-    disabled_zeroex_sources: Vec<String>,
+    zeroex_disabled_sources: Vec<String>,
+    zeroex_enable_rfqt: bool,
+    zeroex_enable_slippage_protection: bool,
     use_internal_buffers: bool,
     one_inch_url: Url,
     one_inch_referrer_address: Option<H160>,
@@ -426,10 +436,12 @@ pub fn create(
                         settlement_contract.clone(),
                         chain_id,
                         zeroex_api.clone(),
-                        disabled_zeroex_sources.clone(),
+                        zeroex_disabled_sources.clone(),
                         slippage_calculator,
                     )
-                    .unwrap();
+                    .unwrap()
+                    .with_rfqt(zeroex_enable_rfqt)
+                    .with_slippage_protection(zeroex_enable_slippage_protection);
                     shared(single_order(Box::new(zeroex_solver)))
                 }
                 SolverType::Paraswap => shared(single_order(Box::new(ParaswapSolver::new(

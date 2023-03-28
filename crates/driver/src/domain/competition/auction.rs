@@ -21,7 +21,7 @@ pub struct Auction {
     pub id: Option<Id>,
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
-    pub gas_price: eth::EffectiveGasPrice,
+    pub gas_price: eth::GasPrice,
     pub deadline: Deadline,
 }
 

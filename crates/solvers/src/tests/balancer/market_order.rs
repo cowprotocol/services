@@ -44,7 +44,7 @@ async fn sell() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -109,7 +109,7 @@ async fn sell() {
                     "internalize": false,
                     "target": "0xba12222222228d8ba445958a75a0704d566bf2c8",
                     "value": "0",
-                    "calldata": "0x945bcec9\
+                    "callData": "0x945bcec9\
                                    0000000000000000000000000000000000000000000000000000000000000000\
                                    0000000000000000000000000000000000000000000000000000000000000120\
                                    0000000000000000000000000000000000000000000000000000000000000220\
@@ -196,7 +196,7 @@ async fn buy() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api)).await;
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -261,7 +261,7 @@ async fn buy() {
                     "internalize": false,
                     "target": "0xba12222222228d8ba445958a75a0704d566bf2c8",
                     "value": "0",
-                    "calldata": "0x945bcec9\
+                    "callData": "0x945bcec9\
                                    0000000000000000000000000000000000000000000000000000000000000001\
                                    0000000000000000000000000000000000000000000000000000000000000120\
                                    0000000000000000000000000000000000000000000000000000000000000220\

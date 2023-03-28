@@ -15,7 +15,10 @@ async fn test() {
              &sellAmount=1000000000000000000\
              &slippagePercentage=0.1\
              &gasPrice=15000000000\
+             &takerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41\
              &excludedSources=Uniswap_V2%2CBalancer_V2\
+             &skipValidation=true\
+             &intentOnFilling=true\
              &affiliateAddress=0x0123456789012345678901234567890123456789\
              &enableSlippageProtection=true",
         ),
@@ -181,13 +184,16 @@ async fn test() {
         "zeroex",
         tests::Config::String(format!(
             "
-endpoint = 'http://{api}/swap/v1/'
+relative-slippage = '0.1'
+[dex]
+endpoint = 'http://{}/swap/v1/'
 api-key = 'abc123'
 excluded-sources = ['Uniswap_V2', 'Balancer_V2']
 affiliate = '0x0123456789012345678901234567890123456789'
+enable-rfqt = true
 enable-slippage-protection = true
-relative-slippage = '0.1'
-            "
+            ",
+            api.address
         )),
     )
     .await;
@@ -255,7 +261,7 @@ relative-slippage = '0.1'
                     "internalize": false,
                     "target": "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
                     "value": "0",
-                    "calldata": "0x6af479b2\
+                    "callData": "0x6af479b2\
                                    0000000000000000000000000000000000000000000000000000000000000080\
                                    0000000000000000000000000000000000000000000000000de0b6b3a7640000\
                                    00000000000000000000000000000000000000000000013b603a9ce6a341ab60\

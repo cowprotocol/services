@@ -103,6 +103,7 @@ pub trait SolverMetrics: Send + Sync {
     fn settlement_computed(&self, solver_type: &str, response: &str, start: Instant);
     fn order_settled(&self, order: &Order, solver: &str);
     fn settlement_simulation(&self, solver: &str, outcome: SolverSimulationOutcome);
+    fn settlement_non_positive_score(&self, solver: &str);
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str);
     fn single_order_solver_succeeded(&self, solver: &str);
     fn single_order_solver_failed(&self, solver: &str);
@@ -138,6 +139,9 @@ struct Storage {
     /// Settlement simulation counts
     #[metric(labels("result", "solver_type"))]
     settlement_simulations: IntCounterVec,
+    /// Settlement non-positive score counts
+    #[metric(labels("solver_type"))]
+    settlement_non_positive_scores: IntCounterVec,
     /// Settlement submission counts
     #[metric(labels("result", "solver_type"))]
     settlement_submissions: IntCounterVec,
@@ -284,6 +288,13 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
+    fn settlement_non_positive_score(&self, solver: &str) {
+        self.metrics
+            .settlement_non_positive_scores
+            .with_label_values(&[solver])
+            .inc()
+    }
+
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str) {
         self.metrics
             .solver_runs
@@ -416,6 +427,8 @@ impl SolverMetrics for NoopMetrics {
     fn transaction_gas_price(&self, _: U256) {}
 
     fn settlement_simulation(&self, _: &str, _: SolverSimulationOutcome) {}
+
+    fn settlement_non_positive_score(&self, _: &str) {}
 }
 
 #[cfg(test)]

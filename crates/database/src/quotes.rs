@@ -154,7 +154,7 @@ mod tests {
     /// the `DateTime` uses. This leads to issues comparing round-tripped data.
     /// Work around the issue by created `DateTime`s with lower precision.
     fn low_precision_now() -> DateTime<Utc> {
-        Utc.timestamp(Utc::now().timestamp(), 0)
+        Utc.timestamp_opt(Utc::now().timestamp(), 0).unwrap()
     }
 
     #[tokio::test]

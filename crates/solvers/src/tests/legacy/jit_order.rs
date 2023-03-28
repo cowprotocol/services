@@ -65,7 +65,7 @@ async fn test() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver)).await;
+    let engine = tests::SolverEngine::new("legacy", legacy::config(&legacy_solver.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -107,7 +107,7 @@ async fn test() {
                             {
                                 "target": "0x2222222222222222222222222222222222222222",
                                 "value": "200",
-                                "calldata": "0xabcd",
+                                "callData": "0xabcd",
                             }
                         ]
                     },

@@ -16,6 +16,9 @@ async fn sell() {
              &sellAmount=1000000000000000000\
              &slippagePercentage=0.01\
              &gasPrice=15000000000\
+             &takerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41\
+             &skipValidation=true\
+             &intentOnFilling=false\
              &affiliateAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41\
              &enableSlippageProtection=false",
         ),
@@ -85,7 +88,7 @@ async fn sell() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("zeroex", zeroex::config(&api)).await;
+    let engine = tests::SolverEngine::new("zeroex", zeroex::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -150,7 +153,7 @@ async fn sell() {
                     "internalize": false,
                     "target": "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
                     "value": "0",
-                    "calldata": "0x6af479b2\
+                    "callData": "0x6af479b2\
                                    0000000000000000000000000000000000000000000000000000000000000080\
                                    0000000000000000000000000000000000000000000000000de0b6b3a7640000\
                                    00000000000000000000000000000000000000000000013b603a9ce6a341ab60\
@@ -193,7 +196,8 @@ async fn buy() {
             "swap/v1/quote?sellToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&\
              buyToken=0xe41d2489571d322189246dafa5ebde1f4699f498&buyAmount=1000000000000000000000&\
              slippagePercentage=0.01&gasPrice=15000000000&\
-             affiliateAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41&\
+             takerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41&skipValidation=true&\
+             intentOnFilling=false&affiliateAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41&\
              enableSlippageProtection=false",
         ),
         res: json!({
@@ -260,7 +264,7 @@ async fn buy() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("zeroex", zeroex::config(&api)).await;
+    let engine = tests::SolverEngine::new("zeroex", zeroex::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -325,7 +329,7 @@ async fn buy() {
                     "internalize": false,
                     "target": "0xdef1c0ded9bec7f1a1670819833240f027b25eff",
                     "value": "0",
-                    "calldata": "0xd9627aa4\
+                    "callData": "0xd9627aa4\
                                    0000000000000000000000000000000000000000000000000000000000000080\
                                    0000000000000000000000000000000000000000000000000261835c7dc9e181\
                                    00000000000000000000000000000000000000000000003635c9adc5dea00000\

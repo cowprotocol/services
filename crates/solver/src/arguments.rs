@@ -333,6 +333,19 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub score_params: score_computation::Arguments,
+
+    /// Should we skip settlements with non-positive score for solver
+    /// competition?
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub skip_non_positive_score_settlements: bool,
+
+    /// Flag to enable RFQ-T liquidity in the 0x solver.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub zeroex_enable_rfqt: bool,
+
+    /// Flag to enable slippage protection for the 0x solver.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub zeroex_enable_slippage_protection: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -465,6 +478,13 @@ impl std::fmt::Display for Arguments {
             self.additional_mining_deadline
         )?;
         writeln!(f, "{}", self.score_params)?;
+        writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
+        writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
+        writeln!(
+            f,
+            "zeroex_enable_slippage_protection: {}",
+            self.zeroex_enable_slippage_protection
+        )?;
         Ok(())
     }
 }
@@ -485,7 +505,13 @@ mod tests {
 
     #[test]
     fn test_parsing_date_time() {
-        let dt = DateTime::<Utc>::from_utc(NaiveDate::from_ymd(2023, 3, 14).and_hms(0, 0, 0), Utc);
+        let dt = DateTime::<Utc>::from_utc(
+            NaiveDate::from_ymd_opt(2023, 3, 14)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            Utc,
+        );
         let stringified = dt.to_rfc3339();
         println!("stringified: {}", stringified);
         let dt2 = DateTime::<Utc>::from_str(&stringified).unwrap();

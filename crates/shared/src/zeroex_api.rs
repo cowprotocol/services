@@ -11,7 +11,7 @@ use {
         interaction::{EncodedInteraction, Interaction},
     },
     anyhow::{Context, Result},
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
     model::u256_decimal,
@@ -60,8 +60,12 @@ pub struct SwapQuery {
     pub buy_amount: Option<U256>,
     /// Limit of price slippage you are willing to accept.
     pub slippage_percentage: Option<Slippage>,
+    /// The taker address to use.
+    pub taker_address: Option<H160>,
     /// List of sources to exclude.
     pub excluded_sources: Vec<String>,
+    /// Wether or not the taker intends on filling the quote.
+    pub intent_on_filling: bool,
     /// Requests trade routes which aim to protect against high slippage and MEV
     /// attacks.
     pub enable_slippage_protection: bool,
@@ -78,6 +82,7 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
+            .append_pair("intentOnFilling", &self.intent_on_filling.to_string())
             .append_pair(
                 "enableSlippageProtection",
                 &self.enable_slippage_protection.to_string(),
@@ -94,6 +99,10 @@ impl SwapQuery {
             url.query_pairs_mut()
                 .append_pair("slippagePercentage", &slippage_percentage.to_string());
         }
+        if let Some(taker) = self.taker_address {
+            url.query_pairs_mut()
+                .append_pair("takerAddress", &addr2str(taker));
+        }
         if !self.excluded_sources.is_empty() {
             url.query_pairs_mut()
                 .append_pair("excludedSources", &self.excluded_sources.join(","));
@@ -102,10 +111,6 @@ impl SwapQuery {
             .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
         // We do not provide a takerAddress so validation does not make sense.
         url.query_pairs_mut().append_pair("skipValidation", "true");
-        // Ensure that we do not request binding quotes that we might be penalized for
-        // not taking.
-        url.query_pairs_mut()
-            .append_pair("intentOnFilling", "false");
         url
     }
 }
@@ -506,8 +511,7 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
-        let expiry = NaiveDateTime::from_timestamp(order.order.expiry as i64, 0);
-        let expiry: DateTime<Utc> = DateTime::from_utc(expiry, Utc);
+        let expiry = Utc.timestamp_opt(order.order.expiry as i64, 0).unwrap();
 
         // only keep orders which are still valid and unique
         expiry > now && included_orders.insert(order.metadata.order_hash.clone())
@@ -553,7 +557,11 @@ impl DefaultZeroExApi {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::addr, chrono::TimeZone};
+    use {
+        super::*,
+        crate::addr,
+        chrono::{DateTime, NaiveDate},
+    };
 
     #[tokio::test]
     #[ignore]
@@ -563,10 +571,8 @@ mod tests {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
-            buy_amount: None,
             slippage_percentage: Some(Slippage::new(0.012345678)),
-            excluded_sources: Vec::new(),
-            enable_slippage_protection: false,
+            ..Default::default()
         };
 
         let price_response = zeroex_client.get_swap(swap_query).await;
@@ -585,10 +591,8 @@ mod tests {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
-            buy_amount: None,
             slippage_percentage: Some(Slippage::ONE_PERCENT),
-            excluded_sources: Vec::new(),
-            enable_slippage_protection: false,
+            ..Default::default()
         };
 
         let price_response = zeroex_client.get_price(swap_query.clone()).await;
@@ -607,10 +611,8 @@ mod tests {
             sell_token: testlib::tokens::WETH,
             buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
             sell_amount: Some(U256::from_f64_lossy(1000e18)),
-            buy_amount: None,
             slippage_percentage: Some(Slippage::ONE_PERCENT),
-            excluded_sources: Vec::new(),
-            enable_slippage_protection: false,
+            ..Default::default()
         };
 
         let swap = zeroex.get_swap(query.clone()).await;
@@ -718,7 +720,7 @@ mod tests {
                                 "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
                             ).unwrap(),
                         remaining_fillable_taker_amount: 262467000000000000u128,
-                        created_at: Utc.ymd(2022, 2, 26).and_hms_milli(6, 59, 0, 440)
+                        created_at: DateTime::from_utc(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
                     },
                     order: Order {
                         chain_id: 1u64,

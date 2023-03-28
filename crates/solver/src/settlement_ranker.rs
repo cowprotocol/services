@@ -28,12 +28,6 @@ use {
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
-// We require from solvers to have a bit more ETH balance then needed
-// at the moment of simulating the transaction, to cover the potential increase
-// of the cost of sending transaction onchain, because of the sudden gas price
-// increase. To simulate this sudden increase of gas price during simulation, we
-// artificially multiply the gas price with this factor.
-const SOLVER_BALANCE_MULTIPLIER: f64 = 3.;
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
@@ -43,6 +37,7 @@ pub struct SettlementRanker {
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
     pub auction_rewards_activation_timestamp: DateTime<Utc>,
+    pub skip_non_positive_score_settlements: bool,
 }
 
 impl SettlementRanker {
@@ -147,8 +142,6 @@ impl SettlementRanker {
         gas_price: GasPrice1559,
         auction_id: AuctionId,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
-        let gas_price = gas_price.bump(SOLVER_BALANCE_MULTIPLIER);
-
         let solver_settlements =
             self.get_legal_settlements(settlements, external_prices, auction_id);
 
@@ -192,6 +185,27 @@ impl SettlementRanker {
                     },
                 )),
             );
+        }
+
+        // Filter out settlements with non-positive score.
+        if Utc::now() > self.auction_rewards_activation_timestamp // CIP20 activated
+        && self.skip_non_positive_score_settlements
+        {
+            rated_settlements.retain(|(solver, settlement, _)| {
+                let positive_score = settlement.score.score() > 0.into();
+                if !positive_score {
+                    tracing::debug!(
+                        solver_name = %solver.name(),
+                        "settlement filtered for having non-positive score",
+                    );
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore),
+                    );
+                    self.metrics.settlement_non_positive_score(solver.name());
+                }
+                positive_score
+            });
         }
 
         // Before sorting, make sure to shuffle the settlements. This is to make sure we

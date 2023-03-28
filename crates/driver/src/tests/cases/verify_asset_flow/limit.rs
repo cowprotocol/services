@@ -21,7 +21,7 @@ use {
 async fn sell_too_low() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
         settlement,
         token_a,
@@ -37,7 +37,7 @@ async fn sell_too_low() {
         geth,
         solver_secret_key,
         ..
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
@@ -62,7 +62,7 @@ async fn sell_too_low() {
         owner: admin,
         partially_fillable: false,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
+    let gas_price = setup::blockchain::effective_gas_price(&web3).await;
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -132,7 +132,7 @@ async fn sell_too_low() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
@@ -230,7 +230,7 @@ async fn sell_too_low() {
 async fn buy_too_high() {
     crate::boundary::initialize_tracing("driver=trace");
     // Set up the uniswap swap.
-    let setup::blockchain::Uniswap {
+    let setup::blockchain::uniswap_a_b::Uniswap {
         web3,
         settlement,
         token_a,
@@ -246,7 +246,7 @@ async fn buy_too_high() {
         geth,
         solver_secret_key,
         ..
-    } = setup::blockchain::uniswap::setup().await;
+    } = setup::blockchain::uniswap_a_b::setup().await;
 
     // Values for the auction.
     let sell_token = token_a.address();
@@ -271,7 +271,7 @@ async fn buy_too_high() {
         owner: admin,
         partially_fillable: false,
     };
-    let gas_price = web3.eth().gas_price().await.unwrap().to_string();
+    let gas_price = setup::blockchain::effective_gas_price(&web3).await;
     let now = infra::time::Now::Fake(chrono::Utc::now());
     let deadline = now.now() + chrono::Duration::days(30);
     let interactions = interactions
@@ -341,7 +341,7 @@ async fn buy_too_high() {
                     }
                 ],
                 "liquidity": [],
-                "effectiveGasPrice": gas_price,
+                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({

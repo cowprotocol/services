@@ -1,0 +1,3 @@
+chain-id = "1"
+solver-name = "CoW Solver"
+endpoint = "https://solver.cow.fi"

@@ -48,6 +48,8 @@ use {
         BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
         BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3,
+        BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
     model::TokenPair,
@@ -163,6 +165,8 @@ pub struct BalancerPoolFetcher {
 #[clap(rename_all = "verbatim")]
 pub enum BalancerFactoryKind {
     Weighted,
+    WeightedV3,
+    WeightedV4,
     Weighted2Token,
     Stable,
     StableV2,
@@ -175,14 +179,15 @@ impl BalancerFactoryKind {
     pub fn for_chain(chain_id: u64) -> Vec<Self> {
         match chain_id {
             1 => Self::value_variants().to_owned(),
-            4 => vec![
+            5 => vec![
                 Self::Weighted,
+                Self::WeightedV3,
+                Self::WeightedV4,
                 Self::Weighted2Token,
                 Self::Stable,
-                Self::LiquidityBootstrapping,
-                Self::NoProtocolFeeLiquidityBootstrapping,
+                Self::StableV2,
             ],
-            5 => vec![Self::Weighted, Self::Weighted2Token],
+            100 => vec![Self::WeightedV3, Self::WeightedV4, Self::StableV2],
             _ => Default::default(),
         }
     }
@@ -208,6 +213,8 @@ impl BalancerContracts {
         for kind in factory_kinds {
             let instance = match &kind {
                 BalancerFactoryKind::Weighted => instance!(BalancerV2WeightedPoolFactory),
+                BalancerFactoryKind::WeightedV3 => instance!(BalancerV2WeightedPoolFactoryV3),
+                BalancerFactoryKind::WeightedV4 => instance!(BalancerV2WeightedPoolFactoryV4),
                 BalancerFactoryKind::Weighted2Token => {
                     instance!(BalancerV2WeightedPool2TokensFactory)
                 }
@@ -362,6 +369,8 @@ async fn create_aggregate_pool_fetcher(
     for (kind, instance) in &contracts.factories {
         let registry = match kind {
             BalancerFactoryKind::Weighted => registry!(BalancerV2WeightedPoolFactory, instance),
+            BalancerFactoryKind::WeightedV3 => registry!(BalancerV2WeightedPoolFactoryV3, instance),
+            BalancerFactoryKind::WeightedV4 => registry!(BalancerV2WeightedPoolFactoryV4, instance),
             BalancerFactoryKind::Weighted2Token => {
                 registry!(BalancerV2WeightedPool2TokensFactory, instance)
             }
@@ -387,8 +396,12 @@ async fn create_aggregate_pool_fetcher(
             .values()
             .map(|registered| registered.pools.len())
             .sum::<usize>();
+        let factories = registered_pools_by_factory
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
         tracing::warn!(
-            %total_count, unused_pools = ?registered_pools_by_factory,
+            %total_count, ?factories,
             "found pools that don't correspond to any known Balancer pool factory",
         );
     }
@@ -525,7 +538,7 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
         println!("Indexing events for chain {chain_id}");
-        crate::tracing::initialize_reentrant("warn,shared=debug");
+        crate::tracing::initialize_reentrant("warn,shared=debug,shared::ethrpc=trace");
 
         let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };

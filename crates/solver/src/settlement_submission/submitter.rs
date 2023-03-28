@@ -21,11 +21,12 @@ pub mod flashbots_api;
 pub mod public_mempool_api;
 
 use {
-    super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR},
+    super::{SubTxPoolRef, SubmissionError},
     crate::{
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::settle_method_builder,
+        settlement_submission::gas_limit_for_estimate,
     },
     anyhow::{anyhow, ensure, Context, Result},
     contracts::GPv2Settlement,
@@ -71,7 +72,7 @@ pub struct SubmitterParams {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum SubmissionLoopStatus {
-    Enabled(AdditionalTip),
+    Enabled,
     Disabled(DisabledReason),
 }
 
@@ -132,15 +133,15 @@ pub struct SubmitterGasPriceEstimator<'a> {
     /// Additionally increase max_priority_fee_per_gas by percentage of
     /// max_fee_per_gas, in order to increase the chances of a transaction being
     /// mined
-    pub additional_tip_percentage_of_max_fee: Option<f64>,
+    pub additional_tip_percentage_of_max_fee: f64,
     /// Maximum max_priority_fee_per_gas additional increase
-    pub max_additional_tip: Option<f64>,
+    pub max_additional_tip: f64,
     /// Maximum max_fee_per_gas to pay for a transaction
-    pub gas_price_cap: f64,
+    pub max_fee_per_gas: f64,
 }
 
 impl SubmitterGasPriceEstimator<'_> {
-    pub fn with_additional_tip(&self, max_additional_tip: Option<f64>) -> Self {
+    pub fn with_additional_tip(&self, max_additional_tip: f64) -> Self {
         Self {
             max_additional_tip,
             ..*self
@@ -155,25 +156,22 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         gas_limit: f64,
         time_limit: Duration,
     ) -> Result<GasPrice1559> {
-        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
-            Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
-                // boost miner tip to increase our chances of being included in a block
-                gas_price.max_priority_fee_per_gas +=
-                    self.max_additional_tip.unwrap_or_default().min(
-                        gas_price.max_fee_per_gas
-                            * self
-                                .additional_tip_percentage_of_max_fee
-                                .unwrap_or_default(),
-                    );
-                Ok(gas_price)
-            }
-            Ok(gas_price) => Err(anyhow!(
-                "gas station gas price {} is larger than cap {}",
-                gas_price.max_fee_per_gas,
-                self.gas_price_cap
-            )),
-            Err(err) => Err(err),
-        }
+        let mut estimate = self
+            .inner
+            .estimate_with_limits(gas_limit, time_limit)
+            .await?;
+
+        estimate.max_fee_per_gas = estimate.max_fee_per_gas.min(self.max_fee_per_gas);
+        estimate.max_priority_fee_per_gas += self
+            .max_additional_tip
+            .min(estimate.max_fee_per_gas * self.additional_tip_percentage_of_max_fee);
+        estimate.max_priority_fee_per_gas = estimate
+            .max_priority_fee_per_gas
+            .min(estimate.max_fee_per_gas);
+        estimate = estimate.ceil();
+
+        ensure!(estimate.is_valid(), "gas estimate exceeds cap {estimate:?}");
+        Ok(estimate)
     }
 }
 
@@ -403,16 +401,9 @@ impl<'a> Submitter<'a> {
                     tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
-                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
-                    self.gas_price_estimator.with_additional_tip(None)
-                }
-                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
-                    self.gas_price_estimator.clone()
-                }
+                SubmissionLoopStatus::Enabled => self.gas_price_estimator.clone(),
             };
-            // Account for some buffer in the gas limit in case racing state changes result
-            // in slightly more heavy computation at execution time.
-            let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
+            let gas_limit = gas_limit_for_estimate(params.gas_estimate).to_f64_lossy();
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
             let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
                 Ok(gas_price) => gas_price,
@@ -738,9 +729,9 @@ mod tests {
         .unwrap();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &gas_price_estimator,
-            max_additional_tip: Some(3.0),
-            gas_price_cap: 100e9,
-            additional_tip_percentage_of_max_fee: Some(0.05),
+            max_additional_tip: 3.0,
+            max_fee_per_gas: 100e9,
+            additional_tip_percentage_of_max_fee: 0.05,
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
@@ -800,16 +791,89 @@ mod tests {
         tracing::debug!("finished with result {:?}", result);
     }
 
+    #[tokio::test]
+    async fn gas_price_estimator_includes_additional_tip() {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: 0.05,
+            max_additional_tip: 1000.,
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 11.,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn gas_price_estimator_additional_tip_gets_capped() {
+        // Capped by `max_additional_tip`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: 0.5,
+            max_additional_tip: 5.,
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 6.,
+            }
+        );
+
+        // Capped by `max_fee_per_gas`.
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 500.,
+                max_priority_fee_per_gas: 1.,
+            }),
+            additional_tip_percentage_of_max_fee: 5.,
+            max_additional_tip: 1000.,
+            max_fee_per_gas: 200.,
+        };
+
+        assert_eq!(
+            gas_price_estimator.estimate().await.unwrap(),
+            GasPrice1559 {
+                base_fee_per_gas: 100.,
+                max_fee_per_gas: 200.,
+                max_priority_fee_per_gas: 200.,
+            }
+        );
+    }
+
     #[test]
     fn gas_price_estimator_no_tip_test() {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &FakeGasPriceEstimator::default(),
-            additional_tip_percentage_of_max_fee: Some(5.),
-            max_additional_tip: Some(10.),
-            gas_price_cap: 0.,
+            additional_tip_percentage_of_max_fee: 5.,
+            max_additional_tip: 10.,
+            max_fee_per_gas: 0.,
         };
 
-        let gas_price_estimator = gas_price_estimator.with_additional_tip(None);
-        assert_eq!(gas_price_estimator.max_additional_tip, None);
+        assert_eq!(
+            gas_price_estimator
+                .with_additional_tip(0.)
+                .max_additional_tip,
+            0.
+        );
+        assert_eq!(gas_price_estimator.max_additional_tip, 10.);
     }
 }

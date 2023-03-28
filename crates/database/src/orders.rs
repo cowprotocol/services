@@ -787,7 +787,7 @@ mod tests {
             PgTransaction,
         },
         bigdecimal::num_bigint::{BigInt, ToBigInt},
-        chrono::NaiveDateTime,
+        chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
         sqlx::Connection,
     };
@@ -1074,16 +1074,13 @@ mod tests {
         let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert!(order.cancellation_timestamp.is_none());
 
-        let time = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        let time = Utc.timestamp_opt(1234567890, 0).unwrap();
         cancel_order(&mut db, &order.uid, time).await.unwrap();
         let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(time, order.cancellation_timestamp.unwrap());
 
         // Cancel again and verify that cancellation timestamp was not changed.
-        let irrelevant_time = DateTime::<Utc>::from_utc(
-            NaiveDateTime::from_timestamp(1234567890, 1_000_000_000),
-            Utc,
-        );
+        let irrelevant_time = Utc.timestamp_opt(1234567890, 1_000_000_000).unwrap();
         assert_ne!(irrelevant_time, time);
         cancel_order(&mut db, &order.uid, time).await.unwrap();
         let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
@@ -1498,7 +1495,7 @@ mod tests {
         let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
 
         fn datetime(offset: u32) -> DateTime<Utc> {
-            DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
+            Utc.timestamp_opt(offset as i64, 0).unwrap()
         }
 
         type Data = ([u8; 56], Address, DateTime<Utc>);
@@ -1696,10 +1693,7 @@ mod tests {
         };
         let update = FeeUpdate {
             surplus_fee: Some(42.into()),
-            surplus_fee_timestamp: DateTime::from_utc(
-                NaiveDateTime::from_timestamp(1234567890, 0),
-                Utc,
-            ),
+            surplus_fee_timestamp: Utc.timestamp_opt(1234567890, 0).unwrap(),
             full_fee_amount: 1337.into(),
         };
         let updated_uids = update_fok_limit_order_fees(&mut db, &order_spec, &update)
@@ -1728,7 +1722,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        let timestamp = Utc.timestamp_opt(1234567890, 0).unwrap();
         // Valid limit order with an outdated surplus fee.
         let order = Order {
             uid: ByteArray([1; 56]),
@@ -1935,7 +1929,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        let timestamp = Utc.timestamp_opt(1234567890, 0).unwrap();
         let order_uid = ByteArray([1; 56]);
         // Valid limit order with an outdated surplus fee.
         insert_order(
