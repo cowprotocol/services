@@ -111,6 +111,7 @@ fn to_boundary_auction(
             .tokens
             .iter()
             .map(|(address, info)| {
+                let is_weth = address.0 == weth.0;
                 (
                     address.0,
                     TokenInfoModel {
@@ -120,10 +121,10 @@ fn to_boundary_auction(
                             .map(|price| price.0 .0.to_f64_lossy() / 1e18),
                         internal_buffer: Some(info.available_balance),
                         accepted_for_internalization: info.trusted,
-                        decimals: info.decimals,
-                        // Quasimodo crashes when the reference token doesn't have decimals. So
-                        // when we find a token with decimals we pick it as the reference token.
-                        normalize_priority: info.decimals.map(|_| 1),
+                        // Quasimodo crashes when the reference token (i.e. WETH) doesn't
+                        // have decimals. So use a reasonable default if we don't get one.
+                        decimals: info.decimals.or_else(|| is_weth.then_some(18)),
+                        normalize_priority: Some(u64::from(is_weth)),
                     },
                 )
             })
@@ -137,6 +138,17 @@ fn to_boundary_auction(
         }),
         ..Default::default()
     };
+
+    // Make sure the reference token is always included in the legacy auction.
+    // Existing solvers (including Quasimodo) rely on this behaviour.
+    model
+        .tokens
+        .entry(weth.0)
+        .or_insert_with(|| TokenInfoModel {
+            decimals: Some(18),
+            normalize_priority: Some(1),
+            ..Default::default()
+        });
 
     for order in &auction.orders {
         let index = mapping.orders.len();
