@@ -229,8 +229,9 @@ impl DriverLogger {
             use std::fmt::Write;
             write!(
                 text,
-                "\nid={} solver={} objective={:.2e} score={:.2e} surplus={:.2e} gas_estimate={:.2e} \
-                 gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} access_list_addresses={}",
+                "\nid={} solver={} objective={:.2e} score={:.2e} surplus={:.2e} \
+                 gas_estimate={:.2e} gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} \
+                 access_list_addresses={}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
