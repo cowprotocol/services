@@ -363,52 +363,72 @@ impl Settlement {
         max_settlement_price_deviation: &Ratio<BigInt>,
         tokens_to_satisfy_price_test: &PriceCheckTokens,
     ) -> bool {
-        if matches!(tokens_to_satisfy_price_test, PriceCheckTokens::Tokens(token_list) if token_list.is_empty())
-        {
-            return true;
+        if let PriceCheckTokens::Tokens(token_list) = tokens_to_satisfy_price_test {
+            if token_list.is_empty() {
+                return true;
+            }
         }
         self.user_trades().all(|trade| {
             let sell_token = &trade.order.data.sell_token;
             let buy_token = &trade.order.data.buy_token;
-            let clearing_price_sell_token = self.clearing_price(*sell_token).expect("Every traded token has a clearing price").to_big_rational();
-            let clearing_price_buy_token = self.clearing_price(*buy_token).expect("Every traded token has a clearing price").to_big_rational();
+            let clearing_price_sell_token = self
+                .clearing_price(*sell_token)
+                .expect("Every traded token has a clearing price")
+                .to_big_rational();
+            let clearing_price_buy_token = self
+                .clearing_price(*buy_token)
+                .expect("Every traded token has a clearing price")
+                .to_big_rational();
 
-            if matches!(tokens_to_satisfy_price_test, PriceCheckTokens::Tokens(token_list) if (!token_list.contains(sell_token)) || !token_list.contains(buy_token))
-                {
+            if let PriceCheckTokens::Tokens(token_list) = tokens_to_satisfy_price_test {
+                if !token_list.contains(sell_token) || !token_list.contains(buy_token) {
                     return true;
                 }
-                let external_price_sell_token = match external_prices.price(sell_token) {
-                    Some(price) => price,
-                    None => return true,
-                };
-                let external_price_buy_token = match external_prices.price(buy_token) {
-                    Some(price) => price,
-                    None => return true,
-                };
-                // Condition to check: Deviation of clearing prices is bigger than max_settlement_price deviation
-                //
-                // external_price_sell_token / external_price_buy_token - clearing_price_sell_token / clearing_price_buy_token
-                // ----------------------------------------------------------------------------------------------------------
-                //                      clearing_price_sell_token / clearing_price_buy_token                                 
-                // is bigger than:
-                // max_settlement_price_deviation
-                //
-                // This is equal to: |clearing_price_sell_token * external_price_buy_token - external_price_sell_token * clearing_price_buy_token|>
-                // max_settlement_price_deviation * clearing_price_buy_token * external_price_buy_token * clearing_price_sell_token
+            }
+            let external_price_sell_token = match external_prices.price(sell_token) {
+                Some(price) => price,
+                None => return true,
+            };
+            let external_price_buy_token = match external_prices.price(buy_token) {
+                Some(price) => price,
+                None => return true,
+            };
 
-                let price_check_result = clearing_price_buy_token
-                    .mul(external_price_sell_token)
-                    .sub(&external_price_buy_token.mul(&clearing_price_sell_token))
-                    .lt(&max_settlement_price_deviation
+            // Condition to check: Deviation of clearing prices is bigger than
+            // max_settlement_price deviation
+            //
+            // external_price_sell_token / external_price_buy_token -
+            // clearing_price_sell_token / clearing_price_buy_token
+            // ------------------------------------------------------
+            // clearing_price_sell_token / clearing_price_buy_token
+            //
+            // is bigger than max_settlement_price_deviation
+            //
+            // This is equal to:
+            //
+            // |clearing_price_sell_token * external_price_buy_token -
+            // external_price_sell_token * clearing_price_buy_token|
+            //
+            // is bigger than
+            //
+            // max_settlement_price_deviation *
+            // clearing_price_buy_token *
+            // external_price_buy_token *
+            // clearing_price_sell_token
+
+            let price_check_result = clearing_price_buy_token
+                .mul(external_price_sell_token)
+                .sub(&external_price_buy_token.mul(&clearing_price_sell_token))
+                .lt(&max_settlement_price_deviation
                     .mul(&external_price_buy_token.mul(&clearing_price_sell_token)));
-                if !price_check_result {
-                    tracing::debug!(
-                        token_pair =% format!("{sell_token:?}-{buy_token:?}"),
-                        %solver_name, settlement =? self,
-                        "price violation",
-                    );
-                }
-                price_check_result
+            if !price_check_result {
+                tracing::debug!(
+                    token_pair =% format!("{sell_token:?}-{buy_token:?}"),
+                    %solver_name, settlement =? self,
+                    "price violation",
+                );
+            }
+            price_check_result
         })
     }
 
