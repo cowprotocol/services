@@ -63,9 +63,7 @@ impl ScoreCalculator {
             ?score,
             "score calculation",
         );
-        f64::to_u128(&score)
-            .map(Into::into)
-            .context("failed to convert score")
+        Ok(U256::from_f64_lossy(score))
     }
 }
 
