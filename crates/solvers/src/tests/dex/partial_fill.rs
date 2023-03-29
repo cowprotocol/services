@@ -522,6 +522,107 @@ async fn moves_surplus_fee_to_buy_token() {
     );
 }
 
+/// Test that verifies that no solution is proposed when a partially fillable
+/// order is matched, but that there is insufficient surplus to charge the fee.
+#[tokio::test]
+async fn insufficient_room_for_surplus_fee() {
+    let api = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
+        req: json!({
+            "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
+            "orderKind": "sell",
+            "amount": "1000000000000000000",
+            "gasPrice": "15000000000",
+        }),
+        res: json!({
+            "tokenAddresses": [
+                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                "0xba100000625a3754423978a60c9317c58a424e3d"
+            ],
+            "swaps": [
+                {
+                    "poolId": "0x5c6ee304399dbdb9c8ef030ab642b10820\
+                        db8f56000200000000000000000014",
+                    "assetInIndex": 0,
+                    "assetOutIndex": 1,
+                    "amount": "1000000000000000000",
+                    "userData": "0x",
+                    "returnAmount": "227598784442065388110"
+                }
+            ],
+            "swapAmount": "1000000000000000000",
+            "swapAmountForSwaps": "1000000000000000000",
+            "returnAmount": "227598784442065388110",
+            "returnAmountFromSwaps": "227598784442065388110",
+            "returnAmountConsideringFees": "227307710853355710706",
+            "tokenIn": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "tokenOut": "0xba100000625a3754423978a60c9317c58a424e3d",
+            "marketSp": "0.004393607339632106",
+        }),
+    }])
+    .await;
+
+    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
+
+    let solution = engine
+        .solve(json!({
+            "id": null,
+            "tokens": {
+                "0xba100000625a3754423978a60c9317c58a424e3D": {
+                    "decimals": 18,
+                    "symbol": "BAL",
+                    "referencePrice": "4327903683155778",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
+                    "decimals": 18,
+                    "symbol": "WETH",
+                    "referencePrice": "1000000000000000000",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+                    "decimals": 18,
+                    "symbol": "ETH",
+                    "referencePrice": "1000000000000000000",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a",
+                    "sellToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+                    "buyToken": "0xba100000625a3754423978a60c9317c58a424e3D",
+                    "sellAmount": "1000000000000000000",
+                    "buyAmount": "227598784442065388110",
+                    "feeAmount": "10000000000000000",
+                    "kind": "sell",
+                    "partiallyFillable": true,
+                    "class": "limit",
+                    "reward": 0.
+                }
+            ],
+            "liquidity": [],
+            "effectiveGasPrice": "15000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    assert_eq!(
+        solution,
+        json!({
+            "prices": {},
+            "trades": [],
+            "interactions": [],
+        }),
+    );
+}
+
 /// Test that documents how we deal with partially fillable market orders. In
 /// particular, we assume that there is no solver fee to compute and that the
 /// pre-agreed upon "feeAmount" is sufficient. In practice, this isn't expected
