@@ -17,6 +17,7 @@ use {
         tenderly_api,
     },
     anyhow::{anyhow, ensure, Context, Result},
+    bigdecimal::BigDecimal,
     ethcontract::{H160, H256, U256},
     model::app_id::AppId,
     std::{
@@ -509,8 +510,10 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
     Ok(Duration::from_secs_f64(s.parse()?))
 }
 
-pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
-    Ok(U256::from_dec_str(s)? * U256::exp10(18))
+pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
+    let in_ether = s.parse::<BigDecimal>()?;
+    let base = BigDecimal::new(1.into(), -18);
+    number_conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
 }
 
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {

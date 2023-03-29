@@ -11,7 +11,7 @@ use {
     ethcontract::{H160, U256},
     lazy_static::lazy_static,
     model::order::BUY_ETH_ADDRESS,
-    num::{BigInt, BigRational, One as _, ToPrimitive as _},
+    num::{BigInt, BigRational, CheckedDiv, One as _, ToPrimitive as _},
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -82,6 +82,27 @@ impl ExternalPrices {
     /// panicking.
     pub fn try_get_native_amount(&self, token: H160, amount: BigRational) -> Option<BigRational> {
         Some(self.0.get(&token)? * amount)
+    }
+
+    /// Converts a native asset amount into an amount of equivalent value in the
+    /// specified token.
+    ///
+    /// # Panic
+    ///
+    /// This method panics if the specified token does not have a price.
+    pub fn get_token_amount(&self, amount: &BigRational, token: H160) -> BigRational {
+        self.try_get_token_amount(amount, token)
+            .unwrap_or_else(|| panic!("missing price for {token}"))
+    }
+
+    /// Converts a native asset amount into an amount of equivalent value in the
+    /// specified token.
+    ///
+    /// This method is similar to [`get_native_amount`] except that it will
+    /// return `None` if the specified token does not have a price instead of
+    /// panicking.
+    pub fn try_get_token_amount(&self, amount: &BigRational, token: H160) -> Option<BigRational> {
+        amount.checked_div(self.0.get(&token)?)
     }
 
     /// Converts a set of external prices into prices for the HTTP solver.
