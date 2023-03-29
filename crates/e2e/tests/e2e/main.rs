@@ -5,7 +5,6 @@
 
 #[macro_use]
 mod setup;
-mod colocation;
 mod local_node;
 
 // Each of the following modules contains tests.

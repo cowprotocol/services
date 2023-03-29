@@ -1,3 +1,4 @@
+pub mod colocation;
 mod deploy;
 #[macro_use]
 mod onchain_components;

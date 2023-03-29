@@ -1,5 +1,5 @@
 use {
-    crate::{colocation, setup::*},
+    crate::setup::*,
     ethcontract::U256,
     model::{
         order::{OrderBuilder, OrderKind},
