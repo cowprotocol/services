@@ -22,8 +22,9 @@ async fn test(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
+    // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
         .await;
 
     tx!(
@@ -31,11 +32,11 @@ async fn test(web3: Web3) {
         onchain
             .contracts()
             .weth
-            .approve(onchain.contracts().allowance, to_wei(3))
+            .approve(onchain.contracts().allowance, to_wei(4))
     );
     tx_value!(
         trader.account(),
-        to_wei(3),
+        to_wei(4),
         onchain.contracts().weth.deposit()
     );
 
@@ -47,20 +48,25 @@ async fn test(web3: Web3) {
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
+        "--process-partially-fillable-limit-orders=true".to_string(),
     ]);
-    services.start_api(vec![]).await;
+    services
+        .start_api(vec![
+            "--allow-placing-partially-fillable-limit-orders=true".to_string()
+        ])
+        .await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
     let order = OrderBuilder::default()
         .with_sell_token(onchain.contracts().weth.address())
-        .with_sell_amount(to_wei(2))
-        .with_fee_amount(to_wei(1))
+        .with_sell_amount(to_wei(4))
         .with_buy_token(token.address())
-        .with_buy_amount(to_wei(1))
+        .with_buy_amount(to_wei(3))
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Buy)
+        .with_partially_fillable(true)
+        .with_kind(OrderKind::Sell)
         .sign_with(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
@@ -75,8 +81,17 @@ async fn test(web3: Web3) {
         || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, to_wei(1));
+    // We expect the partially fillable order to only fill half-way.
+    let sell_balance = onchain
+        .contracts()
+        .weth
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(sell_balance, 1_999_999_999_740_430_040_u128.into());
+    let buy_balance = token.balance_of(trader.address()).call().await.unwrap();
+    assert_eq!(buy_balance, 1_662_497_915_624_478_906_u128.into());
 
     // TODO: test that we have other important per-auction data that should have
     // made its way into the DB.

@@ -1,6 +1,9 @@
 use {
     itertools::Itertools,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt,
+    },
 };
 
 pub mod allowance;
@@ -273,7 +276,7 @@ pub struct Interaction {
 }
 
 /// An onchain transaction.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
@@ -288,6 +291,18 @@ impl Tx {
             access_list,
             ..self
         }
+    }
+}
+
+impl fmt::Debug for Tx {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Tx")
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("value", &self.value)
+            .field("input", &format_args!("0x{}", hex::encode(&self.input)))
+            .field("access_list", &self.access_list)
+            .finish()
     }
 }
 

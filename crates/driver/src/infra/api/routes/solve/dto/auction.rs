@@ -51,6 +51,11 @@ impl Auction {
                         },
                         kind: match order.class {
                             Class::Market => competition::order::Kind::Market,
+                            Class::Limit if order.partially_fillable => {
+                                competition::order::Kind::Limit {
+                                    surplus_fee: eth::U256::zero().into(),
+                                }
+                            }
                             Class::Limit => competition::order::Kind::Limit {
                                 surplus_fee: order
                                     .surplus_fee

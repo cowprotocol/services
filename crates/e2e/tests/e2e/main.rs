@@ -5,9 +5,11 @@
 
 #[macro_use]
 mod setup;
+mod colocation;
 mod local_node;
 
 // Each of the following modules contains tests.
+mod colocation_partial_fill;
 mod colocation_univ2;
 mod eth_flow;
 mod eth_integration;
