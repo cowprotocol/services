@@ -169,7 +169,12 @@ impl SingleOrderSolving for ZeroExSolver {
         };
 
         let Some(settlement) = create_settlement()
-            .into_settlement(auction, &order, order.full_execution_amount())
+            .into_settlement(
+                &order,
+                order.full_execution_amount(),
+                &auction.external_prices,
+                auction.gas_price,
+            )
             .context("into_settlement")?
         else {
             return Ok(None);

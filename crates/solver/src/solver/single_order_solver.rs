@@ -1,12 +1,4 @@
 use {
-    model::order::OrderKind,
-    shared::{conversions::U256Ext, price_estimation::gas},
-};
-
-mod fills;
-mod merge;
-
-use {
     crate::{
         liquidity::{LimitOrder, LimitOrderExecution, LimitOrderId},
         metrics::SolverMetrics,
@@ -16,11 +8,17 @@ use {
     anyhow::{Context as _, Error, Result},
     clap::Parser,
     ethcontract::Account,
+    model::order::OrderKind,
     num::ToPrimitive,
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
     rand::prelude::SliceRandom,
-    shared::{external_prices::ExternalPrices, interaction::Interaction},
+    shared::{
+        conversions::U256Ext,
+        external_prices::ExternalPrices,
+        interaction::Interaction,
+        price_estimation::gas,
+    },
     std::{
         collections::VecDeque,
         fmt::{self, Display, Formatter},
@@ -28,6 +26,9 @@ use {
         time::Duration,
     },
 };
+
+mod fills;
+mod merge;
 
 /// CLI arguments to configure order prioritization of single order solvers
 /// based on an orders price.
@@ -180,7 +181,12 @@ impl Solver for SingleOrderSolver {
 
                 match single.and_then(|single| {
                     single
-                        .into_settlement(&auction, &order, fill.full_execution_amount())
+                        .into_settlement(
+                            &order,
+                            fill.full_execution_amount(),
+                            &auction.external_prices,
+                            auction.gas_price,
+                        )
                         .transpose()
                 }) {
                     Some(Ok(settlement)) => settlements.push(settlement),
@@ -245,9 +251,10 @@ pub struct SingleOrderSettlement {
 impl SingleOrderSettlement {
     pub fn into_settlement(
         self,
-        auction: &Auction,
         order: &LimitOrder,
         executed_amount: U256,
+        prices: &ExternalPrices,
+        gas_price: f64,
     ) -> Result<Option<Settlement>> {
         // Compute the expected traded amounts.
         let (traded_sell_amount, traded_buy_amount) = match order.kind {
@@ -273,12 +280,11 @@ impl SingleOrderSettlement {
         // and solver fee which will be used for scoring.
         let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
             let fee = number_conversions::big_rational_to_u256(
-                &auction
-                    .external_prices
+                &prices
                     .try_get_token_amount(
                         &number_conversions::u256_to_big_rational(
                             &((self.gas_estimate + gas::SETTLEMENT_OVERHEAD)
-                                * U256::from_f64_lossy(auction.gas_price)),
+                                * U256::from_f64_lossy(gas_price)),
                         ),
                         order.sell_token,
                     )
@@ -353,7 +359,7 @@ impl SingleOrderSettlement {
         for interaction in self.interactions {
             settlement.encoder.append_to_execution_plan(interaction);
         }
-        Ok(Some(settlement))
+        Ok(Some(dbg!(settlement)))
     }
 }
 
@@ -465,11 +471,12 @@ mod tests {
                 LiquidityOrderId,
             },
             metrics::NoopMetrics,
+            settlement::TradeExecution,
         },
         anyhow::anyhow,
         ethcontract::Bytes,
-        maplit::hashmap,
-        model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid},
+        maplit::{btreemap, hashmap},
+        model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::http_solver::model::InternalizationStrategy,
@@ -776,5 +783,127 @@ mod tests {
         // skewed weights.
         dbg!(expected_results);
         assert!((expected_results as f64) < (SAMPLES as f64 * 0.9));
+    }
+
+    #[test]
+    fn partially_fillable_single_order_settlements() {
+        let native = H160::from_low_u64_be(0);
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        let converter = OrderConverter::test(native);
+        let order = |kind: OrderKind| {
+            converter
+                .normalize_limit_order(Order {
+                    data: OrderData {
+                        sell_token: H160::from_low_u64_be(1),
+                        buy_token: H160::from_low_u64_be(2),
+                        kind,
+                        sell_amount: 100.into(),
+                        buy_amount: 100.into(),
+                        partially_fillable: true,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        uid: OrderUid([0u8; 56]),
+                        class: OrderClass::Limit(Default::default()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .unwrap()
+        };
+
+        let base = U256::from(10_u128.pow(18));
+        let prices = ExternalPrices::try_from_auction_prices(
+            native,
+            btreemap! {
+                native => base,
+                sell_token => base * 50000,
+                buy_token => base * 50000,
+            },
+        )
+        .unwrap();
+
+        let settlement = |order: LimitOrder, in_amount: u128, out_amount: u128| {
+            SingleOrderSettlement {
+                sell_token_price: out_amount.into(),
+                buy_token_price: in_amount.into(),
+                interactions: vec![],
+                gas_estimate: 2.into(),
+            }
+            .into_settlement(
+                &order,
+                match order.kind {
+                    OrderKind::Buy => out_amount.into(),
+                    OrderKind::Sell => in_amount.into(),
+                },
+                &prices,
+                1.,
+            )
+            .unwrap()
+        };
+        let trade = |settlement: Settlement| settlement.trade_executions().next().unwrap();
+
+        // Not enough room for surplus fees.
+        assert!(settlement(order(OrderKind::Buy), 50, 50).is_none());
+        assert!(settlement(order(OrderKind::Buy), 100, 100).is_none());
+        assert!(settlement(order(OrderKind::Sell), 50, 50).is_none());
+        assert!(settlement(order(OrderKind::Sell), 100, 100).is_none());
+
+        // Adds surplus fee to executed sell amount.
+        assert_eq!(
+            trade(settlement(order(OrderKind::Buy), 40, 50).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 42.into(),
+                buy_amount: 50.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Buy), 90, 100).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 92.into(),
+                buy_amount: 100.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 50, 60).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 52.into(),
+                buy_amount: 60.into(),
+                fee_amount: 2.into(),
+            }
+        );
+
+        // Scale buy amount if insufficient "space" for collecting surplus fees
+        // in the sell token.
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 99, 110).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 100.into(),
+                buy_amount: 109.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 100, 110).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 100.into(),
+                buy_amount: 108.into(),
+                fee_amount: 2.into(),
+            }
+        );
     }
 }
