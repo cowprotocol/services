@@ -45,10 +45,23 @@ pub struct Query {
     #[serde_as(as = "Option<serialize::U256>")]
     pub gas_price: Option<U256>,
 
+    /// The address which will fill the quote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taker_address: Option<H160>,
+
     /// List of sources to exclude.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde_as(as = "serialize::CommaSeparated")]
     pub excluded_sources: Vec<String>,
+
+    /// Whether or not to skip quote validation.
+    pub skip_validation: bool,
+
+    /// Wether or not you intend to actually fill the quote. Setting this flag
+    /// enables RFQ-T liquidity.
+    ///
+    /// <https://docs.0x.org/market-makers/docs/introduction>
+    pub intent_on_filling: bool,
 
     /// The affiliate address to use for tracking and analytics purposes.
     pub affiliate_address: H160,
@@ -99,6 +112,11 @@ pub struct Quote {
     /// The swap calldata.
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
+
+    /// The estimate for the amount of gas that will actually be used in the
+    /// transaction.
+    #[serde_as(as = "serialize::U256")]
+    pub estimated_gas: U256,
 
     /// The amount of sell token (in atoms) that would be sold in this swap.
     #[serde_as(as = "serialize::U256")]

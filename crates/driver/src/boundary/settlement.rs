@@ -87,33 +87,25 @@ impl Settlement {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
-                    if eth::U256::from(trade.execution.filled).is_zero() {
+                    if eth::U256::from(trade.executed()).is_zero() {
                         return Err(Error::Boundary(anyhow!("unexpected empty execution")));
                     }
 
-                    let solver_fee = match trade.order.solver_determines_fee() {
-                        true => trade.execution.fee.expect("API ensures fee exists").0,
-                        false => trade.order.fee.solver.0,
-                    };
-
-                    let execution = LimitOrderExecution {
-                        filled: trade.execution.filled.into(),
-                        solver_fee,
-                    };
-
-                    (to_boundary_order(&trade.order), execution)
-                }
-                competition::solution::Trade::Jit(trade) => {
-                    let execution = LimitOrderExecution {
-                        filled: trade.executed.into(),
-                        solver_fee: 0.into(),
-                    };
-
                     (
-                        to_boundary_jit_order(&DomainSeparator(domain.0), &trade.order),
-                        execution,
+                        to_boundary_order(trade.order()),
+                        LimitOrderExecution {
+                            filled: trade.executed().into(),
+                            solver_fee: trade.solver_fee().into(),
+                        },
                     )
                 }
+                competition::solution::Trade::Jit(trade) => (
+                    to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
+                    LimitOrderExecution {
+                        filled: trade.executed().into(),
+                        solver_fee: 0.into(),
+                    },
+                ),
             };
 
             let boundary_limit_order = order_converter

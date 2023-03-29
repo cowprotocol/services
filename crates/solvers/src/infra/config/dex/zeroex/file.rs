@@ -32,6 +32,10 @@ struct Config {
     #[serde(default = "default_affiliate")]
     affiliate: H160,
 
+    /// Whether or not to enable 0x RFQ-T liquidity.
+    #[serde(default)]
+    enable_rfqt: bool,
+
     /// Whether or not to enable slippage protection. The slippage protection
     /// considers average negative slippage paid out in MEV when quoting,
     /// preferring private market maker orders when they are close to what you
@@ -58,12 +62,18 @@ fn default_affiliate() -> H160 {
 pub async fn load(path: &Path) -> super::Config {
     let (base, config) = file::load::<Config>(path).await;
 
+    // Note that we just assume Mainnet here - this is because this is the
+    // only chain that the 0x solver supports anyway.
+    let settlement = contracts::Contracts::for_chain(eth::ChainId::Mainnet).settlement;
+
     super::Config {
         zeroex: zeroex::Config {
             endpoint: config.endpoint,
             api_key: config.api_key,
             excluded_sources: config.excluded_sources,
             affiliate: config.affiliate,
+            settlement,
+            enable_rfqt: config.enable_rfqt,
             enable_slippage_protection: config.enable_slippage_protection,
         },
         base,

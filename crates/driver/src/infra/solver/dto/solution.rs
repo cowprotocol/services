@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, competition::solution::trade::OrderExecution, eth, liquidity},
+        domain::{competition, eth, liquidity},
         infra::Solver,
         util::serialize,
     },
@@ -33,40 +33,26 @@ impl Solution {
                             .ok_or(super::Error("invalid order UID specified in fulfillment"))?
                             .clone();
 
-                        Ok(competition::solution::Trade::Fulfillment(
-                            competition::solution::trade::Fulfillment {
-                                execution: match (order.solver_determines_fee(), fulfillment.fee) {
-                                    (true, Some(fee)) => OrderExecution {
-                                        fee: Some(competition::order::SellAmount(fee)),
-                                        filled: fulfillment.executed_amount.into(),
-                                    },
-                                    (true, None) => {
-                                        // TODO this error should reference the UID
-                                        return Err(super::Error(
-                                            "solver did not determine a fee for a partially \
-                                             fillable limit order",
-                                        ));
-                                    }
-                                    (false, fee) => {
-                                        if fee.is_some() {
-                                            tracing::debug!(
-                                                "solver computed a fee when it was not required \
-                                                 so it will be ignored"
-                                            );
-                                        }
-                                        OrderExecution {
-                                            fee: None,
-                                            filled: fulfillment.executed_amount.into(),
-                                        }
-                                    }
-                                },
-                                order,
+                        competition::solution::trade::Fulfillment::new(
+                            order,
+                            fulfillment.executed_amount.into(),
+                            match fulfillment.fee {
+                                Some(fee) => competition::solution::trade::Fee::Dynamic(
+                                    competition::order::SellAmount(fee),
+                                ),
+                                None => competition::solution::trade::Fee::Static,
                             },
-                        ))
+                        )
+                        .map(competition::solution::Trade::Fulfillment)
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid trade fulfillment")
+                            },
+                        )
                     }
                     Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
-                        competition::solution::trade::Jit {
-                            order: competition::order::Jit {
+                        competition::solution::trade::Jit::new(
+                            competition::order::Jit {
                                 sell: eth::Asset {
                                     amount: jit.order.sell_amount,
                                     token: jit.order.sell_token.into(),
@@ -122,8 +108,13 @@ impl Solution {
                                     signer: solver.address(),
                                 },
                             },
-                            executed: jit.executed_amount.into(),
-                        },
+                            jit.executed_amount.into(),
+                        )
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid executed amount in JIT order")
+                            },
+                        )?,
                     )),
                 })
                 .try_collect()?,

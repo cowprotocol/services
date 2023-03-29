@@ -319,6 +319,8 @@ pub async fn run(args: Arguments) {
         metrics.clone(),
         zeroex_api.clone(),
         args.shared.disabled_zeroex_sources,
+        args.zeroex_enable_rfqt,
+        args.zeroex_enable_slippage_protection,
         args.shared.use_internal_buffers,
         args.shared.one_inch_url,
         args.shared.one_inch_referrer_address,

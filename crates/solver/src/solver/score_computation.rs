@@ -32,18 +32,38 @@ pub struct ScoreCalculator {
 }
 
 impl ScoreCalculator {
-    pub fn calculate(&self, inputs: &objective_value::Inputs, nmb_orders: usize) -> Option<U256> {
-        let surplus = inputs.surplus_given.to_f64()?;
-        let fees = inputs.solver_fees.to_f64()?;
-        let gas_amount = inputs.gas_amount.to_f64()?;
-        let gas_price = inputs.gas_price.to_f64()?;
+    pub fn calculate(&self, inputs: &objective_value::Inputs, nmb_orders: usize) -> Result<U256> {
+        let surplus = inputs
+            .surplus_given
+            .to_f64()
+            .context("surplus_given conversion")?;
+        let fees = inputs
+            .solver_fees
+            .to_f64()
+            .context("solver_fees conversion")?;
+        let gas_amount = inputs
+            .gas_amount
+            .to_f64()
+            .context("gas_amount conversion")?;
+        let gas_price = inputs.gas_price.to_f64().context("gas_price conversion")?;
         let exponent = self.intercept.neg()
             - self.gas_amount_factor * gas_amount / 1_000_000.
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
         let score = success_probability * (surplus + fees) - gas_amount * gas_price;
-        Some(U256::from_f64_lossy(score))
+        tracing::trace!(
+            ?surplus,
+            ?fees,
+            ?gas_amount,
+            ?gas_price,
+            ?nmb_orders,
+            ?exponent,
+            ?success_probability,
+            ?score,
+            "score calculation",
+        );
+        Ok(U256::from_f64_lossy(score))
     }
 }
 

@@ -150,6 +150,9 @@ struct Order {
     fee_amount: eth::U256,
     kind: Kind,
     partially_fillable: bool,
+    // TODO There is no executed field here. Is this an oversight? For partial orders, should the
+    // driver reduce the buy/sell amount by the executed amounts before sending the order to the
+    // solver?
     class: Class,
     reward: f64,
 }

@@ -15,7 +15,10 @@ async fn test() {
              &sellAmount=1000000000000000000\
              &slippagePercentage=0.1\
              &gasPrice=15000000000\
+             &takerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41\
              &excludedSources=Uniswap_V2%2CBalancer_V2\
+             &skipValidation=true\
+             &intentOnFilling=true\
              &affiliateAddress=0x0123456789012345678901234567890123456789\
              &enableSlippageProtection=true",
         ),
@@ -187,6 +190,7 @@ endpoint = 'http://{}/swap/v1/'
 api-key = 'abc123'
 excluded-sources = ['Uniswap_V2', 'Balancer_V2']
 affiliate = '0x0123456789012345678901234567890123456789'
+enable-rfqt = true
 enable-slippage-protection = true
             ",
             api.address

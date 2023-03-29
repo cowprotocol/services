@@ -338,6 +338,14 @@ pub struct Arguments {
     /// competition?
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub skip_non_positive_score_settlements: bool,
+
+    /// Flag to enable RFQ-T liquidity in the 0x solver.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub zeroex_enable_rfqt: bool,
+
+    /// Flag to enable slippage protection for the 0x solver.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub zeroex_enable_slippage_protection: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -471,6 +479,12 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "{}", self.score_params)?;
         writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
+        writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
+        writeln!(
+            f,
+            "zeroex_enable_slippage_protection: {}",
+            self.zeroex_enable_slippage_protection
+        )?;
         Ok(())
     }
 }

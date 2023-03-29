@@ -55,10 +55,12 @@ impl Settlement {
     }
 }
 
-/// A settlement which has been verified to be correct. In particular:
+/// A settlement which has been verified to respect some the rules of the
+/// protocol. In particular:
 ///
 /// - Simulation: the settlement has been simulated without reverting, including
-///   the case where no interactions were internalized.
+///   the case where no interactions were internalized. Additionally the solver
+///   account is known to have sufficient Ether to execute the transaction.
 /// - Asset flow: the sum of tokens into and out of the settlement are
 ///   non-negative, meaning that the solver doesn't take any tokens out of the
 ///   settlement contract.
