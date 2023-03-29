@@ -113,6 +113,11 @@ pub struct Quote {
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
 
+    /// The estimate for the amount of gas that will actually be used in the
+    /// transaction.
+    #[serde_as(as = "serialize::U256")]
+    pub estimated_gas: U256,
+
     /// The amount of sell token (in atoms) that would be sold in this swap.
     #[serde_as(as = "serialize::U256")]
     pub sell_amount: U256,

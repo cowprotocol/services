@@ -81,6 +81,11 @@ pub struct Swap {
     pub output: eth::Asset,
     /// The minimum allowance that is required for executing the swap.
     pub allowance: Allowance,
+    /// The gas guesstimate in gas units for the swap.
+    ///
+    /// This estimate is **not** expected to be accurate, and is purely
+    /// indicative.
+    pub gas: eth::Gas,
 }
 
 impl Swap {
