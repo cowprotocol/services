@@ -388,7 +388,10 @@ fn to_domain_solution(
                         order::Side::Buy => execution.exec_buy_amount,
                         order::Side::Sell => execution.exec_sell_amount,
                     },
-                    execution.exec_fee_amount,
+                    match execution.exec_fee_amount {
+                        Some(fee) => solution::Fee::Surplus(fee),
+                        None => solution::Fee::Protocol,
+                    },
                 )
                 .context("invalid trade execution")?,
             )),

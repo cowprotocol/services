@@ -120,7 +120,7 @@ impl Swap {
             // full order fee as well as a solver computed fee. Note that this
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
-            Some(
+            solution::Fee::Surplus(
                 sell_price.ether_value(eth::Ether(
                     self.gas
                         .0
@@ -129,15 +129,16 @@ impl Swap {
                 ))?,
             )
         } else {
-            None
+            solution::Fee::Protocol
         };
+        let surplus_fee = fee.surplus().unwrap_or_default();
 
         // Compute total executed sell and buy amounts accounting for solver
         // fees. That is, the total amount of sell tokens transferred into the
         // contract and the total buy tokens transferred out of the contract.
         let (sell, buy) = match order.side {
             order::Side::Buy => (
-                self.input.amount.checked_add(fee.unwrap_or_default())?,
+                self.input.amount.checked_add(surplus_fee)?,
                 self.output.amount,
             ),
             order::Side::Sell => {
@@ -150,10 +151,10 @@ impl Swap {
                 let sell = self
                     .input
                     .amount
-                    .checked_add(fee.unwrap_or_default())?
+                    .checked_add(surplus_fee)?
                     .min(order.sell.amount);
                 let buy = util::math::div_ceil(
-                    sell.checked_sub(fee.unwrap_or_default())?
+                    sell.checked_sub(surplus_fee)?
                         .checked_mul(self.output.amount)?,
                     self.input.amount,
                 )?;
@@ -169,13 +170,13 @@ impl Swap {
 
         let executed = match order.side {
             order::Side::Buy => buy,
-            order::Side::Sell => sell.checked_sub(fee.unwrap_or_default())?,
+            order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
         let allowance = self.allowance();
         Some(solution::Solution {
             prices: solution::ClearingPrices::new([
                 (order.sell.token, buy),
-                (order.buy.token, sell.checked_sub(fee.unwrap_or_default())?),
+                (order.buy.token, sell.checked_sub(surplus_fee)?),
             ]),
             trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::new(
                 order, executed, fee,

@@ -35,7 +35,7 @@ impl Solution {
                     solution::Trade::Fulfillment(trade) => Trade::Fulfillment(Fulfillment {
                         order: trade.order().uid.0,
                         executed_amount: trade.executed().amount,
-                        fee: trade.fee().map(|fee| fee.amount),
+                        fee: trade.surplus_fee().map(|fee| fee.amount),
                     }),
                     solution::Trade::Jit(trade) => {
                         let (signing_scheme, signature) = match &trade.order.signature {
