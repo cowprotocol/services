@@ -1,10 +1,8 @@
-use crate::liquidity::LimitOrderExecution;
-
 mod merge;
 
 use {
     crate::{
-        liquidity::{LimitOrder, LimitOrderId},
+        liquidity::{LimitOrder, LimitOrderExecution, LimitOrderId},
         metrics::SolverMetrics,
         settlement::Settlement,
         solver::{Auction, Solver},
@@ -221,6 +219,7 @@ pub struct SingleOrderSettlement {
     pub sell_token_price: U256,
     pub buy_token_price: U256,
     pub interactions: Vec<Box<dyn Interaction>>,
+    pub gas_estimate: U256,
 }
 
 impl SingleOrderSettlement {
@@ -427,6 +426,7 @@ mod tests {
                         4.into(),
                         Bytes(vec![5]),
                     ))],
+                    gas_estimate: U256::zero(),
                 })),
                 OrderKind::Sell => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 6.into(),
@@ -436,6 +436,7 @@ mod tests {
                         9.into(),
                         Bytes(vec![10]),
                     ))],
+                    gas_estimate: U256::zero(),
                 })),
             });
         inner.expect_name().returning(|| "");

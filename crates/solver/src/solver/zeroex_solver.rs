@@ -159,6 +159,7 @@ impl SingleOrderSolving for ZeroExSolver {
                 sell_token_price: swap.price.buy_amount,
                 buy_token_price: swap.price.sell_amount,
                 interactions: Vec::new(),
+                gas_estimate: swap.price.estimated_gas.into(),
             };
             if let Some(approval) = &approval {
                 settlement.interactions.push(Box::new(*approval));
