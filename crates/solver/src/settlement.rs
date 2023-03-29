@@ -1562,7 +1562,7 @@ pub mod tests {
                         },
                         ..Default::default()
                     },
-                    executed_amount: 100_000_u128.into(),
+                    executed_amount: 99_000_u128.into(),
                     solver_fee: 1_000_u128.into(),
                 }],
             );
@@ -1596,7 +1596,11 @@ pub mod tests {
                         },
                         ..Default::default()
                     },
-                    executed_amount: 100_000_u128.into(),
+                    executed_amount: match kind {
+                        OrderKind::Buy => 98_000_u128,
+                        OrderKind::Sell => 99_000_u128,
+                    }
+                    .into(),
                     solver_fee: 1_000_u128.into(),
                 }],
             );
@@ -1637,7 +1641,7 @@ pub mod tests {
                     },
                     ..Default::default()
                 },
-                executed_amount: 100_000_u128.into(),
+                executed_amount: 99_000_u128.into(),
                 solver_fee: 1_000_u128.into(),
             }],
         )

@@ -264,38 +264,25 @@ impl SettlementEncoder {
                 )?
             }
             OrderClass::Limit(limit) => {
-                let (executed_amount, fee_to_collect) = if order.data.partially_fillable {
-                    // Executed amounts from solvers are how much of the
-                    // order get traded, so the "on-chain" execution needs
-                    // to also include the surplus fee.
-                    let executed_amount = match order.data.kind {
-                        OrderKind::Sell => executed_amount.checked_add(solver_fee).context(
-                            "overflow computing partially fillable limit order trade execution",
-                        )?,
-                        OrderKind::Buy => executed_amount,
-                    };
-
-                    // Solver determines fees for partially fillable orders.
-                    let fee_to_collect = solver_fee;
-
-                    (executed_amount, fee_to_collect)
-                } else {
-                    // Solvers calculate with slightly adjusted amounts
-                    // compared to this order but because limit orders are
-                    // fill-or-kill we can simply use the total original
-                    // `${kind}_amount`.
-                    let executed_amount = match order.data.kind {
-                        OrderKind::Sell => order.data.sell_amount,
-                        OrderKind::Buy => order.data.buy_amount,
-                    };
-
+                let surplus_fee = match order.data.partially_fillable {
                     // Protocol determines fees for fok orders.
-                    let fee_to_collect = limit.surplus_fee.unwrap();
-
-                    (executed_amount, fee_to_collect)
+                    false => limit.surplus_fee.unwrap(),
+                    // Solver determines fees for partially fillable orders.
+                    true => solver_fee,
                 };
+
+                // Solvers calculate with slightly adjusted amounts compared to
+                // the signed order, so adjust by the surplus fee (if needed) to
+                // get the actual executed amount.
+                let executed_amount = match order.data.kind {
+                    OrderKind::Sell => executed_amount
+                        .checked_add(surplus_fee)
+                        .context("overflow computing limit order trade execution")?,
+                    OrderKind::Buy => executed_amount,
+                };
+
                 let (sell_price, buy_price) =
-                    self.custom_price_for_limit_order(&order, executed_amount, fee_to_collect)?;
+                    self.custom_price_for_limit_order(&order, executed_amount, surplus_fee)?;
 
                 self.add_custom_price_trade(
                     order,
