@@ -153,51 +153,41 @@ impl Solver for SingleOrderSolver {
 
         let mut settlements = Vec::new();
         let settle = async {
+            let name = self.inner.name();
             while let Some(order) = orders.pop_front() {
                 let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
                     tracing::warn!(?order.id, "failed to compute fill; skipping order");
                     continue;
                 };
 
-                match self.inner.try_settle_order(fill.clone(), &auction).await {
-                    Ok(Some(settlement)) => {
-                        self.metrics
-                            .single_order_solver_succeeded(self.inner.name());
-                        let settlement = match settlement.into_settlement(
-                            &auction,
-                            &order,
-                            fill.full_execution_amount(),
-                        ) {
-                            Ok(Some(settlement)) => settlement,
-                            Ok(None) => {
-                                if let Some(order_uid) = order.id.order_uid() {
-                                    self.fills.reduce_next_try(order_uid);
-                                }
-                                continue;
-                            }
-                            Err(err) => {
-                                tracing::warn!(name = self.inner.name(), ?err, "encoding error");
-                                continue;
-                            }
-                        };
-                        settlements.push(settlement);
-                    }
-                    Ok(None) => {
-                        self.metrics
-                            .single_order_solver_succeeded(self.inner.name());
-
-                        if let Some(order_uid) = order.id.order_uid() {
-                            self.fills.reduce_next_try(order_uid);
-                        }
+                let single = match self.inner.try_settle_order(fill.clone(), &auction).await {
+                    Ok(value) => {
+                        self.metrics.single_order_solver_succeeded(name);
+                        value
                     }
                     Err(err) => {
-                        let name = self.inner.name();
                         self.metrics.single_order_solver_failed(name);
                         if err.retryable {
                             tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
                             orders.push_back(order);
                         } else {
                             tracing::warn!("Solver {} error: {:?}", name, &err.inner);
+                        }
+
+                        continue;
+                    }
+                };
+
+                match single.and_then(|single| {
+                    single
+                        .into_settlement(&auction, &order, fill.full_execution_amount())
+                        .transpose()
+                }) {
+                    Some(Ok(settlement)) => settlements.push(settlement),
+                    Some(Err(err)) => tracing::warn!(%name, ?err, "encoding error"),
+                    None => {
+                        if let Some(order_uid) = order.id.order_uid() {
+                            self.fills.reduce_next_try(order_uid);
                         }
                     }
                 }
