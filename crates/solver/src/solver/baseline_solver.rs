@@ -6,6 +6,7 @@ use {
             AmmOrderExecution,
             ConstantProductOrder,
             LimitOrder,
+            LimitOrderExecution,
             Liquidity,
             WeightedProductOrder,
         },
@@ -282,7 +283,12 @@ impl Solution {
             order.buy_token => self.executed_sell_amount,
         });
 
-        settlement.with_liquidity(order, order.full_execution_amount())?;
+        let execution = LimitOrderExecution {
+            filled: order.full_execution_amount(),
+            // TODO: We still need to compute a `solver_fee` for partially fillable limit orders.
+            solver_fee: order.solver_fee,
+        };
+        settlement.with_liquidity(order, execution)?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
         for amm in self.path {
@@ -433,7 +439,10 @@ mod tests {
 
         // Second order is fully matched
         assert_eq!(order_handler[0].clone().calls().len(), 0);
-        assert_eq!(order_handler[1].clone().calls()[0], 100_000.into());
+        assert_eq!(
+            order_handler[1].clone().calls()[0],
+            LimitOrderExecution::new(100_000.into(), 0.into())
+        );
 
         // Second & Third AMM are matched with slippage applied
         let slippage = SlippageContext::default();
@@ -546,7 +555,10 @@ mod tests {
 
         // Second order is fully matched
         assert_eq!(order_handler[0].clone().calls().len(), 0);
-        assert_eq!(order_handler[1].clone().calls()[0], 100_000.into());
+        assert_eq!(
+            order_handler[1].clone().calls()[0],
+            LimitOrderExecution::new(100_000.into(), 0.into())
+        );
 
         // Second & Third AMM are matched with slippage applied
         let slippage = SlippageContext::default();

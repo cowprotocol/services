@@ -41,6 +41,7 @@ use {
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
             AmmOrderExecution,
+            LimitOrderExecution,
         },
         settlement_simulation::settle_method_builder,
     },
@@ -81,7 +82,7 @@ impl Settlement {
         );
 
         for trade in &solution.trades {
-            let (boundary_order, executed_amount) = match trade {
+            let (boundary_order, execution) = match trade {
                 competition::solution::Trade::Fulfillment(trade) => {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
@@ -90,11 +91,20 @@ impl Settlement {
                         return Err(Error::Boundary(anyhow!("unexpected empty execution")));
                     }
 
-                    (to_boundary_order(trade.order()), trade.executed().into())
+                    (
+                        to_boundary_order(trade.order()),
+                        LimitOrderExecution {
+                            filled: trade.executed().into(),
+                            solver_fee: trade.solver_fee().into(),
+                        },
+                    )
                 }
                 competition::solution::Trade::Jit(trade) => (
                     to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
-                    trade.executed().into(),
+                    LimitOrderExecution {
+                        filled: trade.executed().into(),
+                        solver_fee: 0.into(),
+                    },
                 ),
             };
 
@@ -102,7 +112,7 @@ impl Settlement {
                 .normalize_limit_order(boundary_order)
                 .map_err(Error::Boundary)?;
             settlement
-                .with_liquidity(&boundary_limit_order, executed_amount)
+                .with_liquidity(&boundary_limit_order, execution)
                 .map_err(Error::Boundary)?;
         }
 

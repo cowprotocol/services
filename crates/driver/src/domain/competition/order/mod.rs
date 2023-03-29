@@ -157,6 +157,12 @@ impl Order {
             token: self.buy.token.wrap(weth),
         }
     }
+
+    /// For some orders the protocol doesn't precompute a fee. Instead solvers
+    /// are supposed to compute a reasonable fee themselves.
+    pub fn solver_determines_fee(&self) -> bool {
+        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

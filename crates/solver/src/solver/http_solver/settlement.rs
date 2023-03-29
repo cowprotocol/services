@@ -6,6 +6,7 @@ use {
             slippage::SlippageContext,
             AmmOrderExecution,
             LimitOrder,
+            LimitOrderExecution,
             LimitOrderId,
             Liquidity,
         },
@@ -85,7 +86,21 @@ impl Execution {
         use Execution::*;
 
         match self {
-            LimitOrder(order) => settlement.with_liquidity(&order.order, order.executed_amount()),
+            LimitOrder(order) => {
+                let solver_fee = match order.order.solver_determines_fee() {
+                    true => order
+                        .executed_fee_amount
+                        .context("no fee for partially fillable limit order")?,
+                    false => order.order.solver_fee,
+                };
+
+                let execution = LimitOrderExecution {
+                    filled: order.executed_amount(),
+                    solver_fee,
+                };
+
+                settlement.with_liquidity(&order.order, execution)
+            }
             Amm(executed_amm) => {
                 let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
                     input_max: executed_amm.input.clone(),
@@ -161,6 +176,11 @@ struct ExecutedLimitOrder {
     order: LimitOrder,
     executed_buy_amount: U256,
     executed_sell_amount: U256,
+    /// The fee for this order execution computed by the solver.
+    /// This exact number of sell token atoms will be kept by the protocol for
+    /// this trade execution. It will also be used in the objective value
+    /// computation.
+    executed_fee_amount: Option<U256>,
     exec_plan: Option<ExecutionPlan>,
 }
 
@@ -276,6 +296,7 @@ fn match_prepared_and_settled_orders(
                 executed_buy_amount: settled.exec_buy_amount,
                 executed_sell_amount: settled.exec_sell_amount,
                 exec_plan: settled.exec_plan,
+                executed_fee_amount: settled.exec_fee_amount,
             })
         })
         .collect()
@@ -310,6 +331,7 @@ fn convert_foreign_liquidity_orders(
                 order: converted,
                 executed_sell_amount: liquidity.exec_sell_amount,
                 executed_buy_amount: liquidity.exec_buy_amount,
+                executed_fee_amount: None,
                 exec_plan: None,
             })
         })
@@ -709,7 +731,10 @@ mod tests {
             }]
         );
 
-        assert_eq!(limit_handler.calls(), vec![7.into()]);
+        assert_eq!(
+            limit_handler.calls(),
+            vec![LimitOrderExecution::new(7.into(), 0.into())]
+        );
         assert_eq!(
             cp_amm_handler.calls(),
             vec![AmmOrderExecution {
@@ -1106,6 +1131,7 @@ mod tests {
             order: Default::default(),
             executed_buy_amount: U256::zero(),
             executed_sell_amount: U256::zero(),
+            executed_fee_amount: None,
             exec_plan: None,
         }];
         let merged_executions = merge_and_order_executions(

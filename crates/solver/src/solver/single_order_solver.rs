@@ -1,3 +1,5 @@
+use crate::liquidity::LimitOrderExecution;
+
 mod merge;
 
 use {
@@ -228,7 +230,12 @@ impl SingleOrderSettlement {
             (order.buy_token, self.buy_token_price),
         ];
         let mut settlement = Settlement::new(prices.into_iter().collect());
-        settlement.with_liquidity(order, order.full_execution_amount())?;
+        let execution = LimitOrderExecution {
+            filled: order.full_execution_amount(),
+            // TODO: We still need to compute a `solver_fee` for partially fillable limit orders.
+            solver_fee: order.solver_fee,
+        };
+        settlement.with_liquidity(order, execution)?;
         for interaction in self.interactions {
             settlement.encoder.append_to_execution_plan(interaction);
         }

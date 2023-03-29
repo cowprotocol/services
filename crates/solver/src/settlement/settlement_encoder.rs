@@ -5,7 +5,7 @@ use {
     itertools::{Either, Itertools},
     model::{
         interaction::InteractionData,
-        order::{LimitOrderClass, Order, OrderClass, OrderKind},
+        order::{Order, OrderClass, OrderKind},
     },
     num::{BigRational, One},
     number_conversions::big_rational_to_u256,
@@ -271,12 +271,19 @@ impl SettlementEncoder {
                     OrderKind::Sell => order.data.sell_amount,
                     OrderKind::Buy => order.data.buy_amount,
                 };
-                let (sell_price, buy_price) = self.custom_price_for_limit_order(&order, limit)?;
+                let (fee_to_collect, fee_for_objective) = match order.data.partially_fillable {
+                    // Solver determines fees for partially fillable orders.
+                    true => (solver_fee, solver_fee),
+                    // Protocol determines fees for fok orders.
+                    false => (limit.surplus_fee.unwrap(), solver_fee),
+                };
+                let (sell_price, buy_price) =
+                    self.custom_price_for_limit_order(&order, fee_to_collect)?;
 
                 self.add_custom_price_trade(
                     order,
                     executed_amount,
-                    solver_fee,
+                    fee_for_objective,
                     sell_price,
                     buy_price,
                 )?
@@ -292,11 +299,7 @@ impl SettlementEncoder {
     /// `compute_synthetic_order_amounts_if_limit_order()`).
     /// Returns an error if the UCP doesn't contain the traded tokens or if
     /// under- or overflows happen during the computation.
-    fn custom_price_for_limit_order(
-        &self,
-        order: &Order,
-        limit: &LimitOrderClass,
-    ) -> Result<(U256, U256)> {
+    fn custom_price_for_limit_order(&self, order: &Order, fee: U256) -> Result<(U256, U256)> {
         anyhow::ensure!(
             order.metadata.class.is_limit(),
             "this function should only be called for limit orders"
@@ -317,9 +320,6 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
-        // Solvable limit orders always have a surplus fee. It would be nice if this was
-        // enforced in the API.
-        let surplus_fee = limit.surplus_fee.unwrap();
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -333,7 +333,7 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(surplus_fee)
+                    .checked_add(fee)
                     .context("sell_amount computation failed")?;
                 (sell_amount_adjusted_for_fees, order.data.buy_amount)
             }
@@ -344,7 +344,7 @@ impl SettlementEncoder {
                 let sell_amount = order
                     .data
                     .sell_amount
-                    .checked_sub(surplus_fee)
+                    .checked_sub(fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)

@@ -182,7 +182,13 @@ impl Trade {
                 (sell_amount, buy_amount)
             }
         };
-        let fee_amount = self.executed_fee()?;
+
+        let fee_amount = match self.order.solver_determines_fee() {
+            // The solver already computed the fee for this exact fill so there is no need to scale
+            // it to account for partial fills.
+            true => self.solver_fee,
+            false => self.executed_fee()?,
+        };
 
         Some(TradeExecution {
             sell_token: order.sell_token,

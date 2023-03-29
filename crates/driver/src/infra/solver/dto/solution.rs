@@ -25,25 +25,30 @@ impl Solution {
                 .into_iter()
                 .map(|trade| match trade {
                     Trade::Fulfillment(fulfillment) => {
-                        let _ = fulfillment.fee;
-                        Ok(competition::solution::Trade::Fulfillment(
-                            competition::solution::trade::Fulfillment::new(
-                                auction
-                                    .orders
-                                    .iter()
-                                    .find(|order| order.uid == fulfillment.order)
-                                    .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment",
-                                    ))?
-                                    .clone(),
-                                fulfillment.executed_amount.into(),
-                            )
-                            .map_err(
-                                |competition::solution::trade::InvalidExecutedAmount| {
-                                    super::Error("invalid executed amount in JIT order")
-                                },
-                            )?,
-                        ))
+                        let order = auction
+                            .orders
+                            .iter()
+                            .find(|order| order.uid == fulfillment.order)
+                            // TODO this error should reference the UID
+                            .ok_or(super::Error("invalid order UID specified in fulfillment"))?
+                            .clone();
+
+                        competition::solution::trade::Fulfillment::new(
+                            order,
+                            fulfillment.executed_amount.into(),
+                            match fulfillment.fee {
+                                Some(fee) => competition::solution::trade::Fee::Dynamic(
+                                    competition::order::SellAmount(fee),
+                                ),
+                                None => competition::solution::trade::Fee::Static,
+                            },
+                        )
+                        .map(competition::solution::Trade::Fulfillment)
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid trade fulfillment")
+                            },
+                        )
                     }
                     Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
                         competition::solution::trade::Jit::new(

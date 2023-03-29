@@ -3,7 +3,7 @@ use {
         boundary::liquidity::constant_product::to_boundary_pool,
         domain::{eth, liquidity, order, solution},
     },
-    ethereum_types::{H160, U256},
+    ethereum_types::H160,
     itertools::Itertools,
     model::order::{
         LimitOrderClass,
@@ -23,6 +23,7 @@ use {
             ConstantProductOrder,
             Exchange,
             LimitOrder,
+            LimitOrderExecution,
             LimitOrderId,
             LiquidityOrderId,
             SettlementHandling,
@@ -207,12 +208,12 @@ impl SettlementHandling<LimitOrder> for OrderHandler {
         self
     }
 
-    fn encode(&self, execution: U256, encoder: &mut SettlementEncoder) -> anyhow::Result<()> {
-        encoder.add_trade(
-            self.order.clone(),
-            execution,
-            self.order.metadata.solver_fee,
-        )?;
+    fn encode(
+        &self,
+        execution: LimitOrderExecution,
+        encoder: &mut SettlementEncoder,
+    ) -> anyhow::Result<()> {
+        encoder.add_trade(self.order.clone(), execution.filled, execution.solver_fee)?;
         Ok(())
     }
 }
