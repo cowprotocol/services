@@ -359,7 +359,7 @@ impl SingleOrderSettlement {
         for interaction in self.interactions {
             settlement.encoder.append_to_execution_plan(interaction);
         }
-        Ok(Some(settlement))
+        Ok(Some(dbg!(settlement)))
     }
 }
 
