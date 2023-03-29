@@ -74,14 +74,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ExecuteRequest"
+              $ref: "#/components/schemas/SettleRequest"
       responses:
         200:
           description: Execution accepted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExecuteResponse"
+                $ref: "#/components/schemas/SettleResponse"
         400:
           $ref: "#/components/responses/BadRequest"
         500:
