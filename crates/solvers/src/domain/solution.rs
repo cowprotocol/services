@@ -1,5 +1,8 @@
 use {
-    crate::domain::{eth, liquidity, order},
+    crate::{
+        domain::{auction, eth, liquidity, order},
+        util,
+    },
     ethereum_types::{Address, U256},
     std::collections::HashMap,
 };
@@ -10,6 +13,106 @@ pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
+}
+
+/// A solution for a settling a single order.
+pub struct Single {
+    /// The order included in this single order solution.
+    pub order: order::Order,
+    /// The total input to the swap for executing a single order.
+    pub input: eth::Asset,
+    /// The total output of the swap for executing a single order.
+    pub output: eth::Asset,
+    /// The swap interactions for the single order settlement.
+    pub interactions: Vec<Interaction>,
+    /// The estimated gas needed for swapping the sell amount to buy amount.
+    pub gas: eth::Gas,
+}
+
+impl Single {
+    /// An approximation for the overhead of executing a trade in a settlement.
+    const SETTLEMENT_OVERHEAD: u64 = 106_391;
+
+    /// Creates a full solution for a single order solution given gas and sell
+    /// token prices.
+    pub fn into_solution(
+        self,
+        gas_price: auction::GasPrice,
+        sell_token: auction::Price,
+    ) -> Option<Solution> {
+        let Self {
+            order,
+            input,
+            output,
+            interactions,
+            gas: swap,
+        } = self;
+
+        if (order.sell.token, order.buy.token) != (input.token, output.token) {
+            return None;
+        }
+
+        let fee = if order.has_solver_fee() {
+            // TODO: If the order has signed `fee` amount already, we should
+            // discount it from the surplus fee. ATM, users would pay both a
+            // full order fee as well as a solver computed fee. Note that this
+            // is fine for now, since there is no way to create limit orders
+            // with non-zero fees.
+            Fee::Surplus(
+                sell_token.ether_value(eth::Ether(
+                    swap.0
+                        .checked_add(Self::SETTLEMENT_OVERHEAD.into())?
+                        .checked_mul(gas_price.0 .0)?,
+                ))?,
+            )
+        } else {
+            Fee::Protocol
+        };
+        let surplus_fee = fee.surplus().unwrap_or_default();
+
+        // Compute total executed sell and buy amounts accounting for solver
+        // fees. That is, the total amount of sell tokens transferred into the
+        // contract and the total buy tokens transferred out of the contract.
+        let (sell, buy) = match order.side {
+            order::Side::Buy => (input.amount.checked_add(surplus_fee)?, output.amount),
+            order::Side::Sell => {
+                // We want to collect fees in the sell token, so we need to sell
+                // `fee` more than the DEX swap. However, we don't allow
+                // transferring more than `order.sell.amount` (guaranteed by the
+                // Smart Contract), so we need to cap our executed amount to the
+                // order's limit sell amount and compute the executed buy amount
+                // accordingly.
+                let sell = input
+                    .amount
+                    .checked_add(surplus_fee)?
+                    .min(order.sell.amount);
+                let buy = util::math::div_ceil(
+                    sell.checked_sub(surplus_fee)?.checked_mul(output.amount)?,
+                    input.amount,
+                )?;
+                (sell, buy)
+            }
+        };
+
+        // Check order's limit price is satisfied accounting for solver
+        // specified fees.
+        if order.sell.amount.checked_mul(buy)? < order.buy.amount.checked_mul(sell)? {
+            return None;
+        }
+
+        let executed = match order.side {
+            order::Side::Buy => buy,
+            order::Side::Sell => sell.checked_sub(surplus_fee)?,
+        };
+        Some(Solution {
+            prices: ClearingPrices::new([
+                (order.sell.token, buy),
+                (order.buy.token, sell.checked_sub(surplus_fee)?),
+            ]),
+            trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
+            interactions,
+        })
+    }
 }
 
 /// A set of uniform clearing prices. They are represented as a mapping of token

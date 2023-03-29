@@ -90,6 +90,7 @@ async fn start_solver(weth: H160) -> Url {
 weth = "{weth:?}"
 base-tokens = []
 max-hops = 0
+max-partial-attempts = 5
         "#,
     ));
     let args = vec![

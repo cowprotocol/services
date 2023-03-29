@@ -90,11 +90,11 @@ impl Dex {
             }
         };
 
-        let Some(sell_price) = prices.reference_price(order.sell.token) else {
+        let Some(sell) = prices.reference_price(order.sell.token) else {
             tracing::warn!(token = ?order.sell.token.0, "missing sell token price");
             return None;
         };
-        let Some(solution) = swap.into_solution(order, sell_price, gas) else {
+        let Some(solution) = swap.into_solution(order, gas, sell) else {
             tracing::debug!("no solution for swap");
             return None;
         };
