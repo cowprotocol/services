@@ -124,6 +124,14 @@ impl Prices {
                 .filter_map(|(address, token)| Some((*address, token.reference_price?))),
         )
     }
+
+    /// Returns the reference price, in Ether for the specified token.
+    pub fn reference_price(&self, token: eth::TokenAddress) -> Option<auction::Price> {
+        self.0
+            .get(&token)
+            .and_then(conv::decimal_to_ether)
+            .map(auction::Price)
+    }
 }
 
 #[cfg(test)]

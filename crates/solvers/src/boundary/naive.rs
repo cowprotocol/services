@@ -54,6 +54,9 @@ pub fn solve(
     // settlement transaction anyway.
     let boundary_orders = orders
         .iter()
+        // The naive solver currently doesn't support partially fillable limit
+        // orders, so filter them out.
+        .filter(|order| !order.has_solver_fee())
         .map(|order| LimitOrder {
             id: match order.class {
                 order::Class::Market => LimitOrderId::Market(OrderUid(order.uid.0)),
@@ -129,14 +132,20 @@ pub fn solve(
         trades: boundary_solution
             .traded_orders()
             .map(|order| {
-                solution::Trade::Fulfillment(solution::Fulfillment::fill(
-                    orders
-                        .iter()
-                        .copied()
-                        .find(|o| o.uid.0 == order.metadata.uid.0)
-                        .unwrap()
-                        .clone(),
-                ))
+                solution::Trade::Fulfillment(
+                    solution::Fulfillment::fill(
+                        orders
+                            .iter()
+                            .copied()
+                            .find(|o| o.uid.0 == order.metadata.uid.0)
+                            .unwrap()
+                            .clone(),
+                    )
+                    .expect(
+                        "all orders can be filled, as partially fillable limit orders are \
+                         filtered out",
+                    ),
+                )
             })
             .collect(),
         interactions: swap

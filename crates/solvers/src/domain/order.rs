@@ -27,6 +27,11 @@ impl Order {
             amount: self.fee.0,
         }
     }
+
+    /// Returns `true` if the order expects a solver-computed fee.
+    pub fn has_solver_fee(&self) -> bool {
+        self.partially_fillable && self.class == Class::Limit
+    }
 }
 
 /// UID of an order.

@@ -34,33 +34,43 @@ pub enum Trade {
 pub struct Fulfillment {
     order: order::Order,
     executed: U256,
+    fee: Fee,
 }
 
 impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
-    pub fn partial(order: order::Order, executed: U256) -> Option<Self> {
-        let fill = match order.side {
-            order::Side::Buy => order.buy.amount,
-            order::Side::Sell => order.sell.amount,
-        };
+    pub fn new(order: order::Order, executed: U256, fee: Fee) -> Option<Self> {
+        if matches!(fee, Fee::Surplus(_)) != order.has_solver_fee() {
+            return None;
+        }
 
-        if (!order.partially_fillable && executed != fill)
-            || (order.partially_fillable && executed > fill)
+        let (fill, full) = match order.side {
+            order::Side::Buy => (order.buy.amount, executed),
+            order::Side::Sell => (
+                order.sell.amount,
+                executed.checked_add(fee.surplus().unwrap_or_default())?,
+            ),
+        };
+        if (!order.partially_fillable && full != fill) || (order.partially_fillable && full > fill)
         {
             return None;
         }
 
-        Some(Self { order, executed })
+        Some(Self {
+            order,
+            executed,
+            fee,
+        })
     }
 
     /// Creates a new trade for a fully executed order.
-    pub fn fill(order: order::Order) -> Self {
+    pub fn fill(order: order::Order) -> Option<Self> {
         let executed = match order.side {
             order::Side::Buy => order.buy.amount,
             order::Side::Sell => order.sell.amount,
         };
-        Self { order, executed }
+        Self::new(order, executed, Fee::Protocol)
     }
 
     /// Get a reference to the traded order.
@@ -78,6 +88,39 @@ impl Fulfillment {
         eth::Asset {
             token,
             amount: self.executed,
+        }
+    }
+
+    /// Returns the solver computed fee that was charged to the order as an
+    /// asset (token address and amount). Returns `None` if the fulfillment
+    /// does not include a solver computed fee.
+    pub fn surplus_fee(&self) -> Option<eth::Asset> {
+        Some(eth::Asset {
+            token: self.order.sell.token,
+            amount: self.fee.surplus()?,
+        })
+    }
+}
+
+/// The fee that is charged to a user for executing an order.
+#[derive(Clone, Copy, Debug)]
+pub enum Fee {
+    /// A protocol computed fee.
+    ///
+    /// That is, the fee is charged from the order's `fee_amount` that is
+    /// included in the auction being solved.
+    Protocol,
+
+    /// An additional surplus fee that is charged by the solver.
+    Surplus(U256),
+}
+
+impl Fee {
+    /// Returns the dynamic component for the fee.
+    pub fn surplus(&self) -> Option<U256> {
+        match self {
+            Fee::Protocol => None,
+            Fee::Surplus(fee) => Some(*fee),
         }
     }
 }

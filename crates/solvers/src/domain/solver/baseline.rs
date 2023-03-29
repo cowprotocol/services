@@ -50,7 +50,7 @@ impl Baseline {
                     ]),
                     trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::fill(
                         order.clone(),
-                    ))],
+                    )?)],
                     interactions: route
                         .segments
                         .iter()

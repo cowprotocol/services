@@ -18,7 +18,7 @@ pub struct Dex {
 
     /// Helps to manage the strategy to fill orders (especially partially
     /// fillable orders).
-    order_fill_handler: Fills,
+    fills: Fills,
 }
 
 impl Dex {
@@ -26,7 +26,7 @@ impl Dex {
         Self {
             dex,
             slippage: config.slippage,
-            order_fill_handler: Fills::new(config.smallest_partial_fill),
+            fills: Fills::new(config.smallest_partial_fill),
         }
     }
 
@@ -51,7 +51,7 @@ impl Dex {
             }
         }
 
-        self.order_fill_handler.collect_garbage();
+        self.fills.collect_garbage();
 
         solutions
     }
@@ -63,7 +63,7 @@ impl Dex {
         gas: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
-            let order = self.order_fill_handler.dex_order(&order, prices)?;
+            let order = self.fills.dex_order(&order, prices)?;
             let slippage = self.slippage.relative(&order.amount(), prices);
             self.dex.swap(&order, &slippage, gas).await
         };
@@ -74,7 +74,7 @@ impl Dex {
                 if order.partially_fillable {
                     // Only adjust the amount to try next if we are sure the API worked correctly
                     // yet still wasn't able to provide a swap.
-                    self.order_fill_handler.reduce_next_try(order.uid);
+                    self.fills.reduce_next_try(order.uid);
                 } else {
                     tracing::debug!(?err, "skipping order");
                 }
@@ -90,7 +90,11 @@ impl Dex {
             }
         };
 
-        let Some(solution) = swap.into_solution(order) else {
+        let Some(sell_price) = prices.reference_price(order.sell.token) else {
+            tracing::warn!(token = ?order.sell.token.0, "missing sell token price");
+            return None;
+        };
+        let Some(solution) = swap.into_solution(order, sell_price, gas) else {
             tracing::debug!("no solution for swap");
             return None;
         };

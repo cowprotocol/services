@@ -35,6 +35,7 @@ impl Solution {
                     solution::Trade::Fulfillment(trade) => Trade::Fulfillment(Fulfillment {
                         order: trade.order().uid.0,
                         executed_amount: trade.executed().amount,
+                        fee: trade.surplus_fee().map(|fee| fee.amount),
                     }),
                     solution::Trade::Jit(trade) => {
                         let (signing_scheme, signature) = match &trade.order.signature {
@@ -163,6 +164,9 @@ struct Fulfillment {
     order: [u8; 56],
     #[serde_as(as = "serialize::U256")]
     executed_amount: U256,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<serialize::U256>")]
+    fee: Option<U256>,
 }
 
 #[serde_as]
