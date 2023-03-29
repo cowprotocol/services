@@ -86,15 +86,15 @@ impl Settlement {
                     // TODO: The `http_solver` module filters out orders with 0
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
-                    if eth::U256::from(trade.executed).is_zero() {
+                    if eth::U256::from(trade.executed()).is_zero() {
                         return Err(Error::Boundary(anyhow!("unexpected empty execution")));
                     }
 
-                    (to_boundary_order(&trade.order), trade.executed.into())
+                    (to_boundary_order(trade.order()), trade.executed().into())
                 }
                 competition::solution::Trade::Jit(trade) => (
-                    to_boundary_jit_order(&DomainSeparator(domain.0), &trade.order),
-                    trade.executed.into(),
+                    to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
+                    trade.executed().into(),
                 ),
             };
 

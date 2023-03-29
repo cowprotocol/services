@@ -17,22 +17,84 @@ pub enum Trade {
 /// A trade which fulfills an order from the auction.
 #[derive(Debug)]
 pub struct Fulfillment {
-    pub order: competition::Order,
-    /// The amount executed by this fulfillment. See
-    /// [`competition::order::Partial`]. If the order is not partial, the
-    /// executed amount must equal the amount from the order.
-    pub executed: competition::order::TargetAmount,
+    order: competition::Order,
+    /// The amount executed by this fulfillment. See [`order::Partial`]. If the
+    /// order is not partial, the executed amount must equal the amount from the
+    /// order.
+    executed: order::TargetAmount,
+}
+
+impl Fulfillment {
+    pub fn new(
+        order: competition::Order,
+        executed: order::TargetAmount,
+    ) -> Result<Self, InvalidExecutedAmount> {
+        // If the order is partial, the total executed amount can be smaller than
+        // the target amount. Otherwise, the executed amount must be equal to the target
+        // amount.
+        let is_valid = match order.partial {
+            order::Partial::Yes { executed: already } => {
+                // TODO Is this correct? I'm assuming that the executed amount of the trade is
+                // only what is executed by the current trade, not the total
+                // executed amount after the trade. I think that's correct.
+                order::TargetAmount(already.0 + executed.0) <= order.target()
+            }
+            order::Partial::No => executed == order.target(),
+        };
+        if is_valid {
+            Ok(Self { order, executed })
+        } else {
+            Err(InvalidExecutedAmount)
+        }
+    }
+
+    pub fn order(&self) -> &competition::Order {
+        &self.order
+    }
+
+    pub fn executed(&self) -> order::TargetAmount {
+        self.executed
+    }
 }
 
 /// A trade which adds a JIT order. See [`order::Jit`].
 #[derive(Debug)]
 pub struct Jit {
-    pub order: order::Jit,
+    order: order::Jit,
     /// The amount executed by this JIT trade. See
-    /// [`competition::order::Jit::partially_fillable`]. If the order is not
+    /// [`order::Jit::partially_fillable`]. If the order is not
     /// partially fillable, the executed amount must equal the amount from the
     /// order.
-    pub executed: competition::order::TargetAmount,
+    executed: order::TargetAmount,
+}
+
+impl Jit {
+    pub fn new(
+        order: order::Jit,
+        executed: order::TargetAmount,
+    ) -> Result<Self, InvalidExecutedAmount> {
+        // If the order is partially fillable, the executed amount can be smaller than
+        // the target amount. Otherwise, the executed amount must be equal to the target
+        // amount.
+        let is_valid = if order.partially_fillable {
+            executed <= order.target()
+        } else {
+            executed == order.target()
+        };
+        if is_valid {
+            Ok(Self { order, executed })
+        } else {
+            Err(InvalidExecutedAmount)
+        }
+    }
+
+    pub fn order(&self) -> &order::Jit {
+        &self.order
+    }
+
+    pub fn executed(&self) -> order::TargetAmount {
+        self.executed
+    }
 }
 
 impl Trade {
@@ -262,6 +324,10 @@ struct ExecutionParams {
     buy: eth::Asset,
     executed: order::TargetAmount,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid executed amount")]
+pub struct InvalidExecutedAmount;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {

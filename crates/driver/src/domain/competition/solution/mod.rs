@@ -79,7 +79,7 @@ impl Solution {
     /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order.kind {
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
                 order::Kind::Market | order::Kind::Limit { .. } => Some(fulfillment),
                 order::Kind::Liquidity => None,
             },
@@ -178,12 +178,12 @@ impl Solution {
         // The solution is to do access list estimation in two steps: first, simulate
         // moving 1 wei into every smart contract to get a partial access list.
         let partial_access_lists = try_join_all(self.user_trades().map(|trade| async {
-            if !trade.order.buys_eth() || !trade.order.pays_to_contract(eth).await? {
+            if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
                 return Ok(Default::default());
             }
             let tx = eth::Tx {
                 from: self.solver.address(),
-                to: trade.order.receiver(),
+                to: trade.order().receiver(),
                 value: 1.into(),
                 input: Vec::new(),
                 access_list: Default::default(),
@@ -309,12 +309,12 @@ impl Solution {
         // WETH instead of ETH. Once the driver receives the solution which fulfills an
         // ETH order, a clearing price for ETH needs to be added, equal to the
         // WETH clearing price.
-        if self.user_trades().any(|trade| trade.order.buys_eth()) {
+        if self.user_trades().any(|trade| trade.order().buys_eth()) {
             // If no order trades WETH, the WETH price is not necessary, only the ETH
             // price is needed. Remove the unneeded WETH price, which slightly reduces
             // gas used by the settlement.
             let mut prices = if self.user_trades().all(|trade| {
-                trade.order.sell.token != self.weth.0 && trade.order.buy.token != self.weth.0
+                trade.order().sell.token != self.weth.0 && trade.order().buy.token != self.weth.0
             }) {
                 prices
                     .filter(|price| price.token != self.weth.0)

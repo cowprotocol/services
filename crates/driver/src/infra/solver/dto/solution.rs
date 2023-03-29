@@ -27,8 +27,8 @@ impl Solution {
                     Trade::Fulfillment(fulfillment) => {
                         let _ = fulfillment.fee;
                         Ok(competition::solution::Trade::Fulfillment(
-                            competition::solution::trade::Fulfillment {
-                                order: auction
+                            competition::solution::trade::Fulfillment::new(
+                                auction
                                     .orders
                                     .iter()
                                     .find(|order| order.uid == fulfillment.order)
@@ -36,13 +36,18 @@ impl Solution {
                                         "invalid order UID specified in fulfillment",
                                     ))?
                                     .clone(),
-                                executed: fulfillment.executed_amount.into(),
-                            },
+                                fulfillment.executed_amount.into(),
+                            )
+                            .map_err(
+                                |competition::solution::trade::InvalidExecutedAmount| {
+                                    super::Error("invalid executed amount in JIT order")
+                                },
+                            )?,
                         ))
                     }
                     Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
-                        competition::solution::trade::Jit {
-                            order: competition::order::Jit {
+                        competition::solution::trade::Jit::new(
+                            competition::order::Jit {
                                 sell: eth::Asset {
                                     amount: jit.order.sell_amount,
                                     token: jit.order.sell_token.into(),
@@ -98,8 +103,13 @@ impl Solution {
                                     signer: solver.address(),
                                 },
                             },
-                            executed: jit.executed_amount.into(),
-                        },
+                            jit.executed_amount.into(),
+                        )
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid executed amount in JIT order")
+                            },
+                        )?,
                     )),
                 })
                 .try_collect()?,

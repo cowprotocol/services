@@ -59,7 +59,7 @@ impl From<SellAmount> for eth::U256 {
 
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TargetAmount(pub eth::U256);
 
 impl From<eth::U256> for TargetAmount {
@@ -85,6 +85,15 @@ pub struct Fee {
 }
 
 impl Order {
+    /// The buy amount for [`Side::Buy`] orders, or the sell amount for
+    /// [`Side::Sell`] orders.
+    pub fn target(&self) -> TargetAmount {
+        match self.side {
+            Side::Buy => self.buy.amount.into(),
+            Side::Sell => self.sell.amount.into(),
+        }
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -276,4 +285,15 @@ pub struct Jit {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+}
+
+impl Jit {
+    /// The buy amount for [`Side::Buy`] orders, or the sell amount for
+    /// [`Side::Sell`] orders.
+    pub fn target(&self) -> TargetAmount {
+        match self.side {
+            Side::Buy => self.buy.amount.into(),
+            Side::Sell => self.sell.amount.into(),
+        }
+    }
 }
