@@ -351,6 +351,12 @@ pub struct Arguments {
     /// Flag to enable slippage protection for the 0x solver.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_enable_slippage_protection: bool,
+
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub process_partially_fillable_liquidity_orders: bool,
+
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub process_partially_fillable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -489,6 +495,16 @@ impl std::fmt::Display for Arguments {
             f,
             "zeroex_enable_slippage_protection: {}",
             self.zeroex_enable_slippage_protection
+        )?;
+        writeln!(
+            f,
+            "process_partially_fillable_limit_orders: {:?}",
+            self.process_partially_fillable_limit_orders
+        )?;
+        writeln!(
+            f,
+            "process_partially_fillable_liquidity_orders: {:?}",
+            self.process_partially_fillable_liquidity_orders
         )?;
         Ok(())
     }

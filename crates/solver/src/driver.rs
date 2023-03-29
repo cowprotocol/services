@@ -77,6 +77,8 @@ pub struct Driver {
     logger: DriverLogger,
     web3: Web3,
     last_attempted_settlement: Option<AuctionId>,
+    process_partially_fillable_liquidity_orders: bool,
+    process_partially_fillable_limit_orders: bool,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -106,6 +108,8 @@ impl Driver {
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
         auction_rewards_activation_timestamp: DateTime<Utc>,
+        process_partially_fillable_liquidity_orders: bool,
+        process_partially_fillable_limit_orders: bool,
     ) -> Self {
         let gas_price_estimator =
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
@@ -156,6 +160,8 @@ impl Driver {
             logger,
             web3,
             last_attempted_settlement: None,
+            process_partially_fillable_liquidity_orders,
+            process_partially_fillable_limit_orders,
         }
     }
 
@@ -265,6 +271,17 @@ impl Driver {
                 .collect(),
             prices: auction.prices.clone(),
         };
+
+        auction.orders.retain(|order| {
+            match (
+                order.data.partially_fillable,
+                order.metadata.is_liquidity_order,
+            ) {
+                (false, _) => true,
+                (true, true) => self.process_partially_fillable_liquidity_orders,
+                (true, false) => self.process_partially_fillable_limit_orders,
+            }
+        });
 
         let orders = auction
             .orders

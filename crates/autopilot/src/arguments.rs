@@ -151,9 +151,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub process_fill_or_kill_limit_orders: bool,
 
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub process_partially_fillable_limit_orders: bool,
-
     /// How many quotes the limit order quoter updates in parallel.
     #[clap(long, env, default_value = "5")]
     pub limit_order_quoter_parallelism: usize,
@@ -260,11 +257,6 @@ impl std::fmt::Display for Arguments {
             f,
             "process_fill_or_kill_limit_orders: {:?}",
             self.process_fill_or_kill_limit_orders
-        )?;
-        writeln!(
-            f,
-            "process_partially_fillable_limit_orders: {:?}",
-            self.process_partially_fillable_limit_orders
         )?;
         writeln!(
             f,
