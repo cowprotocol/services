@@ -568,6 +568,8 @@ components:
             - $ref: "#/components/schemas/Fulfillment"
             - $ref: "#/components/schemas/JitTrade"
         - type: object
+          required:
+            - executedAmount
           properties:
             executedAmount:
               description: |
@@ -575,6 +577,11 @@ components:
                 "sellToken" for sell orders, and "buyToken" for buy orders.
               allOf:
                 - $ref: "#/components/schemas/TokenAmount"
+            fee:
+              description: |
+                The sell token amount that should be taken as a fee for this
+                trade. This only gets returned for partially fillable limit
+                orders and only refers to the actual amount filled by the trade.
 
     LiquidityInteraction:
       description: |

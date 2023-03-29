@@ -463,6 +463,7 @@ mod tests {
                     0 => ExecutedOrderModel {
                         exec_sell_amount: 50.into(),
                         exec_buy_amount: 200.into(),
+                        exec_fee_amount: None,
                         cost: None,
                         fee: None,
                         exec_plan: None,
@@ -613,6 +614,7 @@ mod tests {
                     0 => ExecutedOrderModel {
                         exec_sell_amount: 100.into(),
                         exec_buy_amount: 100.into(),
+                        exec_fee_amount: None,
                         cost: Some(TokenAmount {
                             amount: 100_000.into(),
                             token: native_token

@@ -25,6 +25,7 @@ impl Solution {
                 .into_iter()
                 .map(|trade| match trade {
                     Trade::Fulfillment(fulfillment) => {
+                        let _ = fulfillment.fee;
                         Ok(competition::solution::Trade::Fulfillment(
                             competition::solution::trade::Fulfillment {
                                 order: auction
@@ -209,6 +210,8 @@ struct Fulfillment {
     order: [u8; 56],
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
+    #[serde_as(as = "Option<serialize::U256>")]
+    fee: Option<eth::U256>,
 }
 
 #[serde_as]

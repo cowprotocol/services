@@ -256,12 +256,15 @@ pub struct SettledBatchAuctionMetadataModel {
     pub result: Option<String>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExecutedOrderModel {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "DecimalU256")]
     pub exec_sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "DecimalU256")]
     pub exec_buy_amount: U256,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub exec_fee_amount: Option<U256>,
     pub cost: Option<TokenAmount>,
     pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit
