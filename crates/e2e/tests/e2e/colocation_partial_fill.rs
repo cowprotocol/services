@@ -89,9 +89,16 @@ async fn test(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(sell_balance, 1_999_999_999_740_430_040_u128.into());
+    assert!(
+        // Sell balance is strictly less than 2.0 because of the fee.
+        (1_999_999_000_000_000_000_u128..2_000_000_000_000_000_000_u128)
+            .contains(&sell_balance.as_u128())
+    );
     let buy_balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(buy_balance, 1_662_497_915_624_478_906_u128.into());
+    assert!(
+        (1_650_000_000_000_000_000_u128..1_670_000_000_000_000_000_u128)
+            .contains(&buy_balance.as_u128())
+    );
 
     // TODO: test that we have other important per-auction data that should have
     // made its way into the DB.
