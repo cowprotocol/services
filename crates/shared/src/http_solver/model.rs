@@ -387,6 +387,8 @@ pub enum SolverRejectionReason {
         fees: U256,
         #[serde(with = "u256_decimal")]
         max_score: U256,
+        #[serde(with = "u256_decimal")]
+        submitted_score: U256,
     },
 }
 
@@ -1121,7 +1123,8 @@ mod tests {
             serde_json::to_value(&SolverRejectionReason::TooHighScore {
                 surplus: 1300.into(),
                 fees: 37.into(),
-                max_score: 1337.into()
+                max_score: 1337.into(),
+                submitted_score: 1338.into(),
             })
             .unwrap(),
             json!({
@@ -1129,6 +1132,7 @@ mod tests {
                     "surplus": "1300",
                     "fees": "37",
                     "maxScore": "1337",
+                    "submittedScore": "1338",
                 },
             }),
         );

@@ -229,6 +229,7 @@ impl SettlementRanker {
                             surplus,
                             fees,
                             max_score,
+                            submitted_score: settlement.score.score(),
                         }),
                     );
                 }
