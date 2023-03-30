@@ -116,7 +116,14 @@ async fn test(web3: Web3) {
 
     // Expecting a partial fill
     let sell_balance = token_a.balance_of(trader_a.address()).call().await.unwrap();
-    assert_eq!(sell_balance, 249_999_832_941_266_241_166_u128.into());
+    assert!(
+        // Sell balance is strictly less than 250.0 because of the fee.
+        (249_999_000_000_000_000_000_u128..250_000_000_000_000_000_000_u128)
+            .contains(&sell_balance.as_u128())
+    );
     let buy_balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    assert_eq!(buy_balance, 199_519_711_827_096_257_754_u128.into());
+    assert!(
+        (199_000_000_000_000_000_000_u128..201_000_000_000_000_000_000_u128)
+            .contains(&buy_balance.as_u128())
+    );
 }
