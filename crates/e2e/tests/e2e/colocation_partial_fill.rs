@@ -48,7 +48,6 @@ async fn test(web3: Web3) {
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
-        "--process-partially-fillable-limit-orders=true".to_string(),
     ]);
     services
         .start_api(vec![
