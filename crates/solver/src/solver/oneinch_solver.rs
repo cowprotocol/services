@@ -139,13 +139,16 @@ impl OneInchSolver {
             tracing::debug!("execution does not respect order");
             return Ok(None);
         }
+
         let (sell_token_price, buy_token_price) = (swap.to_token_amount, swap.from_token_amount);
+        let gas_estimate = swap.tx.gas.into();
         interactions.push(Box::new(swap));
 
         Ok(Some(SingleOrderSettlement {
             sell_token_price,
             buy_token_price,
             interactions,
+            gas_estimate,
         }))
     }
 }
