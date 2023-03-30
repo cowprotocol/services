@@ -279,13 +279,13 @@ impl SingleOrderSettlement {
         // Compute the surplus fee that needs to be incorporated into the prices
         // and solver fee which will be used for scoring.
         let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
+            let gas_estimate = self.gas_estimate + gas::SETTLEMENT_OVERHEAD;
+            let gas_cost = gas_estimate * U256::from_f64_lossy(gas_price);
+
             let fee = number_conversions::big_rational_to_u256(
                 &prices
                     .try_get_token_amount(
-                        &number_conversions::u256_to_big_rational(
-                            &((self.gas_estimate + gas::SETTLEMENT_OVERHEAD)
-                                * U256::from_f64_lossy(gas_price)),
-                        ),
+                        &number_conversions::u256_to_big_rational(&gas_cost),
                         order.sell_token,
                     )
                     .context("failed to compute solver fee")?,
