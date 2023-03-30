@@ -60,7 +60,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
         500:
           $ref: "#/components/responses/InternalServerError"
-  /execute:
+  /settle:
     post:
       description: |
         Execute the previously solved auction on chain.
@@ -74,14 +74,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ExecuteRequest"
+              $ref: "#/components/schemas/SettleRequest"
       responses:
         200:
           description: Execution accepted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExecuteResponse"
+                $ref: "#/components/schemas/SettleResponse"
         400:
           $ref: "#/components/responses/BadRequest"
         500:
@@ -289,7 +289,7 @@ components:
 
             TODO: Decide what is signed and how it is signed.
           type: string
-    ExecuteRequest:
+    SettleRequest:
       description: Request to the execute endpoint.
       type: object
       properties:
@@ -304,7 +304,7 @@ components:
             Hex encoded bytes. No fixed length.
           type: string
           example: "0x00112233"
-    ExecuteResponse:
+    SettleResponse:
       description: Response of the execute endpoint.
       type: object
       properties:

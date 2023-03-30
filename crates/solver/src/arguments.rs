@@ -12,6 +12,7 @@ use {
         },
     },
     chrono::{DateTime, Utc},
+    ethcontract::U256,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -275,6 +276,10 @@ pub struct Arguments {
     /// The maximum number of settlements the driver considers per solver.
     #[clap(long, env, default_value = "20")]
     pub max_settlements_per_solver: usize,
+
+    /// The smallest possible amount in Ether to consider for a partial order.
+    #[clap(long, env, default_value = "0.01", value_parser = shared::arguments::wei_from_ether)]
+    pub smallest_partial_fill: U256,
 
     /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is
     /// not big enough to settle ETH buy orders.

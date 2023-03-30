@@ -17,39 +17,158 @@ pub enum Trade {
 /// A trade which fulfills an order from the auction.
 #[derive(Debug)]
 pub struct Fulfillment {
-    pub order: competition::Order,
-    /// The amount executed by this fulfillment. See
-    /// [`competition::order::Partial`]. If the order is not partial, the
-    /// executed amount must equal the amount from the order.
-    pub executed: competition::order::TargetAmount,
+    order: competition::Order,
+    /// The amount executed by this fulfillment. See [`order::Partial`]. If the
+    /// order is not partial, the executed amount must equal the amount from the
+    /// order.
+    executed: order::TargetAmount,
+    fee: Fee,
+}
+
+impl Fulfillment {
+    pub fn new(
+        order: competition::Order,
+        executed: order::TargetAmount,
+        fee: Fee,
+    ) -> Result<Self, InvalidExecutedAmount> {
+        // If the order is partial, the total executed amount can be smaller than
+        // the target amount. Otherwise, the executed amount must be equal to the target
+        // amount.
+        let valid_execution = {
+            let surplus_fee = match order.side {
+                order::Side::Buy => order::TargetAmount::default(),
+                order::Side::Sell => order::TargetAmount(match fee {
+                    Fee::Static => match order.kind {
+                        order::Kind::Limit { surplus_fee } => surplus_fee.0,
+                        _ => eth::U256::default(),
+                    },
+                    Fee::Dynamic(fee) => fee.0,
+                }),
+            };
+
+            match order.partial {
+                order::Partial::Yes { executed: already } => {
+                    order::TargetAmount(already.0 + executed.0 + surplus_fee.0) <= order.target()
+                }
+                order::Partial::No => {
+                    order::TargetAmount(executed.0 + surplus_fee.0) == order.target()
+                }
+            }
+        };
+
+        // Only accept solver supplied fees
+        let valid_fee = match &fee {
+            Fee::Static => !order.solver_determines_fee(),
+            Fee::Dynamic(_) => order.solver_determines_fee(),
+        };
+
+        if valid_execution && valid_fee {
+            Ok(Self {
+                order,
+                executed,
+                fee,
+            })
+        } else {
+            Err(InvalidExecutedAmount)
+        }
+    }
+
+    pub fn order(&self) -> &competition::Order {
+        &self.order
+    }
+
+    pub fn executed(&self) -> order::TargetAmount {
+        self.executed
+    }
+
+    /// Returns the solver fee that should be considered as collected when
+    /// scoring a solution.
+    pub fn solver_fee(&self) -> order::SellAmount {
+        match self.fee {
+            Fee::Static => self.order.fee.solver,
+            Fee::Dynamic(fee) => fee,
+        }
+    }
+}
+
+/// A fee that is charged for executing an order.
+#[derive(Clone, Copy, Debug)]
+pub enum Fee {
+    /// A static protocol computed fee.
+    ///
+    /// That is, the fee is known upfront and is either signed as part of the
+    /// order, or, in the case of fill-or-kill limit orders, is determined by
+    /// the protocol and specified as a `surplus_fee` that is included in the
+    /// auction that is sent to the driver.
+    Static,
+    /// A dynamic solver computed surplus fee.
+    Dynamic(order::SellAmount),
 }
 
 /// A trade which adds a JIT order. See [`order::Jit`].
 #[derive(Debug)]
 pub struct Jit {
-    pub order: order::Jit,
+    order: order::Jit,
     /// The amount executed by this JIT trade. See
-    /// [`competition::order::Jit::partially_fillable`]. If the order is not
+    /// [`order::Jit::partially_fillable`]. If the order is not
     /// partially fillable, the executed amount must equal the amount from the
     /// order.
-    pub executed: competition::order::TargetAmount,
+    executed: order::TargetAmount,
+}
+
+impl Jit {
+    pub fn new(
+        order: order::Jit,
+        executed: order::TargetAmount,
+    ) -> Result<Self, InvalidExecutedAmount> {
+        // If the order is partially fillable, the executed amount can be smaller than
+        // the target amount. Otherwise, the executed amount must be equal to the target
+        // amount.
+        let is_valid = if order.partially_fillable {
+            executed <= order.target()
+        } else {
+            executed == order.target()
+        };
+        if is_valid {
+            Ok(Self { order, executed })
+        } else {
+            Err(InvalidExecutedAmount)
+        }
+    }
+
+    pub fn order(&self) -> &order::Jit {
+        &self.order
+    }
+
+    pub fn executed(&self) -> order::TargetAmount {
+        self.executed
+    }
 }
 
 impl Trade {
     /// The surplus fee associated with this trade, if any.
+    ///
+    /// The protocol determines the fee for fill-or-kill limit orders whereas
+    /// solvers are responsible for computing the fee for partially fillable
+    /// limit orders.
     pub(super) fn surplus_fee(&self) -> Option<order::SellAmount> {
-        match self {
-            // Surplus fees only apply to trades which fulfill limit orders.
-            &Self::Fulfillment(Fulfillment {
-                order:
-                    competition::Order {
-                        kind: order::Kind::Limit { surplus_fee },
-                        ..
-                    },
-                ..
-            }) => Some(surplus_fee),
-            _ => None,
+        if let &Self::Fulfillment(Fulfillment {
+            order:
+                competition::Order {
+                    kind: order::Kind::Limit { surplus_fee },
+                    ..
+                },
+            fee,
+            ..
+        }) = &self
+        {
+            return match fee {
+                Fee::Static => Some(*surplus_fee),
+                Fee::Dynamic(fee) => Some(*fee),
+            };
         }
+
+        None
     }
 
     /// Calculate the final sold and bought amounts that are transferred to and
@@ -67,11 +186,11 @@ impl Trade {
             executed,
         } = match self {
             Trade::Fulfillment(trade) => ExecutionParams {
-                side: trade.order.side,
-                kind: trade.order.kind,
-                sell: trade.order.sell,
-                buy: trade.order.buy,
-                executed: trade.executed,
+                side: trade.order().side,
+                kind: trade.order().kind,
+                sell: trade.order().sell,
+                buy: trade.order().buy,
+                executed: trade.executed(),
             },
             Trade::Jit(trade) => ExecutionParams {
                 side: trade.order.side,
@@ -172,7 +291,7 @@ impl Trade {
                     },
                 }
             }
-            order::Kind::Limit { surplus_fee } => {
+            order::Kind::Limit { .. } => {
                 // Warning: calculating executed amounts for limit orders is complex and
                 // confusing. To understand why the calculations work, it is important to note
                 // that the solver doesn't receive limit orders with the same amounts that were
@@ -187,6 +306,10 @@ impl Trade {
                 //
                 // Similar to market orders, the executed amounts for limit orders are
                 // calculated using the clearing prices.
+                let surplus_fee = self
+                    .surplus_fee()
+                    .expect("all limit orders must have a surplus fee");
+
                 let sell_price = solution
                     .price(sell.token)
                     .ok_or(ExecutionError::ClearingPriceMissing)?
@@ -262,6 +385,10 @@ struct ExecutionParams {
     buy: eth::Asset,
     executed: order::TargetAmount,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid executed amount")]
+pub struct InvalidExecutedAmount;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {

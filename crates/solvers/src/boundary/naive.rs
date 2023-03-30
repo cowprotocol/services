@@ -3,7 +3,7 @@ use {
         boundary::liquidity::constant_product::to_boundary_pool,
         domain::{eth, liquidity, order, solution},
     },
-    ethereum_types::{H160, U256},
+    ethereum_types::H160,
     itertools::Itertools,
     model::order::{
         LimitOrderClass,
@@ -23,6 +23,7 @@ use {
             ConstantProductOrder,
             Exchange,
             LimitOrder,
+            LimitOrderExecution,
             LimitOrderId,
             LiquidityOrderId,
             SettlementHandling,
@@ -53,6 +54,9 @@ pub fn solve(
     // settlement transaction anyway.
     let boundary_orders = orders
         .iter()
+        // The naive solver currently doesn't support partially fillable limit
+        // orders, so filter them out.
+        .filter(|order| !order.has_solver_fee())
         .map(|order| LimitOrder {
             id: match order.class {
                 order::Class::Market => LimitOrderId::Market(OrderUid(order.uid.0)),
@@ -128,14 +132,20 @@ pub fn solve(
         trades: boundary_solution
             .traded_orders()
             .map(|order| {
-                solution::Trade::Fulfillment(solution::Fulfillment::fill(
-                    orders
-                        .iter()
-                        .copied()
-                        .find(|o| o.uid.0 == order.metadata.uid.0)
-                        .unwrap()
-                        .clone(),
-                ))
+                solution::Trade::Fulfillment(
+                    solution::Fulfillment::fill(
+                        orders
+                            .iter()
+                            .copied()
+                            .find(|o| o.uid.0 == order.metadata.uid.0)
+                            .unwrap()
+                            .clone(),
+                    )
+                    .expect(
+                        "all orders can be filled, as partially fillable limit orders are \
+                         filtered out",
+                    ),
+                )
             })
             .collect(),
         interactions: swap
@@ -207,12 +217,12 @@ impl SettlementHandling<LimitOrder> for OrderHandler {
         self
     }
 
-    fn encode(&self, execution: U256, encoder: &mut SettlementEncoder) -> anyhow::Result<()> {
-        encoder.add_trade(
-            self.order.clone(),
-            execution,
-            self.order.metadata.solver_fee,
-        )?;
+    fn encode(
+        &self,
+        execution: LimitOrderExecution,
+        encoder: &mut SettlementEncoder,
+    ) -> anyhow::Result<()> {
+        encoder.add_trade(self.order.clone(), execution.filled, execution.solver_fee)?;
         Ok(())
     }
 }

@@ -170,6 +170,11 @@ pub struct SlippageContext<'a> {
 }
 
 impl<'a> SlippageContext<'a> {
+    /// Returns the external prices used for the slippage context.
+    pub fn prices(&self) -> &ExternalPrices {
+        self.prices
+    }
+
     /// Computes the slippage amount for the specified token amount.
     pub fn slippage(&self, token: H160, amount: U256) -> Result<SlippageAmount> {
         let (relative, absolute) = self.calculator.compute(

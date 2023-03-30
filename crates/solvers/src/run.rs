@@ -25,6 +25,7 @@ pub async fn run(
                 weth: baseline.weth,
                 base_tokens: baseline.base_tokens.into_iter().collect(),
                 max_hops: baseline.max_hops,
+                max_partial_attempts: baseline.max_partial_attempts,
             })
         }
         cli::Command::Naive => Solver::Naive(solver::Naive),

@@ -35,24 +35,23 @@ impl<'a> Solver<'a> {
 
     pub fn route(
         &self,
-        order: order::NonLiquidity,
+        request: baseline::Request,
         max_hops: usize,
     ) -> Option<baseline::Route<'a>> {
         let candidates = self.base_tokens.path_candidates_with_hops(
-            order.get().sell.token.0,
-            order.get().buy.token.0,
+            request.sell.token.0,
+            request.buy.token.0,
             max_hops,
         );
 
-        let order = order.get();
-        let (path, executed_sell_amount) = match order.side {
+        let (path, executed_sell_amount) = match request.side {
             order::Side::Buy => {
                 let best = candidates
                     .iter()
                     .filter_map(|path| {
-                        baseline_solver::estimate_sell_amount(order.buy.amount, path, &self.amms)
+                        baseline_solver::estimate_sell_amount(request.buy.amount, path, &self.amms)
                     })
-                    .filter(|estimate| estimate.value <= order.sell.amount)
+                    .filter(|estimate| estimate.value <= request.sell.amount)
                     .min_by_key(|estimate| estimate.value)?;
                 (best.path, best.value)
             }
@@ -60,15 +59,19 @@ impl<'a> Solver<'a> {
                 let best = candidates
                     .iter()
                     .filter_map(|path| {
-                        baseline_solver::estimate_buy_amount(order.sell.amount, path, &self.amms)
+                        baseline_solver::estimate_buy_amount(request.sell.amount, path, &self.amms)
                     })
-                    .filter(|estimate| estimate.value >= order.buy.amount)
+                    .filter(|estimate| estimate.value >= request.buy.amount)
                     .max_by_key(|estimate| estimate.value)?;
-                (best.path, order.sell.amount)
+                (best.path, request.sell.amount)
             }
         };
 
-        baseline::Route::new(self.traverse_path(&path, order.sell.token.0, executed_sell_amount)?)
+        baseline::Route::new(self.traverse_path(
+            &path,
+            request.sell.token.0,
+            executed_sell_amount,
+        )?)
     }
 
     fn traverse_path(
@@ -100,6 +103,7 @@ impl<'a> Solver<'a> {
                     token: eth::TokenAddress(buy_token),
                     amount: buy_amount,
                 },
+                gas: eth::Gas(liquidity.gas_cost().into()),
             });
 
             sell_token = buy_token;

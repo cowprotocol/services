@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        domain::{eth, order, solution},
+        domain::{auction, eth, order, solution},
         util,
     },
     ethereum_types::U256,
@@ -81,6 +81,11 @@ pub struct Swap {
     pub output: eth::Asset,
     /// The minimum allowance that is required for executing the swap.
     pub allowance: Allowance,
+    /// The gas guesstimate in gas units for the swap.
+    ///
+    /// This estimate is **not** expected to be accurate, and is purely
+    /// indicative.
+    pub gas: eth::Gas,
 }
 
 impl Swap {
@@ -96,54 +101,31 @@ impl Swap {
 
     /// Constructs a single order `solution::Solution` for this swap. Returns
     /// `None` if the swap is not valid for the specified order.
-    pub fn into_solution(self, order: order::Order) -> Option<solution::Solution> {
-        if !self.matches_order(&order) || !self.respects_price(&order) {
-            return None;
-        }
-
+    pub fn into_solution(
+        self,
+        order: order::Order,
+        gas_price: auction::GasPrice,
+        sell_token: auction::Price,
+    ) -> Option<solution::Solution> {
         let allowance = self.allowance();
-        Some(solution::Solution {
-            prices: solution::ClearingPrices::new([
-                (self.input.token, self.output.amount),
-                (self.output.token, self.input.amount),
-            ]),
-            trades: vec![solution::Trade::Fulfillment(solution::Fulfillment::fill(
-                order,
-            ))],
-            interactions: vec![solution::Interaction::Custom(solution::CustomInteraction {
-                target: self.call.to.0,
-                value: eth::Ether::default(),
-                calldata: self.call.calldata,
-                inputs: vec![self.input],
-                outputs: vec![self.output],
-                internalize: false,
-                allowances: vec![allowance],
-            })],
-        })
-    }
+        let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {
+            target: self.call.to.0,
+            value: eth::Ether::default(),
+            calldata: self.call.calldata,
+            inputs: vec![self.input],
+            outputs: vec![self.output],
+            internalize: false,
+            allowances: vec![allowance],
+        })];
 
-    fn matches_order(&self, order: &order::Order) -> bool {
-        let (swap_amount, order_amount) = match order.side {
-            order::Side::Buy => (self.output.amount, order.buy.amount),
-            order::Side::Sell => (self.input.amount, order.sell.amount),
-        };
-
-        let correct_tokens =
-            (order.sell.token, order.buy.token) == (self.input.token, self.output.token);
-        let correct_amount = match order.partially_fillable {
-            true => swap_amount <= order_amount,
-            false => swap_amount == order_amount,
-        };
-
-        correct_tokens && correct_amount
-    }
-
-    fn respects_price(&self, order: &order::Order) -> bool {
-        // Note the use of checked multiplication - this is consistent with the
-        // on-chain limit price check.
-        let sell = order.sell.amount.checked_mul(self.output.amount);
-        let buy = order.buy.amount.checked_mul(self.input.amount);
-        matches!((sell, buy), (Some(sell), Some(buy)) if sell >= buy)
+        solution::Single {
+            order,
+            input: self.input,
+            output: self.output,
+            interactions,
+            gas: self.gas,
+        }
+        .into_solution(gas_price, sell_token)
     }
 }
 

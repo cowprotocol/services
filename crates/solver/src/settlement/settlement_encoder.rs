@@ -5,7 +5,7 @@ use {
     itertools::{Either, Itertools},
     model::{
         interaction::InteractionData,
-        order::{LimitOrderClass, Order, OrderClass, OrderKind},
+        order::{Order, OrderClass, OrderKind},
     },
     num::{BigRational, One},
     number_conversions::big_rational_to_u256,
@@ -264,14 +264,25 @@ impl SettlementEncoder {
                 )?
             }
             OrderClass::Limit(limit) => {
-                // Solvers calculate with slightly adjusted amounts compared to this order but
-                // because limit orders are fill-or-kill we can simply use the
-                // total original `sell_amount`.
-                let executed_amount = match order.data.kind {
-                    OrderKind::Sell => order.data.sell_amount,
-                    OrderKind::Buy => order.data.buy_amount,
+                let surplus_fee = match order.data.partially_fillable {
+                    // Protocol determines fees for fok orders.
+                    false => limit.surplus_fee.unwrap(),
+                    // Solver determines fees for partially fillable orders.
+                    true => solver_fee,
                 };
-                let (sell_price, buy_price) = self.custom_price_for_limit_order(&order, limit)?;
+
+                // Solvers calculate with slightly adjusted amounts compared to
+                // the signed order, so adjust by the surplus fee (if needed) to
+                // get the actual executed amount.
+                let executed_amount = match order.data.kind {
+                    OrderKind::Sell => executed_amount
+                        .checked_add(surplus_fee)
+                        .context("overflow computing limit order trade execution")?,
+                    OrderKind::Buy => executed_amount,
+                };
+
+                let (sell_price, buy_price) =
+                    self.custom_price_for_limit_order(&order, executed_amount, surplus_fee)?;
 
                 self.add_custom_price_trade(
                     order,
@@ -295,12 +306,24 @@ impl SettlementEncoder {
     fn custom_price_for_limit_order(
         &self,
         order: &Order,
-        limit: &LimitOrderClass,
+        executed_amount: U256,
+        fee: U256,
     ) -> Result<(U256, U256)> {
         anyhow::ensure!(
             order.metadata.class.is_limit(),
             "this function should only be called for limit orders"
         );
+
+        let target_amount = match order.data.kind {
+            OrderKind::Buy => order.data.buy_amount,
+            OrderKind::Sell => order.data.sell_amount,
+        };
+        anyhow::ensure!(
+            (order.data.partially_fillable && executed_amount <= target_amount)
+                || (!order.data.partially_fillable && executed_amount == target_amount),
+            "this function should only be called with valid executed amounts"
+        );
+
         // The order passed into this function is the original order signed by the user.
         // But the solver actually computed a solution for an order with `sell_amount -=
         // surplus_fee`. To account for the `surplus_fee` we first have to
@@ -317,41 +340,34 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
-        // Solvable limit orders always have a surplus fee. It would be nice if this was
-        // enforced in the API.
-        let surplus_fee = limit.surplus_fee.unwrap();
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
             OrderKind::Buy => {
-                let sell_amount = order
-                    .data
-                    .buy_amount
+                let sell_amount = executed_amount
                     .checked_mul(uniform_buy_price)
                     .context("sell_amount computation failed")?
                     .checked_div(uniform_sell_price)
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
                 let sell_amount_adjusted_for_fees = sell_amount
-                    .checked_add(surplus_fee)
+                    .checked_add(fee)
                     .context("sell_amount computation failed")?;
-                (sell_amount_adjusted_for_fees, order.data.buy_amount)
+                (sell_amount_adjusted_for_fees, executed_amount)
             }
             // This means sell ALL the `sell_token` and get as much `buy_token` as possible.
             // Therefore we need to solve for `buy_amount`.
             OrderKind::Sell => {
                 // Solver actually used this `sell_amount` to compute prices.
-                let sell_amount = order
-                    .data
-                    .sell_amount
-                    .checked_sub(surplus_fee)
+                let sell_amount = executed_amount
+                    .checked_sub(fee)
                     .context("buy_amount computation failed")?;
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)
                     .context("buy_amount computation failed")?
                     .checked_div(uniform_buy_price)
                     .context("buy_amount computation failed")?;
-                (order.data.sell_amount, buy_amount)
+                (executed_amount, buy_amount)
             }
         };
 

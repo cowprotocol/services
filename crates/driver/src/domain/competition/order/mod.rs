@@ -59,7 +59,7 @@ impl From<SellAmount> for eth::U256 {
 
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TargetAmount(pub eth::U256);
 
 impl From<eth::U256> for TargetAmount {
@@ -85,6 +85,15 @@ pub struct Fee {
 }
 
 impl Order {
+    /// The buy amount for [`Side::Buy`] orders, or the sell amount for
+    /// [`Side::Sell`] orders.
+    pub fn target(&self) -> TargetAmount {
+        match self.side {
+            Side::Buy => self.buy.amount.into(),
+            Side::Sell => self.sell.amount.into(),
+        }
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -147,6 +156,12 @@ impl Order {
             amount: self.buy.amount,
             token: self.buy.token.wrap(weth),
         }
+    }
+
+    /// For some orders the protocol doesn't precompute a fee. Instead solvers
+    /// are supposed to compute a reasonable fee themselves.
+    pub fn solver_determines_fee(&self) -> bool {
+        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
     }
 }
 
@@ -276,4 +291,15 @@ pub struct Jit {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+}
+
+impl Jit {
+    /// The buy amount for [`Side::Buy`] orders, or the sell amount for
+    /// [`Side::Sell`] orders.
+    pub fn target(&self) -> TargetAmount {
+        match self.side {
+            Side::Buy => self.buy.amount.into(),
+            Side::Sell => self.sell.amount.into(),
+        }
+    }
 }

@@ -25,23 +25,34 @@ impl Solution {
                 .into_iter()
                 .map(|trade| match trade {
                     Trade::Fulfillment(fulfillment) => {
-                        Ok(competition::solution::Trade::Fulfillment(
-                            competition::solution::trade::Fulfillment {
-                                order: auction
-                                    .orders
-                                    .iter()
-                                    .find(|order| order.uid == fulfillment.order)
-                                    .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment",
-                                    ))?
-                                    .clone(),
-                                executed: fulfillment.executed_amount.into(),
+                        let order = auction
+                            .orders
+                            .iter()
+                            .find(|order| order.uid == fulfillment.order)
+                            // TODO this error should reference the UID
+                            .ok_or(super::Error("invalid order UID specified in fulfillment"))?
+                            .clone();
+
+                        competition::solution::trade::Fulfillment::new(
+                            order,
+                            fulfillment.executed_amount.into(),
+                            match fulfillment.fee {
+                                Some(fee) => competition::solution::trade::Fee::Dynamic(
+                                    competition::order::SellAmount(fee),
+                                ),
+                                None => competition::solution::trade::Fee::Static,
                             },
-                        ))
+                        )
+                        .map(competition::solution::Trade::Fulfillment)
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid trade fulfillment")
+                            },
+                        )
                     }
                     Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
-                        competition::solution::trade::Jit {
-                            order: competition::order::Jit {
+                        competition::solution::trade::Jit::new(
+                            competition::order::Jit {
                                 sell: eth::Asset {
                                     amount: jit.order.sell_amount,
                                     token: jit.order.sell_token.into(),
@@ -97,8 +108,13 @@ impl Solution {
                                     signer: solver.address(),
                                 },
                             },
-                            executed: jit.executed_amount.into(),
-                        },
+                            jit.executed_amount.into(),
+                        )
+                        .map_err(
+                            |competition::solution::trade::InvalidExecutedAmount| {
+                                super::Error("invalid executed amount in JIT order")
+                            },
+                        )?,
                     )),
                 })
                 .try_collect()?,
@@ -209,6 +225,8 @@ struct Fulfillment {
     order: [u8; 56],
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
+    #[serde_as(as = "Option<serialize::U256>")]
+    fee: Option<eth::U256>,
 }
 
 #[serde_as]

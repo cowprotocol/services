@@ -1,3 +1,4 @@
+pub mod colocation;
 mod deploy;
 #[macro_use]
 mod onchain_components;
@@ -70,10 +71,13 @@ where
     Fut: Future<Output = ()>,
 {
     let filters = [
+        "warn",
         "e2e=debug",
+        "autopilot=debug",
+        "driver=debug",
         "orderbook=debug",
         "solver=debug",
-        "autopilot=debug",
+        "solvers=debug",
         "orderbook::api::request_summary=off",
     ]
     .join(",");

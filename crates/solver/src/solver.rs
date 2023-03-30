@@ -305,6 +305,7 @@ pub fn create(
     order_converter: Arc<OrderConverter>,
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
+    smallest_partial_fill: U256,
     slippage_configuration: &slippage::Arguments,
     market_makable_token_list: AutoUpdatingTokenList,
     order_prioritization_config: &single_order_solver::Arguments,
@@ -378,6 +379,7 @@ pub fn create(
                     max_merged_settlements,
                     max_settlements_per_solver,
                     order_prioritization_config.clone(),
+                    smallest_partial_fill,
                 )
             };
 

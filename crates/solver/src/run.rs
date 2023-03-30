@@ -328,6 +328,7 @@ pub async fn run(args: Arguments) {
         order_converter.clone(),
         args.max_settlements_per_solver,
         args.max_merged_settlements,
+        args.smallest_partial_fill,
         &args.slippage,
         market_makable_token_list,
         &args.order_prioritization,

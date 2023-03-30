@@ -144,7 +144,7 @@ async fn sell_too_low() {
                     {
                         "kind": "fulfillment",
                         "order": boundary.uid(),
-                        "executedAmount": sell_amount.to_string(),
+                        "executedAmount": (sell_amount - surplus_fee).to_string(),
                     }
                 ],
                 "interactions": interactions
@@ -353,7 +353,7 @@ async fn buy_too_high() {
                     {
                         "kind": "fulfillment",
                         "order": boundary.uid(),
-                        "executedAmount": sell_amount.to_string(),
+                        "executedAmount": (sell_amount - surplus_fee).to_string(),
                     }
                 ],
                 "interactions": interactions

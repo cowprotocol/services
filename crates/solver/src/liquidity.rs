@@ -194,6 +194,12 @@ impl LimitOrder {
     pub fn is_liquidity_order(&self) -> bool {
         matches!(self.id, LimitOrderId::Liquidity(_))
     }
+
+    /// For some orders the protocol doesn't precompute a fee. Instead solvers
+    /// are supposed to compute a reasonable fee themselves.
+    pub fn solver_determines_fee(&self) -> bool {
+        self.partially_fillable && matches!(self.id, LimitOrderId::Limit(_))
+    }
 }
 
 impl std::fmt::Debug for LimitOrder {
@@ -212,8 +218,28 @@ impl LimitOrder {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitOrderExecution {
+    /// The amount that the order `side` (`buy`, `sell`) should be filled by
+    /// this trade.
+    pub filled: U256,
+    /// The fee (for the objective value) associated with this order.
+    /// For partially fillable limit orders this value gets computed by the
+    /// solver already refers to the `filled` amount. In this case no
+    /// further scaling is necessary for partial fills. For all other orders
+    /// this is the `solver_fee` for the entire order and will get scaled
+    /// correctly by the [`SettlementEncoder`].
+    pub solver_fee: U256,
+}
+
+impl LimitOrderExecution {
+    pub fn new(filled: U256, solver_fee: U256) -> Self {
+        Self { filled, solver_fee }
+    }
+}
+
 impl Settleable for LimitOrder {
-    type Execution = U256;
+    type Execution = LimitOrderExecution;
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling

@@ -33,6 +33,17 @@ pub struct Token {
 #[derive(Clone, Copy, Debug)]
 pub struct Price(pub eth::Ether);
 
+impl Price {
+    /// The base Ether amount for pricing.
+    const BASE: u128 = 10_u128.pow(18);
+
+    /// Computes an amount equivalent in value to the specified [`eth::Ether`]
+    /// at the given price.
+    pub fn ether_value(&self, eth: eth::Ether) -> Option<U256> {
+        eth.0.checked_mul(Self::BASE.into())?.checked_div(self.0 .0)
+    }
+}
+
 /// The estimated effective gas price that will likely be used for executing the
 /// settlement transaction.
 #[derive(Clone, Copy, Debug)]

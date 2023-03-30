@@ -156,6 +156,7 @@ impl OneInch {
                 spender: self.spender,
                 amount: dex::Amount::new(swap.from_token_amount),
             },
+            gas: eth::Gas(swap.tx.gas),
         })
     }
 }
