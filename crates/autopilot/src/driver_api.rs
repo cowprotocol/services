@@ -71,7 +71,7 @@ impl Driver {
             .await
             .context("body")?;
         let text = String::from_utf8_lossy(&body);
-        tracing::trace!(body=%text, "response");
+        tracing::trace!(%status, body=%text, "response");
         let context = || format!("url {url}, body {text:?}");
         if status != 200 {
             return Err(anyhow!("bad status {status}, {}", context()));
