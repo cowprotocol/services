@@ -330,6 +330,11 @@ impl<'a> Submitter<'a> {
                 {
                     tracing::debug!("found mined transaction {:?}", receipt.transaction_hash);
                     track_mined_transactions(&format!("{name}"));
+                    // No need to keep submitted transactions for next auction if tx was found.
+                    // This also protects against reorgs where mined tx is found in one auction but
+                    // the block gets reorged and the tx is again found in the
+                    // next auction.
+                    self.submitted_transactions.clear();
                     return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
