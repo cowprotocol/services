@@ -25,7 +25,7 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader_a.address(), to_wei(101)).await;
+    token_a.mint(trader_a.address(), to_wei(500)).await;
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
 
@@ -66,7 +66,7 @@ async fn test(web3: Web3) {
 
     tx!(
         trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(101))
+        token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
     let services = Services::new(onchain.contracts()).await;
@@ -79,9 +79,9 @@ async fn test(web3: Web3) {
 
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(100))
+        .with_sell_amount(to_wei(500))
         .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(80))
+        .with_buy_amount(to_wei(390))
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .with_kind(OrderKind::Sell)
         .with_partially_fillable(true)
@@ -106,20 +106,22 @@ async fn test(web3: Web3) {
     assert_eq!(order.metadata.solver_fee, 0.into());
     assert_eq!(auction.rewards.get(&order.metadata.uid), None);
 
-    // The following doesn't work yet because the solver crate cannot handle
-    // these orders yet.
-    /*
     tracing::info!("Waiting for trade.");
     services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    assert!(balance >= order_a.data.buy_amount);
-
-    tracing::info!("Waiting for auction to be cleared.");
-    let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
-    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
-    */
+    // Expecting a partial fill
+    let sell_balance = token_a.balance_of(trader_a.address()).call().await.unwrap();
+    assert!(
+        // Sell balance is strictly less than 250.0 because of the fee.
+        (249_999_000_000_000_000_000_u128..250_000_000_000_000_000_000_u128)
+            .contains(&sell_balance.as_u128())
+    );
+    let buy_balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    assert!(
+        (199_000_000_000_000_000_000_u128..201_000_000_000_000_000_000_u128)
+            .contains(&buy_balance.as_u128())
+    );
 }
