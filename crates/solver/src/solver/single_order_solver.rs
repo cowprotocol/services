@@ -25,6 +25,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tracing::Instrument,
 };
 
 mod fills;
@@ -140,6 +141,63 @@ impl SingleOrderSolver {
             fills: fills::Fills::new(smallest_fill),
         }
     }
+
+    async fn solve_single_order(&self, order: LimitOrder, auction: &Auction) -> SolveResult {
+        let name = self.inner.name();
+        let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
+            tracing::warn!(?order.id, "failed to compute fill; skipping order");
+            return SolveResult::Failed;
+        };
+
+        let single = match self.inner.try_settle_order(fill.clone(), auction).await {
+            Ok(value) => {
+                self.metrics.single_order_solver_succeeded(name);
+                value
+            }
+            Err(err) => {
+                self.metrics.single_order_solver_failed(name);
+                if err.retryable {
+                    tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
+                    return SolveResult::Retryable(order);
+                } else {
+                    tracing::warn!("Solver {} error: {:?}", name, &err.inner);
+                    return SolveResult::Failed;
+                }
+            }
+        };
+
+        match single.and_then(|single| {
+            single
+                .into_settlement(
+                    &order,
+                    fill.full_execution_amount(),
+                    &auction.external_prices,
+                    auction.gas_price,
+                )
+                .transpose()
+        }) {
+            Some(Ok(settlement)) => SolveResult::Solved(settlement),
+            Some(Err(err)) => {
+                tracing::warn!(%name, ?err, "encoding error");
+                SolveResult::Failed
+            }
+            None => {
+                if let Some(order_uid) = order.id.order_uid() {
+                    self.fills.reduce_next_try(order_uid);
+                }
+                SolveResult::Failed
+            }
+        }
+    }
+}
+
+enum SolveResult {
+    /// No solution but order could be retried.
+    Retryable(LimitOrder),
+    /// No solution and retrying would not help.
+    Failed,
+    /// Found a solution for the order.
+    Solved(Settlement),
 }
 
 #[async_trait::async_trait]
@@ -154,48 +212,16 @@ impl Solver for SingleOrderSolver {
 
         let mut settlements = Vec::new();
         let settle = async {
-            let name = self.inner.name();
             while let Some(order) = orders.pop_front() {
-                let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
-                    tracing::warn!(?order.id, "failed to compute fill; skipping order");
-                    continue;
-                };
-
-                let single = match self.inner.try_settle_order(fill.clone(), &auction).await {
-                    Ok(value) => {
-                        self.metrics.single_order_solver_succeeded(name);
-                        value
-                    }
-                    Err(err) => {
-                        self.metrics.single_order_solver_failed(name);
-                        if err.retryable {
-                            tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
-                            orders.push_back(order);
-                        } else {
-                            tracing::warn!("Solver {} error: {:?}", name, &err.inner);
-                        }
-
-                        continue;
-                    }
-                };
-
-                match single.and_then(|single| {
-                    single
-                        .into_settlement(
-                            &order,
-                            fill.full_execution_amount(),
-                            &auction.external_prices,
-                            auction.gas_price,
-                        )
-                        .transpose()
-                }) {
-                    Some(Ok(settlement)) => settlements.push(settlement),
-                    Some(Err(err)) => tracing::warn!(%name, ?err, "encoding error"),
-                    None => {
-                        if let Some(order_uid) = order.id.order_uid() {
-                            self.fills.reduce_next_try(order_uid);
-                        }
-                    }
+                let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
+                match self
+                    .solve_single_order(order, &auction)
+                    .instrument(span)
+                    .await
+                {
+                    SolveResult::Failed => continue,
+                    SolveResult::Retryable(order) => orders.push_back(order),
+                    SolveResult::Solved(settlement) => settlements.push(settlement),
                 }
             }
         };

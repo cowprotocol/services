@@ -47,7 +47,6 @@ impl Fills {
 
         let smallest_fill = prices.try_get_token_amount(&self.smallest_fill, token)?;
         let smallest_fill = number_conversions::big_rational_to_u256(&smallest_fill).ok()?;
-        tracing::trace!(?smallest_fill, "least amount worth filling");
 
         let now = Instant::now();
 
@@ -64,7 +63,11 @@ impl Fills {
                 entry.last_requested = now;
 
                 if entry.next_amount < smallest_fill {
-                    tracing::trace!("target fill got too small; starting over");
+                    tracing::trace!(
+                        ?smallest_fill,
+                        target =? entry.next_amount,
+                        "target fill got too small; starting over"
+                    );
                     entry.next_amount = total_amount;
                 } else if entry.next_amount > total_amount {
                     tracing::trace!("partially filled; adjusting to new total amount");
