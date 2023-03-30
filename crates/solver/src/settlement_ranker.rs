@@ -9,9 +9,11 @@ use {
     },
     anyhow::Result,
     chrono::{DateTime, Utc},
+    ethcontract::U256,
     gas_estimation::GasPrice1559,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
+    number_conversions::big_rational_to_u256,
     rand::prelude::SliceRandom,
     shared::{
         external_prices::ExternalPrices,
@@ -205,6 +207,33 @@ impl SettlementRanker {
                     self.metrics.settlement_non_positive_score(solver.name());
                 }
                 positive_score
+            });
+        }
+
+        // Filter out settlements with too high score.
+        if Utc::now() > self.auction_rewards_activation_timestamp {
+            // CIP20 activated
+            rated_settlements.retain(|(solver, settlement, _)| {
+                let surplus = big_rational_to_u256(&settlement.surplus).unwrap_or(U256::MAX);
+                let fees = big_rational_to_u256(&settlement.solver_fees).unwrap_or(U256::MAX);
+                let max_score = surplus.saturating_add(fees);
+                let valid_score = settlement.score.score() < max_score;
+                if !valid_score {
+                    tracing::debug!(
+                        solver_name = %solver.name(),
+                        "settlement filtered for having too high score",
+                    );
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::TooHighScore {
+                            surplus,
+                            fees,
+                            max_score,
+                            submitted_score: settlement.score.score(),
+                        }),
+                    );
+                }
+                valid_score
             });
         }
 

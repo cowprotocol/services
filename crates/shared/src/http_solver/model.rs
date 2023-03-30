@@ -376,6 +376,20 @@ pub enum SolverRejectionReason {
     /// The solution doesn't have a positive score. Currently this can happen
     /// only if the objective value is negative.
     NonPositiveScore,
+
+    /// The solution has a score that is too high. This can happen if the
+    /// score is higher than the maximum score (surplus + fees)
+    #[serde(rename_all = "camelCase")]
+    TooHighScore {
+        #[serde(with = "u256_decimal")]
+        surplus: U256,
+        #[serde(with = "u256_decimal")]
+        fees: U256,
+        #[serde(with = "u256_decimal")]
+        max_score: U256,
+        #[serde(with = "u256_decimal")]
+        submitted_score: U256,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -1099,6 +1113,27 @@ mod tests {
             .unwrap(),
             json!({
                 "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_rejection_too_high_score() {
+        assert_eq!(
+            serde_json::to_value(&SolverRejectionReason::TooHighScore {
+                surplus: 1300.into(),
+                fees: 37.into(),
+                max_score: 1337.into(),
+                submitted_score: 1338.into(),
+            })
+            .unwrap(),
+            json!({
+                "tooHighScore": {
+                    "surplus": "1300",
+                    "fees": "37",
+                    "maxScore": "1337",
+                    "submittedScore": "1338",
+                },
             }),
         );
     }
