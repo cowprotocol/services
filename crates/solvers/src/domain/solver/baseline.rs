@@ -90,20 +90,22 @@ impl Baseline {
             1
         };
 
-        (0..n).map(move |i| {
-            let divisor = U256::one() << i;
-            Request {
-                sell: eth::Asset {
-                    token: sell.token,
-                    amount: sell.amount / divisor,
-                },
-                buy: eth::Asset {
-                    token: buy.token,
-                    amount: buy.amount / divisor,
-                },
-                side,
-            }
-        })
+        (0..n)
+            .map(move |i| {
+                let divisor = U256::one() << i;
+                Request {
+                    sell: eth::Asset {
+                        token: sell.token,
+                        amount: sell.amount / divisor,
+                    },
+                    buy: eth::Asset {
+                        token: buy.token,
+                        amount: buy.amount / divisor,
+                    },
+                    side,
+                }
+            })
+            .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
     }
 }
 

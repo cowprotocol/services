@@ -115,6 +115,10 @@ impl SubTxPoolRef {
             .pools
             .insert((sender, nonce), transactions);
     }
+
+    pub fn clear(&self) {
+        self.pools.lock().unwrap()[self.index].pools.clear();
+    }
 }
 
 pub struct SubmissionReceipt {
