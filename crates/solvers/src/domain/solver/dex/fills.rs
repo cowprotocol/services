@@ -54,7 +54,6 @@ impl Fills {
         let smallest_fill =
             self.smallest_fill.clone() * prices.0.get(&ETH)? / prices.0.get(&token)?;
         let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
-        tracing::trace!(?smallest_fill, "least amount worth filling");
 
         let now = Instant::now();
 
@@ -71,7 +70,11 @@ impl Fills {
                 entry.last_requested = now;
 
                 if entry.next_amount < smallest_fill {
-                    tracing::trace!("target fill got too small; starting over");
+                    tracing::trace!(
+                        ?smallest_fill,
+                        target =? entry.next_amount,
+                        "target fill got too small; starting over"
+                    );
                     entry.next_amount = total_amount;
                 } else if entry.next_amount > total_amount {
                     tracing::trace!("partially filled; adjusting to new total amount");
