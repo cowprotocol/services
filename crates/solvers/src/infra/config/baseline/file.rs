@@ -29,6 +29,10 @@ struct Config {
     /// The maximum number of hops to consider when finding the optimal trading
     /// path.
     max_hops: usize,
+
+    /// The maximum number of pieces to divide partially fillable limit orders
+    /// when trying to solve it against baseline liquidity.
+    max_partial_attempts: usize,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -62,5 +66,6 @@ pub async fn load(path: &Path) -> super::Config {
             .map(eth::TokenAddress)
             .collect(),
         max_hops: config.max_hops,
+        max_partial_attempts: config.max_partial_attempts,
     }
 }
