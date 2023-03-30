@@ -1,5 +1,3 @@
-mod merge;
-
 use {
     crate::{
         liquidity::{LimitOrder, LimitOrderExecution, LimitOrderId},
@@ -7,14 +5,20 @@ use {
         settlement::Settlement,
         solver::{Auction, Solver},
     },
-    anyhow::{Error, Result},
+    anyhow::{Context as _, Error, Result},
     clap::Parser,
     ethcontract::Account,
+    model::order::OrderKind,
     num::ToPrimitive,
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
     rand::prelude::SliceRandom,
-    shared::{external_prices::ExternalPrices, interaction::Interaction},
+    shared::{
+        conversions::U256Ext,
+        external_prices::ExternalPrices,
+        interaction::Interaction,
+        price_estimation::gas,
+    },
     std::{
         collections::VecDeque,
         fmt::{self, Display, Formatter},
@@ -22,6 +26,9 @@ use {
         time::Duration,
     },
 };
+
+mod fills;
+mod merge;
 
 /// CLI arguments to configure order prioritization of single order solvers
 /// based on an orders price.
@@ -112,6 +119,7 @@ pub struct SingleOrderSolver {
     max_merged_settlements: usize,
     max_settlements_per_solver: usize,
     order_prioritization_config: Arguments,
+    fills: fills::Fills,
 }
 
 impl SingleOrderSolver {
@@ -121,6 +129,7 @@ impl SingleOrderSolver {
         max_settlements_per_solver: usize,
         max_merged_settlements: usize,
         order_prioritization_config: Arguments,
+        smallest_fill: U256,
     ) -> Self {
         Self {
             inner,
@@ -128,6 +137,7 @@ impl SingleOrderSolver {
             max_merged_settlements,
             max_settlements_per_solver,
             order_prioritization_config,
+            fills: fills::Fills::new(smallest_fill),
         }
     }
 }
@@ -144,32 +154,46 @@ impl Solver for SingleOrderSolver {
 
         let mut settlements = Vec::new();
         let settle = async {
+            let name = self.inner.name();
             while let Some(order) = orders.pop_front() {
-                match self.inner.try_settle_order(order.clone(), &auction).await {
-                    Ok(Some(settlement)) => {
-                        self.metrics
-                            .single_order_solver_succeeded(self.inner.name());
-                        let settlement = match settlement.into_settlement(&order) {
-                            Ok(settlement) => settlement,
-                            Err(err) => {
-                                tracing::warn!(name = self.inner.name(), ?err, "encoding error");
-                                continue;
-                            }
-                        };
-                        settlements.push(settlement);
-                    }
-                    Ok(None) => {
-                        self.metrics
-                            .single_order_solver_succeeded(self.inner.name());
+                let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
+                    tracing::warn!(?order.id, "failed to compute fill; skipping order");
+                    continue;
+                };
+
+                let single = match self.inner.try_settle_order(fill.clone(), &auction).await {
+                    Ok(value) => {
+                        self.metrics.single_order_solver_succeeded(name);
+                        value
                     }
                     Err(err) => {
-                        let name = self.inner.name();
                         self.metrics.single_order_solver_failed(name);
                         if err.retryable {
                             tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
                             orders.push_back(order);
                         } else {
                             tracing::warn!("Solver {} error: {:?}", name, &err.inner);
+                        }
+
+                        continue;
+                    }
+                };
+
+                match single.and_then(|single| {
+                    single
+                        .into_settlement(
+                            &order,
+                            fill.full_execution_amount(),
+                            &auction.external_prices,
+                            auction.gas_price,
+                        )
+                        .transpose()
+                }) {
+                    Some(Ok(settlement)) => settlements.push(settlement),
+                    Some(Err(err)) => tracing::warn!(%name, ?err, "encoding error"),
+                    None => {
+                        if let Some(order_uid) = order.id.order_uid() {
+                            self.fills.reduce_next_try(order_uid);
                         }
                     }
                 }
@@ -187,6 +211,8 @@ impl Solver for SingleOrderSolver {
             settle,
         )
         .await;
+
+        self.fills.collect_garbage();
 
         // Keep at most this many settlements. This is important in case where a solver
         // produces a large number of settlements which would hold up the driver
@@ -223,22 +249,117 @@ pub struct SingleOrderSettlement {
 }
 
 impl SingleOrderSettlement {
-    pub fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
+    pub fn into_settlement(
+        self,
+        order: &LimitOrder,
+        executed_amount: U256,
+        prices: &ExternalPrices,
+        gas_price: f64,
+    ) -> Result<Option<Settlement>> {
+        // Compute the expected traded amounts.
+        let (traded_sell_amount, traded_buy_amount) = match order.kind {
+            OrderKind::Buy => (
+                executed_amount
+                    .checked_mul(self.buy_token_price)
+                    .context("buy value overflow")?
+                    .checked_div(self.sell_token_price)
+                    .context("zero sell token price")?,
+                executed_amount,
+            ),
+            OrderKind::Sell => (
+                executed_amount,
+                executed_amount
+                    .checked_mul(self.sell_token_price)
+                    .context("sell value overflow")?
+                    .checked_ceil_div(&self.buy_token_price)
+                    .context("zero buy token price")?,
+            ),
+        };
+
+        // Compute the surplus fee that needs to be incorporated into the prices
+        // and solver fee which will be used for scoring.
+        let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
+            let gas_estimate = self.gas_estimate + gas::SETTLEMENT_OVERHEAD;
+            let gas_cost = gas_estimate * U256::from_f64_lossy(gas_price);
+
+            let fee = number_conversions::big_rational_to_u256(
+                &prices
+                    .try_get_token_amount(
+                        &number_conversions::u256_to_big_rational(&gas_cost),
+                        order.sell_token,
+                    )
+                    .context("failed to compute solver fee")?,
+            )
+            .context("invalid solver fee amount")?;
+
+            (fee, fee)
+        } else {
+            (U256::zero(), order.solver_fee)
+        };
+
+        // Compute the actual executed amounts accounting for surplus fees.
+        let (executed_sell_amount, executed_buy_amount) = match order.kind {
+            OrderKind::Buy => (
+                traded_sell_amount
+                    .checked_add(surplus_fee)
+                    .context("underflow computing executed sell amount")?,
+                traded_buy_amount,
+            ),
+            OrderKind::Sell => {
+                let executed_sell_amount = traded_sell_amount
+                    .checked_add(surplus_fee)
+                    .context("overflow computing executed sell amount")?
+                    .min(order.sell_amount);
+                let executed_buy_amount = executed_sell_amount
+                    .checked_sub(surplus_fee)
+                    .context("underflow computing executed buy amount")?
+                    .checked_mul(traded_buy_amount)
+                    .context("overflow computing executed buy amount")?
+                    .checked_ceil_div(&traded_sell_amount)
+                    .context("zero traded sell amount")?;
+
+                (executed_sell_amount, executed_buy_amount)
+            }
+        };
+
+        // Check that the order's limit price is satisfied accounting for the
+        // surplus fees.
+        if order
+            .sell_amount
+            .checked_mul(executed_buy_amount)
+            .context("overflow sell value")?
+            < order
+                .buy_amount
+                .checked_mul(executed_sell_amount)
+                .context("overflow buy value")?
+        {
+            tracing::debug!(
+                ?surplus_fee,
+                ?self.sell_token_price,
+                ?self.buy_token_price,
+                ?order,
+                "order limit price not respected after applying surplus fees",
+            );
+            return Ok(None);
+        }
+
         let prices = [
-            (order.sell_token, self.sell_token_price),
-            (order.buy_token, self.buy_token_price),
+            (order.sell_token, executed_buy_amount),
+            (order.buy_token, executed_sell_amount - surplus_fee),
         ];
         let mut settlement = Settlement::new(prices.into_iter().collect());
         let execution = LimitOrderExecution {
-            filled: order.full_execution_amount(),
-            // TODO: We still need to compute a `solver_fee` for partially fillable limit orders.
-            solver_fee: order.solver_fee,
+            filled: match order.kind {
+                OrderKind::Buy => executed_buy_amount,
+                OrderKind::Sell => executed_sell_amount - surplus_fee,
+            },
+            solver_fee,
         };
         settlement.with_liquidity(order, execution)?;
         for interaction in self.interactions {
             settlement.encoder.append_to_execution_plan(interaction);
         }
-        Ok(settlement)
+        Ok(Some(settlement))
     }
 }
 
@@ -350,11 +471,12 @@ mod tests {
                 LiquidityOrderId,
             },
             metrics::NoopMetrics,
+            settlement::TradeExecution,
         },
         anyhow::anyhow,
         ethcontract::Bytes,
-        maplit::hashmap,
-        model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid},
+        maplit::{btreemap, hashmap},
+        model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::http_solver::model::InternalizationStrategy,
@@ -368,6 +490,7 @@ mod tests {
             max_merged_settlements: 5,
             max_settlements_per_solver: 5,
             order_prioritization_config: Default::default(),
+            fills: fills::Fills::new(1.into()),
         }
     }
 
@@ -380,7 +503,7 @@ mod tests {
                 sell_token: H160::from_low_u64_be(1),
                 buy_token: H160::from_low_u64_be(2),
                 kind: OrderKind::Buy,
-                sell_amount: 1.into(),
+                sell_amount: 2.into(),
                 buy_amount: 1.into(),
                 ..Default::default()
             },
@@ -394,8 +517,8 @@ mod tests {
             data: OrderData {
                 sell_token: H160::from_low_u64_be(3),
                 buy_token: H160::from_low_u64_be(4),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
+                sell_amount: 7.into(),
+                buy_amount: 6.into(),
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
@@ -660,5 +783,127 @@ mod tests {
         // skewed weights.
         dbg!(expected_results);
         assert!((expected_results as f64) < (SAMPLES as f64 * 0.9));
+    }
+
+    #[test]
+    fn partially_fillable_single_order_settlements() {
+        let native = H160::from_low_u64_be(0);
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        let converter = OrderConverter::test(native);
+        let order = |kind: OrderKind| {
+            converter
+                .normalize_limit_order(Order {
+                    data: OrderData {
+                        sell_token: H160::from_low_u64_be(1),
+                        buy_token: H160::from_low_u64_be(2),
+                        kind,
+                        sell_amount: 100.into(),
+                        buy_amount: 100.into(),
+                        partially_fillable: true,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        uid: OrderUid([0u8; 56]),
+                        class: OrderClass::Limit(Default::default()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .unwrap()
+        };
+
+        let base = U256::from(10_u128.pow(18));
+        let prices = ExternalPrices::try_from_auction_prices(
+            native,
+            btreemap! {
+                native => base,
+                sell_token => base * 50000,
+                buy_token => base * 50000,
+            },
+        )
+        .unwrap();
+
+        let settlement = |order: LimitOrder, in_amount: u128, out_amount: u128| {
+            SingleOrderSettlement {
+                sell_token_price: out_amount.into(),
+                buy_token_price: in_amount.into(),
+                interactions: vec![],
+                gas_estimate: 2.into(),
+            }
+            .into_settlement(
+                &order,
+                match order.kind {
+                    OrderKind::Buy => out_amount.into(),
+                    OrderKind::Sell => in_amount.into(),
+                },
+                &prices,
+                1.,
+            )
+            .unwrap()
+        };
+        let trade = |settlement: Settlement| settlement.trade_executions().next().unwrap();
+
+        // Not enough room for surplus fees.
+        assert!(settlement(order(OrderKind::Buy), 50, 50).is_none());
+        assert!(settlement(order(OrderKind::Buy), 100, 100).is_none());
+        assert!(settlement(order(OrderKind::Sell), 50, 50).is_none());
+        assert!(settlement(order(OrderKind::Sell), 100, 100).is_none());
+
+        // Adds surplus fee to executed sell amount.
+        assert_eq!(
+            trade(settlement(order(OrderKind::Buy), 40, 50).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 42.into(),
+                buy_amount: 50.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Buy), 90, 100).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 92.into(),
+                buy_amount: 100.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 50, 60).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 52.into(),
+                buy_amount: 60.into(),
+                fee_amount: 2.into(),
+            }
+        );
+
+        // Scale buy amount if insufficient "space" for collecting surplus fees
+        // in the sell token.
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 99, 110).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 100.into(),
+                buy_amount: 109.into(),
+                fee_amount: 2.into(),
+            }
+        );
+        assert_eq!(
+            trade(settlement(order(OrderKind::Sell), 100, 110).unwrap()),
+            TradeExecution {
+                sell_token,
+                buy_token,
+                sell_amount: 100.into(),
+                buy_amount: 108.into(),
+                fee_amount: 2.into(),
+            }
+        );
     }
 }

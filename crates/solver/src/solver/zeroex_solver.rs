@@ -168,9 +168,17 @@ impl SingleOrderSolving for ZeroExSolver {
             settlement
         };
 
-        let settlement = create_settlement()
-            .into_settlement(&order)
-            .context("into_settlement")?;
+        let Some(settlement) = create_settlement()
+            .into_settlement(
+                &order,
+                order.full_execution_amount(),
+                &auction.external_prices,
+                auction.gas_price,
+            )
+            .context("into_settlement")?
+        else {
+            return Ok(None);
+        };
 
         let gas_price = BigRational::from_float(auction.gas_price).expect("Invalid gas price.");
         let inputs = crate::objective_value::Inputs::from_settlement(

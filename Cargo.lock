@@ -3392,6 +3392,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "atty",
+ "bigdecimal",
  "cached",
  "chrono",
  "clap",

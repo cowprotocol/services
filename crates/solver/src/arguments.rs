@@ -12,6 +12,7 @@ use {
         },
     },
     chrono::{DateTime, Utc},
+    ethcontract::U256,
     primitive_types::H160,
     reqwest::Url,
     shared::{
@@ -276,6 +277,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "20")]
     pub max_settlements_per_solver: usize,
 
+    /// The smallest possible amount in Ether to consider for a partial order.
+    #[clap(long, env, default_value = "0.01", value_parser = shared::arguments::wei_from_ether)]
+    pub smallest_partial_fill: U256,
+
     /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is
     /// not big enough to settle ETH buy orders.
     /// Unwrapping a bigger amount will cause fewer unwraps to happen and
@@ -346,6 +351,12 @@ pub struct Arguments {
     /// Flag to enable slippage protection for the 0x solver.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_enable_slippage_protection: bool,
+
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub process_partially_fillable_liquidity_orders: bool,
+
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub process_partially_fillable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -484,6 +495,16 @@ impl std::fmt::Display for Arguments {
             f,
             "zeroex_enable_slippage_protection: {}",
             self.zeroex_enable_slippage_protection
+        )?;
+        writeln!(
+            f,
+            "process_partially_fillable_limit_orders: {:?}",
+            self.process_partially_fillable_limit_orders
+        )?;
+        writeln!(
+            f,
+            "process_partially_fillable_liquidity_orders: {:?}",
+            self.process_partially_fillable_liquidity_orders
         )?;
         Ok(())
     }

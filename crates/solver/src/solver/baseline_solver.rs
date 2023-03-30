@@ -1,4 +1,5 @@
 use {
+    super::single_order_solver::SingleOrderSettlement,
     crate::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
@@ -6,7 +7,6 @@ use {
             AmmOrderExecution,
             ConstantProductOrder,
             LimitOrder,
-            LimitOrderExecution,
             Liquidity,
             WeightedProductOrder,
         },
@@ -15,8 +15,7 @@ use {
     },
     anyhow::Result,
     ethcontract::{Account, H160, U256},
-    maplit::hashmap,
-    model::TokenPair,
+    model::{order::OrderKind, TokenPair},
     shared::{
         baseline_solver::{
             estimate_buy_amount,
@@ -44,11 +43,12 @@ impl Solver for BaselineSolver {
             orders,
             liquidity,
             external_prices,
+            gas_price,
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         let slippage = self.slippage_calculator.context(&external_prices);
-        Ok(self.solve_(orders, liquidity, slippage))
+        Ok(self.solve_(orders, liquidity, slippage, gas_price))
     }
 
     fn account(&self) -> &Account {
@@ -143,6 +143,7 @@ impl BaselineSolver {
         mut limit_orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         slippage: SlippageContext,
+        gas_price: f64,
     ) -> Vec<Settlement> {
         limit_orders.retain(|order| !order.is_liquidity_order());
         let user_orders = limit_orders;
@@ -183,23 +184,42 @@ impl BaselineSolver {
 
         // Return a solution for the first settle-able user order
         for order in user_orders {
-            let solution = match self.settle_order(&order, &amm_map) {
-                Some(solution) => solution,
+            match Self::fills_for_order(&order).find_map(|fill| {
+                self.solve_order(&fill, &amm_map)?
+                    .into_settlement(&order, &slippage, gas_price)
+                    .transpose()
+            }) {
+                Some(Ok(settlement)) => settlements.push(settlement),
+                Some(Err(err)) => tracing::error!(?err, "failed to create settlement"),
                 None => continue,
             };
-
-            match solution.into_settlement(&order, &slippage) {
-                Ok(settlement) => settlements.push(settlement),
-                Err(err) => {
-                    tracing::error!("baseline_solver failed to create settlement: {:?}", err)
-                }
-            }
         }
 
         settlements
     }
 
-    fn settle_order(
+    fn fills_for_order(order: &LimitOrder) -> impl Iterator<Item = LimitOrder> + '_ {
+        const MAX_PARTIAL_ATTEMPTS: usize = 5;
+
+        let n = if order.partially_fillable {
+            MAX_PARTIAL_ATTEMPTS
+        } else {
+            1
+        };
+
+        (0..n)
+            .map(move |i| {
+                let divisor = U256::one() << i;
+                LimitOrder {
+                    sell_amount: order.sell_amount / divisor,
+                    buy_amount: order.buy_amount / divisor,
+                    ..order.clone()
+                }
+            })
+            .filter(|o| !o.sell_amount.is_zero() && !o.buy_amount.is_zero())
+    }
+
+    fn solve_order(
         &self,
         order: &LimitOrder,
         amms: &HashMap<TokenPair, Vec<Amm>>,
@@ -248,7 +268,7 @@ impl BaselineSolver {
 
     #[cfg(test)]
     fn must_solve(&self, orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Settlement {
-        self.solve_(orders, liquidity, SlippageContext::default())
+        self.solve_(orders, liquidity, SlippageContext::default(), 0.)
             .into_iter()
             .next()
             .unwrap()
@@ -277,18 +297,34 @@ struct Solution {
 }
 
 impl Solution {
-    fn into_settlement(self, order: &LimitOrder, slippage: &SlippageContext) -> Result<Settlement> {
-        let mut settlement = Settlement::new(hashmap! {
-            order.sell_token => self.executed_buy_amount,
-            order.buy_token => self.executed_sell_amount,
-        });
+    fn into_settlement(
+        self,
+        order: &LimitOrder,
+        slippage: &SlippageContext,
+        gas_price: f64,
+    ) -> Result<Option<Settlement>> {
+        let settlement = SingleOrderSettlement {
+            sell_token_price: self.executed_buy_amount,
+            buy_token_price: self.executed_sell_amount,
+            interactions: vec![],
+            gas_estimate: self
+                .path
+                .iter()
+                .fold(U256::zero(), |acc, amm| acc + amm.gas_cost()),
+        }
+        .into_settlement(
+            order,
+            match order.kind {
+                OrderKind::Buy => self.executed_buy_amount,
+                OrderKind::Sell => self.executed_sell_amount,
+            },
+            slippage.prices(),
+            gas_price,
+        )?;
 
-        let execution = LimitOrderExecution {
-            filled: order.full_execution_amount(),
-            // TODO: We still need to compute a `solver_fee` for partially fillable limit orders.
-            solver_fee: order.solver_fee,
+        let Some(mut settlement) = settlement else {
+            return Ok(None);
         };
-        settlement.with_liquidity(order, execution)?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
         for amm in self.path {
@@ -309,7 +345,7 @@ impl Solution {
             sell_token = buy_token;
         }
 
-        Ok(settlement)
+        Ok(Some(settlement))
     }
 }
 
@@ -339,9 +375,11 @@ mod tests {
                 AmmOrderExecution,
                 ConstantProductOrder,
                 LimitOrder,
+                LimitOrderExecution,
             },
             test::account,
         },
+        maplit::hashmap,
         model::order::OrderKind,
         num::rational::Ratio,
         shared::{
@@ -624,7 +662,7 @@ mod tests {
         let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         assert_eq!(
             solver
-                .solve_(orders, liquidity, SlippageContext::default())
+                .solve_(orders, liquidity, SlippageContext::default(), 0.)
                 .len(),
             1
         );
@@ -684,7 +722,7 @@ mod tests {
         let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         assert_eq!(
             solver
-                .solve_(vec![order], liquidity, SlippageContext::default())
+                .solve_(vec![order], liquidity, SlippageContext::default(), 0.)
                 .len(),
             0
         );
@@ -765,7 +803,7 @@ mod tests {
         ];
         let base_tokens = Arc::new(BaseTokens::new(tokens[0], &tokens));
         let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
-        let settlements = solver.solve_(vec![order], liquidity, Default::default());
+        let settlements = solver.solve_(vec![order], liquidity, Default::default(), 0.);
         assert!(settlements.is_empty());
     }
 }
