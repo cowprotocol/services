@@ -791,6 +791,7 @@ mod tests {
                 base: Url::parse(&quasimodo_url).expect("failed to parse quasimodo url"),
                 solve_path: "solve".to_owned(),
                 client,
+                gzip_requests: false,
                 config: SolverConfig {
                     use_internal_buffers: Some(true),
                     ..Default::default()
