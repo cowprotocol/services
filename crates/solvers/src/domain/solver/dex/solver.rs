@@ -94,12 +94,16 @@ impl Dex {
             tracing::warn!(token = ?order.sell.token.0, "missing sell token price");
             return None;
         };
+        let uid = order.uid;
         let Some(solution) = swap.into_solution(order, gas, sell) else {
             tracing::debug!("no solution for swap");
             return None;
         };
 
         tracing::debug!("solved");
+        // Maybe some liquidity appeared that enables a bigger fill.
+        self.fills.increase_next_try(uid);
+
         Some(solution)
     }
 }

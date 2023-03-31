@@ -55,12 +55,14 @@ impl Fills {
                 entry.insert(CacheEntry {
                     next_amount: total_amount,
                     last_requested: now,
+                    total_amount,
                 });
                 total_amount
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
+                entry.total_amount = total_amount;
 
                 if entry.next_amount < smallest_fill {
                     tracing::trace!(
@@ -103,7 +105,21 @@ impl Fills {
     pub fn reduce_next_try(&self, uid: OrderUid) {
         self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
             entry.next_amount /= 2;
-            tracing::trace!(next_try =? entry.next_amount, "adjusted next fill amount");
+            tracing::trace!(next_try =? entry.next_amount, "decreased next fill amount");
+        });
+    }
+
+    /// Adjusts the next fill amount that should be tried. Doubles the amount to
+    /// try. This is useful in case the onchain liquidity changed and now
+    /// allows for bigger fills.
+    pub fn increase_next_try(&self, uid: OrderUid) {
+        self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
+            entry.next_amount = entry
+                .next_amount
+                .checked_mul(2.into())
+                .unwrap_or(entry.total_amount)
+                .min(entry.total_amount);
+            tracing::trace!(next_try =? entry.next_amount, "increased next fill amount");
         });
     }
 
@@ -125,4 +141,5 @@ impl Fills {
 struct CacheEntry {
     next_amount: U256,
     last_requested: Instant,
+    total_amount: U256,
 }
