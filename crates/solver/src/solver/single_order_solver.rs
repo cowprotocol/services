@@ -176,7 +176,13 @@ impl SingleOrderSolver {
                 )
                 .transpose()
         }) {
-            Some(Ok(settlement)) => SolveResult::Solved(settlement),
+            Some(Ok(settlement)) => {
+                if let Some(order_uid) = order.id.order_uid() {
+                    // Maybe some liquidity appeared that enables a bigger fill.
+                    self.fills.increase_next_try(order_uid);
+                }
+                SolveResult::Solved(settlement)
+            }
             Some(Err(err)) => {
                 tracing::warn!(%name, ?err, "encoding error");
                 SolveResult::Failed
