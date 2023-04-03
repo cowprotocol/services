@@ -85,12 +85,29 @@ impl Fills {
             return None;
         }
 
+        // Scale amounts according to the limit price and the chosen fill.
         let (sell_amount, buy_amount) = match order.kind {
-            OrderKind::Buy => (order.sell_amount, amount),
-            OrderKind::Sell => (amount, order.buy_amount),
+            OrderKind::Buy => {
+                let sell_amount = order
+                    .sell_amount
+                    .full_mul(amount)
+                    .checked_div(order.buy_amount.into())?
+                    .try_into()
+                    .unwrap();
+                (sell_amount, amount)
+            }
+            OrderKind::Sell => {
+                let buy_amount = order
+                    .buy_amount
+                    .full_mul(amount)
+                    .checked_div(order.sell_amount.into())?
+                    .try_into()
+                    .unwrap();
+                (amount, buy_amount)
+            }
         };
 
-        tracing::trace!(?amount, "trying to partially fill order");
+        tracing::trace!(?sell_amount, ?buy_amount, "trying to partially fill order");
         Some(LimitOrder {
             sell_amount,
             buy_amount,
