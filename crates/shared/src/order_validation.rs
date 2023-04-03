@@ -684,11 +684,12 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 ///
 /// None when addition overflows.
 fn minimum_balance(order: &OrderData) -> Option<U256> {
-    // TODO: Note that we are pessimistic here for partially fillable orders,
-    // since they don't need the full balance in order for the order to be
-    // tradable. However, since they are currently only used for PMMs for
-    // matching against user orders, it makes sense for the full sell token
-    // amount balance to be required.
+    // TODO: We might even want to allow 0 balance for partially fillable but we
+    // require balance for fok limit orders too so this make some sense and protects
+    // against accidentally creating order for token without balance.
+    if order.partially_fillable {
+        return Some(1.into());
+    }
     order.sell_amount.checked_add(order.fee_amount)
 }
 

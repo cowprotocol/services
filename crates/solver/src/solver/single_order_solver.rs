@@ -839,6 +839,7 @@ mod tests {
                     metadata: OrderMetadata {
                         uid: OrderUid([0u8; 56]),
                         class: OrderClass::Limit(Default::default()),
+                        partially_fillable_balance: Some(100.into()),
                         ..Default::default()
                     },
                     ..Default::default()
