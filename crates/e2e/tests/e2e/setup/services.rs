@@ -55,6 +55,7 @@ impl<'a> Services<'a> {
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=10".to_string(),
+            "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
                 self.contracts.uniswap_v2_router.address(),
