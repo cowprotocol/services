@@ -452,8 +452,6 @@ impl Driver {
                 })
                 .collect();
 
-            tracing::error!(?executions, "executions in driver");
-
             let account = winning_solver.account();
             let address = account.address();
             let nonce = self
