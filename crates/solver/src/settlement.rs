@@ -25,7 +25,23 @@ pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, Settleme
 pub struct Trade {
     pub order: Order,
     pub executed_amount: U256,
+    /// The fee amount used for objective value computations.
     pub solver_fee: U256,
+}
+
+impl Trade {
+    /// Returns the fee taken from the surplus.
+    pub fn surplus_fee(&self) -> Option<U256> {
+        match self.order.metadata.class {
+            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                match self.order.solver_determines_fee() {
+                    true => Some(self.solver_fee),
+                    false => Some(surplus_fee.unwrap()),
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -218,7 +234,7 @@ impl Trade {
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
 use {
-    model::order::OrderClass,
+    model::order::{LimitOrderClass, OrderClass},
     shared::{external_prices::ExternalPrices, http_solver::model::Score},
 };
 #[cfg(test)]
