@@ -410,7 +410,7 @@ fn solvable_orders(
             Some(balance) => *balance,
             None => continue,
         };
-        for order in orders {
+        for mut order in orders {
             // For ethflow orders, there is no need to check the balance. The contract
             // ensures that there will always be sufficient balance, after the wrapAll
             // pre_interaction has been called.
@@ -442,9 +442,22 @@ fn solvable_orders(
                 }
             };
 
-            if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
-                remaining_balance = balance;
+            if order.data.partially_fillable {
+                if remaining_balance == 0.into() {
+                    continue;
+                }
+                order.metadata.partially_fillable_balance =
+                    Some(needed_balance.min(remaining_balance));
                 result.push(order);
+                remaining_balance = remaining_balance.saturating_sub(needed_balance);
+            } else {
+                match remaining_balance.checked_sub(needed_balance) {
+                    Some(balance) => {
+                        result.push(order);
+                        remaining_balance = balance;
+                    }
+                    None => continue,
+                };
             }
         }
     }
@@ -779,6 +792,20 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
+                    creation_date: Utc.timestamp_opt(1, 0).unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                data: OrderData {
+                    sell_amount: 10.into(),
+                    buy_amount: 10.into(),
+                    fee_amount: 10.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
                     creation_date: Utc.timestamp_opt(0, 0).unwrap(),
                     ..Default::default()
                 },
@@ -788,11 +815,26 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
         let orders_ = solvable_orders(orders.clone(), &balances, None);
+        assert_eq!(orders_.len(), 2);
         // Second order has lower timestamp so it isn't picked.
-        assert_eq!(orders_, orders[..1]);
+        assert_eq!(orders_[0].data, orders[0].data);
+        // Third order is partially fillable so is picked with remaining balance.
+        assert_eq!(orders_[1].data, orders[2].data);
+        assert_eq!(
+            orders_[1].metadata.partially_fillable_balance,
+            Some(3.into())
+        );
+
         orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
         let orders_ = solvable_orders(orders.clone(), &balances, None);
-        assert_eq!(orders_, orders[1..]);
+        assert_eq!(orders_.len(), 2);
+        assert_eq!(orders_[0].data, orders[1].data);
+        // Remaining balance is different because previous order has changed.
+        assert_eq!(orders_[1].data, orders[2].data);
+        assert_eq!(
+            orders_[1].metadata.partially_fillable_balance,
+            Some(5.into())
+        );
     }
 
     #[tokio::test]
@@ -1091,7 +1133,10 @@ mod tests {
         let mut filtered_orders = solvable_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
-        assert_eq!(expected_result, filtered_orders);
+        assert_eq!(expected_result.len(), filtered_orders.len());
+        for (left, right) in expected_result.iter().zip(filtered_orders) {
+            assert_eq!(left.data, right.data);
+        }
     }
 
     #[tokio::test]
