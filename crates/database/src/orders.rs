@@ -531,6 +531,70 @@ WHERE
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct OrderExecution {
+    pub executed_solver_fee: BigDecimal,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub kind: OrderKind,
+    pub sell_amount_before_fees: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub executed_amount: BigDecimal,
+    pub signature: Vec<u8>,
+    pub signing_scheme: SigningScheme,
+    pub owner: Address,
+}
+
+pub fn order_executions_in_tx<'a>(
+    ex: &'a mut PgConnection,
+    tx_hash: &'a TransactionHash,
+) -> BoxStream<'a, Result<OrderExecution, sqlx::Error>> {
+    const QUERY: &str = const_format::formatcp!(
+        r#"
+-- This will fail if we ever have multiple settlements in the same transaction because this WITH
+-- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
+-- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
+-- like taking block number and log index directly.
+WITH settlement AS (
+    SELECT block_number, log_index
+    FROM settlements
+    WHERE tx_hash = '\xbd4734d2c727582cf162ee59202d7e75d3fc9d3c99a7c249cd81ac768f94651f'
+)
+SELECT
+    solver_fee AS executed_solver_fee,
+    sell_token,
+    buy_token,
+    o.sell_amount AS sell_amount_before_fees,
+    o.buy_amount AS buy_amount,
+    kind,
+    CASE
+        WHEN o.kind = 'sell' THEN t.sell_amount - oe.surplus_fee - t.fee_amount
+        ELSE t.buy_amount END AS executed_amount,
+    o.owner,
+    signature,
+    signing_scheme
+FROM order_execution AS oe
+JOIN orders o ON o.uid = oe.order_uid
+JOIN trades t ON t.order_uid = oe.order_uid
+WHERE
+    t.block_number = (SELECT block_number FROM settlement) AND
+    -- BETWEEN is inclusive
+    t.log_index BETWEEN
+        -- previous settlement, the settlement event is emitted after the trade events
+        (
+            -- COALESCE because there might not be a previous settlement
+            SELECT COALESCE(MAX(log_index), 0)
+            FROM settlements
+            WHERE
+                block_number = (SELECT block_number FROM settlement) AND
+                log_index < (SELECT log_index from settlement)
+        ) AND
+        (SELECT log_index FROM settlement)#
+    "#
+    );
+    sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
+}
+
 pub fn user_orders<'a>(
     ex: &'a mut PgConnection,
     owner: &'a Address,

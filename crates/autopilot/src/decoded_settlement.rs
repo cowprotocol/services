@@ -104,9 +104,14 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
     }
 }
 
+/// It's possible that the same order gets filled in portions across multiple or
+/// even the same settlement. This struct describes the details of such a fill.
+/// Note that most orders only have a single fill as they are fill-or-kill
+/// orders but partially fillable orders could have associated any number of
+/// [`OrderExecution`]s with them.
 #[derive(Debug)]
-pub struct Order {
-    pub executed_solver_fee: Option<U256>,
+pub struct OrderExecution {
+    pub executed_solver_fee: U256,
     pub kind: OrderKind,
     pub sell_token: H160,
     pub buy_token: H160,
@@ -116,27 +121,19 @@ pub struct Order {
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl TryFrom<database::orders::FullOrder> for Order {
+impl TryFrom<database::orders::OrderExecution> for OrderExecution {
     type Error = anyhow::Error;
 
-    fn try_from(order: database::orders::FullOrder) -> std::result::Result<Self, Self::Error> {
+    fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            executed_solver_fee: order
-                .executed_solver_fee
-                .as_ref()
-                .and_then(big_decimal_to_u256),
+            executed_solver_fee: big_decimal_to_u256(&order.executed_solver_fee).unwrap(),
             kind: order_kind_from(order.kind),
             sell_token: H160(order.sell_token.0),
             buy_token: H160(order.buy_token.0),
-            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
+            sell_amount: big_decimal_to_u256(&order.sell_amount_before_fees)
+                .context("sell_amount")?,
             buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
-            executed_amount: match order_kind_from(order.kind) {
-                OrderKind::Buy => {
-                    big_decimal_to_u256(&order.sum_buy).context("executed_buy_amount")?
-                }
-                OrderKind::Sell => big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-                    .context("executed_sell_amount_before_fees")?,
-            },
+            executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
             signature: {
                 let signing_scheme = signing_scheme_from(order.signing_scheme);
                 let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
@@ -179,7 +176,7 @@ impl DecodedSettlement {
     // Needs rework to support partially fillable orders.
     // Tricky because the decoded settlement is using FILLED `orders` so we don't
     // always know the executed amount in case of partial fill.
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
+    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[OrderExecution]) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders
                 .iter()
@@ -251,8 +248,8 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
-fn fee(external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
-    let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
+fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
+    let solver_fee = u256_to_big_rational(&order.executed_solver_fee);
     tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
 
     let fee = match order.kind {
@@ -560,8 +557,8 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let orders = vec![
-            Order {
-                executed_solver_fee: Some(48263037u128.into()),
+            OrderExecution {
+                executed_solver_fee: 48263037u128.into(),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
@@ -570,8 +567,8 @@ mod tests {
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
-            Order {
-                executed_solver_fee: Some(127253135942751092736u128.into()),
+            OrderExecution {
+                executed_solver_fee: 127253135942751092736u128.into(),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
