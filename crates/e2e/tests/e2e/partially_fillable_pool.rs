@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        order::{OrderBuilder, OrderClass, OrderKind},
+        order::{LimitOrderClass, OrderBuilder, OrderClass, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -92,7 +92,7 @@ async fn test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    services.create_order(&order_a).await.unwrap();
+    let uid = services.create_order(&order_a).await.unwrap();
 
     tracing::info!("Waiting for order to show up in auction.");
     let has_order = || async { services.get_auction().await.auction.orders.len() == 1 };
@@ -124,4 +124,20 @@ async fn test(web3: Web3) {
         (199_000_000_000_000_000_000_u128..201_000_000_000_000_000_000_u128)
             .contains(&buy_balance.as_u128())
     );
+
+    let metadata_updated = || async {
+        let order = services.get_order(&uid).await.unwrap();
+        let executed_surplus_fee = match order.metadata.class {
+            OrderClass::Limit(LimitOrderClass {
+                executed_surplus_fee,
+                ..
+            }) => executed_surplus_fee,
+            _ => unreachable!(),
+        };
+        executed_surplus_fee.is_some()
+            && executed_surplus_fee.unwrap() != Default::default()
+            && order.metadata.executed_buy_amount != Default::default()
+            && order.metadata.executed_sell_amount != Default::default()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 }
