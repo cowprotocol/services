@@ -69,6 +69,9 @@ pub struct DefaultHttpSolverApi {
     /// solver.
     pub client: Client,
 
+    /// Solve requests to the API are sent gzipped.
+    pub gzip_requests: bool,
+
     /// Other solver parameters.
     pub config: SolverConfig,
 }
@@ -158,8 +161,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
-        let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::trace!(%url, %body, "request");
         let mut request = self
             .client
             .post(url)
@@ -171,7 +172,16 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             header.set_sensitive(true);
             request = request.header("X-API-KEY", header);
         }
-        let request = request.body(body.clone());
+        if self.gzip_requests {
+            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), Default::default());
+            serde_json::to_writer(&mut encoder, &model).unwrap();
+            let body = encoder.finish().unwrap();
+            request = request.header(header::CONTENT_ENCODING, "gzip");
+            request = request.body(body);
+        } else {
+            let body = serde_json::to_vec(&model).unwrap();
+            request = request.body(body);
+        };
         let mut response = request.send().await.context("failed to send request")?;
         let status = response.status();
         let response_body =
@@ -252,22 +262,102 @@ mod tests {
     use {
         super::{model::SettledBatchAuctionModel, *},
         flate2::write::GzEncoder,
-        tokio::{io::AsyncWriteExt, net::TcpListener},
+        std::collections::HashMap,
+        tokio::{
+            io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        },
     };
 
+    /// Reads a full http request. Returns headers and body.
+    async fn handle_http_request(
+        stream: &mut (impl AsyncRead + Unpin),
+    ) -> (HashMap<String, String>, Vec<u8>) {
+        let needle = b"\r\n\r\n";
+        let mut buf: Vec<u8> = Default::default();
+        let headers_end: usize = 'outer: loop {
+            let old_len = buf.len();
+            stream.read_buf(&mut buf).await.unwrap();
+            let end = match buf.len().checked_sub(needle.len()) {
+                None => continue,
+                Some(i) => i,
+            };
+            for i in old_len..end {
+                if &buf[i..i + needle.len()] == needle {
+                    break 'outer i;
+                }
+            }
+        };
+
+        let mut lines = std::str::from_utf8(&buf[..headers_end])
+            .unwrap()
+            .split("\r\n");
+        assert!(lines.next().unwrap().starts_with("POST"));
+
+        let mut headers: HashMap<String, String> = Default::default();
+        for line in lines {
+            let mut split = line.split(": ");
+            let key = split.next().unwrap();
+            let value = split.next().unwrap();
+            assert!(split.next().is_none());
+            headers.insert(key.to_string(), value.to_string());
+        }
+
+        let content_length: usize = headers.get("content-length").unwrap().parse().unwrap();
+        let old_len = buf.len();
+        let body_start = headers_end + needle.len();
+        buf.resize(body_start + content_length, 0);
+        stream.read_exact(&mut buf[old_len..]).await.unwrap();
+
+        (headers, buf.split_off(body_start))
+    }
+
     #[tokio::test]
-    async fn supports_gzip() {
-        let listener = TcpListener::bind("localhost:1234").await.unwrap();
+    async fn supports_gzip_response() {
+        let listener = TcpListener::bind("localhost:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
         let listen = async move {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
-                let mut encoder = GzEncoder::new(Vec::new(), Default::default());
-                serde_json::to_writer(&mut encoder, &SettledBatchAuctionModel::default()).unwrap();
-                let body = encoder.finish().unwrap();
-                let response = "\
-HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\r\n";
-                stream.write_all(response.as_bytes()).await.unwrap();
-                stream.write_all(&body).await.unwrap();
+                let (mut read, mut write) = stream.split();
+
+                let (headers, body) = handle_http_request(&mut read).await;
+
+                match headers.get("content-encoding").map(String::as_str) {
+                    None => {
+                        println!("reading plaintext request");
+                        let _: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+                    }
+                    Some("gzip") => {
+                        println!("reading gzip request");
+                        let reader = flate2::read::GzDecoder::new(body.as_slice());
+                        let _: serde_json::Value = serde_json::from_reader(reader).unwrap();
+                    }
+                    _ => panic!(),
+                }
+
+                match headers.get("accept-encoding").map(String::as_str) {
+                    None => {
+                        println!("sending plaintext response");
+                        let body =
+                            serde_json::to_vec(&SettledBatchAuctionModel::default()).unwrap();
+                        let response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
+                        write.write_all(response).await.unwrap();
+                        write.write_all(&body).await.unwrap();
+                    }
+                    Some("gzip") => {
+                        println!("sending gzip response");
+                        let mut encoder = GzEncoder::new(Vec::new(), Default::default());
+                        serde_json::to_writer(&mut encoder, &SettledBatchAuctionModel::default())
+                            .unwrap();
+                        let body = encoder.finish().unwrap();
+                        let response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\r\n";
+                        write.write_all(response).await.unwrap();
+                        write.write_all(&body).await.unwrap();
+                    }
+                    _ => panic!(),
+                };
                 stream.shutdown().await.unwrap();
             }
         };
@@ -277,9 +367,10 @@ HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\
             name: Default::default(),
             network_name: Default::default(),
             chain_id: Default::default(),
-            base: "http://localhost:1234".parse().unwrap(),
+            base: format!("http://localhost:{port}").parse().unwrap(),
             solve_path: "solve".to_owned(),
             client: Default::default(),
+            gzip_requests: false,
             config: Default::default(),
         };
         // The default reqwest::Client supports gzip responses if the corresponding
@@ -287,10 +378,17 @@ HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n\
         api.solve(&Default::default(), Duration::from_secs(1))
             .await
             .unwrap();
-        // After explicitly disabling gzip support the response no longer decodes.
+
+        // We can explicitly disable gzip response support.
         api.client = reqwest::ClientBuilder::new().no_gzip().build().unwrap();
         api.solve(&Default::default(), Duration::from_secs(1))
             .await
-            .unwrap_err();
+            .unwrap();
+
+        // We can send a gzipped request. See debug prints for verification.
+        api.gzip_requests = true;
+        api.solve(&Default::default(), Duration::from_secs(1))
+            .await
+            .unwrap();
     }
 }

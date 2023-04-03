@@ -532,6 +532,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
                 base: params.base,
                 solve_path: params.solve_path,
                 client: factory.components.http_factory.create(),
+                gzip_requests: false,
                 config: SolverConfig {
                     use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
                     objective: Some(Objective::SurplusFeesCosts),

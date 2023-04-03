@@ -356,6 +356,7 @@ pub fn create(
                 base: url,
                 solve_path: "solve".to_owned(),
                 client: http_factory.create(),
+                gzip_requests: false,
                 config,
             },
             account,
