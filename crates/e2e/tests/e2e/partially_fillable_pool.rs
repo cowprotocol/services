@@ -12,7 +12,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_partially_fillable() {
+async fn local_node_partially_fillable_pool() {
     run_test(test).await;
 }
 
@@ -112,7 +112,7 @@ async fn test(web3: Web3) {
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    // Expecting a partial fill
+    // Expecting a partial fill because the pool cannot trade the full amount.
     let sell_balance = token_a.balance_of(trader_a.address()).call().await.unwrap();
     assert!(
         // Sell balance is strictly less than 250.0 because of the fee.
