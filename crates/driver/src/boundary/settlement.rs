@@ -272,6 +272,13 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             onchain_user: Default::default(),
             onchain_order_data: Default::default(),
             is_liquidity_order: order.is_liquidity(),
+            // TODO: This isn't right if a partially fillable order got included in the auction when
+            // the user didn't have full balance. See #1378 .
+            partially_fillable_balance: if order.is_partial() {
+                Some(order.sell.amount + order.fee.user.0)
+            } else {
+                None
+            },
         },
         signature: to_boundary_signature(&order.signature),
         interactions: Interactions {

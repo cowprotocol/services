@@ -40,10 +40,6 @@ impl OrderConverter {
 
         let remaining = shared::remaining_amounts::Remaining::from_order(&order)?;
 
-        // The reported fee amount that is used for objective computation is the
-        // order's full full amount scaled by a constant factor.
-        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
-
         let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) if !order.data.partially_fillable => {
                 compute_synthetic_order_amounts_for_limit_order(&order, limit)?
@@ -58,12 +54,49 @@ impl OrderConverter {
             }
             OrderClass::Limit(_) => LimitOrderId::Limit(order.metadata.uid),
         };
+
+        // The reported fee amount that is used for objective computation is the
+        // order's full full amount scaled by a constant factor.
+        let mut solver_fee = remaining.remaining(order.metadata.solver_fee)?;
+        let mut sell_amount = remaining.remaining(sell_amount)?;
+        let mut buy_amount = remaining.remaining(order.data.buy_amount)?;
+
+        // Partially fillable orders are included in the auction when there is at least
+        // 1 atom balance available.
+        if order.data.partially_fillable {
+            let need = sell_amount
+                .checked_add(remaining.remaining(order.data.fee_amount)?)
+                .context("partially fillable need calculation overflow")?;
+            let have = order
+                .metadata
+                .partially_fillable_balance
+                .context("no balance for partially fillable order")?;
+            tracing::trace!(%need, %have, "partially fillable order conversion");
+            if have < need {
+                solver_fee = solver_fee
+                    .checked_mul(have)
+                    .context("partially fillable solver_fee calculation overflow")?
+                    .checked_div(need)
+                    .context("partially fillable solver_fee calculation overflow")?;
+                sell_amount = sell_amount
+                    .checked_mul(have)
+                    .context("partially fillable sell_amount calculation overflow")?
+                    .checked_div(need)
+                    .context("partially fillable sell_amount calculation overflow")?;
+                buy_amount = buy_amount
+                    .checked_mul(have)
+                    .context("partially fillable buy_amount calculation overflow")?
+                    .checked_div(need)
+                    .context("partially fillable buy_amount calculation overflow")?;
+            }
+        }
+
         Ok(LimitOrder {
             id,
             sell_token: order.data.sell_token,
             buy_token,
-            sell_amount: remaining.remaining(sell_amount)?,
-            buy_amount: remaining.remaining(order.data.buy_amount)?,
+            sell_amount,
+            buy_amount,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
             solver_fee,
@@ -333,28 +366,43 @@ pub mod tests {
     #[test]
     fn scales_limit_order_amounts_for_partially_filled_orders() {
         let converter = OrderConverter::test(H160::default());
-        let order = converter
-            .normalize_limit_order(Order {
-                data: OrderData {
-                    sell_amount: 10.into(),
-                    buy_amount: 20.into(),
-                    fee_amount: 30.into(),
-                    kind: OrderKind::Sell,
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    executed_sell_amount_before_fees: 5.into(),
-                    solver_fee: 200.into(),
-                    ..Default::default()
-                },
+        let mut order = Order {
+            data: OrderData {
+                sell_amount: 20.into(),
+                buy_amount: 40.into(),
+                fee_amount: 60.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
                 ..Default::default()
-            })
-            .unwrap();
+            },
+            metadata: OrderMetadata {
+                executed_sell_amount_before_fees: 10.into(),
+                solver_fee: 200.into(),
+                partially_fillable_balance: Some(1000.into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        assert_eq!(order.sell_amount, 5.into());
-        assert_eq!(order.buy_amount, 10.into());
-        assert_eq!(order.solver_fee, 100.into());
+        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        // Amounts are halved because the order is half executed.
+        assert_eq!(order_.sell_amount, 10.into());
+        assert_eq!(order_.buy_amount, 20.into());
+        assert_eq!(order_.solver_fee, 100.into());
+
+        order.metadata.partially_fillable_balance = Some(20.into());
+        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        // Amounts are quartered because of balance.
+        assert_eq!(order_.sell_amount, 5.into());
+        assert_eq!(order_.buy_amount, 10.into());
+        assert_eq!(order_.solver_fee, 50.into());
+
+        order.metadata.executed_sell_amount_before_fees = 0.into();
+        let order_ = converter.normalize_limit_order(order).unwrap();
+        // Amounts are still quartered because of balance.
+        assert_eq!(order_.sell_amount, 5.into());
+        assert_eq!(order_.buy_amount, 10.into());
+        assert_eq!(order_.solver_fee, 50.into());
     }
 
     #[test]
