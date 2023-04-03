@@ -281,6 +281,7 @@ mod tests {
                 base: url.parse().unwrap(),
                 solve_path: "solve".to_owned(),
                 client: Client::new(),
+                gzip_requests: false,
                 config: SolverConfig::default(),
             },
             Account::Local(Address::default(), None),
