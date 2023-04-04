@@ -36,12 +36,15 @@ impl Solver for NaiveSolver {
     async fn solve(
         &self,
         Auction {
-            orders,
+            mut orders,
             liquidity,
             external_prices,
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
+        // Filter out partially fillable limit orders until we add support for computing
+        // a reasonable `solver_fee` (#1414).
+        orders.retain(|o| !o.solver_determines_fee());
         let slippage = self.slippage_calculator.context(&external_prices);
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         Ok(settle(slippage, orders, uniswaps))
