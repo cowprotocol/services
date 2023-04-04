@@ -533,7 +533,7 @@ WHERE
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct OrderExecution {
-    pub executed_solver_fee: BigDecimal,
+    pub executed_solver_fee: Option<BigDecimal>,
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
@@ -560,7 +560,7 @@ pub fn order_executions_in_tx<'a>(
 WITH settlement AS (
     SELECT block_number, log_index
     FROM settlements
-    WHERE tx_hash = '\xbd4734d2c727582cf162ee59202d7e75d3fc9d3c99a7c249cd81ac768f94651f'
+    WHERE tx_hash = $1
 )
 SELECT
     solver_fee AS executed_solver_fee,
@@ -570,7 +570,7 @@ SELECT
     o.buy_amount AS buy_amount,
     kind,
     CASE
-        WHEN o.kind = 'sell' THEN t.sell_amount - oe.surplus_fee - t.fee_amount
+        WHEN o.kind = 'sell' THEN t.sell_amount - COALESCE(oe.surplus_fee, 0) - t.fee_amount
         ELSE t.buy_amount END AS executed_amount,
     o.owner,
     signature,
