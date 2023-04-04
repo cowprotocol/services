@@ -172,10 +172,10 @@ impl DecodedSettlement {
         })
     }
 
-    // Assumes it is called with already FILLED orders.
-    // Needs rework to support partially fillable orders.
-    // Tricky because the decoded settlement is using FILLED `orders` so we don't
-    // always know the executed amount in case of partial fill.
+    /// Returns the total `executed_solver_fee` of this solution converted to
+    /// the native token. This is only the value used for objective value
+    /// computatations and can theoretically be different from the value of
+    /// fees actually collected by the protocol.
     pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[OrderExecution]) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders
@@ -248,22 +248,12 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
+/// Converts the order's `solver_fee` which is denominated in `sell_token` to
+/// the native token.
 fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
     let solver_fee = u256_to_big_rational(&order.executed_solver_fee);
-    tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
-
-    let fee = match order.kind {
-        model::order::OrderKind::Buy => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.buy_amount)
-        }
-        model::order::OrderKind::Sell => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.sell_amount)
-        }
-    };
-    tracing::trace!(?fee, "fee before conversion to native token");
-    let fee = external_prices.try_get_native_amount(order.sell_token, fee)?;
+    tracing::trace!(?solver_fee, "fee before conversion to native token");
+    let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
     tracing::trace!(?fee, "fee after conversion to native token");
     big_rational_to_u256(&fee).ok()
 }

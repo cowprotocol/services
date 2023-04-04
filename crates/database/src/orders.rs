@@ -537,6 +537,8 @@ pub struct OrderExecution {
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
+    /// The amount of `sell_token`s that actually got converted to `buy_token`
+    /// for the user to receive.
     pub sell_amount_before_fees: BigDecimal,
     pub buy_amount: BigDecimal,
     pub executed_amount: BigDecimal,
