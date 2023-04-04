@@ -14,6 +14,7 @@ use {
         db_order_conversions::{order_kind_from, signing_scheme_from},
         external_prices::ExternalPrices,
     },
+    std::collections::HashSet,
     web3::ethabi::{Function, Token},
 };
 
@@ -109,7 +110,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 /// Note that most orders only have a single fill as they are fill-or-kill
 /// orders but partially fillable orders could have associated any number of
 /// [`OrderExecution`]s with them.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderExecution {
     pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
@@ -180,17 +181,17 @@ impl DecodedSettlement {
     /// computatations and can theoretically be different from the value of
     /// fees actually collected by the protocol.
     pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[OrderExecution]) -> U256 {
+        let mut used_indices = HashSet::new();
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders.iter().find(|order| {
-                // I think theoretically it's possible that the same partiallye fillable order
-                // gets filled twice for the same `executed_amount` in the same
-                // auction with different `executed_solver_fee`s but I'm not
-                // sure this can be made unambiguous here and I'm not sure if it
-                // would practically ever happen.
+            match orders.iter().enumerate().find(|(i, order)| {
                 order.signature == trade.signature.0
                     && order.executed_amount == trade.executed_amount
+                    // It's possible to have multiple fills with the same `executed_amount` for the
+                    // same order with different `solver_fees`. To end up with the correct total
+                    // fees we can only use every `OrderExecution` exactly once.
+                    && used_indices.insert(*i)
             }) {
-                Some(order) => {
+                Some((_, order)) => {
                     acc + match fee(external_prices, order) {
                         Some(fee) => fee,
                         None => {
