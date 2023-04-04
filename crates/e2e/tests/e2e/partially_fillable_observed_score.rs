@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    ethcontract::{prelude::U256, BlockId},
+    ethcontract::{prelude::U256, BlockId, H160},
     model::{
         order::{OrderBuilder, OrderClass, OrderKind},
         signature::EcdsaSigningScheme,
@@ -16,6 +16,9 @@ async fn local_node_partially_fillable_balance() {
     run_test(test).await;
 }
 
+/// Sets up a big partially fillable trade. Waits until 2 partial fills
+/// happened and then asserts that the solver competition entries for these 2 tx
+/// only contain their respectively filled amounts and fees.
 async fn test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -113,17 +116,15 @@ async fn test(web3: Web3) {
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     let get_block = || async {
-        web3
-            .eth()
+        web3.eth()
             .block(BlockId::Number(ethcontract::BlockNumber::Latest))
             .await
             .unwrap()
             .unwrap()
     };
-    let settlement_tx = get_block().await.transactions.pop().unwrap();
+    let settlement_tx_1 = get_block().await.transactions.pop().unwrap();
 
-    // Expecting a partial fill because order sells 100 but user only has balance of
-    // 50.
+    // Expecting a partial fill because order sells 100 but user only has 50.
     let sell_balance = token_a
         .balance_of(trader_a.address())
         .call()
@@ -132,33 +133,65 @@ async fn test(web3: Web3) {
         .to_f64_lossy();
     // Depending on how the solver works might not have sold all balance.
     assert!((0e18..=1e18).contains(&sell_balance));
-    let buy_balance = token_b
-        .balance_of(trader_a.address())
-        .call()
-        .await
-        .unwrap()
-        .to_f64_lossy();
+    let buy_balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
     // We don't know exact buy balance because of the fee.
-    assert!((45e18..=55e18).contains(&buy_balance));
+    assert!((45e18..=55e18).contains(&buy_balance.to_f64_lossy()));
 
-    // Mine enough blocks to get past the reorg safety threshold for indexing events
+    // Trader somehow gets another 25 `token_a` which allows for another partial
+    // fill.
+    token_a.mint(trader_a.address(), to_wei(25)).await;
+    let trade_happened =
+        || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != buy_balance };
+    let start = std::time::Instant::now();
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+    tracing::error!(elapsed =? start.elapsed(), "second trade done");
+    let settlement_tx_2 = get_block().await.transactions.pop().unwrap();
+
+    tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
     for _ in 0..100 {
-        token_a.mint(trader_a.address(), to_wei(50)).await;
+        token_a.mint(H160::from_low_u64_be(42), 1.into()).await;
     }
 
-    let get_competition = || async { services
-        .client()
-        .get(format!(
-            "{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/by_tx_hash/{settlement_tx:?}"
-        ))
-        .send()
+    let competitions_indexed = || async {
+        services
+            .get_solver_competition(settlement_tx_2)
+            .await
+            .is_ok()
+            && services
+                .get_solver_competition(settlement_tx_1)
+                .await
+                .is_ok()
+    };
+    tracing::info!("waiting for solver competitions to get indexed");
+    wait_for_condition(TIMEOUT, competitions_indexed)
         .await
-        .unwrap()
-    };
-    let competition_indexed = || async {
-        get_competition().await.status() == 200
-    };
-    wait_for_condition(TIMEOUT, competition_indexed).await.unwrap();
-    let competition = get_competition().await.json::<serde_json::Value>().await.unwrap();
-    dbg!(competition);
+        .unwrap();
+
+    let competition_1 = services
+        .get_solver_competition(settlement_tx_1)
+        .await
+        .unwrap();
+    assert_eq!(competition_1.transaction_hash, Some(settlement_tx_1));
+    assert_eq!(
+        competition_1.common.solutions[0].objective.fees,
+        113195499999999.95
+    );
+    assert_eq!(
+        competition_1.common.solutions[0].orders[0].executed_amount,
+        U256::from_f64_lossy(50e18)
+    );
+
+    let competition_2 = services
+        .get_solver_competition(settlement_tx_2)
+        .await
+        .unwrap();
+    assert_eq!(competition_2.transaction_hash, Some(settlement_tx_2));
+    assert_eq!(
+        competition_2.common.solutions[0].objective.fees,
+        41597749999999.66
+    );
+    assert_eq!(
+        competition_2.common.solutions[0].orders[0].executed_amount,
+        U256::from_f64_lossy(25e18)
+    );
 }

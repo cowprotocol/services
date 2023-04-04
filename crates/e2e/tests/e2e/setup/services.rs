@@ -9,6 +9,7 @@ use {
         auction::AuctionWithId,
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
+        solver_competition::SolverCompetitionAPI,
     },
     reqwest::{Client, StatusCode},
     sqlx::Connection,
@@ -155,6 +156,28 @@ impl<'a> Services<'a> {
         assert_eq!(status, StatusCode::OK, "{body}");
 
         serde_json::from_str(&body).unwrap()
+    }
+
+    pub async fn get_solver_competition(
+        &self,
+        hash: H256,
+    ) -> Result<SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/by_tx_hash/{hash:?}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
     }
 
     /// Create an [`Order`].
