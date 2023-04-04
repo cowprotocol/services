@@ -92,15 +92,40 @@ impl Fills {
             return None;
         }
 
-        let (sell, buy) = match order.side {
-            order::Side::Buy => (order.sell, eth::Asset { token, amount }),
-            order::Side::Sell => (eth::Asset { token, amount }, order.buy),
+        // Scale amounts according to the limit price and the chosen fill.
+        let (sell_amount, buy_amount) = match order.side {
+            order::Side::Buy => {
+                let sell_amount = order
+                    .sell
+                    .amount
+                    .full_mul(amount)
+                    .checked_div(order.buy.amount.into())?
+                    .try_into()
+                    .unwrap();
+                (sell_amount, amount)
+            }
+            order::Side::Sell => {
+                let buy_amount = order
+                    .buy
+                    .amount
+                    .full_mul(amount)
+                    .checked_div(order.sell.amount.into())?
+                    .try_into()
+                    .unwrap();
+                (amount, buy_amount)
+            }
         };
 
         tracing::trace!(?amount, "trying to partially fill order");
         Some(dex::Order::new(&order::Order {
-            sell,
-            buy,
+            sell: eth::Asset {
+                token: order.sell.token,
+                amount: sell_amount,
+            },
+            buy: eth::Asset {
+                token: order.buy.token,
+                amount: buy_amount,
+            },
             ..*order
         }))
     }
