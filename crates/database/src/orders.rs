@@ -591,7 +591,7 @@ WHERE
                 block_number = (SELECT block_number FROM settlement) AND
                 log_index < (SELECT log_index from settlement)
         ) AND
-        (SELECT log_index FROM settlement)#
+        (SELECT log_index FROM settlement)
     "#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)

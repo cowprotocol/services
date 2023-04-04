@@ -22,6 +22,7 @@ pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
+pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
