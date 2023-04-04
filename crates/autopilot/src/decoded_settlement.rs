@@ -181,10 +181,15 @@ impl DecodedSettlement {
     /// fees actually collected by the protocol.
     pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[OrderExecution]) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders
-                .iter()
-                .find(|order| order.signature == trade.signature.0)
-            {
+            match orders.iter().find(|order| {
+                // I think theoretically it's possible that the same partiallye fillable order
+                // gets filled twice for the same `executed_amount` in the same
+                // auction with different `executed_solver_fee`s but I'm not
+                // sure this can be made unambiguous here and I'm not sure if it
+                // would practically ever happen.
+                order.signature == trade.signature.0
+                    && order.executed_amount == trade.executed_amount
+            }) {
                 Some(order) => {
                     acc + match fee(external_prices, order) {
                         Some(fee) => fee,
