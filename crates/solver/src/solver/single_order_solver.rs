@@ -486,9 +486,13 @@ pub fn execution_respects_order(
     executed_sell_amount: U256,
     executed_buy_amount: U256,
 ) -> bool {
-    // note: This would be different for partially fillable orders but LimitOrder
-    // does currently not contain the remaining fill amount.
-    executed_sell_amount <= order.sell_amount && executed_buy_amount >= order.buy_amount
+    executed_sell_amount <= order.sell_amount
+        && if order.partially_fillable {
+            order.sell_amount.full_mul(executed_buy_amount)
+                >= executed_sell_amount.full_mul(order.buy_amount)
+        } else {
+            executed_buy_amount >= order.buy_amount
+        }
 }
 
 #[cfg(test)]
@@ -728,6 +732,21 @@ mod tests {
         assert!(execution_respects_order(&order, 10.into(), 11.into(),));
         // Price is respected but order is partially filled.
         assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
+
+        let order = LimitOrder {
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 20.into(),
+            partially_fillable: true,
+            ..Default::default()
+        };
+        assert!(execution_respects_order(&order, 10.into(), 20.into()));
+        assert!(execution_respects_order(&order, 10.into(), 21.into()));
+        assert!(!execution_respects_order(&order, 10.into(), 19.into()));
+        assert!(!execution_respects_order(&order, 11.into(), 23.into()));
+        assert!(execution_respects_order(&order, 5.into(), 10.into()));
+        assert!(execution_respects_order(&order, 5.into(), 11.into()));
+        assert!(!execution_respects_order(&order, 5.into(), 9.into()));
     }
 
     #[ignore] // ignore this test because it could fail due to randomness
