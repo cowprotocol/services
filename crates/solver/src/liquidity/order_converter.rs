@@ -105,8 +105,6 @@ impl OrderConverter {
                 native_token,
             }),
             exchange: Exchange::GnosisProtocol,
-            // Deprecated. Always set to 0.
-            reward: 0.,
         })
     }
 }

@@ -107,7 +107,6 @@ pub fn solve(
                 },
             }),
             exchange: Exchange::GnosisProtocol,
-            reward: 0.,
         })
         .collect_vec();
 
