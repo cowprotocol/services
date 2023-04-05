@@ -287,12 +287,8 @@ impl Driver {
             .orders
             .into_iter()
             .filter_map(|order| {
-                let uid = order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
-                    Ok(mut order) => {
-                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
-                        Some(order)
-                    }
+                    Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
@@ -334,7 +330,6 @@ impl Driver {
             .await?;
         self.metrics.liquidity_fetched(&liquidity);
 
-        let rewards = auction.rewards;
         let auction = Auction {
             id: auction_id,
             run: run_id,
@@ -439,16 +434,11 @@ impl Driver {
                 .settlement
                 .user_trades()
                 .map(|trade| {
-                    let uid = &trade.order.metadata.uid;
-                    let reward = rewards.get(uid).copied().unwrap_or(0.);
-                    // Log in case something goes wrong with storing the rewards in the database.
-                    tracing::debug!(%uid, %reward, "winning solution reward");
                     let execution = Execution {
-                        reward,
                         surplus_fee: trade.surplus_fee(),
                         solver_fee: trade.solver_fee,
                     };
-                    (*uid, execution)
+                    (trade.order.metadata.uid, execution)
                 })
                 .collect();
 
