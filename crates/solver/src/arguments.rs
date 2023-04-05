@@ -11,7 +11,6 @@ use {
             SolverType,
         },
     },
-    chrono::{DateTime, Utc},
     ethcontract::U256,
     primitive_types::H160,
     reqwest::Url,
@@ -321,11 +320,6 @@ pub struct Arguments {
     #[clap(flatten)]
     pub s3_upload: S3UploadArguments,
 
-    /// Enable ranking of settlements by score
-    /// /// CIP20 TODO - remove after transition period is over
-    #[clap(long, env, default_value = "2023-03-21T00:00:00+00:00")]
-    pub auction_rewards_activation_timestamp: DateTime<Utc>,
-
     /// Additional time to wait for a transaction to appear onchain before
     /// considering the solution invalid and setting the reward to 0.
     #[clap(
@@ -480,11 +474,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "{}", self.s3_upload)?;
         writeln!(
             f,
-            "auction_rewards_activation_timestamp: {}",
-            self.auction_rewards_activation_timestamp
-        )?;
-        writeln!(
-            f,
             "additional_mining_deadline: {:?}",
             self.additional_mining_deadline
         )?;
@@ -518,24 +507,4 @@ pub enum TransactionStrategyArg {
     Flashbots,
     Gelato,
     DryRun,
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, chrono::NaiveDate, std::str::FromStr};
-
-    #[test]
-    fn test_parsing_date_time() {
-        let dt = DateTime::<Utc>::from_utc(
-            NaiveDate::from_ymd_opt(2023, 3, 14)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-            Utc,
-        );
-        let stringified = dt.to_rfc3339();
-        println!("stringified: {}", stringified);
-        let dt2 = DateTime::<Utc>::from_str(&stringified).unwrap();
-        assert_eq!(dt, dt2);
-    }
 }
