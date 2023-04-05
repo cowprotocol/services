@@ -49,7 +49,7 @@ impl SolverCompetitionStoring for Postgres {
                 &u256_to_big_decimal(&execution.solver_fee),
             )
             .await
-            .context("order_rewards::save")?;
+            .context("order_execution::save")?;
         }
 
         database::settlement_scores::insert(
