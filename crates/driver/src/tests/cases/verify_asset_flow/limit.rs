@@ -128,7 +128,6 @@ async fn sell_too_low() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "limit",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -203,7 +202,6 @@ async fn sell_too_low() {
                         "class": "limit",
                         "surplusFee": surplus_fee.to_string(),
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
@@ -337,7 +335,6 @@ async fn buy_too_high() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "limit",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -412,7 +409,6 @@ async fn buy_too_high() {
                         "class": "limit",
                         "surplusFee": surplus_fee.to_string(),
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
