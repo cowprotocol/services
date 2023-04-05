@@ -12,12 +12,13 @@ pub async fn save(
     solver_fee: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, surplus_fee, solver_fee)
-VALUES ($1, $2, $3, $4)
+INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
+VALUES ($1, $2, $3, $4, $5)
     ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
+        .bind(0.) // reward is deprecated but saved for historical analysis
         .bind(surplus_fee)
         .bind(solver_fee)
         .execute(ex)
