@@ -342,13 +342,15 @@ impl SingleOrderSettlement {
                     .checked_add(surplus_fee)
                     .context("overflow computing executed sell amount")?
                     .min(order.sell_amount);
-                let executed_buy_amount = executed_sell_amount
-                    .checked_sub(surplus_fee)
-                    .context("underflow computing executed buy amount")?
-                    .checked_mul(traded_buy_amount)
-                    .context("overflow computing executed buy amount")?
-                    .checked_ceil_div(&traded_sell_amount)
-                    .context("zero traded sell amount")?;
+                let executed_buy_amount = match executed_sell_amount.checked_sub(surplus_fee) {
+                    Some(i) => i,
+                    // The fee is larger than the sell amount so it is not possible to fulfill it.
+                    None => return Ok(None),
+                }
+                .checked_mul(traded_buy_amount)
+                .context("overflow computing executed buy amount")?
+                .checked_ceil_div(&traded_sell_amount)
+                .context("zero traded sell amount")?;
 
                 (executed_sell_amount, executed_buy_amount)
             }
@@ -957,5 +959,16 @@ mod tests {
                 fee_amount: 2.into(),
             }
         );
+
+        // Fee is larger than total order sell amount.
+        let order = order(OrderKind::Sell);
+        let settlement = SingleOrderSettlement {
+            sell_token_price: 1.into(),
+            buy_token_price: 1.into(),
+            interactions: vec![],
+            gas_estimate: 1000.into(),
+        };
+        let result = settlement.into_settlement(&order, 1.into(), &prices, 1000.);
+        assert!(matches!(result, Ok(None)), "{:?}", result);
     }
 }
