@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::Postgres,
+        database::{competition::Competition, Postgres},
         driver_api::Driver,
         driver_model::{
             execute,
@@ -76,6 +76,15 @@ impl RunLoop {
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by(|left, right| left.1.score.total_cmp(&right.1.score));
 
+        let competition = Competition {
+            auction_id: id,
+            ..Default::default() // TODO: Fill in the rest.
+        };
+        if let Err(err) = self.save_competition(&competition).await {
+            tracing::error!(?err, "failed to save competition");
+            return;
+        }
+
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
             // The winner has score 0 so all solutions are empty.
@@ -93,12 +102,6 @@ impl RunLoop {
                 }
             }
         }
-
-        // TODO:
-        // - Think about what per auction information needs to be permanently
-        //   stored. We might want
-        // to store the competition information and the full promised solution
-        // of the winner.
     }
 
     /// Returns the successful /solve responses and the index of the solver.
@@ -294,5 +297,13 @@ impl RunLoop {
             tokio::time::sleep(self.network_block_interval.div_f32(2.)).await;
         }
         Ok(None)
+    }
+
+    /// Saves the competition data to the database
+    async fn save_competition(&self, competition: &Competition) -> Result<()> {
+        self.database
+            .save_competition(competition)
+            .await
+            .context("save competition data")
     }
 }
