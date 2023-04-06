@@ -114,7 +114,6 @@ async fn sell() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 }
             ],
             "liquidity": [],
@@ -236,7 +235,6 @@ async fn buy() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 }
             ],
             "liquidity": [],

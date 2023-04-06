@@ -16,7 +16,6 @@ pub struct Order {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
-    pub reward: Reward,
 }
 
 impl Order {
@@ -113,10 +112,6 @@ impl<'a> NonLiquidity<'a> {
         self.0
     }
 }
-
-/// A COW reward amount, in base units.
-#[derive(Clone, Copy, Debug)]
-pub struct Reward(pub f64);
 
 /// An arbitrary ethereum interaction that is required for the settlement
 /// execution.

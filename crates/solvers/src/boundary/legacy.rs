@@ -175,7 +175,7 @@ fn to_boundary_auction(
                 // single user order that is mandatory to be matched.
                 mandatory: auction.id.is_none(),
                 has_atomic_execution: false,
-                reward: order.reward.0,
+                reward: 0.,
             },
         );
     }

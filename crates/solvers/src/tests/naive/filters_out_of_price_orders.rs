@@ -25,7 +25,6 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 },
                 // Reasonable order a -> b
                 {
@@ -40,7 +39,6 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 },
                 // Reasonable order a -> b
                 {
@@ -55,7 +53,6 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 },
                 // Unreasonable order a -> b
                 {
@@ -70,7 +67,6 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 },
             ],
             "liquidity": [

@@ -43,6 +43,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    /// [DEPRECATED] All orders are always mature
     pub is_mature: bool,
     #[serde(default)]
     pub mandatory: bool,
@@ -53,7 +54,7 @@ pub struct OrderModel {
     /// the pre- and post conditions are met after the complete batch got
     /// executed.
     pub has_atomic_execution: bool,
-    /// CIP-14 risk adjusted solver reward
+    /// [DEPRECATED] CIP-14 risk adjusted solver reward is no longer used
     pub reward: f64,
 }
 

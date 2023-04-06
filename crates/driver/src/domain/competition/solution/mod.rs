@@ -137,8 +137,6 @@ impl Solution {
         // these rules constitutes a punishable offense for the solver, even if
         // the interactions are internalized. To ensure that this doesn't happen, check
         // that the settlement simulates even when internalizations are disabled.
-        //
-        // See also the [`competition::Order::reward`] field.
         if self
             .interactions
             .iter()
