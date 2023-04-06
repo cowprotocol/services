@@ -10,6 +10,7 @@ use {
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,
+        trade::Trade,
     },
     reqwest::{Client, StatusCode},
     sqlx::Connection,
@@ -170,6 +171,19 @@ impl<'a> Services<'a> {
             .send()
             .await
             .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
+        let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
+        let response = self.http.get(url).send().await.unwrap();
 
         let status = response.status();
         let body = response.text().await.unwrap();

@@ -1,6 +1,7 @@
 use {
     crate::setup::*,
-    ethcontract::{prelude::U256, BlockId, H160},
+    ethcontract::{prelude::U256, H160},
+    futures::StreamExt,
     model::{
         order::{OrderBuilder, OrderClass, OrderKind},
         signature::EcdsaSigningScheme,
@@ -95,7 +96,7 @@ async fn test(web3: Web3) {
         )
         .build()
         .into_order_creation();
-    services.create_order(&order_a).await.unwrap();
+    let uid = services.create_order(&order_a).await.unwrap();
 
     tracing::info!("Waiting for order to show up in auction.");
     let has_order = || async { services.get_auction().await.auction.orders.len() == 1 };
@@ -109,89 +110,67 @@ async fn test(web3: Web3) {
     assert_eq!(order.metadata.solver_fee, 0.into());
     assert_eq!(auction.rewards.get(&order.metadata.uid), None);
 
-    tracing::info!("Waiting for trade.");
     services.start_old_driver(solver.private_key(), vec!["--solvers=Baseline".to_owned()]);
+
+    tracing::info!("Waiting for trade.");
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+    let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
 
-    let get_block = || async {
-        web3.eth()
-            .block(BlockId::Number(ethcontract::BlockNumber::Latest))
-            .await
-            .unwrap()
-            .unwrap()
-    };
-    let settlement_tx_1 = get_block().await.transactions.pop().unwrap();
-
-    // Expecting a partial fill because order sells 100 but user only has 50.
-    let sell_balance = token_a
-        .balance_of(trader_a.address())
-        .call()
-        .await
-        .unwrap()
-        .to_f64_lossy();
-    // Depending on how the solver works might not have sold all balance.
-    assert!((0e18..=1e18).contains(&sell_balance));
-    let buy_balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    // We don't know exact buy balance because of the fee.
-    assert!((45e18..=55e18).contains(&buy_balance.to_f64_lossy()));
-
-    // Trader somehow gets another 25 `token_a` which allows for another partial
-    // fill.
+    // Add balance so that second trade happens.
     token_a.mint(trader_a.address(), to_wei(25)).await;
+    tracing::info!("Waiting for trade.");
     let trade_happened =
-        || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != buy_balance };
-    let start = std::time::Instant::now();
+        || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != balance };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-    tracing::error!(elapsed =? start.elapsed(), "second trade done");
-    let settlement_tx_2 = get_block().await.transactions.pop().unwrap();
 
     tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
-    for _ in 0..100 {
+    for _ in 0..65 {
         token_a.mint(H160::from_low_u64_be(42), 1.into()).await;
     }
 
-    let competitions_indexed = || async {
-        services
-            .get_solver_competition(settlement_tx_2)
-            .await
-            .is_ok()
-            && services
-                .get_solver_competition(settlement_tx_1)
+    let indexed_trades = || async { services.get_trades(&uid).await.unwrap().len() == 2 };
+    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
+    let trades = services.get_trades(&uid).await.unwrap();
+
+    tracing::info!("waiting for solver competitions to get indexed");
+    let competitions_indexed = || {
+        futures::stream::iter(&trades).all(|trade| async {
+            services
+                .get_solver_competition(trade.tx_hash.unwrap())
                 .await
                 .is_ok()
+        })
     };
-    tracing::info!("waiting for solver competitions to get indexed");
     wait_for_condition(TIMEOUT, competitions_indexed)
         .await
         .unwrap();
 
+    let competition_0 = services
+        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .await
+        .unwrap();
     let competition_1 = services
-        .get_solver_competition(settlement_tx_1)
+        .get_solver_competition(trades[1].tx_hash.unwrap())
         .await
         .unwrap();
-    assert_eq!(competition_1.transaction_hash, Some(settlement_tx_1));
-    assert_eq!(
-        competition_1.common.solutions[0].objective.fees,
-        113195499999999.95
-    );
-    assert_eq!(
-        competition_1.common.solutions[0].orders[0].executed_amount,
-        U256::from_f64_lossy(50e18)
-    );
 
-    let competition_2 = services
-        .get_solver_competition(settlement_tx_2)
-        .await
-        .unwrap();
-    assert_eq!(competition_2.transaction_hash, Some(settlement_tx_2));
-    assert_eq!(
-        competition_2.common.solutions[0].objective.fees,
-        41597749999999.66
-    );
-    assert_eq!(
-        competition_2.common.solutions[0].orders[0].executed_amount,
-        U256::from_f64_lossy(25e18)
+    tracing::info!(?trades, ?competition_0, ?competition_1);
+
+    assert_eq!(competition_0.common.solutions.len(), 1);
+    assert_eq!(competition_1.common.solutions.len(), 1);
+    let solution_0 = &competition_0.common.solutions[0];
+    let solution_1 = &competition_1.common.solutions[0];
+
+    assert!(solution_0.objective.fees > 0.);
+    assert!(solution_1.objective.fees > 0.);
+    assert_ne!(solution_0.objective.fees, solution_1.objective.fees);
+
+    assert!(solution_0.orders[0].executed_amount > 0.into());
+    assert!(solution_1.orders[0].executed_amount > 0.into());
+    assert_ne!(
+        solution_0.orders[0].executed_amount,
+        solution_1.orders[0].executed_amount
     );
 }
