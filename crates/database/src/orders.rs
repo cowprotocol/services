@@ -494,16 +494,14 @@ pub async fn single_full_order(
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
-pub fn full_orders_in_tx<'a>(
-    ex: &'a mut PgConnection,
-    tx_hash: &'a TransactionHash,
-) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    const QUERY: &str = const_format::formatcp!(
-        r#"
--- This will fail if we ever have multiple settlements in the same transaction because this WITH
--- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
--- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
--- like taking block number and log index directly.
+// Partial query for getting the log indices of events of a single settlement.
+//
+// This will fail if we ever have multiple settlements in the same transaction
+// because this WITH query will return multiple rows. If we ever want to do
+// this, a tx hash is no longer enough to uniquely identify a settlement so the
+// "orders for tx hash" route needs to change in some way like taking block
+// number and log index directly.
+const SETTLEMENT_LOG_INDICES: &str = r#"
 WITH
     -- The log index in this query is the log index from the settlement event, which comes after the trade events.
     settlement AS (
@@ -519,12 +517,20 @@ WITH
             block_number = (SELECT block_number FROM settlement) AND
             log_index < (SELECT log_index FROM settlement)
     )
+"#;
+
+pub fn full_orders_in_tx<'a>(
+    ex: &'a mut PgConnection,
+    tx_hash: &'a TransactionHash,
+) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
+    const QUERY: &str = const_format::formatcp!(
+        r#"
+{SETTLEMENT_LOG_INDICES}
 SELECT {ORDERS_SELECT}
 FROM {ORDERS_FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
-    -- BETWEEN is inclusive
     t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
 ;"#
     );
@@ -553,15 +559,7 @@ pub fn order_executions_in_tx<'a>(
 ) -> BoxStream<'a, Result<OrderExecution, sqlx::Error>> {
     const QUERY: &str = const_format::formatcp!(
         r#"
--- This will fail if we ever have multiple settlements in the same transaction because this WITH
--- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
--- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
--- like taking block number and log index directly.
-WITH settlement AS (
-    SELECT block_number, log_index
-    FROM settlements
-    WHERE tx_hash = $1
-)
+{SETTLEMENT_LOG_INDICES}
 SELECT
     solver_fee AS executed_solver_fee,
     sell_token,
@@ -580,18 +578,7 @@ JOIN orders o ON o.uid = oe.order_uid
 JOIN trades t ON t.order_uid = oe.order_uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
-    -- BETWEEN is inclusive
-    t.log_index BETWEEN
-        -- previous settlement, the settlement event is emitted after the trade events
-        (
-            -- COALESCE because there might not be a previous settlement
-            SELECT COALESCE(MAX(log_index), 0)
-            FROM settlements
-            WHERE
-                block_number = (SELECT block_number FROM settlement) AND
-                log_index < (SELECT log_index from settlement)
-        ) AND
-        (SELECT log_index FROM settlement)
+    t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
     "#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
