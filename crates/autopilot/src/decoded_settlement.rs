@@ -14,7 +14,6 @@ use {
         db_order_conversions::{order_kind_from, signing_scheme_from},
         external_prices::ExternalPrices,
     },
-    std::collections::HashSet,
     web3::ethabi::{Function, Token},
 };
 
@@ -180,19 +179,22 @@ impl DecodedSettlement {
     /// the native token. This is only the value used for objective value
     /// computatations and can theoretically be different from the value of
     /// fees actually collected by the protocol.
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[OrderExecution]) -> U256 {
-        let mut used_indices = HashSet::new();
+    pub fn total_fees(
+        &self,
+        external_prices: &ExternalPrices,
+        mut orders: Vec<OrderExecution>,
+    ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders.iter().enumerate().find(|(i, order)| {
+            match orders.iter().position(|order| {
                 order.signature == trade.signature.0
                     && order.executed_amount == trade.executed_amount
+            }) {
+                Some(i) => {
                     // It's possible to have multiple fills with the same `executed_amount` for the
                     // same order with different `solver_fees`. To end up with the correct total
                     // fees we can only use every `OrderExecution` exactly once.
-                    && used_indices.insert(*i)
-            }) {
-                Some((_, order)) => {
-                    acc + match fee(external_prices, order) {
+                    let order = orders.swap_remove(i);
+                    acc + match fee(external_prices, &order) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -578,7 +580,7 @@ mod tests {
             }
         ];
         let fees = settlement
-            .total_fees(&external_prices, &orders)
+            .total_fees(&external_prices, orders)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);
