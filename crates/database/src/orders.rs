@@ -504,28 +504,28 @@ pub fn full_orders_in_tx<'a>(
 -- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
 -- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
 -- like taking block number and log index directly.
-WITH settlement as (
-    SELECT block_number, log_index
-    FROM settlements
-    WHERE tx_hash = $1
-)
+WITH
+    -- The log index in this query is the log index from the settlement event, which comes after the trade events.
+    settlement AS (
+        SELECT block_number, log_index
+        FROM settlements
+        WHERE tx_hash = $1
+    ),
+    -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
+    previous_settlement AS (
+        SELECT COALESCE(MAX(log_index), 0) AS low
+        FROM settlements
+        WHERE
+            block_number = (SELECT block_number FROM settlement) AND
+            log_index < (SELECT log_index FROM settlement)
+    )
 SELECT {ORDERS_SELECT}
 FROM {ORDERS_FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
     -- BETWEEN is inclusive
-    t.log_index BETWEEN
-        -- previous settlement, the settlement event is emitted after the trade events
-        (
-            -- COALESCE because there might not be a previous settlement
-            SELECT COALESCE(MAX(log_index), 0)
-            FROM settlements
-            WHERE
-                block_number = (SELECT block_number FROM settlement) AND
-                log_index < (SELECT log_index from settlement)
-        ) AND
-        (SELECT log_index FROM settlement)
+    t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
 ;"#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
