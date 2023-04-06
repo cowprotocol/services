@@ -1,6 +1,6 @@
 use {
     crate::{
-        driver::solver_settlements::{self, RatedSettlement},
+        driver::solver_settlements::{self},
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
         settlement_rater::{RatedSolverSettlement, SettlementRating},
@@ -8,11 +8,10 @@ use {
         solver::{SimulationWithError, Solver},
     },
     anyhow::Result,
-    chrono::{DateTime, Utc},
     ethcontract::U256,
     gas_estimation::GasPrice1559,
     model::auction::AuctionId,
-    num::{rational::Ratio, BigInt, BigRational, CheckedDiv, FromPrimitive},
+    num::{rational::Ratio, BigInt},
     number_conversions::big_rational_to_u256,
     rand::prelude::SliceRandom,
     shared::{
@@ -25,7 +24,7 @@ use {
             TransactionWithError,
         },
     },
-    std::{cmp::Ordering, collections::HashMap, sync::Arc},
+    std::sync::Arc,
 };
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
@@ -38,7 +37,6 @@ pub struct SettlementRanker {
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
     pub decimal_cutoff: u16,
-    pub auction_rewards_activation_timestamp: DateTime<Utc>,
     pub skip_non_positive_score_settlements: bool,
 }
 
@@ -190,9 +188,7 @@ impl SettlementRanker {
         }
 
         // Filter out settlements with non-positive score.
-        if Utc::now() > self.auction_rewards_activation_timestamp // CIP20 activated
-        && self.skip_non_positive_score_settlements
-        {
+        if self.skip_non_positive_score_settlements {
             rated_settlements.retain(|(solver, settlement, _)| {
                 let positive_score = settlement.score.score() > 0.into();
                 if !positive_score {
@@ -211,132 +207,44 @@ impl SettlementRanker {
         }
 
         // Filter out settlements with too high score.
-        if Utc::now() > self.auction_rewards_activation_timestamp {
-            // CIP20 activated
-            rated_settlements.retain(|(solver, settlement, _)| {
-                let surplus = big_rational_to_u256(&settlement.surplus).unwrap_or(U256::MAX);
-                let fees = big_rational_to_u256(&settlement.solver_fees).unwrap_or(U256::MAX);
-                let max_score = surplus.saturating_add(fees);
-                let valid_score = settlement.score.score() < max_score;
-                if !valid_score {
-                    tracing::debug!(
-                        solver_name = %solver.name(),
-                        "settlement filtered for having too high score",
-                    );
-                    solver.notify_auction_result(
-                        auction_id,
-                        AuctionResult::Rejected(SolverRejectionReason::TooHighScore {
-                            surplus,
-                            fees,
-                            max_score,
-                            submitted_score: settlement.score.score(),
-                        }),
-                    );
-                }
-                valid_score
-            });
-        }
+        rated_settlements.retain(|(solver, settlement, _)| {
+            let surplus = big_rational_to_u256(&settlement.surplus).unwrap_or(U256::MAX);
+            let fees = big_rational_to_u256(&settlement.solver_fees).unwrap_or(U256::MAX);
+            let max_score = surplus.saturating_add(fees);
+            let valid_score = settlement.score.score() < max_score;
+            if !valid_score {
+                tracing::debug!(
+                    solver_name = %solver.name(),
+                    "settlement filtered for having too high score",
+                );
+                solver.notify_auction_result(
+                    auction_id,
+                    AuctionResult::Rejected(SolverRejectionReason::TooHighScore {
+                        surplus,
+                        fees,
+                        max_score,
+                        submitted_score: settlement.score.score(),
+                    }),
+                );
+            }
+            valid_score
+        });
 
         // Before sorting, make sure to shuffle the settlements. This is to make sure we
-        // don't give preference to any specific solver when there is an
-        // objective value tie.
+        // don't give preference to any specific solver when there is a score tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
+        rated_settlements.sort_by_key(|s| s.1.score.score());
 
-        if Utc::now() > self.auction_rewards_activation_timestamp {
-            rated_settlements.sort_by_key(|s| s.1.score.score());
-
-            rated_settlements.iter_mut().rev().enumerate().for_each(
-                |(i, (solver, settlement, _))| {
-                    self.metrics
-                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-                    settlement.ranking = i + 1;
-                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
-                },
-            );
-        } else {
-            // TODO: remove this block of code once `auction-rewards` is implemented
-            rated_settlements.sort_by(|a, b| compare_solutions(&a.1, &b.1, self.decimal_cutoff));
-
-            let auction_based_ranking = auction_based_ranking(
-                rated_settlements
-                    .iter()
-                    .map(|(_, settlement, _)| settlement)
-                    .collect(),
-            );
-
-            rated_settlements.iter_mut().rev().enumerate().for_each(
-                |(i, (solver, settlement, _))| {
-                    self.metrics
-                        .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
-                    settlement.ranking = auction_based_ranking
-                        .get(&settlement.id)
-                        .copied()
-                        .unwrap_or(0);
-                    solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
-                },
-            );
-        }
+        rated_settlements
+            .iter_mut()
+            .rev()
+            .enumerate()
+            .for_each(|(i, (solver, settlement, _))| {
+                self.metrics
+                    .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
+                settlement.ranking = i + 1;
+                solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
+            });
         Ok((rated_settlements, errors))
-    }
-}
-
-// TODO: remove this once `auction-rewards` is implemented
-// Sort settlements by `auction-rewards` rules and return hashmap of settlement
-// id to ranking
-fn auction_based_ranking(settlements: Vec<&RatedSettlement>) -> HashMap<usize, usize> {
-    let mut settlements = settlements;
-    settlements.sort_by_key(|s| s.score.score());
-    settlements
-        .iter()
-        .rev()
-        .enumerate()
-        .map(|(i, settlement)| (settlement.id, i + 1))
-        .collect()
-}
-
-// TODO: remove this once `auction-rewards` is implemented
-fn compare_solutions(lhs: &RatedSettlement, rhs: &RatedSettlement, decimals: u16) -> Ordering {
-    let precision = BigRational::from_i8(10).unwrap().pow(decimals.into());
-    let rounded_lhs = lhs
-        .objective_value
-        .checked_div(&precision)
-        .expect("precision cannot be 0")
-        .floor();
-    let rounded_rhs = rhs
-        .objective_value
-        .checked_div(&precision)
-        .expect("precision cannot be 0")
-        .floor();
-    rounded_lhs.cmp(&rounded_rhs)
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, crate::driver::solver_settlements::RatedSettlement};
-
-    impl RatedSettlement {
-        fn with_objective(objective_value: f64) -> Self {
-            Self {
-                objective_value: BigRational::from_f64(objective_value).unwrap(),
-                ..Default::default()
-            }
-        }
-    }
-
-    #[test]
-    fn compare_solutions_precise() {
-        let better = RatedSettlement::with_objective(77495164315950.95);
-        let worse = RatedSettlement::with_objective(77278255312878.95);
-        assert_eq!(compare_solutions(&better, &worse, 0), Ordering::Greater);
-        assert_eq!(compare_solutions(&worse, &better, 0), Ordering::Less);
-        assert_eq!(compare_solutions(&better, &better, 0), Ordering::Equal);
-    }
-
-    #[test]
-    fn compare_solutions_rounded() {
-        let better = RatedSettlement::with_objective(77495164315950.95);
-        let worse = RatedSettlement::with_objective(77278255312878.95);
-        assert_eq!(compare_solutions(&better, &worse, 12), Ordering::Equal);
-        assert_eq!(compare_solutions(&better, &worse, 11), Ordering::Greater);
     }
 }

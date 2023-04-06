@@ -533,7 +533,6 @@ pub async fn run(args: Arguments) {
             .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
         code_fetcher,
-        args.auction_rewards_activation_timestamp,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
     );
