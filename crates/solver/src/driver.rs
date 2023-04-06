@@ -18,12 +18,10 @@ use {
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
-    chrono::{DateTime, Utc},
     contracts::GPv2Settlement,
     ethcontract::Account,
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
-    itertools::Itertools,
     model::{
         auction::{AuctionId, AuctionWithId},
         order::OrderUid,
@@ -107,7 +105,6 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
-        auction_rewards_activation_timestamp: DateTime<Utc>,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
     ) -> Self {
@@ -127,7 +124,6 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
-            auction_rewards_activation_timestamp,
             skip_non_positive_score_settlements,
         };
 
@@ -414,19 +410,6 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
-        // In transition period last settlement is not necessarily the one with the
-        // highest score. So we need to use the score ranking to determine the winner.
-        // CIP20 TODO - add to if statement below, once the transition period is over.
-        let mut scores = rated_settlements
-            .iter()
-            .map(|(solver, rated_settlement, _)| {
-                (
-                    rated_settlement.ranking,
-                    solver.account().address(),
-                    rated_settlement.score.score(),
-                )
-            })
-            .sorted_by_key(|(ranking, _, _)| *ranking);
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -467,12 +450,14 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
-            let (_, winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
             let scores = model::solver_competition::Scores {
-                winner,
-                winning_score,
+                winner: address,
+                winning_score: winning_settlement.score.score(),
                 // second highest score, or 0 if there is only one score (see CIP20)
-                reference_score: scores.next().unwrap_or_default().2,
+                reference_score: rated_settlements
+                    .last()
+                    .map(|(_, settlement, _)| settlement.score.score())
+                    .unwrap_or_default(),
                 block_deadline: {
                     let deadline = self.solver_time_limit
                         + self.solution_submitter.max_confirm_time
