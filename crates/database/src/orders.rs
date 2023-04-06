@@ -676,6 +676,7 @@ pub async fn update_fok_limit_order_fees(
             sell_token = $4
             AND buy_token = $5
             AND sell_amount = $6
+            AND NOT partially_fillable
         RETURNING
             uid
     ";
