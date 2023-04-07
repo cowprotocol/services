@@ -7,6 +7,7 @@ use {
 
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
+    pub auction_id: i64,
     pub gas_used: U256,
     pub effective_gas_price: U256,
     pub surplus: U256,
@@ -45,7 +46,6 @@ impl super::Postgres {
         .await
         .context("insert_settlement_tx_info")?;
 
-        // update settlement_observations if exist
         if let Some(auction_data) = settlement_update.auction_data {
             database::settlement_observations::insert(
                 &mut ex,
@@ -60,6 +60,11 @@ impl super::Postgres {
             )
             .await
             .context("insert_settlement_observations")?;
+
+            // delete auction prices for auction_id and all auctions before it
+            database::auction_prices::delete(&mut ex, auction_data.auction_id)
+                .await
+                .context("delete_before_auction_id")?;
         }
 
         ex.commit().await?;

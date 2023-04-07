@@ -161,6 +161,7 @@ impl OnSettlementEventUpdater {
                     let fee = settlement.total_fees(&external_prices, &orders);
 
                     update.auction_data = Some(AuctionData {
+                        auction_id,
                         surplus,
                         fee,
                         gas_used,

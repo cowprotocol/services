@@ -38,6 +38,17 @@ pub async fn fetch(
     Ok(prices)
 }
 
+/// Deletes all auction prices with an auction id less than or equal to the
+/// given auction id.
+pub async fn delete(ex: &mut PgTransaction<'_>, auction_id: AuctionId) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "DELETE FROM auction_prices WHERE auction_id <= $1";
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .execute(&mut *ex)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
@@ -49,7 +60,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let input = vec![
+        let auction_1 = vec![
             AuctionPrice {
                 auction_id: 1,
                 token: ByteArray([2; 20]),
@@ -61,12 +72,39 @@ mod tests {
                 price: 5.into(),
             },
         ];
-        insert(&mut db, &input).await.unwrap();
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(input, output);
+        let auction_2 = vec![AuctionPrice {
+            auction_id: 2,
+            token: ByteArray([4; 20]),
+            price: 6.into(),
+        }];
+        let auction_3 = vec![AuctionPrice {
+            auction_id: 3,
+            token: ByteArray([5; 20]),
+            price: 7.into(),
+        }];
 
+        insert(&mut db, &auction_1).await.unwrap();
+        insert(&mut db, &auction_2).await.unwrap();
+        insert(&mut db, &auction_3).await.unwrap();
+
+        // check that all auctions are there
+        let output = fetch(&mut db, 1).await.unwrap();
+        assert_eq!(output, auction_1);
+        let output = fetch(&mut db, 2).await.unwrap();
+        assert_eq!(output, auction_2);
+        let output = fetch(&mut db, 3).await.unwrap();
+        assert_eq!(output, auction_3);
         // non-existent auction
+        let output = fetch(&mut db, 4).await.unwrap();
+        assert!(output.is_empty());
+
+        // delete auction_2 and all before it
+        delete(&mut db, 2).await.unwrap();
+        let output = fetch(&mut db, 1).await.unwrap();
+        assert!(output.is_empty());
         let output = fetch(&mut db, 2).await.unwrap();
         assert!(output.is_empty());
+        let output = fetch(&mut db, 3).await.unwrap();
+        assert_eq!(output, auction_3);
     }
 }
