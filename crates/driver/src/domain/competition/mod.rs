@@ -1,5 +1,6 @@
 use {
     self::solution::settlement,
+    super::eth,
     crate::{
         boundary,
         domain::liquidity,
@@ -44,7 +45,10 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<(solution::Id, solution::Score), Error> {
+    pub async fn solve(
+        &self,
+        auction: &Auction,
+    ) -> Result<(solution::Id, solution::Score, eth::Address), Error> {
         tracing::trace!("fetching liquidity");
         let liquidity = self.liquidity.fetch(&Self::liquidity_pairs(auction)).await;
         tracing::trace!("solving");
@@ -55,7 +59,7 @@ impl Competition {
 
         if solution.is_empty() {
             // Don't waste resources on simulating an empty solution.
-            return Ok((solution.id, solution::Score::zero()));
+            return Ok((solution.id, solution::Score::zero(), self.solver.address()));
         }
 
         tracing::trace!("verifying");
@@ -64,7 +68,7 @@ impl Competition {
         let score = settlement.score(&self.eth, auction).await?;
         let id = settlement.id();
         *self.settlement.lock().unwrap() = Some((id, settlement));
-        Ok((id, score))
+        Ok((id, score, self.solver.address()))
     }
 
     /// Execute (settle) a solution generated as part of this competition.
