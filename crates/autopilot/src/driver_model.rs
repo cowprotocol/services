@@ -124,8 +124,9 @@ pub mod solve {
     pub struct Response {
         pub id: String,
         pub score: f64,
-        /// The address to which the CIP20 participation reward will be sent for this solution.
-        /// Usually the solver address used for submitting the solution onchain.
+        /// The address to which the CIP20 participation reward will be sent for
+        /// this solution. Usually the solver address used for
+        /// submitting the solution onchain.
         pub participation_reward_address: H160,
     }
 }
