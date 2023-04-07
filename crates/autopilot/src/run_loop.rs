@@ -79,6 +79,10 @@ impl RunLoop {
         let competition = Competition {
             auction_id: id,
             prices: auction.prices.clone(),
+            participants: solutions
+                .iter()
+                .map(|(_, response)| response.participation_reward_address)
+                .collect(),
             ..Default::default() // TODO: Fill in the rest.
         };
         if let Err(err) = self.save_competition(&competition).await {
