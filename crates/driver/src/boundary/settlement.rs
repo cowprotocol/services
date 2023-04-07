@@ -30,7 +30,7 @@ use {
         signature::EcdsaSignature,
         DomainSeparator,
     },
-    number_conversions::u256_to_big_rational,
+    number_conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, TokenAmount},
@@ -214,7 +214,8 @@ impl Settlement {
             gas_price,
             &gas.into(),
         );
-        Ok(inputs.objective_value().into())
+        let objective_value = big_rational_to_u256(&inputs.objective_value())?;
+        Ok(objective_value.into())
     }
 }
 

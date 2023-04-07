@@ -18,7 +18,7 @@ use {
     bigdecimal::Signed,
     futures::future::try_join_all,
     itertools::Itertools,
-    num::ToPrimitive,
+    primitive_types::U256,
     rand::Rng,
     settlement::Settlement,
     std::collections::HashMap,
@@ -36,6 +36,7 @@ pub use {interaction::Interaction, trade::Trade};
 #[derive(Debug)]
 pub struct Solution {
     pub id: Id,
+    //pub score: Score, // TODO - add score back in
     /// Trades settled by this solution.
     pub trades: Vec<Trade>,
     pub prices: ClearingPrices,
@@ -397,23 +398,23 @@ impl SolverTimeout {
 
 /// The solution score. This is often referred to as the "objective value".
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Score(pub num::BigRational);
+pub struct Score(pub U256);
 
-impl From<Score> for f64 {
+impl From<Score> for U256 {
     fn from(score: Score) -> Self {
-        score.0.to_f64().expect("value can be represented as f64")
+        score.0
     }
 }
 
-impl From<num::BigRational> for Score {
-    fn from(inner: num::BigRational) -> Self {
+impl From<U256> for Score {
+    fn from(inner: U256) -> Self {
         Self(inner)
     }
 }
 
 impl Score {
     pub fn zero() -> Self {
-        Self::default()
+        Self(U256::zero())
     }
 }
 

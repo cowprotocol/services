@@ -69,7 +69,7 @@ impl Competition {
         tracing::trace!("verifying");
         let settlement = solution.verify(&self.eth, &self.simulator, auction).await?;
         tracing::trace!("scoring");
-        let score = settlement.score(&self.eth, auction).await?;
+        let score = settlement.score(&self.eth, auction).await?; // TODO score should be provided by the solver
         let id = settlement.id();
         *self.settlement.lock().unwrap() = Some((id, settlement));
         Ok((id, score, reward))

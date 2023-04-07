@@ -1,6 +1,6 @@
 use {
     crate::domain::competition::{self, solution},
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
 };
@@ -34,6 +34,6 @@ pub struct Reward {
 pub struct Solution {
     #[serde_as(as = "DisplayFromStr")]
     id: u64,
-    score: f64,
+    score: U256,
     reward: Reward,
 }
