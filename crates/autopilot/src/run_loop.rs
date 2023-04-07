@@ -87,22 +87,27 @@ impl RunLoop {
             }
 
             tracing::info!("saving competition");
+            let auction_id = id;
+            let prices = auction.prices.clone();
+            let mut participants = solutions
+                .iter()
+                .map(|(_, response)| response.reward.participation_address)
+                .collect::<HashSet<_>>();
+            participants.insert(solution.reward.participation_address); // add winner
+            let scores = Scores {
+                winner: solution.reward.performance_address,
+                winning_score: solution.score,
+                reference_score: solutions
+                    .last()
+                    .map(|(_, response)| response.score)
+                    .unwrap_or_default(),
+                block_deadline: Default::default(), // TODO
+            };
             let competition = Competition {
-                auction_id: id,
-                prices: auction.prices.clone(),
-                participants: solutions
-                    .iter()
-                    .map(|(_, response)| response.reward.participation_address)
-                    .collect(),
-                scores: Scores {
-                    winner: solution.reward.performance_address,
-                    winning_score: solution.score,
-                    reference_score: solutions
-                        .last()
-                        .map(|(_, response)| response.score)
-                        .unwrap_or_default(),
-                    block_deadline: Default::default(), // TODO
-                },
+                auction_id,
+                prices,
+                participants,
+                scores,
             };
             if let Err(err) = self.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");

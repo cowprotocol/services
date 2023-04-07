@@ -16,7 +16,7 @@ use {
 pub struct Competition {
     pub auction_id: AuctionId,
     pub scores: Scores,
-    pub participants: HashSet<H160>,  // solver addresses
+    pub participants: HashSet<H160>, // addresses for CIP20 participation rewards payout
     pub prices: BTreeMap<H160, U256>, // external prices for auction
 }
 
