@@ -1,6 +1,9 @@
 use {
     crate::{
-        database::{competition::Competition, Postgres},
+        database::{
+            competition::{Competition, Scores},
+            Postgres,
+        },
         driver_api::Driver,
         driver_model::{
             execute,
@@ -74,28 +77,38 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by(|left, right| left.1.score.total_cmp(&right.1.score));
-
-        let competition = Competition {
-            auction_id: id,
-            prices: auction.prices.clone(),
-            participants: solutions
-                .iter()
-                .map(|(_, response)| response.participation_reward_address)
-                .collect(),
-            ..Default::default() // TODO: Fill in the rest.
-        };
-        if let Err(err) = self.save_competition(&competition).await {
-            tracing::error!(?err, "failed to save competition");
-            return;
-        }
+        solutions.sort_unstable_by_key(|solution| solution.1.score);
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
             // The winner has score 0 so all solutions are empty.
-            if solution.score == 0. {
+            if solution.score == 0.into() {
                 return;
             }
+
+            tracing::info!("saving competition");
+            let competition = Competition {
+                auction_id: id,
+                prices: auction.prices.clone(),
+                participants: solutions
+                    .iter()
+                    .map(|(_, response)| response.reward.participation_address)
+                    .collect(),
+                scores: Scores {
+                    winner: solution.reward.performance_address,
+                    winning_score: solution.score,
+                    reference_score: solutions
+                        .last()
+                        .map(|(_, response)| response.score)
+                        .unwrap_or_default(),
+                    block_deadline: Default::default(), // TODO
+                },
+            };
+            if let Err(err) = self.save_competition(&competition).await {
+                tracing::error!(?err, "failed to save competition");
+                return;
+            }
+
             tracing::info!("executing with solver {}", index);
             match self
                 .execute(auction, id, &self.drivers[index], &solution)
@@ -199,9 +212,7 @@ impl RunLoop {
         results
             .into_iter()
             .filter_map(|(index, result)| match result {
-                Ok(result) if result.score.is_finite() && result.score >= 0. => {
-                    Some((index, result))
-                }
+                Ok(result) if result.score >= 0.into() => Some((index, result)),
                 Ok(result) => {
                     tracing::warn!("bad score {:?}", result.score);
                     None

@@ -417,6 +417,12 @@ impl Score {
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct Reward {
+    pub performance_address: eth::Address,
+    pub participation_address: eth::Address,
+}
+
 /// A unique solution ID. This ID is encoded as part of the calldata of the
 /// settlement transaction, and it's used by the protocol to match onchain
 /// transactions to corresponding solutions.

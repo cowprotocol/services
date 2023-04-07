@@ -121,13 +121,23 @@ pub mod solve {
 
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct Response {
-        pub id: String,
-        pub score: f64,
+    pub struct Reward {
+        /// The address to which the CIP20 performance reward will be sent for
+        /// this solution. Usually the solver address used for
+        /// submitting the solution onchain.
+        pub performance_address: H160,
         /// The address to which the CIP20 participation reward will be sent for
         /// this solution. Usually the solver address used for
         /// submitting the solution onchain.
-        pub participation_reward_address: H160,
+        pub participation_address: H160,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Response {
+        pub id: String,
+        pub score: U256,
+        pub reward: Reward,
     }
 }
 
