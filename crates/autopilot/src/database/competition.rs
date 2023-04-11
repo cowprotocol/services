@@ -15,18 +15,16 @@ use {
 #[derive(Clone, Debug, Default)]
 pub struct Competition {
     pub auction_id: AuctionId,
-    pub scores: Scores,
-    pub participants: HashSet<H160>, // addresses for CIP20 participation rewards payout
-    pub prices: BTreeMap<H160, U256>, // external prices for auction
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Scores {
     pub winner: H160,
     pub winning_score: U256,
     pub reference_score: U256,
-    /// Settlement needs to be mined before this block deadline in order to have
-    /// reward > 0.
+    /// Addresses to which the CIP20 participation rewards will be payed out.
+    /// Usually the same as the solver addresses.
+    pub participants: HashSet<H160>,
+    /// External prices for auction.
+    pub prices: BTreeMap<H160, U256>,
+    /// Winner receives performance rewards if a settlement is finalized on
+    /// chain before this block height.
     pub block_deadline: u64,
 }
 
@@ -43,11 +41,10 @@ impl super::Postgres {
             &mut ex,
             Score {
                 auction_id: competition.auction_id,
-                winner: ByteArray(competition.scores.winner.0),
-                winning_score: u256_to_big_decimal(&competition.scores.winning_score),
-                reference_score: u256_to_big_decimal(&competition.scores.reference_score),
+                winner: ByteArray(competition.winner.0),
+                winning_score: u256_to_big_decimal(&competition.winning_score),
+                reference_score: u256_to_big_decimal(&competition.reference_score),
                 block_deadline: competition
-                    .scores
                     .block_deadline
                     .try_into()
                     .context("convert block deadline")?,

@@ -1,9 +1,6 @@
 use {
     crate::{
-        database::{
-            competition::{Competition, Scores},
-            Postgres,
-        },
+        database::{competition::Competition, Postgres},
         driver_api::Driver,
         driver_model::{
             execute,
@@ -88,31 +85,32 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!("saving competition");
             let auction_id = id;
-            let prices = auction.prices.clone();
+            let winner = solution.reward.performance_address;
+            let winning_score = solution.score;
+            let reference_score = solutions
+                .last()
+                .map(|(_, response)| response.score)
+                .unwrap_or_default();
             let mut participants = solutions
                 .iter()
                 .map(|(_, response)| response.reward.participation_address)
                 .collect::<HashSet<_>>();
             participants.insert(solution.reward.participation_address); // add winner as participant
-            let scores = Scores {
-                winner: solution.reward.performance_address,
-                winning_score: solution.score,
-                reference_score: solutions
-                    .last()
-                    .map(|(_, response)| response.score)
-                    .unwrap_or_default(),
-                block_deadline: self.current_block.borrow().number
-                    + self.submission_deadline
-                    + self.additional_deadline_for_rewards,
-            };
+            let prices = auction.prices.clone();
+            let block_deadline = self.current_block.borrow().number
+                + self.submission_deadline
+                + self.additional_deadline_for_rewards;
             let competition = Competition {
                 auction_id,
-                prices,
+                winner,
+                winning_score,
+                reference_score,
                 participants,
-                scores,
+                prices,
+                block_deadline,
             };
+            tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
