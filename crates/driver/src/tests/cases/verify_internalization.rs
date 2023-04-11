@@ -123,7 +123,6 @@ async fn valid_internalization() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -197,7 +196,6 @@ async fn valid_internalization() {
                         "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
@@ -326,7 +324,6 @@ async fn invalid_internalization() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -400,7 +397,6 @@ async fn invalid_internalization() {
                         "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
@@ -533,7 +529,6 @@ async fn non_internalized_simulation_fails() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -607,7 +602,6 @@ async fn non_internalized_simulation_fails() {
                         "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }

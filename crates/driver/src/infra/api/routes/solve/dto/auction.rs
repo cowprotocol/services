@@ -114,7 +114,6 @@ impl Auction {
                             data: order.signature,
                             signer: order.owner.into(),
                         },
-                        reward: order.reward,
                     })
                 })
                 .try_collect::<_, _, Error>()?,
@@ -188,7 +187,6 @@ struct Order {
     surplus_fee: Option<eth::U256>,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; 32],
-    reward: f64,
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,

@@ -230,7 +230,6 @@ enable-slippage-protection = true
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 0.,
                 }
             ],
             "liquidity": [],

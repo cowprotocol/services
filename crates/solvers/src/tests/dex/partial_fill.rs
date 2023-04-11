@@ -134,7 +134,6 @@ async fn tested_amounts_adjust_depending_on_response() {
                 "kind": "sell",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -313,7 +312,6 @@ async fn tested_amounts_wrap_around() {
                 "kind": "buy",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -442,7 +440,6 @@ async fn moves_surplus_fee_to_buy_token() {
                 "kind": "sell",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -615,7 +612,6 @@ async fn insufficient_room_for_surplus_fee() {
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "limit",
-                    "reward": 0.
                 }
             ],
             "liquidity": [],
@@ -719,7 +715,6 @@ async fn market() {
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "market",
-                    "reward": 0.
                 }
             ],
             "liquidity": [],

@@ -8,7 +8,6 @@ pub mod driver_model;
 pub mod event_updater;
 pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
-pub mod risk_adjusted_rewards;
 pub mod run_loop;
 pub mod solvable_orders;
 
@@ -358,15 +357,6 @@ pub async fn main(args: arguments::Arguments) {
     )
     .map(Arc::new);
 
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-
     let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
         shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
     });
@@ -415,42 +405,6 @@ pub async fn main(args: arguments::Arguments) {
         )
         .unwrap();
 
-    let risk_adjusted_rewards = (|| {
-        if chain_id != 1 {
-            return None;
-        }
-        let cip_args = [
-            args.cip_14_beta,
-            args.cip_14_alpha1,
-            args.cip_14_alpha2,
-            args.cip_14_profit,
-            args.cip_14_gas_cap,
-            args.cip_14_reward_cap,
-        ];
-        match cip_args.iter().map(|arg| arg.is_some() as u32).sum::<u32>() {
-            0 => return None,
-            6 => (),
-            _ => panic!("need none or all cip_14 arguments"),
-        };
-        Some(risk_adjusted_rewards::Calculator::new(
-            risk_adjusted_rewards::Configuration {
-                beta: args.cip_14_beta.unwrap(),
-                alpha1: args.cip_14_alpha1.unwrap(),
-                alpha2: args.cip_14_alpha2.unwrap(),
-                profit: args.cip_14_profit.unwrap(),
-                gas_cap: args.cip_14_gas_cap.unwrap(),
-                reward_cap: args.cip_14_reward_cap.unwrap(),
-            },
-            db.clone(),
-            cow_token
-                .as_ref()
-                .expect("no cow token on mainnet")
-                .address(),
-            gas_price_estimator.clone(),
-            native_price_estimator.clone(),
-        ))
-    })();
-
     let skip_event_sync_start = if args.skip_event_sync {
         block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
     } else {
@@ -476,6 +430,14 @@ pub async fn main(args: arguments::Arguments) {
         .await
         .expect("failed to create gas price estimator"),
     ));
+    let cow_token = match CowProtocolToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
     let cow_tokens = match (cow_token, cow_vtoken) {
         (None, None) => None,
         (Some(token), Some(vtoken)) => Some((token, vtoken)),
@@ -592,7 +554,6 @@ pub async fn main(args: arguments::Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
-        risk_adjusted_rewards,
         args.ethflow_contract,
         args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
         args.limit_order_price_factor

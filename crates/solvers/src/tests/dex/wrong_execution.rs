@@ -122,7 +122,6 @@ async fn test() {
                         "kind": side,
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": 0.
                     }
                 ],
                 "liquidity": [],

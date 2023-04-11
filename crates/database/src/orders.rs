@@ -676,6 +676,7 @@ pub async fn update_fok_limit_order_fees(
             sell_token = $4
             AND buy_token = $5
             AND sell_amount = $6
+            AND NOT partially_fillable
         RETURNING
             uid
     ";
@@ -1910,7 +1911,7 @@ mod tests {
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), &solver_fee)
             .await
             .unwrap();
 
