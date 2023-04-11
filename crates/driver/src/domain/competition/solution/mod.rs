@@ -36,7 +36,7 @@ pub use {interaction::Interaction, trade::Trade};
 #[derive(Debug)]
 pub struct Solution {
     pub id: Id,
-    //pub score: Score, // TODO - add score back in
+    pub score: Option<Score>, // TODO remove Option
     /// Trades settled by this solution.
     pub trades: Vec<Trade>,
     pub prices: ClearingPrices,

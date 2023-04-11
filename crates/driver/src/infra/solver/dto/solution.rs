@@ -195,6 +195,7 @@ impl Solution {
                 .try_collect()?,
             weth,
             solver,
+            score: self.score.map(Into::into),
         })
     }
 }
@@ -208,6 +209,7 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    score: Option<eth::U256>,
 }
 
 #[derive(Debug, Deserialize)]
