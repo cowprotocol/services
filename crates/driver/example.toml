@@ -3,7 +3,6 @@ name = "mysolver" # Arbitrary name given to this solver, must be unique
 endpoint = "http://0.0.0.0:33219/solve"
 absolute-slippage = "12" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
-address = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf" # The ETH address of this solver
 private-key = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
 
 [[solver]] # And so on, specify as many solvers as needed
