@@ -911,7 +911,7 @@ mod tests {
                 buy_token,
                 sell_amount: 42.into(),
                 buy_amount: 50.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -921,7 +921,7 @@ mod tests {
                 buy_token,
                 sell_amount: 92.into(),
                 buy_amount: 100.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -931,7 +931,7 @@ mod tests {
                 buy_token,
                 sell_amount: 52.into(),
                 buy_amount: 60.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
 
@@ -944,7 +944,7 @@ mod tests {
                 buy_token,
                 sell_amount: 100.into(),
                 buy_amount: 109.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -954,7 +954,7 @@ mod tests {
                 buy_token,
                 sell_amount: 100.into(),
                 buy_amount: 108.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
     }

@@ -539,14 +539,18 @@ WHERE
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct OrderExecution {
+    /// The `solver_fee` that got executed for this specific fill.
     pub executed_solver_fee: Option<BigDecimal>,
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
-    /// The amount of `sell_token`s that actually got converted to `buy_token`
-    /// for the user to receive.
-    pub sell_amount_before_fees: BigDecimal,
+    /// The entire `sell_amount` of the order.
+    pub sell_amount: BigDecimal,
+    /// The entire `sell_amount` of the order.
     pub buy_amount: BigDecimal,
+    // In case of a sell order the `executed_amount` only contains the amount of `sell_token`s that
+    // actually got converted to the `buy_token`. Meaning that this value does not contain any fee
+    // signed by the user or `surplus_fee`.
     pub executed_amount: BigDecimal,
     pub signature: Vec<u8>,
     pub signing_scheme: SigningScheme,
@@ -564,7 +568,7 @@ SELECT
     solver_fee AS executed_solver_fee,
     sell_token,
     buy_token,
-    o.sell_amount AS sell_amount_before_fees,
+    o.sell_amount,
     o.buy_amount AS buy_amount,
     kind,
     CASE

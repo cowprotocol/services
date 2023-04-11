@@ -133,8 +133,7 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
             kind: order_kind_from(order.kind),
             sell_token: H160(order.sell_token.0),
             buy_token: H160(order.buy_token.0),
-            sell_amount: big_decimal_to_u256(&order.sell_amount_before_fees)
-                .context("sell_amount")?,
+            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
             buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
             executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
             signature: {
