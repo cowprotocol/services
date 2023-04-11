@@ -299,7 +299,6 @@ async fn test() {
             "kind": "sell",
             "partiallyFillable": false,
             "class": "market",
-            "reward": 0.1,
         })];
         for liquidity_order in liquidity_orders(sell_token, buy_token) {
             orders.push({
@@ -316,7 +315,6 @@ async fn test() {
                     },
                     "partiallyFillable": liquidity_order.partially_fillable,
                     "class": "liquidity",
-                    "reward": 0.1,
                 })
             });
         }
@@ -407,7 +405,6 @@ async fn test() {
             "preInteractions": [],
             "class": "market",
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "reward": 0.1,
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(boundary.signature()))
         })];
@@ -432,7 +429,6 @@ async fn test() {
                     "preInteractions": [],
                     "class": "liquidity",
                     "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                    "reward": 0.1,
                     "signingScheme": "eip712",
                     "signature": format!("0x{}", hex::encode(boundary_liquidity_order(&liquidity_order).signature()))
                 })

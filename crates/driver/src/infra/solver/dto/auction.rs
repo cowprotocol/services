@@ -57,7 +57,6 @@ impl Auction {
                         competition::order::Kind::Limit { .. } => Class::Limit,
                         competition::order::Kind::Liquidity => Class::Liquidity,
                     },
-                    reward: order.reward,
                 })
                 .collect(),
             liquidity: liquidity
@@ -154,7 +153,6 @@ struct Order {
     // driver reduce the buy/sell amount by the executed amounts before sending the order to the
     // solver?
     class: Class,
-    reward: f64,
 }
 
 #[derive(Debug, Serialize)]

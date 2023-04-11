@@ -131,8 +131,7 @@ impl HttpPriceEstimator {
                 is_liquidity_order: false,
                 mandatory: true,
                 has_atomic_execution: false,
-                // TODO: is it possible to set a more accurate reward?
-                reward: 35.,
+                reward: 0., // irrelevant for price estimation
                 is_mature: true, // irrelevant for price estimation
             },
         };

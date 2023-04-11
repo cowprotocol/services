@@ -104,7 +104,6 @@ async fn test(web3: Web3) {
     assert!(matches!(order.metadata.class, OrderClass::Limit(_)));
     assert_eq!(order.metadata.full_fee_amount, 0.into());
     assert_eq!(order.metadata.solver_fee, 0.into());
-    assert_eq!(auction.rewards.get(&order.metadata.uid), None);
 
     tracing::info!("Waiting for trade.");
     services.start_old_driver(solver.private_key(), vec![]);

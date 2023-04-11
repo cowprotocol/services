@@ -47,7 +47,6 @@ pub struct Transaction {
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Execution {
-    pub reward: f64,
     #[serde_as(as = "Option<DecimalU256>")]
     pub surplus_fee: Option<U256>,
     #[serde_as(as = "DecimalU256")]

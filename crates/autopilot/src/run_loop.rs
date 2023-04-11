@@ -148,7 +148,6 @@ impl RunLoop {
                         class,
                         surplus_fee,
                         app_data: order.data.app_data,
-                        reward: Default::default(),
                         signature: order.signature.clone(),
                     }
                 })

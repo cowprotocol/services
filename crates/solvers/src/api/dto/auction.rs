@@ -61,7 +61,6 @@ impl Auction {
                         },
                         fee: order::Fee(order.fee_amount),
                         partially_fillable: order.partially_fillable,
-                        reward: order::Reward(order.reward),
                     }
                 })
                 .collect(),
@@ -112,7 +111,6 @@ struct Order {
     kind: Kind,
     partially_fillable: bool,
     class: Class,
-    reward: f64,
 }
 
 #[derive(Debug, Deserialize)]

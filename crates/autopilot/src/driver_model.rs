@@ -107,7 +107,6 @@ pub mod solve {
         #[serde_as(as = "Option<DecimalU256>")]
         pub surplus_fee: Option<U256>,
         pub app_data: AppId,
-        pub reward: f64,
         #[serde(flatten)]
         pub signature: Signature,
     }

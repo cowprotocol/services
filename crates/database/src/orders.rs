@@ -1911,7 +1911,7 @@ mod tests {
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), &solver_fee)
             .await
             .unwrap();
 

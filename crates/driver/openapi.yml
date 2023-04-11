@@ -179,8 +179,6 @@ components:
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string
-        reward:
-          type: number
         signingScheme:
           type: string
           enum: ["eip712", "ethsign", "presign", "eip1271"]
