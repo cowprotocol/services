@@ -185,6 +185,18 @@ pub struct Arguments {
     /// Driver base URLs.
     #[clap(long, env, use_value_delimiter = true)]
     pub drivers: Vec<Url>,
+
+    /// The maximum number of blocks to wait for a settlement to appear on
+    /// chain.
+    #[clap(long, env, default_value = "5")]
+    pub submission_deadline: usize,
+
+    /// The maximum number of blocks to wait for a settlement to appear on
+    /// chain, in addition to the submission deadline. This is used to ensure
+    /// that the settlement mined at the very end on the deadline and reorged,
+    /// is still considered for payout.
+    #[clap(long, env, default_value = "5")]
+    pub additional_deadline_for_rewards: usize,
 }
 
 impl std::fmt::Display for Arguments {

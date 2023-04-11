@@ -41,6 +41,8 @@ pub struct RunLoop {
     pub web3: Web3,
     pub network_block_interval: Duration,
     pub market_makable_token_list: AutoUpdatingTokenList,
+    pub submission_deadline: u64,
+    pub additional_deadline_for_rewards: u64,
 }
 
 impl RunLoop {
@@ -93,7 +95,7 @@ impl RunLoop {
                 .iter()
                 .map(|(_, response)| response.reward.participation_address)
                 .collect::<HashSet<_>>();
-            participants.insert(solution.reward.participation_address); // add winner
+            participants.insert(solution.reward.participation_address); // add winner as participant
             let scores = Scores {
                 winner: solution.reward.performance_address,
                 winning_score: solution.score,
@@ -101,7 +103,9 @@ impl RunLoop {
                     .last()
                     .map(|(_, response)| response.score)
                     .unwrap_or_default(),
-                block_deadline: Default::default(), // TODO
+                block_deadline: self.current_block.borrow().number
+                    + self.submission_deadline
+                    + self.additional_deadline_for_rewards,
             };
             let competition = Competition {
                 auction_id,

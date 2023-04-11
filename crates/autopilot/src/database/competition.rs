@@ -25,6 +25,8 @@ pub struct Scores {
     pub winner: H160,
     pub winning_score: U256,
     pub reference_score: U256,
+    /// Settlement needs to be mined before this block deadline in order to have
+    /// reward > 0.
     pub block_deadline: u64,
 }
 
