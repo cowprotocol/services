@@ -546,11 +546,9 @@ pub struct OrderExecution {
     pub kind: OrderKind,
     /// The entire `sell_amount` of the order.
     pub sell_amount: BigDecimal,
-    /// The entire `sell_amount` of the order.
+    /// The entire `buy_amount` of the order.
     pub buy_amount: BigDecimal,
-    // In case of a sell order the `executed_amount` only contains the amount of `sell_token`s that
-    // actually got converted to the `buy_token`. Meaning that this value does not contain any fee
-    // signed by the user or `surplus_fee`.
+    /// The amount that got executed just with this trade.
     pub executed_amount: BigDecimal,
     pub signature: Vec<u8>,
     pub signing_scheme: SigningScheme,
@@ -572,7 +570,7 @@ SELECT
     o.buy_amount AS buy_amount,
     kind,
     CASE
-        WHEN o.kind = 'sell' THEN t.sell_amount - COALESCE(oe.surplus_fee, 0) - t.fee_amount
+        WHEN o.kind = 'sell' THEN t.sell_amount
         ELSE t.buy_amount END AS executed_amount,
     o.owner,
     signature,
