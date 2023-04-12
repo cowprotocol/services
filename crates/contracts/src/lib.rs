@@ -6,6 +6,7 @@ pub use ethcontract;
 pub mod paths;
 pub mod vault;
 pub mod web3;
+pub mod source;
 
 macro_rules! include_contracts {
     ($($name:ident;)*) => {$(
