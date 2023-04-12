@@ -9,6 +9,8 @@ use {
         auction::AuctionWithId,
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
+        solver_competition::SolverCompetitionAPI,
+        trade::Trade,
     },
     reqwest::{Client, StatusCode},
     sqlx::Connection,
@@ -22,6 +24,7 @@ pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
+pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
@@ -154,6 +157,41 @@ impl<'a> Services<'a> {
         assert_eq!(status, StatusCode::OK, "{body}");
 
         serde_json::from_str(&body).unwrap()
+    }
+
+    pub async fn get_solver_competition(
+        &self,
+        hash: H256,
+    ) -> Result<SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/by_tx_hash/{hash:?}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
+        let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
+        let response = self.http.get(url).send().await.unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
     }
 
     /// Create an [`Order`].

@@ -95,6 +95,7 @@ where
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
     let resetter = Resetter::new(&web3).await;
+    services::clear_database().await;
 
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node

@@ -1228,6 +1228,7 @@ dependencies = [
  "database",
  "driver",
  "ethcontract",
+ "futures",
  "hex",
  "hex-literal",
  "model",

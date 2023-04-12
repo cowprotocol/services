@@ -150,31 +150,43 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/GPv2Settlement.sol#L383-L385
     pub fn executed_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.order.data.fee_amount)
+        self.scale_amount(self.order.data.fee_amount)
     }
 
     /// Returns the solver fee used for computing the objective value adjusted
     /// for partial fills.
     pub fn executed_solver_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.solver_fee)
+        match self.order.solver_determines_fee() {
+            true => Some(self.solver_fee),
+            false => self.scale_amount(self.solver_fee),
+        }
     }
 
     /// Returns the actual fees taken by the protocol.
     pub fn executed_earned_fee(&self) -> Option<U256> {
-        let surplus_fee = match &self.order.metadata.class {
-            // TODO adjust this when limit orders become partially fillable.
-            OrderClass::Limit(details) => details.surplus_fee.unwrap_or_default(),
-            _ => 0.into(),
-        };
-        self.compute_fee_execution(self.order.data.fee_amount + surplus_fee)
+        let user_fee = self.order.data.fee_amount;
+        match (
+            &self.order.metadata.class,
+            self.order.data.partially_fillable,
+        ) {
+            (OrderClass::Limit(details), false) => {
+                self.scale_amount(user_fee.checked_add(details.surplus_fee.unwrap())?)
+            }
+            (OrderClass::Limit(_), true) => {
+                // Solvers already scale the `solver_fee` for these orders.
+                self.scale_amount(user_fee)?.checked_add(self.solver_fee)
+            }
+            _ => self.scale_amount(user_fee),
+        }
     }
 
-    fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
+    /// Scales the passed `amount` based on the `executed_amount`.
+    fn scale_amount(&self, amount: U256) -> Option<U256> {
         match self.order.data.kind {
-            model::order::OrderKind::Buy => fee_amount
+            model::order::OrderKind::Buy => amount
                 .checked_mul(self.executed_amount)?
                 .checked_div(self.order.data.buy_amount),
-            model::order::OrderKind::Sell => fee_amount
+            model::order::OrderKind::Sell => amount
                 .checked_mul(self.executed_amount)?
                 .checked_div(self.order.data.sell_amount),
         }
@@ -199,19 +211,12 @@ impl Trade {
             }
         };
 
-        let fee_amount = match self.order.solver_determines_fee() {
-            // The solver already computed the fee for this exact fill so there is no need to scale
-            // it to account for partial fills.
-            true => self.solver_fee,
-            false => self.executed_fee()?,
-        };
-
         Some(TradeExecution {
             sell_token: order.sell_token,
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            fee_amount,
+            fee_amount: self.executed_fee()?,
         })
     }
 }
