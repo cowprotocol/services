@@ -1,5 +1,5 @@
 use {
-    crate::{database::Postgres, risk_adjusted_rewards},
+    crate::database::Postgres,
     anyhow::{Context as _, Result},
     bigdecimal::BigDecimal,
     chrono::Utc,
@@ -69,9 +69,6 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    // Optional because reward calculation only makes sense on mainnet. Other networks have 0
-    // rewards.
-    reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
@@ -108,7 +105,6 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
-        reward_calculator: Option<risk_adjusted_rewards::Calculator>,
         ethflow_contract_address: Option<H160>,
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
@@ -134,7 +130,6 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
-            reward_calculator,
             ethflow_contract_address,
             surplus_fee_age,
             limit_order_price_factor,
@@ -230,37 +225,11 @@ impl SolvableOrdersCache {
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
         counter.checkpoint("fee_scaling_overflow", &orders);
 
-        let rewards = if let Some(calculator) = &self.reward_calculator {
-            let rewards = calculator
-                .calculate_many(&orders)
-                .await
-                .context("rewards")?;
-
-            orders
-                .iter()
-                .zip(rewards)
-                .filter_map(|(order, reward)| match reward {
-                    Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
-                    Ok(_) => None,
-                    Err(err) => {
-                        tracing::warn!(
-                            order =% order.metadata.uid, ?err,
-                            "error calculating risk adjusted reward",
-                        );
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            Default::default()
-        };
-
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders.clone(),
             prices,
-            rewards,
         };
         counter.record(&auction.orders);
 

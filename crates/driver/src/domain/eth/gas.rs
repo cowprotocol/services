@@ -63,8 +63,10 @@ impl From<EffectiveGasPrice> for GasPrice {
     }
 }
 
-/// A measurement of an of Ether to pay as fees for a single gas unit. This is
+/// The amount of ETH to pay as fees for a single unit of gas. This is
 /// `{max,max_priority,base}_fee_per_gas` as defined by EIP-1559.
+///
+/// https://eips.ethereum.org/EIPS/eip-1559#specification
 #[derive(Debug, Clone, Copy)]
 pub struct FeePerGas(pub Ether);
 

@@ -190,7 +190,9 @@ impl BaselineSolver {
                     .transpose()
             }) {
                 Some(Ok(settlement)) => settlements.push(settlement),
-                Some(Err(err)) => tracing::error!(?err, "failed to create settlement"),
+                Some(Err(err)) => {
+                    tracing::error!(?err, id = ?order.id, "failed to create settlement")
+                }
                 None => continue,
             };
         }

@@ -531,6 +531,7 @@ FROM {ORDERS_FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
+    -- BETWEEN is inclusive
     t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
 ;"#
     );
@@ -731,6 +732,7 @@ pub async fn update_fok_limit_order_fees(
             sell_token = $4
             AND buy_token = $5
             AND sell_amount = $6
+            AND NOT partially_fillable
         RETURNING
             uid
     ";
@@ -1965,7 +1967,7 @@ mod tests {
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), &solver_fee)
             .await
             .unwrap();
 

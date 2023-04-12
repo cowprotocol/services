@@ -86,7 +86,6 @@ async fn test() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": quote::FAKE_AUCTION_REWARD,
                     }
                 ],
                 "liquidity": [],

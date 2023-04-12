@@ -1,10 +1,7 @@
 //! Module defining a batch auction.
 
 use {
-    crate::{
-        order::{Order, OrderUid},
-        u256_decimal::DecimalU256,
-    },
+    crate::{order::Order, u256_decimal::DecimalU256},
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -51,17 +48,16 @@ pub struct Auction {
     /// The reference prices for all traded tokens in the auction.
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
-
-    /// CIP-14 risk adjusted solver rewards
-    ///
-    /// Some orders like liquidity orders do not have associated rewards.
-    #[serde(default)]
-    pub rewards: BTreeMap<OrderUid, f64>,
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::order::OrderMetadata, maplit::btreemap, serde_json::json};
+    use {
+        super::*,
+        crate::order::{OrderMetadata, OrderUid},
+        maplit::btreemap,
+        serde_json::json,
+    };
 
     #[test]
     fn roundtrips_auction() {
@@ -80,10 +76,6 @@ mod tests {
                 H160([2; 20]) => U256::from(2),
                 H160([1; 20]) => U256::from(1),
             },
-            rewards: btreemap! {
-                OrderUid([1; 56]) => 1.,
-                OrderUid([2; 56]) => 2.,
-            },
         };
         let auction = AuctionWithId { id: 0, auction };
 
@@ -100,10 +92,6 @@ mod tests {
                 "prices": {
                     "0x0101010101010101010101010101010101010101": "1",
                     "0x0202020202020202020202020202020202020202": "2",
-                },
-                "rewards": {
-                    "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101": 1.0,
-                    "0x0202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202": 2.0,
                 },
             }),
         );

@@ -200,7 +200,6 @@ components:
         - kind
         - partiallyFillable
         - class
-        - reward
       properties:
         uid:
           $ref: "#/components/schemas/OrderUid"
@@ -224,11 +223,6 @@ components:
           type: boolean
         class:
           $ref: "#/components/schemas/OrderClass"
-        reward:
-          description: |
-            The rewards, in COW base units, that would be given by the protocol
-            for settling this order.
-          type: number
 
     TokenReserve:
       description: |

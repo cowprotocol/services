@@ -1,7 +1,7 @@
 /// A Unix timestamp denominated in seconds since epoch.
 ///
 /// https://en.wikipedia.org/wiki/Unix_time
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Timestamp(pub u32);
 
 impl From<u32> for Timestamp {

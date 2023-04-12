@@ -209,8 +209,6 @@ pub async fn setup() -> Uniswap {
             .unwrap(),
     );
 
-    dbg!(uniswap_pair.address());
-
     let token_a_reserve = ethcontract::U256::from_dec_str("1000000000000000000000").unwrap();
     let weth_reserve = ethcontract::U256::from_dec_str("600000000000").unwrap();
 

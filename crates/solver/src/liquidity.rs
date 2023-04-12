@@ -185,9 +185,6 @@ pub struct LimitOrder {
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
-    // TODO: decide how reward works for partially fillable orders
-    /// CIP-14 risk adjusted solver reward
-    pub reward: f64,
 }
 
 impl LimitOrder {
@@ -269,7 +266,6 @@ impl Default for LimitOrder {
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,
-            reward: Default::default(),
         }
     }
 }

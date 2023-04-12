@@ -45,12 +45,11 @@ impl SolverCompetitionStoring for Postgres {
                 &mut ex,
                 &ByteArray(order.0),
                 request.auction,
-                execution.reward,
                 surplus_fee.as_ref(),
                 &u256_to_big_decimal(&execution.solver_fee),
             )
             .await
-            .context("order_rewards::save")?;
+            .context("order_execution::save")?;
         }
 
         database::settlement_scores::insert(

@@ -122,7 +122,6 @@ async fn test() {
                         "kind": "sell",
                         "partiallyFillable": false,
                         "class": "market",
-                        "reward": 0.1,
                     }
                 ],
                 "liquidity": [],
@@ -196,7 +195,6 @@ async fn test() {
                         "preInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                        "reward": 0.1,
                         "signingScheme": "eip712",
                         "signature": format!("0x{}", hex::encode(boundary.signature()))
                     }
