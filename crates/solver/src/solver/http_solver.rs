@@ -21,13 +21,19 @@ use {
     primitive_types::H160,
     shared::{
         http_solver::{
-            model::{InteractionData, SettledBatchAuctionModel, SolverRejectionReason},
+            model::{
+                BatchAuctionModel,
+                InteractionData,
+                SettledBatchAuctionModel,
+                SolverRejectionReason,
+            },
             DefaultHttpSolverApi,
             HttpSolverApi,
         },
         token_list::AutoUpdatingTokenList,
     },
     std::{
+        borrow::Cow,
         collections::{BTreeSet, HashSet},
         sync::Arc,
         time::Instant,
@@ -51,6 +57,9 @@ pub struct HttpSolver {
     market_makable_token_list: AutoUpdatingTokenList,
     domain: DomainSeparator,
     instance_cache: Arc<SharedInstanceCreator>,
+    // Liquidity information takes up a lot of space in the instance. Only some solvers (only
+    // Quasimodo?) uses it so it is wasteful to send it to all of them.
+    use_liquidity: bool,
 }
 
 impl HttpSolver {
@@ -65,6 +74,7 @@ impl HttpSolver {
         market_makable_token_list: AutoUpdatingTokenList,
         domain: DomainSeparator,
         instance_cache: Arc<SharedInstanceCreator>,
+        use_liquidity: bool,
     ) -> Self {
         Self {
             solver,
@@ -76,6 +86,7 @@ impl HttpSolver {
             market_makable_token_list,
             domain,
             instance_cache,
+            use_liquidity,
         }
     }
 }
@@ -187,10 +198,15 @@ impl HttpSolver {
             InstanceType::Filtered => &instances.filtered,
         };
 
+        let mut model: Cow<BatchAuctionModel> = Cow::Borrowed(model);
+        if !self.use_liquidity {
+            model.to_mut().amms.clear();
+        }
+
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .context("no time left to send request")?;
-        let mut settled = self.solver.solve(model, timeout).await?;
+        let mut settled = self.solver.solve(&model, timeout).await?;
         settled.add_missing_execution_plans();
 
         tracing::debug!(
@@ -301,6 +317,7 @@ mod tests {
                 },
                 None,
             )),
+            true,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
