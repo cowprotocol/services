@@ -257,6 +257,7 @@ pub struct ExternalSolverArg {
     pub name: String,
     pub url: Url,
     pub account: SolverAccountArg,
+    pub use_liquidity: bool,
 }
 
 impl FromStr for ExternalSolverArg {
@@ -267,10 +268,13 @@ impl FromStr for ExternalSolverArg {
         let name = parts.next().context("missing name")?;
         let url = parts.next().context("missing url")?;
         let account = parts.next().context("missing account")?;
+        // default to true temporarily until we configure the argument
+        let use_liquidity = parts.next().unwrap_or("true");
         Ok(Self {
             name: name.to_string(),
             url: url.parse().context("parse url")?,
             account: account.parse().context("parse account")?,
+            use_liquidity: use_liquidity.parse().context("parse use_liquidity")?,
         })
     }
 }
@@ -346,7 +350,8 @@ pub fn create(
                               name: String,
                               config: SolverConfig,
                               instance_type: InstanceType,
-                              slippage_calculator: SlippageCalculator|
+                              slippage_calculator: SlippageCalculator,
+                              use_liquidity: bool|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -367,6 +372,7 @@ pub fn create(
             market_makable_token_list.clone(),
             *domain,
             shared_instance_creator.clone(),
+            use_liquidity,
         )
     };
 
@@ -406,6 +412,7 @@ pub fn create(
                     SolverConfig::default(),
                     InstanceType::Plain,
                     slippage_calculator,
+                    false,
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,
@@ -417,6 +424,7 @@ pub fn create(
                     },
                     InstanceType::Filtered,
                     slippage_calculator,
+                    true,
                 )),
                 SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -494,6 +502,7 @@ pub fn create(
             },
             InstanceType::Plain,
             slippage_configuration.get_global_calculator(),
+            solver.use_liquidity,
         ))
     });
     solvers.extend(external_solvers);
@@ -723,5 +732,16 @@ mod tests {
             parsed.account,
             SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
         );
+        assert!(parsed.use_liquidity);
+    }
+
+    #[test]
+    fn parse_external_solver_arg_use_liquidity() {
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|false";
+        let parsed = ExternalSolverArg::from_str(arg).unwrap();
+        assert!(!parsed.use_liquidity);
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|true";
+        let parsed = ExternalSolverArg::from_str(arg).unwrap();
+        assert!(parsed.use_liquidity);
     }
 }
