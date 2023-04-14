@@ -117,7 +117,8 @@ components:
         address:
           $ref: "#/components/schemas/Address"
         price:
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           description: |
             The reference price denominated in native token (i.e. 1e18 represents a token that
             trades one to one with the native token). These prices are used for solution competition
@@ -174,7 +175,8 @@ components:
           type: string
           enum: ["market", "limit", "liquidity"]
         surplusFee:
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           nullable: true
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
