@@ -406,18 +406,18 @@ components:
       properties:
         sender:
           description: |
-              If orders are placed as onchain orders, the owner of the order might
-              be a smart contract, but not the user placing the order. The
-              actual user will be provided in this field
+            If orders are placed as onchain orders, the owner of the order might
+            be a smart contract, but not the user placing the order. The
+            actual user will be provided in this field
           allOf:
             - $ref: "#/components/schemas/Address"
         placementError:
           description: |
-              Describes the error, if the order placement was not
-              successful. This could happen, for example, if the
-              valid_to is too high, or no valid quote was found or generated
+            Describes the error, if the order placement was not
+            successful. This could happen, for example, if the
+            valid_to is too high, or no valid quote was found or generated
           type: string
-          enum: [ QuoteNotFound, ValidToTooFarInFuture, PreValidationError ]
+          enum: [QuoteNotFound, ValidToTooFarInFuture, PreValidationError]
       required:
         - sender
     EthflowData:
@@ -434,9 +434,9 @@ components:
           nullable: true
         userValidTo:
           description: |
-           Describes the valid to of an order ethflow order.
-           Note that for ethflow orders, the valid_to encoded in the smart
-           contract is max(uint)
+            Describes the valid to of an order ethflow order.
+            Note that for ethflow orders, the valid_to encoded in the smart
+            contract is max(uint)
           type: integer
       required:
         - refundTxHash
@@ -448,7 +448,7 @@ components:
     OrderClass:
       description: Order class
       type: string
-      enum: [ market, limit, liquidity ]
+      enum: [market, limit, liquidity]
     SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
@@ -949,7 +949,7 @@ components:
                 The total amount that is available for the order. From this value, the fee
                 is deducted and the buy amount is calculated.
               allOf:
-              - $ref: "#/components/schemas/TokenAmount"
+                - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - sellAmountBeforeFee
