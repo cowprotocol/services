@@ -406,17 +406,18 @@ components:
       properties:
         sender:
           description: |
-              If orders are placed as onchain orders, the owner of the order might
-              be a smart contract, but not the user placing the order. The
-              actual user will be provided in this field
-          $ref: "#/components/schemas/Address"
+            If orders are placed as onchain orders, the owner of the order might
+            be a smart contract, but not the user placing the order. The
+            actual user will be provided in this field
+          allOf:
+            - $ref: "#/components/schemas/Address"
         placementError:
           description: |
-              Describes the error, if the order placement was not
-              successful. This could happen, for example, if the
-              valid_to is too high, or no valid quote was found or generated
+            Describes the error, if the order placement was not
+            successful. This could happen, for example, if the
+            valid_to is too high, or no valid quote was found or generated
           type: string
-          enum: [ QuoteNotFound, ValidToTooFarInFuture, PreValidationError ]
+          enum: [QuoteNotFound, ValidToTooFarInFuture, PreValidationError]
       required:
         - sender
     EthflowData:
@@ -428,34 +429,18 @@ components:
           description: |
             Specifies in which transaction the order was refunded. If
             this field is null the order was not yet refunded.
-          $ref: "#/components/schemas/TransactionHash"
+          allOf:
+            - $ref: "#/components/schemas/TransactionHash"
           nullable: true
         userValidTo:
           description: |
-           Describes the valid to of an order ethflow order.
-           Note that for ethflow orders, the valid_to encoded in the smart
-           contract is max(uint)
+            Describes the valid to of an order ethflow order.
+            Note that for ethflow orders, the valid_to encoded in the smart
+            contract is max(uint)
           type: integer
       required:
         - refundTxHash
         - userValidTo
-    FeeInformation:
-      description: |
-        Provides the information to calculate the fees.
-      type: object
-      properties:
-        expiration:
-          description: |
-            Expiration date of the offered fee. Order service might not accept
-            the fee after this expiration date. Encoded as ISO 8601 UTC.
-          type: string
-          example: "2020-12-03T18:35:18.814523Z"
-        amount:
-          description: Absolute amount of fee charged per order in specified sellToken
-          $ref: "#/components/schemas/TokenAmount"
-      required:
-        - expiration
-        - amount
     OrderKind:
       description: Is this a buy order or sell order?
       type: string
@@ -463,7 +448,7 @@ components:
     OrderClass:
       description: Order class
       type: string
-      enum: [ market, limit, liquidity ]
+      enum: [market, limit, liquidity]
     SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
@@ -488,22 +473,27 @@ components:
       properties:
         sellToken:
           description: "ERC20 token to be sold"
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         buyToken:
           description: "ERC20 token to be bought"
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         receiver:
           description: |
             An optional address to receive the proceeds of the trade instead of the
             owner (i.e. the order signer).
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
           nullable: true
         sellAmount:
           description: "Amount of sellToken to be sold in atoms"
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           description: "Amount of buyToken to be bought in atoms"
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: Unix timestamp until the order is valid. uint32.
           type: integer
@@ -513,24 +503,30 @@ components:
             also be used to ensure uniqueness between two orders with otherwise the
             exact same parameters.
           type: string
-          $ref: "#/components/schemas/AppData"
+          allOf:
+            - $ref: "#/components/schemas/AppData"
         feeAmount:
           description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         kind:
           description: "The kind is either a buy or sell order"
-          $ref: "#/components/schemas/OrderKind"
+          allOf:
+            - $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
         sellTokenBalance:
-          $ref: "#/components/schemas/SellTokenSource"
+          allOf:
+            - $ref: "#/components/schemas/SellTokenSource"
           default: "erc20"
         buyTokenBalance:
-          $ref: "#/components/schemas/BuyTokenDestination"
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
         signingScheme:
-          $ref: "#/components/schemas/SigningScheme"
+          allOf:
+            - $ref: "#/components/schemas/SigningScheme"
           default: "eip712"
       required:
         - sellToken
@@ -558,7 +554,8 @@ components:
                 the signature. This helps catch errors with invalid signature encodings as the backend
                 might otherwise silently work with an unexpected address that for example does not have
                 any balance.
-              $ref: "#/components/schemas/Address"
+              allOf:
+                - $ref: "#/components/schemas/Address"
               nullable: true
             quoteId:
               description: |
@@ -587,30 +584,37 @@ components:
           $ref: "#/components/schemas/UID"
         availableBalance:
           description: Unused field that is currently always set to null and will be removed in the future.
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           nullable: true
           deprecated: true
         executedSellAmount:
           description: "The total amount of sellToken that has been executed for this order including fees."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         executedSellAmountBeforeFees:
           description: "The total amount of sellToken that has been executed for this order without fees."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         executedBuyAmount:
           description: "The total amount of buyToken that has been executed for this order."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         executedFeeAmount:
           description: "The total amount of fees that have been executed for this order."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         invalidated:
           description: Has this order been invalidated?
           type: boolean
         status:
           description: Order status
-          $ref: "#/components/schemas/OrderStatus"
+          allOf:
+            - $ref: "#/components/schemas/OrderStatus"
         fullFeeAmount:
           description: "Amount that the signed fee would be without subsidies"
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         isLiquidityOrder:
           description: |
             Liquidity orders are functionally the same as normal smart contract orders but are not
@@ -625,20 +629,24 @@ components:
           description: |
             For ethflow orders - order that are placed onchain with native eth -, this field
             contains a struct with two variables user_valid_to and is_refunded
-          $ref: "#/components/schemas/EthflowData"
+          allOf:
+            - $ref: "#/components/schemas/EthflowData"
         onchainUser:
           description: |
             This represents the actual trader of an on-chain order.
             In that case, the owner would be the EthFlow contract in the case of EthFlow orders and not the actual trader.
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
             There is some data only available for orders that are placed onchain. This data
             can be found in this object
-          $ref: "#/components/schemas/OnchainOrderData"
+          allOf:
+            - $ref: "#/components/schemas/OnchainOrderData"
         executedSurplusFee:
           description: "Surplus fee that the limit order was executed with."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
           nullable: true
       required:
         - creationDate
@@ -718,9 +726,11 @@ components:
             $ref: "#/components/schemas/UID"
         signature:
           description: "OrderCancellation signed by owner"
-          $ref: "#/components/schemas/EcdsaSignature"
+          allOf:
+            - $ref: "#/components/schemas/EcdsaSignature"
         signingScheme:
-          $ref: "#/components/schemas/EcdsaSigningScheme"
+          allOf:
+            - $ref: "#/components/schemas/EcdsaSigningScheme"
       required:
         - signature
         - signingScheme
@@ -731,23 +741,13 @@ components:
       properties:
         signature:
           description: "OrderCancellation signed by owner"
-          $ref: "#/components/schemas/EcdsaSignature"
+          allOf:
+            - $ref: "#/components/schemas/EcdsaSignature"
         signingScheme:
           $ref: "#/components/schemas/EcdsaSigningScheme"
       required:
         - signature
         - signingScheme
-    AmountEstimate:
-      description: |
-        Provides the information about an estimated price.
-      type: object
-      properties:
-        amount:
-          description: The estimated amount
-          $ref: "#/components/schemas/TokenAmount"
-        token:
-          description: "The token in which the amount is given"
-          $ref: "#/components/schemas/Address"
     Trade:
       description: |
         Trade data such as executed amounts, fees, order id and block number.
@@ -761,28 +761,36 @@ components:
           type: integer
         orderUid:
           description: "Unique ID of the order matched by this trade."
-          $ref: "#/components/schemas/UID"
+          allOf:
+            - $ref: "#/components/schemas/UID"
         owner:
           description: "Address of trader."
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         sellToken:
           description: "Address of token sold."
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         buyToken:
           description: "Address of token bought."
-          $ref: "#/components/schemas/Address"
+          allOf:
+            - $ref: "#/components/schemas/Address"
         sellAmount:
           description: "Total amount of sellToken that has been executed for this trade (including fees)."
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         sellAmountBeforeFees:
           description: "The total amount of sellToken that has been executed for this order without fees."
-          $ref: "#/components/schemas/BigUint"
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         buyAmount:
           description: "Total amount of buyToken received in this trade."
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         txHash:
           description: "Hash of the corresponding settlement transaction containing the trade (if available)."
-          $ref: "#/components/schemas/TransactionHash"
+          allOf:
+            - $ref: "#/components/schemas/TransactionHash"
           nullable: true
       required:
         - blockNumber
@@ -910,22 +918,6 @@ components:
       required:
         - errorType
         - description
-    FeeAndQuoteSellResponse:
-      type: object
-      properties:
-        fee:
-          $ref: "#/components/schemas/FeeInformation"
-        buyAmountAfterFee:
-          description: The buy amount after deducting the fee.
-          $ref: "#/components/schemas/TokenAmount"
-    FeeAndQuoteBuyResponse:
-      type: object
-      properties:
-        fee:
-          $ref: "#/components/schemas/FeeInformation"
-        sellAmountBeforeFee:
-          description: The sell amount including the fee.
-          $ref: "#/components/schemas/TokenAmount"
     FeeAndQuoteError:
       type: object
       properties:
@@ -956,7 +948,8 @@ components:
               description: |
                 The total amount that is available for the order. From this value, the fee
                 is deducted and the buy amount is calculated.
-              $ref: "#/components/schemas/TokenAmount"
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - sellAmountBeforeFee
@@ -968,7 +961,8 @@ components:
               enum: [sell]
             sellAmountAfterFee:
               description: The sell amount for the order.
-              $ref: "#/components/schemas/TokenAmount"
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - sellAmountAfterFee
@@ -980,7 +974,8 @@ components:
               enum: [buy]
             buyAmountAfterFee:
               description: The buy amount for the order.
-              $ref: "#/components/schemas/TokenAmount"
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - buyAmountAfterFee
@@ -1008,38 +1003,46 @@ components:
           properties:
             sellToken:
               description: "ERC20 token to be sold"
-              $ref: "#/components/schemas/Address"
+              allOf:
+                - $ref: "#/components/schemas/Address"
             buyToken:
               description: "ERC20 token to be bought"
-              $ref: "#/components/schemas/Address"
+              allOf:
+                - $ref: "#/components/schemas/Address"
             receiver:
               description: |
                 An optional address to receive the proceeds of the trade instead of the
                 owner (i.e. the order signer).
-              $ref: "#/components/schemas/Address"
+              allOf:
+                - $ref: "#/components/schemas/Address"
               nullable: true
             appData:
               description: |
                 Arbitrary application specific data that can be added to an order. This can
                 also be used to ensure uniqueness between two orders with otherwise the
                 exact same parameters.
-              $ref: "#/components/schemas/AppData"
+              allOf:
+                - $ref: "#/components/schemas/AppData"
             partiallyFillable:
               description: Is this a fill-or-kill order or a partially fillable order?
               type: boolean
             sellTokenBalance:
-              $ref: "#/components/schemas/SellTokenSource"
+              allOf:
+                - $ref: "#/components/schemas/SellTokenSource"
               default: "erc20"
             buyTokenBalance:
-              $ref: "#/components/schemas/BuyTokenDestination"
+              allOf:
+                - $ref: "#/components/schemas/BuyTokenDestination"
               default: "erc20"
             from:
               $ref: "#/components/schemas/Address"
             priceQuality:
-              $ref: "#/components/schemas/PriceQuality"
+              allOf:
+                - $ref: "#/components/schemas/PriceQuality"
               default: "optimal"
             signingScheme:
-              $ref: "#/components/schemas/SigningScheme"
+              allOf:
+                - $ref: "#/components/schemas/SigningScheme"
               default: "eip712"
             onchainOrder:
               description: "Flag to signal whether the order is intended for onchain order placement. Only valid for non ECDSA-signed orders"

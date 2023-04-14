@@ -117,7 +117,8 @@ components:
         address:
           $ref: "#/components/schemas/Address"
         price:
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           description: |
             The reference price denominated in native token (i.e. 1e18 represents a token that
             trades one to one with the native token). These prices are used for solution competition
@@ -163,7 +164,7 @@ components:
         preInteractions:
           type: array
           items:
-            $ref: '#/components/schemas/Interaction'
+            $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
           type: string
           enum: ["erc20", "internal", "external"]
@@ -174,7 +175,8 @@ components:
           type: string
           enum: ["market", "limit", "liquidity"]
         surplusFee:
-          $ref: "#/components/schemas/TokenAmount"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           nullable: true
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
@@ -214,31 +216,31 @@ components:
           $ref: "#/components/schemas/TokenAmount"
     QuoteResponse:
       anyOf:
-      - description: |
-          Successful Quote
+        - description: |
+            Successful Quote
 
-          The Solver knows how to fill the request with these parameters.
+            The Solver knows how to fill the request with these parameters.
 
-          If the request was of type `buy` then the response's buy amount has the same value as the
-          request's amount and the sell amount was filled in by the server. Vice versa for type
-          `sell`.
-        type: object
-        properties:
-          sellAmount:
-            $ref: "#/components/schemas/TokenAmount"
-          buyAmount:
-            $ref: "#/components/schemas/TokenAmount"
-          gas:
-            type: integer
-      - description: |
-          Unfillable Quote
+            If the request was of type `buy` then the response's buy amount has the same value as the
+            request's amount and the sell amount was filled in by the server. Vice versa for type
+            `sell`.
+          type: object
+          properties:
+            sellAmount:
+              $ref: "#/components/schemas/TokenAmount"
+            buyAmount:
+              $ref: "#/components/schemas/TokenAmount"
+            gas:
+              type: integer
+        - description: |
+            Unfillable Quote
 
-          This is not an error. The server handled the request correctly but could not create a
-          quote. For example, this Solver might not be aware of any liquidity between the tokens.
-        type: object
-        properties:
-          unfillableReason:
-            type: string
+            This is not an error. The server handled the request correctly but could not create a
+            quote. For example, this Solver might not be aware of any liquidity between the tokens.
+          type: object
+          properties:
+            unfillableReason:
+              type: string
     SolveRequest:
       description: Request to the solve endpoint.
       type: object
@@ -342,12 +344,12 @@ components:
                 description: Mapping of hex token address to amount.
                 type: object
                 additionalProperties:
-                    $ref: "#/components/schemas/TokenAmount"
+                  $ref: "#/components/schemas/TokenAmount"
               outputs:
                 description: Mapping of token address to amount.
                 type: object
                 additionalProperties:
-                    $ref: "#/components/schemas/TokenAmount"
+                  $ref: "#/components/schemas/TokenAmount"
         calldata:
           description: hex encoded
           type: string

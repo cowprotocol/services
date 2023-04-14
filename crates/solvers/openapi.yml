@@ -33,7 +33,6 @@ paths:
 
 components:
   schemas:
-
     Address:
       description: |
         An Ethereum public address.
@@ -78,8 +77,7 @@ components:
       example: "1234567890"
 
     DateTime:
-      description:
-        An ISO-8601 formatted date-time.
+      description: An ISO-8601 formatted date-time.
       type: string
       example: "1970-01-01T00:00:00.000Z"
 
