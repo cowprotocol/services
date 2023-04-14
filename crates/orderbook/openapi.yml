@@ -439,23 +439,6 @@ components:
       required:
         - refundTxHash
         - userValidTo
-    FeeInformation:
-      description: |
-        Provides the information to calculate the fees.
-      type: object
-      properties:
-        expiration:
-          description: |
-            Expiration date of the offered fee. Order service might not accept
-            the fee after this expiration date. Encoded as ISO 8601 UTC.
-          type: string
-          example: "2020-12-03T18:35:18.814523Z"
-        amount:
-          description: Absolute amount of fee charged per order in specified sellToken
-          $ref: "#/components/schemas/TokenAmount"
-      required:
-        - expiration
-        - amount
     OrderKind:
       description: Is this a buy order or sell order?
       type: string
@@ -737,17 +720,6 @@ components:
       required:
         - signature
         - signingScheme
-    AmountEstimate:
-      description: |
-        Provides the information about an estimated price.
-      type: object
-      properties:
-        amount:
-          description: The estimated amount
-          $ref: "#/components/schemas/TokenAmount"
-        token:
-          description: "The token in which the amount is given"
-          $ref: "#/components/schemas/Address"
     Trade:
       description: |
         Trade data such as executed amounts, fees, order id and block number.
@@ -910,22 +882,6 @@ components:
       required:
         - errorType
         - description
-    FeeAndQuoteSellResponse:
-      type: object
-      properties:
-        fee:
-          $ref: "#/components/schemas/FeeInformation"
-        buyAmountAfterFee:
-          description: The buy amount after deducting the fee.
-          $ref: "#/components/schemas/TokenAmount"
-    FeeAndQuoteBuyResponse:
-      type: object
-      properties:
-        fee:
-          $ref: "#/components/schemas/FeeInformation"
-        sellAmountBeforeFee:
-          description: The sell amount including the fee.
-          $ref: "#/components/schemas/TokenAmount"
     FeeAndQuoteError:
       type: object
       properties:
