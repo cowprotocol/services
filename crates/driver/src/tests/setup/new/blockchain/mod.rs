@@ -1,3 +1,4 @@
+pub use tenderly::Tenderly;
 use {
     super::{Asset, Order},
     crate::{
@@ -9,7 +10,12 @@ use {
     futures::Future,
     secp256k1::SecretKey,
     std::collections::HashMap,
+    tracing::log,
 };
+
+// TODO geth should also have its own submodule
+
+mod tenderly;
 
 /// The URL to which a post request can be made to start and stop geth
 /// instances. See the `dev-geth` crate.
@@ -34,11 +40,12 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
 
     pub web3: Web3<DynTransport>,
+    pub web3_url: String,
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub domain_separator: boundary::DomainSeparator,
-    pub geth: Geth,
+    pub geth: Option<Geth>,
     pub pairs: Vec<Pair>,
     bogus_calldata: bool,
 }
@@ -111,6 +118,7 @@ impl Fulfillment {
     }
 }
 
+#[derive(Debug)]
 pub struct Config {
     pub pools: Vec<Pool>,
     pub bogus_calldata: bool,
@@ -118,6 +126,7 @@ pub struct Config {
     pub trader_secret_key: SecretKey,
     pub solver_address: eth::H160,
     pub solver_secret_key: SecretKey,
+    pub tenderly: Option<Tenderly>,
 }
 
 impl Blockchain {
@@ -129,17 +138,29 @@ impl Blockchain {
         // should be happening from the primary_account of the geth node, will do this
         // later
 
-        let geth = Geth::new().await;
+        let tenderly = match config.tenderly {
+            Some(tenderly) => Some(tenderly::fork(tenderly).await),
+            None => None,
+        };
+        // If Tenderly is in use, don't start the geth node.
+        let geth = match tenderly.as_ref() {
+            Some(..) => None,
+            None => Some(Geth::new().await),
+        };
+        let web3_url = match (tenderly.as_ref(), geth.as_ref()) {
+            (Some(tenderly), None) => tenderly.web3_url(),
+            (None, Some(geth)) => geth.url().clone(),
+            _ => unreachable!(),
+        };
         let web3 = Web3::new(DynTransport::new(
-            web3::transports::Http::new(&geth.url()).expect("valid URL"),
+            web3::transports::Http::new(&web3_url).expect("valid URL"),
         ));
-
         let trader_account = ethcontract::Account::Offline(
             ethcontract::PrivateKey::from_slice(config.trader_secret_key.as_ref()).unwrap(),
             None,
         );
 
-        // Use the geth account to fund the trader and the solver with ETH.
+        // Use the starting account to fund the trader and the solver with ETH.
         let balance = web3
             .eth()
             .balance(primary_address(&web3).await, None)
@@ -157,6 +178,7 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        log::debug!("funded trader with ETH");
         wait_for(
             &web3,
             web3.eth()
@@ -169,36 +191,64 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        log::debug!("funded solver with ETH");
 
         // Deploy WETH and wrap some funds in the primary account of the geth node.
         let weth = wait_for(
             &web3,
             contracts::WETH9::builder(&web3)
                 .from(trader_account.clone())
+                .gas(1000000.into())
                 .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed WETH");
+        if let Some(tenderly) = tenderly.as_ref() {
+            tenderly
+                .verify(weth.address(), contracts::source::weth9())
+                .await;
+            log::debug!("verified WETH");
+        }
         wait_for(
             &web3,
             ethcontract::transaction::TransactionBuilder::new(web3.clone())
                 .from(primary_account(&web3).await)
                 .to(weth.address())
                 .value(balance / 5)
+                .gas(100000.into())
                 .send(),
         )
         .await
         .unwrap();
+        log::debug!("deposited WETH");
 
         // Set up the settlement contract and related contracts.
         let vault_authorizer = wait_for(
             &web3,
             contracts::BalancerV2Authorizer::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
+                .gas(1000000.into())
                 .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed BalancerV2Authorizer");
+        if let Some(tenderly) = tenderly.as_ref() {
+            tenderly
+                .verify(
+                    vault_authorizer.address(),
+                    contracts::source::balancer_v2_authorizer(),
+                )
+                .await;
+            log::debug!("verified BalancerV2Authorizer");
+        }
+        dbg!(web3
+            .eth()
+            .balance(trader_account.address(), None)
+            .await
+            .unwrap());
+        log::debug!("sender: {}", hex::encode(trader_account.address()));
         let vault = wait_for(
             &web3,
             contracts::BalancerV2Vault::builder(
@@ -208,27 +258,42 @@ impl Blockchain {
                 0.into(),
                 0.into(),
             )
+            // TODO Would be nice I think, why is trader deploying all these contracts?
+            //.from(primary_account(&web3).await)
             .from(trader_account.clone())
+            .gas(100000000.into())
             .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed BalancerV2Vault");
+
         let authenticator = wait_for(
             &web3,
             contracts::GPv2AllowListAuthentication::builder(&web3)
                 .from(trader_account.clone())
+                .gas(1000000.into())
                 .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed GPv2AllowListAuthentication");
         let settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
                 .from(trader_account.clone())
+                .gas(1000000.into())
                 .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed GPv2Settlement");
+        if let Some(tenderly) = tenderly.as_ref() {
+            tenderly
+                .verify(settlement.address(), contracts::source::gp_v2_settlement())
+                .await;
+            log::debug!("verified GPv2Settlement");
+        }
         wait_for(
             &web3,
             authenticator
@@ -259,6 +324,7 @@ impl Blockchain {
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
+                        .gas(1000000.into())
                         .deploy(),
                 )
                 .await
@@ -270,6 +336,7 @@ impl Blockchain {
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
+                        .gas(1000000.into())
                         .deploy(),
                 )
                 .await
@@ -283,10 +350,12 @@ impl Blockchain {
             &web3,
             contracts::UniswapV2Factory::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
+                .gas(1000000.into())
                 .deploy(),
         )
         .await
         .unwrap();
+        log::debug!("deployed UniswapV2Factory");
 
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
@@ -313,6 +382,7 @@ impl Blockchain {
             )
             .await
             .unwrap();
+            // TODO The pairs need to be verified as well.
             // Fund the pair and the settlement contract.
             let pair = contracts::IUniswapLikePair::at(
                 &web3,
@@ -444,6 +514,7 @@ impl Blockchain {
             settlement,
             domain_separator,
             weth,
+            web3_url,
             web3,
             geth,
             pairs,
@@ -672,13 +743,13 @@ impl Drop for Geth {
 pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
     let block = web3.eth().block_number().await.unwrap();
     let result = fut.await;
-    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let next_block = web3.eth().block_number().await.unwrap();
             if next_block > block {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
     })
     .await

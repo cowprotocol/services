@@ -3,6 +3,7 @@
 //! dead_code macros should be removed and this `new` module should become the
 //! super module.
 
+pub use blockchain::Tenderly;
 use {
     self::{
         blockchain::{Fulfillment, Pool},
@@ -98,6 +99,7 @@ impl Default for Order {
 
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
+    crate::boundary::initialize_tracing("driver=trace,web3=debug");
     Setup {
         pools: Default::default(),
         orders: Default::default(),
@@ -106,6 +108,7 @@ pub fn setup() -> Setup {
         internalize: Default::default(),
         now: infra::time::Now::Fake(chrono::Utc::now()),
         config_file: Default::default(),
+        tenderly: Default::default(),
     }
 }
 
@@ -118,6 +121,7 @@ pub struct Setup {
     internalize: bool,
     now: infra::time::Now,
     config_file: Option<PathBuf>,
+    tenderly: Option<Tenderly>,
 }
 
 impl Setup {
@@ -141,6 +145,13 @@ impl Setup {
             },
         });
         self
+    }
+
+    pub fn tenderly(self, tenderly: Tenderly) -> Self {
+        Self {
+            tenderly: Some(tenderly),
+            ..self
+        }
     }
 
     /// Add a new order to be solved as part of the test. This order will be
@@ -172,22 +183,24 @@ impl Setup {
 
     /// Load the specified config file. Otherwise, a temporary config file will
     /// be created with reasonable values.
-    pub fn config(mut self, path: PathBuf) -> Self {
-        self.config_file = Some(path);
-        self
+    pub fn config(self, path: PathBuf) -> Self {
+        Self {
+            config_file: Some(path),
+            ..self
+        }
     }
 
     /// The interactions will have nonsensical calldata.
-    pub fn bogus_calldata(mut self) -> Self {
-        self.bogus_calldata = true;
-        self
+    pub fn bogus_calldata(self) -> Self {
+        Self {
+            bogus_calldata: true,
+            ..self
+        }
     }
 
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
-        crate::boundary::initialize_tracing("driver=trace");
-
         let deadline = self.deadline();
         let Self {
             pools,
@@ -227,6 +240,7 @@ impl Setup {
             solver_address,
             solver_secret_key,
             bogus_calldata: self.bogus_calldata,
+            tenderly: self.tenderly,
         })
         .await;
         let fulfillments = blockchain.fulfill(&orders).await;

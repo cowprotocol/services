@@ -5,6 +5,11 @@ use crate::tests::{setup, setup::new::Order};
 #[ignore]
 async fn test() {
     let test = setup()
+        .tenderly(setup::new::Tenderly {
+            username: "gp-v2".to_owned(),
+            project: "niksa-".to_owned(),
+            key: "LU0ldRKOdvSKsooOFYGdEOK6Vpy2AFOL".to_owned(),
+        })
         .pool(
             "A",
             1000000000000000000000u128.into(),

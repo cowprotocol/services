@@ -1,12 +1,12 @@
 #![allow(clippy::let_unit_value)]
 
-pub use ethcontract;
+pub use {ethcontract, source::Source};
 
 #[cfg(feature = "bin")]
 pub mod paths;
+pub mod source;
 pub mod vault;
 pub mod web3;
-pub mod source;
 
 macro_rules! include_contracts {
     ($($name:ident;)*) => {$(

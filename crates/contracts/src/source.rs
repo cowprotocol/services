@@ -6,19 +6,16 @@ pub struct Source {
     pub file: &'static str,
     pub name: &'static str,
     pub compiler_version: &'static str,
-    // TODO Check if this is needed.
-    pub compiler_commit: &'static str,
     pub optimizations: bool,
     pub optimization_runs: u32,
 }
 
 pub fn weth9() -> Source {
     Source {
-        dir: path("."),
+        dir: path("weth"),
         file: "WETH9.sol",
         name: "WETH9",
         compiler_version: "v0.4.19",
-        compiler_commit: "",
         optimizations: false,
         optimization_runs: 200,
     }
@@ -30,9 +27,19 @@ pub fn balancer_v2_authorizer() -> Source {
         file: "TimelockAuthorizer.sol",
         name: "TimelockAuthorizer",
         compiler_version: "v0.7.1",
-        compiler_commit: "",
         optimizations: true,
         optimization_runs: 9999,
+    }
+}
+
+pub fn gp_v2_settlement() -> Source {
+    Source {
+        dir: path("cow-contracts"),
+        file: "GPv2Settlement.sol",
+        name: "GPv2Settlement",
+        compiler_version: "v0.7.6",
+        optimizations: true,
+        optimization_runs: 1000000,
     }
 }
 
