@@ -118,7 +118,7 @@ fn default_max_additional_flashbots_tip() -> f64 {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SolverConfig {
     /// The endpoint of this solver. `POST`ing an auction to this endpoint
     /// should prompt the solver to calculate and return a solution.

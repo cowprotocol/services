@@ -6,8 +6,11 @@ use {
 /// Tests that dex solvers consecutively decrease the amounts they try to fill
 /// partially fillable orders with across `/solve` requests to eventually find a
 /// fillable amount that works.
+/// If a fillable amount was found the solver tries to solve a bigger amount
+/// next time in case some juicy liquidity appeared on chain which makes big
+/// fills possible.
 #[tokio::test]
-async fn tested_amounts_decrease() {
+async fn tested_amounts_adjust_depending_on_response() {
     // shared::tracing::initialize_reentrant("solvers=trace");
     let inner_request = |amount| {
         json!({
@@ -82,6 +85,12 @@ async fn tested_amounts_decrease() {
                 "marketSp": "0.004393607339632106",
             }),
         },
+        // After a successful response we try the next time with a bigger amount.
+        mock::http::Expectation::Post {
+            path: mock::http::Path::Any,
+            req: inner_request("2000000000000000000"),
+            res: no_swap_found_response.clone(),
+        },
     ])
     .await;
 
@@ -125,7 +134,6 @@ async fn tested_amounts_decrease() {
                 "kind": "sell",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -133,17 +141,15 @@ async fn tested_amounts_decrease() {
         "deadline": "2106-01-01T00:00:00.000Z"
     });
 
+    let empty_solution = json!({
+        "prices": {},
+        "trades": [],
+        "interactions": [],
+    });
+
     for _ in 0..4 {
         let solution = engine.solve(auction.clone()).await;
-
-        assert_eq!(
-            solution,
-            json!({
-                "prices": {},
-                "trades": [],
-                "interactions": [],
-            }),
-        );
+        assert_eq!(solution, empty_solution);
     }
 
     let solution = engine.solve(auction.clone()).await;
@@ -218,6 +224,10 @@ async fn tested_amounts_decrease() {
             ]
         })
     );
+
+    // Solver tried a bigger fill after the last success but that failed again.
+    let solution = engine.solve(auction.clone()).await;
+    assert_eq!(solution, empty_solution);
 }
 
 /// Tests that we don't converge to 0 with the amounts we try to fill. Instead
@@ -302,7 +312,6 @@ async fn tested_amounts_wrap_around() {
                 "kind": "buy",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -431,7 +440,6 @@ async fn moves_surplus_fee_to_buy_token() {
                 "kind": "sell",
                 "partiallyFillable": true,
                 "class": "limit",
-                "reward": 0.
             }
         ],
         "liquidity": [],
@@ -604,7 +612,6 @@ async fn insufficient_room_for_surplus_fee() {
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "limit",
-                    "reward": 0.
                 }
             ],
             "liquidity": [],
@@ -708,7 +715,6 @@ async fn market() {
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "market",
-                    "reward": 0.
                 }
             ],
             "liquidity": [],

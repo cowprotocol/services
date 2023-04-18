@@ -404,6 +404,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         ethflow_data,
         onchain_user,
         onchain_order_data,
+        partially_fillable_balance: None,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

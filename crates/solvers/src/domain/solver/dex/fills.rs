@@ -54,7 +54,6 @@ impl Fills {
         let smallest_fill =
             self.smallest_fill.clone() * prices.0.get(&ETH)? / prices.0.get(&token)?;
         let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
-        tracing::trace!(?smallest_fill, "least amount worth filling");
 
         let now = Instant::now();
 
@@ -63,15 +62,21 @@ impl Fills {
                 entry.insert(CacheEntry {
                     next_amount: total_amount,
                     last_requested: now,
+                    total_amount,
                 });
                 total_amount
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
+                entry.total_amount = total_amount;
 
                 if entry.next_amount < smallest_fill {
-                    tracing::trace!("target fill got too small; starting over");
+                    tracing::trace!(
+                        ?smallest_fill,
+                        target =? entry.next_amount,
+                        "target fill got too small; starting over"
+                    );
                     entry.next_amount = total_amount;
                 } else if entry.next_amount > total_amount {
                     tracing::trace!("partially filled; adjusting to new total amount");
@@ -87,15 +92,40 @@ impl Fills {
             return None;
         }
 
-        let (sell, buy) = match order.side {
-            order::Side::Buy => (order.sell, eth::Asset { token, amount }),
-            order::Side::Sell => (eth::Asset { token, amount }, order.buy),
+        // Scale amounts according to the limit price and the chosen fill.
+        let (sell_amount, buy_amount) = match order.side {
+            order::Side::Buy => {
+                let sell_amount = order
+                    .sell
+                    .amount
+                    .full_mul(amount)
+                    .checked_div(order.buy.amount.into())?
+                    .try_into()
+                    .unwrap();
+                (sell_amount, amount)
+            }
+            order::Side::Sell => {
+                let buy_amount = order
+                    .buy
+                    .amount
+                    .full_mul(amount)
+                    .checked_div(order.sell.amount.into())?
+                    .try_into()
+                    .unwrap();
+                (amount, buy_amount)
+            }
         };
 
         tracing::trace!(?amount, "trying to partially fill order");
         Some(dex::Order::new(&order::Order {
-            sell,
-            buy,
+            sell: eth::Asset {
+                token: order.sell.token,
+                amount: sell_amount,
+            },
+            buy: eth::Asset {
+                token: order.buy.token,
+                amount: buy_amount,
+            },
             ..*order
         }))
     }
@@ -107,7 +137,21 @@ impl Fills {
     pub fn reduce_next_try(&self, uid: order::Uid) {
         self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
             entry.next_amount /= 2;
-            tracing::trace!(next_try =? entry.next_amount, "adjusted next fill amount");
+            tracing::trace!(next_try =? entry.next_amount, "reduced next fill amount");
+        });
+    }
+
+    /// Adjusts the next fill amount that should be tried. Doubles the amount to
+    /// try. This is useful in case the onchain liquidity changed and now
+    /// allows for bigger fills.
+    pub fn increase_next_try(&self, uid: order::Uid) {
+        self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
+            entry.next_amount = entry
+                .next_amount
+                .checked_mul(2.into())
+                .unwrap_or(entry.total_amount)
+                .min(entry.total_amount);
+            tracing::trace!(next_try =? entry.next_amount, "increased next fill amount");
         });
     }
 
@@ -128,5 +172,6 @@ impl Fills {
 #[derive(Debug)]
 struct CacheEntry {
     next_amount: eth::U256,
+    total_amount: eth::U256,
     last_requested: Instant,
 }

@@ -17,8 +17,6 @@ use {
     std::{collections::HashSet, iter},
 };
 
-pub const FAKE_AUCTION_REWARD: f64 = 35.;
-
 /// A quote describing the expected outcome of an order.
 #[derive(Debug)]
 pub struct Quote {
@@ -108,7 +106,6 @@ impl Order {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                reward: FAKE_AUCTION_REWARD,
             }],
             gas_price: self.gas_price.into(),
             deadline: Default::default(),

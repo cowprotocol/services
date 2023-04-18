@@ -54,6 +54,7 @@ impl Legacy {
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
+                gzip_requests: false,
                 solve_path,
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
@@ -174,7 +175,7 @@ fn to_boundary_auction(
                 // single user order that is mandatory to be matched.
                 mandatory: auction.id.is_none(),
                 has_atomic_execution: false,
-                reward: order.reward.0,
+                reward: 0.,
             },
         );
     }

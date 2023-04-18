@@ -104,8 +104,13 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
     }
 }
 
-#[derive(Debug)]
-pub struct Order {
+/// It's possible that the same order gets filled in portions across multiple or
+/// even the same settlement. This struct describes the details of such a fill.
+/// Note that most orders only have a single fill as they are fill-or-kill
+/// orders but partially fillable orders could have associated any number of
+/// [`OrderExecution`]s with them.
+#[derive(Debug, Clone)]
+pub struct OrderExecution {
     pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
@@ -116,10 +121,10 @@ pub struct Order {
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl TryFrom<database::orders::FullOrder> for Order {
+impl TryFrom<database::orders::OrderExecution> for OrderExecution {
     type Error = anyhow::Error;
 
-    fn try_from(order: database::orders::FullOrder) -> std::result::Result<Self, Self::Error> {
+    fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             executed_solver_fee: order
                 .executed_solver_fee
@@ -130,13 +135,7 @@ impl TryFrom<database::orders::FullOrder> for Order {
             buy_token: H160(order.buy_token.0),
             sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
             buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
-            executed_amount: match order_kind_from(order.kind) {
-                OrderKind::Buy => {
-                    big_decimal_to_u256(&order.sum_buy).context("executed_buy_amount")?
-                }
-                OrderKind::Sell => big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-                    .context("executed_sell_amount_before_fees")?,
-            },
+            executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
             signature: {
                 let signing_scheme = signing_scheme_from(order.signing_scheme);
                 let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
@@ -175,18 +174,26 @@ impl DecodedSettlement {
         })
     }
 
-    // Assumes it is called with already FILLED orders.
-    // Needs rework to support partially fillable orders.
-    // Tricky because the decoded settlement is using FILLED `orders` so we don't
-    // always know the executed amount in case of partial fill.
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
+    /// Returns the total `executed_solver_fee` of this solution converted to
+    /// the native token. This is only the value used for objective value
+    /// computatations and can theoretically be different from the value of
+    /// fees actually collected by the protocol.
+    pub fn total_fees(
+        &self,
+        external_prices: &ExternalPrices,
+        mut orders: Vec<OrderExecution>,
+    ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders
-                .iter()
-                .find(|order| order.signature == trade.signature.0)
-            {
-                Some(order) => {
-                    acc + match fee(external_prices, order) {
+            match orders.iter().position(|order| {
+                order.signature == trade.signature.0
+                    && order.executed_amount == trade.executed_amount
+            }) {
+                Some(i) => {
+                    // It's possible to have multiple fills with the same `executed_amount` for the
+                    // same order with different `solver_fees`. To end up with the correct total
+                    // fees we can only use every `OrderExecution` exactly once.
+                    let order = orders.swap_remove(i);
+                    acc + match fee(external_prices, &order) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -251,22 +258,12 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
-fn fee(external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
+/// Converts the order's `solver_fee` which is denominated in `sell_token` to
+/// the native token.
+fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
     let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
-    tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
-
-    let fee = match order.kind {
-        model::order::OrderKind::Buy => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.buy_amount)
-        }
-        model::order::OrderKind::Sell => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.sell_amount)
-        }
-    };
-    tracing::trace!(?fee, "fee before conversion to native token");
-    let fee = external_prices.try_get_native_amount(order.sell_token, fee)?;
+    tracing::trace!(?solver_fee, "fee before conversion to native token");
+    let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
     tracing::trace!(?fee, "fee after conversion to native token");
     big_rational_to_u256(&fee).ok()
 }
@@ -560,7 +557,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let orders = vec![
-            Order {
+            OrderExecution {
                 executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
@@ -570,7 +567,7 @@ mod tests {
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
-            Order {
+            OrderExecution {
                 executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
@@ -582,7 +579,7 @@ mod tests {
             }
         ];
         let fees = settlement
-            .total_fees(&external_prices, &orders)
+            .total_fees(&external_prices, orders)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);

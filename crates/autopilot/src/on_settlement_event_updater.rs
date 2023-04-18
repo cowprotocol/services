@@ -148,17 +148,25 @@ impl OnSettlementEventUpdater {
                 .with_context(|| {
                     format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
                 })?;
-            let orders = self.db.orders_for_tx(&hash).await?;
+            let orders = self.db.order_executions_for_tx(&hash).await?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),
             )?;
 
+            tracing::trace!(
+                ?auction_id,
+                ?auction_external_prices,
+                ?orders,
+                ?external_prices,
+                "observations input"
+            );
+
             // surplus and fees calculation
             match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
                     let surplus = settlement.total_surplus(&external_prices);
-                    let fee = settlement.total_fees(&external_prices, &orders);
+                    let fee = settlement.total_fees(&external_prices, orders);
 
                     update.auction_data = Some(AuctionData {
                         surplus,
@@ -176,14 +184,6 @@ impl OnSettlementEventUpdater {
                     return Err(err.into());
                 }
             }
-
-            tracing::trace!(
-                ?auction_id,
-                ?auction_external_prices,
-                ?orders,
-                ?external_prices,
-                "observations input"
-            );
         }
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");

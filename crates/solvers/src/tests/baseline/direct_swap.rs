@@ -43,7 +43,6 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "reward": 42.42
                 }
             ],
             "liquidity": [

@@ -18,15 +18,13 @@ use {
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
-    chrono::{DateTime, Utc},
     contracts::GPv2Settlement,
     ethcontract::Account,
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
-    itertools::Itertools,
     model::{
         auction::{AuctionId, AuctionWithId},
-        order::{LimitOrderClass, OrderClass, OrderUid},
+        order::OrderUid,
         solver_competition::{
             self,
             CompetitionAuction,
@@ -107,7 +105,6 @@ impl Driver {
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
         code_fetcher: Arc<dyn CodeFetching>,
-        auction_rewards_activation_timestamp: DateTime<Utc>,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
     ) -> Self {
@@ -127,7 +124,6 @@ impl Driver {
             metrics: metrics.clone(),
             settlement_rater,
             decimal_cutoff: solution_comparison_decimal_cutoff,
-            auction_rewards_activation_timestamp,
             skip_non_positive_score_settlements,
         };
 
@@ -287,12 +283,8 @@ impl Driver {
             .orders
             .into_iter()
             .filter_map(|order| {
-                let uid = order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
-                    Ok(mut order) => {
-                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
-                        Some(order)
-                    }
+                    Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
@@ -334,7 +326,6 @@ impl Driver {
             .await?;
         self.metrics.liquidity_fetched(&liquidity);
 
-        let rewards = auction.rewards;
         let auction = Auction {
             id: auction_id,
             run: run_id,
@@ -414,19 +405,6 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
-        // In transition period last settlement is not necessarily the one with the
-        // highest score. So we need to use the score ranking to determine the winner.
-        // CIP20 TODO - add to if statement below, once the transition period is over.
-        let mut scores = rated_settlements
-            .iter()
-            .map(|(solver, rated_settlement, _)| {
-                (
-                    rated_settlement.ranking,
-                    solver.account().address(),
-                    rated_settlement.score.score(),
-                )
-            })
-            .sorted_by_key(|(ranking, _, _)| *ranking);
         if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
@@ -439,20 +417,11 @@ impl Driver {
                 .settlement
                 .user_trades()
                 .map(|trade| {
-                    let uid = &trade.order.metadata.uid;
-                    let reward = rewards.get(uid).copied().unwrap_or(0.);
-                    let surplus_fee = match trade.order.metadata.class {
-                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => surplus_fee,
-                        _ => None,
-                    };
-                    // Log in case something goes wrong with storing the rewards in the database.
-                    tracing::debug!(%uid, %reward, "winning solution reward");
                     let execution = Execution {
-                        reward,
-                        surplus_fee,
+                        surplus_fee: trade.surplus_fee(),
                         solver_fee: trade.solver_fee,
                     };
-                    (*uid, execution)
+                    (trade.order.metadata.uid, execution)
                 })
                 .collect();
 
@@ -471,12 +440,14 @@ impl Driver {
                     .map_err(|err| anyhow!("{err}"))
                     .context("convert nonce")?,
             };
-            let (_, winner, winning_score) = scores.next().expect("no winner"); // guaranteed to exist
             let scores = model::solver_competition::Scores {
-                winner,
-                winning_score,
+                winner: address,
+                winning_score: winning_settlement.score.score(),
                 // second highest score, or 0 if there is only one score (see CIP20)
-                reference_score: scores.next().unwrap_or_default().2,
+                reference_score: rated_settlements
+                    .last()
+                    .map(|(_, settlement, _)| settlement.score.score())
+                    .unwrap_or_default(),
                 block_deadline: {
                     let deadline = self.solver_time_limit
                         + self.solution_submitter.max_confirm_time

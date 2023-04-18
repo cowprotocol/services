@@ -1,5 +1,5 @@
 use {
-    crate::{database::Postgres, risk_adjusted_rewards},
+    crate::database::Postgres,
     anyhow::{Context as _, Result},
     bigdecimal::BigDecimal,
     chrono::Utc,
@@ -69,9 +69,6 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    // Optional because reward calculation only makes sense on mainnet. Other networks have 0
-    // rewards.
-    reward_calculator: Option<risk_adjusted_rewards::Calculator>,
     ethflow_contract_address: Option<H160>,
     surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
@@ -108,7 +105,6 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
-        reward_calculator: Option<risk_adjusted_rewards::Calculator>,
         ethflow_contract_address: Option<H160>,
         surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
@@ -134,7 +130,6 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
-            reward_calculator,
             ethflow_contract_address,
             surplus_fee_age,
             limit_order_price_factor,
@@ -230,37 +225,11 @@ impl SolvableOrdersCache {
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
         counter.checkpoint("fee_scaling_overflow", &orders);
 
-        let rewards = if let Some(calculator) = &self.reward_calculator {
-            let rewards = calculator
-                .calculate_many(&orders)
-                .await
-                .context("rewards")?;
-
-            orders
-                .iter()
-                .zip(rewards)
-                .filter_map(|(order, reward)| match reward {
-                    Ok(reward) if reward > 0. => Some((order.metadata.uid, reward)),
-                    Ok(_) => None,
-                    Err(err) => {
-                        tracing::warn!(
-                            order =% order.metadata.uid, ?err,
-                            "error calculating risk adjusted reward",
-                        );
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            Default::default()
-        };
-
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders.clone(),
             prices,
-            rewards,
         };
         counter.record(&auction.orders);
 
@@ -410,7 +379,7 @@ fn solvable_orders(
             Some(balance) => *balance,
             None => continue,
         };
-        for order in orders {
+        for mut order in orders {
             // For ethflow orders, there is no need to check the balance. The contract
             // ensures that there will always be sufficient balance, after the wrapAll
             // pre_interaction has been called.
@@ -442,9 +411,22 @@ fn solvable_orders(
                 }
             };
 
-            if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
-                remaining_balance = balance;
+            if order.data.partially_fillable {
+                if remaining_balance == 0.into() {
+                    continue;
+                }
+                order.metadata.partially_fillable_balance =
+                    Some(needed_balance.min(remaining_balance));
                 result.push(order);
+                remaining_balance = remaining_balance.saturating_sub(needed_balance);
+            } else {
+                match remaining_balance.checked_sub(needed_balance) {
+                    Some(balance) => {
+                        result.push(order);
+                        remaining_balance = balance;
+                    }
+                    None => continue,
+                };
             }
         }
     }
@@ -779,6 +761,20 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
+                    creation_date: Utc.timestamp_opt(1, 0).unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                data: OrderData {
+                    sell_amount: 10.into(),
+                    buy_amount: 10.into(),
+                    fee_amount: 10.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
                     creation_date: Utc.timestamp_opt(0, 0).unwrap(),
                     ..Default::default()
                 },
@@ -788,11 +784,26 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
         let orders_ = solvable_orders(orders.clone(), &balances, None);
+        assert_eq!(orders_.len(), 2);
         // Second order has lower timestamp so it isn't picked.
-        assert_eq!(orders_, orders[..1]);
+        assert_eq!(orders_[0].data, orders[0].data);
+        // Third order is partially fillable so is picked with remaining balance.
+        assert_eq!(orders_[1].data, orders[2].data);
+        assert_eq!(
+            orders_[1].metadata.partially_fillable_balance,
+            Some(3.into())
+        );
+
         orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
         let orders_ = solvable_orders(orders.clone(), &balances, None);
-        assert_eq!(orders_, orders[1..]);
+        assert_eq!(orders_.len(), 2);
+        assert_eq!(orders_[0].data, orders[1].data);
+        // Remaining balance is different because previous order has changed.
+        assert_eq!(orders_[1].data, orders[2].data);
+        assert_eq!(
+            orders_[1].metadata.partially_fillable_balance,
+            Some(5.into())
+        );
     }
 
     #[tokio::test]
@@ -1091,7 +1102,10 @@ mod tests {
         let mut filtered_orders = solvable_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
-        assert_eq!(expected_result, filtered_orders);
+        assert_eq!(expected_result.len(), filtered_orders.len());
+        for (left, right) in expected_result.iter().zip(filtered_orders) {
+            assert_eq!(left.data, right.data);
+        }
     }
 
     #[tokio::test]

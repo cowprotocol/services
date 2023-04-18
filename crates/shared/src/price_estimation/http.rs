@@ -131,8 +131,7 @@ impl HttpPriceEstimator {
                 is_liquidity_order: false,
                 mandatory: true,
                 has_atomic_execution: false,
-                // TODO: is it possible to set a more accurate reward?
-                reward: 35.,
+                reward: 0., // irrelevant for price estimation
                 is_mature: true, // irrelevant for price estimation
             },
         };
@@ -791,6 +790,7 @@ mod tests {
                 base: Url::parse(&quasimodo_url).expect("failed to parse quasimodo url"),
                 solve_path: "solve".to_owned(),
                 client,
+                gzip_requests: false,
                 config: SolverConfig {
                     use_internal_buffers: Some(true),
                     ..Default::default()

@@ -47,7 +47,6 @@ impl Fills {
 
         let smallest_fill = prices.try_get_token_amount(&self.smallest_fill, token)?;
         let smallest_fill = number_conversions::big_rational_to_u256(&smallest_fill).ok()?;
-        tracing::trace!(?smallest_fill, "least amount worth filling");
 
         let now = Instant::now();
 
@@ -56,15 +55,21 @@ impl Fills {
                 entry.insert(CacheEntry {
                     next_amount: total_amount,
                     last_requested: now,
+                    total_amount,
                 });
                 total_amount
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.last_requested = now;
+                entry.total_amount = total_amount;
 
                 if entry.next_amount < smallest_fill {
-                    tracing::trace!("target fill got too small; starting over");
+                    tracing::trace!(
+                        ?smallest_fill,
+                        target =? entry.next_amount,
+                        "target fill got too small; starting over"
+                    );
                     entry.next_amount = total_amount;
                 } else if entry.next_amount > total_amount {
                     tracing::trace!("partially filled; adjusting to new total amount");
@@ -80,12 +85,29 @@ impl Fills {
             return None;
         }
 
+        // Scale amounts according to the limit price and the chosen fill.
         let (sell_amount, buy_amount) = match order.kind {
-            OrderKind::Buy => (order.sell_amount, amount),
-            OrderKind::Sell => (amount, order.buy_amount),
+            OrderKind::Buy => {
+                let sell_amount = order
+                    .sell_amount
+                    .full_mul(amount)
+                    .checked_div(order.buy_amount.into())?
+                    .try_into()
+                    .unwrap();
+                (sell_amount, amount)
+            }
+            OrderKind::Sell => {
+                let buy_amount = order
+                    .buy_amount
+                    .full_mul(amount)
+                    .checked_div(order.sell_amount.into())?
+                    .try_into()
+                    .unwrap();
+                (amount, buy_amount)
+            }
         };
 
-        tracing::trace!(?amount, "trying to partially fill order");
+        tracing::trace!(?sell_amount, ?buy_amount, "trying to partially fill order");
         Some(LimitOrder {
             sell_amount,
             buy_amount,
@@ -100,7 +122,21 @@ impl Fills {
     pub fn reduce_next_try(&self, uid: OrderUid) {
         self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
             entry.next_amount /= 2;
-            tracing::trace!(next_try =? entry.next_amount, "adjusted next fill amount");
+            tracing::trace!(next_try =? entry.next_amount, "decreased next fill amount");
+        });
+    }
+
+    /// Adjusts the next fill amount that should be tried. Doubles the amount to
+    /// try. This is useful in case the onchain liquidity changed and now
+    /// allows for bigger fills.
+    pub fn increase_next_try(&self, uid: OrderUid) {
+        self.amounts.lock().unwrap().entry(uid).and_modify(|entry| {
+            entry.next_amount = entry
+                .next_amount
+                .checked_mul(2.into())
+                .unwrap_or(entry.total_amount)
+                .min(entry.total_amount);
+            tracing::trace!(next_try =? entry.next_amount, "increased next fill amount");
         });
     }
 
@@ -122,4 +158,5 @@ impl Fills {
 struct CacheEntry {
     next_amount: U256,
     last_requested: Instant,
+    total_amount: U256,
 }

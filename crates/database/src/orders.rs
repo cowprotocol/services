@@ -494,39 +494,95 @@ pub async fn single_full_order(
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
+// Partial query for getting the log indices of events of a single settlement.
+//
+// This will fail if we ever have multiple settlements in the same transaction
+// because this WITH query will return multiple rows. If we ever want to do
+// this, a tx hash is no longer enough to uniquely identify a settlement so the
+// "orders for tx hash" route needs to change in some way like taking block
+// number and log index directly.
+const SETTLEMENT_LOG_INDICES: &str = r#"
+WITH
+    -- The log index in this query is the log index from the settlement event, which comes after the trade events.
+    settlement AS (
+        SELECT block_number, log_index
+        FROM settlements
+        WHERE tx_hash = $1
+    ),
+    -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
+    previous_settlement AS (
+        SELECT COALESCE(MAX(log_index), 0) AS low
+        FROM settlements
+        WHERE
+            block_number = (SELECT block_number FROM settlement) AND
+            log_index < (SELECT log_index FROM settlement)
+    )
+"#;
+
 pub fn full_orders_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
     const QUERY: &str = const_format::formatcp!(
         r#"
--- This will fail if we ever have multiple settlements in the same transaction because this WITH
--- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
--- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
--- like taking block number and log index directly.
-WITH settlement as (
-    SELECT block_number, log_index
-    FROM settlements
-    WHERE tx_hash = $1
-)
+{SETTLEMENT_LOG_INDICES}
 SELECT {ORDERS_SELECT}
 FROM {ORDERS_FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
     -- BETWEEN is inclusive
-    t.log_index BETWEEN
-        -- previous settlement, the settlement event is emitted after the trade events
-        (
-            -- COALESCE because there might not be a previous settlement
-            SELECT COALESCE(MAX(log_index), 0)
-            FROM settlements
-            WHERE
-                block_number = (SELECT block_number FROM settlement) AND
-                log_index < (SELECT log_index from settlement)
-        ) AND
-        (SELECT log_index FROM settlement)
+    t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
 ;"#
+    );
+    sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct OrderExecution {
+    /// The `solver_fee` that got executed for this specific fill.
+    pub executed_solver_fee: Option<BigDecimal>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub kind: OrderKind,
+    /// The entire `sell_amount` of the order.
+    pub sell_amount: BigDecimal,
+    /// The entire `buy_amount` of the order.
+    pub buy_amount: BigDecimal,
+    /// The amount that got executed just with this trade.
+    pub executed_amount: BigDecimal,
+    pub signature: Vec<u8>,
+    pub signing_scheme: SigningScheme,
+    pub owner: Address,
+}
+
+pub fn order_executions_in_tx<'a>(
+    ex: &'a mut PgConnection,
+    tx_hash: &'a TransactionHash,
+) -> BoxStream<'a, Result<OrderExecution, sqlx::Error>> {
+    const QUERY: &str = const_format::formatcp!(
+        r#"
+{SETTLEMENT_LOG_INDICES}
+SELECT
+    solver_fee AS executed_solver_fee,
+    sell_token,
+    buy_token,
+    o.sell_amount,
+    o.buy_amount AS buy_amount,
+    kind,
+    CASE
+        WHEN o.kind = 'sell' THEN t.sell_amount
+        ELSE t.buy_amount END AS executed_amount,
+    o.owner,
+    signature,
+    signing_scheme
+FROM order_execution AS oe
+JOIN orders o ON o.uid = oe.order_uid
+JOIN trades t ON t.order_uid = oe.order_uid
+WHERE
+    t.block_number = (SELECT block_number FROM settlement) AND
+    t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
+    "#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
@@ -676,6 +732,7 @@ pub async fn update_fok_limit_order_fees(
             sell_token = $4
             AND buy_token = $5
             AND sell_amount = $6
+            AND NOT partially_fillable
         RETURNING
             uid
     ";
@@ -1910,7 +1967,7 @@ mod tests {
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, 0., Some(&fee), &solver_fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), &solver_fee)
             .await
             .unwrap();
 

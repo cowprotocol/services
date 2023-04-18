@@ -1,5 +1,5 @@
 use {
-    crate::{infra, infra::config::file::ContractsConfig, tests::setup},
+    crate::{infra, infra::config::file::ContractsConfig, tests},
     itertools::Itertools,
     rand::Rng,
     std::{net::SocketAddr, path::PathBuf},
@@ -101,7 +101,7 @@ impl Drop for Client {
 
 #[derive(Debug)]
 pub struct Config<'a> {
-    pub geth: &'a setup::blockchain::Geth,
+    pub geth: &'a tests::setup::blockchain::Geth,
     pub now: infra::time::Now,
     pub file: ConfigFile,
 }
@@ -112,7 +112,7 @@ pub enum ConfigFile {
     /// solvers.
     Create {
         contracts: infra::config::file::ContractsConfig,
-        solvers: Vec<setup::Solver>,
+        solvers: Vec<tests::setup::Solver>,
     },
     /// Load an existing config file.
     Load(PathBuf),
@@ -159,7 +159,7 @@ pub async fn setup(config: Config<'_>) -> Client {
 /// Create the config file for the driver to use.
 async fn create_config_file(
     path: &ConfigPath,
-    solvers: &[setup::Solver],
+    solvers: &[tests::setup::Solver],
     contracts: &ContractsConfig,
 ) {
     let contracts_config = format!(
@@ -176,12 +176,11 @@ async fn create_config_file(
         mempool = "public""#
         .to_owned();
     let solver_configs = solvers.iter().map(|solver| {
-        let setup::Solver {
+        let tests::setup::Solver {
             config:
-                setup::solver::Config {
+                tests::setup::solver::Config {
                     absolute_slippage,
                     relative_slippage,
-                    address,
                     private_key,
                     name,
                     ..
@@ -195,7 +194,6 @@ async fn create_config_file(
                    endpoint = "http://{addr}"
                    absolute-slippage = "{absolute_slippage}"
                    relative-slippage = "{relative_slippage}"
-                   address = "{address}"
                    private-key = "{private_key}""#
             );
         config

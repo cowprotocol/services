@@ -25,6 +25,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    tracing::Instrument,
 };
 
 mod fills;
@@ -140,6 +141,69 @@ impl SingleOrderSolver {
             fills: fills::Fills::new(smallest_fill),
         }
     }
+
+    async fn solve_single_order(&self, order: LimitOrder, auction: &Auction) -> SolveResult {
+        let name = self.inner.name();
+        let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
+            tracing::warn!(?order.id, "failed to compute fill; skipping order");
+            return SolveResult::Failed;
+        };
+
+        let single = match self.inner.try_settle_order(fill.clone(), auction).await {
+            Ok(value) => {
+                self.metrics.single_order_solver_succeeded(name);
+                value
+            }
+            Err(err) => {
+                self.metrics.single_order_solver_failed(name);
+                if err.retryable {
+                    tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
+                    return SolveResult::Retryable(order);
+                } else {
+                    tracing::warn!("Solver {} error: {:?}", name, &err.inner);
+                    return SolveResult::Failed;
+                }
+            }
+        };
+
+        match single.and_then(|single| {
+            single
+                .into_settlement(
+                    &order,
+                    fill.full_execution_amount(),
+                    &auction.external_prices,
+                    auction.gas_price,
+                )
+                .transpose()
+        }) {
+            Some(Ok(settlement)) => {
+                if let Some(order_uid) = order.id.order_uid() {
+                    // Maybe some liquidity appeared that enables a bigger fill.
+                    self.fills.increase_next_try(order_uid);
+                }
+                SolveResult::Solved(settlement)
+            }
+            Some(Err(err)) => {
+                tracing::warn!(%name, ?err, "encoding error");
+                SolveResult::Failed
+            }
+            None => {
+                if let Some(order_uid) = order.id.order_uid() {
+                    self.fills.reduce_next_try(order_uid);
+                }
+                SolveResult::Failed
+            }
+        }
+    }
+}
+
+enum SolveResult {
+    /// No solution but order could be retried.
+    Retryable(LimitOrder),
+    /// No solution and retrying would not help.
+    Failed,
+    /// Found a solution for the order.
+    Solved(Settlement),
 }
 
 #[async_trait::async_trait]
@@ -154,48 +218,16 @@ impl Solver for SingleOrderSolver {
 
         let mut settlements = Vec::new();
         let settle = async {
-            let name = self.inner.name();
             while let Some(order) = orders.pop_front() {
-                let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
-                    tracing::warn!(?order.id, "failed to compute fill; skipping order");
-                    continue;
-                };
-
-                let single = match self.inner.try_settle_order(fill.clone(), &auction).await {
-                    Ok(value) => {
-                        self.metrics.single_order_solver_succeeded(name);
-                        value
-                    }
-                    Err(err) => {
-                        self.metrics.single_order_solver_failed(name);
-                        if err.retryable {
-                            tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
-                            orders.push_back(order);
-                        } else {
-                            tracing::warn!("Solver {} error: {:?}", name, &err.inner);
-                        }
-
-                        continue;
-                    }
-                };
-
-                match single.and_then(|single| {
-                    single
-                        .into_settlement(
-                            &order,
-                            fill.full_execution_amount(),
-                            &auction.external_prices,
-                            auction.gas_price,
-                        )
-                        .transpose()
-                }) {
-                    Some(Ok(settlement)) => settlements.push(settlement),
-                    Some(Err(err)) => tracing::warn!(%name, ?err, "encoding error"),
-                    None => {
-                        if let Some(order_uid) = order.id.order_uid() {
-                            self.fills.reduce_next_try(order_uid);
-                        }
-                    }
+                let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
+                match self
+                    .solve_single_order(order, &auction)
+                    .instrument(span)
+                    .await
+                {
+                    SolveResult::Failed => continue,
+                    SolveResult::Retryable(order) => orders.push_back(order),
+                    SolveResult::Solved(settlement) => settlements.push(settlement),
                 }
             }
         };
@@ -310,13 +342,15 @@ impl SingleOrderSettlement {
                     .checked_add(surplus_fee)
                     .context("overflow computing executed sell amount")?
                     .min(order.sell_amount);
-                let executed_buy_amount = executed_sell_amount
-                    .checked_sub(surplus_fee)
-                    .context("underflow computing executed buy amount")?
-                    .checked_mul(traded_buy_amount)
-                    .context("overflow computing executed buy amount")?
-                    .checked_ceil_div(&traded_sell_amount)
-                    .context("zero traded sell amount")?;
+                let executed_buy_amount = match executed_sell_amount.checked_sub(surplus_fee) {
+                    Some(i) => i,
+                    // The fee is larger than the sell amount so it is not possible to fulfill it.
+                    None => return Ok(None),
+                }
+                .checked_mul(traded_buy_amount)
+                .context("overflow computing executed buy amount")?
+                .checked_ceil_div(&traded_sell_amount)
+                .context("zero traded sell amount")?;
 
                 (executed_sell_amount, executed_buy_amount)
             }
@@ -454,9 +488,13 @@ pub fn execution_respects_order(
     executed_sell_amount: U256,
     executed_buy_amount: U256,
 ) -> bool {
-    // note: This would be different for partially fillable orders but LimitOrder
-    // does currently not contain the remaining fill amount.
-    executed_sell_amount <= order.sell_amount && executed_buy_amount >= order.buy_amount
+    executed_sell_amount <= order.sell_amount
+        && if order.partially_fillable {
+            order.sell_amount.full_mul(executed_buy_amount)
+                >= executed_sell_amount.full_mul(order.buy_amount)
+        } else {
+            executed_buy_amount >= order.buy_amount
+        }
 }
 
 #[cfg(test)]
@@ -696,6 +734,21 @@ mod tests {
         assert!(execution_respects_order(&order, 10.into(), 11.into(),));
         // Price is respected but order is partially filled.
         assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
+
+        let order = LimitOrder {
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 20.into(),
+            partially_fillable: true,
+            ..Default::default()
+        };
+        assert!(execution_respects_order(&order, 10.into(), 20.into()));
+        assert!(execution_respects_order(&order, 10.into(), 21.into()));
+        assert!(!execution_respects_order(&order, 10.into(), 19.into()));
+        assert!(!execution_respects_order(&order, 11.into(), 23.into()));
+        assert!(execution_respects_order(&order, 5.into(), 10.into()));
+        assert!(execution_respects_order(&order, 5.into(), 11.into()));
+        assert!(!execution_respects_order(&order, 5.into(), 9.into()));
     }
 
     #[ignore] // ignore this test because it could fail due to randomness
@@ -807,6 +860,7 @@ mod tests {
                     metadata: OrderMetadata {
                         uid: OrderUid([0u8; 56]),
                         class: OrderClass::Limit(Default::default()),
+                        partially_fillable_balance: Some(100.into()),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -859,7 +913,7 @@ mod tests {
                 buy_token,
                 sell_amount: 42.into(),
                 buy_amount: 50.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -869,7 +923,7 @@ mod tests {
                 buy_token,
                 sell_amount: 92.into(),
                 buy_amount: 100.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -879,7 +933,7 @@ mod tests {
                 buy_token,
                 sell_amount: 52.into(),
                 buy_amount: 60.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
 
@@ -892,7 +946,7 @@ mod tests {
                 buy_token,
                 sell_amount: 100.into(),
                 buy_amount: 109.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
         assert_eq!(
@@ -902,8 +956,19 @@ mod tests {
                 buy_token,
                 sell_amount: 100.into(),
                 buy_amount: 108.into(),
-                fee_amount: 2.into(),
+                fee_amount: 0.into(),
             }
         );
+
+        // Fee is larger than total order sell amount.
+        let order = order(OrderKind::Sell);
+        let settlement = SingleOrderSettlement {
+            sell_token_price: 1.into(),
+            buy_token_price: 1.into(),
+            interactions: vec![],
+            gas_estimate: 1000.into(),
+        };
+        let result = settlement.into_settlement(&order, 1.into(), &prices, 1000.);
+        assert!(matches!(result, Ok(None)), "{:?}", result);
     }
 }

@@ -68,7 +68,6 @@ impl Settlement {
 ///
 /// Such a settlement is verified to obey some of the rules of the protocol that
 /// could result in slashing, and is ready to broadcast to the Ethereum network.
-/// See the [`competition::Order::reward`] field for more about slashing.
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub(super) inner: Settlement,
