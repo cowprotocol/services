@@ -191,35 +191,52 @@ async fn orders_with_sufficient_balance(
     balance_fetcher: &dyn BalanceFetching,
     mut orders: Vec<OrderQuotingData>,
 ) -> Vec<OrderQuotingData> {
+    // Note that we skip balance checks for orders with pre-interactions. This
+    // notably includes EthFlow orders, as the WETH for the trade will get
+    // deposited as part of a pre-interaction and might not be available when
+    // checking whether or not the owner has sufficient balance for the order.
+    // This exception is also needed for user orders with custom
+    // pre-interactions (for example, an order with a EIP-2612 `permit`
+    // pre-interaction to set an allowance).
+    let do_balance_check = |order: &OrderQuotingData| order.pre_interactions == 0;
+
     let queries = orders
         .iter()
-        .filter(|order| order.pre_interactions <= 0)
+        .filter(|order| do_balance_check(order))
         .map(query_from)
         .unique()
         .collect_vec();
     let balances = balance_fetcher.get_balances(&queries).await;
-    let balances: HashMap<_, _> = queries
+    let balances = queries
         .iter()
-        .zip(balances.into_iter())
-        .filter_map(|(query, result)| Some((query, result.ok()?)))
-        .collect();
+        .zip(balances)
+        .filter_map(|(query, balance)| match balance {
+            Ok(value) => Some((query, value)),
+            Err(err) => {
+                tracing::warn!(?query, ?err, "error fetching balance for order");
+                None
+            }
+        })
+        .collect::<HashMap<_, _>>();
 
     let order_count_before = orders.len();
 
     orders.retain(|order| {
-        if let Some(balance) = balances.get(&query_from(order)) {
-            let has_sufficient_balance =
-                balance >= &big_decimal_to_u256(&order.sell_amount).unwrap();
+        let keep = if !do_balance_check(order) {
+            true
+        } else if let Some(balance) = balances.get(&query_from(order)) {
+            balance >= &big_decimal_to_u256(&order.sell_amount).unwrap()
+        } else {
+            // In case the balance couldn't be fetched err on the safe side and assume
+            // the order can be filled to not discard limit orders unjustly.
+            true
+        };
 
-            // It's possible that a pre_interaction transfers the owner the required balance
-            // so we want to keep them even if the balance is insufficient at the moment.
-            let could_transfer_money_in = order.pre_interactions > 0;
-            return could_transfer_money_in || has_sufficient_balance;
+        if !keep {
+            let order = model::order::OrderUid(order.uid.0);
+            tracing::debug!(%order, "filtered order for insufficient balance");
         }
-
-        // In case the balance couldn't be fetched err on the safe side and assume
-        // the order can be filled to not discard limit orders unjustly.
-        true
+        keep
     });
 
     Metrics::get()
