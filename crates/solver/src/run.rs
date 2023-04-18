@@ -11,6 +11,7 @@ use {
         },
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::Metrics,
+        order_balance_filter::OrderBalanceFilter,
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
         settlement_post_processing::PostProcessingPipeline,
@@ -39,6 +40,7 @@ use {
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
+        account_balances::Web3BalanceFetcher,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc,
@@ -103,6 +105,11 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
+    let vault_relayer = settlement_contract
+        .vault_relayer()
+        .call()
+        .await
+        .expect("Couldn't get vault relayer address");
     let vault_contract = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
             &web3, address, None,
@@ -504,6 +511,16 @@ pub async fn run(args: Arguments) {
         .or_else(|| shared::network::block_interval(&network_id, chain_id))
         .expect("unknown network block interval");
 
+    let order_balance_filter = OrderBalanceFilter {
+        balance_fetcher: Arc::new(Web3BalanceFetcher::new(
+            web3.clone(),
+            vault_contract.clone(),
+            vault_relayer,
+            settlement_contract.address(),
+        )),
+        ethflow_contract: args.ethflow_contract,
+    };
+
     let mut driver = Driver::new(
         settlement_contract,
         liquidity_collector,
@@ -535,6 +552,7 @@ pub async fn run(args: Arguments) {
         code_fetcher,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
+        order_balance_filter,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);

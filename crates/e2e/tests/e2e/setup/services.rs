@@ -121,6 +121,7 @@ impl<'a> Services<'a> {
             format!("--solver-account={}", hex::encode(private_key)),
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
+            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

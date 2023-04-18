@@ -30,7 +30,13 @@ impl OrderConverter {
     }
 
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
-    pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
+    ///
+    /// The second argument is unused for FOK orders.
+    pub fn normalize_limit_order(
+        &self,
+        order: Order,
+        available_partially_fillable_sell_token_balance: U256,
+    ) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -67,10 +73,11 @@ impl OrderConverter {
             let need = sell_amount
                 .checked_add(remaining.remaining(order.data.fee_amount)?)
                 .context("partially fillable need calculation overflow")?;
-            let have = order
-                .metadata
-                .partially_fillable_balance
-                .context("no balance for partially fillable order")?;
+            let have = available_partially_fillable_sell_token_balance;
+            anyhow::ensure!(
+                have != 0.into(),
+                "unexpected 0 balance for partially fillable order"
+            );
             tracing::trace!(%need, %have, "partially fillable order conversion");
             if have < need {
                 solver_fee = solver_fee
@@ -198,7 +205,10 @@ pub mod tests {
         };
 
         assert_eq!(
-            converter.normalize_limit_order(order).unwrap().buy_token,
+            converter
+                .normalize_limit_order(order, Default::default())
+                .unwrap()
+                .buy_token,
             native_token,
         );
     }
@@ -218,7 +228,10 @@ pub mod tests {
         };
 
         assert_eq!(
-            converter.normalize_limit_order(order).unwrap().buy_token,
+            converter
+                .normalize_limit_order(order, Default::default())
+                .unwrap()
+                .buy_token,
             buy_token
         );
     }
@@ -385,27 +398,29 @@ pub mod tests {
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 10.into(),
                 solver_fee: 200.into(),
-                partially_fillable_balance: Some(1000.into()),
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        let order_ = converter
+            .normalize_limit_order(order.clone(), 1000.into())
+            .unwrap();
         // Amounts are halved because the order is half executed.
         assert_eq!(order_.sell_amount, 10.into());
         assert_eq!(order_.buy_amount, 20.into());
         assert_eq!(order_.solver_fee, 100.into());
 
-        order.metadata.partially_fillable_balance = Some(20.into());
-        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        let order_ = converter
+            .normalize_limit_order(order.clone(), 20.into())
+            .unwrap();
         // Amounts are quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
         assert_eq!(order_.solver_fee, 50.into());
 
         order.metadata.executed_sell_amount_before_fees = 0.into();
-        let order_ = converter.normalize_limit_order(order).unwrap();
+        let order_ = converter.normalize_limit_order(order, 20.into()).unwrap();
         // Amounts are still quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
@@ -423,7 +438,9 @@ pub mod tests {
             .with_surplus_fee(100.into())
             .with_solver_fee(200.into())
             .build();
-        let solver_order = converter.normalize_limit_order(order).unwrap();
+        let solver_order = converter
+            .normalize_limit_order(order, Default::default())
+            .unwrap();
 
         // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
         assert_eq!(solver_order.sell_amount, 1_100.into());

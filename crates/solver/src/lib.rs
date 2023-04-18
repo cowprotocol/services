@@ -10,6 +10,7 @@ pub mod liquidity;
 pub mod liquidity_collector;
 pub mod metrics;
 pub mod objective_value;
+pub mod order_balance_filter;
 pub mod orderbook;
 pub mod run;
 pub mod s3_instance_upload;
