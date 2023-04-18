@@ -202,7 +202,7 @@ async fn orders_with_sufficient_balance(
 
     let queries = orders
         .iter()
-        .filter(|order| do_balance_check(*order))
+        .filter(|order| do_balance_check(order))
         .map(query_from)
         .unique()
         .collect_vec();
