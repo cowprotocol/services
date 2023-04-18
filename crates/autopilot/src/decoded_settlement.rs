@@ -56,9 +56,53 @@ pub struct DecodedTrade {
     pub valid_to: u32,
     pub app_data: Bytes<[u8; 32]>,
     pub fee_amount: U256,
-    pub flags: U256,
+    pub flags: TradeFlags,
     pub executed_amount: U256,
     pub signature: Bytes<Vec<u8>>,
+}
+
+impl DecodedTrade {
+    fn matches_execution(&self, order: &OrderExecution) -> bool {
+        let matches_order = self.signature.0 == order.signature;
+
+        // the `executed_amount` field is ignored by the smart contract for
+        // fill-or-kill orders, so only check that executed amounts match for
+        // partially fillable orders.
+        let matches_execution =
+            !self.flags.partially_fillable() || self.executed_amount == order.executed_amount;
+
+        matches_order && matches_execution
+    }
+}
+
+/// Trade flags are encoded in a 256-bit integer field. For more information on
+/// how flags are encoded see:
+/// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
+#[derive(Debug)]
+pub struct TradeFlags(pub U256);
+
+impl TradeFlags {
+    fn as_u8(&self) -> u8 {
+        self.0.byte(0)
+    }
+
+    fn order_kind(&self) -> OrderKind {
+        if self.as_u8() & 0b1 == 0 {
+            OrderKind::Sell
+        } else {
+            OrderKind::Buy
+        }
+    }
+
+    fn partially_fillable(&self) -> bool {
+        self.as_u8() & 0b10 != 0
+    }
+}
+
+impl From<U256> for TradeFlags {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Debug)]
@@ -94,7 +138,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
                     valid_to: trade.5,
                     app_data: trade.6,
                     fee_amount: trade.7,
-                    flags: trade.8,
+                    flags: trade.8.into(),
                     executed_amount: trade.9,
                     signature: trade.10,
                 })
@@ -184,10 +228,10 @@ impl DecodedSettlement {
         mut orders: Vec<OrderExecution>,
     ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders.iter().position(|order| {
-                order.signature == trade.signature.0
-                    && order.executed_amount == trade.executed_amount
-            }) {
+            match orders
+                .iter()
+                .position(|order| trade.matches_execution(order))
+            {
                 Some(i) => {
                     // It's possible to have multiple fills with the same `executed_amount` for the
                     // same order with different `solver_fees`. To end up with the correct total
@@ -223,7 +267,7 @@ fn surplus(
 
     let sell_token_clearing_price = clearing_prices.get(sell_token_index)?.to_big_rational();
     let buy_token_clearing_price = clearing_prices.get(buy_token_index)?.to_big_rational();
-    let kind = order_kind(&trade.flags);
+    let kind = trade.flags.order_kind();
 
     if match kind {
         OrderKind::Sell => &buy_token_clearing_price,
@@ -338,15 +382,6 @@ fn sell_order_surplus(
         None
     } else {
         Some(res)
-    }
-}
-
-fn order_kind(flags: &U256) -> OrderKind {
-    let flags = flags.byte(0);
-    match flags & 0b1 {
-        0b0 => OrderKind::Sell,
-        0b1 => OrderKind::Buy,
-        _ => unreachable!(),
     }
 }
 
@@ -583,5 +618,120 @@ mod tests {
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn execution_amount_does_not_matter_for_fok_orders() {
+        // transaction hash:
+        // 0x
+
+        // From solver competition table:
+
+        // external prices (auction values):
+        // 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee: 1000000000000000000
+        // 0xf88baf18fab7e330fa0c4f83949e23f52fececce: 29428019732094
+
+        // fees: 463182886014406361088
+
+        let transport = shared::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
+        let call_data = hex_literal::hex!(
+            "13d79a0b
+             0000000000000000000000000000000000000000000000000000000000000080
+             00000000000000000000000000000000000000000000000000000000000000e0
+             0000000000000000000000000000000000000000000000000000000000000140
+             0000000000000000000000000000000000000000000000000000000000000360
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+             000000000000000000000000f88baf18fab7e330fa0c4f83949e23f52fececce
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000000000000000000000000000000132e67578cc3f
+             00000000000000000000000000000000000000000000000000000002540be400
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000020
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000b70cd1ebd3b24aeeaf90c6041446630338536e7f
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             000000000000000000000000000000000000000000000000013d0a4d504284e9
+             00000000000000000000000000000000000000000000000000000000643d6a39
+             e9f29ae547955463ed535162aefee525d8d309571a2b18bc26086c8c35d781eb
+             00000000000000000000000000000000000000000000002557f7974fde5c0000
+             0000000000000000000000000000000000000000000000000000000000000008
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             0000000000000000000000000000000000000000000000000000000000000160
+             0000000000000000000000000000000000000000000000000000000000000041
+             4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a6091
+             2fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a7600
+             1c00000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000080
+             0000000000000000000000000000000000000000000000000000000000000420
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000040
+             00000000000000000000000000000000000000000000000000000000000002c0
+             000000000000000000000000ba12222222228d8ba445958a75a0704d566bf2c8
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000001e4
+             52bbbe2900000000000000000000000000000000000000000000000000000000
+             000000e00000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000000000000000000000000000a566558000
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000067f117350eab45983374f4f83d275d8a5d62b1bf0001000000000000
+             000004f200000000000000000000000000000000000000000000000000000000
+             00000001000000000000000000000000f88baf18fab7e330fa0c4f83949e23f5
+             2fececce000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead908
+             3c756cc2000000000000000000000000000000000000000000000000013eae86
+             d49c295900000000000000000000000000000000000000000000000000000000
+             000000c000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000024
+             2e1a7d4d000000000000000000000000000000000000000000000000013eae86
+             d49c29bf00000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
+
+        //calculate fees
+        let auction_external_prices = BTreeMap::from([
+            (
+                H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                U256::from(1000000000000000000u128),
+            ),
+            (
+                H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
+                U256::from(29428019732094u128),
+            ),
+        ]);
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
+
+        let orders = vec![
+            OrderExecution {
+                executed_solver_fee: Some(463182886014406361088u128.into()),
+                kind: OrderKind::Sell,
+                buy_amount: 89238894792574185u128.into(),
+                sell_amount: 3026871740084629982950u128.into(),
+                sell_token: H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
+                buy_token: H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                executed_amount: 0.into(),
+                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+            },
+        ];
+        let fees = settlement
+            .total_fees(&external_prices, orders)
+            .to_f64_lossy();
+        assert_eq!(fees, 13630555109200196.);
     }
 }

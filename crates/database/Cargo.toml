@@ -14,4 +14,5 @@ hex = { workspace = true }
 sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
 
 [dev-dependencies]
+hex-literal = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
