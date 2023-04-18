@@ -194,37 +194,35 @@ async fn orders_with_sufficient_balance(
     // Note that we skip balance checks for orders with pre-interactions. This
     // notably includes EthFlow orders, as the WETH for the trade will get
     // deposited as part of a pre-interaction and might not be available when
-    // checking whether or not we should be. This exception is also needed for
-    // user orders with custom pre-interactions (for example, an order with a
-    // EIP-2612 `permit` pre-interaction to set an allowance).
-    let skip_balance_check = |order: &OrderQuotingData| order.pre_interactions > 0;
+    // checking whether or not the owner has sufficient balance for the order.
+    // This exception is also needed for user orders with custom
+    // pre-interactions (for example, an order with a EIP-2612 `permit`
+    // pre-interaction to set an allowance).
+    let do_balance_check = |order: &OrderQuotingData| order.pre_interactions == 0;
 
     let queries = orders
         .iter()
-        .filter(|order| !skip_balance_check(order))
+        .filter(|order| do_balance_check(*order))
         .map(query_from)
         .unique()
         .collect_vec();
     let balances = balance_fetcher.get_balances(&queries).await;
-    let balances = {
-        let mut map = HashMap::new();
-        for (query, balance) in queries.iter().zip(balances) {
-            let balance = match balance {
-                Ok(value) => value,
-                Err(err) => {
-                    tracing::warn!(?query, ?err, "error fetching balance for order");
-                    continue;
-                }
-            };
-            map.insert(query, balance);
-        }
-        map
-    };
+    let balances = queries
+        .iter()
+        .zip(balances)
+        .filter_map(|(query, balance)| match balance {
+            Ok(value) => Some((query, value)),
+            Err(err) => {
+                tracing::warn!(?query, ?err, "error fetching balance for order");
+                None
+            }
+        })
+        .collect::<HashMap<_, _>>();
 
     let order_count_before = orders.len();
 
     orders.retain(|order| {
-        let keep = if skip_balance_check(order) {
+        let keep = if !do_balance_check(order) {
             true
         } else if let Some(balance) = balances.get(&query_from(order)) {
             balance >= &big_decimal_to_u256(&order.sell_amount).unwrap()
