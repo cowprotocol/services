@@ -3,7 +3,7 @@ use {
     futures::{future::select_ok, FutureExt},
 };
 
-pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Kind, Mempool};
+pub use crate::boundary::mempool::{Config, DebugConfig, GlobalTxPool, HighRisk, Kind, Mempool};
 
 pub async fn send(
     mempools: &[Mempool],

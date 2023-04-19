@@ -97,6 +97,7 @@ pub async fn simulate_and_error_with_tenderly_link(
                     transaction_builder,
                     Some(gas_price),
                     None,
+                    None,
                 ))
             })
         })
@@ -194,6 +195,15 @@ pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
     method.tx.data.unwrap().0
 }
 
+/// Override the default URL used when generating Tenderly simulation links.
+/// Useful for generating simulation links for forks during testing.
+#[derive(Debug)]
+pub struct TenderlyUrl {
+    pub project: String,
+    pub user: String,
+    pub fork: String,
+}
+
 // Creates a simulation link in the gp-v2 tenderly workspace
 pub fn tenderly_link(
     current_block: u64,
@@ -201,6 +211,7 @@ pub fn tenderly_link(
     tx: TransactionBuilder<DynTransport>,
     gas_price: Option<GasPrice1559>,
     access_list: Option<AccessList>,
+    url: Option<&TenderlyUrl>,
 ) -> String {
     // Tenderly simulates transactions for block N at transaction index 0, while
     // `eth_call` simulates transactions "on top" of the block (i.e. after the
@@ -211,8 +222,16 @@ pub fn tenderly_link(
     let gas_price = gas_price
         .map(|gas_price| U256::from_f64_lossy(gas_price.effective_gas_price()))
         .unwrap_or_default();
+    let base = match url {
+        Some(url) => format!(
+            "https://dashboard.tenderly.co/gp-v2/{}/fork/{}/simulation/new",
+            url.project, url.fork
+        ),
+        None => "https://dashboard.tenderly.co/gp-v2/staging/simulator/new".to_owned(),
+    };
     let link = format!(
-        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice={}&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
+        "{base}?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice={}&value=0&\
+         contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
         next_block,
         tx.from.unwrap().address(),
         gas_price,
@@ -699,7 +718,7 @@ mod tests {
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
             "Tenderly simulation for generated tx: {:?}",
-            tenderly_link(13830346u64, &network_id, settlement, None, None)
+            tenderly_link(13830346u64, &network_id, settlement, None, None, None)
         );
     }
 

@@ -5,8 +5,9 @@ use crate::tests::{setup, setup::new::Order};
 #[ignore]
 async fn test() {
     let test = setup()
+        // TODO These need to be ENV vars
         .tenderly(setup::new::Tenderly {
-            username: "gp-v2".to_owned(),
+            user: "gp-v2".to_owned(),
             project: "niksa-".to_owned(),
             key: "LU0ldRKOdvSKsooOFYGdEOK6Vpy2AFOL".to_owned(),
         })

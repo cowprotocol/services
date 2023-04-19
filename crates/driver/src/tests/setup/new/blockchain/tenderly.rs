@@ -7,7 +7,7 @@ use {
 
 #[derive(Debug)]
 pub struct Tenderly {
-    pub username: String,
+    pub user: String,
     pub project: String,
     pub key: String,
 }
@@ -19,12 +19,12 @@ pub async fn fork(tenderly: Tenderly) -> Fork {
     let id = client
         .post(format!(
             "https://api.tenderly.co/api/v1/account/{}/project/{}/fork",
-            tenderly.username, tenderly.project
+            tenderly.user, tenderly.project
         ))
         .header("x-access-key", &tenderly.key)
         .json(&serde_json::json!({
             "network_id": "1",
-            "block_number": 0,
+            "block_number": 17_080_165,
             "alias": "the one",
             "description": "",
         }))
@@ -44,9 +44,10 @@ pub async fn fork(tenderly: Tenderly) -> Fork {
     Fork { id, tenderly }
 }
 
+#[derive(Debug)]
 pub struct Fork {
-    id: String,
-    tenderly: Tenderly,
+    pub id: String,
+    pub tenderly: Tenderly,
 }
 
 impl Fork {
@@ -104,7 +105,7 @@ impl Fork {
         let resp = client
             .post(format!(
                 "https://api.tenderly.co/api/v1/account/{}/project/{}/fork/{}/verify",
-                self.tenderly.username, self.tenderly.project, self.id
+                self.tenderly.user, self.tenderly.project, self.id
             ))
             .header("x-access-key", &self.tenderly.key)
             .json(&req)

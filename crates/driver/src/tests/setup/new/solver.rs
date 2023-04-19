@@ -151,6 +151,8 @@ impl Solver {
             axum::routing::post(
                 |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
+                     // TODO The req doesn't need to be part of state. So move it here and user
+                     // web3 to get the effective gas price.
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");
                     assert_eq!(req, state.req, "solve request has unexpected body");

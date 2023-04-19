@@ -151,5 +151,22 @@ async fn create_config_file(
         config.solver_secret_key.display_secret(),
     )
     .unwrap();
+    if let Some(fork) = blockchain.fork.as_ref() {
+        write!(
+            file,
+            r#"[tenderly]
+               api-key = "{}"
+               user = "{}"
+               project = "{}"
+               save = true
+               save-if-fails = true
+
+               [debug]
+               tenderly-fork = "{}"
+               "#,
+            fork.tenderly.key, fork.tenderly.user, fork.tenderly.project, fork.id
+        )
+        .unwrap();
+    }
     file.into_temp_path()
 }

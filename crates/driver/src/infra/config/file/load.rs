@@ -90,6 +90,11 @@ pub async fn load(path: &Path) -> infra::Config {
                         max_additional_tip: *max_additional_tip,
                     },
                 },
+                debug: config.debug.as_ref().map(|debug| mempool::DebugConfig {
+                    tenderly_project: config.tenderly.as_ref().unwrap().project.clone(),
+                    tenderly_user: config.tenderly.as_ref().unwrap().user.clone(),
+                    tenderly_fork: debug.tenderly_fork.clone(),
+                }),
             })
             .collect(),
         tenderly: config.tenderly.map(|config| simulator::tenderly::Config {

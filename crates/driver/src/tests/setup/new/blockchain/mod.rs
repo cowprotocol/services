@@ -47,6 +47,8 @@ pub struct Blockchain {
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Option<Geth>,
     pub pairs: Vec<Pair>,
+    pub fork: Option<tenderly::Fork>,
+
     bogus_calldata: bool,
 }
 
@@ -129,6 +131,7 @@ pub struct Config {
     pub tenderly: Option<Tenderly>,
 }
 
+// TODO Add all the missing source and verify it
 impl Blockchain {
     /// Start a local geth node using the `dev-geth` crate and deploy the
     /// settlement contract, token contracts, and all supporting contracts
@@ -194,11 +197,12 @@ impl Blockchain {
         log::debug!("funded solver with ETH");
 
         // Deploy WETH and wrap some funds in the primary account of the geth node.
+        log::debug!("deploying WETH");
         let weth = wait_for(
             &web3,
             contracts::WETH9::builder(&web3)
                 .from(trader_account.clone())
-                .gas(1000000.into())
+                .gas(10000000.into())
                 .deploy(),
         )
         .await
@@ -216,7 +220,7 @@ impl Blockchain {
                 .from(primary_account(&web3).await)
                 .to(weth.address())
                 .value(balance / 5)
-                .gas(100000.into())
+                .gas(1000000.into())
                 .send(),
         )
         .await
@@ -224,11 +228,12 @@ impl Blockchain {
         log::debug!("deposited WETH");
 
         // Set up the settlement contract and related contracts.
+        log::debug!("deploying BalancerV2Authorizer");
         let vault_authorizer = wait_for(
             &web3,
             contracts::BalancerV2Authorizer::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
-                .gas(1000000.into())
+                .gas(10000000.into())
                 .deploy(),
         )
         .await
@@ -243,12 +248,7 @@ impl Blockchain {
                 .await;
             log::debug!("verified BalancerV2Authorizer");
         }
-        dbg!(web3
-            .eth()
-            .balance(trader_account.address(), None)
-            .await
-            .unwrap());
-        log::debug!("sender: {}", hex::encode(trader_account.address()));
+        log::debug!("deploying BalancerV2Vault");
         let vault = wait_for(
             &web3,
             contracts::BalancerV2Vault::builder(
@@ -258,16 +258,15 @@ impl Blockchain {
                 0.into(),
                 0.into(),
             )
-            // TODO Would be nice I think, why is trader deploying all these contracts?
-            //.from(primary_account(&web3).await)
             .from(trader_account.clone())
-            .gas(100000000.into())
+            .gas(100000000000u128.into())
             .deploy(),
         )
         .await
         .unwrap();
         log::debug!("deployed BalancerV2Vault");
 
+        log::debug!("deploying GPv2AllowListAuthentication");
         let authenticator = wait_for(
             &web3,
             contracts::GPv2AllowListAuthentication::builder(&web3)
@@ -278,11 +277,12 @@ impl Blockchain {
         .await
         .unwrap();
         log::debug!("deployed GPv2AllowListAuthentication");
+        log::debug!("deploying GPv2Settlement");
         let settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
                 .from(trader_account.clone())
-                .gas(1000000.into())
+                .gas(10000000.into())
                 .deploy(),
         )
         .await
@@ -320,37 +320,42 @@ impl Blockchain {
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if !tokens.contains_key(pool.reserve_a.token) {
+                log::debug!("deploying ERC20 token {}", pool.reserve_a.token);
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
-                        .gas(1000000.into())
+                        .gas(10000000.into())
                         .deploy(),
                 )
                 .await
                 .unwrap();
+                log::debug!("deployed ERC20 token {}", pool.reserve_a.token);
                 tokens.insert(pool.reserve_a.token, token);
             }
             if !tokens.contains_key(pool.reserve_b.token) {
+                log::debug!("deploying ERC20 token {}", pool.reserve_b.token);
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
-                        .gas(1000000.into())
+                        .gas(10000000.into())
                         .deploy(),
                 )
                 .await
                 .unwrap();
+                log::debug!("deployed ERC20 token {}", pool.reserve_b.token);
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
 
         // Create the uniswap factory.
+        log::debug!("deploying UniswapV2Factory");
         let uniswap_factory = wait_for(
             &web3,
             contracts::UniswapV2Factory::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
-                .gas(1000000.into())
+                .gas(10000000.into())
                 .deploy(),
         )
         .await
@@ -373,6 +378,7 @@ impl Blockchain {
                 tokens.get(pool.reserve_b.token).unwrap().address()
             };
             // Create the pair.
+            log::debug!("deploying UniswapV2Pair between {token_a} and {token_b}");
             wait_for(
                 &web3,
                 uniswap_factory
@@ -382,6 +388,7 @@ impl Blockchain {
             )
             .await
             .unwrap();
+            log::debug!("deployed UniswapV2Pair between {token_a} and {token_b}");
             // TODO The pairs need to be verified as well.
             // Fund the pair and the settlement contract.
             let pair = contracts::IUniswapLikePair::at(
@@ -519,6 +526,7 @@ impl Blockchain {
             geth,
             pairs,
             bogus_calldata: config.bogus_calldata,
+            fork: tenderly,
         }
     }
 

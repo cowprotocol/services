@@ -9,6 +9,7 @@ use {
     shared::http_client::HttpClientFactory,
     solver::{
         settlement_access_list::AccessListEstimating,
+        settlement_simulation::TenderlyUrl,
         settlement_submission::{
             submitter::{
                 flashbots_api::FlashbotsApi,
@@ -35,6 +36,18 @@ pub struct Config {
     pub max_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub kind: Kind,
+
+    pub debug: Option<DebugConfig>,
+}
+
+/// Tenderly project and fork to use when generating simulation links for
+/// debugging. TODO In the future, this should be on the simulator type,
+/// but for now it's here because of the boundary integration.
+#[derive(Debug, Clone)]
+pub struct DebugConfig {
+    pub tenderly_project: String,
+    pub tenderly_user: String,
+    pub tenderly_fork: String,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +153,11 @@ impl Mempool {
             self.submitted_transactions.clone(),
             web3.clone(),
             &web3,
+            self.config.debug.clone().map(|config| TenderlyUrl {
+                project: config.tenderly_project,
+                user: config.tenderly_user,
+                fork: config.tenderly_fork,
+            }),
         )?;
         let gas = settlement.gas;
         let id = settlement.id();

@@ -357,6 +357,7 @@ impl SolutionSubmitter {
             strategy_args.sub_tx_pool.clone(),
             self.web3.clone(),
             self.code_fetcher.as_ref(),
+            None,
         )?;
         submitter
             .submit(settlement, params)

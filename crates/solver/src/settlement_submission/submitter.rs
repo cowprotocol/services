@@ -15,6 +15,8 @@
 // is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
+use crate::settlement_simulation::TenderlyUrl;
+
 mod common;
 pub mod eden_api;
 pub mod flashbots_api;
@@ -25,7 +27,7 @@ use {
     crate::{
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
-        settlement_simulation::settle_method_builder,
+        settlement_simulation::{settle_method_builder, tenderly_link},
         settlement_submission::gas_limit_for_estimate,
     },
     anyhow::{anyhow, ensure, Context, Result},
@@ -185,6 +187,7 @@ pub struct Submitter<'a> {
     code_fetcher: &'a dyn CodeFetching,
     submitted_transactions: SubTxPoolRef,
     web3: Web3,
+    tenderly_url: Option<TenderlyUrl>,
 }
 
 impl<'a> Submitter<'a> {
@@ -199,6 +202,7 @@ impl<'a> Submitter<'a> {
         submitted_transactions: SubTxPoolRef,
         web3: Web3,
         code_fetcher: &'a dyn CodeFetching,
+        tenderly_url: Option<TenderlyUrl>,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -210,6 +214,7 @@ impl<'a> Submitter<'a> {
             submitted_transactions,
             web3,
             code_fetcher,
+            tenderly_url,
         })
     }
 }
@@ -450,6 +455,19 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
+                if let Ok(block_number) = self.web3.eth().block_number().await {
+                    tracing::info!(
+                        "failed simulation while publishing, check on tenderly: {}",
+                        tenderly_link(
+                            block_number.as_u64(),
+                            "network_id",
+                            method.tx,
+                            Some(gas_price),
+                            access_list,
+                            self.tenderly_url.as_ref()
+                        )
+                    );
+                }
                 if let Some(previous_gas_price) = pending_gas_price {
                     // We only match the replacement gas price because we don't care about the
                     // cancellation actually being mined as long as it successfully replaces the
@@ -781,6 +799,7 @@ mod tests {
             submitted_transactions,
             web3.clone(),
             &code_fetcher,
+            None,
         )
         .unwrap();
 

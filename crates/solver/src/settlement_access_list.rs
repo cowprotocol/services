@@ -91,6 +91,7 @@ pub async fn estimate_settlement_access_list(
                     &web3.net().version().await?,
                     tx.clone(),
                     None,
+                    None,
                     None
                 );
                 tracing::debug!(%simulation_link, ?order_uid, "generating partial access list for trade");
@@ -132,6 +133,7 @@ pub async fn estimate_settlement_access_list(
         tx.clone(),
         None,
         Some(partial_access_list.clone()),
+        None,
     );
     tracing::trace!(?settlement, %simulation_link, "generating access list for settlement");
 

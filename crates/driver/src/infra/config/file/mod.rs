@@ -33,6 +33,8 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    debug: Option<DebugConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -217,4 +219,12 @@ struct UniswapV3Config {
 
     /// How many pools to initialize during start up.
     max_pools_to_initialize: u64,
+}
+
+/// Configuration to aid in debugging.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct DebugConfig {
+    /// The tenderly fork to use when generating Tenderly simulation links.
+    tenderly_fork: String,
 }
