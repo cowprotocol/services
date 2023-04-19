@@ -538,7 +538,7 @@ WHERE
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
     /// The `solver_fee` that got executed for this specific fill.
     pub executed_solver_fee: Option<BigDecimal>,
@@ -564,18 +564,19 @@ pub fn order_executions_in_tx<'a>(
         r#"
 {SETTLEMENT_LOG_INDICES}
 SELECT
-    solver_fee AS executed_solver_fee,
-    sell_token,
-    buy_token,
+    oe.solver_fee AS executed_solver_fee,
+    o.sell_token,
+    o.buy_token,
     o.sell_amount,
-    o.buy_amount AS buy_amount,
-    kind,
+    o.buy_amount,
+    o.kind,
     CASE
-        WHEN o.kind = 'sell' THEN t.sell_amount
-        ELSE t.buy_amount END AS executed_amount,
+        WHEN o.kind = 'sell' THEN t.sell_amount - t.fee_amount
+        ELSE t.buy_amount
+    END AS executed_amount,
     o.owner,
-    signature,
-    signing_scheme
+    o.signature,
+    o.signing_scheme
 FROM order_execution AS oe
 JOIN orders o ON o.uid = oe.order_uid
 JOIN trades t ON t.order_uid = oe.order_uid
@@ -846,6 +847,7 @@ mod tests {
         bigdecimal::num_bigint::{BigInt, ToBigInt},
         chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
+        hex_literal::hex,
         sqlx::Connection,
     };
 
@@ -2080,6 +2082,103 @@ mod tests {
                 .await
                 .unwrap(),
             1
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_executions_in_tx() {
+        let bigdecimal = |x: u128| x.to_string().parse().unwrap();
+
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_uid = ByteArray(hex!(
+            "999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02
+             b70cd1ebd3b24aeeaf90c6041446630338536e7f
+             643d6a39"
+        ));
+
+        insert_order(
+            &mut db,
+            &Order {
+                uid: order_uid,
+                owner: ByteArray(hex!("b70cd1ebd3b24aeeaf90c6041446630338536e7f")),
+                sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
+                buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
+                sell_amount: bigdecimal(3026871740084629982950),
+                buy_amount: bigdecimal(89238894792574185),
+                fee_amount: bigdecimal(688868232097089454080),
+                kind: OrderKind::Sell,
+                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+                signing_scheme: SigningScheme::Eip712,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &order_uid,
+            6124819,
+            None,
+            &bigdecimal(463182886014406361088),
+        )
+        .await
+        .unwrap();
+
+        crate::events::insert_trade(
+            &mut db,
+            &EventIndex {
+                block_number: 17066992,
+                log_index: 290,
+            },
+            &Trade {
+                order_uid,
+                sell_amount_including_fee: bigdecimal(3715739972181719437030),
+                buy_amount: bigdecimal(89700936709843391),
+                fee_amount: bigdecimal(688868232097089454080),
+            },
+        )
+        .await
+        .unwrap();
+
+        let transaction_hash = ByteArray(hex!(
+            "d2a3b85244bee6043f740ce774bc72ba271b890c4aa939ebe3d859afef445d99"
+        ));
+        crate::events::insert_settlement(
+            &mut db,
+            &EventIndex {
+                block_number: 17066992,
+                log_index: 300,
+            },
+            &Settlement {
+                solver: ByteArray(hex!("c9ec550bea1c64d779124b23a26292cc223327b6")),
+                transaction_hash,
+            },
+        )
+        .await
+        .unwrap();
+
+        let executions = order_executions_in_tx(&mut db, &transaction_hash)
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(
+            executions,
+            vec![OrderExecution {
+                executed_solver_fee: Some(bigdecimal(463182886014406361088)),
+                sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
+                buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
+                kind: OrderKind::Sell,
+                sell_amount: bigdecimal(3026871740084629982950),
+                buy_amount: bigdecimal(89238894792574185),
+                executed_amount: bigdecimal(3026871740084629982950),
+                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+                signing_scheme: SigningScheme::Eip712,
+                owner: ByteArray(hex!("b70cd1ebd3b24aeeaf90c6041446630338536e7f")),
+            }]
         );
     }
 }
