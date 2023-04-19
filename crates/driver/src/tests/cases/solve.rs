@@ -6,11 +6,13 @@ use crate::tests::{setup, setup::new::Order};
 async fn test() {
     let test = setup()
         // TODO These need to be ENV vars
+        /*
         .tenderly(setup::new::Tenderly {
             user: "gp-v2".to_owned(),
             project: "niksa-".to_owned(),
             key: "LU0ldRKOdvSKsooOFYGdEOK6Vpy2AFOL".to_owned(),
         })
+        */
         .pool(
             "A",
             1000000000000000000000u128.into(),
@@ -28,5 +30,5 @@ async fn test() {
 
     let solve = test.solve().await;
 
-    solve.ok().score(-51517992626182.0);
+    solve.ok().score(&[-51517992626182.0, -1914291000590276.0]);
 }

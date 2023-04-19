@@ -32,6 +32,8 @@ const GETH_ARGS: &[&str] = &[
     "0.0.0.0",
     "--http.api",
     "web3,eth,net,debug",
+    "--rpc.txfeecap",
+    "0",
 ];
 
 /// The base datadir used to ensure that the genesis block is always the same.

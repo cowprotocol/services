@@ -2,7 +2,7 @@ use {
     super::blockchain::{Blockchain, Fulfillment},
     crate::{
         domain::competition::{auction, order},
-        infra,
+        infra::{self, blockchain::contracts::Addresses, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -107,11 +107,11 @@ impl Solver {
                 },
             }))
         }
-
-        let state = Arc::new(Mutex::new(StateInner {
-            req: json!({
-                "id": "1",
-                "tokens": fulfillments.iter().map(|f| &f.order).flat_map(|order| [
+        let tokens_json: HashMap<_, _> = fulfillments
+            .iter()
+            .map(|f| &f.order)
+            .flat_map(|order| {
+                [
                     (
                         hex_address(blockchain.get_token(order.sell_token)),
                         json!({
@@ -120,7 +120,7 @@ impl Solver {
                             "referencePrice": "1000000000000000000",
                             "availableBalance": "0",
                             "trusted": trusted.contains(order.sell_token),
-                        })
+                        }),
                     ),
                     (
                         hex_address(blockchain.get_token(order.buy_token)),
@@ -130,34 +130,54 @@ impl Solver {
                             "referencePrice": "1000000000000000000",
                             "availableBalance": "0",
                             "trusted": trusted.contains(order.buy_token),
-                        })
+                        }),
                     ),
-                ]).collect::<HashMap<_, _>>(),
-                "orders": orders_json,
-                "liquidity": [],
-                "effectiveGasPrice": "216456697",
-                "deadline": deadline - auction::Deadline::time_buffer(),
-            }),
-            res: json!({
-                "prices": prices_json,
-                "trades": trades_json,
-                "interactions": interactions_json
-            }),
-            called: false,
-        }));
+                ]
+            })
+            .collect();
+
+        let url = blockchain.web3_url.parse().unwrap();
+        let eth = Ethereum::ethrpc(
+            &url,
+            Addresses {
+                settlement: Some(blockchain.settlement.address().into()),
+                weth: Some(blockchain.weth.address().into()),
+            },
+        )
+        .await
+        .unwrap();
+        let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
             "/",
             axum::routing::post(
-                |axum::extract::State(state): axum::extract::State<State>,
+                move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
-                     // TODO The req doesn't need to be part of state. So move it here and user
-                     // web3 to get the effective gas price.
+                    let effective_gas_price = eth
+                        .gas_price()
+                        .await
+                        .unwrap()
+                        .effective()
+                        .0
+                        .0
+                        .to_string();
+                    let expected = json!({
+                        "id": "1",
+                        "tokens": tokens_json,
+                        "orders": orders_json,
+                        "liquidity": [],
+                        "effectiveGasPrice": effective_gas_price,
+                        "deadline": deadline - auction::Deadline::time_buffer(),
+                    });
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");
-                    assert_eq!(req, state.req, "solve request has unexpected body");
+                    assert_eq!(req, expected, "solve request has unexpected body");
                     state.called = true;
-                    axum::response::Json(state.res.clone())
+                    axum::response::Json(json!({
+                        "prices": prices_json,
+                        "trades": trades_json,
+                        "interactions": interactions_json
+                    }))
                 },
             ),
         )
@@ -172,10 +192,6 @@ impl Solver {
 
 #[derive(Debug, Clone)]
 struct StateInner {
-    /// The expected request.
-    req: serde_json::Value,
-    /// The expected response.
-    res: serde_json::Value,
     /// Has this solver been called yet? If so, attempting to make another call
     /// will result in a failed test.
     called: bool,

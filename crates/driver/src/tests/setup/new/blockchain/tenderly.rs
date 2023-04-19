@@ -14,9 +14,9 @@ pub struct Tenderly {
 
 /// Create a Tenderly fork starting from the mainnet genesis block.
 pub async fn fork(tenderly: Tenderly) -> Fork {
+    dbg!(&tenderly);
     let client = reqwest::Client::new();
-    // Create a new fork.
-    let id = client
+    let resp = client
         .post(format!(
             "https://api.tenderly.co/api/v1/account/{}/project/{}/fork",
             tenderly.user, tenderly.project
@@ -30,9 +30,14 @@ pub async fn fork(tenderly: Tenderly) -> Fork {
         }))
         .send()
         .await
-        .unwrap()
-        .json::<serde_json::Value>()
-        .await
+        .unwrap();
+    let status = resp.status();
+    tracing::debug!("tenderly status: {}", status);
+    let resp = resp.text().await.unwrap();
+    tracing::debug!("tenderly resp: {resp}");
+    assert_eq!(status, 201);
+    // Create a new fork.
+    let id = serde_json::from_str::<serde_json::Value>(&resp)
         .unwrap()
         .get("simulation_fork")
         .unwrap()

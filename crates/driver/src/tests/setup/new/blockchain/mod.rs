@@ -259,7 +259,7 @@ impl Blockchain {
                 0.into(),
             )
             .from(trader_account.clone())
-            .gas(100000000000u128.into())
+            .gas(10000000u128.into())
             .deploy(),
         )
         .await

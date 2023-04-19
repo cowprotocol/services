@@ -394,14 +394,24 @@ pub struct SolveOk {
 }
 
 impl SolveOk {
-    /// Check the score in the response against the expected value.
-    pub fn score(self, expected_score: f64) {
+    /// Check the score in the response matches one of the expected scores. The
+    /// score differs depending on the blockchain (dev-geth or Tenderly),
+    /// hence the slice of valid scores.
+    pub fn score(self, valid_scores: &[f64]) {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(result.get("score").is_some());
         let score = result.get("score").unwrap().as_f64().unwrap();
-        approx::assert_relative_eq!(score, expected_score, max_relative = 0.01);
+        if valid_scores
+            .iter()
+            .all(|&valid_score| !approx::relative_eq!(score, valid_score))
+        {
+            panic!(
+                "score {} is not one of the expected scores {:?}",
+                score, valid_scores
+            );
+        }
     }
 
     /// Get the solution ID from the response.
