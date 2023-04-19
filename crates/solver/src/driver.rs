@@ -288,7 +288,12 @@ impl Driver {
             .iter()
             .map(|order| order.metadata.uid)
             .collect();
+        let balance_start = Instant::now();
         let orders = self.order_balance_filter.filter(auction.orders).await;
+        tracing::debug!(
+            "filtering orders based on balance took {}s",
+            balance_start.elapsed().as_secs_f32()
+        );
         let new_orders: HashSet<OrderUid> = orders
             .iter()
             .map(|order| order.order.metadata.uid)
