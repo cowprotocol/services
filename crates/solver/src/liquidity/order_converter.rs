@@ -7,7 +7,11 @@ use {
         LiquidityOrderId,
         SettlementHandling,
     },
-    crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
+    crate::{
+        interactions::UnwrapWethInteraction,
+        order_balance_filter::BalancedOrder,
+        settlement::SettlementEncoder,
+    },
     anyhow::{ensure, Context, Result},
     contracts::WETH9,
     ethcontract::U256,
@@ -34,8 +38,10 @@ impl OrderConverter {
     /// The second argument is unused for FOK orders.
     pub fn normalize_limit_order(
         &self,
-        order: Order,
-        available_partially_fillable_sell_token_balance: U256,
+        BalancedOrder {
+            order,
+            available_sell_token_balance,
+        }: BalancedOrder,
     ) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
@@ -73,7 +79,7 @@ impl OrderConverter {
             let need = sell_amount
                 .checked_add(remaining.remaining(order.data.fee_amount)?)
                 .context("partially fillable need calculation overflow")?;
-            let have = available_partially_fillable_sell_token_balance;
+            let have = available_sell_token_balance;
             anyhow::ensure!(
                 have != 0.into(),
                 "unexpected 0 balance for partially fillable order"
@@ -206,7 +212,7 @@ pub mod tests {
 
         assert_eq!(
             converter
-                .normalize_limit_order(order, Default::default())
+                .normalize_limit_order(BalancedOrder::full(order))
                 .unwrap()
                 .buy_token,
             native_token,
@@ -229,7 +235,7 @@ pub mod tests {
 
         assert_eq!(
             converter
-                .normalize_limit_order(order, Default::default())
+                .normalize_limit_order(BalancedOrder::full(order))
                 .unwrap()
                 .buy_token,
             buy_token
@@ -404,7 +410,10 @@ pub mod tests {
         };
 
         let order_ = converter
-            .normalize_limit_order(order.clone(), 1000.into())
+            .normalize_limit_order(BalancedOrder {
+                order: order.clone(),
+                available_sell_token_balance: 1000.into(),
+            })
             .unwrap();
         // Amounts are halved because the order is half executed.
         assert_eq!(order_.sell_amount, 10.into());
@@ -412,7 +421,10 @@ pub mod tests {
         assert_eq!(order_.solver_fee, 100.into());
 
         let order_ = converter
-            .normalize_limit_order(order.clone(), 20.into())
+            .normalize_limit_order(BalancedOrder {
+                order: order.clone(),
+                available_sell_token_balance: 20.into(),
+            })
             .unwrap();
         // Amounts are quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
@@ -420,7 +432,12 @@ pub mod tests {
         assert_eq!(order_.solver_fee, 50.into());
 
         order.metadata.executed_sell_amount_before_fees = 0.into();
-        let order_ = converter.normalize_limit_order(order, 20.into()).unwrap();
+        let order_ = converter
+            .normalize_limit_order(BalancedOrder {
+                order,
+                available_sell_token_balance: 20.into(),
+            })
+            .unwrap();
         // Amounts are still quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
@@ -439,7 +456,7 @@ pub mod tests {
             .with_solver_fee(200.into())
             .build();
         let solver_order = converter
-            .normalize_limit_order(order, Default::default())
+            .normalize_limit_order(BalancedOrder::full(order))
             .unwrap();
 
         // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
@@ -453,7 +470,7 @@ pub mod tests {
     fn limit_orders_scaled_to_zero_amounts_rejected() {
         let converter = OrderConverter::test(Default::default());
 
-        let mut sell = Order {
+        let sell = Order {
             data: OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 10.into(),
@@ -462,24 +479,24 @@ pub mod tests {
                 partially_fillable: true,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
-                partially_fillable_balance: Some(100.into()),
-                ..Default::default()
-            },
             ..Default::default()
+        };
+        let mut sell = BalancedOrder {
+            order: sell,
+            available_sell_token_balance: 100.into(),
         };
 
         assert!(converter.normalize_limit_order(sell.clone()).is_ok());
 
         // Execute the order so that scaling the buy_amount would result in a
         // 0 amount.
-        sell.metadata.executed_sell_amount = 99_u32.into();
-        sell.metadata.executed_sell_amount_before_fees = 99_u32.into();
-        sell.metadata.executed_buy_amount = 10_u32.into();
+        sell.order.metadata.executed_sell_amount = 99_u32.into();
+        sell.order.metadata.executed_sell_amount_before_fees = 99_u32.into();
+        sell.order.metadata.executed_buy_amount = 10_u32.into();
 
         assert!(converter.normalize_limit_order(sell).is_err());
 
-        let mut buy = Order {
+        let buy = Order {
             data: OrderData {
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
@@ -488,20 +505,20 @@ pub mod tests {
                 partially_fillable: true,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
-                partially_fillable_balance: Some(10.into()),
-                ..Default::default()
-            },
             ..Default::default()
+        };
+        let mut buy = BalancedOrder {
+            order: buy,
+            available_sell_token_balance: 10.into(),
         };
 
         assert!(converter.normalize_limit_order(buy.clone()).is_ok());
 
         // Execute the order so that scaling the sell_amount would result in a
         // 0 amount.
-        buy.metadata.executed_sell_amount = 10_u32.into();
-        buy.metadata.executed_sell_amount_before_fees = 10_u32.into();
-        buy.metadata.executed_buy_amount = 99_u32.into();
+        buy.order.metadata.executed_sell_amount = 10_u32.into();
+        buy.order.metadata.executed_sell_amount_before_fees = 10_u32.into();
+        buy.order.metadata.executed_buy_amount = 99_u32.into();
 
         assert!(converter.normalize_limit_order(buy).is_err());
     }

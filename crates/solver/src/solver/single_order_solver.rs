@@ -510,6 +510,7 @@ mod tests {
                 LiquidityOrderId,
             },
             metrics::NoopMetrics,
+            order_balance_filter::BalancedOrder,
             settlement::TradeExecution,
         },
         anyhow::anyhow,
@@ -571,7 +572,7 @@ mod tests {
             .iter()
             .map(|order| {
                 converter
-                    .normalize_limit_order(Order::clone(order), Default::default())
+                    .normalize_limit_order(BalancedOrder::full(Order::clone(order)))
                     .unwrap()
             })
             .collect::<Vec<_>>();
@@ -848,8 +849,8 @@ mod tests {
         let converter = OrderConverter::test(native);
         let order = |kind: OrderKind| {
             converter
-                .normalize_limit_order(
-                    Order {
+                .normalize_limit_order(BalancedOrder {
+                    order: Order {
                         data: OrderData {
                             sell_token: H160::from_low_u64_be(1),
                             buy_token: H160::from_low_u64_be(2),
@@ -866,8 +867,8 @@ mod tests {
                         },
                         ..Default::default()
                     },
-                    100.into(),
-                )
+                    available_sell_token_balance: 100.into(),
+                })
                 .unwrap()
         };
 

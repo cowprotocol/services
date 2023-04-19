@@ -257,6 +257,7 @@ mod tests {
                 Liquidity,
                 StablePoolOrder,
             },
+            order_balance_filter::BalancedOrder,
             settlement::Settlement,
             solver::http_solver::settlement::{convert_settlement, SettlementContext},
         },
@@ -472,7 +473,7 @@ mod tests {
             .into_iter()
             .map(|order| {
                 order_converter
-                    .normalize_limit_order(order, Default::default())
+                    .normalize_limit_order(BalancedOrder::full(order))
                     .unwrap()
             })
             .collect::<Vec<_>>();

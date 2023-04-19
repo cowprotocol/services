@@ -289,8 +289,10 @@ impl Driver {
             .map(|order| order.metadata.uid)
             .collect();
         let orders = self.order_balance_filter.filter(auction.orders).await;
-        let new_orders: HashSet<OrderUid> =
-            orders.iter().map(|order| order.0.metadata.uid).collect();
+        let new_orders: HashSet<OrderUid> = orders
+            .iter()
+            .map(|order| order.order.metadata.uid)
+            .collect();
         for uid in previous_orders {
             if !new_orders.contains(&uid) {
                 tracing::debug!(%uid, "order filtered because of missing balance");
@@ -299,8 +301,8 @@ impl Driver {
 
         let orders = orders
             .into_iter()
-            .filter_map(|(order, balance)| {
-                match self.order_converter.normalize_limit_order(order, balance) {
+            .filter_map(|order| {
+                match self.order_converter.normalize_limit_order(order) {
                     Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed

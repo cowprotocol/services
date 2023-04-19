@@ -130,11 +130,14 @@ fn extract_deepest_amm_liquidity(
 mod tests {
     use {
         super::*,
-        crate::liquidity::{
-            order_converter::OrderConverter,
-            tests::CapturingSettlementHandler,
-            LimitOrderId,
-            LiquidityOrderId,
+        crate::{
+            liquidity::{
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
+                LiquidityOrderId,
+            },
+            order_balance_filter::BalancedOrder,
         },
         ethcontract::H160,
         maplit::hashmap,
@@ -315,40 +318,34 @@ mod tests {
 
         let orders = vec![
             converter
-                .normalize_limit_order(
-                    Order {
-                        data: OrderData {
-                            sell_token: native_token,
-                            buy_token: H160([2; 20]),
-                            sell_amount: 1_000_000_000_u128.into(),
-                            buy_amount: 900_000_000_u128.into(),
-                            kind: OrderKind::Sell,
-                            ..Default::default()
-                        },
+                .normalize_limit_order(BalancedOrder::full(Order {
+                    data: OrderData {
+                        sell_token: native_token,
+                        buy_token: H160([2; 20]),
+                        sell_amount: 1_000_000_000_u128.into(),
+                        buy_amount: 900_000_000_u128.into(),
+                        kind: OrderKind::Sell,
                         ..Default::default()
                     },
-                    Default::default(),
-                )
+                    ..Default::default()
+                }))
                 .unwrap(),
             converter
-                .normalize_limit_order(
-                    Order {
-                        data: OrderData {
-                            sell_token: H160([2; 20]),
-                            buy_token: BUY_ETH_ADDRESS,
-                            sell_amount: 1_000_000_000_u128.into(),
-                            buy_amount: 900_000_000_u128.into(),
-                            kind: OrderKind::Sell,
-                            ..Default::default()
-                        },
-                        metadata: OrderMetadata {
-                            class: OrderClass::Liquidity,
-                            ..Default::default()
-                        },
+                .normalize_limit_order(BalancedOrder::full(Order {
+                    data: OrderData {
+                        sell_token: H160([2; 20]),
+                        buy_token: BUY_ETH_ADDRESS,
+                        sell_amount: 1_000_000_000_u128.into(),
+                        buy_amount: 900_000_000_u128.into(),
+                        kind: OrderKind::Sell,
                         ..Default::default()
                     },
-                    Default::default(),
-                )
+                    metadata: OrderMetadata {
+                        class: OrderClass::Liquidity,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }))
                 .unwrap(),
         ];
 

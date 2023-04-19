@@ -10,6 +10,7 @@ use {
             LimitOrderId,
             Liquidity,
         },
+        order_balance_filter::BalancedOrder,
         settlement::Settlement,
     },
     anyhow::{anyhow, ensure, Context as _, Result},
@@ -310,26 +311,24 @@ fn convert_foreign_liquidity_orders(
     foreign_liquidity_orders
         .into_iter()
         .map(|liquidity| {
-            let converted = order_converter.normalize_limit_order(
-                Order {
-                    metadata: OrderMetadata {
-                        owner: liquidity.order.from,
-                        full_fee_amount: liquidity.order.data.fee_amount,
-                        // All foreign orders **MUST** be liquidity, this is
-                        // important so they cannot be used to affect the objective.
-                        class: OrderClass::Liquidity,
-                        // Not needed for encoding but nice to have for logs and competition info.
-                        uid: liquidity.order.data.uid(domain, &liquidity.order.from),
-                        // These remaining fields do not seem to be used at all for order
-                        // encoding, so we just use the default values.
-                        ..Default::default()
-                    },
-                    data: liquidity.order.data,
-                    signature: liquidity.order.signature,
-                    interactions: liquidity.order.interactions,
+            let order = Order {
+                metadata: OrderMetadata {
+                    owner: liquidity.order.from,
+                    full_fee_amount: liquidity.order.data.fee_amount,
+                    // All foreign orders **MUST** be liquidity, this is
+                    // important so they cannot be used to affect the objective.
+                    class: OrderClass::Liquidity,
+                    // Not needed for encoding but nice to have for logs and competition info.
+                    uid: liquidity.order.data.uid(domain, &liquidity.order.from),
+                    // These remaining fields do not seem to be used at all for order
+                    // encoding, so we just use the default values.
+                    ..Default::default()
                 },
-                Default::default(),
-            )?;
+                data: liquidity.order.data,
+                signature: liquidity.order.signature,
+                interactions: liquidity.order.interactions,
+            };
+            let converted = order_converter.normalize_limit_order(BalancedOrder::full(order))?;
             Ok(ExecutedLimitOrder {
                 order: converted,
                 executed_sell_amount: liquidity.exec_sell_amount,

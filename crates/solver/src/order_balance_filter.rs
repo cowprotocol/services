@@ -6,6 +6,33 @@ use {
     std::{collections::HashMap, sync::Arc},
 };
 
+/// An order processed by `OrderBalanceFilter`.
+///
+/// To ensure that all orders passed to solvers are settleable we need to
+/// make a choice for which orders to include when the user only has enough
+/// sell token balance for some of them.
+#[derive(Debug, Clone)]
+pub struct BalancedOrder {
+    pub order: Order,
+    /// The amount of sell token balance that is usable by this order.
+    ///
+    /// The field might be larger than the order's sell_amount + fee_amount .
+    ///
+    /// The field might be smaller than the order's sell_amount + fee_amount for
+    /// partially fillable orders. But it is always greater than 0 because no
+    /// balance being available at all would make an order unsettleable.
+    pub available_sell_token_balance: U256,
+}
+
+impl BalancedOrder {
+    pub fn full(order: Order) -> Self {
+        Self {
+            order,
+            available_sell_token_balance: U256::MAX,
+        }
+    }
+}
+
 pub struct OrderBalanceFilter {
     pub balance_fetcher: Arc<dyn BalanceFetching>,
     pub ethflow_contract: Option<H160>,
@@ -13,11 +40,7 @@ pub struct OrderBalanceFilter {
 
 impl OrderBalanceFilter {
     /// Filter orders based on the available balance.
-    ///
-    /// To ensure that all orders passed to solvers are settleable we need to
-    /// make a choice for which orders to include when the user only has enough
-    /// sell token balance for some of them.
-    pub async fn filter(&mut self, orders: Vec<Order>) -> Vec<(Order, U256)> {
+    pub async fn filter(&mut self, orders: Vec<Order>) -> Vec<BalancedOrder> {
         let queries: Vec<Query> = orders.iter().map(Query::from_order).collect();
         let balances = self.balance_fetcher.get_balances(&queries).await;
         let balances: Balances = queries
@@ -37,7 +60,7 @@ fn solvable_orders(
     mut orders: Vec<Order>,
     balances: &Balances,
     ethflow_contract: Option<H160>,
-) -> Vec<(Order, U256)> {
+) -> Vec<BalancedOrder> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
     orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     for order in orders {
@@ -45,7 +68,7 @@ fn solvable_orders(
         orders_map.entry(key).or_default().push(order);
     }
 
-    let mut result = Vec::new();
+    let mut result: Vec<BalancedOrder> = Vec::new();
     for (key, orders) in orders_map {
         let mut remaining_balance = match balances.get(&key) {
             Some(balance) => *balance,
@@ -56,7 +79,7 @@ fn solvable_orders(
             // ensures that there will always be sufficient balance, after the wrapAll
             // pre_interaction has been called.
             if Some(order.metadata.owner) == ethflow_contract {
-                result.push((order, Default::default()));
+                result.push(BalancedOrder::full(order));
                 continue;
             }
             // TODO: This is overly pessimistic for partially filled orders where the needed
@@ -87,12 +110,15 @@ fn solvable_orders(
                 if remaining_balance == 0.into() {
                     continue;
                 }
-                result.push((order, needed_balance.min(remaining_balance)));
+                result.push(BalancedOrder {
+                    order,
+                    available_sell_token_balance: needed_balance.min(remaining_balance),
+                });
                 remaining_balance = remaining_balance.saturating_sub(needed_balance);
             } else {
                 match remaining_balance.checked_sub(needed_balance) {
                     Some(balance) => {
-                        result.push((order, Default::default()));
+                        result.push(BalancedOrder::full(order));
                         remaining_balance = balance;
                     }
                     None => continue,
@@ -173,18 +199,18 @@ mod tests {
         let orders_ = solvable_orders(orders.clone(), &balances, None);
         assert_eq!(orders_.len(), 2);
         // Second order has lower timestamp so it isn't picked.
-        assert_eq!(orders_[0].0.data, orders[0].data);
+        assert_eq!(orders_[0].order.data, orders[0].data);
         // Third order is partially fillable so is picked with remaining balance.
-        assert_eq!(orders_[1].0.data, orders[2].data);
-        assert_eq!(orders_[1].1, 3.into());
+        assert_eq!(orders_[1].order.data, orders[2].data);
+        assert_eq!(orders_[1].available_sell_token_balance, 3.into());
 
         orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
         let orders_ = solvable_orders(orders.clone(), &balances, None);
         assert_eq!(orders_.len(), 2);
-        assert_eq!(orders_[0].0.data, orders[1].data);
+        assert_eq!(orders_[0].order.data, orders[1].data);
         // Remaining balance is different because previous order has changed.
-        assert_eq!(orders_[1].0.data, orders[2].data);
-        assert_eq!(orders_[1].1, 5.into());
+        assert_eq!(orders_[1].order.data, orders[2].data);
+        assert_eq!(orders_[1].available_sell_token_balance, 5.into());
     }
 
     #[tokio::test]
@@ -207,7 +233,7 @@ mod tests {
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
         let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
         assert_eq!(orders_.len(), 1);
-        assert_eq!(orders_[0].0, orders[0]);
+        assert_eq!(orders_[0].order, orders[0]);
     }
 
     #[test]
@@ -255,10 +281,10 @@ mod tests {
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
         let mut filtered_orders = solvable_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
-        filtered_orders.sort_by_key(|order| order.0.metadata.creation_date);
+        filtered_orders.sort_by_key(|order| order.order.metadata.creation_date);
         assert_eq!(expected_result.len(), filtered_orders.len());
         for (left, right) in expected_result.iter().zip(filtered_orders) {
-            assert_eq!(left.data, right.0.data);
+            assert_eq!(left.data, right.order.data);
         }
     }
 }

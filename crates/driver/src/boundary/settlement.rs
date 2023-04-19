@@ -109,7 +109,9 @@ impl Settlement {
             };
 
             let boundary_limit_order = order_converter
-                .normalize_limit_order(boundary_order, eth::U256::MAX)
+                .normalize_limit_order(solver::order_balance_filter::BalancedOrder::full(
+                    boundary_order,
+                ))
                 .map_err(Error::Boundary)?;
             settlement
                 .with_liquidity(&boundary_limit_order, execution)
