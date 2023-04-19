@@ -1,6 +1,6 @@
 use {
     crate::database::Postgres,
-    anyhow::{Context as _, Result},
+    anyhow::Result,
     bigdecimal::BigDecimal,
     chrono::Utc,
     itertools::Itertools,
@@ -208,7 +208,7 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let orders = solvable_orders(orders, &new_balances, self.ethflow_contract_address);
+        let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
         counter.checkpoint("insufficient_balance", &orders);
 
         // create auction
@@ -358,93 +358,37 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
     (new_balances, missing_queries)
 }
 
-// The order book has to make a choice for which orders to include when a user
-// has multiple orders selling the same token but not enough balance for all of
-// them. Assumes balance fetcher is already tracking all balances.
-fn solvable_orders(
+/// Removes orders that can't possibly be settled because there isn't enough
+/// balance.
+fn orders_with_balance(
     mut orders: Vec<Order>,
     balances: &Balances,
     ethflow_contract: Option<H160>,
 ) -> Vec<Order> {
-    let mut orders_map = HashMap::<Query, Vec<Order>>::new();
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
-    for order in orders {
-        let key = Query::from_order(&order);
-        orders_map.entry(key).or_default().push(order);
-    }
-
-    let mut result = Vec::new();
-    for (key, orders) in orders_map {
-        let mut remaining_balance = match balances.get(&key) {
-            Some(balance) => *balance,
-            None => continue,
-        };
-        for mut order in orders {
-            // For ethflow orders, there is no need to check the balance. The contract
-            // ensures that there will always be sufficient balance, after the wrapAll
-            // pre_interaction has been called.
-            if Some(order.metadata.owner) == ethflow_contract {
-                result.push(order);
-                continue;
-            }
-            // TODO: This is overly pessimistic for partially filled orders where the needed
-            // balance is lower. For partially fillable orders that cannot be
-            // fully filled because of the balance we could also give them as
-            // much balance as possible instead of skipping. For that we first
-            // need a way to communicate this to the solver. We could repurpose
-            // availableBalance for this.
-            let needed_balance = match max_transfer_out_amount(&order) {
-                // Should only ever happen if a partially fillable order has been filled completely
-                Ok(balance) if balance.is_zero() => continue,
-                Ok(balance) => balance,
-                Err(err) => {
-                    // This should only happen if we read bogus order data from
-                    // the database (either we allowed a bogus order to be
-                    // created or we updated a good order incorrectly), so raise
-                    // the alarm!
-                    tracing::error!(
-                        ?err,
-                        ?order,
-                        "error computing order max transfer out amount"
-                    );
-                    continue;
-                }
-            };
-
-            if order.data.partially_fillable {
-                if remaining_balance == 0.into() {
-                    continue;
-                }
-                order.metadata.partially_fillable_balance =
-                    Some(needed_balance.min(remaining_balance));
-                result.push(order);
-                remaining_balance = remaining_balance.saturating_sub(needed_balance);
-            } else {
-                match remaining_balance.checked_sub(needed_balance) {
-                    Some(balance) => {
-                        result.push(order);
-                        remaining_balance = balance;
-                    }
-                    None => continue,
-                };
-            }
+    orders.retain(|order| {
+        // For ethflow orders, there is no need to check the balance. The contract
+        // ensures that there will always be sufficient balance, after the wrapAll
+        // pre_interaction has been called.
+        if Some(order.metadata.owner) == ethflow_contract {
+            return true;
         }
-    }
-    result
-}
 
-/// Computes the maximum amount that can be transferred out for a given order.
-///
-/// While this is trivial for fill or kill orders (`sell_amount + fee_amount`),
-/// partially fillable orders need to account for the already filled amount (so
-/// a half-filled order would be `(sell_amount + fee_amount) / 2`).
-///
-/// Returns `Err` on overflow.
-fn max_transfer_out_amount(order: &Order) -> Result<U256> {
-    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
-    let sell = remaining.remaining(order.data.sell_amount)?;
-    let fee = remaining.remaining(order.data.fee_amount)?;
-    sell.checked_add(fee).context("add")
+        let balance = match balances.get(&Query::from_order(order)) {
+            None => return false,
+            Some(balance) => *balance,
+        };
+
+        if order.data.partially_fillable && balance >= 1.into() {
+            return true;
+        }
+
+        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
+            None => return false,
+            Some(balance) => balance,
+        };
+        balance >= needed_balance
+    });
+    orders
 }
 
 /// Keep updating the cache every N seconds or when an update notification
@@ -719,18 +663,10 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
-        chrono::{TimeZone, Utc},
         futures::{FutureExt, StreamExt},
-        maplit::{btreemap, hashmap, hashset},
+        maplit::{btreemap, hashset},
         mockall::predicate::eq,
-        model::order::{
-            LimitOrderClass,
-            OrderBuilder,
-            OrderData,
-            OrderKind,
-            OrderMetadata,
-            OrderUid,
-        },
+        model::order::{LimitOrderClass, OrderBuilder, OrderData, OrderMetadata, OrderUid},
         primitive_types::H160,
         shared::{
             bad_token::list_based::ListBasedDetector,
@@ -738,95 +674,6 @@ mod tests {
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };
-
-    #[tokio::test]
-    async fn filters_insufficient_balances() {
-        let mut orders = vec![
-            Order {
-                data: OrderData {
-                    sell_amount: 3.into(),
-                    fee_amount: 3.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    creation_date: Utc.timestamp_opt(2, 0).unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                data: OrderData {
-                    sell_amount: 2.into(),
-                    fee_amount: 2.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    creation_date: Utc.timestamp_opt(1, 0).unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                data: OrderData {
-                    sell_amount: 10.into(),
-                    buy_amount: 10.into(),
-                    fee_amount: 10.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    creation_date: Utc.timestamp_opt(0, 0).unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-
-        let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
-        assert_eq!(orders_.len(), 2);
-        // Second order has lower timestamp so it isn't picked.
-        assert_eq!(orders_[0].data, orders[0].data);
-        // Third order is partially fillable so is picked with remaining balance.
-        assert_eq!(orders_[1].data, orders[2].data);
-        assert_eq!(
-            orders_[1].metadata.partially_fillable_balance,
-            Some(3.into())
-        );
-
-        orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
-        assert_eq!(orders_.len(), 2);
-        assert_eq!(orders_[0].data, orders[1].data);
-        // Remaining balance is different because previous order has changed.
-        assert_eq!(orders_[1].data, orders[2].data);
-        assert_eq!(
-            orders_[1].metadata.partially_fillable_balance,
-            Some(5.into())
-        );
-    }
-
-    #[tokio::test]
-    async fn do_not_filters_insufficient_balances_for_ethflow_orders() {
-        let ethflow_address = H160([3u8; 20]);
-        let orders = vec![Order {
-            data: OrderData {
-                sell_amount: 3.into(),
-                fee_amount: 3.into(),
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                creation_date: Utc.timestamp_opt(2, 0).unwrap(),
-                owner: ethflow_address,
-                ..Default::default()
-            },
-            ..Default::default()
-        }];
-
-        let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
-        assert_eq!(orders_, orders);
-    }
 
     #[test]
     fn computes_u256_prices_normalized_to_1e18() {
@@ -946,79 +793,6 @@ mod tests {
     }
 
     #[test]
-    fn computes_max_transfer_out_amount_for_order() {
-        // For fill-or-kill orders, we don't overflow even for very large buy
-        // orders (where `{sell,fee}_amount * buy_amount` would overflow).
-        assert_eq!(
-            max_transfer_out_amount(&Order {
-                data: OrderData {
-                    sell_amount: 1000.into(),
-                    fee_amount: 337.into(),
-                    buy_amount: U256::MAX,
-                    kind: OrderKind::Buy,
-                    partially_fillable: false,
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap(),
-            U256::from(1337),
-        );
-
-        // Partially filled order scales amount.
-        assert_eq!(
-            max_transfer_out_amount(&Order {
-                data: OrderData {
-                    sell_amount: 100.into(),
-                    buy_amount: 10.into(),
-                    fee_amount: 101.into(),
-                    kind: OrderKind::Buy,
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    executed_buy_amount: 9_u32.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .unwrap(),
-            U256::from(20),
-        );
-    }
-
-    #[test]
-    fn max_transfer_out_amount_overflow() {
-        // For fill-or-kill orders, overflow if the total sell and fee amount
-        // overflows a uint. This kind of order cannot be filled by the
-        // settlement contract anyway.
-        assert!(max_transfer_out_amount(&Order {
-            data: OrderData {
-                sell_amount: U256::MAX,
-                fee_amount: 1.into(),
-                partially_fillable: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .is_err());
-
-        // Handles overflow when computing fill ratio.
-        assert!(max_transfer_out_amount(&Order {
-            data: OrderData {
-                sell_amount: 1000.into(),
-                fee_amount: 337.into(),
-                buy_amount: U256::MAX,
-                kind: OrderKind::Buy,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .is_err());
-    }
-
-    #[test]
     fn filters_banned_users() {
         let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
         let orders = [
@@ -1054,58 +828,6 @@ mod tests {
             filtered_owners,
             [H160([1; 20]), H160([1; 20]), H160([2; 20]), H160([3; 20])],
         );
-    }
-
-    #[test]
-    fn filters_zero_amount_orders() {
-        let orders = vec![
-            // normal order with non zero amounts
-            Order {
-                data: OrderData {
-                    buy_amount: 1u8.into(),
-                    sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // partially fillable order with remaining liquidity
-            Order {
-                data: OrderData {
-                    partially_fillable: true,
-                    buy_amount: 1u8.into(),
-                    sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // normal order with zero amounts
-            Order::default(),
-            // partially fillable order completely filled
-            Order {
-                metadata: OrderMetadata {
-                    executed_buy_amount: 1u8.into(),
-                    executed_sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                data: OrderData {
-                    partially_fillable: true,
-                    buy_amount: 1u8.into(),
-                    sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-
-        let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
-        let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, None);
-        // Deal with `solvable_orders()` sorting the orders.
-        filtered_orders.sort_by_key(|order| order.metadata.creation_date);
-        assert_eq!(expected_result.len(), filtered_orders.len());
-        for (left, right) in expected_result.iter().zip(filtered_orders) {
-            assert_eq!(left.data, right.data);
-        }
     }
 
     #[tokio::test]
@@ -1344,5 +1066,88 @@ mod tests {
         assert_eq!(updated_orders.len(), 2);
         assert_eq!(updated_orders[0].metadata.solver_fee, 200.into());
         assert_eq!(updated_orders[1].metadata.solver_fee, 100.into());
+    }
+
+    #[test]
+    fn orders_with_balance_() {
+        let ethflow = H160::from_low_u64_be(1);
+        let orders = vec![
+            // enough balance for sell and fee
+            Order {
+                data: OrderData {
+                    sell_token: H160::from_low_u64_be(2),
+                    sell_amount: 1.into(),
+                    fee_amount: 1.into(),
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // missing fee balance
+            Order {
+                data: OrderData {
+                    sell_token: H160::from_low_u64_be(3),
+                    sell_amount: 1.into(),
+                    fee_amount: 1.into(),
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // at least 1 partially fillable balance
+            Order {
+                data: OrderData {
+                    sell_token: H160::from_low_u64_be(4),
+                    sell_amount: 2.into(),
+                    fee_amount: 0.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // 0 partially fillable balance
+            Order {
+                data: OrderData {
+                    sell_token: H160::from_low_u64_be(5),
+                    sell_amount: 2.into(),
+                    fee_amount: 0.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // 0 ethflow balance
+            Order {
+                data: OrderData {
+                    sell_token: ethflow,
+                    sell_amount: 1.into(),
+                    fee_amount: 0.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    owner: ethflow,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+        let balances = [
+            (Query::from_order(&orders[0]), 2.into()),
+            (Query::from_order(&orders[1]), 1.into()),
+            (Query::from_order(&orders[2]), 1.into()),
+            (Query::from_order(&orders[3]), 0.into()),
+            (Query::from_order(&orders[4]), 0.into()),
+        ]
+        .into_iter()
+        .collect();
+        let expected = &[0, 2, 4];
+
+        let filtered = orders_with_balance(orders.clone(), &balances, Some(ethflow));
+        assert_eq!(filtered.len(), expected.len());
+        for index in expected {
+            let found = filtered.iter().any(|o| o.data == orders[*index].data);
+            assert!(found, "{}", index);
+        }
     }
 }

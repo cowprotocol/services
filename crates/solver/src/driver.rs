@@ -9,6 +9,7 @@ use {
         liquidity::order_converter::OrderConverter,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::SolverMetrics,
+        order_balance_filter::OrderBalanceFilter,
         orderbook::OrderBookApi,
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
@@ -77,6 +78,7 @@ pub struct Driver {
     last_attempted_settlement: Option<AuctionId>,
     process_partially_fillable_liquidity_orders: bool,
     process_partially_fillable_limit_orders: bool,
+    order_balance_filter: OrderBalanceFilter,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -107,6 +109,7 @@ impl Driver {
         code_fetcher: Arc<dyn CodeFetching>,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
+        order_balance_filter: OrderBalanceFilter,
     ) -> Self {
         let gas_price_estimator =
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
@@ -158,6 +161,7 @@ impl Driver {
             last_attempted_settlement: None,
             process_partially_fillable_liquidity_orders,
             process_partially_fillable_limit_orders,
+            order_balance_filter,
         }
     }
 
@@ -279,8 +283,28 @@ impl Driver {
             }
         });
 
-        let orders = auction
+        let previous_orders: Vec<OrderUid> = auction
             .orders
+            .iter()
+            .map(|order| order.metadata.uid)
+            .collect();
+        let balance_start = Instant::now();
+        let orders = self.order_balance_filter.filter(auction.orders).await;
+        tracing::debug!(
+            "filtering orders based on balance took {}s",
+            balance_start.elapsed().as_secs_f32()
+        );
+        let new_orders: HashSet<OrderUid> = orders
+            .iter()
+            .map(|order| order.order.metadata.uid)
+            .collect();
+        for uid in previous_orders {
+            if !new_orders.contains(&uid) {
+                tracing::debug!(%uid, "order filtered because of missing balance");
+            }
+        }
+
+        let orders = orders
             .into_iter()
             .filter_map(|order| {
                 match self.order_converter.normalize_limit_order(order) {

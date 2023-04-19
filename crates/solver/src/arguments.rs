@@ -351,6 +351,11 @@ pub struct Arguments {
 
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub process_partially_fillable_limit_orders: bool,
+
+    /// Address of the ETH flow contract. If not specified, eth-flow orders are
+    /// disabled.
+    #[clap(long, env)]
+    pub ethflow_contract: Option<H160>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -495,6 +500,7 @@ impl std::fmt::Display for Arguments {
             "process_partially_fillable_liquidity_orders: {:?}",
             self.process_partially_fillable_liquidity_orders
         )?;
+        display_option(f, "ethflow_contract", &self.ethflow_contract)?;
         Ok(())
     }
 }

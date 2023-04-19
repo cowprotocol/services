@@ -510,6 +510,7 @@ mod tests {
                 LiquidityOrderId,
             },
             metrics::NoopMetrics,
+            order_balance_filter::BalancedOrder,
             settlement::TradeExecution,
         },
         anyhow::anyhow,
@@ -571,7 +572,7 @@ mod tests {
             .iter()
             .map(|order| {
                 converter
-                    .normalize_limit_order(Order::clone(order))
+                    .normalize_limit_order(BalancedOrder::full(Order::clone(order)))
                     .unwrap()
             })
             .collect::<Vec<_>>();
@@ -848,23 +849,25 @@ mod tests {
         let converter = OrderConverter::test(native);
         let order = |kind: OrderKind| {
             converter
-                .normalize_limit_order(Order {
-                    data: OrderData {
-                        sell_token: H160::from_low_u64_be(1),
-                        buy_token: H160::from_low_u64_be(2),
-                        kind,
-                        sell_amount: 100.into(),
-                        buy_amount: 100.into(),
-                        partially_fillable: true,
+                .normalize_limit_order(BalancedOrder {
+                    order: Order {
+                        data: OrderData {
+                            sell_token: H160::from_low_u64_be(1),
+                            buy_token: H160::from_low_u64_be(2),
+                            kind,
+                            sell_amount: 100.into(),
+                            buy_amount: 100.into(),
+                            partially_fillable: true,
+                            ..Default::default()
+                        },
+                        metadata: OrderMetadata {
+                            uid: OrderUid([0u8; 56]),
+                            class: OrderClass::Limit(Default::default()),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    metadata: OrderMetadata {
-                        uid: OrderUid([0u8; 56]),
-                        class: OrderClass::Limit(Default::default()),
-                        partially_fillable_balance: Some(100.into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
+                    available_sell_token_balance: 100.into(),
                 })
                 .unwrap()
         };

@@ -10,6 +10,7 @@ use {
             LimitOrderId,
             Liquidity,
         },
+        order_balance_filter::BalancedOrder,
         settlement::Settlement,
     },
     anyhow::{anyhow, ensure, Context as _, Result},
@@ -310,7 +311,7 @@ fn convert_foreign_liquidity_orders(
     foreign_liquidity_orders
         .into_iter()
         .map(|liquidity| {
-            let converted = order_converter.normalize_limit_order(Order {
+            let order = Order {
                 metadata: OrderMetadata {
                     owner: liquidity.order.from,
                     full_fee_amount: liquidity.order.data.fee_amount,
@@ -326,7 +327,8 @@ fn convert_foreign_liquidity_orders(
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
                 interactions: liquidity.order.interactions,
-            })?;
+            };
+            let converted = order_converter.normalize_limit_order(BalancedOrder::full(order))?;
             Ok(ExecutedLimitOrder {
                 order: converted,
                 executed_sell_amount: liquidity.exec_sell_amount,
