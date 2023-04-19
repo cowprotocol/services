@@ -8,7 +8,7 @@ use {
         SettlementHandling,
     },
     crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
-    anyhow::{Context, Result},
+    anyhow::{ensure, Context, Result},
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
@@ -90,6 +90,11 @@ impl OrderConverter {
                     .context("partially fillable buy_amount calculation overflow")?;
             }
         }
+
+        ensure!(
+            !sell_amount.is_zero() && !buy_amount.is_zero(),
+            "partially fillable order scaled to 0 amounts",
+        );
 
         Ok(LimitOrder {
             id,
@@ -185,6 +190,8 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -203,6 +210,8 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -409,6 +418,7 @@ pub mod tests {
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit(Default::default()))
             .with_sell_amount(1_000.into())
+            .with_buy_amount(1.into())
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())
             .with_solver_fee(200.into())
@@ -420,5 +430,62 @@ pub mod tests {
         // it's the `autopilot`'s responsibility to prepare this value for us so we
         // don't touch it
         assert_eq!(solver_order.solver_fee, 200.into());
+    }
+
+    #[test]
+    fn limit_orders_scaled_to_zero_amounts_rejected() {
+        let converter = OrderConverter::test(Default::default());
+
+        let mut sell = Order {
+            data: OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 10.into(),
+                fee_amount: 0.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                partially_fillable_balance: Some(100.into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(converter.normalize_limit_order(sell.clone()).is_ok());
+
+        // Execute the order so that scaling the buy_amount would result in a
+        // 0 amount.
+        sell.metadata.executed_sell_amount = 99_u32.into();
+        sell.metadata.executed_sell_amount_before_fees = 99_u32.into();
+        sell.metadata.executed_buy_amount = 10_u32.into();
+
+        assert!(converter.normalize_limit_order(sell).is_err());
+
+        let mut buy = Order {
+            data: OrderData {
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                fee_amount: 0.into(),
+                kind: OrderKind::Buy,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                partially_fillable_balance: Some(10.into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(converter.normalize_limit_order(buy.clone()).is_ok());
+
+        // Execute the order so that scaling the sell_amount would result in a
+        // 0 amount.
+        buy.metadata.executed_sell_amount = 10_u32.into();
+        buy.metadata.executed_sell_amount_before_fees = 10_u32.into();
+        buy.metadata.executed_buy_amount = 99_u32.into();
+
+        assert!(converter.normalize_limit_order(buy).is_err());
     }
 }
