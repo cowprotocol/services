@@ -40,7 +40,7 @@ pub struct OrderBalanceFilter {
 
 impl OrderBalanceFilter {
     /// Filter orders based on the available balance.
-    pub async fn filter(&mut self, orders: Vec<Order>) -> Vec<BalancedOrder> {
+    pub async fn filter(&self, orders: Vec<Order>) -> Vec<BalancedOrder> {
         let queries: Vec<Query> = orders.iter().map(Query::from_order).collect();
         let balances = self.balance_fetcher.get_balances(&queries).await;
         let balances: Balances = queries

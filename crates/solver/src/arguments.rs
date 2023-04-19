@@ -352,7 +352,7 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub process_partially_fillable_limit_orders: bool,
 
-    /// Address of the ethflow contract. If not specified, eth-flow orders are
+    /// Address of the ETH flow contract. If not specified, eth-flow orders are
     /// disabled.
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
