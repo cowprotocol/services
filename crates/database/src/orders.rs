@@ -2109,11 +2109,21 @@ mod tests {
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
                 sell_amount: bigdecimal(3026871740084629982950),
                 buy_amount: bigdecimal(89238894792574185),
+                fee_amount: bigdecimal(688868232097089454080),
                 kind: OrderKind::Sell,
                 signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
                 signing_scheme: SigningScheme::Eip712,
                 ..Default::default()
             },
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &order_uid,
+            6124819,
+            None,
+            &bigdecimal(463182886014406361088),
         )
         .await
         .unwrap();
