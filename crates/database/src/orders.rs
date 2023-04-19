@@ -1,5 +1,6 @@
 use {
     crate::{
+        auction::AuctionId,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         Address,
         AppId,
@@ -559,6 +560,7 @@ pub struct OrderExecution {
 pub fn order_executions_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
+    auction_id: AuctionId,
 ) -> BoxStream<'a, Result<OrderExecution, sqlx::Error>> {
     const QUERY: &str = const_format::formatcp!(
         r#"
@@ -578,17 +580,18 @@ SELECT
     o.signature,
     o.signing_scheme
 FROM order_execution AS oe
-JOIN auction_transaction a ON a.auction_id = oe.auction_id
-JOIN settlements s ON s.tx_from = a.tx_from AND s.tx_nonce = a.tx_nonce
 JOIN orders o ON o.uid = oe.order_uid
 JOIN trades t ON t.order_uid = oe.order_uid
 WHERE
-    s.tx_hash = $1 AND
+    oe.auction_id = $2 AND
     t.block_number = (SELECT block_number FROM settlement) AND
     t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
         "#
     );
-    sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
+    sqlx::query_as(QUERY)
+        .bind(tx_hash)
+        .bind(auction_id)
+        .fetch(ex)
 }
 
 pub fn user_orders<'a>(
@@ -2152,13 +2155,12 @@ mod tests {
         let transaction_hash = ByteArray(hex!(
             "d2a3b85244bee6043f740ce774bc72ba271b890c4aa939ebe3d859afef445d99"
         ));
-        let event_index = EventIndex {
-            block_number: 17066992,
-            log_index: 300,
-        };
         crate::events::insert_settlement(
             &mut db,
-            &event_index,
+            &EventIndex {
+                block_number: 17066992,
+                log_index: 300,
+            },
             &Settlement {
                 solver: ByteArray(hex!("c9ec550bea1c64d779124b23a26292cc223327b6")),
                 transaction_hash,
@@ -2166,24 +2168,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let tx_from = ByteArray(hex!("c9ec550bea1c64d779124b23a26292cc223327b6"));
-        let tx_nonce = 68785;
-        crate::auction_transaction::insert_settlement_tx_info(
-            &mut db,
-            event_index.block_number,
-            event_index.log_index,
-            &tx_from,
-            tx_nonce,
-        )
-        .await
-        .unwrap();
-        crate::auction_transaction::upsert_auction_transaction(
-            &mut db, auction_id, &tx_from, tx_nonce,
-        )
-        .await
-        .unwrap();
 
-        let executions = order_executions_in_tx(&mut db, &transaction_hash)
+        let executions = order_executions_in_tx(&mut db, &transaction_hash, auction_id)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
@@ -2261,20 +2247,7 @@ mod tests {
         .await
         .unwrap();
 
-        crate::auction_transaction::insert_settlement_tx_info(
-            &mut db,
-            1,
-            1,
-            &Default::default(),
-            0,
-        )
-        .await
-        .unwrap();
-        crate::auction_transaction::upsert_auction_transaction(&mut db, 42, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        let executions = order_executions_in_tx(&mut db, &transaction_hash)
+        let executions = order_executions_in_tx(&mut db, &transaction_hash, 42)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
