@@ -9,7 +9,7 @@ use {
     clap::Parser,
     ethcontract::Account,
     model::order::OrderKind,
-    num::ToPrimitive,
+    num::{CheckedDiv, ToPrimitive},
     number_conversions::u256_to_big_rational,
     primitive_types::U256,
     rand::prelude::SliceRandom,
@@ -440,8 +440,9 @@ fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 
     let buy_amount = u256_to_big_rational(&order.buy_amount);
     let native_sell_amount = prices.get_native_amount(order.sell_token, sell_amount);
     let native_buy_amount = prices.get_native_amount(order.buy_token, buy_amount);
-    (native_sell_amount / native_buy_amount)
-        .to_f64()
+    native_sell_amount
+        .checked_div(&native_buy_amount)
+        .and_then(|ratio| ratio.to_f64())
         .unwrap_or(0.)
 }
 
@@ -518,7 +519,7 @@ mod tests {
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::http_solver::model::InternalizationStrategy,
-        std::sync::Arc,
+        std::{collections::HashMap, sync::Arc},
     };
 
     fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
@@ -970,5 +971,47 @@ mod tests {
         };
         let result = settlement.into_settlement(&order, 1.into(), &prices, 1000.);
         assert!(matches!(result, Ok(None)), "{:?}", result);
+    }
+
+    #[test]
+    fn order_priotization_weight_does_not_panic_on_zeros() {
+        let token = H160::from_low_u64_be;
+        let amount = U256::from;
+        let prices =
+            |prices: HashMap<H160, BigRational>| ExternalPrices::new(token(0), prices).unwrap();
+
+        assert_eq!(
+            estimate_price_viability(
+                &LimitOrder {
+                    sell_token: token(1),
+                    sell_amount: amount(100),
+                    buy_token: token(2),
+                    buy_amount: amount(100),
+                    ..Default::default()
+                },
+                &prices(hashmap! {
+                    token(1) => BigRational::from_u8(1).unwrap(),
+                    token(2) => BigRational::from_u8(0).unwrap(),
+                })
+            ),
+            0.
+        );
+
+        assert_eq!(
+            estimate_price_viability(
+                &LimitOrder {
+                    sell_token: token(1),
+                    sell_amount: amount(100),
+                    buy_token: token(2),
+                    buy_amount: amount(0),
+                    ..Default::default()
+                },
+                &prices(hashmap! {
+                    token(1) => BigRational::from_u8(1).unwrap(),
+                    token(2) => BigRational::from_u8(1).unwrap(),
+                })
+            ),
+            0.
+        );
     }
 }
