@@ -33,7 +33,7 @@ use {
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
         liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::{ensure, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::{Account, H160},
     model::order::OrderKind,
@@ -218,9 +218,10 @@ impl SingleOrderSolving for ZeroExSolver {
 
 impl From<ZeroExResponseError> for SettlementError {
     fn from(err: ZeroExResponseError) -> Self {
-        SettlementError {
-            inner: anyhow!("0x Response Error {:?}", err),
-            retryable: matches!(err, ZeroExResponseError::ServerError(_)),
+        match err {
+            ZeroExResponseError::RateLimited => Self::RateLimited,
+            err @ ZeroExResponseError::ServerError(_) => Self::Retryable(err.into()),
+            err => Self::Other(err.into()),
         }
     }
 }

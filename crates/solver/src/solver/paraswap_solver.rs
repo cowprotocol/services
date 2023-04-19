@@ -84,10 +84,12 @@ impl ParaswapSolver {
 
 impl From<ParaswapResponseError> for SettlementError {
     fn from(err: ParaswapResponseError) -> Self {
-        let retryable = err.is_retryable();
-        SettlementError {
-            inner: anyhow!(err),
-            retryable,
+        match err {
+            err @ ParaswapResponseError::Request(_) | err @ ParaswapResponseError::Retryable(_) => {
+                Self::Retryable(anyhow!(err))
+            }
+            ParaswapResponseError::RateLimited => Self::RateLimited,
+            err => Self::Other(anyhow!(err)),
         }
     }
 }
