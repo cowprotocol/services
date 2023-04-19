@@ -480,7 +480,7 @@ pub mod tests {
 
         assert!(converter.normalize_limit_order(buy.clone()).is_ok());
 
-        // Execute the order so that scaling the buy_amount would result in a
+        // Execute the order so that scaling the sell_amount would result in a
         // 0 amount.
         buy.metadata.executed_sell_amount = 10_u32.into();
         buy.metadata.executed_sell_amount_before_fees = 10_u32.into();
