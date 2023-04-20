@@ -12,7 +12,7 @@ use {
         order_balance_filter::BalancedOrder,
         settlement::SettlementEncoder,
     },
-    anyhow::{ensure, Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
@@ -42,7 +42,7 @@ impl OrderConverter {
             order,
             available_sell_token_balance,
         }: BalancedOrder,
-    ) -> Result<LimitOrder> {
+    ) -> Result<LimitOrder, OrderConversionError> {
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -80,10 +80,12 @@ impl OrderConverter {
                 .checked_add(remaining.remaining(order.data.fee_amount)?)
                 .context("partially fillable need calculation overflow")?;
             let have = available_sell_token_balance;
-            anyhow::ensure!(
-                have != 0.into(),
-                "unexpected 0 balance for partially fillable order"
-            );
+            if have.is_zero() {
+                return Err(OrderConversionError::Other(anyhow!(
+                    "unexpected 0 balance for partially fillable order"
+                )));
+            }
+
             tracing::trace!(%need, %have, "partially fillable order conversion");
             if have < need {
                 solver_fee = solver_fee
@@ -104,10 +106,9 @@ impl OrderConverter {
             }
         }
 
-        ensure!(
-            !sell_amount.is_zero() && !buy_amount.is_zero(),
-            "partially fillable order scaled to 0 amounts",
-        );
+        if sell_amount.is_zero() || buy_amount.is_zero() {
+            return Err(OrderConversionError::ZeroAmount);
+        }
 
         Ok(LimitOrder {
             id,
@@ -183,6 +184,15 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum OrderConversionError {
+    #[error("order scaled to 0 buy or sell amount")]
+    ZeroAmount,
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[cfg(test)]
@@ -494,7 +504,10 @@ pub mod tests {
         sell.order.metadata.executed_sell_amount_before_fees = 99_u32.into();
         sell.order.metadata.executed_buy_amount = 10_u32.into();
 
-        assert!(converter.normalize_limit_order(sell).is_err());
+        assert!(matches!(
+            converter.normalize_limit_order(sell),
+            Err(OrderConversionError::ZeroAmount)
+        ));
 
         let buy = Order {
             data: OrderData {
@@ -520,6 +533,9 @@ pub mod tests {
         buy.order.metadata.executed_sell_amount_before_fees = 10_u32.into();
         buy.order.metadata.executed_buy_amount = 99_u32.into();
 
-        assert!(converter.normalize_limit_order(buy).is_err());
+        assert!(matches!(
+            converter.normalize_limit_order(buy),
+            Err(OrderConversionError::ZeroAmount)
+        ));
     }
 }
