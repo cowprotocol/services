@@ -258,6 +258,29 @@ pub struct ExternalSolverArg {
     pub url: Url,
     pub account: SolverAccountArg,
     pub use_liquidity: bool,
+    pub user_balance_support: UserBalanceSupport,
+}
+
+/// Whether the solver supports assigning user sell token balance to orders or
+/// whether the driver needs to do it instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UserBalanceSupport {
+    None,
+    PartiallyFillable,
+    // Will be added later.
+    // All,
+}
+
+impl FromStr for UserBalanceSupport {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Self::None),
+            "partially_fillable" => Ok(Self::PartiallyFillable),
+            _ => Err(anyhow::anyhow!("unknown variant {}", s)),
+        }
+    }
 }
 
 impl FromStr for ExternalSolverArg {
@@ -268,13 +291,17 @@ impl FromStr for ExternalSolverArg {
         let name = parts.next().context("missing name")?;
         let url = parts.next().context("missing url")?;
         let account = parts.next().context("missing account")?;
-        // default to true temporarily until we configure the argument
-        let use_liquidity = parts.next().unwrap_or("true");
+        let use_liquidity = parts.next().context("missing use_liquidity")?;
+        // With a default temporarily until we configure the argument in our cluster.
+        let user_balance_support = parts.next().unwrap_or("none");
         Ok(Self {
             name: name.to_string(),
             url: url.parse().context("parse url")?,
             account: account.parse().context("parse account")?,
             use_liquidity: use_liquidity.parse().context("parse use_liquidity")?,
+            user_balance_support: user_balance_support
+                .parse()
+                .context("parse user_balance_support")?,
         })
     }
 }
@@ -724,7 +751,7 @@ mod tests {
 
     #[test]
     fn parse_external_solver_arg() {
-        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242";
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|true|partially_fillable";
         let parsed = ExternalSolverArg::from_str(arg).unwrap();
         assert_eq!(parsed.name, "name");
         assert_eq!(parsed.url.to_string(), "http://solver.com/");
@@ -733,15 +760,16 @@ mod tests {
             SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
         );
         assert!(parsed.use_liquidity);
+        assert_eq!(
+            parsed.user_balance_support,
+            UserBalanceSupport::PartiallyFillable
+        );
     }
 
     #[test]
-    fn parse_external_solver_arg_use_liquidity() {
+    fn parse_external_solver_arg_user_balance_default() {
         let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|false";
         let parsed = ExternalSolverArg::from_str(arg).unwrap();
-        assert!(!parsed.use_liquidity);
-        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|true";
-        let parsed = ExternalSolverArg::from_str(arg).unwrap();
-        assert!(parsed.use_liquidity);
+        assert_eq!(parsed.user_balance_support, UserBalanceSupport::None);
     }
 }
