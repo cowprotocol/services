@@ -53,8 +53,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10.0")]
     pub price_priority_max_weight: f64,
 
-    /// Configures the back off strategy for single order solvers. See
-    /// --price-estimation-rate-limiter for more details.
+    /// Configures the back off strategy for single order solvers. Requests
+    /// issued while back off is active get dropped entirely. Expects
+    /// "<factor >= 1.0>,<min: seconds>,<max: seconds>".
     #[clap(long, env)]
     pub single_order_solver_rate_limiter: Option<RateLimitingStrategy>,
 }
