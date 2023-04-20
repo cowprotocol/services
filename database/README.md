@@ -1,14 +1,41 @@
-This document explains the database that the orderbook api uses.
+Here we document the current state of the database. The history of these changes lives in the `sql` folder which contains all migrations. This document shows the schema and the purpose of the tables.
 
-We need to store orders persistently even if the orderbook service goes down. For this we use a PostgreSQL database. The schema can be found in `schema.sql`.
+Code that directly interfaces with the database through SQL queries lives in the `database`. This crate is often wrapped into higher level components by consumers.
 
-In addition to the orders, we also store trade events. This allows us to keep track of filled amounts.
+With a live database information for all tables can be retrieved with the `\d` command and information for a specific table with `\d MyTable`.
 
-To prevent users from spamming the database we should when receiving an order check that
-* the erc20 spending is approved
-* valid_to is not in the past and not more than <1 year> in the future
-* the order owner does not already have more than <1000> valid orders
+The database contains the following tables:
 
-This ensures that the amount of orders we have to keep track of per user is limited and that there is a real cost the user incurs before being able to submit orders because they need to have sent an ethereum transaction.
+### auction_participants
 
-Technically, this could still be attacked with a fake token that claims that approval has always been granted. This is more evidence to my belief that we should whitelist erc20 tokens that we will handle.
+   Column    |  Type  | Nullable | Default
+-------------|--------|----------|---------
+ auction_id  | bigint | not null |
+ participant | bytea  | not null |
+Indexes:
+- "auction_participants_pkey" PRIMARY KEY, btree (auction_id, participant)
+
+This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
+
+
+### auction_prices
+### auction_transaction
+### auctions (and auctions_id_seq counter))
+### ethflow_orders
+### ethflow_refunds
+### fixed_bytes_test
+### flyway_schema_history
+### interactions
+### invalidations
+### onchain_order_invalidations
+### onchain_placed_orders
+### order_execution
+### order_quotes
+### orders
+### presignature_events
+### quotes (and quotes_id_seq counter)
+### settlement_observations
+### settlement_scores
+### settlements
+### solver_competitions
+### trades
