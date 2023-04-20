@@ -62,15 +62,8 @@ impl BalancerSorSolver {
 impl From<BalancerError> for SettlementError {
     fn from(err: BalancerError) -> Self {
         match err {
-            BalancerError::Other(err) => Self {
-                inner: err,
-                retryable: false,
-            },
-            BalancerError::RateLimited => Self {
-                inner: anyhow::anyhow!("rate limited"),
-                // Technically this error is retryable but only after some time.
-                retryable: false,
-            },
+            BalancerError::Other(err) => Self::Other(err),
+            BalancerError::RateLimited => Self::RateLimited,
         }
     }
 }

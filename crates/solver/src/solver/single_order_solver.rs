@@ -5,7 +5,7 @@ use {
         settlement::Settlement,
         solver::{Auction, Solver},
     },
-    anyhow::{Context as _, Error, Result},
+    anyhow::{Context as _, Result},
     clap::Parser,
     ethcontract::Account,
     model::order::OrderKind,
@@ -14,10 +14,12 @@ use {
     primitive_types::U256,
     rand::prelude::SliceRandom,
     shared::{
+        arguments::display_option,
         conversions::U256Ext,
         external_prices::ExternalPrices,
         interaction::Interaction,
         price_estimation::gas,
+        rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     },
     std::{
         collections::VecDeque,
@@ -50,6 +52,31 @@ pub struct Arguments {
     /// prioritization.
     #[clap(long, env, default_value = "10.0")]
     pub price_priority_max_weight: f64,
+
+    /// Configures the back off strategy for single order solvers. Requests
+    /// issued while back off is active get dropped entirely. Expects
+    /// "<factor >= 1.0>,<min: seconds>,<max: seconds>".
+    #[clap(long, env)]
+    pub single_order_solver_rate_limiter: Option<RateLimitingStrategy>,
+}
+
+impl Arguments {
+    fn order_prioritization(&self) -> OrderPrioritization {
+        OrderPrioritization {
+            exponent: self.price_priority_exponent,
+            min_weight: self.price_priority_min_weight,
+            max_weight: self.price_priority_max_weight,
+        }
+    }
+
+    fn rate_limiter(&self, name: &str) -> Arc<RateLimiter> {
+        Arc::new(RateLimiter::from_strategy(
+            self.single_order_solver_rate_limiter
+                .clone()
+                .unwrap_or_default(),
+            format!("{name}_solver"),
+        ))
+    }
 }
 
 impl Display for Arguments {
@@ -69,28 +96,12 @@ impl Display for Arguments {
             "price_priority_max_weight: {}",
             self.price_priority_max_weight
         )?;
+        display_option(
+            f,
+            "single_order_solver_rate_limiter",
+            &self.single_order_solver_rate_limiter,
+        )?;
         Ok(())
-    }
-}
-
-impl Arguments {
-    fn apply_weight_constraints(&self, original_weight: f64) -> f64 {
-        original_weight.powf(self.price_priority_exponent).clamp(
-            self.price_priority_min_weight,
-            self.price_priority_max_weight,
-        )
-    }
-}
-
-impl Default for Arguments {
-    fn default() -> Self {
-        // Arguments which seem to produce reasonable results for orders between 90% and
-        // 130% of the market price.
-        Self {
-            price_priority_exponent: 10.,
-            price_priority_min_weight: 0.01,
-            price_priority_max_weight: 10.,
-        }
     }
 }
 
@@ -114,12 +125,39 @@ pub trait SingleOrderSolving: Send + Sync + 'static {
     }
 }
 
+struct OrderPrioritization {
+    exponent: f64,
+    min_weight: f64,
+    max_weight: f64,
+}
+
+impl OrderPrioritization {
+    fn apply_weight_constraints(&self, original_weight: f64) -> f64 {
+        original_weight
+            .powf(self.exponent)
+            .clamp(self.min_weight, self.max_weight)
+    }
+}
+
+impl Default for OrderPrioritization {
+    fn default() -> Self {
+        // Arguments which seem to produce reasonable results for orders between 90% and
+        // 130% of the market price.
+        Self {
+            exponent: 10.,
+            min_weight: 0.01,
+            max_weight: 10.,
+        }
+    }
+}
+
 pub struct SingleOrderSolver {
     inner: Box<dyn SingleOrderSolving>,
     metrics: Arc<dyn SolverMetrics>,
     max_merged_settlements: usize,
     max_settlements_per_solver: usize,
-    order_prioritization_config: Arguments,
+    order_prioritization_config: OrderPrioritization,
+    rate_limiter: Arc<RateLimiter>,
     fills: fills::Fills,
 }
 
@@ -129,15 +167,17 @@ impl SingleOrderSolver {
         metrics: Arc<dyn SolverMetrics>,
         max_settlements_per_solver: usize,
         max_merged_settlements: usize,
-        order_prioritization_config: Arguments,
+        arguments: Arguments,
         smallest_fill: U256,
     ) -> Self {
+        let rate_limiter = arguments.rate_limiter(inner.name());
         Self {
             inner,
             metrics,
             max_merged_settlements,
             max_settlements_per_solver,
-            order_prioritization_config,
+            order_prioritization_config: arguments.order_prioritization(),
+            rate_limiter,
             fills: fills::Fills::new(smallest_fill),
         }
     }
@@ -149,20 +189,33 @@ impl SingleOrderSolver {
             return SolveResult::Failed;
         };
 
-        let single = match self.inner.try_settle_order(fill.clone(), auction).await {
+        let single = match self
+            .rate_limiter
+            .execute(
+                self.inner.try_settle_order(fill.clone(), auction),
+                |result| matches!(result, Err(SettlementError::RateLimited)),
+            )
+            .await
+            .unwrap_or_else(|RateLimiterError::RateLimited| Err(SettlementError::RateLimited))
+        {
             Ok(value) => {
                 self.metrics.single_order_solver_succeeded(name);
                 value
             }
-            Err(err) => {
+            Err(SettlementError::RateLimited) => {
                 self.metrics.single_order_solver_failed(name);
-                if err.retryable {
-                    tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
-                    return SolveResult::Retryable(order);
-                } else {
-                    tracing::warn!("Solver {} error: {:?}", name, &err.inner);
-                    return SolveResult::Failed;
-                }
+                tracing::warn!(%name, "rate limited");
+                return SolveResult::Failed;
+            }
+            Err(SettlementError::Retryable(err)) => {
+                self.metrics.single_order_solver_failed(name);
+                tracing::warn!(%name, ?err, "retryable error");
+                return SolveResult::Retryable(order);
+            }
+            Err(SettlementError::Other(err)) => {
+                self.metrics.single_order_solver_failed(name);
+                tracing::warn!(%name, ?err, "failed");
+                return SolveResult::Failed;
             }
         };
 
@@ -397,19 +450,16 @@ impl SingleOrderSettlement {
     }
 }
 
-#[derive(Debug)]
-pub struct SettlementError {
-    pub inner: anyhow::Error,
-    pub retryable: bool,
-}
+#[derive(Debug, thiserror::Error)]
+pub enum SettlementError {
+    #[error("rate limited")]
+    RateLimited,
 
-impl From<anyhow::Error> for SettlementError {
-    fn from(err: Error) -> Self {
-        SettlementError {
-            inner: err,
-            retryable: false,
-        }
-    }
+    #[error("intermittent error: {0}")]
+    Retryable(anyhow::Error),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 /// Prioritizes orders to settle in the auction. First come all the market
@@ -418,7 +468,7 @@ impl From<anyhow::Error> for SettlementError {
 fn get_prioritized_orders(
     orders: &[LimitOrder],
     prices: &ExternalPrices,
-    order_prioritization_config: &Arguments,
+    order_prioritization_config: &OrderPrioritization,
 ) -> VecDeque<LimitOrder> {
     let (market, limit) = orders
         .iter()
@@ -454,7 +504,7 @@ fn estimate_price_viability(order: &LimitOrder, prices: &ExternalPrices) -> f64 
 fn prioritize_orders(
     mut orders: Vec<LimitOrder>,
     prices: &ExternalPrices,
-    order_prioritization_config: &Arguments,
+    order_prioritization_config: &OrderPrioritization,
 ) -> Vec<LimitOrder> {
     if orders.len() <= 1 {
         return orders;
@@ -516,6 +566,7 @@ mod tests {
         anyhow::anyhow,
         ethcontract::Bytes,
         maplit::{btreemap, hashmap},
+        mockall::Sequence,
         model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
@@ -530,6 +581,7 @@ mod tests {
             max_merged_settlements: 5,
             max_settlements_per_solver: 5,
             order_prioritization_config: Default::default(),
+            rate_limiter: RateLimiter::test(),
             fills: fills::Fills::new(1.into()),
         }
     }
@@ -658,10 +710,7 @@ mod tests {
             .returning(move |_, _| {
                 dbg!();
                 let result = match call_count {
-                    0 => Err(SettlementError {
-                        inner: anyhow!(""),
-                        retryable: true,
-                    }),
+                    0 => Err(SettlementError::Retryable(anyhow!(""))),
                     1 => Ok(None),
                     _ => unreachable!(),
                 };
@@ -687,23 +736,28 @@ mod tests {
     #[tokio::test]
     async fn does_not_retry_unretryable() {
         let mut inner = MockSingleOrderSolving::new();
+        let mut seq = Sequence::new();
         inner.expect_name().return_const("");
-        inner.expect_try_settle_order().times(1).returning(|_, _| {
-            Err(SettlementError {
-                inner: anyhow!(""),
-                retryable: false,
-            })
-        });
+        inner
+            .expect_try_settle_order()
+            .times(1)
+            .returning(|_, _| Err(SettlementError::RateLimited))
+            .in_sequence(&mut seq);
+        inner
+            .expect_try_settle_order()
+            .times(1)
+            .returning(|_, _| Err(SettlementError::Other(anyhow!(""))))
+            .in_sequence(&mut seq);
 
         let solver = test_solver(inner);
         let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = LimitOrder {
+        let order = || LimitOrder {
             settlement_handling: handler.clone(),
             ..Default::default()
         };
         solver
             .solve(Auction {
-                orders: vec![order],
+                orders: vec![order(), order()],
                 ..Default::default()
             })
             .await
@@ -784,7 +838,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = Arguments::default();
+        let config = OrderPrioritization::default();
 
         const SAMPLES: usize = 1_000;
         let mut expected_results = 0;
@@ -826,7 +880,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = Arguments::default();
+        let config = OrderPrioritization::default();
 
         const SAMPLES: usize = 1_000;
         let mut expected_results = 0;

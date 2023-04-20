@@ -195,10 +195,12 @@ impl Display for OneInchSolver {
 
 impl From<OneInchError> for SettlementError {
     fn from(err: OneInchError) -> Self {
-        let retryable = matches!(&err, OneInchError::Api(err) if err.status_code == 500);
-        SettlementError {
-            inner: err.into(),
-            retryable,
+        match err {
+            OneInchError::Api(err) if err.status_code == 429 => Self::RateLimited,
+            OneInchError::Api(err) if err.status_code == 500 => {
+                Self::Retryable(OneInchError::Api(err).into())
+            }
+            err => Self::Other(err.into()),
         }
     }
 }
