@@ -9,7 +9,7 @@ use {
     },
     ethcontract::{H256, U256},
     futures::{StreamExt, TryStreamExt},
-    model::time::now_in_epoch_seconds,
+    model::{auction::AuctionId, time::now_in_epoch_seconds},
     number_conversions::u256_to_big_decimal,
     shared::fee_subsidy::FeeParameters,
 };
@@ -165,14 +165,18 @@ impl Postgres {
         .await?)
     }
 
-    pub async fn order_executions_for_tx(&self, tx_hash: &H256) -> Result<Vec<OrderExecution>> {
+    pub async fn order_executions_for_tx(
+        &self,
+        tx_hash: &H256,
+        auction_id: AuctionId,
+    ) -> Result<Vec<OrderExecution>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["orders_for_tx"])
             .start_timer();
 
         let mut ex = self.0.acquire().await?;
-        database::orders::order_executions_in_tx(&mut ex, &ByteArray(tx_hash.0))
+        database::orders::order_executions_in_tx(&mut ex, &ByteArray(tx_hash.0), auction_id)
             .map(|result| match result {
                 Ok(execution) => execution.try_into().map_err(Into::into),
                 Err(err) => Err(anyhow::Error::from(err)),
