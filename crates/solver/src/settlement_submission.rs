@@ -406,12 +406,13 @@ impl SubmissionError {
         }
     }
 
-    pub fn transaction_hash(&self) -> Option<H256> {
+    /// Returns the transaction hash of a reverted on-chain settlement.
+    pub fn revert_transaction_hash(&self) -> Option<H256> {
         match self {
             Self::SimulationRevert(_) => None,
             Self::Timeout => None,
             Self::Revert(hash) => Some(*hash),
-            Self::Canceled(hash) => Some(*hash),
+            Self::Canceled(_) => None,
             Self::Disabled(_) => None,
             Self::Other(_) => None,
         }
