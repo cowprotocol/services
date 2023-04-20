@@ -12,7 +12,7 @@ use {
         order_balance_filter::BalancedOrder,
         settlement::SettlementEncoder,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{ensure, Context, Result},
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
@@ -42,7 +42,7 @@ impl OrderConverter {
             order,
             available_sell_token_balance,
         }: BalancedOrder,
-    ) -> Result<LimitOrder, OrderConversionError> {
+    ) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -50,7 +50,10 @@ impl OrderConverter {
             order.data.buy_token
         };
 
-        let remaining = shared::remaining_amounts::Remaining::from_order(&order)?;
+        let remaining = shared::remaining_amounts::Remaining::from_order_with_balance(
+            &order,
+            available_sell_token_balance,
+        )?;
 
         let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) if !order.data.partially_fillable => {
@@ -69,46 +72,13 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let mut solver_fee = remaining.remaining(order.metadata.solver_fee)?;
-        let mut sell_amount = remaining.remaining(sell_amount)?;
-        let mut buy_amount = remaining.remaining(order.data.buy_amount)?;
-
-        // Partially fillable orders are included in the auction when there is at least
-        // 1 atom balance available.
-        if order.data.partially_fillable {
-            let need = sell_amount
-                .checked_add(remaining.remaining(order.data.fee_amount)?)
-                .context("partially fillable need calculation overflow")?;
-            let have = available_sell_token_balance;
-            if have.is_zero() {
-                return Err(OrderConversionError::Other(anyhow!(
-                    "unexpected 0 balance for partially fillable order"
-                )));
-            }
-
-            tracing::trace!(%need, %have, "partially fillable order conversion");
-            if have < need {
-                solver_fee = solver_fee
-                    .checked_mul(have)
-                    .context("partially fillable solver_fee calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable solver_fee calculation overflow")?;
-                sell_amount = sell_amount
-                    .checked_mul(have)
-                    .context("partially fillable sell_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable sell_amount calculation overflow")?;
-                buy_amount = buy_amount
-                    .checked_mul(have)
-                    .context("partially fillable buy_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable buy_amount calculation overflow")?;
-            }
-        }
-
-        if sell_amount.is_zero() || buy_amount.is_zero() {
-            return Err(OrderConversionError::ZeroAmount);
-        }
+        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
+        let sell_amount = remaining.remaining(sell_amount)?;
+        let buy_amount = remaining.remaining(order.data.buy_amount)?;
+        ensure!(
+            !sell_amount.is_zero() && !buy_amount.is_zero(),
+            "order with 0 amounts",
+        );
 
         Ok(LimitOrder {
             id,
@@ -184,15 +154,6 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 
         Ok(())
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum OrderConversionError {
-    #[error("order scaled to 0 buy or sell amount")]
-    ZeroAmount,
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
 }
 
 #[cfg(test)]
@@ -504,10 +465,7 @@ pub mod tests {
         sell.order.metadata.executed_sell_amount_before_fees = 99_u32.into();
         sell.order.metadata.executed_buy_amount = 10_u32.into();
 
-        assert!(matches!(
-            converter.normalize_limit_order(sell),
-            Err(OrderConversionError::ZeroAmount)
-        ));
+        assert!(converter.normalize_limit_order(sell).is_err());
 
         let buy = Order {
             data: OrderData {
@@ -533,9 +491,6 @@ pub mod tests {
         buy.order.metadata.executed_sell_amount_before_fees = 10_u32.into();
         buy.order.metadata.executed_buy_amount = 99_u32.into();
 
-        assert!(matches!(
-            converter.normalize_limit_order(buy),
-            Err(OrderConversionError::ZeroAmount)
-        ));
+        assert!(converter.normalize_limit_order(buy).is_err());
     }
 }

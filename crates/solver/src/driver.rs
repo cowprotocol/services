@@ -8,7 +8,7 @@ use {
         auction_preprocessing,
         driver_logger::DriverLogger,
         in_flight_orders::InFlightOrders,
-        liquidity::order_converter::{OrderConversionError, OrderConverter},
+        liquidity::order_converter::OrderConverter,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::SolverMetrics,
         order_balance_filter::OrderBalanceFilter,
@@ -301,17 +301,12 @@ impl Driver {
             .into_iter()
             .filter_map(|order| {
                 let uid = order.order.metadata.uid;
-                let partially_fillable = order.order.data.partially_fillable;
                 match self.order_converter.normalize_limit_order(order) {
                     Ok(order) => Some(order),
-                    Err(OrderConversionError::ZeroAmount) if partially_fillable => {
-                        tracing::debug!(order = %uid, "skipping dust order");
-                        None
-                    }
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
-                        tracing::error!(?err, "error normalizing limit order");
+                        tracing::error!(?err, order = %uid, "error normalizing limit order");
                         None
                     }
                 }

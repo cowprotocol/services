@@ -113,7 +113,7 @@ impl Settlement {
                 .normalize_limit_order(solver::order_balance_filter::BalancedOrder::full(
                     boundary_order,
                 ))
-                .map_err(|err| Error::Boundary(err.into()))?;
+                .map_err(Error::Boundary)?;
             settlement
                 .with_liquidity(&boundary_limit_order, execution)
                 .map_err(Error::Boundary)?;
