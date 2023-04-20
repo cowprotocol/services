@@ -131,7 +131,7 @@ impl DriverLogger {
                 tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver_name);
-                if let Some(transaction_hash) = err.transaction_hash() {
+                if let Some(transaction_hash) = err.revert_transaction_hash() {
                     if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
                         tracing::debug!(?err, "access list metric not saved");
                     }
