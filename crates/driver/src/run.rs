@@ -80,13 +80,13 @@ pub async fn run(
 }
 
 fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
-    let simulator = match &config.tenderly {
+    let simulator = match config.tenderly.as_ref() {
         Some(tenderly) => Simulator::tenderly(
             simulator::tenderly::Config {
-                url: tenderly.url.to_owned(),
-                api_key: tenderly.api_key.to_owned(),
-                user: tenderly.user.to_owned(),
-                project: tenderly.project.to_owned(),
+                fork: tenderly.fork.clone(),
+                api_key: tenderly.api_key.clone(),
+                user: tenderly.user.clone(),
+                project: tenderly.project.clone(),
                 save: tenderly.save,
                 save_if_fails: tenderly.save_if_fails,
             },

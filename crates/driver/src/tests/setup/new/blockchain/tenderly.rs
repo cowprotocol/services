@@ -1,5 +1,7 @@
 //! Code for interacting with Tenderly during test setup.
 
+use std::io::Write;
+
 use {
     ethcontract::H160,
     std::{collections::HashMap, path::Path},
@@ -14,7 +16,6 @@ pub struct Tenderly {
 
 /// Create a Tenderly fork starting from the mainnet genesis block.
 pub async fn fork(tenderly: Tenderly) -> Fork {
-    dbg!(&tenderly);
     let client = reqwest::Client::new();
     let resp = client
         .post(format!(
@@ -107,6 +108,11 @@ impl Fork {
                 })
                 .collect(),
         };
+        dbg!("verify req");
+        std::fs::File::create("verify.json")
+            .unwrap()
+            .write_all(serde_json::to_string_pretty(&req).unwrap().as_bytes())
+            .unwrap();
         let resp = client
             .post(format!(
                 "https://api.tenderly.co/api/v1/account/{}/project/{}/fork/{}/verify",
@@ -118,6 +124,7 @@ impl Fork {
             .await
             .unwrap();
         let status = resp.status();
+        dbg!(resp.text().await.unwrap());
         assert_eq!(status, 200);
     }
 }

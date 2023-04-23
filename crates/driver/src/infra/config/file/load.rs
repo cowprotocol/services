@@ -98,7 +98,7 @@ pub async fn load(path: &Path) -> infra::Config {
             })
             .collect(),
         tenderly: config.tenderly.map(|config| simulator::tenderly::Config {
-            url: config.url,
+            fork: config.fork,
             api_key: config.api_key,
             user: config.user,
             project: config.project,

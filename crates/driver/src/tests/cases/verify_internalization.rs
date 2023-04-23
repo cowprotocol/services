@@ -68,8 +68,12 @@ async fn non_internalized_simulation_fails() {
     // of improving this test suite, I want to make such failures easy to debug.
     // So instead of fixing this now, I will use this to drive the improvements
     // to the debugging experience, which I will implement in a follow-up PR.
-    /*
     let test = setup()
+        .tenderly(setup::new::Tenderly {
+            user: "gp-v2".to_owned(),
+            project: "niksa-".to_owned(),
+            key: "LU0ldRKOdvSKsooOFYGdEOK6Vpy2AFOL".to_owned(),
+        })
         .pool(
             "A",
             1000000000000000000000u128.into(),
@@ -90,6 +94,5 @@ async fn non_internalized_simulation_fails() {
 
     let solve = test.solve().await;
 
-    solve.err("FailingInternalization");
-    */
+    solve.err().kind("FailingInternalization");
 }

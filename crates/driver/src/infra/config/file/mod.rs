@@ -156,8 +156,8 @@ pub struct ContractsConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct TenderlyConfig {
-    /// Optionally override the Tenderly API URL.
-    url: Option<Url>,
+    /// Optionally use a Tenderly fork.
+    fork: Option<String>,
 
     /// Authentication key for the Tenderly API.
     api_key: String,

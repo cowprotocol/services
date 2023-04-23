@@ -2,7 +2,7 @@ use {crate::domain::eth, thiserror::Error};
 
 mod dto;
 
-const DEFAULT_URL: &str = "https://api.tenderly.co/api";
+const API_URL: &str = "https://api.tenderly.co";
 
 #[derive(Debug, Clone)]
 pub(super) struct Tenderly {
@@ -14,8 +14,8 @@ pub(super) struct Tenderly {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// The URL of the Tenderly API.
-    pub url: Option<reqwest::Url>,
+    /// Optional Tenderly fork to use for simulation.
+    pub fork: Option<String>,
     /// The Tenderly API key.
     pub api_key: String,
     /// The user associated with the API key.
@@ -40,16 +40,15 @@ impl Tenderly {
         let mut api_key = reqwest::header::HeaderValue::from_str(&config.api_key).unwrap();
         api_key.set_sensitive(true);
         headers.insert("x-access-key", api_key);
+        let fork = config
+            .fork
+            .as_ref()
+            .map(|fork| format!("/fork/{fork}"))
+            .unwrap_or_default();
         Self {
             endpoint: reqwest::Url::parse(&format!(
-                "{}/v1/account/{}/project/{}/simulate",
-                config
-                    .url
-                    .as_ref()
-                    .map(|url| url.to_string())
-                    .unwrap_or_else(|| DEFAULT_URL.to_owned()),
-                config.user,
-                config.project
+                "{API_URL}/api/v1/account/{}/project/{}{fork}/simulate",
+                config.user, config.project
             ))
             .unwrap(),
             client: reqwest::ClientBuilder::new()
@@ -66,7 +65,7 @@ impl Tenderly {
         tx: eth::Tx,
         generate_access_list: GenerateAccessList,
     ) -> Result<Simulation, Error> {
-        let res: dto::Response = self
+        let res = self
             .client
             .post(self.endpoint.clone())
             .json(&dto::Request {
@@ -86,11 +85,29 @@ impl Tenderly {
             })
             .send()
             .await?
-            .error_for_status()?
-            .json()
-            .await?;
+            .error_for_status()?;
+        let res = res.text().await?;
+        tracing::debug!("tenderly simulation response: {}", res);
+        let res: dto::Response = serde_json::from_str(&res)?;
         Ok(res.into())
     }
+
+    // TODO Looks like I don't need this
+    // TODO Probably inline this
+    /*
+    fn simulation_link(&self, tx: &eth::Tx) -> String {
+        let fork = self
+            .config
+            .fork
+            .as_ref()
+            .map(|fork| format!("/fork/{fork}"))
+            .unwrap_or_default();
+        format!(
+            "{DASHBOARD_URL}/{}/{}{fork}/simulation/new",
+            self.config.user, self.config.project
+        )
+    }
+    */
 }
 
 #[derive(Debug)]
@@ -107,4 +124,7 @@ pub(super) enum GenerateAccessList {
 
 #[derive(Debug, Error)]
 #[error("tenderly error")]
-pub struct Error(#[from] reqwest::Error);
+pub enum Error {
+    Reqwest(#[from] reqwest::Error),
+    Json(#[from] serde_json::Error),
+}

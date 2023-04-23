@@ -21,7 +21,7 @@ use {
     num::ToPrimitive,
     rand::Rng,
     settlement::Settlement,
-    std::collections::HashMap,
+    std::{collections::HashMap, str::FromStr},
 };
 
 pub mod interaction;
@@ -123,6 +123,8 @@ impl Solution {
             .simulate(eth, simulator, auction, settlement::Internalization::Enable)
             .await?;
 
+        // TODO Now that I'm reading this, it sounds like it should be part of
+        // simulate() and not be here at all
         // Ensure that the solver account has enough Ether balance to mine the
         // transaction. Simulations failing on insufficient gas is not
         // guaranteed by all nodes.
@@ -164,6 +166,8 @@ impl Solution {
         simulator: &Simulator,
         auction: &competition::Auction,
         internalization: settlement::Internalization,
+        // TODO Git blame when did this start returning settlement::Verified what is this
+        // This isn't VERIFIED yet, it's just simulated!!!!! The types are wrong
     ) -> Result<settlement::Verified, Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
@@ -173,8 +177,9 @@ impl Solution {
         // on transferring ETH into a smart contract, which some contracts exceed unless
         // the access list is already specified.
 
-        // The solution is to do access list estimation in two steps: first, simulate
-        // moving 1 wei into every smart contract to get a partial access list.
+        // The solution is to do access list estimation in multiple steps: first,
+        // simulate moving 1 wei into every smart contract to get a partial
+        // access list.
         let partial_access_lists = try_join_all(self.user_trades().map(|trade| async {
             if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
                 return Ok(Default::default());
@@ -193,15 +198,35 @@ impl Solution {
             .into_iter()
             .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
 
+        dbg!("after partial access list simulation");
+        dbg!(eth
+            .balance(
+                eth::H160::from_str("0x72b92ee5f847fbb0d243047c263acd40c34a63b9")
+                    .unwrap()
+                    .into()
+            )
+            .await
+            .unwrap());
+
         // Encode the settlement with the partial access list.
         let settlement = Settlement::encode(eth, auction, self, internalization).await?;
         let tx = settlement.clone().tx().set_access_list(partial_access_list);
 
-        // Second, simulate the full access list, passing the partial access
+        // Simulate the full access list, passing the partial access
         // list into the simulation. This way the settlement contract does not
         // fail, and hence the full access list estimation also does not fail.
         let access_list = simulator.access_list(tx.clone()).await?;
         let tx = tx.set_access_list(access_list.clone());
+
+        dbg!("after full access list simulation");
+        dbg!(eth
+            .balance(
+                eth::H160::from_str("0x72b92ee5f847fbb0d243047c263acd40c34a63b9")
+                    .unwrap()
+                    .into()
+            )
+            .await
+            .unwrap());
 
         // Third, get the gas parameters for the settlement using the full
         // access list.

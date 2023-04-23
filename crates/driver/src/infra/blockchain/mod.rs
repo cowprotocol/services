@@ -15,7 +15,8 @@ pub use self::contracts::Contracts;
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
-    web3: DynWeb3,
+    // TODO Make this private again
+    pub web3: DynWeb3,
     chain_id: eth::ChainId,
     network_id: eth::NetworkId,
     contracts: Contracts,

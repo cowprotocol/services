@@ -207,13 +207,19 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        log::debug!("deployed WETH");
+        log::debug!("deployed WETH at {:?}", weth.address());
+
+        let code = web3.eth().code(weth.address(), None).await.unwrap();
+        dbg!(hex::encode(code.0));
+
+        /*
         if let Some(tenderly) = tenderly.as_ref() {
             tenderly
                 .verify(weth.address(), contracts::source::weth9())
                 .await;
             log::debug!("verified WETH");
         }
+        */
         wait_for(
             &web3,
             ethcontract::transaction::TransactionBuilder::new(web3.clone())
@@ -239,6 +245,7 @@ impl Blockchain {
         .await
         .unwrap();
         log::debug!("deployed BalancerV2Authorizer");
+        /*
         if let Some(tenderly) = tenderly.as_ref() {
             tenderly
                 .verify(
@@ -248,6 +255,7 @@ impl Blockchain {
                 .await;
             log::debug!("verified BalancerV2Authorizer");
         }
+        */
         log::debug!("deploying BalancerV2Vault");
         let vault = wait_for(
             &web3,
@@ -287,7 +295,7 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        log::debug!("deployed GPv2Settlement");
+        log::debug!("deployed GPv2Settlement at {:?}", settlement.address());
         if let Some(tenderly) = tenderly.as_ref() {
             tenderly
                 .verify(settlement.address(), contracts::source::gp_v2_settlement())

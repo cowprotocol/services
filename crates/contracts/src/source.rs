@@ -15,7 +15,7 @@ pub fn weth9() -> Source {
         dir: path("weth"),
         file: "WETH9.sol",
         name: "WETH9",
-        compiler_version: "v0.4.19",
+        compiler_version: "v0.4.22",
         optimizations: false,
         optimization_runs: 200,
     }

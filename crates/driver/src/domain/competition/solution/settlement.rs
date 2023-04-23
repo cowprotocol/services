@@ -100,10 +100,15 @@ impl Verified {
     }
 }
 
+// TODO Fix this. "Gas parameters" is not a real abstraction, and fetching
+// the gas price probably shouldn't be done as part of settlement verification,
+// since it's not used for verification and it does not represent a result of
+// verification.
 /// Gas parameters associated with a settlement.
 #[derive(Clone, Copy, Debug)]
 pub struct Gas {
-    /// The gas estimate, in gas units, for executing a settlement transaction.
+    /// The gas estimate, in gas units, for executing the settlement
+    /// transaction.
     pub estimate: eth::Gas,
     /// The gas limit, in gas units, for a settlement transaction. This is
     /// computed by adding a buffer to the gas estimate to allow for small
@@ -151,7 +156,7 @@ impl Gas {
         }
     }
 
-    /// Returns the minimum required balance in Ether that an account needs in
+    /// The minimum required balance in Ether that an account needs in
     /// order to afford the specified gas parameters.
     pub fn required_balance(&self) -> eth::Ether {
         self.limit * self.price

@@ -158,11 +158,9 @@ async fn create_config_file(
                api-key = "{}"
                user = "{}"
                project = "{}"
+               fork = "{}"
                save = true
                save-if-fails = true
-
-               [debug]
-               tenderly-fork = "{}"
                "#,
             fork.tenderly.key, fork.tenderly.user, fork.tenderly.project, fork.id
         )
