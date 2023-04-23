@@ -68,16 +68,19 @@ impl Remaining {
                 .checked_add(order.data.fee_amount)
                 .context("overflow sell + fee amount")?;
 
-            let execution = if sell_balance >= sell && executed.is_zero() {
+            let execution = if executed.is_zero() {
                 ratio::one()
             } else {
                 ratio::zero()
             };
 
-            Ok(Self {
-                execution,
-                balance: ratio::one(),
-            })
+            let balance = if sell_balance >= sell {
+                ratio::one()
+            } else {
+                ratio::zero()
+            };
+
+            Ok(Self { execution, balance })
         }
     }
 
