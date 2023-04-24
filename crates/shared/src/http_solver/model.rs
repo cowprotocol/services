@@ -660,7 +660,7 @@ mod tests {
             }),
         };
 
-        let result = serde_json::to_value(&model).unwrap();
+        let result = serde_json::to_value(model).unwrap();
 
         let expected = json!({
           "tokens": {
@@ -1071,7 +1071,7 @@ mod tests {
     #[test]
     fn serialize_simulated_transaction() {
         assert_eq!(
-            serde_json::to_value(&SimulatedTransaction {
+            serde_json::to_value(SimulatedTransaction {
                 access_list: Some(vec![AccessListItem {
                     address: H160::from_low_u64_be(1),
                     storage_keys: vec![H256::from_low_u64_be(2)]
@@ -1106,7 +1106,7 @@ mod tests {
     #[test]
     fn serialize_rejection_non_bufferable_tokens_used() {
         assert_eq!(
-            serde_json::to_value(&SolverRejectionReason::NonBufferableTokensUsed(
+            serde_json::to_value(SolverRejectionReason::NonBufferableTokensUsed(
                 [H160::from_low_u64_be(1), H160::from_low_u64_be(2)]
                     .into_iter()
                     .collect()
@@ -1121,7 +1121,7 @@ mod tests {
     #[test]
     fn serialize_rejection_too_high_score() {
         assert_eq!(
-            serde_json::to_value(&SolverRejectionReason::TooHighScore {
+            serde_json::to_value(SolverRejectionReason::TooHighScore {
                 surplus: 1300.into(),
                 fees: 37.into(),
                 max_score: 1337.into(),

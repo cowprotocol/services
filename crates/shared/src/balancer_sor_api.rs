@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn serialize_query() {
         assert_eq!(
-            serde_json::to_value(&Query {
+            serde_json::to_value(Query {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
