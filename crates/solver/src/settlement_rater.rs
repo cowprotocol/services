@@ -96,8 +96,8 @@ impl SettlementRater {
         .ok()
     }
 
-    /// Simulates the settlements and returns the gas used (or reason for
-    /// revert) as well as the access list for each settlement.
+    /// Simulates the settlement and returns the gas used or the reason for a
+    /// revert.
     async fn simulate_settlement(
         &self,
         solver: &SolverInfo,
