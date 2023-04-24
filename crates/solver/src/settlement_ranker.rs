@@ -171,11 +171,9 @@ impl SettlementRanker {
             );
         }
 
-        let (mut rated_settlements, errors): (Vec<_>, Vec<_>) = join_all(
-            solver_settlements
-                .into_iter()
-                .enumerate()
-                .map(|(i, (solver, settlement))| async move {
+        let (mut rated_settlements, errors): (Vec<_>, Vec<_>) =
+            join_all(solver_settlements.into_iter().enumerate().map(
+                |(i, (solver, settlement))| async move {
                     let simulation = self
                         .settlement_rater
                         .rate_settlement(
@@ -190,14 +188,21 @@ impl SettlementRanker {
                         )
                         .await;
                     (solver, simulation)
-                }),
-        )
-        .await
-        .into_iter()
-        .partition_map(|(solver, r)| match r.unwrap() {
-            Rating::Ok(r) => itertools::Either::Left((solver, r)),
-            Rating::Err(err) => itertools::Either::Right((solver, err)),
-        });
+                },
+            ))
+            .await
+            .into_iter()
+            .filter_map(|(solver, result)| match result {
+                Ok(res) => Some((solver, res)),
+                Err(err) => {
+                    tracing::warn!(?err, "error in settlement rating logic");
+                    None
+                }
+            })
+            .partition_map(|(solver, result)| match result {
+                Rating::Ok(r) => itertools::Either::Left((solver, r)),
+                Rating::Err(err) => itertools::Either::Right((solver, err)),
+            });
 
         tracing::info!(
             "{} settlements passed simulation and {} failed",
