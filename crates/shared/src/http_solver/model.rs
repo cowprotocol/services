@@ -416,9 +416,11 @@ pub struct TransactionWithError {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulatedTransaction {
-    /// The simulation was done on top of all transactions from the given block
-    /// number
+    /// The simulation was done at the beginning of the block
     pub block_number: u64,
+    /// Index of the transaction inside the block the transaction was simulated
+    /// on
+    pub tx_index: u64,
     /// Is transaction simulated with internalized interactions or without
     pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some
@@ -1077,6 +1079,7 @@ mod tests {
                     storage_keys: vec![H256::from_low_u64_be(2)]
                 }]),
                 block_number: 15848799,
+                tx_index: 0,
                 from: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 data: vec![19, 250, 73],
@@ -1093,6 +1096,7 @@ mod tests {
                     ]
                 }],
                 "blockNumber": 15848799,
+                "txIndex": 0,
                 "data": "0x13fa49",
                 "from": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
                 "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
