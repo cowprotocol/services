@@ -327,9 +327,9 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Arc<dyn PriceEstimating>> {
         let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.optimal)?);
-        Ok(Arc::new(
-            self.sanitized(CompetitionPriceEstimator::new(estimators)),
-        ))
+        Ok(Arc::new(self.sanitized(
+            CompetitionPriceEstimator::new(estimators).with_preditions(),
+        )))
     }
 
     pub fn fast_price_estimator(

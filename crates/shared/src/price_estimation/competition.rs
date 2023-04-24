@@ -115,11 +115,16 @@ impl RacingCompetitionPriceEstimator {
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            competition: (successful_results_for_early_return.get() >= inner.len())
-                .then_some(Default::default()),
             inner,
             successful_results_for_early_return,
+            competition: None,
         }
+    }
+
+    /// Enables predicting the winning quote and gathering of related metrics.
+    pub fn with_preditions(mut self) -> Self {
+        self.competition = Some(Default::default());
+        self
     }
 }
 
@@ -230,6 +235,12 @@ impl CompetitionPriceEstimator {
         Self {
             inner: RacingCompetitionPriceEstimator::new(inner, number_of_estimators),
         }
+    }
+
+    /// Enables predicting the winning quote and gathering of related metrics.
+    pub fn with_preditions(mut self) -> Self {
+        self.inner.competition = Some(Default::default());
+        self
     }
 }
 
