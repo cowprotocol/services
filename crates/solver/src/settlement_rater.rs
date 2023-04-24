@@ -58,6 +58,7 @@ pub trait SettlementRating: Send + Sync {
         settlement: Settlement,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
+        id: usize,
     ) -> Result<Rating>;
 }
 
@@ -156,6 +157,7 @@ impl SettlementRating for SettlementRater {
         settlement: Settlement,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
+        id: usize,
     ) -> Result<Rating> {
         // first simulate settlements without internalizations to make sure they pass
         let simulation_result = self
@@ -240,8 +242,7 @@ impl SettlementRating for SettlementRater {
         };
 
         let rated_settlement = RatedSettlement {
-            // TODO refactor or pass in?
-            id: Default::default(),
+            id,
             settlement,
             surplus: inputs.surplus_given,
             earned_fees,

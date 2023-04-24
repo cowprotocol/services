@@ -174,7 +174,8 @@ impl SettlementRanker {
         let (mut rated_settlements, errors): (Vec<_>, Vec<_>) = join_all(
             solver_settlements
                 .into_iter()
-                .map(|(solver, settlement)| async {
+                .enumerate()
+                .map(|(i, (solver, settlement))| async move {
                     let simulation = self
                         .settlement_rater
                         .rate_settlement(
@@ -185,6 +186,7 @@ impl SettlementRanker {
                             settlement,
                             external_prices,
                             gas_price,
+                            i,
                         )
                         .await;
                     (solver, simulation)
