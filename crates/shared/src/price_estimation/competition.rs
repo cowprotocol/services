@@ -8,8 +8,95 @@ use {
     },
     futures::stream::StreamExt,
     model::order::OrderKind,
-    std::{cmp::Ordering, num::NonZeroUsize, sync::Arc},
+    primitive_types::H160,
+    std::{
+        cmp::Ordering,
+        collections::HashMap,
+        num::NonZeroUsize,
+        sync::{Arc, RwLock},
+    },
 };
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct Trade {
+    sell_token: H160,
+    buy_token: H160,
+    kind: OrderKind,
+}
+
+impl From<&Query> for Trade {
+    fn from(query: &Query) -> Self {
+        Self {
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
+            kind: query.kind,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Competition {
+    /// How many quotes were requested for this trade.
+    total_quotes: u64,
+    /// How often each price estimator managed to offer the best quote.
+    winners: HashMap<String, u64>,
+}
+
+struct Prediction {
+    /// Which price estimator will probably provide the best quote.
+    winner: String,
+    /// How confident we are in the pick.
+    confidence: f64,
+}
+
+/// Collects historic data on which price estimator tends to give the best quote
+/// for what kind of trade.
+#[derive(Debug, Default)]
+struct HistoricalWinners(RwLock<HashMap<Trade, Competition>>);
+
+impl HistoricalWinners {
+    /// Updates the metrics for the given trade.
+    pub fn record_winner(&self, trade: Trade, winner: String) {
+        let mut lock = self.0.write().unwrap();
+        let mut competition = lock.entry(trade).or_default();
+        competition.total_quotes += 1;
+        *competition.winners.entry(winner).or_default() += 1;
+    }
+
+    /// Predicts which price estimator will most likely provide the best quote
+    /// for the requested trade.
+    pub fn predict_winner(&self, quote: &Trade) -> Option<Prediction> {
+        let lock = self.0.read().unwrap();
+        let competition = lock.get(quote)?;
+        if competition.total_quotes < 100 {
+            // Not enough data to generate a meaningful prediction.
+            return None;
+        }
+        let mut prediction: Option<Prediction> = None;
+        let mut wins_evaluated = 0;
+        for (estimator, wins) in &competition.winners {
+            let confidence = *wins as f64 / competition.total_quotes as f64;
+            if prediction
+                .as_ref()
+                .map(|p| p.confidence)
+                .unwrap_or_default()
+                <= confidence
+            {
+                prediction = Some(Prediction {
+                    winner: estimator.clone(),
+                    confidence,
+                });
+            }
+            wins_evaluated += wins;
+            let remaining_likelyhood = (competition.total_quotes - wins_evaluated) as f64
+                / competition.total_quotes as f64;
+            if remaining_likelyhood < prediction.as_ref().unwrap().confidence {
+                return prediction;
+            }
+        }
+        prediction
+    }
+}
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Returns a price estimation
@@ -18,6 +105,7 @@ use {
 pub struct RacingCompetitionPriceEstimator {
     inner: Vec<(String, Arc<dyn PriceEstimating>)>,
     successful_results_for_early_return: NonZeroUsize,
+    competition: Option<HistoricalWinners>,
 }
 
 impl RacingCompetitionPriceEstimator {
@@ -27,6 +115,8 @@ impl RacingCompetitionPriceEstimator {
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
+            competition: (successful_results_for_early_return.get() >= inner.len())
+                .then_some(Default::default()),
             inner,
             successful_results_for_early_return,
         }
@@ -43,6 +133,18 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != query.buy_token
         }));
+
+        let predictions: HashMap<_, _> = match &self.competition {
+            Some(competition) => queries
+                .iter()
+                .map(|query| {
+                    let trade = Trade::from(query);
+                    let prediction = competition.predict_winner(&trade);
+                    (trade, prediction)
+                })
+                .collect(),
+            None => Default::default(),
+        };
 
         // Turn the streams from all inner price estimators into a single stream.
         let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
@@ -81,6 +183,23 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
             let estimator = self.inner[estimator_index].0.as_str();
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
+
+            // Collect stats for winner predictions.
+            if let (Some(competition), Ok(_)) = (&self.competition, &result) {
+                let trade = Trade::from(query);
+                if let Some(Some(prediction)) = predictions.get(&trade) {
+                    let label = match prediction.winner == estimator {
+                        true => "correct",
+                        false => "incorrect",
+                    };
+                    metrics()
+                        .quote_predictions
+                        .with_label_values(&[label])
+                        .inc();
+                }
+                competition.record_winner(trade, estimator.to_owned());
+            }
+
             metrics()
                 .queries_won
                 .with_label_values(&[estimator, query.kind.label()])
@@ -188,6 +307,11 @@ struct Metrics {
     /// estimators behave for buy vs sell orders.
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
+
+    /// Number of quotes we (un)successfully predicted the winning price
+    /// estimator for.
+    #[metric(labels("result"))]
+    quote_predictions: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
