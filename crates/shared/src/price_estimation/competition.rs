@@ -39,12 +39,12 @@ struct Competition {
     /// How many quotes were requested for this trade.
     total_quotes: u64,
     /// How often each price estimator managed to offer the best quote.
-    winners: HashMap<String, u64>,
+    winners: HashMap<Arc<String>, u64>,
 }
 
 struct Prediction {
     /// Which price estimator will probably provide the best quote.
-    winner: String,
+    winner: Arc<String>,
     /// How confident we are in the pick.
     confidence: f64,
 }
@@ -56,7 +56,7 @@ struct HistoricalWinners(RwLock<HashMap<Trade, Competition>>);
 
 impl HistoricalWinners {
     /// Updates the metrics for the given trade.
-    pub fn record_winner(&self, trade: Trade, winner: String) {
+    pub fn record_winner(&self, trade: Trade, winner: Arc<String>) {
         let mut lock = self.0.write().unwrap();
         let mut competition = lock.entry(trade).or_default();
         competition.total_quotes += 1;
@@ -103,7 +103,7 @@ impl HistoricalWinners {
 /// early if there is a configurable number of successful estimates
 /// for every query or if all price sources returned an estimate.
 pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<(String, Arc<dyn PriceEstimating>)>,
+    inner: Vec<(Arc<String>, Arc<dyn PriceEstimating>)>,
     successful_results_for_early_return: NonZeroUsize,
     competition: Option<HistoricalWinners>,
 }
@@ -115,7 +115,10 @@ impl RacingCompetitionPriceEstimator {
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner,
+            inner: inner
+                .into_iter()
+                .map(|(name, est)| (Arc::new(name), est))
+                .collect(),
             successful_results_for_early_return,
             competition: None,
         }
@@ -186,8 +189,13 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
             // Log and collect metrics.
             let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
-            let estimator = self.inner[estimator_index].0.as_str();
-            tracing::debug!(?query, ?result, estimator, "winning price estimate");
+            let estimator = self.inner[estimator_index].0.clone();
+            tracing::debug!(
+                ?query,
+                ?result,
+                estimator = *estimator,
+                "winning price estimate"
+            );
 
             // Collect stats for winner predictions.
             if let (Some(competition), Ok(_)) = (&self.competition, &result) {
@@ -207,7 +215,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
             metrics()
                 .queries_won
-                .with_label_values(&[estimator, query.kind.label()])
+                .with_label_values(&[estimator.as_str(), query.kind.label()])
                 .inc();
 
             Some((query_index, result))
