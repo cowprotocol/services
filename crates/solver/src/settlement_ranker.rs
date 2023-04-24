@@ -1,15 +1,20 @@
 use {
     crate::{
-        driver::solver_settlements::{self},
+        driver::solver_settlements::{
+            RatedSettlement,
+            {self},
+        },
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
-        settlement_rater::{RatedSolverSettlement, SettlementRating},
+        settlement_rater::{Rating, SettlementRating},
         settlement_simulation::call_data,
-        solver::{SimulationWithError, Solver},
+        solver::{SimulationWithError, Solver, SolverInfo},
     },
     anyhow::Result,
     ethcontract::U256,
+    futures::future::join_all,
     gas_estimation::GasPrice1559,
+    itertools::Itertools,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt},
     number_conversions::big_rational_to_u256,
@@ -28,6 +33,7 @@ use {
 };
 
 type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
+pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement);
 
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
@@ -165,18 +171,39 @@ impl SettlementRanker {
             );
         }
 
-        let (mut rated_settlements, errors) = self
-            .settlement_rater
-            .rate_settlements(solver_settlements, external_prices, gas_price)
-            .await?;
+        let (mut rated_settlements, errors): (Vec<_>, Vec<_>) = join_all(
+            solver_settlements
+                .into_iter()
+                .map(|(solver, settlement)| async {
+                    let simulation = self
+                        .settlement_rater
+                        .rate_settlement(
+                            &SolverInfo {
+                                account: solver.account().clone(),
+                                name: solver.name().to_owned(),
+                            },
+                            settlement,
+                            external_prices,
+                            gas_price,
+                        )
+                        .await;
+                    (solver, simulation)
+                }),
+        )
+        .await
+        .into_iter()
+        .partition_map(|(solver, r)| match r.unwrap() {
+            Rating::Ok(r) => itertools::Either::Left((solver, r)),
+            Rating::Err(err) => itertools::Either::Right((solver, err)),
+        });
 
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
             errors.len(),
         );
-        for error in &errors {
-            error.simulation.solver.notify_auction_result(
+        for (solver, error) in &errors {
+            solver.notify_auction_result(
                 auction_id,
                 AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
                     TransactionWithError {
@@ -189,7 +216,7 @@ impl SettlementRanker {
 
         // Filter out settlements with non-positive score.
         if self.skip_non_positive_score_settlements {
-            rated_settlements.retain(|(solver, settlement, _)| {
+            rated_settlements.retain(|(solver, settlement)| {
                 let positive_score = settlement.score.score() > 0.into();
                 if !positive_score {
                     tracing::debug!(
@@ -207,7 +234,7 @@ impl SettlementRanker {
         }
 
         // Filter out settlements with too high score.
-        rated_settlements.retain(|(solver, settlement, _)| {
+        rated_settlements.retain(|(solver, settlement)| {
             let surplus = big_rational_to_u256(&settlement.surplus).unwrap_or(U256::MAX);
             let fees = big_rational_to_u256(&settlement.solver_fees).unwrap_or(U256::MAX);
             let max_score = surplus.saturating_add(fees);
@@ -233,18 +260,19 @@ impl SettlementRanker {
         // Before sorting, make sure to shuffle the settlements. This is to make sure we
         // don't give preference to any specific solver when there is a score tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
-        rated_settlements.sort_by_key(|s| s.1.score.score());
+        rated_settlements.sort_by_key(|(_, settlement)| settlement.score.score());
 
         rated_settlements
             .iter_mut()
             .rev()
             .enumerate()
-            .for_each(|(i, (solver, settlement, _))| {
+            .for_each(|(i, (solver, settlement))| {
                 self.metrics
                     .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
                 settlement.ranking = i + 1;
                 solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
             });
+        let errors = errors.into_iter().map(|(_, error)| error).collect();
         Ok((rated_settlements, errors))
     }
 }

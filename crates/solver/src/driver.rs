@@ -383,7 +383,7 @@ impl Driver {
             auction: competition_auction,
             solutions: rated_settlements
                 .iter()
-                .map(|(solver, rated_settlement, _)| SolverSettlement {
+                .map(|(solver, rated_settlement)| SolverSettlement {
                     solver: solver.name().to_string(),
                     solver_address: solver.account().address(),
                     objective: Objective {
@@ -429,7 +429,7 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
-        if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
+        if let Some((winning_solver, winning_settlement)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
                 winning_settlement.id,
@@ -470,7 +470,7 @@ impl Driver {
                 // second highest score, or 0 if there is only one score (see CIP20)
                 reference_score: rated_settlements
                     .last()
-                    .map(|(_, settlement, _)| settlement.score.score())
+                    .map(|(_, settlement)| settlement.score.score())
                     .unwrap_or_default(),
                 block_deadline: {
                     let deadline = self.solver_time_limit
@@ -547,7 +547,7 @@ impl Driver {
                 &(winning_solver, winning_settlement),
                 rated_settlements
                     .into_iter()
-                    .map(|(solver, settlement, _)| (solver, settlement))
+                    .map(|(solver, settlement)| (solver, settlement))
                     .collect(),
             );
         }

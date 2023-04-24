@@ -175,9 +175,17 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
+#[derive(Debug, Clone)]
+pub struct SolverInfo {
+    /// Identifier used for metrics and logging.
+    pub name: String,
+    /// Address used for simulating settlements of that solver.
+    pub account: Account,
+}
+
 pub struct Simulation {
     pub settlement: Settlement,
-    pub solver: Arc<dyn Solver>,
+    pub solver: SolverInfo,
     pub transaction: SimulatedTransaction,
 }
 
