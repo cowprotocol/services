@@ -39,14 +39,16 @@ struct Competition {
     /// How many quotes were requested for this trade.
     total_quotes: u64,
     /// How often each price estimator managed to offer the best quote.
-    winners: HashMap<Arc<String>, u64>,
+    /// The list is always sorted based on the number of wins in descending
+    /// order.
+    winners: Vec<(Arc<String>, u64)>,
 }
 
 struct Prediction {
     /// Which price estimator will probably provide the best quote.
     winner: Arc<String>,
     /// How confident we are in the pick.
-    confidence: f64,
+    _confidence: f64,
 }
 
 /// Collects historic data on which price estimator tends to give the best quote
@@ -60,7 +62,23 @@ impl HistoricalWinners {
         let mut lock = self.0.write().unwrap();
         let mut competition = lock.entry(trade).or_default();
         competition.total_quotes += 1;
-        *competition.winners.entry(winner).or_default() += 1;
+        match competition
+            .winners
+            .iter_mut()
+            .enumerate()
+            .find(|(_, w)| w.0 == winner)
+        {
+            Some((index, (_, wins))) => {
+                *wins += 1;
+                if index != 0 {
+                    // make sure the winner is always in the first spot
+                    competition.winners.sort_by_key(|w| std::cmp::Reverse(w.1));
+                }
+            }
+            None => {
+                competition.winners.push((winner, 1));
+            }
+        }
     }
 
     /// Predicts which price estimator will most likely provide the best quote
@@ -72,29 +90,12 @@ impl HistoricalWinners {
             // Not enough data to generate a meaningful prediction.
             return None;
         }
-        let mut prediction: Option<Prediction> = None;
-        let mut wins_evaluated = 0;
-        for (estimator, wins) in &competition.winners {
-            let confidence = *wins as f64 / competition.total_quotes as f64;
-            if prediction
-                .as_ref()
-                .map(|p| p.confidence)
-                .unwrap_or_default()
-                <= confidence
-            {
-                prediction = Some(Prediction {
-                    winner: estimator.clone(),
-                    confidence,
-                });
-            }
-            wins_evaluated += wins;
-            let remaining_likelyhood = (competition.total_quotes - wins_evaluated) as f64
-                / competition.total_quotes as f64;
-            if remaining_likelyhood < prediction.as_ref().unwrap().confidence {
-                return prediction;
-            }
-        }
-        prediction
+        let (estimator, wins) = competition.winners.first()?;
+        let confidence = *wins as f64 / competition.total_quotes as f64;
+        Some(Prediction {
+            winner: estimator.clone(),
+            _confidence: confidence,
+        })
     }
 }
 
