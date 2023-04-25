@@ -134,7 +134,10 @@ impl SettlementRater {
                         transaction: SimulatedTransaction {
                             internalization,
                             access_list,
-                            block_number,
+                            // simulating on block X and tx index A is equal to simulating on block
+                            // X+1 and tx index 0.
+                            block_number: block_number + 1,
+                            tx_index: 0,
                             to: self.settlement_contract.address(),
                             from: solver.account().address(),
                             data: call_data(settlement.clone().encode(internalization)),
