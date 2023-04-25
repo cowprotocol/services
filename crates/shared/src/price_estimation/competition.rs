@@ -34,6 +34,14 @@ impl From<&Query> for Trade {
     }
 }
 
+/// Index of an estimator stored in the [`CompetitionPriceEstimator`] used as an
+/// identifier.
+#[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
+struct EstimatorIndex(usize);
+
+#[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
+struct Wins(u64);
+
 #[derive(Debug, Clone, Default)]
 struct Competition {
     /// How many quotes were requested for this trade.
@@ -41,12 +49,12 @@ struct Competition {
     /// How often each price estimator managed to offer the best quote.
     /// The list is always sorted based on the number of wins in descending
     /// order.
-    winners: Vec<(Arc<String>, u64)>,
+    winners: Vec<(EstimatorIndex, Wins)>,
 }
 
 struct Prediction {
     /// Which price estimator will probably provide the best quote.
-    winner: Arc<String>,
+    winner: EstimatorIndex,
     /// How confident we are in the pick.
     _confidence: f64,
 }
@@ -58,7 +66,7 @@ struct HistoricalWinners(RwLock<HashMap<Trade, Competition>>);
 
 impl HistoricalWinners {
     /// Updates the metrics for the given trade.
-    pub fn record_winner(&self, trade: Trade, winner: Arc<String>) {
+    pub fn record_winner(&self, trade: Trade, winner: EstimatorIndex) {
         let mut lock = self.0.write().unwrap();
         let mut competition = lock.entry(trade).or_default();
         competition.total_quotes += 1;
@@ -69,14 +77,14 @@ impl HistoricalWinners {
             .find(|(_, w)| w.0 == winner)
         {
             Some((index, (_, wins))) => {
-                *wins += 1;
+                wins.0 += 1;
                 if index != 0 {
                     // make sure the winner is always in the first spot
                     competition.winners.sort_by_key(|w| std::cmp::Reverse(w.1));
                 }
             }
             None => {
-                competition.winners.push((winner, 1));
+                competition.winners.push((winner, Wins(1)));
             }
         }
     }
@@ -91,9 +99,9 @@ impl HistoricalWinners {
             return None;
         }
         let (estimator, wins) = competition.winners.first()?;
-        let confidence = *wins as f64 / competition.total_quotes as f64;
+        let confidence = wins.0 as f64 / competition.total_quotes as f64;
         Some(Prediction {
-            winner: estimator.clone(),
+            winner: *estimator,
             _confidence: confidence,
         })
     }
@@ -104,7 +112,7 @@ impl HistoricalWinners {
 /// early if there is a configurable number of successful estimates
 /// for every query or if all price sources returned an estimate.
 pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<(Arc<String>, Arc<dyn PriceEstimating>)>,
+    inner: Vec<(String, Arc<dyn PriceEstimating>)>,
     successful_results_for_early_return: NonZeroUsize,
     competition: Option<HistoricalWinners>,
 }
@@ -116,10 +124,7 @@ impl RacingCompetitionPriceEstimator {
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner: inner
-                .into_iter()
-                .map(|(name, est)| (Arc::new(name), est))
-                .collect(),
+            inner,
             successful_results_for_early_return,
             competition: None,
         }
@@ -184,26 +189,22 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
             // Log and collect metrics.
             let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
-            let estimator = self.inner[estimator_index].0.clone();
-            tracing::debug!(
-                ?query,
-                ?result,
-                estimator = *estimator,
-                "winning price estimate"
-            );
+            let estimator = self.inner[estimator_index].0.as_str();
+            tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
             // Collect stats for winner predictions.
             if let (Some(competition), Ok(_)) = (&self.competition, &result) {
                 let trade = Trade::from(query);
+                let estimator = EstimatorIndex(estimator_index);
                 if let Some(Some(prediction)) = predictions.get(&trade) {
                     metrics().record_prediction(&trade, prediction.winner == estimator);
                 }
-                competition.record_winner(trade, estimator.to_owned());
+                competition.record_winner(trade, estimator);
             }
 
             metrics()
                 .queries_won
-                .with_label_values(&[estimator.as_str(), query.kind.label()])
+                .with_label_values(&[estimator, query.kind.label()])
                 .inc();
 
             Some((query_index, result))
