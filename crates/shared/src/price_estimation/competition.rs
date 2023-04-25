@@ -196,14 +196,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             if let (Some(competition), Ok(_)) = (&self.competition, &result) {
                 let trade = Trade::from(query);
                 if let Some(Some(prediction)) = predictions.get(&trade) {
-                    let label = match prediction.winner == estimator {
-                        true => "correct",
-                        false => "incorrect",
-                    };
-                    metrics()
-                        .quote_predictions
-                        .with_label_values(&[label])
-                        .inc();
+                    metrics().record_prediction(&trade, prediction.winner == estimator);
                 }
                 competition.record_winner(trade, estimator.to_owned());
             }
@@ -325,8 +318,29 @@ struct Metrics {
 
     /// Number of quotes we (un)successfully predicted the winning price
     /// estimator for.
-    #[metric(labels("result"))]
+    #[metric(labels("result", "sell_token", "buy_token", "kind"))]
     quote_predictions: prometheus::IntCounterVec,
+}
+
+impl Metrics {
+    fn record_prediction(&self, trade: &Trade, correct: bool) {
+        let result = match correct {
+            true => "correct",
+            false => "incorrect",
+        };
+        let kind = match trade.kind {
+            OrderKind::Buy => "buy",
+            OrderKind::Sell => "sell",
+        };
+        self.quote_predictions
+            .with_label_values(&[
+                result,
+                hex::encode(trade.sell_token).as_str(),
+                hex::encode(trade.buy_token).as_str(),
+                kind,
+            ])
+            .inc();
+    }
 }
 
 fn metrics() -> &'static Metrics {
