@@ -123,12 +123,6 @@ impl RacingCompetitionPriceEstimator {
             competition: None,
         }
     }
-
-    /// Enables predicting the winning quote and gathering of related metrics.
-    pub fn with_preditions(mut self) -> Self {
-        self.competition = Some(Default::default());
-        self
-    }
 }
 
 impl PriceEstimating for RacingCompetitionPriceEstimator {
@@ -245,8 +239,9 @@ impl CompetitionPriceEstimator {
         }
     }
 
-    /// Enables predicting the winning quote and gathering of related metrics.
-    pub fn with_preditions(mut self) -> Self {
+    /// Enables predicting the winning price estimator and gathering of related
+    /// metrics.
+    pub fn with_predictions(mut self) -> Self {
         self.inner.competition = Some(Default::default());
         self
     }
