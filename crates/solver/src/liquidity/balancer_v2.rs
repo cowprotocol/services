@@ -172,7 +172,10 @@ impl SettlementHandler {
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
         if let Some(approval) = self.allowances.approve_token(execution.input_max.clone())? {
-            encoder.append_to_execution_plan_internalizable(Arc::new(approval), execution.internalizable);
+            encoder.append_to_execution_plan_internalizable(
+                Arc::new(approval),
+                execution.internalizable,
+            );
         }
         encoder.append_to_execution_plan_internalizable(
             Arc::new(BalancerSwapGivenOutInteraction {

@@ -6,6 +6,7 @@ use {
     },
     shared::{external_prices::ExternalPrices, http_solver::model::InternalizationStrategy},
     solver::{interactions::Erc20ApproveInteraction, liquidity::slippage::SlippageCalculator},
+    std::sync::Arc,
 };
 
 const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100; // 1%

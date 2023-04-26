@@ -3,8 +3,6 @@
 //! This simple solver will simply use the 1Inch API to get a quote for a
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
-use std::sync::Arc;
-
 use {
     super::{
         single_order_solver::{
@@ -38,7 +36,10 @@ use {
             SwapQuery,
         },
     },
-    std::fmt::{self, Display, Formatter},
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+    },
 };
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.

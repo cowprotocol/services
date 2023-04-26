@@ -233,11 +233,16 @@ impl SingleOrderSolver {
         };
 
         match single {
-            Some(settlement) => SolveResult::Solved(IntermediateSettlement {
-                settlement,
-                order,
-                executed_amount: fill.full_execution_amount(),
-            }),
+            Some(settlement) => {
+                if let Some(order_uid) = order.id.order_uid() {
+                    self.fills.increase_next_try(order_uid);
+                }
+                SolveResult::Solved(IntermediateSettlement {
+                    settlement,
+                    order,
+                    executed_amount: fill.full_execution_amount(),
+                })
+            }
             None => {
                 if let Some(order_uid) = order.id.order_uid() {
                     self.fills.reduce_next_try(order_uid);
@@ -335,7 +340,9 @@ impl Solver for SingleOrderSolver {
                 {
                     SolveResult::Failed => continue,
                     SolveResult::Retryable(order) => orders.push_back(order),
-                    SolveResult::Solved(settlement) => intermediates.push(settlement),
+                    SolveResult::Solved(settlement) => {
+                        intermediates.push(settlement);
+                    }
                 }
             }
         };
@@ -364,6 +371,13 @@ impl Solver for SingleOrderSolver {
             .collect();
 
         self.fills.collect_garbage();
+
+        // Shuffle so that in the case a buggy solver keeps returning some amount
+        // of invalid settlements first we have a chance to make progress.
+        settlements.shuffle(&mut rand::thread_rng());
+        // Keep at most this many settlements to not overwhelm the node with too many
+        // simulations.
+        settlements.truncate(self.max_settlements_per_solver);
 
         merge::merge_settlements(
             self.max_merged_settlements,
@@ -620,6 +634,7 @@ mod tests {
             metrics::NoopMetrics,
             order_balance_filter::BalancedOrder,
             settlement::TradeExecution,
+            settlement_rater::MockSettlementRating,
         },
         anyhow::anyhow,
         ethcontract::Bytes,
@@ -633,6 +648,11 @@ mod tests {
     };
 
     fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
+        let mut settlement_rating = MockSettlementRating::new();
+        settlement_rating
+            .expect_rate_settlement()
+            .returning(|_, _, _, _, _| Ok(Rating::Ok(Default::default())));
+
         SingleOrderSolver {
             inner: Box::new(inner),
             metrics: Arc::new(NoopMetrics::default()),
@@ -641,6 +661,7 @@ mod tests {
             order_prioritization_config: Default::default(),
             rate_limiter: RateLimiter::test(),
             fills: fills::Fills::new(1.into()),
+            settlement_rater: Arc::new(settlement_rating),
         }
     }
 
@@ -712,6 +733,9 @@ mod tests {
                     gas_estimate: U256::zero(),
                 })),
             });
+        inner
+            .expect_account()
+            .return_const(Account::Local(Default::default(), None));
         inner.expect_name().returning(|| "");
 
         let solver = test_solver(inner);
