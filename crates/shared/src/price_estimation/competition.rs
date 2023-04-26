@@ -70,17 +70,18 @@ impl HistoricalWinners {
         let mut lock = self.0.write().unwrap();
         let mut competition = lock.entry(trade).or_default();
         competition.total_quotes += 1;
-        match competition
+        let winner_index = competition
             .winners
-            .iter_mut()
+            .iter()
             .enumerate()
-            .find(|(_, w)| w.0 == winner)
-        {
-            Some((index, (_, wins))) => {
+            .find_map(|(index, (estimator, _))| (*estimator == winner).then_some(index));
+        match winner_index {
+            Some(winner_index) => {
+                let (_, mut wins) = competition.winners[winner_index];
                 wins.0 += 1;
-                if index != 0 {
-                    // make sure the winner is always in the first spot
-                    competition.winners.sort_by_key(|w| std::cmp::Reverse(w.1));
+                if winner_index != 0 && competition.winners[0].1 < wins {
+                    // make sure the estimator with the most wins is always in the front
+                    competition.winners.swap(0, winner_index);
                 }
             }
             None => {
