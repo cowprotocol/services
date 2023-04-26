@@ -51,7 +51,8 @@ impl ScoreCalculator {
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
-        let score = success_probability * (surplus + fees) - gas_amount * gas_price;
+        let score = success_probability * (surplus + fees - gas_amount * gas_price)
+            - (1. - success_probability) * 21000. * gas_price;
         tracing::trace!(
             ?surplus,
             ?fees,
@@ -195,6 +196,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        assert_eq!(score, 228957825032329696u128.into());
+        assert_eq!(score, 231414764258305056u128.into());
     }
 }
