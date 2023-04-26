@@ -134,7 +134,6 @@ impl RefundService {
 
         batch.execute_all(MAX_BATCH_SIZE).await;
         let uid_with_latest_refundablility = futures::future::join_all(futures).await;
-        type TupleWithRefundStatus = (Vec<(OrderUid, RefundStatus)>, Vec<(OrderUid, RefundStatus)>);
         let mut to_be_refunded_uids = Vec::new();
         let mut invalid_uids = Vec::new();
         for (uid, refund_status) in uid_with_latest_refundablility.into_iter().flatten() {
