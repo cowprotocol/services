@@ -1,13 +1,16 @@
 use {
+    super::SolverInfo,
     crate::{
         liquidity::{LimitOrder, LimitOrderExecution, LimitOrderId},
         metrics::SolverMetrics,
         settlement::Settlement,
+        settlement_rater::{Rating, SettlementRating},
         solver::{Auction, Solver},
     },
     anyhow::{Context as _, Result},
     clap::Parser,
     ethcontract::Account,
+    gas_estimation::GasPrice1559,
     model::order::OrderKind,
     num::{CheckedDiv, ToPrimitive},
     number_conversions::u256_to_big_rational,
@@ -159,6 +162,14 @@ pub struct SingleOrderSolver {
     order_prioritization_config: OrderPrioritization,
     rate_limiter: Arc<RateLimiter>,
     fills: fills::Fills,
+    settlement_rater: Arc<dyn SettlementRating>,
+}
+
+#[derive(Debug, Clone)]
+struct IntermediateSettlement {
+    settlement: SingleOrderSettlement,
+    order: LimitOrder,
+    executed_amount: U256,
 }
 
 impl SingleOrderSolver {
@@ -169,6 +180,7 @@ impl SingleOrderSolver {
         max_merged_settlements: usize,
         arguments: Arguments,
         smallest_fill: U256,
+        settlement_rater: Arc<dyn SettlementRating>,
     ) -> Self {
         let rate_limiter = arguments.rate_limiter(inner.name());
         Self {
@@ -179,6 +191,7 @@ impl SingleOrderSolver {
             order_prioritization_config: arguments.order_prioritization(),
             rate_limiter,
             fills: fills::Fills::new(smallest_fill),
+            settlement_rater,
         }
     }
 
@@ -219,27 +232,12 @@ impl SingleOrderSolver {
             }
         };
 
-        match single.and_then(|single| {
-            single
-                .into_settlement(
-                    &order,
-                    fill.full_execution_amount(),
-                    &auction.external_prices,
-                    auction.gas_price,
-                )
-                .transpose()
-        }) {
-            Some(Ok(settlement)) => {
-                if let Some(order_uid) = order.id.order_uid() {
-                    // Maybe some liquidity appeared that enables a bigger fill.
-                    self.fills.increase_next_try(order_uid);
-                }
-                SolveResult::Solved(settlement)
-            }
-            Some(Err(err)) => {
-                tracing::warn!(%name, ?err, "encoding error");
-                SolveResult::Failed
-            }
+        match single {
+            Some(settlement) => SolveResult::Solved(IntermediateSettlement {
+                settlement,
+                order,
+                executed_amount: fill.full_execution_amount(),
+            }),
             None => {
                 if let Some(order_uid) = order.id.order_uid() {
                     self.fills.reduce_next_try(order_uid);
@@ -247,6 +245,63 @@ impl SingleOrderSolver {
                 SolveResult::Failed
             }
         }
+    }
+
+    /// Ensures the intermediate settlement simulates and uses the gas estimate
+    /// from the simulations to determine appropriate fees for the
+    /// settlement.
+    async fn finalize_intermediate_settlement(
+        &self,
+        mut intermediate: IntermediateSettlement,
+        auction: &Auction,
+        id: usize,
+    ) -> Option<Settlement> {
+        let settlement = intermediate
+            .settlement
+            .clone()
+            .into_settlement(
+                &intermediate.order,
+                intermediate.executed_amount,
+                &auction.external_prices,
+                auction.gas_price,
+            )
+            .ok()??;
+
+        let result = self
+            .settlement_rater
+            .rate_settlement(
+                &SolverInfo {
+                    name: self.name().to_owned(),
+                    account: self.account().clone(),
+                },
+                settlement,
+                &auction.external_prices,
+                GasPrice1559 {
+                    base_fee_per_gas: auction.gas_price,
+                    max_fee_per_gas: auction.gas_price,
+                    max_priority_fee_per_gas: 0.,
+                },
+                id,
+            )
+            .await
+            .ok()?;
+
+        let simulation = match result {
+            Rating::Ok(simulation) => simulation,
+            Rating::Err(_) => return None,
+        };
+
+        intermediate.settlement.gas_estimate = simulation.gas_estimate;
+
+        intermediate
+            .settlement
+            .into_settlement(
+                &intermediate.order,
+                intermediate.executed_amount,
+                &auction.external_prices,
+                auction.gas_price,
+            )
+            .ok()?
     }
 }
 
@@ -256,7 +311,7 @@ enum SolveResult {
     /// No solution and retrying would not help.
     Failed,
     /// Found a solution for the order.
-    Solved(Settlement),
+    Solved(IntermediateSettlement),
 }
 
 #[async_trait::async_trait]
@@ -269,7 +324,7 @@ impl Solver for SingleOrderSolver {
         );
         tracing::trace!(name = self.name(), ?orders, "prioritized orders");
 
-        let mut settlements = Vec::new();
+        let mut intermediates = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
                 let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
@@ -280,7 +335,7 @@ impl Solver for SingleOrderSolver {
                 {
                     SolveResult::Failed => continue,
                     SolveResult::Retryable(order) => orders.push_back(order),
-                    SolveResult::Solved(settlement) => settlements.push(settlement),
+                    SolveResult::Solved(settlement) => intermediates.push(settlement),
                 }
             }
         };
@@ -297,15 +352,18 @@ impl Solver for SingleOrderSolver {
         )
         .await;
 
-        self.fills.collect_garbage();
+        let mut settlements: Vec<_> =
+            futures::future::join_all(intermediates.into_iter().enumerate().map(
+                |(index, intermediate)| {
+                    self.finalize_intermediate_settlement(intermediate, &auction, index)
+                },
+            ))
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
-        // Keep at most this many settlements. This is important in case where a solver
-        // produces a large number of settlements which would hold up the driver
-        // logic when simulating them.
-        // Shuffle first so that in the case a buggy solver keeps returning some amount
-        // of invalid settlements first we have a chance to make progress.
-        settlements.shuffle(&mut rand::thread_rng());
-        settlements.truncate(self.max_settlements_per_solver);
+        self.fills.collect_garbage();
 
         merge::merge_settlements(
             self.max_merged_settlements,
@@ -325,11 +383,11 @@ impl Solver for SingleOrderSolver {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SingleOrderSettlement {
     pub sell_token_price: U256,
     pub buy_token_price: U256,
-    pub interactions: Vec<Box<dyn Interaction>>,
+    pub interactions: Vec<Arc<dyn Interaction>>,
     pub gas_estimate: U256,
 }
 
@@ -636,7 +694,7 @@ mod tests {
                 OrderKind::Buy => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 1.into(),
                     buy_token_price: 2.into(),
-                    interactions: vec![Box::new((
+                    interactions: vec![Arc::new((
                         H160::from_low_u64_be(3),
                         4.into(),
                         Bytes(vec![5]),
@@ -646,7 +704,7 @@ mod tests {
                 OrderKind::Sell => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 6.into(),
                     buy_token_price: 7.into(),
-                    interactions: vec![Box::new((
+                    interactions: vec![Arc::new((
                         H160::from_low_u64_be(8),
                         9.into(),
                         Bytes(vec![10]),

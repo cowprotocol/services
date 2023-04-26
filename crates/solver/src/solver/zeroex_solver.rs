@@ -162,9 +162,9 @@ impl SingleOrderSolving for ZeroExSolver {
                 gas_estimate: swap.price.estimated_gas.into(),
             };
             if let Some(approval) = &approval {
-                settlement.interactions.push(Box::new(*approval));
+                settlement.interactions.push(Arc::new(*approval));
             }
-            settlement.interactions.push(Box::new(swap.clone()));
+            settlement.interactions.push(Arc::new(swap.clone()));
             settlement
         };
 

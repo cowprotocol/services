@@ -136,7 +136,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             })
             .await?
         {
-            settlement.interactions.push(Box::new(approval));
+            settlement.interactions.push(Arc::new(approval));
         }
 
         let limits = compute_swap_limits(
@@ -151,7 +151,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             quote,
             limits,
         };
-        settlement.interactions.push(Box::new(batch_swap));
+        settlement.interactions.push(Arc::new(batch_swap));
 
         Ok(Some(settlement))
     }

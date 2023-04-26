@@ -35,18 +35,18 @@ pub fn encode_interactions(
             // worth the performance hit.
             settlement
                 .encoder
-                .append_to_execution_plan(Erc20ApproveInteraction {
+                .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
                     token: eth.contract_at(allowance.0.spender.token.into()),
                     spender: allowance.0.spender.address.into(),
                     amount: eth::U256::zero(),
-                });
+                }));
             settlement
                 .encoder
-                .append_to_execution_plan(Erc20ApproveInteraction {
+                .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
                     token: eth.contract_at(allowance.0.spender.token.into()),
                     spender: allowance.0.spender.address.into(),
                     amount: eth::U256::max_value(),
-                });
+                }));
         }
 
         let boundary_interaction = boundary::settlement::to_boundary_interaction(
@@ -56,7 +56,7 @@ pub fn encode_interactions(
         )?;
         settlement
             .encoder
-            .append_to_execution_plan_internalizable(boundary_interaction, false);
+            .append_to_execution_plan_internalizable(Arc::new(boundary_interaction), false);
     }
 
     let encoded_settlement = settlement.encode(InternalizationStrategy::EncodeAllInteractions);

@@ -21,6 +21,7 @@ use {
         s3_instance_upload::S3InstanceUploader,
         settlement::Settlement,
         settlement_post_processing::PostProcessing,
+        settlement_rater::SettlementRating,
         solver::{
             balancer_sor_solver::BalancerSorSolver,
             http_solver::{
@@ -352,6 +353,7 @@ pub fn create(
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
     score_configuration: &score_computation::Arguments,
+    settlement_rater: Arc<dyn SettlementRating>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -422,6 +424,7 @@ pub fn create(
                     max_settlements_per_solver,
                     order_prioritization_config.clone(),
                     smallest_partial_fill,
+                    settlement_rater.clone(),
                 )
             };
 

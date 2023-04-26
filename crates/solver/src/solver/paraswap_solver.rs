@@ -132,9 +132,9 @@ impl SingleOrderSolving for ParaswapSolver {
             })
             .await?
         {
-            settlement.interactions.push(Box::new(approval));
+            settlement.interactions.push(Arc::new(approval));
         }
-        settlement.interactions.push(Box::new(transaction));
+        settlement.interactions.push(Arc::new(transaction));
         Ok(Some(settlement))
     }
 

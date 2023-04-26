@@ -3,6 +3,8 @@
 //! This simple solver will simply use the 1Inch API to get a quote for a
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
+use std::sync::Arc;
+
 use {
     super::{
         single_order_solver::{
@@ -98,7 +100,7 @@ impl OneInchSolver {
             "only sell orders should be passed to try_settle_order"
         );
 
-        let mut interactions: Vec<Box<dyn Interaction>> = Vec::new();
+        let mut interactions: Vec<Arc<dyn Interaction>> = Vec::new();
 
         let spender = self.client.get_spender().await?;
         // Fetching allowance before making the SwapQuery so that the Swap info is as
@@ -112,7 +114,7 @@ impl OneInchSolver {
             })
             .await?
         {
-            interactions.push(Box::new(approval));
+            interactions.push(Arc::new(approval));
         }
 
         let query = SwapQuery::with_default_options(
@@ -142,7 +144,7 @@ impl OneInchSolver {
 
         let (sell_token_price, buy_token_price) = (swap.to_token_amount, swap.from_token_amount);
         let gas_estimate = swap.tx.gas.into();
-        interactions.push(Box::new(swap));
+        interactions.push(Arc::new(swap));
 
         Ok(Some(SingleOrderSettlement {
             sell_token_price,
