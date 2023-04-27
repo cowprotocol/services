@@ -343,6 +343,7 @@ pub async fn run(args: Arguments) {
         &domain,
         s3_instance_uploader,
         &args.score_params,
+        args.allow_missing_fees_for_partially_fillable_limit_orders,
     )
     .expect("failure creating solvers");
 

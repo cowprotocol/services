@@ -344,6 +344,7 @@ pub fn create(
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
     score_configuration: &score_computation::Arguments,
+    allow_missing_fees: bool,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -370,11 +371,6 @@ pub fn create(
         instance_creator,
         s3_instance_uploader,
     ));
-
-    // On some chains (goerli, xdai) the fees are so small that we'd rather have the
-    // solver produce more working solutions than always have accurate fees for
-    // partially fillable limit orders.
-    let allow_missing_fees = [5, 100].iter().any(|id| *id == chain_id);
 
     // Helper function to create http solver instances.
     let create_http_solver = |account: Account,
