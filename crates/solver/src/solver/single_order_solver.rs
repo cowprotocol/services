@@ -235,6 +235,7 @@ impl SingleOrderSolver {
         match single {
             Some(settlement) => {
                 if let Some(order_uid) = order.id.order_uid() {
+                    // Maybe some liquidity appeared that enables a bigger fill.
                     self.fills.increase_next_try(order_uid);
                 }
                 SolveResult::Solved(IntermediateSettlement {
