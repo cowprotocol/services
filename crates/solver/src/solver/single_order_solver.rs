@@ -263,7 +263,6 @@ impl SingleOrderSolver {
     ) -> Option<Settlement> {
         let settlement = intermediate
             .settlement
-            .clone()
             .into_settlement(
                 &intermediate.order,
                 intermediate.executed_amount,
@@ -407,7 +406,7 @@ pub struct SingleOrderSettlement {
 
 impl SingleOrderSettlement {
     pub fn into_settlement(
-        self,
+        &self,
         order: &LimitOrder,
         executed_amount: U256,
         prices: &ExternalPrices,
@@ -515,8 +514,10 @@ impl SingleOrderSettlement {
             solver_fee,
         };
         settlement.with_liquidity(order, execution)?;
-        for interaction in self.interactions {
-            settlement.encoder.append_to_execution_plan(interaction);
+        for interaction in &self.interactions {
+            settlement
+                .encoder
+                .append_to_execution_plan(interaction.clone());
         }
         Ok(Some(settlement))
     }
