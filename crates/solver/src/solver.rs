@@ -371,6 +371,11 @@ pub fn create(
         s3_instance_uploader,
     ));
 
+    // On some chains (goerli, xdai) the fees are so small that we'd rather have the
+    // solver produce more working solutions than always have accurate fees for
+    // partially fillable limit orders.
+    let allow_missing_fees = [5, 100].iter().any(|id| *id == chain_id);
+
     // Helper function to create http solver instances.
     let create_http_solver = |account: Account,
                               url: Url,
@@ -400,6 +405,7 @@ pub fn create(
             *domain,
             shared_instance_creator.clone(),
             use_liquidity,
+            allow_missing_fees,
         )
     };
 
@@ -426,7 +432,11 @@ pub fn create(
             let score_calculator = score_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
-                SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),
+                SolverType::Naive => shared(NaiveSolver::new(
+                    account,
+                    slippage_calculator,
+                    allow_missing_fees,
+                )),
                 SolverType::Baseline => shared(BaselineSolver::new(
                     account,
                     base_tokens.clone(),
@@ -547,7 +557,11 @@ pub fn create(
 
 /// Returns a naive solver to be used e.g. in e2e tests.
 pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
-    Arc::new(NaiveSolver::new(account, SlippageCalculator::default()))
+    Arc::new(NaiveSolver::new(
+        account,
+        SlippageCalculator::default(),
+        false,
+    ))
 }
 
 /// A solver that remove limit order below a certain threshold and
