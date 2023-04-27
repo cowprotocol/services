@@ -361,7 +361,7 @@ pub struct Arguments {
     /// filllable limit orders or set the fee to 0. This can make sense on
     /// chains where we are not so concerned about the fee (e.g. gc,
     /// goerli).
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub enforce_correct_fees_for_partially_fillable_limit_orders: bool,
 }
 
