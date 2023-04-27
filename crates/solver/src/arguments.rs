@@ -357,9 +357,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
 
-    /// Controls whether we discard solutions with partially filllable limit
-    /// orders or set the fee to 0. This can make sense on chains where we
-    /// are not so concerned about the fee (e.g. gc, goerli).
+    /// Controls whether we discard solutions without a fee for partially
+    /// filllable limit orders or set the fee to 0. This can make sense on
+    /// chains where we are not so concerned about the fee (e.g. gc,
+    /// goerli).
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enforce_correct_fees_for_partially_fillable_limit_orders: bool,
 }
