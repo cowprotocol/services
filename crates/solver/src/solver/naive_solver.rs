@@ -20,19 +20,19 @@ use {
 pub struct NaiveSolver {
     account: Account,
     slippage_calculator: SlippageCalculator,
-    allow_missing_fees: bool,
+    enforce_correct_fees: bool,
 }
 
 impl NaiveSolver {
     pub fn new(
         account: Account,
         slippage_calculator: SlippageCalculator,
-        allow_missing_fees: bool,
+        enforce_correct_fees: bool,
     ) -> Self {
         Self {
             account,
             slippage_calculator,
-            allow_missing_fees,
+            enforce_correct_fees,
         }
     }
 }
@@ -50,7 +50,7 @@ impl Solver for NaiveSolver {
     ) -> Result<Vec<Settlement>> {
         // Filter out partially fillable limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
-        orders.retain(|o| !o.solver_determines_fee() || self.allow_missing_fees);
+        orders.retain(|o| !o.solver_determines_fee() || !self.enforce_correct_fees);
         let slippage = self.slippage_calculator.context(&external_prices);
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         Ok(settle(slippage, orders, uniswaps))

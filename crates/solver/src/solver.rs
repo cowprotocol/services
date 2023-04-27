@@ -344,7 +344,7 @@ pub fn create(
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
     score_configuration: &score_computation::Arguments,
-    allow_missing_fees: bool,
+    enforce_correct_fees: bool,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -401,7 +401,7 @@ pub fn create(
             *domain,
             shared_instance_creator.clone(),
             use_liquidity,
-            allow_missing_fees,
+            enforce_correct_fees,
         )
     };
 
@@ -431,7 +431,7 @@ pub fn create(
                 SolverType::Naive => shared(NaiveSolver::new(
                     account,
                     slippage_calculator,
-                    allow_missing_fees,
+                    enforce_correct_fees,
                 )),
                 SolverType::Baseline => shared(BaselineSolver::new(
                     account,
@@ -556,7 +556,7 @@ pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
     Arc::new(NaiveSolver::new(
         account,
         SlippageCalculator::default(),
-        false,
+        true,
     ))
 }
 

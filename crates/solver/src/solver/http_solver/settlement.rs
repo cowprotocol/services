@@ -42,7 +42,7 @@ pub async fn convert_settlement(
     order_converter: Arc<OrderConverter>,
     slippage: SlippageContext<'_>,
     domain: &DomainSeparator,
-    allow_missing_fees: bool,
+    enforce_correct_fees: bool,
 ) -> Result<Settlement, ConversionError> {
     IntermediateSettlement::new(
         settled,
@@ -51,7 +51,7 @@ pub async fn convert_settlement(
         order_converter,
         slippage,
         domain,
-        allow_missing_fees,
+        enforce_correct_fees,
     )
     .await?
     .into_settlement()
@@ -85,7 +85,7 @@ impl Execution {
         settlement: &mut Settlement,
         slippage: &SlippageContext,
         internalizable: bool,
-        allow_missing_fees: bool,
+        enforce_correct_fees: bool,
     ) -> Result<()> {
         use Execution::*;
 
@@ -94,9 +94,9 @@ impl Execution {
                 let solver_fee = match order.order.solver_determines_fee() {
                     true => {
                         let fee = order.executed_fee_amount;
-                        match allow_missing_fees {
-                            true => fee.unwrap_or_default(),
-                            false => fee.context("no fee for partially fillable limit order")?,
+                        match enforce_correct_fees {
+                            true => fee.context("no fee for partially fillable limit order")?,
+                            false => fee.unwrap_or_default(),
                         }
                     }
                     false => order.order.solver_fee,
@@ -154,7 +154,7 @@ struct IntermediateSettlement<'a> {
     submitter: SubmissionPreference,
     score: Option<Score>,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
-    allow_missing_fees: bool,
+    enforce_correct_fees: bool,
 }
 
 // Conversion error happens during building a settlement from a solution
@@ -220,7 +220,7 @@ impl<'a> IntermediateSettlement<'a> {
         order_converter: Arc<OrderConverter>,
         slippage: SlippageContext<'a>,
         domain: &DomainSeparator,
-        allow_missing_fees: bool,
+        enforce_correct_fees: bool,
     ) -> Result<IntermediateSettlement<'a>, ConversionError> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(&context.orders, settled.orders)?;
@@ -254,7 +254,7 @@ impl<'a> IntermediateSettlement<'a> {
             slippage,
             submitter,
             score,
-            allow_missing_fees,
+            enforce_correct_fees,
         })
     }
 
@@ -279,7 +279,7 @@ impl<'a> IntermediateSettlement<'a> {
                 &mut settlement,
                 &self.slippage,
                 internalizable,
-                self.allow_missing_fees,
+                self.enforce_correct_fees,
             )?;
         }
 
@@ -708,7 +708,7 @@ mod tests {
             Arc::new(OrderConverter::test(weth)),
             SlippageContext::default(),
             &Default::default(),
-            false,
+            true,
         )
         .await
         .unwrap();

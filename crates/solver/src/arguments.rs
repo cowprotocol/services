@@ -361,7 +361,7 @@ pub struct Arguments {
     /// orders or set the fee to 0. This can make sense on chains where we
     /// are not so concerned about the fee (e.g. gc, goerli).
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub allow_missing_fees_for_partially_fillable_limit_orders: bool,
+    pub enforce_correct_fees_for_partially_fillable_limit_orders: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -509,8 +509,8 @@ impl std::fmt::Display for Arguments {
         display_option(f, "ethflow_contract", &self.ethflow_contract)?;
         writeln!(
             f,
-            "allow_missing_fees_for_partially_fillable_limit_orders: {:?}",
-            self.allow_missing_fees_for_partially_fillable_limit_orders
+            "enforce_correct_fees_for_partially_fillable_limit_orders: {:?}",
+            self.enforce_correct_fees_for_partially_fillable_limit_orders
         )?;
         Ok(())
     }

@@ -692,7 +692,7 @@ mod tests {
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             SlippageContext::default(),
             &Default::default(),
-            false,
+            true,
         )
         .await
         .map(|settlement| vec![settlement])
