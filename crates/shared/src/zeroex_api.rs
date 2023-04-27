@@ -525,33 +525,59 @@ impl DefaultZeroExApi {
     ) -> Result<T, ZeroExResponseError> {
         tracing::trace!("Querying 0x API: {}", url);
 
-        let request = self.client.get(url.clone());
-        let response = request.send().await.map_err(ZeroExResponseError::Send)?;
+        let path = url.path().to_owned();
+        let result = async move {
+            let request = self.client.get(url.clone());
+            let response = request.send().await.map_err(ZeroExResponseError::Send)?;
 
-        let status = response.status();
-        let response_text = response
-            .text()
-            .await
-            .map_err(ZeroExResponseError::TextFetch)?;
-        tracing::trace!("Response from 0x API: {}", response_text);
+            let status = response.status();
+            let response_text = response
+                .text()
+                .await
+                .map_err(ZeroExResponseError::TextFetch)?;
+            tracing::trace!("Response from 0x API: {}", response_text);
 
-        if status == StatusCode::TOO_MANY_REQUESTS {
-            return Err(ZeroExResponseError::RateLimited);
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                return Err(ZeroExResponseError::RateLimited);
+            }
+
+            match serde_json::from_str::<RawResponse<T>>(&response_text) {
+                Ok(RawResponse::ResponseOk(response)) => Ok(response),
+                Ok(RawResponse::ResponseErr { reason, code }) => match code {
+                    // Validation Error
+                    100 => Err(ZeroExResponseError::InsufficientLiquidity),
+                    500..=599 => Err(ZeroExResponseError::ServerError(format!("{url:?}"))),
+                    _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
+                },
+                Err(err) => Err(ZeroExResponseError::DeserializeError(
+                    err,
+                    response_text.parse().unwrap(),
+                )),
+            }
         }
+        .await;
 
-        match serde_json::from_str::<RawResponse<T>>(&response_text) {
-            Ok(RawResponse::ResponseOk(response)) => Ok(response),
-            Ok(RawResponse::ResponseErr { reason, code }) => match code {
-                // Validation Error
-                100 => Err(ZeroExResponseError::InsufficientLiquidity),
-                500..=599 => Err(ZeroExResponseError::ServerError(format!("{url:?}"))),
-                _ => Err(ZeroExResponseError::UnknownZeroExError(reason)),
-            },
-            Err(err) => Err(ZeroExResponseError::DeserializeError(
-                err,
-                response_text.parse().unwrap(),
-            )),
-        }
+        let metrics = Metrics::get();
+        let status = if result.is_ok() { "success" } else { "failure" };
+        metrics
+            .zeroex_api_requests
+            .with_label_values(&[path.as_str(), status])
+            .inc();
+
+        result
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Counter for 0x API requests by URI path and result.
+    #[metric(labels("path", "result"))]
+    zeroex_api_requests: prometheus::IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
     }
 }
 
