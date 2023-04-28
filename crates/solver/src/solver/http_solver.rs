@@ -60,6 +60,7 @@ pub struct HttpSolver {
     // Liquidity information takes up a lot of space in the instance. Only some solvers (only
     // Quasimodo?) uses it so it is wasteful to send it to all of them.
     use_liquidity: bool,
+    enforce_correct_fees: bool,
 }
 
 impl HttpSolver {
@@ -75,6 +76,7 @@ impl HttpSolver {
         domain: DomainSeparator,
         instance_cache: Arc<SharedInstanceCreator>,
         use_liquidity: bool,
+        enforce_correct_fees: bool,
     ) -> Self {
         Self {
             solver,
@@ -87,6 +89,7 @@ impl HttpSolver {
             domain,
             instance_cache,
             use_liquidity,
+            enforce_correct_fees,
         }
     }
 }
@@ -156,6 +159,7 @@ impl Solver for HttpSolver {
             self.order_converter.clone(),
             slippage,
             &self.domain,
+            self.enforce_correct_fees,
         )
         .await
         {
@@ -317,6 +321,7 @@ mod tests {
                 },
                 None,
             )),
+            true,
             true,
         );
         let base = |x: u128| x * 10u128.pow(18);
