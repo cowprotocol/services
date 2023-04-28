@@ -363,9 +363,13 @@ impl<'a> PriceEstimatorFactory<'a> {
         );
         let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
         estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
+        let competition_estimator = CompetitionPriceEstimator::new(estimators);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
-                Arc::new(self.sanitized(CompetitionPriceEstimator::new(estimators))),
+                Arc::new(self.sanitized(match self.args.enable_quote_predictions {
+                    true => competition_estimator.with_predictions(),
+                    false => competition_estimator,
+                })),
                 self.network.native_token,
                 self.native_token_price_estimation_amount()?,
             )),
