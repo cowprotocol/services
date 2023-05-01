@@ -13,7 +13,26 @@ use {
 /// Works like the smart contract by taking intermediate overflows into account
 /// for partially fillable orders.
 pub struct Remaining {
+    /// The ratio of a order that is available based on order execution. That
+    /// is, if a partially fillable order selling 100 DAI already executed
+    /// 75, this ratio will be `25/100`.
+    ///
+    /// This is always `0/1` or `1/1` for fill or kill orders.
     execution: Ratio<U256>,
+
+    /// The ratio of a order that is available based on user balance. That is,
+    /// if a partially fillable order selling 90 DAI with a fee of 10 DAI where
+    /// the owner has a balance of 25, then this ratio will be `25/100`.
+    ///
+    /// This is always `0/1` or `1/1` for fill or kill orders.
+    ///
+    /// Note that this ratio is kept separate from `execution`. This is done
+    /// in order to respect Smart Contract overflow semantics. In particular,
+    /// scaling amounts for partially executed orders can result in overflows
+    /// in the Settlement contract, however, the Settlement Smart Contract does
+    /// not concern itself with overflows WRT to user balances, so we compute
+    /// remaining order amount from user balances separately and without
+    /// overflow checks in the intermediate operations.
     balance: Ratio<U256>,
 }
 
@@ -86,7 +105,7 @@ impl Remaining {
 
     /// Returns Err if the contract would error due to intermediate overflow.
     pub fn remaining(&self, total: U256) -> Result<U256> {
-        ratio::scalar_mul(
+        ratio::full_scalar_mul(
             &self.balance,
             ratio::scalar_mul(&self.execution, total)
                 .context("overflow scaling for order execution")?,
@@ -106,10 +125,23 @@ mod ratio {
         Ratio::new_raw(0.into(), 1.into())
     }
 
+    /// Multiplies a ratio by a scalar, returning `None` if the result or any
+    /// intermediate operation would overflow a `U256`.
     pub fn scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
         scalar
-            .checked_mul(*ratio.numer())
-            .and_then(|product| product.checked_div(*ratio.denom()))
+            .checked_mul(*ratio.numer())?
+            .checked_div(*ratio.denom())
+    }
+
+    /// Multiplies a ratio by a scalar, returning `None` only if the result
+    /// would overflow a `U256`, but intermediate operations are allowed to
+    /// overflow.
+    pub fn full_scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
+        scalar
+            .full_mul(*ratio.numer())
+            .checked_div(ratio.denom().into())?
+            .try_into()
+            .ok()
     }
 }
 
@@ -347,10 +379,9 @@ mod tests {
 
     #[test]
     fn support_scaling_for_large_orders_with_partial_balance() {
-        let u = <U256 as From<u128>>::from;
         let order = Order {
             data: OrderData {
-                sell_amount: u(10).pow(u(30)),
+                sell_amount: U256::exp10(30),
                 buy_amount: 1.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
