@@ -61,6 +61,6 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
 fn tracing_panic_hook(panic: &PanicInfo) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("<unnamed>");
-    let backtrace = std::backtrace::Backtrace::capture();
+    let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
 }
