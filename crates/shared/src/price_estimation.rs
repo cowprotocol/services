@@ -166,7 +166,8 @@ pub struct Arguments {
 
     /// Determines how confident we want to be that we quote the best price.
     /// If the value is < 1 we may skip sending quote requests to price
-    /// estimators that perform poorly for the given trade.
+    /// estimators that have returned some winning quote in the past for a given
+    /// trade.
     #[clap(long, env, default_value = "1")]
     pub quote_prediction_confidence: f64,
 }
