@@ -163,6 +163,12 @@ pub struct Arguments {
     /// trade and enables metrics accordingly.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_quote_predictions: bool,
+
+    /// Determines how confident we want to be that we quote the best price.
+    /// If the value is < 1 we may skip sending quote requests to price
+    /// estimators that perform poorly for the given trade.
+    #[clap(long, env, default_value = "1")]
+    pub quote_prediction_confidence: f64,
 }
 
 impl Display for Arguments {
