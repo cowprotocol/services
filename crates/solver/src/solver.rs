@@ -352,6 +352,7 @@ pub fn create(
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
     score_configuration: &score_computation::Arguments,
+    enforce_correct_fees: bool,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -408,6 +409,7 @@ pub fn create(
             *domain,
             shared_instance_creator.clone(),
             use_liquidity,
+            enforce_correct_fees,
         )
     };
 
@@ -434,7 +436,11 @@ pub fn create(
             let score_calculator = score_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
-                SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),
+                SolverType::Naive => shared(NaiveSolver::new(
+                    account,
+                    slippage_calculator,
+                    enforce_correct_fees,
+                )),
                 SolverType::Baseline => shared(BaselineSolver::new(
                     account,
                     base_tokens.clone(),
@@ -555,7 +561,11 @@ pub fn create(
 
 /// Returns a naive solver to be used e.g. in e2e tests.
 pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
-    Arc::new(NaiveSolver::new(account, SlippageCalculator::default()))
+    Arc::new(NaiveSolver::new(
+        account,
+        SlippageCalculator::default(),
+        true,
+    ))
 }
 
 /// A solver that remove limit order below a certain threshold and
