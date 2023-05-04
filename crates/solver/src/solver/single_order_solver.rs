@@ -261,7 +261,7 @@ impl SingleOrderSolver {
         mut intermediate: IntermediateSettlement,
         auction: &Auction,
         id: usize,
-    ) -> Result<Settlement> {
+    ) -> Result<Option<Settlement>> {
         let settlement = intermediate.settlement.into_settlement(
             &intermediate.order,
             intermediate.executed_amount,
@@ -299,15 +299,12 @@ impl SingleOrderSolver {
 
         intermediate.settlement.gas_estimate = simulation.gas_estimate;
 
-        intermediate
-            .settlement
-            .into_settlement(
-                &intermediate.order,
-                intermediate.executed_amount,
-                &auction.external_prices,
-                auction.gas_price,
-            )?
-            .ok_or_else(|| anyhow::anyhow!("settlement did not respect limit price"))
+        intermediate.settlement.into_settlement(
+            &intermediate.order,
+            intermediate.executed_amount,
+            &auction.external_prices,
+            auction.gas_price,
+        )
     }
 }
 
@@ -377,7 +374,8 @@ impl Solver for SingleOrderSolver {
             .await
             .into_iter()
             .filter_map(|result| match result {
-                Ok(settlement) => Some(settlement),
+                Ok(Some(settlement)) => Some(settlement),
+                Ok(None) => None,
                 Err(err) => {
                     tracing::warn!(?err, "failed to finalize intermediate settlement");
                     None
