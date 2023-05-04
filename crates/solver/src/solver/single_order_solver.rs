@@ -338,6 +338,7 @@ impl Solver for SingleOrderSolver {
                     }
                 }
             }
+            drop(tx);
         };
 
         let finalize = async {
