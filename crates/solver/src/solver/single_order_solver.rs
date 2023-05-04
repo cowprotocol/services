@@ -261,16 +261,18 @@ impl SingleOrderSolver {
         mut intermediate: IntermediateSettlement,
         auction: &Auction,
         id: usize,
-    ) -> Option<Settlement> {
-        let settlement = intermediate
-            .settlement
-            .into_settlement(
-                &intermediate.order,
-                intermediate.executed_amount,
-                &auction.external_prices,
-                auction.gas_price,
-            )
-            .ok()??;
+    ) -> Result<Settlement> {
+        let settlement = intermediate.settlement.into_settlement(
+            &intermediate.order,
+            intermediate.executed_amount,
+            &auction.external_prices,
+            auction.gas_price,
+        );
+        let settlement = match settlement {
+            Ok(Some(settlement)) => settlement,
+            Err(err) => return Err(err),
+            Ok(None) => anyhow::bail!("settlement did not respect limit price"),
+        };
 
         let result = self
             .settlement_rater
@@ -288,12 +290,11 @@ impl SingleOrderSolver {
                 },
                 id,
             )
-            .await
-            .ok()?;
+            .await?;
 
         let simulation = match result {
             Rating::Ok(simulation) => simulation,
-            Rating::Err(_) => return None,
+            Rating::Err(err) => return Err(err.error).context("failed to rate the settlement"),
         };
 
         intermediate.settlement.gas_estimate = simulation.gas_estimate;
@@ -305,8 +306,8 @@ impl SingleOrderSolver {
                 intermediate.executed_amount,
                 &auction.external_prices,
                 auction.gas_price,
-            )
-            .ok()?
+            )?
+            .ok_or_else(|| anyhow::anyhow!("settlement did not respect limit price"))
     }
 }
 
@@ -375,7 +376,13 @@ impl Solver for SingleOrderSolver {
             ))
             .await
             .into_iter()
-            .flatten()
+            .filter_map(|result| match result {
+                Ok(settlement) => Some(settlement),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to finalize intermediate settlement");
+                    None
+                }
+            })
             .collect();
 
         self.fills.collect_garbage();
