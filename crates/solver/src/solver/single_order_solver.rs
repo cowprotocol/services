@@ -21,7 +21,6 @@ use {
         conversions::U256Ext,
         external_prices::ExternalPrices,
         interaction::Interaction,
-        price_estimation::gas,
         rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     },
     std::{
@@ -165,13 +164,6 @@ pub struct SingleOrderSolver {
     settlement_rater: Arc<dyn SettlementRating>,
 }
 
-#[derive(Debug, Clone)]
-struct IntermediateSettlement {
-    settlement: SingleOrderSettlement,
-    order: LimitOrder,
-    executed_amount: U256,
-}
-
 impl SingleOrderSolver {
     pub fn new(
         inner: Box<dyn SingleOrderSolving>,
@@ -238,11 +230,7 @@ impl SingleOrderSolver {
                     // Maybe some liquidity appeared that enables a bigger fill.
                     self.fills.increase_next_try(order_uid);
                 }
-                SolveResult::Solved(IntermediateSettlement {
-                    settlement,
-                    order,
-                    executed_amount: fill.full_execution_amount(),
-                })
+                SolveResult::Solved(settlement)
             }
             None => {
                 if let Some(order_uid) = order.id.order_uid() {
@@ -254,20 +242,15 @@ impl SingleOrderSolver {
     }
 
     /// Ensures the intermediate settlement simulates and uses the gas estimate
-    /// from the simulations to determine appropriate fees for the
+    /// from the simulations to determine appropriate fees for the final
     /// settlement.
-    async fn finalize_intermediate_settlement(
+    async fn finalize_settlement(
         &self,
-        mut intermediate: IntermediateSettlement,
+        intermediate: SingleOrderSettlement,
         auction: &Auction,
         id: usize,
     ) -> Result<Option<Settlement>> {
-        let settlement = intermediate.settlement.into_settlement(
-            &intermediate.order,
-            intermediate.executed_amount,
-            &auction.external_prices,
-            auction.gas_price,
-        );
+        let settlement = intermediate.into_settlement(&auction.external_prices, &0.into());
         let settlement = match settlement {
             Ok(Some(settlement)) => settlement,
             Err(err) => return Err(err),
@@ -297,20 +280,18 @@ impl SingleOrderSolver {
             Rating::Err(err) => return Err(err.error).context("failed to rate the settlement"),
         };
 
-        intermediate.settlement.gas_estimate = simulation.gas_estimate;
+        let gas_cost = simulation
+            .gas_estimate
+            .checked_mul(U256::from_f64_lossy(auction.gas_price))
+            .ok_or_else(|| anyhow::anyhow!("overflow during gas cost computation"))?;
 
-        intermediate.settlement.into_settlement(
-            &intermediate.order,
-            intermediate.executed_amount,
-            &auction.external_prices,
-            auction.gas_price,
-        )
+        intermediate.into_settlement(&auction.external_prices, &gas_cost)
     }
 }
 
 enum SolveResult {
     /// Found a solution for the order.
-    Solved(IntermediateSettlement),
+    Solved(SingleOrderSettlement),
     /// No solution but order could be retried.
     Retryable(LimitOrder),
     /// No solution and retrying would not help.
@@ -367,9 +348,7 @@ impl Solver for SingleOrderSolver {
 
         let mut settlements: Vec<_> =
             futures::future::join_all(settlements.into_iter().enumerate().map(
-                |(index, intermediate)| {
-                    self.finalize_intermediate_settlement(intermediate, &auction, index)
-                },
+                |(index, intermediate)| self.finalize_settlement(intermediate, &auction, index),
             ))
             .await
             .into_iter()
@@ -410,22 +389,22 @@ impl Solver for SingleOrderSolver {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SingleOrderSettlement {
     pub sell_token_price: U256,
     pub buy_token_price: U256,
     pub interactions: Vec<Arc<dyn Interaction>>,
-    pub gas_estimate: U256,
+    pub order: LimitOrder,
 }
 
 impl SingleOrderSettlement {
     pub fn into_settlement(
         &self,
-        order: &LimitOrder,
-        executed_amount: U256,
         prices: &ExternalPrices,
-        gas_price: f64,
+        gas_cost: &U256,
     ) -> Result<Option<Settlement>> {
+        let order = &self.order;
+        let executed_amount = order.full_execution_amount();
         // Compute the expected traded amounts.
         let (traded_sell_amount, traded_buy_amount) = match order.kind {
             OrderKind::Buy => (
@@ -449,13 +428,10 @@ impl SingleOrderSettlement {
         // Compute the surplus fee that needs to be incorporated into the prices
         // and solver fee which will be used for scoring.
         let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
-            let gas_estimate = self.gas_estimate + gas::SETTLEMENT_OVERHEAD;
-            let gas_cost = gas_estimate * U256::from_f64_lossy(gas_price);
-
             let fee = number_conversions::big_rational_to_u256(
                 &prices
                     .try_get_token_amount(
-                        &number_conversions::u256_to_big_rational(&gas_cost),
+                        &number_conversions::u256_to_big_rational(gas_cost),
                         order.sell_token,
                     )
                     .context("failed to compute solver fee")?,
@@ -496,11 +472,13 @@ impl SingleOrderSettlement {
 
         // Check that the order's limit price is satisfied accounting for the
         // surplus fees.
-        if order
+        if self
+            .order
             .sell_amount
             .checked_mul(executed_buy_amount)
             .context("overflow sell value")?
-            < order
+            < self
+                .order
                 .buy_amount
                 .checked_mul(executed_sell_amount)
                 .context("overflow buy value")?
@@ -735,7 +713,7 @@ mod tests {
                         4.into(),
                         Bytes(vec![5]),
                     ))],
-                    gas_estimate: U256::zero(),
+                    order,
                 })),
                 OrderKind::Sell => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 6.into(),
@@ -745,7 +723,7 @@ mod tests {
                         9.into(),
                         Bytes(vec![10]),
                     ))],
-                    gas_estimate: U256::zero(),
+                    order,
                 })),
             });
         inner
@@ -1060,17 +1038,9 @@ mod tests {
                 sell_token_price: out_amount.into(),
                 buy_token_price: in_amount.into(),
                 interactions: vec![],
-                gas_estimate: 2.into(),
+                order,
             }
-            .into_settlement(
-                &order,
-                match order.kind {
-                    OrderKind::Buy => out_amount.into(),
-                    OrderKind::Sell => in_amount.into(),
-                },
-                &prices,
-                1.,
-            )
+            .into_settlement(&prices, &2.into())
             .unwrap()
         };
         let trade = |settlement: Settlement| settlement.trade_executions().next().unwrap();
@@ -1137,14 +1107,13 @@ mod tests {
         );
 
         // Fee is larger than total order sell amount.
-        let order = order(OrderKind::Sell);
         let settlement = SingleOrderSettlement {
             sell_token_price: 1.into(),
             buy_token_price: 1.into(),
             interactions: vec![],
-            gas_estimate: 1000.into(),
+            order: order(OrderKind::Sell),
         };
-        let result = settlement.into_settlement(&order, 1.into(), &prices, 1000.);
+        let result = settlement.into_settlement(&prices, &1_000_000.into());
         assert!(matches!(result, Ok(None)), "{:?}", result);
     }
 

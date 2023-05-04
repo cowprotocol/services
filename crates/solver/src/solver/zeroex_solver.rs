@@ -31,13 +31,12 @@ use {
     },
     crate::{
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-        liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
+        liquidity::{slippage::SlippageCalculator, LimitOrder},
     },
     anyhow::{ensure, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::{Account, H160},
     model::order::OrderKind,
-    num::{BigRational, ToPrimitive, Zero},
     shared::{
         ethrpc::Web3,
         zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
@@ -154,57 +153,17 @@ impl SingleOrderSolving for ZeroExSolver {
             .await
             .context("get_approval")?;
 
-        let create_settlement = || {
-            let mut settlement = SingleOrderSettlement {
-                sell_token_price: swap.price.buy_amount,
-                buy_token_price: swap.price.sell_amount,
-                interactions: Vec::new(),
-                gas_estimate: swap.price.estimated_gas.into(),
-            };
-            if let Some(approval) = &approval {
-                settlement.interactions.push(Arc::new(*approval));
-            }
-            settlement.interactions.push(Arc::new(swap.clone()));
-            settlement
+        let mut settlement = SingleOrderSettlement {
+            sell_token_price: swap.price.buy_amount,
+            buy_token_price: swap.price.sell_amount,
+            interactions: Vec::new(),
+            order,
         };
-
-        let Some(settlement) = create_settlement()
-            .into_settlement(
-                &order,
-                order.full_execution_amount(),
-                &auction.external_prices,
-                auction.gas_price,
-            )
-            .context("into_settlement")?
-        else {
-            return Ok(None);
-        };
-
-        let gas_price = BigRational::from_float(auction.gas_price).expect("Invalid gas price.");
-        let inputs = crate::objective_value::Inputs::from_settlement(
-            &settlement,
-            &auction.external_prices,
-            gas_price,
-            &swap.price.estimated_gas.into(),
-        );
-        let objective_value = inputs.objective_value();
-        if objective_value < BigRational::zero() {
-            let uid = match order.id {
-                LimitOrderId::Market(uid) => uid,
-                LimitOrderId::Limit(uid) => uid,
-                // Shouldn't happen. This is just for logging so use default.
-                _ => Default::default(),
-            };
-            let objective_value = objective_value.to_f64().unwrap_or(f64::NAN);
-            tracing::debug!(
-                %uid,
-                %objective_value,
-                "skipping solution because it has negative objective value"
-            );
-            return Ok(None);
+        if let Some(approval) = &approval {
+            settlement.interactions.push(Arc::new(*approval));
         }
-
-        Ok(Some(create_settlement()))
+        settlement.interactions.push(Arc::new(swap.clone()));
+        Ok(Some(settlement))
     }
 
     fn account(&self) -> &Account {

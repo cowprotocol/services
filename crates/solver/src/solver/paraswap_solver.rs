@@ -121,7 +121,7 @@ impl SingleOrderSolving for ParaswapSolver {
             sell_token_price: price_response.dest_amount,
             buy_token_price: price_response.src_amount,
             interactions: Vec::new(),
-            gas_estimate: price_response.gas_cost.into(),
+            order: order.clone(),
         };
         if let Some(approval) = self
             .allowance_fetcher
