@@ -217,17 +217,17 @@ impl SingleOrderSolver {
             }
             Err(SettlementError::RateLimited) => {
                 self.metrics.single_order_solver_failed(name);
-                tracing::warn!(%name, "rate limited");
-                return SolveResult::Failed;
+                tracing::warn!("rate limited");
+                return SolveResult::RateLimited;
             }
             Err(SettlementError::Retryable(err)) => {
                 self.metrics.single_order_solver_failed(name);
-                tracing::warn!(%name, ?err, "retryable error");
+                tracing::warn!(?err, "retryable error");
                 return SolveResult::Retryable(order);
             }
             Err(SettlementError::Other(err)) => {
                 self.metrics.single_order_solver_failed(name);
-                tracing::warn!(%name, ?err, "failed");
+                tracing::warn!(?err, "failed");
                 return SolveResult::Failed;
             }
         };
@@ -317,6 +317,9 @@ enum SolveResult {
     Failed,
     /// Found a solution for the order.
     Solved(IntermediateSettlement),
+    /// The single solver solver is rate limiting, back off until the next
+    /// auction (as all single order solves will fail anyway).
+    RateLimited,
 }
 
 #[async_trait::async_trait]
@@ -327,7 +330,7 @@ impl Solver for SingleOrderSolver {
             &auction.external_prices,
             &self.order_prioritization_config,
         );
-        tracing::trace!(name = self.name(), ?orders, "prioritized orders");
+        tracing::trace!(solver = self.name(), ?orders, "prioritized orders");
 
         let mut intermediates = Vec::new();
         let settle = async {
@@ -342,6 +345,13 @@ impl Solver for SingleOrderSolver {
                     SolveResult::Retryable(order) => orders.push_back(order),
                     SolveResult::Solved(settlement) => {
                         intermediates.push(settlement);
+                    }
+                    SolveResult::RateLimited => {
+                        tracing::warn!(
+                            solver = %self.name(),
+                            "rate limited; backing off until next auction"
+                        );
+                        break;
                     }
                 }
             }
@@ -825,11 +835,6 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(1)
-            .returning(|_, _| Err(SettlementError::RateLimited))
-            .in_sequence(&mut seq);
-        inner
-            .expect_try_settle_order()
-            .times(1)
             .returning(|_, _| Err(SettlementError::Other(anyhow!(""))))
             .in_sequence(&mut seq);
 
@@ -841,7 +846,33 @@ mod tests {
         };
         solver
             .solve(Auction {
-                orders: vec![order(), order()],
+                orders: vec![order()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn stops_trying_when_rate_limited() {
+        let mut inner = MockSingleOrderSolving::new();
+        let mut seq = Sequence::new();
+        inner.expect_name().return_const("");
+        inner
+            .expect_try_settle_order()
+            .times(1)
+            .returning(|_, _| Err(SettlementError::RateLimited))
+            .in_sequence(&mut seq);
+
+        let solver = test_solver(inner);
+        let handler = Arc::new(CapturingSettlementHandler::default());
+        let order = || LimitOrder {
+            settlement_handling: handler.clone(),
+            ..Default::default()
+        };
+        solver
+            .solve(Auction {
+                orders: vec![order(), order(), order()],
                 ..Default::default()
             })
             .await

@@ -365,6 +365,7 @@ pub async fn run(args: Arguments) {
         s3_instance_uploader,
         &args.score_params,
         settlement_rater.clone(),
+        args.enforce_correct_fees_for_partially_fillable_limit_orders,
     )
     .expect("failure creating solvers");
 
