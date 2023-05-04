@@ -314,67 +314,67 @@ impl Solver for SingleOrderSolver {
         tracing::trace!(solver = self.name(), ?orders, "prioritized orders");
 
         let mut settlements = Vec::new();
-        // open new scope for solve->finalize pipeline to make borrow checker happy
-        {
-            let (tx, mut rx) = mpsc::unbounded_channel::<SingleOrderSettlement>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SingleOrderSettlement>();
 
-            let solve = async {
-                while let Some(order) = orders.pop_front() {
-                    let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
-                    match self
-                        .solve_single_order(order, &auction)
-                        .instrument(span)
-                        .await
-                    {
-                        SolveResult::Failed => continue,
-                        SolveResult::Retryable(order) => orders.push_back(order),
-                        SolveResult::Solved(settlement) => {
-                            let _ = tx.send(settlement);
-                        }
-                        SolveResult::RateLimited => {
-                            tracing::warn!(
-                                solver = %self.name(),
-                                "rate limited; backing off until next auction"
-                            );
-                            break;
-                        }
+        let solve = async {
+            while let Some(order) = orders.pop_front() {
+                let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
+                match self
+                    .solve_single_order(order, &auction)
+                    .instrument(span)
+                    .await
+                {
+                    SolveResult::Failed => continue,
+                    SolveResult::Retryable(order) => orders.push_back(order),
+                    SolveResult::Solved(settlement) => {
+                        let _ = tx.send(settlement);
+                    }
+                    SolveResult::RateLimited => {
+                        tracing::warn!(
+                            solver = %self.name(),
+                            "rate limited; backing off until next auction"
+                        );
+                        break;
                     }
                 }
             }
-            .fuse();
-            futures::pin_mut!(solve);
+        }
+        .fuse();
 
-            let finalize = async {
-                let mut index = 0;
-                while let Some(intermediate) = rx.recv().await {
-                    match self
-                        .finalize_settlement(intermediate, &auction, index)
-                        .await
-                    {
-                        Ok(Some(settlement)) => {
-                            settlements.push(settlement);
-                        }
-                        Ok(None) => (),
-                        Err(err) => {
-                            tracing::warn!(?err, "failed to finalize intermediate settlement");
-                        }
+        let finalize = async {
+            let mut index = 0;
+            while let Some(intermediate) = rx.recv().await {
+                match self
+                    .finalize_settlement(intermediate, &auction, index)
+                    .await
+                {
+                    Ok(Some(settlement)) => {
+                        settlements.push(settlement);
                     }
-                    index += 1;
+                    Ok(None) => (),
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to finalize intermediate settlement");
+                    }
                 }
-            };
+                index += 1;
+            }
+        };
+
+        // Subtract a small amount of time to ensure that the driver doesn't reach the
+        // deadline first.
+        let timeout = tokio::time::sleep_until(
+            auction
+                .deadline
+                .checked_sub(Duration::from_secs(1))
+                .unwrap()
+                .into(),
+        );
+
+        // open new scope for solve->finalize pipeline to make borrow checker happy
+        {
+            futures::pin_mut!(solve);
             futures::pin_mut!(finalize);
-
-            // Subtract a small amount of time to ensure that the driver doesn't reach the
-            // deadline first.
-            let timeout = tokio::time::sleep_until(
-                auction
-                    .deadline
-                    .checked_sub(Duration::from_secs(1))
-                    .unwrap()
-                    .into(),
-            );
             futures::pin_mut!(timeout);
-
             loop {
                 tokio::select! {
                     // if `solve` stops early there are still settlements to be finalized
