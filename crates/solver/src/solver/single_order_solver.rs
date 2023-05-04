@@ -311,12 +311,12 @@ impl SingleOrderSolver {
 }
 
 enum SolveResult {
+    /// Found a solution for the order.
+    Solved(IntermediateSettlement),
     /// No solution but order could be retried.
     Retryable(LimitOrder),
     /// No solution and retrying would not help.
     Failed,
-    /// Found a solution for the order.
-    Solved(IntermediateSettlement),
     /// The single solver solver is rate limiting, back off until the next
     /// auction (as all single order solves will fail anyway).
     RateLimited,
@@ -332,7 +332,7 @@ impl Solver for SingleOrderSolver {
         );
         tracing::trace!(solver = self.name(), ?orders, "prioritized orders");
 
-        let mut intermediates = Vec::new();
+        let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
                 let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
@@ -343,9 +343,7 @@ impl Solver for SingleOrderSolver {
                 {
                     SolveResult::Failed => continue,
                     SolveResult::Retryable(order) => orders.push_back(order),
-                    SolveResult::Solved(settlement) => {
-                        intermediates.push(settlement);
-                    }
+                    SolveResult::Solved(settlement) => settlements.push(settlement),
                     SolveResult::RateLimited => {
                         tracing::warn!(
                             solver = %self.name(),
@@ -370,7 +368,7 @@ impl Solver for SingleOrderSolver {
         .await;
 
         let mut settlements: Vec<_> =
-            futures::future::join_all(intermediates.into_iter().enumerate().map(
+            futures::future::join_all(settlements.into_iter().enumerate().map(
                 |(index, intermediate)| {
                     self.finalize_intermediate_settlement(intermediate, &auction, index)
                 },
