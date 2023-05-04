@@ -1,5 +1,3 @@
-use model::order::OrderKind;
-
 use {
     super::single_order_solver::SingleOrderSettlement,
     crate::{
@@ -17,7 +15,7 @@ use {
     },
     anyhow::{Context, Result},
     ethcontract::{Account, H160, U256},
-    model::TokenPair,
+    model::{order::OrderKind, TokenPair},
     shared::{
         baseline_solver::{
             estimate_buy_amount,

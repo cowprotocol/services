@@ -616,8 +616,6 @@ pub fn execution_respects_order(
 
 #[cfg(test)]
 mod tests {
-    use shared::price_estimation::gas::SETTLEMENT_OVERHEAD;
-
     use {
         super::*,
         crate::{
@@ -639,7 +637,10 @@ mod tests {
         model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
-        shared::http_solver::model::InternalizationStrategy,
+        shared::{
+            http_solver::model::InternalizationStrategy,
+            price_estimation::gas::SETTLEMENT_OVERHEAD,
+        },
         std::{collections::HashMap, sync::Arc},
     };
 
