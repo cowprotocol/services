@@ -21,7 +21,6 @@ use {
     shared::{ethrpc::Web3, tenderly_api::TenderlyApi},
     std::{sync::Arc, time::Duration},
     tracing::{Instrument as _, Span},
-    web3::types::AccessList,
 };
 
 pub struct DriverLogger {
@@ -166,7 +165,7 @@ impl DriverLogger {
                         .clone()
                         .encode(simulation.transaction.internalization);
                     (
-                        simulation.solver.account().clone(),
+                        simulation.solver.account.clone(),
                         settlement,
                         simulation.transaction.access_list.clone(),
                     )
@@ -192,25 +191,25 @@ impl DriverLogger {
             ) in errors.iter().zip(simulations)
             {
                 metrics
-                    .settlement_simulation(solver.name(), SolverSimulationOutcome::FailureOnLatest);
+                    .settlement_simulation(&solver.name, SolverSimulationOutcome::FailureOnLatest);
                 if let Err(error_at_earlier_block) = result {
                     tracing::warn!(
                         "{} settlement simulation failed at submission and block {}:\n{:?}",
-                        solver.name(),
+                        solver.name,
                         current_block_during_liquidity_fetch,
                         error_at_earlier_block,
                     );
                     // split warning into separate logs so that the messages aren't too long.
                     tracing::warn!(
                         "{} settlement failure for: \n{:#?}",
-                        solver.name(),
+                        solver.name,
                         settlement,
                     );
 
-                    metrics.settlement_simulation(solver.name(), SolverSimulationOutcome::Failure);
+                    metrics.settlement_simulation(&solver.name, SolverSimulationOutcome::Failure);
                 } else {
                     tracing::debug!(
-                        name = solver.name(),
+                        name = solver.name,
                         ?error_at_latest_block,
                         "simulation only failed on the latest block but not on the block the \
                          auction started",
@@ -221,17 +220,14 @@ impl DriverLogger {
         tokio::task::spawn(task.instrument(Span::current()));
     }
 
-    pub fn print_settlements(
-        rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-    ) {
+    pub fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
         let mut text = String::new();
-        for (solver, settlement, access_list) in rated_settlements {
+        for (solver, settlement) in rated_settlements {
             use std::fmt::Write;
             write!(
                 text,
                 "\nid={} solver={} objective={:.2e} score={:.2e} surplus={:.2e} \
-                 gas_estimate={:.2e} gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e} \
-                 access_list_addresses={}",
+                 gas_estimate={:.2e} gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
@@ -241,7 +237,6 @@ impl DriverLogger {
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                 &settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                 settlement.earned_fees.to_f64().unwrap_or(f64::NAN),
-                access_list.clone().unwrap_or_default().len()
             )
             .unwrap();
         }
@@ -299,7 +294,6 @@ mod tests {
                     score: Score::Solver(6.into()),
                     ranking: 1,
                 },
-                None,
             ),
             (
                 dummy_arc_solver(),
@@ -315,7 +309,6 @@ mod tests {
                     score: Score::Solver(12.into()),
                     ranking: 2,
                 },
-                None,
             ),
         ];
 

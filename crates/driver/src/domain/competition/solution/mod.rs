@@ -119,7 +119,7 @@ impl Solution {
         self.verify_asset_flow()?;
         self.verify_internalization(auction)?;
 
-        let settlement = self
+        let (settlement, access_list, gas) = self
             .simulate(eth, simulator, auction, settlement::Internalization::Enable)
             .await?;
 
@@ -127,7 +127,7 @@ impl Solution {
         // transaction. Simulations failing on insufficient gas is not
         // guaranteed by all nodes.
         let balance = eth.balance(self.solver.address()).await?;
-        if balance < settlement.gas.required_balance() {
+        if balance < gas.required_balance() {
             return Err(Error::InsufficientBalance);
         }
 
@@ -152,7 +152,11 @@ impl Solution {
             .map_err(|_| VerificationError::FailingInternalization)?;
         }
 
-        Ok(settlement)
+        Ok(settlement::Verified {
+            inner: settlement,
+            access_list,
+            gas,
+        })
     }
 
     /// Simulate settling this solution on the blockchain. This process
@@ -164,7 +168,7 @@ impl Solution {
         simulator: &Simulator,
         auction: &competition::Auction,
         internalization: settlement::Internalization,
-    ) -> Result<settlement::Verified, Error> {
+    ) -> Result<(Settlement, eth::AccessList, settlement::Gas), Error> {
         // Our settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
@@ -203,19 +207,12 @@ impl Solution {
         let access_list = simulator.access_list(tx.clone()).await?;
         let tx = tx.set_access_list(access_list.clone());
 
-        // Third, get the gas parameters for the settlement using the full
-        // access list.
-        let gas = {
-            let estimate = simulator.gas(tx).await?;
-            let price = eth.gas_price().await?;
-            settlement::Gas::new(estimate, price)
-        };
+        // Get the gas parameters for the settlement using the full access list.
+        let estimate = simulator.gas(tx).await?;
+        let price = eth.gas_price().await?;
+        let gas = settlement::Gas::new(estimate, price);
 
-        Ok(settlement::Verified {
-            inner: settlement,
-            access_list,
-            gas,
-        })
+        Ok((settlement, access_list, gas))
     }
 
     /// Check that the sum of tokens entering the settlement is not less than
