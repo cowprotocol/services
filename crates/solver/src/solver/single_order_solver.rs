@@ -338,8 +338,7 @@ impl Solver for SingleOrderSolver {
                     }
                 }
             }
-        }
-        .fuse();
+        };
 
         let finalize = async {
             let mut index = 0;
@@ -372,6 +371,7 @@ impl Solver for SingleOrderSolver {
 
         // open new scope for solve->finalize pipeline to make borrow checker happy
         {
+            let solve = solve.fuse();
             futures::pin_mut!(solve);
             futures::pin_mut!(finalize);
             futures::pin_mut!(timeout);
