@@ -395,6 +395,7 @@ pub struct SingleOrderSettlement {
     pub buy_token_price: U256,
     pub interactions: Vec<Arc<dyn Interaction>>,
     pub order: LimitOrder,
+    pub executed_amount: U256,
 }
 
 impl SingleOrderSettlement {
@@ -404,7 +405,7 @@ impl SingleOrderSettlement {
         gas_cost: &U256,
     ) -> Result<Option<Settlement>> {
         let order = &self.order;
-        let executed_amount = order.full_execution_amount();
+        let executed_amount = self.executed_amount;
         // Compute the expected traded amounts.
         let (traded_sell_amount, traded_buy_amount) = match order.kind {
             OrderKind::Buy => (
@@ -615,6 +616,8 @@ pub fn execution_respects_order(
 
 #[cfg(test)]
 mod tests {
+    use shared::price_estimation::gas::SETTLEMENT_OVERHEAD;
+
     use {
         super::*,
         crate::{
@@ -713,6 +716,7 @@ mod tests {
                         4.into(),
                         Bytes(vec![5]),
                     ))],
+                    executed_amount: order.full_execution_amount(),
                     order,
                 })),
                 OrderKind::Sell => Ok(Some(SingleOrderSettlement {
@@ -723,6 +727,7 @@ mod tests {
                         9.into(),
                         Bytes(vec![10]),
                     ))],
+                    executed_amount: order.full_execution_amount(),
                     order,
                 })),
             });
@@ -1038,9 +1043,13 @@ mod tests {
                 sell_token_price: out_amount.into(),
                 buy_token_price: in_amount.into(),
                 interactions: vec![],
+                executed_amount: match order.kind {
+                    OrderKind::Sell => in_amount.into(),
+                    OrderKind::Buy => out_amount.into(),
+                },
                 order,
             }
-            .into_settlement(&prices, &2.into())
+            .into_settlement(&prices, &SETTLEMENT_OVERHEAD.into())
             .unwrap()
         };
         let trade = |settlement: Settlement| settlement.trade_executions().next().unwrap();
@@ -1111,6 +1120,7 @@ mod tests {
             sell_token_price: 1.into(),
             buy_token_price: 1.into(),
             interactions: vec![],
+            executed_amount: 100.into(),
             order: order(OrderKind::Sell),
         };
         let result = settlement.into_settlement(&prices, &1_000_000.into());

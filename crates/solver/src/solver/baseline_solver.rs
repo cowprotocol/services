@@ -1,3 +1,5 @@
+use model::order::OrderKind;
+
 use {
     super::single_order_solver::SingleOrderSettlement,
     crate::{
@@ -317,6 +319,10 @@ impl Solution {
             sell_token_price: self.executed_buy_amount,
             buy_token_price: self.executed_sell_amount,
             interactions: vec![],
+            executed_amount: match order.kind {
+                OrderKind::Buy => self.executed_buy_amount,
+                OrderKind::Sell => self.executed_sell_amount,
+            },
             order: order.clone(),
         }
         .into_settlement(slippage.prices(), &gas_cost)?;

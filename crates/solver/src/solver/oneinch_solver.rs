@@ -150,6 +150,7 @@ impl OneInchSolver {
             sell_token_price,
             buy_token_price,
             interactions,
+            executed_amount: order.full_execution_amount(),
             order,
         }))
     }

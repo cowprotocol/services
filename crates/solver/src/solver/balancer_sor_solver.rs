@@ -120,6 +120,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             sell_token_price: quoted_buy_amount,
             buy_token_price: quoted_sell_amount,
             interactions: Vec::new(),
+            executed_amount: order.full_execution_amount(),
             order: order.clone(),
         };
 
