@@ -35,12 +35,10 @@ use {
     contracts::{BalancerV2Vault, GPv2Settlement},
     ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
     model::{auction::AuctionId, DomainSeparator},
-    num::BigRational,
     reqwest::Url,
     shared::{
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
-        conversions::U256Ext,
         ethrpc::Web3,
         external_prices::ExternalPrices,
         http_client::HttpClientFactory,
@@ -568,66 +566,6 @@ pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
     ))
 }
 
-/// A solver that remove limit order below a certain threshold and
-/// passes the remaining liquidity onto an inner solver implementation.
-pub struct SellVolumeFilteringSolver {
-    inner: Box<dyn Solver + Send + Sync>,
-    min_value: BigRational,
-}
-
-impl SellVolumeFilteringSolver {
-    pub fn new(inner: Box<dyn Solver + Send + Sync>, min_value: U256) -> Self {
-        Self {
-            inner,
-            min_value: min_value.to_big_rational(),
-        }
-    }
-
-    // The price estimates come from the Auction struct passed to solvers.
-    async fn filter_orders(
-        &self,
-        mut orders: Vec<LimitOrder>,
-        external_prices: &ExternalPrices,
-    ) -> Vec<LimitOrder> {
-        let is_minimum_volume = |token: &H160, amount: &U256| {
-            let native_amount = external_prices.get_native_amount(*token, amount.to_big_rational());
-            native_amount >= self.min_value
-        };
-        orders.retain(|order| {
-            is_minimum_volume(&order.buy_token, &order.buy_amount)
-                || is_minimum_volume(&order.sell_token, &order.sell_amount)
-        });
-        orders
-    }
-}
-
-#[async_trait::async_trait]
-impl Solver for SellVolumeFilteringSolver {
-    async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
-        let original_length = auction.orders.len();
-        auction.orders = self
-            .filter_orders(auction.orders, &auction.external_prices)
-            .await;
-        tracing::debug!(
-            "Filtered {} orders because on insufficient volume",
-            original_length - auction.orders.len()
-        );
-        self.inner.solve(auction).await
-    }
-
-    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
-        self.inner.notify_auction_result(auction_id, result);
-    }
-
-    fn account(&self) -> &Account {
-        self.inner.account()
-    }
-
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
-}
-
 #[cfg(test)]
 struct DummySolver;
 #[cfg(test)]
@@ -654,13 +592,7 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::liquidity::LimitOrder,
-        model::order::OrderKind,
-        num::One as _,
-        shared::externalprices,
-    };
+    use super::*;
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();
@@ -679,56 +611,6 @@ mod tests {
         fn name(&self) -> &'static str {
             "NoopSolver"
         }
-    }
-
-    #[tokio::test]
-    async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-        let orders = vec![
-            // Orders with high enough amount
-            LimitOrder {
-                sell_amount: 100_000.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            LimitOrder {
-                sell_amount: 500_000.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            // Order with small amount
-            LimitOrder {
-                sell_amount: 100.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-        ];
-
-        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 50_000.into());
-        let prices = externalprices! { native_token: sell_token, buy_token => BigRational::one() };
-        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 2);
-    }
-
-    #[tokio::test]
-    #[should_panic]
-    async fn test_filtering_solver_panics_orders_without_price_estimate() {
-        let sell_token = H160::from_low_u64_be(1);
-        let orders = vec![LimitOrder {
-            sell_amount: 100_000.into(),
-            sell_token,
-            ..Default::default()
-        }];
-
-        let prices = Default::default();
-        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 0.into());
-        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 0);
     }
 
     impl PartialEq for SolverAccountArg {
