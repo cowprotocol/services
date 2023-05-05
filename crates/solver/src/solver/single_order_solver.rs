@@ -270,7 +270,8 @@ impl SingleOrderSolver {
                 &auction.external_prices,
                 GasPrice1559 {
                     base_fee_per_gas: auction.gas_price,
-                    max_fee_per_gas: auction.gas_price,
+                    // factor in 1 block of maximal gas increase
+                    max_fee_per_gas: auction.gas_price * 1.125,
                     max_priority_fee_per_gas: 0.,
                 },
                 id,
