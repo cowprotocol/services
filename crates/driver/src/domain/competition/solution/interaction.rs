@@ -2,7 +2,7 @@ use crate::domain::{self, eth, liquidity};
 
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum Interaction {
     Custom(Custom),
@@ -64,7 +64,7 @@ impl Interaction {
 }
 
 /// An arbitrary interaction with any smart contract.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Custom {
     pub target: eth::ContractAddress,
     pub value: eth::Ether,
@@ -81,7 +81,7 @@ pub struct Custom {
 
 /// An interaction with one of the smart contracts for which we index
 /// liquidity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Liquidity {
     pub liquidity: domain::Liquidity,
     /// See the [`Interaction::inputs`] method.

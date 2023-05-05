@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{
-            competition::{self, solution},
+            competition::{self},
             quote,
         },
         infra::api,
@@ -14,19 +14,14 @@ use {
 enum Kind {
     QuotingFailed,
     SolverFailed,
+    InvalidSolutionId,
     SolutionNotFound,
     DeadlineExceeded,
-    SimulationFailed,
     Unknown,
     TransactionPublishingFailed,
     InvalidAuctionId,
     MissingSurplusFee,
     QuoteSameTokens,
-    InvalidAssetFlow,
-    UntrustedInternalization,
-    FailingInternalization,
-    MissingWeth,
-    InsufficientBalance,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,28 +36,14 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
         let description = match value {
             Kind::QuotingFailed => "No valid quote found",
             Kind::SolverFailed => "Solver engine returned an invalid response",
-            Kind::SolutionNotFound => "No solution found for given ID",
+            Kind::SolutionNotFound => "No solution found for the auction",
+            Kind::InvalidSolutionId => "No solution found for the given ID",
             Kind::DeadlineExceeded => "Exceeded solution deadline",
-            Kind::SimulationFailed => "Solution simulation failed",
             Kind::Unknown => "An unknown error occurred",
             Kind::TransactionPublishingFailed => "Failed to publish the settlement transaction",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
-            Kind::InvalidAssetFlow => {
-                "The solver returned a solution with invalid asset flow: token amounts entering \
-                 the settlement contract are lower than token amounts exiting the contract"
-            }
-            Kind::UntrustedInternalization => {
-                "The solver returned a solution which internalizes interactions with untrusted \
-                 tokens"
-            }
-            Kind::FailingInternalization => {
-                "The solver returned a solution which internalizes interactions that fail to \
-                 simulate"
-            }
-            Kind::MissingWeth => "missing WETH clearing price",
-            Kind::InsufficientBalance => "Solver has insufficient Ether balance",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -89,29 +70,9 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
 impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
+            competition::Error::InvalidSolutionId => Kind::InvalidSolutionId,
             competition::Error::SolutionNotFound => Kind::SolutionNotFound,
-            competition::Error::Solution(solution::Error::Blockchain(_)) => Kind::Unknown,
-            competition::Error::Solution(solution::Error::Boundary(_)) => Kind::Unknown,
-            competition::Error::Solution(solution::Error::Verification(
-                solution::VerificationError::Simulation(_),
-            )) => Kind::SimulationFailed,
-            competition::Error::Solution(solution::Error::Verification(
-                solution::VerificationError::AssetFlow,
-            )) => Kind::InvalidAssetFlow,
-            competition::Error::Solution(solution::Error::Verification(
-                solution::VerificationError::UntrustedInternalization,
-            )) => Kind::UntrustedInternalization,
-            competition::Error::Solution(solution::Error::Verification(
-                solution::VerificationError::FailingInternalization,
-            )) => Kind::FailingInternalization,
-            competition::Error::Solution(solution::Error::MissingWethClearingPrice) => {
-                Kind::MissingWeth
-            }
-            competition::Error::Solution(solution::Error::InsufficientBalance) => {
-                Kind::InsufficientBalance
-            }
             competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
-            competition::Error::Boundary(_) => Kind::Unknown,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
         };
