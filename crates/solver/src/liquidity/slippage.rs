@@ -2,7 +2,7 @@
 
 use {
     super::{AmmOrderExecution, LimitOrder},
-    crate::solver::{Auction, SolverType},
+    crate::solver::SolverType,
     anyhow::{anyhow, Context as _, Result},
     clap::{Parser, ValueEnum as _},
     ethcontract::{H160, U256},
@@ -316,10 +316,6 @@ impl SlippageCalculator {
             prices,
             calculator: self,
         }
-    }
-
-    pub fn auction_context<'a>(&'a self, auction: &'a Auction) -> SlippageContext<'a> {
-        self.context(&auction.external_prices)
     }
 
     /// Computes the capped slippage amount for the specified token price and

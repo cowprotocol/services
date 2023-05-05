@@ -20,14 +20,11 @@
 //! handed back from 0x
 
 use {
-    super::{
-        single_order_solver::{
-            execution_respects_order,
-            SettlementError,
-            SingleOrderSettlement,
-            SingleOrderSolving,
-        },
-        Auction,
+    super::single_order_solver::{
+        execution_respects_order,
+        SettlementError,
+        SingleOrderSettlement,
+        SingleOrderSolving,
     },
     crate::{
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
@@ -39,6 +36,7 @@ use {
     model::order::OrderKind,
     shared::{
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
     },
     std::{
@@ -105,7 +103,8 @@ impl SingleOrderSolving for ZeroExSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        _: f64,
     ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let (buy_amount, sell_amount) = match order.kind {
             OrderKind::Buy => (Some(order.buy_amount), None),
@@ -118,7 +117,7 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_amount,
             slippage_percentage: Some(Slippage::new(
                 self.slippage_calculator
-                    .auction_context(auction)
+                    .context(external_prices)
                     .relative_for_order(&order)?
                     .as_factor(),
             )),
@@ -245,7 +244,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction::default(),
+                &Default::default(),
+                1.,
             )
             .await
             .unwrap();
@@ -287,7 +287,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction::default(),
+                &Default::default(),
+                1.,
             )
             .await
             .unwrap();
@@ -382,7 +383,7 @@ mod tests {
         };
 
         let result = solver
-            .try_settle_order(sell_order_passing_limit, &Auction::default())
+            .try_settle_order(sell_order_passing_limit, &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -390,13 +391,13 @@ mod tests {
         assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
-            .try_settle_order(sell_order_violating_limit, &Auction::default())
+            .try_settle_order(sell_order_violating_limit, &Default::default(), 1.)
             .await
             .unwrap();
         assert!(result.is_none());
 
         let result = solver
-            .try_settle_order(buy_order_passing_limit, &Auction::default())
+            .try_settle_order(buy_order_passing_limit, &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -404,7 +405,7 @@ mod tests {
         assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
-            .try_settle_order(buy_order_violating_limit, &Auction::default())
+            .try_settle_order(buy_order_violating_limit, &Default::default(), 1.)
             .await
             .unwrap();
         assert!(result.is_none());
@@ -502,7 +503,7 @@ mod tests {
 
         // On first run we have two main interactions (approve + swap)
         let result = solver
-            .try_settle_order(order.clone(), &Auction::default())
+            .try_settle_order(order.clone(), &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -510,7 +511,7 @@ mod tests {
 
         // On second run we have only have one main interactions (swap)
         let result = solver
-            .try_settle_order(order, &Auction::default())
+            .try_settle_order(order, &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();

@@ -117,7 +117,8 @@ pub trait SingleOrderSolving: Send + Sync + 'static {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
     ) -> Result<Option<SingleOrderSettlement>, SettlementError>;
 
     /// Solver's account that should be used to submit settlements.
@@ -189,9 +190,14 @@ impl SingleOrderSolver {
         }
     }
 
-    async fn solve_single_order(&self, order: LimitOrder, auction: &Auction) -> SolveResult {
+    async fn solve_single_order(
+        &self,
+        order: LimitOrder,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
+    ) -> SolveResult {
         let name = self.inner.name();
-        let fill = match self.fills.order(&order, &auction.external_prices) {
+        let fill = match self.fills.order(&order, external_prices) {
             Ok(fill) => fill,
             Err(err) => {
                 tracing::warn!(?order.id, ?err, "failed to compute fill; skipping order");
@@ -202,7 +208,8 @@ impl SingleOrderSolver {
         let single = match self
             .rate_limiter
             .execute(
-                self.inner.try_settle_order(fill.clone(), auction),
+                self.inner
+                    .try_settle_order(fill.clone(), external_prices, gas_price),
                 |result| matches!(result, Err(SettlementError::RateLimited)),
             )
             .await
@@ -324,7 +331,7 @@ impl Solver for SingleOrderSolver {
             while let Some(order) = orders.pop_front() {
                 let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
                 match self
-                    .solve_single_order(order, &auction)
+                    .solve_single_order(order, &auction.external_prices, auction.gas_price)
                     .instrument(span)
                     .await
                 {
@@ -738,7 +745,7 @@ mod tests {
         let mut inner = MockSingleOrderSolving::new();
         inner
             .expect_try_settle_order()
-            .returning(|order, _| match order.kind {
+            .returning(|order, _, _| match order.kind {
                 OrderKind::Buy => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 1.into(),
                     buy_token_price: 2.into(),
@@ -818,7 +825,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(2)
-            .returning(move |_, _| {
+            .returning(move |_, _, _| {
                 dbg!();
                 let result = match call_count {
                     0 => Err(SettlementError::Retryable(anyhow!(""))),
@@ -852,7 +859,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(1)
-            .returning(|_, _| Err(SettlementError::Other(anyhow!(""))))
+            .returning(|_, _, _| Err(SettlementError::Other(anyhow!(""))))
             .in_sequence(&mut seq);
 
         let solver = test_solver(inner);
@@ -878,7 +885,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(1)
-            .returning(|_, _| Err(SettlementError::RateLimited))
+            .returning(|_, _, _| Err(SettlementError::RateLimited))
             .in_sequence(&mut seq);
 
         let solver = test_solver(inner);

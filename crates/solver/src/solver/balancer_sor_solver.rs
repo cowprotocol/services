@@ -1,14 +1,11 @@
 //! Solver using the Balancer SOR.
 
 use {
-    super::{
-        single_order_solver::{
-            execution_respects_order,
-            SettlementError,
-            SingleOrderSettlement,
-            SingleOrderSolving,
-        },
-        Auction,
+    super::single_order_solver::{
+        execution_respects_order,
+        SettlementError,
+        SingleOrderSettlement,
+        SingleOrderSolving,
     },
     crate::{
         interactions::{
@@ -23,6 +20,7 @@ use {
     model::order::OrderKind,
     shared::{
         balancer_sor_api::{BalancerSorApi, Error as BalancerError, Query, Quote},
+        external_prices::ExternalPrices,
         interaction::{EncodedInteraction, Interaction},
     },
     std::sync::Arc,
@@ -72,7 +70,8 @@ impl SingleOrderSolving for BalancerSorSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
     ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let amount = match order.kind {
             OrderKind::Sell => order.sell_amount,
@@ -83,7 +82,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             buy_token: order.buy_token,
             order_kind: order.kind,
             amount,
-            gas_price: U256::from_f64_lossy(auction.gas_price),
+            gas_price: U256::from_f64_lossy(gas_price),
         };
 
         let quote = match self.api.quote(query).await? {
@@ -104,7 +103,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             return Ok(None);
         }
 
-        let slippage = self.slippage_calculator.auction_context(auction);
+        let slippage = self.slippage_calculator.context(external_prices);
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
                 quoted_sell_amount,
@@ -356,10 +355,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction {
-                    gas_price: 100e9,
-                    ..Auction::default()
-                },
+                &Default::default(),
+                100e9,
             )
             .await
             .unwrap()
@@ -477,10 +474,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction {
-                    gas_price: 100e9,
-                    ..Auction::default()
-                },
+                &Default::default(),
+                100e9,
             )
             .await
             .unwrap()
@@ -539,7 +534,7 @@ mod tests {
 
         assert!(matches!(
             solver
-                .try_settle_order(LimitOrder::default(), &Auction::default())
+                .try_settle_order(LimitOrder::default(), &Default::default(), 1.)
                 .await,
             Ok(None),
         ));
@@ -582,10 +577,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction {
-                    gas_price: 100e9,
-                    ..Auction::default()
-                },
+                &Default::default(),
+                100e9,
             )
             .await
             .unwrap()
@@ -606,10 +599,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction {
-                    gas_price: 100e9,
-                    ..Auction::default()
-                },
+                &Default::default(),
+                100e9,
             )
             .await
             .unwrap()
