@@ -31,13 +31,12 @@ use {
     },
     crate::{
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-        liquidity::{slippage::SlippageCalculator, LimitOrder, LimitOrderId},
+        liquidity::{slippage::SlippageCalculator, LimitOrder},
     },
     anyhow::{ensure, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::{Account, H160},
     model::order::OrderKind,
-    num::{BigRational, ToPrimitive, Zero},
     shared::{
         ethrpc::Web3,
         zeroex_api::{Slippage, SwapQuery, ZeroExApi, ZeroExResponseError},
@@ -154,57 +153,18 @@ impl SingleOrderSolving for ZeroExSolver {
             .await
             .context("get_approval")?;
 
-        let create_settlement = || {
-            let mut settlement = SingleOrderSettlement {
-                sell_token_price: swap.price.buy_amount,
-                buy_token_price: swap.price.sell_amount,
-                interactions: Vec::new(),
-                gas_estimate: swap.price.estimated_gas.into(),
-            };
-            if let Some(approval) = &approval {
-                settlement.interactions.push(Box::new(*approval));
-            }
-            settlement.interactions.push(Box::new(swap.clone()));
-            settlement
+        let mut settlement = SingleOrderSettlement {
+            sell_token_price: swap.price.buy_amount,
+            buy_token_price: swap.price.sell_amount,
+            interactions: Vec::new(),
+            executed_amount: order.full_execution_amount(),
+            order,
         };
-
-        let Some(settlement) = create_settlement()
-            .into_settlement(
-                &order,
-                order.full_execution_amount(),
-                &auction.external_prices,
-                auction.gas_price,
-            )
-            .context("into_settlement")?
-        else {
-            return Ok(None);
-        };
-
-        let gas_price = BigRational::from_float(auction.gas_price).expect("Invalid gas price.");
-        let inputs = crate::objective_value::Inputs::from_settlement(
-            &settlement,
-            &auction.external_prices,
-            gas_price,
-            &swap.price.estimated_gas.into(),
-        );
-        let objective_value = inputs.objective_value();
-        if objective_value < BigRational::zero() {
-            let uid = match order.id {
-                LimitOrderId::Market(uid) => uid,
-                LimitOrderId::Limit(uid) => uid,
-                // Shouldn't happen. This is just for logging so use default.
-                _ => Default::default(),
-            };
-            let objective_value = objective_value.to_f64().unwrap_or(f64::NAN);
-            tracing::debug!(
-                %uid,
-                %objective_value,
-                "skipping solution because it has negative objective value"
-            );
-            return Ok(None);
+        if let Some(approval) = &approval {
+            settlement.interactions.push(Arc::new(*approval));
         }
-
-        Ok(Some(create_settlement()))
+        settlement.interactions.push(Arc::new(swap.clone()));
+        Ok(Some(settlement))
     }
 
     fn account(&self) -> &Account {
@@ -244,10 +204,9 @@ mod tests {
         contracts::{GPv2Settlement, WETH9},
         ethcontract::{futures::FutureExt as _, Web3, H160, U256},
         mockall::{predicate::*, Sequence},
-        model::order::{Order, OrderData, OrderKind, OrderMetadata},
+        model::order::{Order, OrderData, OrderKind},
         shared::{
             ethrpc::{create_env_test_transport, create_test_transport},
-            external_prices::ExternalPrices,
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
     };
@@ -556,79 +515,5 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result.interactions.len(), 1)
-    }
-
-    #[tokio::test]
-    async fn does_not_settle_negative_objective_value() {
-        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
-        allowance_fetcher
-            .expect_get_approval()
-            .returning(move |_| Ok(None));
-
-        let mut client = MockZeroExApi::new();
-        client.expect_get_swap().returning(move |_| {
-            async move {
-                Ok(SwapResponse {
-                    price: PriceResponse {
-                        sell_amount: 1.into(),
-                        buy_amount: 1.into(),
-                        estimated_gas: 1,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-            }
-            .boxed()
-        });
-
-        let solver = ZeroExSolver {
-            account: account(),
-            api: Arc::new(client),
-            allowance_fetcher,
-            excluded_sources: Default::default(),
-            slippage_calculator: Default::default(),
-            settlement: testlib::protocol::SETTLEMENT,
-            enable_rfqt: false,
-            enable_slippage_protection: false,
-        };
-
-        let order = |fee: U256| {
-            LimitOrder::from(Order {
-                data: OrderData {
-                    sell_amount: 1.into(),
-                    buy_amount: 1.into(),
-                    fee_amount: fee,
-                    kind: OrderKind::Sell,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    solver_fee: fee,
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-        };
-
-        let auction = Auction {
-            gas_price: 1.,
-            external_prices: ExternalPrices::new(Default::default(), Default::default()).unwrap(),
-            ..Default::default()
-        };
-
-        // It costs 1 unit to settle the order and the order earns 1 unit fee.
-        // Objective value is 0.
-        let result = solver
-            .try_settle_order(order(1.into()), &auction)
-            .await
-            .unwrap();
-        assert!(result.is_some());
-
-        // It costs 1 unit to settle the order and the order earns 0 unit fee.
-        // Objective value is -1.
-        let result = solver
-            .try_settle_order(order(0.into()), &auction)
-            .await
-            .unwrap();
-        assert!(result.is_none());
     }
 }

@@ -197,9 +197,12 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(execution.input_max, execution.output);
         if let Some(approval) = approval {
-            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+            encoder.append_to_execution_plan_internalizable(
+                Arc::new(approval),
+                execution.internalizable,
+            );
         }
-        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
+        encoder.append_to_execution_plan_internalizable(Arc::new(swap), execution.internalizable);
         Ok(())
     }
 }

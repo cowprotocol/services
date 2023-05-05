@@ -13,7 +13,7 @@ use {
         settlement::Settlement,
         solver::{Auction, Solver},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     ethcontract::{Account, H160, U256},
     model::{order::OrderKind, TokenPair},
     shared::{
@@ -305,24 +305,25 @@ impl Solution {
         slippage: &SlippageContext,
         gas_price: f64,
     ) -> Result<Option<Settlement>> {
+        let gas_used = self
+            .path
+            .iter()
+            .fold(U256::zero(), |acc, amm| acc + amm.gas_cost());
+        let gas_cost = gas_used
+            .checked_mul(U256::from_f64_lossy(gas_price))
+            .context("overflow during gas cost computation")?;
+
         let settlement = SingleOrderSettlement {
             sell_token_price: self.executed_buy_amount,
             buy_token_price: self.executed_sell_amount,
             interactions: vec![],
-            gas_estimate: self
-                .path
-                .iter()
-                .fold(U256::zero(), |acc, amm| acc + amm.gas_cost()),
-        }
-        .into_settlement(
-            order,
-            match order.kind {
+            executed_amount: match order.kind {
                 OrderKind::Buy => self.executed_buy_amount,
                 OrderKind::Sell => self.executed_sell_amount,
             },
-            slippage.prices(),
-            gas_price,
-        )?;
+            order: order.clone(),
+        }
+        .into_settlement(slippage.prices(), &gas_cost)?;
 
         let Some(mut settlement) = settlement else {
             return Ok(None);

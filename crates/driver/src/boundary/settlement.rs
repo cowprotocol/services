@@ -45,6 +45,7 @@ use {
         },
         settlement_simulation::settle_method_builder,
     },
+    std::sync::Arc,
 };
 
 #[derive(Debug, Clone)]
@@ -122,11 +123,11 @@ impl Settlement {
         for approval in approvals {
             settlement
                 .encoder
-                .append_to_execution_plan(Erc20ApproveInteraction {
+                .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
                     token: eth.contract_at(approval.0.spender.token.into()),
                     spender: approval.0.spender.address.into(),
                     amount: approval.0.amount,
-                });
+                }));
         }
 
         let slippage_calculator = SlippageCalculator {
@@ -156,7 +157,7 @@ impl Settlement {
             )
             .map_err(Error::Boundary)?;
             settlement.encoder.append_to_execution_plan_internalizable(
-                boundary_interaction,
+                Arc::new(boundary_interaction),
                 interaction.internalize(),
             );
         }

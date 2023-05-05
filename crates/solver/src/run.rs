@@ -15,6 +15,7 @@ use {
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
         settlement_post_processing::PostProcessingPipeline,
+        settlement_rater::SettlementRater,
         settlement_submission::{
             gelato::GelatoSubmitter,
             submitter::{
@@ -306,6 +307,26 @@ pub async fn run(args: Arguments) {
         .map(S3InstanceUploader::new)
         .map(Arc::new);
 
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+    let access_list_estimator = Arc::new(
+        crate::settlement_access_list::create_priority_estimator(
+            &web3,
+            args.access_list_estimators.as_slice(),
+            args.shared
+                .tenderly
+                .get_api_instance(&http_factory, "access_lists".to_owned())
+                .expect("failed to create Tenderly API"),
+            network_id.clone(),
+        )
+        .expect("failed to create access list estimator"),
+    );
+    let settlement_rater = Arc::new(SettlementRater {
+        access_list_estimator: access_list_estimator.clone(),
+        settlement_contract: settlement_contract.clone(),
+        web3: web3.clone(),
+        code_fetcher: code_fetcher.clone(),
+    });
+
     let solver = crate::solver::create(
         web3.clone(),
         solvers,
@@ -343,6 +364,7 @@ pub async fn run(args: Arguments) {
         &domain,
         s3_instance_uploader,
         &args.score_params,
+        settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
     )
     .expect("failure creating solvers");
@@ -477,19 +499,6 @@ pub async fn run(args: Arguments) {
             }
         }
     }
-    let access_list_estimator = Arc::new(
-        crate::settlement_access_list::create_priority_estimator(
-            &web3,
-            args.access_list_estimators.as_slice(),
-            args.shared
-                .tenderly
-                .get_api_instance(&http_factory, "access_lists".to_owned())
-                .expect("failed to create Tenderly API"),
-            network_id.clone(),
-        )
-        .expect("failed to create access list estimator"),
-    );
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -499,7 +508,7 @@ pub async fn run(args: Arguments) {
         retry_interval: args.submission_retry_interval_seconds,
         transaction_strategies,
         access_list_estimator,
-        code_fetcher: code_fetcher.clone(),
+        code_fetcher,
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
@@ -550,10 +559,10 @@ pub async fn run(args: Arguments) {
             .get_api_instance(&http_factory, "driver".to_owned())
             .expect("failed to create Tenderly API"),
         args.solution_comparison_decimal_cutoff,
-        code_fetcher,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
         order_balance_filter,
+        settlement_rater,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);

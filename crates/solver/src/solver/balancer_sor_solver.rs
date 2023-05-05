@@ -24,7 +24,6 @@ use {
     shared::{
         balancer_sor_api::{BalancerSorApi, Error as BalancerError, Query, Quote},
         interaction::{EncodedInteraction, Interaction},
-        price_estimation::gas,
     },
     std::sync::Arc,
 };
@@ -121,10 +120,8 @@ impl SingleOrderSolving for BalancerSorSolver {
             sell_token_price: quoted_buy_amount,
             buy_token_price: quoted_sell_amount,
             interactions: Vec::new(),
-            gas_estimate: quote
-                .swaps
-                .iter()
-                .fold(U256::zero(), |acc, _| acc + gas::GAS_PER_BALANCER_SWAP),
+            executed_amount: order.full_execution_amount(),
+            order: order.clone(),
         };
 
         if let Some(approval) = self
@@ -136,7 +133,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             })
             .await?
         {
-            settlement.interactions.push(Box::new(approval));
+            settlement.interactions.push(Arc::new(approval));
         }
 
         let limits = compute_swap_limits(
@@ -151,7 +148,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             quote,
             limits,
         };
-        settlement.interactions.push(Box::new(batch_swap));
+        settlement.interactions.push(Arc::new(batch_swap));
 
         Ok(Some(settlement))
     }

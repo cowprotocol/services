@@ -172,10 +172,13 @@ impl SettlementHandler {
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
         if let Some(approval) = self.allowances.approve_token(execution.input_max.clone())? {
-            encoder.append_to_execution_plan_internalizable(approval, execution.internalizable);
+            encoder.append_to_execution_plan_internalizable(
+                Arc::new(approval),
+                execution.internalizable,
+            );
         }
         encoder.append_to_execution_plan_internalizable(
-            BalancerSwapGivenOutInteraction {
+            Arc::new(BalancerSwapGivenOutInteraction {
                 settlement: self.settlement.clone(),
                 vault: self.vault.clone(),
                 pool_id: self.pool_id,
@@ -185,7 +188,7 @@ impl SettlementHandler {
                 // control pool behaviour for swaps. That being said, weighted pools
                 // do not seem to make use of this at the moment so leave it empty.
                 user_data: Default::default(),
-            },
+            }),
             execution.internalizable,
         );
 

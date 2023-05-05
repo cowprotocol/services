@@ -405,17 +405,16 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    pub fn append_to_execution_plan(&mut self, interaction: impl Interaction + 'static) {
+    pub fn append_to_execution_plan(&mut self, interaction: Arc<dyn Interaction>) {
         self.append_to_execution_plan_internalizable(interaction, false)
     }
 
     pub fn append_to_execution_plan_internalizable(
         &mut self,
-        interaction: impl Interaction + 'static,
+        interaction: Arc<dyn Interaction>,
         internalizable: bool,
     ) {
-        self.execution_plan
-            .push((Arc::new(interaction), internalizable));
+        self.execution_plan.push((interaction, internalizable));
     }
 
     pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
@@ -936,7 +935,7 @@ pub mod tests {
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(unwrap.clone());
-        encoder.append_to_execution_plan(interaction.clone());
+        encoder.append_to_execution_plan(Arc::new(interaction.clone()));
 
         assert_eq!(
             encoder
@@ -1046,7 +1045,7 @@ pub mod tests {
         encoder0
             .add_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
-        encoder0.append_to_execution_plan(NoopInteraction {});
+        encoder0.append_to_execution_plan(Arc::new(NoopInteraction {}));
         encoder0.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
             amount: 1.into(),
@@ -1075,7 +1074,7 @@ pub mod tests {
         encoder1
             .add_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
-        encoder1.append_to_execution_plan(NoopInteraction {});
+        encoder1.append_to_execution_plan(Arc::new(NoopInteraction {}));
         encoder1.add_unwrap(UnwrapWethInteraction {
             weth,
             amount: 2.into(),
@@ -1334,8 +1333,8 @@ pub mod tests {
         let prices = hashmap! {token(1) => 7.into() };
 
         let mut encoder = SettlementEncoder::new(prices);
-        encoder.append_to_execution_plan_internalizable(TestInteraction, true);
-        encoder.append_to_execution_plan_internalizable(TestInteraction, false);
+        encoder.append_to_execution_plan_internalizable(Arc::new(TestInteraction), true);
+        encoder.append_to_execution_plan_internalizable(Arc::new(TestInteraction), false);
 
         let encoded = encoder
             .clone()

@@ -134,7 +134,7 @@ impl Execution {
             }
             CustomInteraction(interaction_data) => {
                 settlement.encoder.append_to_execution_plan_internalizable(
-                    *interaction_data.clone(),
+                    Arc::new(*interaction_data.clone()),
                     internalizable,
                 );
                 Ok(())
@@ -267,7 +267,9 @@ impl<'a> IntermediateSettlement<'a> {
         // interactions from the execution plan - the execution plan typically
         // consists of AMM swaps that require these approvals to be in place.
         for approval in self.approvals {
-            settlement.encoder.append_to_execution_plan(approval);
+            settlement
+                .encoder
+                .append_to_execution_plan(Arc::new(approval));
         }
 
         for execution in &self.executions {
