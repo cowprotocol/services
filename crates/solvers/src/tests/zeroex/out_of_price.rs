@@ -125,9 +125,7 @@ async fn sell() {
     assert_eq!(
         solution,
         json!({
-            "prices": {},
-            "trades": [],
-            "interactions": [],
+            "solutions": []
         }),
     );
 }
@@ -246,9 +244,7 @@ async fn buy() {
     assert_eq!(
         solution,
         json!({
-            "prices": {},
-            "trades": [],
-            "interactions": [],
+            "solutions": []
         }),
     );
 }
