@@ -40,7 +40,7 @@ async fn solve(
     auction: axum::extract::Json<dto::Auction>,
 ) -> (
     axum::http::StatusCode,
-    axum::response::Json<dto::Response<dto::Solution>>,
+    axum::response::Json<dto::Response<dto::Solutions>>,
 ) {
     let auction = match auction.to_domain() {
         Ok(value) => value,
@@ -53,15 +53,16 @@ async fn solve(
         }
     };
 
-    let solution = state
+    let solutions = state
         .solve(auction)
         .await
-        .first()
-        .map(dto::Solution::from_domain)
-        .unwrap_or_else(dto::Solution::trivial);
+        .into_iter()
+        .next()
+        .map(|solution| dto::Solutions::from_domain(&[solution]))
+        .unwrap_or_default();
 
     (
         axum::http::StatusCode::OK,
-        axum::response::Json(dto::Response::Ok(solution)),
+        axum::response::Json(dto::Response::Ok(solutions)),
     )
 }

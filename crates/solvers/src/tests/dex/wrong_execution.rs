@@ -133,9 +133,7 @@ async fn test() {
         assert_eq!(
             solution,
             json!({
-                "prices": {},
-                "trades": [],
-                "interactions": [],
+                "solutions": []
             }),
         );
     }

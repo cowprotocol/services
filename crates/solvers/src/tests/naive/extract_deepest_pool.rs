@@ -89,30 +89,33 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "prices": {
-                "0x0101010101010101010101010101010101010101": "99",
-                "0x0202020202020202020202020202020202020202": "100",
-            },
-            "trades": [
-                {
-                    "kind": "fulfillment",
-                    "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                2a2a2a2a",
-                    "executedAmount": "100",
+            "solutions": [{
+                "id": 0,
+                "prices": {
+                    "0x0101010101010101010101010101010101010101": "99",
+                    "0x0202020202020202020202020202020202020202": "100",
                 },
-            ],
-            "interactions": [
-                {
-                    "kind": "liquidity",
-                    "internalize": false,
-                    "id": "1",
-                    "inputToken": "0x0101010101010101010101010101010101010101",
-                    "outputToken": "0x0202020202020202020202020202020202020202",
-                    "inputAmount": "100",
-                    "outputAmount": "99"
-                },
-            ]
+                "trades": [
+                    {
+                        "kind": "fulfillment",
+                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a",
+                        "executedAmount": "100",
+                    },
+                ],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "1",
+                        "inputToken": "0x0101010101010101010101010101010101010101",
+                        "outputToken": "0x0202020202020202020202020202020202020202",
+                        "inputAmount": "100",
+                        "outputAmount": "99"
+                    },
+                ]
+            }]
         }),
     );
 }
