@@ -3,12 +3,16 @@ use {
         buffers::{BufferRetrievalError, BufferRetrieving},
         settlement::SettlementContext,
     },
-    crate::liquidity::{Exchange, LimitOrder, Liquidity},
+    crate::liquidity::{order_converter::OrderConverter, Exchange, LimitOrder, Liquidity},
     anyhow::{Context, Result},
+    contracts::WETH9,
     ethcontract::{errors::ExecutionError, U256},
     itertools::{Either, Itertools as _},
     maplit::{btreemap, hashset},
-    model::{auction::AuctionId, order::OrderKind},
+    model::{
+        auction::AuctionId,
+        order::{Order, OrderKind},
+    },
     num::{BigInt, BigRational},
     primitive_types::H160,
     shared::{
@@ -32,7 +36,8 @@ pub struct Instances {
 }
 
 pub struct InstanceCreator {
-    pub native_token: H160,
+    pub native_token: WETH9,
+    pub ethflow_contract: Option<H160>,
     pub token_info_fetcher: Arc<dyn TokenInfoFetching>,
     pub buffer_retriever: Arc<dyn BufferRetrieving>,
     pub market_makable_token_list: AutoUpdatingTokenList,
@@ -45,11 +50,21 @@ impl InstanceCreator {
         &self,
         auction_id: AuctionId,
         run_id: u64,
-        mut orders: Vec<LimitOrder>,
+        orders: Vec<Order>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         external_prices: &ExternalPrices,
+        balances: &HashMap<shared::account_balances::Query, U256>,
     ) -> Instances {
+        let converter = OrderConverter {
+            native_token: self.native_token.clone(),
+        };
+        let mut orders = crate::solver::balance_and_convert_orders(
+            self.ethflow_contract,
+            &converter,
+            balances,
+            orders,
+        );
         // The HTTP solver interface expects liquidity limit orders (like 0x
         // limit orders) to be added to the `orders` models and NOT the
         // `liquidity` models. Split the two here to avoid indexing errors
@@ -108,14 +123,14 @@ impl InstanceCreator {
         let price_estimates = external_prices.into_http_solver_prices();
 
         let gas_model = GasModel {
-            native_token: self.native_token,
+            native_token: self.native_token.address(),
             gas_price,
         };
 
         // Some solvers require that there are no isolated islands of orders whose
         // tokens are unconnected to the native token.
         let fee_connected_tokens: HashSet<H160> =
-            compute_fee_connected_tokens(&amms, self.native_token);
+            compute_fee_connected_tokens(&amms, self.native_token.address());
         let filtered_order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
 
         let tokens: HashSet<H160> = tokens.into_iter().collect();
@@ -140,7 +155,7 @@ impl InstanceCreator {
                 auction_id: Some(auction_id),
                 run_id: Some(run_id),
                 gas_price: Some(gas_price),
-                native_token: Some(self.native_token),
+                native_token: Some(self.native_token.address()),
             }),
         };
 
@@ -396,15 +411,15 @@ mod tests {
         super::*,
         crate::{
             liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder},
+            order_balance_filter::max_balance,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
-        model::TokenPair,
-        shared::{externalprices, token_info::MockTokenInfoFetching},
+        model::{order::OrderData, TokenPair},
+        shared::{dummy_contract, externalprices, token_info::MockTokenInfoFetching},
     };
 
     #[tokio::test]
     async fn remove_orders_without_native_connection_() {
-        let limit_handling = CapturingSettlementHandler::arc();
         let amm_handling = CapturingSettlementHandler::arc();
 
         let native_token = H160::from_low_u64_be(0);
@@ -439,11 +454,15 @@ mod tests {
             (tokens[3], tokens[2]),
         ]
         .iter()
-        .map(|tokens| LimitOrder {
-            sell_token: tokens.0,
-            buy_token: tokens.1,
-            kind: OrderKind::Sell,
-            settlement_handling: limit_handling.clone(),
+        .map(|tokens| Order {
+            data: OrderData {
+                sell_token: tokens.0,
+                buy_token: tokens.1,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
             ..Default::default()
         })
         .collect::<Vec<_>>();
@@ -465,15 +484,17 @@ mod tests {
         });
 
         let solver = InstanceCreator {
-            native_token: H160::zero(),
+            native_token: dummy_contract!(WETH9, [0x00; 20]),
+            ethflow_contract: None,
             token_info_fetcher: Arc::new(token_infos),
             buffer_retriever: Arc::new(buffer_retriever),
             market_makable_token_list: Default::default(),
             environment_metadata: Default::default(),
         };
 
+        let balances = &max_balance(&orders);
         let instances = solver
-            .prepare_instances(0, 0, orders, amms, 0., &Default::default())
+            .prepare_instances(0, 0, orders, amms, 0., &Default::default(), balances)
             .await;
         assert_eq!(instances.filtered.orders.len(), 6);
         assert_eq!(instances.plain.orders.len(), 8);
@@ -501,33 +522,43 @@ mod tests {
         });
 
         let solver = InstanceCreator {
-            native_token: H160::zero(),
+            native_token: dummy_contract!(WETH9, [0x00; 20]),
+            ethflow_contract: None,
             token_info_fetcher: Arc::new(token_infos),
             buffer_retriever: Arc::new(buffer_retriever),
             market_makable_token_list: Default::default(),
             environment_metadata: Default::default(),
         };
 
+        let orders = vec![
+            Order {
+                data: OrderData {
+                    sell_token: address(1),
+                    buy_token: address(2),
+                    sell_amount: 1.into(),
+                    buy_amount: 2.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                data: OrderData {
+                    sell_token: address(3),
+                    buy_token: address(4),
+                    sell_amount: 3.into(),
+                    buy_amount: 4.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+        let balances = &max_balance(&orders);
+
         let instances = solver
             .prepare_instances(
                 42,
                 1337,
-                vec![
-                    LimitOrder {
-                        sell_token: address(1),
-                        buy_token: address(2),
-                        sell_amount: 1.into(),
-                        buy_amount: 2.into(),
-                        ..Default::default()
-                    },
-                    LimitOrder {
-                        sell_token: address(3),
-                        buy_token: address(4),
-                        sell_amount: 3.into(),
-                        buy_amount: 4.into(),
-                        ..Default::default()
-                    },
-                ],
+                orders,
                 vec![
                     Liquidity::ConstantProduct(ConstantProductOrder {
                         address: address(0x56),
@@ -557,6 +588,7 @@ mod tests {
                     address(3) => BigRational::new(3.into(), 3.into()),
                     address(4) => BigRational::new(4.into(), 4.into()),
                 },
+                balances,
             )
             .await;
 

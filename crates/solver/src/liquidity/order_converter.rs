@@ -19,6 +19,7 @@ use {
     std::sync::Arc,
 };
 
+#[derive(Clone)]
 pub struct OrderConverter {
     pub native_token: WETH9,
 }
@@ -43,9 +44,8 @@ impl OrderConverter {
             available_sell_token_balance,
         }: BalancedOrder,
     ) -> Result<LimitOrder> {
-        let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
-            native_token.address()
+            self.native_token.address()
         } else {
             order.data.buy_token
         };
@@ -91,7 +91,7 @@ impl OrderConverter {
             solver_fee,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
-                native_token,
+                native_token: self.native_token.clone(),
             }),
             exchange: Exchange::GnosisProtocol,
         })

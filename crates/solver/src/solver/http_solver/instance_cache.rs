@@ -47,10 +47,11 @@ impl SharedInstanceCreator {
                         .prepare_instances(
                             auction.id,
                             auction.run,
-                            auction.orders.clone(),
-                            auction.liquidity.clone(),
+                            auction.orders,
+                            auction.liquidity,
                             auction.gas_price,
                             &auction.external_prices,
+                            &auction.balances,
                         )
                         .await,
                 );
@@ -125,8 +126,13 @@ mod tests {
     use {
         super::*,
         crate::solver::http_solver::buffers::MockBufferRetrieving,
+        contracts::WETH9,
+        model::order::{Order, OrderData},
         primitive_types::U256,
-        shared::token_info::{MockTokenInfoFetching, TokenInfo},
+        shared::{
+            dummy_contract,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
     };
 
     #[tokio::test]
@@ -146,7 +152,8 @@ mod tests {
                 .collect()
         });
         let creator = InstanceCreator {
-            native_token: Default::default(),
+            native_token: dummy_contract!(WETH9, [0x00; 20]),
+            ethflow_contract: None,
             token_info_fetcher: Arc::new(token_infos),
             buffer_retriever: Arc::new(buffer_retriever),
             market_makable_token_list: Default::default(),
@@ -158,18 +165,21 @@ mod tests {
         // check whether the inner instance creator has been called by comparing
         // the size of orders vec in the model.
 
-        let mut auction = Auction {
-            id: 0,
-            run: 0,
-            orders: vec![],
-            ..Default::default()
-        };
+        let mut auction = Auction::default();
         let instance = shared.get_instances(auction.clone()).await;
         assert_eq!(instance.plain.orders.len(), 0);
 
         // Size stays the same even though auction has one more order because cached
         // result is used because id in cache.
-        auction.orders.push(Default::default());
+        auction.orders.push(Order {
+            data: OrderData {
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        auction.balances = crate::order_balance_filter::max_balance(&auction.orders);
         let instance = shared.get_instances(auction.clone()).await;
         assert_eq!(instance.plain.orders.len(), 0);
 

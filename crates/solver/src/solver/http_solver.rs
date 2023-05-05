@@ -51,7 +51,7 @@ pub struct HttpSolver {
     solver: DefaultHttpSolverApi,
     account: Account,
     allowance_manager: Arc<dyn AllowanceManaging>,
-    order_converter: Arc<OrderConverter>,
+    order_converter: OrderConverter,
     instance_type: InstanceType,
     slippage_calculator: SlippageCalculator,
     market_makable_token_list: AutoUpdatingTokenList,
@@ -69,7 +69,7 @@ impl HttpSolver {
         solver: DefaultHttpSolverApi,
         account: Account,
         allowance_manager: Arc<dyn AllowanceManaging>,
-        order_converter: Arc<OrderConverter>,
+        order_converter: OrderConverter,
         instance_type: InstanceType,
         slippage_calculator: SlippageCalculator,
         market_makable_token_list: AutoUpdatingTokenList,
@@ -156,7 +156,7 @@ impl Solver for HttpSolver {
             settled.clone(),
             &instances.context,
             self.allowance_manager.clone(),
-            self.order_converter.clone(),
+            &self.order_converter,
             slippage,
             &self.domain,
             self.enforce_correct_fees,
@@ -229,25 +229,22 @@ mod tests {
         super::*,
         crate::{
             interactions::allowances::MockAllowanceManaging,
-            liquidity::{
-                tests::CapturingSettlementHandler,
-                ConstantProductOrder,
-                LimitOrder,
-                Liquidity,
-            },
+            liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, Liquidity},
             solver::http_solver::{
                 buffers::MockBufferRetrieving,
                 instance_creation::InstanceCreator,
             },
         },
         ::model::TokenPair,
+        contracts::WETH9,
         ethcontract::Address,
         maplit::hashmap,
-        model::order::OrderKind,
+        model::order::{Order, OrderData, OrderKind},
         num::rational::Ratio,
         primitive_types::U256,
         reqwest::Client,
         shared::{
+            dummy_contract,
             http_solver::{
                 model::{ExecutionPlan, TokenAmount},
                 SolverConfig,
@@ -306,14 +303,15 @@ mod tests {
             },
             Account::Local(Address::default(), None),
             Arc::new(MockAllowanceManaging::new()),
-            Arc::new(OrderConverter::test(H160([0x42; 20]))),
+            OrderConverter::test(H160([0x42; 20])),
             InstanceType::Filtered,
             SlippageCalculator::default(),
             Default::default(),
             Default::default(),
             Arc::new(SharedInstanceCreator::new(
                 InstanceCreator {
-                    native_token: H160::zero(),
+                    native_token: dummy_contract!(WETH9, [0x00; 20]),
+                    ethflow_contract: None,
                     token_info_fetcher: Arc::new(mock_token_info_fetcher),
                     buffer_retriever: Arc::new(mock_buffer_retriever),
                     market_makable_token_list: Default::default(),
@@ -325,13 +323,15 @@ mod tests {
             true,
         );
         let base = |x: u128| x * 10u128.pow(18);
-        let limit_orders = vec![LimitOrder {
-            buy_token,
-            sell_token,
-            buy_amount: base(1).into(),
-            sell_amount: base(2).into(),
-            kind: OrderKind::Sell,
-            id: 0.into(),
+        let orders = vec![Order {
+            data: OrderData {
+                buy_token,
+                sell_token,
+                buy_amount: base(1).into(),
+                sell_amount: base(2).into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
             ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {
@@ -345,7 +345,7 @@ mod tests {
             .solve_(Auction {
                 id: 0,
                 run: 1,
-                orders: limit_orders,
+                orders,
                 liquidity,
                 gas_price,
                 deadline: Instant::now() + Duration::from_secs(100),

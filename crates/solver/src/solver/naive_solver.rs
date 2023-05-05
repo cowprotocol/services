@@ -3,6 +3,7 @@ pub mod multi_order_solver;
 use {
     crate::{
         liquidity::{
+            order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
             ConstantProductOrder,
             LimitOrder,
@@ -14,6 +15,7 @@ use {
     anyhow::Result,
     ethcontract::Account,
     model::TokenPair,
+    primitive_types::H160,
     std::collections::HashMap,
 };
 
@@ -21,6 +23,8 @@ pub struct NaiveSolver {
     account: Account,
     slippage_calculator: SlippageCalculator,
     enforce_correct_fees: bool,
+    ethflow_contract: Option<H160>,
+    order_converter: OrderConverter,
 }
 
 impl NaiveSolver {
@@ -28,11 +32,15 @@ impl NaiveSolver {
         account: Account,
         slippage_calculator: SlippageCalculator,
         enforce_correct_fees: bool,
+        ethflow_contract: Option<H160>,
+        order_converter: OrderConverter,
     ) -> Self {
         Self {
             account,
             slippage_calculator,
             enforce_correct_fees,
+            ethflow_contract,
+            order_converter,
         }
     }
 }
@@ -42,12 +50,19 @@ impl Solver for NaiveSolver {
     async fn solve(
         &self,
         Auction {
-            mut orders,
+            orders,
             liquidity,
             external_prices,
+            balances,
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
+        let mut orders = super::balance_and_convert_orders(
+            self.ethflow_contract,
+            &self.order_converter,
+            &balances,
+            orders,
+        );
         // Filter out partially fillable limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
         orders.retain(|o| !o.solver_determines_fee() || !self.enforce_correct_fees);

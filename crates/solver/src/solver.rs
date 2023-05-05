@@ -33,11 +33,12 @@ use {
         },
     },
     anyhow::{anyhow, Context, Result},
-    contracts::{BalancerV2Vault, GPv2Settlement},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
-    model::{auction::AuctionId, DomainSeparator},
+    model::{auction::AuctionId, order::Order, DomainSeparator},
     reqwest::Url,
     shared::{
+        account_balances,
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
         ethrpc::Web3,
@@ -53,6 +54,7 @@ use {
         zeroex_api::ZeroExApi,
     },
     std::{
+        collections::HashMap,
         fmt::{self, Debug, Formatter},
         str::FromStr,
         sync::Arc,
@@ -119,7 +121,7 @@ pub struct Auction {
     pub run: u64,
 
     /// The GPv2 orders to match.
-    pub orders: Vec<LimitOrder>,
+    pub orders: Vec<Order>,
 
     /// The baseline on-chain liquidity that can be used by the solvers for
     /// settling orders.
@@ -147,6 +149,8 @@ pub struct Auction {
     /// External prices are garanteed to exist for all orders included in the
     /// current auction.
     pub external_prices: ExternalPrices,
+
+    pub balances: HashMap<account_balances::Query, U256>,
 }
 
 impl Default for Auction {
@@ -164,6 +168,7 @@ impl Default for Auction {
             gas_price: Default::default(),
             deadline: never,
             external_prices: Default::default(),
+            balances: Default::default(),
         }
     }
 }
@@ -318,7 +323,7 @@ pub fn create(
     web3: Web3,
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
-    native_token: H160,
+    native_token: WETH9,
     cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
     balancer_sor_url: Url,
@@ -340,7 +345,7 @@ pub fn create(
     one_inch_url: Url,
     one_inch_referrer_address: Option<H160>,
     external_solvers: Vec<ExternalSolverArg>,
-    order_converter: Arc<OrderConverter>,
+    order_converter: OrderConverter,
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
     smallest_partial_fill: U256,
@@ -353,6 +358,7 @@ pub fn create(
     score_configuration: &score_computation::Arguments,
     settlement_rater: Arc<dyn SettlementRating>,
     enforce_correct_fees: bool,
+    ethflow_contract: Option<H160>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -370,6 +376,7 @@ pub fn create(
     ));
     let instance_creator = InstanceCreator {
         native_token,
+        ethflow_contract,
         token_info_fetcher: token_info_fetcher.clone(),
         buffer_retriever,
         market_makable_token_list: market_makable_token_list.clone(),
@@ -425,6 +432,8 @@ pub fn create(
                     order_prioritization_config.clone(),
                     smallest_partial_fill,
                     settlement_rater.clone(),
+                    ethflow_contract,
+                    order_converter.clone(),
                 )
             };
 
@@ -441,11 +450,15 @@ pub fn create(
                     account,
                     slippage_calculator,
                     enforce_correct_fees,
+                    ethflow_contract,
+                    order_converter.clone(),
                 )),
                 SolverType::Baseline => shared(BaselineSolver::new(
                     account,
                     base_tokens.clone(),
                     slippage_calculator,
+                    ethflow_contract,
+                    order_converter.clone(),
                 )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
@@ -560,15 +573,6 @@ pub fn create(
     Ok(solvers)
 }
 
-/// Returns a naive solver to be used e.g. in e2e tests.
-pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
-    Arc::new(NaiveSolver::new(
-        account,
-        SlippageCalculator::default(),
-        true,
-    ))
-}
-
 #[cfg(test)]
 struct DummySolver;
 #[cfg(test)]
@@ -591,6 +595,26 @@ impl Solver for DummySolver {
 #[cfg(test)]
 pub fn dummy_arc_solver() -> Arc<dyn Solver> {
     Arc::new(DummySolver)
+}
+
+fn balance_and_convert_orders(
+    ethflow_contract: Option<H160>,
+    converter: &OrderConverter,
+    balances: &HashMap<account_balances::Query, U256>,
+    orders: Vec<Order>,
+) -> Vec<LimitOrder> {
+    crate::order_balance_filter::balance_orders(orders, balances, ethflow_contract)
+        .into_iter()
+        .filter_map(|order| match converter.normalize_limit_order(order) {
+            Ok(order) => Some(order),
+            // This should never happen unless we are getting malformed
+            // orders from the API - so raise an alert if this happens.
+            Err(err) => {
+                tracing::error!(?err, "error normalizing limit order");
+                None
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
