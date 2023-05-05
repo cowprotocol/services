@@ -29,12 +29,12 @@ impl Solutions {
                         .map(|trade| match trade {
                             Trade::Fulfillment(fulfillment) => {
                                 let order = auction
-                            .orders
-                            .iter()
-                            .find(|order| order.uid == fulfillment.order)
-                            // TODO this error should reference the UID
-                            .ok_or(super::Error("invalid order UID specified in fulfillment"))?
-                            .clone();
+                                    .orders
+                                    .iter()
+                                    .find(|order| order.uid == fulfillment.order)
+                                    // TODO this error should reference the UID
+                                    .ok_or(super::Error("invalid order UID specified in fulfillment"))?
+                                    .clone();
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,

@@ -87,7 +87,7 @@ impl Settlement {
     }
 }
 
-/// A settlement which has been verified to respect certain fundamental the
+/// A settlement which has been verified to respect certain fundamental
 /// rules of the protocol. In particular:
 ///
 /// - Simulation: the settlement has been simulated without reverting, including

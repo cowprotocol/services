@@ -124,9 +124,9 @@ pub struct Setup {
 pub enum Solution {
     /// Set up the solver to return a valid solution.
     Valid,
-    /// Set up the solver to return a valid solution, with additional random
-    /// bytes appended to the calldata. This is useful for changing the
-    /// solution score in a controlled way.
+    /// Set up the solver to return a valid solution, with additional
+    /// meaningless bytes appended to the calldata. This is useful for
+    /// changing the solution score in a controlled way.
     AdditionalCalldata { bytes: usize },
     /// Set up the solver to return a solution with bogus calldata.
     InvalidCalldata,
