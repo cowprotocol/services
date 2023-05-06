@@ -234,7 +234,8 @@ impl SolvableOrdersCache {
         counter.record(&auction.orders);
 
         if self.store_in_db {
-            let _id = self.database.replace_current_auction(&auction).await?;
+            let id = self.database.replace_current_auction(&auction).await?;
+            tracing::info!(auction = %id, %block, "new auction");
         }
 
         *self.cache.lock().unwrap() = Inner {
@@ -248,6 +249,7 @@ impl SolvableOrdersCache {
             balances: new_balances,
         };
 
+        tracing::debug!(%block, "updated current cached auction");
         Ok(())
     }
 
