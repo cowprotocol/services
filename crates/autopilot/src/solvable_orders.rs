@@ -209,11 +209,11 @@ impl SolvableOrdersCache {
             new_balances.insert(query, balance);
         }
 
-        let orders = filter_dust_orders(orders, &new_balances);
-        counter.checkpoint("dust_order", &orders);
-
         let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
         counter.checkpoint("insufficient_balance", &orders);
+
+        let orders = filter_dust_orders(orders, &new_balances, self.ethflow_contract_address);
+        counter.checkpoint("dust_order", &orders);
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -397,18 +397,28 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+fn filter_dust_orders(
+    mut orders: Vec<Order>,
+    balances: &Balances,
+    ethflow_contract: Option<H160>,
+) -> Vec<Order> {
     orders.retain(|order| {
         if !order.data.partially_fillable {
             return true;
         }
 
-        let Some(balance) = balances.get(&Query::from_order(order)) else {
+        let balance = if Some(order.metadata.owner) == ethflow_contract {
+            // For EthFlow orders, assume that there is always enough balance.
+            U256::MAX
+        } else if let Some(balance) = balances.get(&Query::from_order(order)) {
+            *balance
+        } else {
             return false;
         };
+
         let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
             order,
-            *balance
+            balance
         ) else {
             return false;
         };
