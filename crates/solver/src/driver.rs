@@ -300,12 +300,13 @@ impl Driver {
         let orders = orders
             .into_iter()
             .filter_map(|order| {
+                let uid = order.order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
                     Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
-                        tracing::error!(?err, "error normalizing limit order");
+                        tracing::error!(?err, order = %uid, "error normalizing limit order");
                         None
                     }
                 }
