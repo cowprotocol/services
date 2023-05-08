@@ -105,10 +105,11 @@ impl Competition {
         // Score the solutions.
         let scores = join_all(settlements.map(|settlement| async move {
             tracing::trace!(id = ?settlement.solution.id, "scoring");
-            (match settlement.solution.score {
+            let score = match settlement.solution.score {
                 Some(score) => Ok(score),
                 None => settlement.score(&self.eth, auction).await,
-            }, settlement)
+            };
+            (score, settlement)
         }))
         .await;
 
@@ -126,7 +127,7 @@ impl Competition {
 
         // Trace the scores.
         let scores = scores.map(|(score, settlement)| {
-            tracing::info!(id = ?settlement.solution.id, score = f64::from(score.clone()), "solution scored");
+            tracing::info!(id = ?settlement.solution.id, score = ?score, "solution scored");
             (score, settlement)
         });
 

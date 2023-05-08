@@ -19,8 +19,6 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     primitive_types::U256,
-    rand::Rng,
-    num::ToPrimitive,
     settlement::Settlement,
     std::collections::HashMap,
 };
@@ -396,7 +394,7 @@ impl SolverTimeout {
 }
 
 /// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Score(pub U256);
 
 impl From<Score> for U256 {
