@@ -36,7 +36,7 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Interactions {
     pub pre: Vec<InteractionData>,
-    // later we can add here intra/post interactions
+    pub post: Vec<InteractionData>,
 }
 
 /// An order that is returned when querying the orderbook.
@@ -939,7 +939,8 @@ mod tests {
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
             "interactions": {
-                    "pre": []
+                    "pre": [],
+                    "post": [],
             }
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;

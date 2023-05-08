@@ -75,6 +75,7 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
+/// Time during the `settle()` call when an interaction should be executed.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "ExecutionTime")]
 #[sqlx(rename_all = "lowercase")]
@@ -88,13 +89,13 @@ pub enum ExecutionTime {
     Post,
 }
 
-/// one row in the pre_interaction table
+/// One row in the `interactions` table
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Interaction {
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
-    pub index: i64,
+    pub index: i32,
     pub execution: ExecutionTime,
 }
 
@@ -408,6 +409,7 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
+    pub post_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
@@ -474,7 +476,8 @@ o.class, o.surplus_fee, o.surplus_fee_timestamp,
     ORDER BY p.block_number DESC, p.log_index DESC
     LIMIT 1
 ), true)) AS presignature_pending,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid order by p.index) as pre_interactions,
+array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'pre' order by p.index) as pre_interactions,
+array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'post' order by p.index) as post_interactions,
 (SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
     left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
     where eth_o.uid = o.uid limit 1) as ethflow_data,
@@ -861,9 +864,10 @@ mod tests {
         sqlx::Connection,
     };
 
-    async fn read_order_pre_interactions(
+    async fn read_order_interactions(
         ex: &mut PgConnection,
         id: &OrderUid,
+        execution: ExecutionTime,
     ) -> Result<Vec<Interaction>, sqlx::Error> {
         const QUERY: &str = r#"
     SELECT * FROM interactions
@@ -873,7 +877,7 @@ mod tests {
         "#;
         sqlx::query_as(QUERY)
             .bind(id)
-            .bind(ExecutionTime::Pre)
+            .bind(execution)
             .fetch_all(ex)
             .await
     }
@@ -974,6 +978,88 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn postgres_order_roundtrip_post_interactions() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        let post_interaction_1 = Interaction {
+            execution: ExecutionTime::Post,
+            ..Default::default()
+        };
+        let post_interaction_2 = Interaction {
+            target: ByteArray([1; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![0u8, 1u8],
+            index: 1,
+            execution: ExecutionTime::Post,
+        };
+        insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
+            .await
+            .unwrap();
+        insert_or_overwrite_interaction(&mut db, &post_interaction_2, &order.uid)
+            .await
+            .unwrap();
+        let order_ = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            vec![ByteArray::default(), ByteArray([1; 20])],
+            order_
+                .post_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.0)
+                .collect::<Vec<ByteArray<20>>>(),
+        );
+        assert_eq!(
+            vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
+            order_
+                .post_interactions
+                .clone()
+                .into_iter()
+                .map(|v| v.1)
+                .collect::<Vec<BigDecimal>>()
+        );
+        assert_eq!(
+            vec![vec![], vec![0u8, 1u8]],
+            order_
+                .post_interactions
+                .into_iter()
+                .map(|v| v.2)
+                .collect::<Vec<Vec<u8>>>()
+        );
+        let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
+            .await
+            .unwrap();
+        assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_1);
+        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_2);
+
+        let post_interaction_overwrite = Interaction {
+            target: ByteArray([2; 20]),
+            value: BigDecimal::new(100.into(), 1),
+            data: vec![0u8, 2u8],
+            index: 0,
+            execution: ExecutionTime::Post,
+        };
+        insert_or_overwrite_interaction(&mut db, &post_interaction_overwrite, &order.uid)
+            .await
+            .unwrap();
+        let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
+            .await
+            .unwrap();
+        assert_eq!(
+            *post_interactions.get(0).unwrap(),
+            post_interaction_overwrite
+        );
+        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_2);
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn postgres_order_roundtrip_pre_interactions() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
@@ -1025,7 +1111,7 @@ mod tests {
                 .map(|v| v.2)
                 .collect::<Vec<Vec<u8>>>()
         );
-        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+        let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
             .await
             .unwrap();
         assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
@@ -1041,7 +1127,7 @@ mod tests {
         insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite, &order.uid)
             .await
             .unwrap();
-        let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
+        let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
             .await
             .unwrap();
         assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_overwrite);

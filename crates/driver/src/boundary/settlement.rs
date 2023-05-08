@@ -279,7 +279,16 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         signature: to_boundary_signature(&order.signature),
         interactions: Interactions {
             pre: order
-                .interactions
+                .pre_interactions
+                .iter()
+                .map(|interaction| model::interaction::InteractionData {
+                    target: interaction.target.into(),
+                    value: interaction.value.into(),
+                    call_data: interaction.call_data.clone(),
+                })
+                .collect(),
+            post: order
+                .post_interactions
                 .iter()
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),

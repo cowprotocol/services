@@ -143,6 +143,7 @@ impl RunLoop {
                         partially_fillable: order.data.partially_fillable,
                         executed: Default::default(),
                         pre_interactions: Default::default(),
+                        post_interactions: Default::default(),
                         sell_token_balance: order.data.sell_token_balance,
                         buy_token_balance: order.data.buy_token_balance,
                         class,
