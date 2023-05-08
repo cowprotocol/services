@@ -330,7 +330,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         Ok(Arc::new(self.sanitized(
             match self.args.enable_quote_predictions {
-                true => competition_estimator.with_predictions(),
+                true => {
+                    competition_estimator.with_predictions(self.args.quote_prediction_confidence)
+                }
                 false => competition_estimator,
             },
         )))
@@ -366,10 +368,13 @@ impl<'a> PriceEstimatorFactory<'a> {
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
-                Arc::new(self.sanitized(match self.args.enable_quote_predictions {
-                    true => competition_estimator.with_predictions(),
-                    false => competition_estimator,
-                })),
+                Arc::new(
+                    self.sanitized(match self.args.enable_quote_predictions {
+                        true => competition_estimator
+                            .with_predictions(self.args.quote_prediction_confidence),
+                        false => competition_estimator,
+                    }),
+                ),
                 self.network.native_token,
                 self.native_token_price_estimation_amount()?,
             )),
