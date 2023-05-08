@@ -123,19 +123,22 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "prices": {},
-            "trades": [],
-            "interactions": [
-                {
-                    "kind": "liquidity",
-                    "internalize": false,
-                    "id": "0",
-                    "inputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                    "outputToken": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
-                    "inputAmount": "133700000000000000",
-                    "outputAmount": "6043910341261930467761"
-                }
-            ]
+            "solutions": [{
+                "id": 0,
+                "prices": {},
+                "trades": [],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "outputToken": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
+                        "inputAmount": "133700000000000000",
+                        "outputAmount": "6043910341261930467761"
+                    }
+                ]
+            }]
         }),
     );
 }

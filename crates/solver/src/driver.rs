@@ -1,3 +1,5 @@
+use crate::settlement_rater::SettlementRating;
+
 pub mod gas;
 pub mod solver_settlements;
 
@@ -13,7 +15,6 @@ use {
         orderbook::OrderBookApi,
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
-        settlement_rater::SettlementRater,
         settlement_simulation,
         settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
@@ -39,7 +40,6 @@ use {
     num::{rational::Ratio, BigInt, ToPrimitive},
     primitive_types::{H160, U256},
     shared::{
-        code_fetching::CodeFetching,
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         external_prices::ExternalPrices,
@@ -106,20 +106,13 @@ impl Driver {
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
-        code_fetcher: Arc<dyn CodeFetching>,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
         order_balance_filter: OrderBalanceFilter,
+        settlement_rater: Arc<dyn SettlementRating>,
     ) -> Self {
         let gas_price_estimator =
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
-
-        let settlement_rater = Arc::new(SettlementRater {
-            access_list_estimator: solution_submitter.access_list_estimator.clone(),
-            settlement_contract: settlement_contract.clone(),
-            web3: web3.clone(),
-            code_fetcher,
-        });
 
         let settlement_ranker = SettlementRanker {
             max_settlement_price_deviation,

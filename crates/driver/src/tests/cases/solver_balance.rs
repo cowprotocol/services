@@ -130,18 +130,23 @@ async fn test() {
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): sell_amount.to_string(),
-                },
-                "trades": [
+                "solutions": [
                     {
-                        "kind": "fulfillment",
-                        "order": boundary.uid(),
-                        "executedAmount": sell_amount.to_string(),
+                        "id": 0,
+                        "prices": {
+                            hex_address(sell_token): buy_amount.to_string(),
+                            hex_address(buy_token): sell_amount.to_string(),
+                        },
+                        "trades": [
+                            {
+                                "kind": "fulfillment",
+                                "order": boundary.uid(),
+                                "executedAmount": sell_amount.to_string(),
+                            }
+                        ],
+                        "interactions": interactions
                     }
-                ],
-                "interactions": interactions
+                ]
             }),
         }],
     })
@@ -247,5 +252,7 @@ async fn test() {
     assert!(result.get("kind").is_some());
     assert!(result.get("description").is_some());
     let kind = result.get("kind").unwrap().as_str().unwrap();
-    assert_eq!(kind, "InsufficientBalance");
+    // TODO When we add metrics, assert that an insufficient balance error is
+    // traced.
+    assert_eq!(kind, "SolutionNotFound");
 }

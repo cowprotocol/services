@@ -1,6 +1,6 @@
 use crate::tests::{
     setup,
-    setup::new::{Balance, Order},
+    setup::new::{Balance, Order, Solution},
 };
 
 /// Test that the /settle endpoint broadcasts a valid settlement transaction.
@@ -20,6 +20,7 @@ async fn test() {
             buy_token: "B",
             ..Default::default()
         })
+        .solution(Solution::Valid)
         .done()
         .await;
 

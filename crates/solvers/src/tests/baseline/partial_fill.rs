@@ -70,31 +70,34 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "prices": {
-                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "20694705425542464884657",
-                "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": "500000000000000000"
-            },
-            "trades": [
-                {
-                    "kind": "fulfillment",
-                    "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                2a2a2a2a",
-                    "executedAmount": "500000000000000000",
-                    "fee": "2495865000000000"
-                }
-            ],
-            "interactions": [
-                {
-                    "kind": "liquidity",
-                    "internalize": false,
-                    "id": "0",
-                    "inputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                    "outputToken": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
-                    "inputAmount": "500000000000000000",
-                    "outputAmount": "20694705425542464884657"
-                }
-            ]
+            "solutions": [{
+                "id": 0,
+                "prices": {
+                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "20694705425542464884657",
+                    "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": "500000000000000000"
+                },
+                "trades": [
+                    {
+                        "kind": "fulfillment",
+                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a",
+                        "executedAmount": "500000000000000000",
+                        "fee": "2495865000000000"
+                    }
+                ],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "outputToken": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
+                        "inputAmount": "500000000000000000",
+                        "outputAmount": "20694705425542464884657"
+                    }
+                ]
+            }]
         }),
     );
 }

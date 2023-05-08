@@ -265,7 +265,7 @@ pub enum BuyTokenBalance {
 /// A just-in-time order. JIT orders are added at solving time by the solver to
 /// generate a more optimal solution for the auction. Very similar to a regular
 /// [`Order`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Jit {
     /// The amount this order wants to sell when completely filled.
     /// The actual executed amount depends on partial fills and the order side.

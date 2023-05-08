@@ -34,13 +34,13 @@ pub struct Blockchain {
     pub trader_secret_key: SecretKey,
 
     pub web3: Web3<DynTransport>,
+    pub web3_url: String,
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
-    bogus_calldata: bool,
 }
 
 #[derive(Debug)]
@@ -113,7 +113,6 @@ impl Fulfillment {
 
 pub struct Config {
     pub pools: Vec<Pool>,
-    pub bogus_calldata: bool,
     pub trader_address: eth::H160,
     pub trader_secret_key: SecretKey,
     pub solver_address: eth::H160,
@@ -445,15 +444,15 @@ impl Blockchain {
             domain_separator,
             weth,
             web3,
+            web3_url: geth.url(),
             geth,
             pairs,
-            bogus_calldata: config.bogus_calldata,
         }
     }
 
     /// Set up the blockchain context and return the interactions needed to
     /// fulfill the orders.
-    pub async fn fulfill(&self, orders: &[Order]) -> Vec<Fulfillment> {
+    pub async fn fulfill(&self, orders: &[Order], solution: super::Solution) -> Vec<Fulfillment> {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
@@ -557,10 +556,13 @@ impl Blockchain {
                 interactions: vec![
                     Interaction {
                         address: sell_token.address(),
-                        calldata: if self.bogus_calldata {
-                            vec![1, 2, 3, 4, 5]
-                        } else {
-                            transfer_interaction
+                        calldata: match solution {
+                            super::Solution::Valid => transfer_interaction,
+                            super::Solution::InvalidCalldata => vec![1, 2, 3, 4, 5],
+                            super::Solution::AdditionalCalldata { bytes } => transfer_interaction
+                                .into_iter()
+                                .chain(std::iter::repeat(0xab).take(bytes))
+                                .collect(),
                         },
                         inputs: Default::default(),
                         outputs: Default::default(),
@@ -568,7 +570,7 @@ impl Blockchain {
                     },
                     Interaction {
                         address: pair.contract.address(),
-                        calldata: if self.bogus_calldata {
+                        calldata: if matches!(solution, super::Solution::InvalidCalldata) {
                             vec![10, 11, 12, 13, 14, 15, 63, 78]
                         } else {
                             swap_interaction

@@ -135,18 +135,23 @@ async fn sell_too_low() {
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
-                },
-                "trades": [
+                "solutions": [
                     {
-                        "kind": "fulfillment",
-                        "order": boundary.uid(),
-                        "executedAmount": (sell_amount - surplus_fee).to_string(),
+                        "id": 0,
+                        "prices": {
+                            hex_address(sell_token): buy_amount.to_string(),
+                            hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
+                        },
+                        "trades": [
+                            {
+                                "kind": "fulfillment",
+                                "order": boundary.uid(),
+                                "executedAmount": (sell_amount - surplus_fee).to_string(),
+                            }
+                        ],
+                        "interactions": interactions
                     }
-                ],
-                "interactions": interactions
+                ]
             }),
         }],
     })
@@ -218,7 +223,8 @@ async fn sell_too_low() {
     assert!(result.get("kind").is_some());
     assert!(result.get("description").is_some());
     let kind = result.get("kind").unwrap().as_str().unwrap();
-    assert_eq!(kind, "InvalidAssetFlow");
+    // TODO When we add metrics, assert that an invalid asset flow error is traced.
+    assert_eq!(kind, "SolutionNotFound");
 }
 
 /// Test that asset flow verification fails for a sell limit order which tries
@@ -342,18 +348,23 @@ async fn buy_too_high() {
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
-                },
-                "trades": [
+                "solutions": [
                     {
-                        "kind": "fulfillment",
-                        "order": boundary.uid(),
-                        "executedAmount": (sell_amount - surplus_fee).to_string(),
+                        "id": 0,
+                        "prices": {
+                            hex_address(sell_token): buy_amount.to_string(),
+                            hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
+                        },
+                        "trades": [
+                            {
+                                "kind": "fulfillment",
+                                "order": boundary.uid(),
+                                "executedAmount": (sell_amount - surplus_fee).to_string(),
+                            }
+                        ],
+                        "interactions": interactions
                     }
-                ],
-                "interactions": interactions
+                ]
             }),
         }],
     })
@@ -425,5 +436,6 @@ async fn buy_too_high() {
     assert!(result.get("kind").is_some());
     assert!(result.get("description").is_some());
     let kind = result.get("kind").unwrap().as_str().unwrap();
-    assert_eq!(kind, "InvalidAssetFlow");
+    // TODO When we add metrics, assert that an invalid asset flow error is traced.
+    assert_eq!(kind, "SolutionNotFound");
 }

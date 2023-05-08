@@ -211,13 +211,15 @@ pub async fn validate_submission_node(node: &Web3, expected_network_id: &String)
 }
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::settlement::NoopInteraction};
+    use {super::*, crate::settlement::NoopInteraction, std::sync::Arc};
 
     #[test]
     fn submission_status_configuration() {
         let high_risk_settlement = {
             let mut settlement = Settlement::new(Default::default());
-            settlement.encoder.append_to_execution_plan(NoopInteraction);
+            settlement
+                .encoder
+                .append_to_execution_plan(Arc::new(NoopInteraction));
             assert_eq!(settlement.revertable(), Revertable::HighRisk);
             settlement
         };

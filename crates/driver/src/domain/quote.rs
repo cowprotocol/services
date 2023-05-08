@@ -77,10 +77,15 @@ impl Order {
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let timeout = self.deadline.timeout(now)?;
-        let solution = solver
+        let solutions = solver
             .solve(&self.fake_auction(), &liquidity, timeout)
             .await?;
-        Quote::new(self, eth, solution)
+        Quote::new(
+            self,
+            eth,
+            // TODO #1468, for now just pick the first solution
+            solutions.into_iter().next().ok_or(Error::QuotingFailed)?,
+        )
     }
 
     fn fake_auction(&self) -> competition::Auction {

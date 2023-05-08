@@ -36,7 +36,10 @@ use {
             SwapQuery,
         },
     },
-    std::fmt::{self, Display, Formatter},
+    std::{
+        fmt::{self, Display, Formatter},
+        sync::Arc,
+    },
 };
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
@@ -98,7 +101,7 @@ impl OneInchSolver {
             "only sell orders should be passed to try_settle_order"
         );
 
-        let mut interactions: Vec<Box<dyn Interaction>> = Vec::new();
+        let mut interactions: Vec<Arc<dyn Interaction>> = Vec::new();
 
         let spender = self.client.get_spender().await?;
         // Fetching allowance before making the SwapQuery so that the Swap info is as
@@ -112,7 +115,7 @@ impl OneInchSolver {
             })
             .await?
         {
-            interactions.push(Box::new(approval));
+            interactions.push(Arc::new(approval));
         }
 
         let query = SwapQuery::with_default_options(
@@ -141,14 +144,14 @@ impl OneInchSolver {
         }
 
         let (sell_token_price, buy_token_price) = (swap.to_token_amount, swap.from_token_amount);
-        let gas_estimate = swap.tx.gas.into();
-        interactions.push(Box::new(swap));
+        interactions.push(Arc::new(swap));
 
         Ok(Some(SingleOrderSettlement {
             sell_token_price,
             buy_token_price,
             interactions,
-            gas_estimate,
+            executed_amount: order.full_execution_amount(),
+            order,
         }))
     }
 }

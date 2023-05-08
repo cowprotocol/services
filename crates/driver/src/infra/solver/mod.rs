@@ -8,6 +8,7 @@ use {
         infra::{self, blockchain::Ethereum},
         util,
     },
+    std::collections::HashSet,
     thiserror::Error,
 };
 
@@ -109,7 +110,8 @@ impl Solver {
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
         timeout: SolverTimeout,
-    ) -> Result<Solution, Error> {
+    ) -> Result<Vec<Solution>, Error> {
+        // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let body = serde_json::to_string(&dto::Auction::from_domain(
             auction, liquidity, timeout, weth, self.now,
@@ -123,9 +125,16 @@ impl Solver {
             .timeout(timeout.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
-        let res: dto::Solution = serde_json::from_str(&res?)?;
-        res.into_domain(auction, liquidity, weth, self.clone())
-            .map_err(Into::into)
+        let res: dto::Solutions = serde_json::from_str(&res?)?;
+        let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
+
+        // Ensure that solution IDs are unique.
+        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id).collect();
+        if ids.len() != solutions.len() {
+            return Err(Error::RepeatedSolutionIds);
+        }
+
+        Ok(solutions)
     }
 }
 
@@ -135,8 +144,8 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("settlement encoding error: {0:?}")]
-    SettlementEncoding(#[from] anyhow::Error),
+    #[error("solution ids are not unique")]
+    RepeatedSolutionIds,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
 }
