@@ -452,7 +452,11 @@ impl Blockchain {
 
     /// Set up the blockchain context and return the interactions needed to
     /// fulfill the orders.
-    pub async fn fulfill(&self, orders: &[Order], solution: super::Solution) -> Vec<Fulfillment> {
+    pub async fn fulfill(
+        &self,
+        orders: impl Iterator<Item = &Order>,
+        solution: super::Solution,
+    ) -> Vec<Fulfillment> {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.

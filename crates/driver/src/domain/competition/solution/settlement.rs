@@ -2,9 +2,10 @@ use {
     crate::{
         boundary,
         domain::{competition, eth},
-        infra::blockchain::Ethereum,
+        infra::{blockchain::Ethereum, Simulator},
     },
     rand::Rng,
+    std::collections::HashSet,
 };
 
 /// A unique settlement ID. This ID is encoded as part of the calldata of the
@@ -36,6 +37,7 @@ impl Id {
     }
 }
 
+// TODO(#1489): make this abstraction make sense.
 /// A transaction calling into our settlement contract on the blockchain.
 ///
 /// Currently, this represents a wrapper around the [`boundary::Settlement`]
@@ -45,11 +47,13 @@ impl Id {
 /// transaction itself, not an intermediate state.
 #[derive(Debug, Clone)]
 pub(super) struct Settlement {
+    solutions: HashSet<super::Id>,
     id: Id,
     boundary: boundary::Settlement,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// Should the interactions be internalized?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Internalization {
     /// Internalize interactions which have the `internalize` flag set.
     ///
@@ -69,21 +73,29 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         solution: &competition::Solution,
-        internalization: Internalization,
-    ) -> anyhow::Result<Self> {
-        let boundary =
-            boundary::Settlement::encode(eth, solution, auction, internalization).await?;
+    ) -> boundary::Result<Self> {
+        let boundary = boundary::Settlement::encode(eth, solution, auction).await?;
         Ok(Self {
+            solutions: [solution.id].into(),
             id: Id::random(),
             boundary,
         })
     }
 
     /// The onchain transaction representing this settlement.
-    pub fn tx(self) -> eth::Tx {
-        let mut tx = self.boundary.tx();
+    pub fn tx(
+        &self,
+        contract: &contracts::GPv2Settlement,
+        internalization: Internalization,
+    ) -> eth::Tx {
+        let mut tx = self.boundary.tx(contract, internalization);
         tx.input.extend(self.id.to_be_bytes());
         tx
+    }
+
+    /// The solver which generated this settlement.
+    pub fn solver(&self) -> eth::Address {
+        self.boundary.solver
     }
 }
 
@@ -104,8 +116,6 @@ impl Settlement {
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub(super) inner: Settlement,
-    /// The solution encoded in the settlement.
-    pub solution: competition::Solution,
     /// The access list used by the settlement.
     pub access_list: eth::AccessList,
     /// The gas parameters used by the settlement.
@@ -132,6 +142,75 @@ impl Verified {
     /// Necessary for the boundary integration, to allow executing settlements.
     pub fn boundary(self) -> boundary::Settlement {
         self.inner.boundary
+    }
+
+    /// The solutions encoded in this settlement. This is a [`HashSet`] because
+    /// multiple solutions can be encoded in a single settlement due to
+    /// merging. See [`Verified::merge`].
+    pub fn solutions(&self) -> &HashSet<super::Id> {
+        &self.inner.solutions
+    }
+
+    /// Merge another settlement into this settlement.
+    ///
+    /// Merging settlements results in a score that can be anything due to the
+    /// fact that contracts can do basically anything, but in practice it can be
+    /// assumed that the score will be at least equal to the sum of the scores
+    /// of the merged settlements.
+    pub async fn merge(
+        &self,
+        other: &Self,
+        contract: &contracts::GPv2Settlement,
+        eth: &Ethereum,
+        simulator: &Simulator,
+    ) -> Result<Self, super::Error> {
+        // The solver must be the same for both settlements.
+        if self.inner.boundary.solver != other.inner.boundary.solver {
+            return Err(super::Error::DifferentSolvers);
+        }
+
+        // If the solutions being merged are not disjoint, the settlements can't be
+        // merged.
+        if !self.inner.solutions.is_disjoint(&other.inner.solutions) {
+            return Err(super::Error::DuplicateSolutions);
+        }
+
+        let settlement = self
+            .inner
+            .boundary
+            .clone()
+            .merge(other.inner.boundary.clone())?;
+
+        let gas = Gas {
+            // After two settlements have been merged, the only verification that
+            // needs to be done is simulating the settlement (which also yields the gas
+            // needed by the final merged settlement). All other verified rules still
+            // hold after the settlements have been merged. See also [`Solution::verify`].
+            estimate: simulator
+                .gas(settlement.tx(contract, Internalization::Enable))
+                .await?,
+            ..self.gas
+        };
+
+        // Ensure that the solver has sufficient balance for the settlement to be mined.
+        if eth.balance(self.inner.solver()).await? < gas.required_balance() {
+            return Err(super::Error::InsufficientBalance);
+        }
+
+        Ok(Self {
+            inner: Settlement {
+                id: self.inner.id,
+                solutions: self
+                    .inner
+                    .solutions
+                    .union(&other.inner.solutions)
+                    .copied()
+                    .collect(),
+                boundary: settlement,
+            },
+            access_list: self.access_list.clone().merge(other.access_list.clone()),
+            gas,
+        })
     }
 }
 
@@ -186,8 +265,8 @@ impl Gas {
         }
     }
 
-    /// Returns the minimum required balance in Ether that an account needs in
-    /// order to afford the specified gas parameters.
+    /// The balance required to ensure settlement execution with the given gas
+    /// parameters.
     pub fn required_balance(&self) -> eth::Ether {
         self.limit * self.price
     }
