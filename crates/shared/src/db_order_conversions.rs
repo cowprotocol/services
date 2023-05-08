@@ -139,7 +139,7 @@ pub fn extract_interactions(
             Ok(InteractionData {
                 target: H160(interaction.0 .0),
                 value: big_decimal_to_u256(&interaction.1)
-                    .context("pre interaction value is not U256")?,
+                    .context("interaction value is not U256")?,
                 call_data: interaction.2.to_vec(),
             })
         })
