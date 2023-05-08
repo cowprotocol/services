@@ -151,18 +151,6 @@ value = $4, data = $5
     Ok(())
 }
 
-pub async fn read_order_pre_interactions(
-    ex: &mut PgConnection,
-    id: &OrderUid,
-) -> Result<Vec<Interaction>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT * FROM interactions
-WHERE order_uid = $1
-ORDER BY index
-    "#;
-    sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
-}
-
 pub async fn insert_orders_and_ignore_conflicts(
     ex: &mut PgConnection,
     orders: &[Order],
@@ -856,6 +844,18 @@ mod tests {
         hex_literal::hex,
         sqlx::Connection,
     };
+
+    async fn read_order_pre_interactions(
+        ex: &mut PgConnection,
+        id: &OrderUid,
+    ) -> Result<Vec<Interaction>, sqlx::Error> {
+        const QUERY: &str = r#"
+    SELECT * FROM interactions
+    WHERE order_uid = $1
+    ORDER BY index
+        "#;
+        sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
+    }
 
     #[tokio::test]
     #[ignore]
