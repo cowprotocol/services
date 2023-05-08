@@ -19,6 +19,7 @@ use {
         bad_token::BadTokenDetecting,
         current_block::CurrentBlockStream,
         price_estimation::native_price_cache::CachingNativePriceEstimator,
+        remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
@@ -211,6 +212,9 @@ impl SolvableOrdersCache {
         let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
         counter.checkpoint("insufficient_balance", &orders);
 
+        let orders = filter_dust_orders(orders, &new_balances, self.ethflow_contract_address);
+        counter.checkpoint("dust_order", &orders);
+
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
             orders.clone(),
@@ -392,6 +396,46 @@ fn orders_with_balance(
             Some(balance) => balance,
         };
         balance >= needed_balance
+    });
+    orders
+}
+
+/// Filters out dust orders i.e. partially fillable orders that, when scaled
+/// have a 0 buy or sell amount.
+fn filter_dust_orders(
+    mut orders: Vec<Order>,
+    balances: &Balances,
+    ethflow_contract: Option<H160>,
+) -> Vec<Order> {
+    orders.retain(|order| {
+        if !order.data.partially_fillable {
+            return true;
+        }
+
+        let balance = if Some(order.metadata.owner) == ethflow_contract {
+            // For EthFlow orders, assume that there is always enough balance.
+            U256::MAX
+        } else if let Some(balance) = balances.get(&Query::from_order(order)) {
+            *balance
+        } else {
+            return false;
+        };
+
+        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(
+            order,
+            balance
+        ) else {
+            return false;
+        };
+
+        let (Ok(sell_amount), Ok(buy_amount)) = (
+            remaining.remaining(order.data.sell_amount),
+            remaining.remaining(order.data.buy_amount),
+        ) else {
+            return false;
+        };
+
+        !sell_amount.is_zero() && !buy_amount.is_zero()
     });
     orders
 }
