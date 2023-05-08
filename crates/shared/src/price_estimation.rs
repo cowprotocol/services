@@ -169,7 +169,7 @@ pub struct Arguments {
     /// allowed to not send requests to price estimators that historically
     /// performed poorly for a given trade. The smaller the value the
     /// more price estimators will not be asked for a quote.
-    #[clap(long, env, default_value = "0.99")]
+    #[clap(long, env, default_value = "1")]
     pub quote_prediction_confidence: f64,
 }
 
