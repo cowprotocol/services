@@ -75,12 +75,26 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "ExecutionTime")]
+#[sqlx(rename_all = "lowercase")]
+pub enum ExecutionTime {
+    /// Interaction that gets executed before sell tokens get transferred from
+    /// user to settlement contract.
+    #[default]
+    Pre,
+    /// Interaction that gets executed after buy tokens got sent from the
+    /// settlement contract to the user.
+    Post,
+}
+
 /// one row in the pre_interaction table
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Interaction {
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
+    pub execution: ExecutionTime,
 }
 
 /// One row in the `orders` table.
@@ -111,20 +125,20 @@ pub struct Order {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
-pub async fn insert_or_overwrite_pre_interactions(
+pub async fn insert_or_overwrite_interactions(
     ex: &mut PgConnection,
-    uid_and_pre_interaction: &[(OrderUid, Interaction)],
+    uid_and_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
-    for (index, (order_uid, pre_interaction)) in uid_and_pre_interaction.iter().enumerate() {
-        insert_or_overwrite_pre_interaction(ex, index as i64, pre_interaction, order_uid).await?;
+    for (index, (order_uid, interaction)) in uid_and_interaction.iter().enumerate() {
+        insert_or_overwrite_interaction(ex, index as i64, interaction, order_uid).await?;
     }
     Ok(())
 }
 
-pub async fn insert_or_overwrite_pre_interaction(
+pub async fn insert_or_overwrite_interaction(
     ex: &mut PgConnection,
     index: i64,
-    pre_interaction: &Interaction,
+    interaction: &Interaction,
     order_uid: &OrderUid,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
@@ -133,9 +147,10 @@ INSERT INTO interactions (
     index,
     target,
     value,
-    data
+    data,
+    execution
 )
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (order_uid, index) DO UPDATE
 SET target = $3,
 value = $4, data = $5
@@ -143,9 +158,10 @@ value = $4, data = $5
     sqlx::query(QUERY)
         .bind(&order_uid)
         .bind(&index)
-        .bind(&pre_interaction.target)
-        .bind(&pre_interaction.value)
-        .bind(&pre_interaction.data)
+        .bind(&interaction.target)
+        .bind(&interaction.value)
+        .bind(&interaction.data)
+        .bind(&interaction.execution)
         .execute(ex)
         .await?;
     Ok(())
@@ -852,9 +868,14 @@ mod tests {
         const QUERY: &str = r#"
     SELECT * FROM interactions
     WHERE order_uid = $1
+    AND execution = $2
     ORDER BY index
         "#;
-        sqlx::query_as(QUERY).bind(id).fetch_all(ex).await
+        sqlx::query_as(QUERY)
+            .bind(id)
+            .bind(ExecutionTime::Pre)
+            .fetch_all(ex)
+            .await
     }
 
     #[tokio::test]
@@ -965,11 +986,12 @@ mod tests {
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
+            execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+        insert_or_overwrite_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        insert_or_overwrite_pre_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+        insert_or_overwrite_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -1012,8 +1034,9 @@ mod tests {
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
+            execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_pre_interaction(&mut db, 0, &pre_interaction_overwrite, &order.uid)
+        insert_or_overwrite_interaction(&mut db, 0, &pre_interaction_overwrite, &order.uid)
             .await
             .unwrap();
         let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
@@ -1816,7 +1839,7 @@ mod tests {
         .unwrap();
 
         // Give the order a pre-interaction to test that the query finds it.
-        insert_or_overwrite_pre_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
+        insert_or_overwrite_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
             .await
             .unwrap();
 
