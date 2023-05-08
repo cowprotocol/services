@@ -126,6 +126,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 target: ByteArray(order.owner.0),
                 value: BigDecimal::new(0.into(), 1),
                 data: WRAP_ALL_SELECTOR.to_vec(),
+                index: 0,
                 execution: ExecutionTime::Pre,
             },
         }

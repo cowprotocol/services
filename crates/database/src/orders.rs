@@ -94,6 +94,7 @@ pub struct Interaction {
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
+    pub index: i64,
     pub execution: ExecutionTime,
 }
 
@@ -129,15 +130,14 @@ pub async fn insert_or_overwrite_interactions(
     ex: &mut PgConnection,
     uid_and_interaction: &[(OrderUid, Interaction)],
 ) -> Result<(), sqlx::Error> {
-    for (index, (order_uid, interaction)) in uid_and_interaction.iter().enumerate() {
-        insert_or_overwrite_interaction(ex, index as i64, interaction, order_uid).await?;
+    for (order_uid, interaction) in uid_and_interaction.iter() {
+        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
     }
     Ok(())
 }
 
 pub async fn insert_or_overwrite_interaction(
     ex: &mut PgConnection,
-    index: i64,
     interaction: &Interaction,
     order_uid: &OrderUid,
 ) -> Result<(), sqlx::Error> {
@@ -157,7 +157,7 @@ value = $4, data = $5
     "#;
     sqlx::query(QUERY)
         .bind(&order_uid)
-        .bind(&index)
+        .bind(&interaction.index)
         .bind(&interaction.target)
         .bind(&interaction.value)
         .bind(&interaction.data)
@@ -986,12 +986,13 @@ mod tests {
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
+            index: 1,
             execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_interaction(&mut db, 0, &pre_interaction_1, &order.uid)
+        insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
-        insert_or_overwrite_interaction(&mut db, 1, &pre_interaction_2, &order.uid)
+        insert_or_overwrite_interaction(&mut db, &pre_interaction_2, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -1034,9 +1035,10 @@ mod tests {
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
+            index: 0,
             execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_interaction(&mut db, 0, &pre_interaction_overwrite, &order.uid)
+        insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite, &order.uid)
             .await
             .unwrap();
         let pre_interactions = read_order_pre_interactions(&mut db, &order.uid)
@@ -1839,7 +1841,7 @@ mod tests {
         .unwrap();
 
         // Give the order a pre-interaction to test that the query finds it.
-        insert_or_overwrite_interaction(&mut db, 0, &Default::default(), &ByteArray([1; 56]))
+        insert_or_overwrite_interaction(&mut db, &Default::default(), &ByteArray([1; 56]))
             .await
             .unwrap();
 
