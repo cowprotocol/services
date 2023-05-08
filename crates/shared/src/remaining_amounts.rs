@@ -1,6 +1,7 @@
 use {
     anyhow::{Context, Result},
     model::order::{Order, OrderKind},
+    num::rational::Ratio,
     primitive_types::U256,
 };
 
@@ -12,31 +13,37 @@ use {
 /// Works like the smart contract by taking intermediate overflows into account
 /// for partially fillable orders.
 pub struct Remaining {
-    numerator: U256,
-    denominator: U256,
+    /// The ratio of a order that is available based on order execution. That
+    /// is, if a partially fillable order selling 100 DAI already executed
+    /// 75, this ratio will be `25/100`.
+    ///
+    /// This is always `0/1` or `1/1` for fill or kill orders.
+    execution: Ratio<U256>,
+
+    /// The ratio of a order that is available based on user balance. That is,
+    /// if a partially fillable order selling 90 DAI with a fee of 10 DAI where
+    /// the owner has a balance of 25, then this ratio will be `25/100`.
+    ///
+    /// This is always `0/1` or `1/1` for fill or kill orders.
+    ///
+    /// Note that this ratio is kept separate from `execution`. This is done
+    /// in order to respect Smart Contract overflow semantics. In particular,
+    /// scaling amounts for partially executed orders can result in overflows
+    /// in the Settlement contract, however, the Settlement Smart Contract does
+    /// not concern itself with overflows WRT to user balances, so we compute
+    /// remaining order amount from user balances separately and without
+    /// overflow checks in the intermediate operations.
+    balance: Ratio<U256>,
 }
 
 impl Remaining {
-    pub fn from_partially_fillable(total: U256, executed: U256) -> Result<Self> {
-        Ok(Self {
-            numerator: total
-                .checked_sub(executed)
-                .context("executed larger than total")?,
-            denominator: total,
-        })
-    }
-
-    pub fn from_fill_or_kill(has_executed: bool) -> Self {
-        // fill-or-kill orders do not have their amounts scaled in the contract so using
-        // the partially fillable logic would be wrong because it could error in
-        // `remaining` when the contract wouldn't.
-        Self {
-            numerator: if has_executed { 0.into() } else { 1.into() },
-            denominator: 1.into(),
-        }
-    }
-
+    /// Returns a ratio of an order assuming it has sufficient balance.
     pub fn from_order(order: &Order) -> Result<Self> {
+        Self::from_order_with_balance(order, U256::MAX)
+    }
+
+    /// Returns a ratio of an order with the specified available balance.
+    pub fn from_order_with_balance(order: &Order, sell_balance: U256) -> Result<Self> {
         let (total, executed) = match order.data.kind {
             OrderKind::Buy => (
                 order.data.buy_amount,
@@ -48,19 +55,93 @@ impl Remaining {
                 order.metadata.executed_sell_amount_before_fees,
             ),
         };
+
         if order.data.partially_fillable {
-            Self::from_partially_fillable(total, executed)
+            let execution = Ratio::new_raw(
+                total
+                    .checked_sub(executed)
+                    .context("executed larger than total")?,
+                total,
+            );
+
+            let sell_amount = ratio::scalar_mul(&execution, order.data.sell_amount)
+                .context("overflow scaling sell amount for execution")?;
+            let fee_amount = ratio::scalar_mul(&execution, order.data.fee_amount)
+                .context("overflow scaling fee amount for execution")?;
+
+            let need = sell_amount
+                .checked_add(fee_amount)
+                .context("partially fillable need calculation overflow")?;
+
+            let balance = if sell_balance < need {
+                Ratio::new_raw(sell_balance, need)
+            } else {
+                ratio::one()
+            };
+
+            Ok(Self { execution, balance })
         } else {
-            Ok(Self::from_fill_or_kill(!executed.is_zero()))
+            let sell = order
+                .data
+                .sell_amount
+                .checked_add(order.data.fee_amount)
+                .context("overflow sell + fee amount")?;
+
+            let execution = if executed.is_zero() {
+                ratio::one()
+            } else {
+                ratio::zero()
+            };
+
+            let balance = if sell_balance >= sell {
+                ratio::one()
+            } else {
+                ratio::zero()
+            };
+
+            Ok(Self { execution, balance })
         }
     }
 
     /// Returns Err if the contract would error due to intermediate overflow.
     pub fn remaining(&self, total: U256) -> Result<U256> {
-        total
-            .checked_mul(self.numerator)
-            .and_then(|product| product.checked_div(self.denominator))
-            .context("overflow")
+        ratio::full_scalar_mul(
+            &self.balance,
+            ratio::scalar_mul(&self.execution, total)
+                .context("overflow scaling for order execution")?,
+        )
+        .context("overflow scaling for available balance")
+    }
+}
+
+mod ratio {
+    use {ethcontract::U256, num::rational::Ratio};
+
+    pub fn one() -> Ratio<U256> {
+        Ratio::new_raw(1.into(), 1.into())
+    }
+
+    pub fn zero() -> Ratio<U256> {
+        Ratio::new_raw(0.into(), 1.into())
+    }
+
+    /// Multiplies a ratio by a scalar, returning `None` if the result or any
+    /// intermediate operation would overflow a `U256`.
+    pub fn scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
+        scalar
+            .checked_mul(*ratio.numer())?
+            .checked_div(*ratio.denom())
+    }
+
+    /// Multiplies a ratio by a scalar, returning `None` only if the result
+    /// would overflow a `U256`, but intermediate operations are allowed to
+    /// overflow.
+    pub fn full_scalar_mul(ratio: &Ratio<U256>, scalar: U256) -> Option<U256> {
+        scalar
+            .full_mul(*ratio.numer())
+            .checked_div(ratio.denom().into())?
+            .try_into()
+            .ok()
     }
 }
 
@@ -177,8 +258,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let remaining = Remaining::from_order(&order).unwrap();
-        assert!(remaining.remaining(U256::MAX).is_err());
+        assert!(Remaining::from_order(&order).is_err());
 
         // Partially filled order overflowing executed amount.
         let order = Order {
@@ -222,9 +302,108 @@ mod tests {
             },
             ..Default::default()
         };
-        let remaining = Remaining::from_order(&order).unwrap();
-        assert!(remaining.remaining(1.into()).is_err());
-        assert!(remaining.remaining(1000.into()).is_err());
-        assert!(remaining.remaining(U256::MAX).is_err());
+        assert!(Remaining::from_order(&order).is_err());
+    }
+
+    #[test]
+    fn scale_order_by_available_balance() {
+        // Fill-or-kill orders without balance scale to 0 if there is
+        // insufficient balance.
+        let order = Order {
+            data: OrderData {
+                sell_amount: 1000.into(),
+                buy_amount: 2000.into(),
+                fee_amount: 337.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let remaining =
+            Remaining::from_order_with_balance(&order, order.data.sell_amount - 1).unwrap();
+        assert_eq!(remaining.remaining(1000.into()).unwrap(), 0.into());
+
+        // A partially fillable order that has not been executed at all scales
+        // to the available balance.
+        let order = Order {
+            data: OrderData {
+                sell_amount: 800.into(),
+                buy_amount: 2000.into(),
+                fee_amount: 200.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        {
+            // More than enough balance for the full order.
+            let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
+            assert_eq!(remaining.remaining(800.into()).unwrap(), 800.into());
+        }
+        {
+            // Not enough balance for the full order.
+            let remaining = Remaining::from_order_with_balance(&order, 500.into()).unwrap();
+            assert_eq!(remaining.remaining(800.into()).unwrap(), 400.into());
+        }
+
+        // A partially fillable order that has has been partially executed scales
+        // to the remaining execution and available balance.
+        let order = Order {
+            data: OrderData {
+                sell_amount: 800.into(),
+                buy_amount: 2000.into(),
+                fee_amount: 200.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                executed_sell_amount_before_fees: 400.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        {
+            // More than enough balance for the full order.
+            let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
+            assert_eq!(remaining.remaining(800.into()).unwrap(), 400.into());
+        }
+        {
+            // Not enough balance for the full order.
+            let remaining = Remaining::from_order_with_balance(&order, 250.into()).unwrap();
+            assert_eq!(remaining.remaining(800.into()).unwrap(), 200.into());
+        }
+    }
+
+    #[test]
+    fn support_scaling_for_large_orders_with_partial_balance() {
+        let order = Order {
+            data: OrderData {
+                sell_amount: U256::exp10(30),
+                buy_amount: 1.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let balance = order.data.sell_amount - 1;
+
+        // Note that we need to scale because of remaining balance, and that
+        // we would overflow with these numbers:
+        assert!((order.data.sell_amount * order.data.sell_amount)
+            .checked_mul(balance)
+            .is_none());
+
+        // However, `Remaining` supports these large orders with large partial
+        // balances as scaling for remaining execution and available balance are
+        // done separately.
+        let remaining = Remaining::from_order_with_balance(&order, balance).unwrap();
+        assert_eq!(
+            remaining.remaining(order.data.sell_amount).unwrap(),
+            balance
+        );
     }
 }

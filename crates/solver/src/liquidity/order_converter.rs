@@ -7,8 +7,12 @@ use {
         LiquidityOrderId,
         SettlementHandling,
     },
-    crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
-    anyhow::{Context, Result},
+    crate::{
+        interactions::UnwrapWethInteraction,
+        order_balance_filter::BalancedOrder,
+        settlement::SettlementEncoder,
+    },
+    anyhow::{ensure, Context, Result},
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
@@ -30,7 +34,15 @@ impl OrderConverter {
     }
 
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
-    pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
+    ///
+    /// The second argument is unused for FOK orders.
+    pub fn normalize_limit_order(
+        &self,
+        BalancedOrder {
+            order,
+            available_sell_token_balance,
+        }: BalancedOrder,
+    ) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -38,7 +50,10 @@ impl OrderConverter {
             order.data.buy_token
         };
 
-        let remaining = shared::remaining_amounts::Remaining::from_order(&order)?;
+        let remaining = shared::remaining_amounts::Remaining::from_order_with_balance(
+            &order,
+            available_sell_token_balance,
+        )?;
 
         let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) if !order.data.partially_fillable => {
@@ -57,39 +72,13 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let mut solver_fee = remaining.remaining(order.metadata.solver_fee)?;
-        let mut sell_amount = remaining.remaining(sell_amount)?;
-        let mut buy_amount = remaining.remaining(order.data.buy_amount)?;
-
-        // Partially fillable orders are included in the auction when there is at least
-        // 1 atom balance available.
-        if order.data.partially_fillable {
-            let need = sell_amount
-                .checked_add(remaining.remaining(order.data.fee_amount)?)
-                .context("partially fillable need calculation overflow")?;
-            let have = order
-                .metadata
-                .partially_fillable_balance
-                .context("no balance for partially fillable order")?;
-            tracing::trace!(%need, %have, "partially fillable order conversion");
-            if have < need {
-                solver_fee = solver_fee
-                    .checked_mul(have)
-                    .context("partially fillable solver_fee calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable solver_fee calculation overflow")?;
-                sell_amount = sell_amount
-                    .checked_mul(have)
-                    .context("partially fillable sell_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable sell_amount calculation overflow")?;
-                buy_amount = buy_amount
-                    .checked_mul(have)
-                    .context("partially fillable buy_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable buy_amount calculation overflow")?;
-            }
-        }
+        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
+        let sell_amount = remaining.remaining(sell_amount)?;
+        let buy_amount = remaining.remaining(order.data.buy_amount)?;
+        ensure!(
+            !sell_amount.is_zero() && !buy_amount.is_zero(),
+            "order with 0 amounts",
+        );
 
         Ok(LimitOrder {
             id,
@@ -185,13 +174,18 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
             ..Default::default()
         };
 
         assert_eq!(
-            converter.normalize_limit_order(order).unwrap().buy_token,
+            converter
+                .normalize_limit_order(BalancedOrder::full(order))
+                .unwrap()
+                .buy_token,
             native_token,
         );
     }
@@ -203,13 +197,18 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
                 ..Default::default()
             },
             ..Default::default()
         };
 
         assert_eq!(
-            converter.normalize_limit_order(order).unwrap().buy_token,
+            converter
+                .normalize_limit_order(BalancedOrder::full(order))
+                .unwrap()
+                .buy_token,
             buy_token
         );
     }
@@ -376,27 +375,40 @@ pub mod tests {
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 10.into(),
                 solver_fee: 200.into(),
-                partially_fillable_balance: Some(1000.into()),
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        let order_ = converter
+            .normalize_limit_order(BalancedOrder {
+                order: order.clone(),
+                available_sell_token_balance: 1000.into(),
+            })
+            .unwrap();
         // Amounts are halved because the order is half executed.
         assert_eq!(order_.sell_amount, 10.into());
         assert_eq!(order_.buy_amount, 20.into());
         assert_eq!(order_.solver_fee, 100.into());
 
-        order.metadata.partially_fillable_balance = Some(20.into());
-        let order_ = converter.normalize_limit_order(order.clone()).unwrap();
+        let order_ = converter
+            .normalize_limit_order(BalancedOrder {
+                order: order.clone(),
+                available_sell_token_balance: 20.into(),
+            })
+            .unwrap();
         // Amounts are quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
         assert_eq!(order_.solver_fee, 50.into());
 
         order.metadata.executed_sell_amount_before_fees = 0.into();
-        let order_ = converter.normalize_limit_order(order).unwrap();
+        let order_ = converter
+            .normalize_limit_order(BalancedOrder {
+                order,
+                available_sell_token_balance: 20.into(),
+            })
+            .unwrap();
         // Amounts are still quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
@@ -409,16 +421,76 @@ pub mod tests {
         let order = OrderBuilder::default()
             .with_class(OrderClass::Limit(Default::default()))
             .with_sell_amount(1_000.into())
+            .with_buy_amount(1.into())
             .with_fee_amount(200.into())
             .with_surplus_fee(100.into())
             .with_solver_fee(200.into())
             .build();
-        let solver_order = converter.normalize_limit_order(order).unwrap();
+        let solver_order = converter
+            .normalize_limit_order(BalancedOrder::full(order))
+            .unwrap();
 
         // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
         assert_eq!(solver_order.sell_amount, 1_100.into());
         // it's the `autopilot`'s responsibility to prepare this value for us so we
         // don't touch it
         assert_eq!(solver_order.solver_fee, 200.into());
+    }
+
+    #[test]
+    fn limit_orders_scaled_to_zero_amounts_rejected() {
+        let converter = OrderConverter::test(Default::default());
+
+        let sell = Order {
+            data: OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 10.into(),
+                fee_amount: 0.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut sell = BalancedOrder {
+            order: sell,
+            available_sell_token_balance: 100.into(),
+        };
+
+        assert!(converter.normalize_limit_order(sell.clone()).is_ok());
+
+        // Execute the order so that scaling the buy_amount would result in a
+        // 0 amount.
+        sell.order.metadata.executed_sell_amount = 99_u32.into();
+        sell.order.metadata.executed_sell_amount_before_fees = 99_u32.into();
+        sell.order.metadata.executed_buy_amount = 10_u32.into();
+
+        assert!(converter.normalize_limit_order(sell).is_err());
+
+        let buy = Order {
+            data: OrderData {
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                fee_amount: 0.into(),
+                kind: OrderKind::Buy,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut buy = BalancedOrder {
+            order: buy,
+            available_sell_token_balance: 10.into(),
+        };
+
+        assert!(converter.normalize_limit_order(buy.clone()).is_ok());
+
+        // Execute the order so that scaling the sell_amount would result in a
+        // 0 amount.
+        buy.order.metadata.executed_sell_amount = 10_u32.into();
+        buy.order.metadata.executed_sell_amount_before_fees = 10_u32.into();
+        buy.order.metadata.executed_buy_amount = 99_u32.into();
+
+        assert!(converter.normalize_limit_order(buy).is_err());
     }
 }

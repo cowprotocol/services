@@ -199,13 +199,13 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
             .allowances
             .approve_token(TokenAmount::new(self.order.taker_token, execution.filled))?;
         if let Some(approval) = approval {
-            encoder.append_to_execution_plan(approval);
+            encoder.append_to_execution_plan(Arc::new(approval));
         }
-        encoder.append_to_execution_plan(ZeroExInteraction {
+        encoder.append_to_execution_plan(Arc::new(ZeroExInteraction {
             taker_token_fill_amount: execution.filled.as_u128(),
             order: self.order.clone(),
             zeroex: self.zeroex.clone(),
-        });
+        }));
         Ok(())
     }
 }

@@ -33,7 +33,7 @@ pub struct Order {
 }
 
 /// An amount denominated in the sell token of an [`Order`].
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SellAmount(pub eth::U256);
 
 impl From<eth::U256> for SellAmount {
@@ -156,7 +156,7 @@ impl Order {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Partial {
     /// A partially order doesn't require the full amount to be traded.
     /// E.g. only 10% of the requested amount may be traded, if this leads
@@ -225,7 +225,7 @@ impl From<AppData> for [u8; 32] {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// Order intended to be immediately executed. This is the "regular" type of
     /// order.
@@ -265,7 +265,7 @@ pub enum BuyTokenBalance {
 /// A just-in-time order. JIT orders are added at solving time by the solver to
 /// generate a more optimal solution for the auction. Very similar to a regular
 /// [`Order`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Jit {
     /// The amount this order wants to sell when completely filled.
     /// The actual executed amount depends on partial fills and the order side.

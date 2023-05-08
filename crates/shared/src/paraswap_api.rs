@@ -97,19 +97,6 @@ pub enum ParaswapResponseError {
     RateLimited,
 }
 
-impl ParaswapResponseError {
-    /// Returns true if the error is considered intermittent and the same
-    /// ParaSwap request can be retried.
-    pub fn is_retryable(&self) -> bool {
-        // We don't retry insufficient liquidity errors because it is unlikely a
-        // more liquidity will appear by the time we would retry.
-        matches!(
-            self,
-            ParaswapResponseError::Request(_) | ParaswapResponseError::Retryable(_),
-        )
-    }
-}
-
 fn parse_paraswap_response<T>(
     status: StatusCode,
     response_text: &str,

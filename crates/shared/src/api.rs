@@ -293,7 +293,7 @@ mod tests {
             }),
         );
         assert_eq!(
-            serde_json::to_value(&Error {
+            serde_json::to_value(Error {
                 error_type: "foo",
                 description: "bar",
                 data: Some(json!(42)),

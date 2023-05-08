@@ -138,7 +138,7 @@ pub async fn insert_trade(
     Ok(())
 }
 
-async fn insert_settlement(
+pub async fn insert_settlement(
     ex: &mut PgConnection,
     index: &EventIndex,
     event: &Settlement,

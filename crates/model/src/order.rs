@@ -628,15 +628,6 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
-    /// How much balance is available from the user to fill this order when it
-    /// is included in the current auction. Maximum value of `sell_amount +
-    /// fee_amount`.
-    ///
-    /// This is a temporary solution until we have a proper implementation for
-    /// #1378 .
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DecimalU256>")]
-    pub partially_fillable_balance: Option<U256>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

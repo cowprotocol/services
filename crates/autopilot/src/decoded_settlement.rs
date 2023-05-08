@@ -56,9 +56,53 @@ pub struct DecodedTrade {
     pub valid_to: u32,
     pub app_data: Bytes<[u8; 32]>,
     pub fee_amount: U256,
-    pub flags: U256,
+    pub flags: TradeFlags,
     pub executed_amount: U256,
     pub signature: Bytes<Vec<u8>>,
+}
+
+impl DecodedTrade {
+    fn matches_execution(&self, order: &OrderExecution) -> bool {
+        let matches_order = self.signature.0 == order.signature;
+
+        // the `executed_amount` field is ignored by the smart contract for
+        // fill-or-kill orders, so only check that executed amounts match for
+        // partially fillable orders.
+        let matches_execution =
+            !self.flags.partially_fillable() || self.executed_amount == order.executed_amount;
+
+        matches_order && matches_execution
+    }
+}
+
+/// Trade flags are encoded in a 256-bit integer field. For more information on
+/// how flags are encoded see:
+/// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
+#[derive(Debug)]
+pub struct TradeFlags(pub U256);
+
+impl TradeFlags {
+    fn as_u8(&self) -> u8 {
+        self.0.byte(0)
+    }
+
+    fn order_kind(&self) -> OrderKind {
+        if self.as_u8() & 0b1 == 0 {
+            OrderKind::Sell
+        } else {
+            OrderKind::Buy
+        }
+    }
+
+    fn partially_fillable(&self) -> bool {
+        self.as_u8() & 0b10 != 0
+    }
+}
+
+impl From<U256> for TradeFlags {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Debug)]
@@ -94,7 +138,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
                     valid_to: trade.5,
                     app_data: trade.6,
                     fee_amount: trade.7,
-                    flags: trade.8,
+                    flags: trade.8.into(),
                     executed_amount: trade.9,
                     signature: trade.10,
                 })
@@ -104,8 +148,13 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
     }
 }
 
-#[derive(Debug)]
-pub struct Order {
+/// It's possible that the same order gets filled in portions across multiple or
+/// even the same settlement. This struct describes the details of such a fill.
+/// Note that most orders only have a single fill as they are fill-or-kill
+/// orders but partially fillable orders could have associated any number of
+/// [`OrderExecution`]s with them.
+#[derive(Debug, Clone)]
+pub struct OrderExecution {
     pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
@@ -116,10 +165,10 @@ pub struct Order {
     pub signature: Vec<u8>, //encoded signature
 }
 
-impl TryFrom<database::orders::FullOrder> for Order {
+impl TryFrom<database::orders::OrderExecution> for OrderExecution {
     type Error = anyhow::Error;
 
-    fn try_from(order: database::orders::FullOrder) -> std::result::Result<Self, Self::Error> {
+    fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             executed_solver_fee: order
                 .executed_solver_fee
@@ -130,13 +179,7 @@ impl TryFrom<database::orders::FullOrder> for Order {
             buy_token: H160(order.buy_token.0),
             sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
             buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
-            executed_amount: match order_kind_from(order.kind) {
-                OrderKind::Buy => {
-                    big_decimal_to_u256(&order.sum_buy).context("executed_buy_amount")?
-                }
-                OrderKind::Sell => big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-                    .context("executed_sell_amount_before_fees")?,
-            },
+            executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
             signature: {
                 let signing_scheme = signing_scheme_from(order.signing_scheme);
                 let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
@@ -175,18 +218,26 @@ impl DecodedSettlement {
         })
     }
 
-    // Assumes it is called with already FILLED orders.
-    // Needs rework to support partially fillable orders.
-    // Tricky because the decoded settlement is using FILLED `orders` so we don't
-    // always know the executed amount in case of partial fill.
-    pub fn total_fees(&self, external_prices: &ExternalPrices, orders: &[Order]) -> U256 {
+    /// Returns the total `executed_solver_fee` of this solution converted to
+    /// the native token. This is only the value used for objective value
+    /// computatations and can theoretically be different from the value of
+    /// fees actually collected by the protocol.
+    pub fn total_fees(
+        &self,
+        external_prices: &ExternalPrices,
+        mut orders: Vec<OrderExecution>,
+    ) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             match orders
                 .iter()
-                .find(|order| order.signature == trade.signature.0)
+                .position(|order| trade.matches_execution(order))
             {
-                Some(order) => {
-                    acc + match fee(external_prices, order) {
+                Some(i) => {
+                    // It's possible to have multiple fills with the same `executed_amount` for the
+                    // same order with different `solver_fees`. To end up with the correct total
+                    // fees we can only use every `OrderExecution` exactly once.
+                    let order = orders.swap_remove(i);
+                    acc + match fee(external_prices, &order) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -216,7 +267,7 @@ fn surplus(
 
     let sell_token_clearing_price = clearing_prices.get(sell_token_index)?.to_big_rational();
     let buy_token_clearing_price = clearing_prices.get(buy_token_index)?.to_big_rational();
-    let kind = order_kind(&trade.flags);
+    let kind = trade.flags.order_kind();
 
     if match kind {
         OrderKind::Sell => &buy_token_clearing_price,
@@ -251,22 +302,12 @@ fn surplus(
     big_rational_to_u256(&normalized_surplus).ok()
 }
 
-fn fee(external_prices: &ExternalPrices, order: &Order) -> Option<U256> {
+/// Converts the order's `solver_fee` which is denominated in `sell_token` to
+/// the native token.
+fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
     let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
-    tracing::trace!(?solver_fee, ?order.executed_solver_fee, "executed_solver_fee");
-
-    let fee = match order.kind {
-        model::order::OrderKind::Buy => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.buy_amount)
-        }
-        model::order::OrderKind::Sell => {
-            solver_fee * u256_to_big_rational(&order.executed_amount)
-                / u256_to_big_rational(&order.sell_amount)
-        }
-    };
-    tracing::trace!(?fee, "fee before conversion to native token");
-    let fee = external_prices.try_get_native_amount(order.sell_token, fee)?;
+    tracing::trace!(?solver_fee, "fee before conversion to native token");
+    let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
     tracing::trace!(?fee, "fee after conversion to native token");
     big_rational_to_u256(&fee).ok()
 }
@@ -341,15 +382,6 @@ fn sell_order_surplus(
         None
     } else {
         Some(res)
-    }
-}
-
-fn order_kind(flags: &U256) -> OrderKind {
-    let flags = flags.byte(0);
-    match flags & 0b1 {
-        0b0 => OrderKind::Sell,
-        0b1 => OrderKind::Buy,
-        _ => unreachable!(),
     }
 }
 
@@ -560,7 +592,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let orders = vec![
-            Order {
+            OrderExecution {
                 executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
@@ -570,7 +602,7 @@ mod tests {
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
-            Order {
+            OrderExecution {
                 executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
@@ -582,9 +614,124 @@ mod tests {
             }
         ];
         let fees = settlement
-            .total_fees(&external_prices, &orders)
+            .total_fees(&external_prices, orders)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn execution_amount_does_not_matter_for_fok_orders() {
+        // transaction hash:
+        // 0x
+
+        // From solver competition table:
+
+        // external prices (auction values):
+        // 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee: 1000000000000000000
+        // 0xf88baf18fab7e330fa0c4f83949e23f52fececce: 29428019732094
+
+        // fees: 463182886014406361088
+
+        let transport = shared::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
+        let call_data = hex_literal::hex!(
+            "13d79a0b
+             0000000000000000000000000000000000000000000000000000000000000080
+             00000000000000000000000000000000000000000000000000000000000000e0
+             0000000000000000000000000000000000000000000000000000000000000140
+             0000000000000000000000000000000000000000000000000000000000000360
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+             000000000000000000000000f88baf18fab7e330fa0c4f83949e23f52fececce
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000000000000000000000000000000132e67578cc3f
+             00000000000000000000000000000000000000000000000000000002540be400
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000020
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000b70cd1ebd3b24aeeaf90c6041446630338536e7f
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             000000000000000000000000000000000000000000000000013d0a4d504284e9
+             00000000000000000000000000000000000000000000000000000000643d6a39
+             e9f29ae547955463ed535162aefee525d8d309571a2b18bc26086c8c35d781eb
+             00000000000000000000000000000000000000000000002557f7974fde5c0000
+             0000000000000000000000000000000000000000000000000000000000000008
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             0000000000000000000000000000000000000000000000000000000000000160
+             0000000000000000000000000000000000000000000000000000000000000041
+             4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a6091
+             2fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a7600
+             1c00000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000080
+             0000000000000000000000000000000000000000000000000000000000000420
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000040
+             00000000000000000000000000000000000000000000000000000000000002c0
+             000000000000000000000000ba12222222228d8ba445958a75a0704d566bf2c8
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000001e4
+             52bbbe2900000000000000000000000000000000000000000000000000000000
+             000000e00000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000000000000000000000000000a566558000
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000067f117350eab45983374f4f83d275d8a5d62b1bf0001000000000000
+             000004f200000000000000000000000000000000000000000000000000000000
+             00000001000000000000000000000000f88baf18fab7e330fa0c4f83949e23f5
+             2fececce000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead908
+             3c756cc2000000000000000000000000000000000000000000000000013eae86
+             d49c295900000000000000000000000000000000000000000000000000000000
+             000000c000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000024
+             2e1a7d4d000000000000000000000000000000000000000000000000013eae86
+             d49c29bf00000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
+
+        //calculate fees
+        let auction_external_prices = BTreeMap::from([
+            (
+                H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                U256::from(1000000000000000000u128),
+            ),
+            (
+                H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
+                U256::from(29428019732094u128),
+            ),
+        ]);
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
+
+        let orders = vec![
+            OrderExecution {
+                executed_solver_fee: Some(463182886014406361088u128.into()),
+                kind: OrderKind::Sell,
+                buy_amount: 89238894792574185u128.into(),
+                sell_amount: 3026871740084629982950u128.into(),
+                sell_token: H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
+                buy_token: H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                executed_amount: 0.into(),
+                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+            },
+        ];
+        let fees = settlement
+            .total_fees(&external_prices, orders)
+            .to_f64_lossy();
+        assert_eq!(fees, 13630555109200196.);
     }
 }

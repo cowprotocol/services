@@ -18,11 +18,11 @@ async fn route(
         tracing::warn!(?err, "error creating auction");
     })?;
     let competition = state.competition();
-    let (solution_id, score, reward) = competition.solve(&auction).await.tap_err(|err| {
+    let (id, score, reward) = competition.solve(&auction).await.tap_err(|err| {
         tracing::warn!(?err, "error solving auction");
     })?;
     Ok(axum::Json(dto::Solution::from_domain(
-        solution_id,
+        id,
         score,
         reward,
     )))

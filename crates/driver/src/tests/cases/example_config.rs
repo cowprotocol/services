@@ -1,16 +1,10 @@
-use crate::{infra, tests::setup};
+use crate::tests::setup;
 
 /// Test that the example configuration file is valid by checking that the
 /// driver does not crash when started with this file.
 #[tokio::test]
 #[ignore]
 async fn test() {
-    let geth = setup::blockchain::geth().await;
     let example_config_file = std::env::current_dir().unwrap().join("example.toml");
-    setup::driver::setup(setup::driver::Config {
-        now: infra::time::Now::Real,
-        file: setup::driver::ConfigFile::Load(example_config_file),
-        geth: &geth,
-    })
-    .await;
+    setup().config(example_config_file).done().await;
 }

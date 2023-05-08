@@ -1,3 +1,5 @@
+use crate::settlement_rater::SettlementRating;
+
 pub mod gas;
 pub mod solver_settlements;
 
@@ -9,10 +11,10 @@ use {
         liquidity::order_converter::OrderConverter,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::SolverMetrics,
+        order_balance_filter::OrderBalanceFilter,
         orderbook::OrderBookApi,
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
-        settlement_rater::SettlementRater,
         settlement_simulation,
         settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
@@ -38,7 +40,6 @@ use {
     num::{rational::Ratio, BigInt, ToPrimitive},
     primitive_types::{H160, U256},
     shared::{
-        code_fetching::CodeFetching,
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         external_prices::ExternalPrices,
@@ -77,6 +78,7 @@ pub struct Driver {
     last_attempted_settlement: Option<AuctionId>,
     process_partially_fillable_liquidity_orders: bool,
     process_partially_fillable_limit_orders: bool,
+    order_balance_filter: OrderBalanceFilter,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -104,19 +106,13 @@ impl Driver {
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
         solution_comparison_decimal_cutoff: u16,
-        code_fetcher: Arc<dyn CodeFetching>,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
+        order_balance_filter: OrderBalanceFilter,
+        settlement_rater: Arc<dyn SettlementRating>,
     ) -> Self {
         let gas_price_estimator =
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
-
-        let settlement_rater = Arc::new(SettlementRater {
-            access_list_estimator: solution_submitter.access_list_estimator.clone(),
-            settlement_contract: settlement_contract.clone(),
-            web3: web3.clone(),
-            code_fetcher,
-        });
 
         let settlement_ranker = SettlementRanker {
             max_settlement_price_deviation,
@@ -158,6 +154,7 @@ impl Driver {
             last_attempted_settlement: None,
             process_partially_fillable_liquidity_orders,
             process_partially_fillable_limit_orders,
+            order_balance_filter,
         }
     }
 
@@ -279,16 +276,37 @@ impl Driver {
             }
         });
 
-        let orders = auction
+        let previous_orders: Vec<OrderUid> = auction
             .orders
+            .iter()
+            .map(|order| order.metadata.uid)
+            .collect();
+        let balance_start = Instant::now();
+        let orders = self.order_balance_filter.filter(auction.orders).await;
+        tracing::debug!(
+            "filtering orders based on balance took {}s",
+            balance_start.elapsed().as_secs_f32()
+        );
+        let new_orders: HashSet<OrderUid> = orders
+            .iter()
+            .map(|order| order.order.metadata.uid)
+            .collect();
+        for uid in previous_orders {
+            if !new_orders.contains(&uid) {
+                tracing::debug!(%uid, "order filtered because of missing balance");
+            }
+        }
+
+        let orders = orders
             .into_iter()
             .filter_map(|order| {
+                let uid = order.order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
                     Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
-                        tracing::error!(?err, "error normalizing limit order");
+                        tracing::error!(?err, order = %uid, "error normalizing limit order");
                         None
                     }
                 }
@@ -359,7 +377,7 @@ impl Driver {
             auction: competition_auction,
             solutions: rated_settlements
                 .iter()
-                .map(|(solver, rated_settlement, _)| SolverSettlement {
+                .map(|(solver, rated_settlement)| SolverSettlement {
                     solver: solver.name().to_string(),
                     solver_address: solver.account().address(),
                     objective: Objective {
@@ -405,7 +423,7 @@ impl Driver {
         };
 
         let mut settlement_transaction_attempted = false;
-        if let Some((winning_solver, winning_settlement, _)) = rated_settlements.pop() {
+        if let Some((winning_solver, winning_settlement)) = rated_settlements.pop() {
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
                 winning_settlement.id,
@@ -446,7 +464,7 @@ impl Driver {
                 // second highest score, or 0 if there is only one score (see CIP20)
                 reference_score: rated_settlements
                     .last()
-                    .map(|(_, settlement, _)| settlement.score.score())
+                    .map(|(_, settlement)| settlement.score.score())
                     .unwrap_or_default(),
                 block_deadline: {
                     let deadline = self.solver_time_limit
@@ -523,7 +541,7 @@ impl Driver {
                 &(winning_solver, winning_settlement),
                 rated_settlements
                     .into_iter()
-                    .map(|(solver, settlement, _)| (solver, settlement))
+                    .map(|(solver, settlement)| (solver, settlement))
                     .collect(),
             );
         }

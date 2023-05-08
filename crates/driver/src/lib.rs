@@ -6,8 +6,10 @@
 pub mod boundary;
 pub mod domain;
 pub mod infra;
-pub mod run;
+mod run;
 pub mod util;
+
+pub use run::{main, run};
 
 #[cfg(test)]
 mod tests;

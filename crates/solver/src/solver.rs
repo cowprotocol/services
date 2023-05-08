@@ -21,6 +21,7 @@ use {
         s3_instance_upload::S3InstanceUploader,
         settlement::Settlement,
         settlement_post_processing::PostProcessing,
+        settlement_rater::SettlementRating,
         solver::{
             balancer_sor_solver::BalancerSorSolver,
             http_solver::{
@@ -35,12 +36,10 @@ use {
     contracts::{BalancerV2Vault, GPv2Settlement},
     ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
     model::{auction::AuctionId, DomainSeparator},
-    num::BigRational,
     reqwest::Url,
     shared::{
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
-        conversions::U256Ext,
         ethrpc::Web3,
         external_prices::ExternalPrices,
         http_client::HttpClientFactory,
@@ -175,9 +174,17 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
+#[derive(Debug, Clone)]
+pub struct SolverInfo {
+    /// Identifier used for metrics and logging.
+    pub name: String,
+    /// Address used for simulating settlements of that solver.
+    pub account: Account,
+}
+
 pub struct Simulation {
     pub settlement: Settlement,
-    pub solver: Arc<dyn Solver>,
+    pub solver: SolverInfo,
     pub transaction: SimulatedTransaction,
 }
 
@@ -257,6 +264,30 @@ pub struct ExternalSolverArg {
     pub name: String,
     pub url: Url,
     pub account: SolverAccountArg,
+    pub use_liquidity: bool,
+    pub user_balance_support: UserBalanceSupport,
+}
+
+/// Whether the solver supports assigning user sell token balance to orders or
+/// whether the driver needs to do it instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UserBalanceSupport {
+    None,
+    PartiallyFillable,
+    // Will be added later.
+    // All,
+}
+
+impl FromStr for UserBalanceSupport {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Self::None),
+            "partially_fillable" => Ok(Self::PartiallyFillable),
+            _ => Err(anyhow::anyhow!("unknown variant {}", s)),
+        }
+    }
 }
 
 impl FromStr for ExternalSolverArg {
@@ -267,10 +298,17 @@ impl FromStr for ExternalSolverArg {
         let name = parts.next().context("missing name")?;
         let url = parts.next().context("missing url")?;
         let account = parts.next().context("missing account")?;
+        let use_liquidity = parts.next().context("missing use_liquidity")?;
+        // With a default temporarily until we configure the argument in our cluster.
+        let user_balance_support = parts.next().unwrap_or("none");
         Ok(Self {
             name: name.to_string(),
             url: url.parse().context("parse url")?,
             account: account.parse().context("parse account")?,
+            use_liquidity: use_liquidity.parse().context("parse use_liquidity")?,
+            user_balance_support: user_balance_support
+                .parse()
+                .context("parse user_balance_support")?,
         })
     }
 }
@@ -313,6 +351,8 @@ pub fn create(
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
     score_configuration: &score_computation::Arguments,
+    settlement_rater: Arc<dyn SettlementRating>,
+    enforce_correct_fees: bool,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -346,7 +386,8 @@ pub fn create(
                               name: String,
                               config: SolverConfig,
                               instance_type: InstanceType,
-                              slippage_calculator: SlippageCalculator|
+                              slippage_calculator: SlippageCalculator,
+                              use_liquidity: bool|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -367,6 +408,8 @@ pub fn create(
             market_makable_token_list.clone(),
             *domain,
             shared_instance_creator.clone(),
+            use_liquidity,
+            enforce_correct_fees,
         )
     };
 
@@ -381,6 +424,7 @@ pub fn create(
                     max_settlements_per_solver,
                     order_prioritization_config.clone(),
                     smallest_partial_fill,
+                    settlement_rater.clone(),
                 )
             };
 
@@ -393,7 +437,11 @@ pub fn create(
             let score_calculator = score_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
-                SolverType::Naive => shared(NaiveSolver::new(account, slippage_calculator)),
+                SolverType::Naive => shared(NaiveSolver::new(
+                    account,
+                    slippage_calculator,
+                    enforce_correct_fees,
+                )),
                 SolverType::Baseline => shared(BaselineSolver::new(
                     account,
                     base_tokens.clone(),
@@ -406,6 +454,7 @@ pub fn create(
                     SolverConfig::default(),
                     InstanceType::Plain,
                     slippage_calculator,
+                    false,
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,
@@ -417,6 +466,7 @@ pub fn create(
                     },
                     InstanceType::Filtered,
                     slippage_calculator,
+                    true,
                 )),
                 SolverType::OneInch => shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -494,6 +544,7 @@ pub fn create(
             },
             InstanceType::Plain,
             slippage_configuration.get_global_calculator(),
+            solver.use_liquidity,
         ))
     });
     solvers.extend(external_solvers);
@@ -511,67 +562,11 @@ pub fn create(
 
 /// Returns a naive solver to be used e.g. in e2e tests.
 pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
-    Arc::new(NaiveSolver::new(account, SlippageCalculator::default()))
-}
-
-/// A solver that remove limit order below a certain threshold and
-/// passes the remaining liquidity onto an inner solver implementation.
-pub struct SellVolumeFilteringSolver {
-    inner: Box<dyn Solver + Send + Sync>,
-    min_value: BigRational,
-}
-
-impl SellVolumeFilteringSolver {
-    pub fn new(inner: Box<dyn Solver + Send + Sync>, min_value: U256) -> Self {
-        Self {
-            inner,
-            min_value: min_value.to_big_rational(),
-        }
-    }
-
-    // The price estimates come from the Auction struct passed to solvers.
-    async fn filter_orders(
-        &self,
-        mut orders: Vec<LimitOrder>,
-        external_prices: &ExternalPrices,
-    ) -> Vec<LimitOrder> {
-        let is_minimum_volume = |token: &H160, amount: &U256| {
-            let native_amount = external_prices.get_native_amount(*token, amount.to_big_rational());
-            native_amount >= self.min_value
-        };
-        orders.retain(|order| {
-            is_minimum_volume(&order.buy_token, &order.buy_amount)
-                || is_minimum_volume(&order.sell_token, &order.sell_amount)
-        });
-        orders
-    }
-}
-
-#[async_trait::async_trait]
-impl Solver for SellVolumeFilteringSolver {
-    async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
-        let original_length = auction.orders.len();
-        auction.orders = self
-            .filter_orders(auction.orders, &auction.external_prices)
-            .await;
-        tracing::debug!(
-            "Filtered {} orders because on insufficient volume",
-            original_length - auction.orders.len()
-        );
-        self.inner.solve(auction).await
-    }
-
-    fn notify_auction_result(&self, auction_id: AuctionId, result: AuctionResult) {
-        self.inner.notify_auction_result(auction_id, result);
-    }
-
-    fn account(&self) -> &Account {
-        self.inner.account()
-    }
-
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
+    Arc::new(NaiveSolver::new(
+        account,
+        SlippageCalculator::default(),
+        true,
+    ))
 }
 
 #[cfg(test)]
@@ -600,13 +595,7 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::liquidity::LimitOrder,
-        model::order::OrderKind,
-        num::One as _,
-        shared::externalprices,
-    };
+    use super::*;
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();
@@ -625,56 +614,6 @@ mod tests {
         fn name(&self) -> &'static str {
             "NoopSolver"
         }
-    }
-
-    #[tokio::test]
-    async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-        let orders = vec![
-            // Orders with high enough amount
-            LimitOrder {
-                sell_amount: 100_000.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            LimitOrder {
-                sell_amount: 500_000.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            // Order with small amount
-            LimitOrder {
-                sell_amount: 100.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-        ];
-
-        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 50_000.into());
-        let prices = externalprices! { native_token: sell_token, buy_token => BigRational::one() };
-        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 2);
-    }
-
-    #[tokio::test]
-    #[should_panic]
-    async fn test_filtering_solver_panics_orders_without_price_estimate() {
-        let sell_token = H160::from_low_u64_be(1);
-        let orders = vec![LimitOrder {
-            sell_amount: 100_000.into(),
-            sell_token,
-            ..Default::default()
-        }];
-
-        let prices = Default::default();
-        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 0.into());
-        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 0);
     }
 
     impl PartialEq for SolverAccountArg {
@@ -715,7 +654,7 @@ mod tests {
 
     #[test]
     fn parse_external_solver_arg() {
-        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242";
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|true|partially_fillable";
         let parsed = ExternalSolverArg::from_str(arg).unwrap();
         assert_eq!(parsed.name, "name");
         assert_eq!(parsed.url.to_string(), "http://solver.com/");
@@ -723,5 +662,17 @@ mod tests {
             parsed.account,
             SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
         );
+        assert!(parsed.use_liquidity);
+        assert_eq!(
+            parsed.user_balance_support,
+            UserBalanceSupport::PartiallyFillable
+        );
+    }
+
+    #[test]
+    fn parse_external_solver_arg_user_balance_default() {
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242|false";
+        let parsed = ExternalSolverArg::from_str(arg).unwrap();
+        assert_eq!(parsed.user_balance_support, UserBalanceSupport::None);
     }
 }

@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn serialize_query() {
         assert_eq!(
-            serde_json::to_value(&Query {
+            serde_json::to_value(Query {
                 query: r#"foo {
                 }"#,
                 variables: Some(json_map! {

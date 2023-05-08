@@ -7,7 +7,7 @@ use {
 };
 
 /// A trade which executes an order as part of this solution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum Trade {
     Fulfillment(Fulfillment),
@@ -15,7 +15,7 @@ pub enum Trade {
 }
 
 /// A trade which fulfills an order from the auction.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fulfillment {
     order: competition::Order,
     /// The amount executed by this fulfillment. See [`order::Partial`]. If the
@@ -106,7 +106,7 @@ pub enum Fee {
 }
 
 /// A trade which adds a JIT order. See [`order::Jit`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Jit {
     order: order::Jit,
     /// The amount executed by this JIT trade. See

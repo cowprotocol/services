@@ -1,5 +1,5 @@
 use {
-    crate::domain::competition::{self, solution},
+    crate::domain::competition::{self, solution::settlement},
     primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -7,7 +7,7 @@ use {
 
 impl Solution {
     pub fn from_domain(
-        id: solution::Id,
+        id: settlement::Id,
         score: competition::Score,
         rewards: competition::Reward,
     ) -> Self {

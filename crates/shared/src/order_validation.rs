@@ -520,7 +520,8 @@ impl OrderValidating for OrderValidator {
             Ok(_) => (),
             Err(
                 TransferSimulationError::InsufficientAllowance
-                | TransferSimulationError::InsufficientBalance,
+                | TransferSimulationError::InsufficientBalance
+                | TransferSimulationError::TransferFailed,
             ) if signing_scheme == SigningScheme::PreSign => {
                 // We have an exception for pre-sign orders where they do not
                 // require sufficient balance or allowance. The idea, is that

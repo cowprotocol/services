@@ -20,13 +20,19 @@ use {
 pub struct NaiveSolver {
     account: Account,
     slippage_calculator: SlippageCalculator,
+    enforce_correct_fees: bool,
 }
 
 impl NaiveSolver {
-    pub fn new(account: Account, slippage_calculator: SlippageCalculator) -> Self {
+    pub fn new(
+        account: Account,
+        slippage_calculator: SlippageCalculator,
+        enforce_correct_fees: bool,
+    ) -> Self {
         Self {
             account,
             slippage_calculator,
+            enforce_correct_fees,
         }
     }
 }
@@ -44,7 +50,7 @@ impl Solver for NaiveSolver {
     ) -> Result<Vec<Settlement>> {
         // Filter out partially fillable limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
-        orders.retain(|o| !o.solver_determines_fee());
+        orders.retain(|o| !o.solver_determines_fee() || !self.enforce_correct_fees);
         let slippage = self.slippage_calculator.context(&external_prices);
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         Ok(settle(slippage, orders, uniswaps))
@@ -130,11 +136,14 @@ fn extract_deepest_amm_liquidity(
 mod tests {
     use {
         super::*,
-        crate::liquidity::{
-            order_converter::OrderConverter,
-            tests::CapturingSettlementHandler,
-            LimitOrderId,
-            LiquidityOrderId,
+        crate::{
+            liquidity::{
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
+                LiquidityOrderId,
+            },
+            order_balance_filter::BalancedOrder,
         },
         ethcontract::H160,
         maplit::hashmap,
@@ -315,7 +324,7 @@ mod tests {
 
         let orders = vec![
             converter
-                .normalize_limit_order(Order {
+                .normalize_limit_order(BalancedOrder::full(Order {
                     data: OrderData {
                         sell_token: native_token,
                         buy_token: H160([2; 20]),
@@ -325,10 +334,10 @@ mod tests {
                         ..Default::default()
                     },
                     ..Default::default()
-                })
+                }))
                 .unwrap(),
             converter
-                .normalize_limit_order(Order {
+                .normalize_limit_order(BalancedOrder::full(Order {
                     data: OrderData {
                         sell_token: H160([2; 20]),
                         buy_token: BUY_ETH_ADDRESS,
@@ -342,7 +351,7 @@ mod tests {
                         ..Default::default()
                     },
                     ..Default::default()
-                })
+                }))
                 .unwrap(),
         ];
 

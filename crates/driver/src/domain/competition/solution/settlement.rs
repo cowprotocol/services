@@ -1,8 +1,40 @@
-use crate::{
-    boundary,
-    domain::{competition, eth},
-    infra::blockchain::Ethereum,
+use {
+    crate::{
+        boundary,
+        domain::{competition, eth},
+        infra::blockchain::Ethereum,
+    },
+    rand::Rng,
 };
+
+/// A unique settlement ID. This ID is encoded as part of the calldata of the
+/// settlement transaction, and it's used by the protocol to match onchain
+/// transactions to corresponding solutions. This is the ID that the protocol
+/// uses to refer both to the settlement and the winning solution.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct Id(pub u64);
+
+impl From<u64> for Id {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Id> for u64 {
+    fn from(value: Id) -> Self {
+        value.0
+    }
+}
+
+impl Id {
+    pub fn random() -> Self {
+        Self(rand::thread_rng().gen())
+    }
+
+    pub fn to_be_bytes(self) -> [u8; 8] {
+        self.0.to_be_bytes()
+    }
+}
 
 /// A transaction calling into our settlement contract on the blockchain.
 ///
@@ -13,7 +45,7 @@ use crate::{
 /// transaction itself, not an intermediate state.
 #[derive(Debug, Clone)]
 pub(super) struct Settlement {
-    id: super::Id,
+    id: Id,
     boundary: boundary::Settlement,
 }
 
@@ -42,7 +74,7 @@ impl Settlement {
         let boundary =
             boundary::Settlement::encode(eth, solution, auction, internalization).await?;
         Ok(Self {
-            id: solution.id,
+            id: Id::random(),
             boundary,
         })
     }
@@ -55,8 +87,8 @@ impl Settlement {
     }
 }
 
-/// A settlement which has been verified to respect some the rules of the
-/// protocol. In particular:
+/// A settlement which has been verified to respect certain fundamental
+/// rules of the protocol. In particular:
 ///
 /// - Simulation: the settlement has been simulated without reverting, including
 ///   the case where no interactions were internalized. Additionally the solver
@@ -66,11 +98,14 @@ impl Settlement {
 ///   settlement contract.
 /// - Internalization: internalized interactions only use trusted tokens.
 ///
-/// Such a settlement is verified to obey some of the rules of the protocol that
-/// could result in slashing, and is ready to broadcast to the Ethereum network.
+/// Violating these rules would result in slashing for the solver (earning
+/// reduced rewards). After a settlement has been verified, it can be executed
+/// onchain.
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub(super) inner: Settlement,
+    /// The solution encoded in the settlement.
+    pub solution: competition::Solution,
     /// The access list used by the settlement.
     pub access_list: eth::AccessList,
     /// The gas parameters used by the settlement.
@@ -90,7 +125,7 @@ impl Verified {
             .await
     }
 
-    pub fn id(&self) -> super::Id {
+    pub fn id(&self) -> Id {
         self.inner.id
     }
 

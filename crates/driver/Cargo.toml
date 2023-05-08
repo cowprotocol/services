@@ -59,6 +59,7 @@ solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
 tap = "1.0.1"
+tempfile = "3.4"
 
 [dev-dependencies]
 approx = "0.5"
