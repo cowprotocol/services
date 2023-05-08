@@ -164,11 +164,12 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_quote_predictions: bool,
 
-    /// Determines how confident we want to be that we quote the best price.
-    /// If the value is < 1 we may skip sending quote requests to price
-    /// estimators that have returned some winning quote in the past for a given
-    /// trade.
-    #[clap(long, env, default_value = "1")]
+    /// Determines the likelihood that the program returns the best possible
+    /// price for a given quote request. If the value is <1 the program is
+    /// allowed to not send requests to price estimators that historically
+    /// performed poorly for a given trade. The smaller the value the
+    /// more price estimators will not be asked for a quote.
+    #[clap(long, env, default_value = "0.99")]
     pub quote_prediction_confidence: f64,
 }
 
