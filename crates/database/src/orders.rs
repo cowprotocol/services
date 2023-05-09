@@ -379,6 +379,12 @@ AND cancellation_timestamp IS NULL
         .map(|_| ())
 }
 
+/// Interactions are read as arrays of their fields: target, value, data.
+/// This is done as sqlx does not support reading arrays of more complicated
+/// types than just one field. The pre_ and post_interaction's data of
+/// target, value and data are composed to an array of interactions later.
+type RawInteraction = (Address, BigDecimal, Vec<u8>);
+
 /// Order with extra information from other tables. Has all the information
 /// needed to construct a model::Order.
 #[derive(Debug, sqlx::FromRow)]
@@ -408,8 +414,8 @@ pub struct FullOrder {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
-    pub pre_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
-    pub post_interactions: Vec<(Address, BigDecimal, Vec<u8>)>,
+    pub pre_interactions: Vec<RawInteraction>,
+    pub post_interactions: Vec<RawInteraction>,
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
@@ -452,11 +458,6 @@ impl FullOrder {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-//
-// The pre_ and post_interactions are read as arrays of their fields: target,
-// value, data. This is done as sqlx does not support reading arrays of more
-// complicated types than just one field. The pre_ and post_interaction's data
-// of target, value and data are composed to an array of interactions later.
 const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
