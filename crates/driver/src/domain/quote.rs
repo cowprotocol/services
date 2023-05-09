@@ -103,7 +103,7 @@ impl Order {
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                // TODO add actual pre- and post-interactions
+                // TODO add actual pre- and post-interactions (#1491)
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,
