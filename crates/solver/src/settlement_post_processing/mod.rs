@@ -143,7 +143,14 @@ impl PostProcessing for PostProcessingPipeline {
                     prices,
                     &solver_account.address(),
                 )
-                .await,
+                .await
+                .map_or_else(
+                    |err| {
+                        tracing::warn!("Failed to compute score: {}", err);
+                        None
+                    },
+                    Some,
+                ),
                 ..optimized_solution
             },
             _ => optimized_solution,
