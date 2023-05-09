@@ -2,7 +2,7 @@ use {
     super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution},
     crate::{encoding::EncodedSettlement, interactions::UnwrapWethInteraction},
     anyhow::{bail, ensure, Context as _, Result},
-    itertools::{Either, Itertools},
+    itertools::Either,
     model::{
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
@@ -597,11 +597,8 @@ impl SettlementEncoder {
             clearing_prices,
             trades,
             interactions: [
-                // In the following it is assumed that all different interactions
-                // are only required once to be executed.
                 self.pre_interactions
                     .into_iter()
-                    .unique()
                     .flat_map(|interaction| interaction.encode())
                     .collect(),
                 iter::empty()
@@ -626,7 +623,6 @@ impl SettlementEncoder {
                     .collect(),
                 self.post_interactions
                     .into_iter()
-                    .unique()
                     .flat_map(|interaction| interaction.encode())
                     .collect(),
             ],
@@ -1152,15 +1148,15 @@ pub mod tests {
     }
 
     #[test]
-    fn add_trade_also_adds_interactions() {
+    fn trades_add_interactions_to_the_encoded_and_later_get_encoded() {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder = SettlementEncoder::new(prices);
-        let pre_interaction = InteractionData {
+        let i1 = InteractionData {
             target: H160::from_low_u64_be(12),
             value: 321.into(),
             call_data: vec![1, 2, 3, 4],
         };
-        let post_interaction = InteractionData {
+        let i2 = InteractionData {
             target: H160::from_low_u64_be(42),
             value: 1212.into(),
             call_data: vec![4, 3, 2, 1],
@@ -1177,8 +1173,8 @@ pub mod tests {
                         ..Default::default()
                     },
                     interactions: Interactions {
-                        pre: vec![pre_interaction.clone()],
-                        post: vec![post_interaction.clone()],
+                        pre: vec![i1.clone()],
+                        post: vec![i2.clone()],
                     },
                     ..Default::default()
                 },
@@ -1200,8 +1196,8 @@ pub mod tests {
                         ..Default::default()
                     },
                     interactions: Interactions {
-                        pre: vec![pre_interaction.clone()],
-                        post: vec![post_interaction.clone()],
+                        pre: vec![i1.clone()],
+                        post: vec![i2.clone()],
                     },
                     ..Default::default()
                 },
@@ -1210,13 +1206,15 @@ pub mod tests {
             )
             .unwrap();
 
+        assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
+        assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
+
+        let i1 = (i1.target, i1.value, Bytes(i1.call_data));
+        let i2 = (i2.target, i2.value, Bytes(i2.call_data));
+        let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
-            encoder.pre_interactions,
-            vec![pre_interaction.clone(), pre_interaction]
-        );
-        assert_eq!(
-            encoder.post_interactions,
-            vec![post_interaction.clone(), post_interaction]
+            encoded.interactions,
+            [vec![i1.clone(), i1], vec![], vec![i2.clone(), i2]]
         );
     }
 
