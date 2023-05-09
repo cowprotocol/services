@@ -47,6 +47,7 @@ pub struct SettlementEncoder {
     // TODO: Can we fix this in a better way?
     execution_plan: Vec<MaybeInternalizableInteraction>,
     pre_interactions: Vec<InteractionData>,
+    post_interactions: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -118,6 +119,7 @@ impl SettlementEncoder {
             trades: Vec::new(),
             execution_plan: Vec::new(),
             pre_interactions: Vec::new(),
+            post_interactions: Vec::new(),
             unwraps: Vec::new(),
         }
     }
@@ -147,6 +149,7 @@ impl SettlementEncoder {
                 .map(|(execution, _)| (execution.clone(), true))
                 .collect(),
             pre_interactions: self.pre_interactions.clone(),
+            post_interactions: self.post_interactions.clone(),
             unwraps: self.unwraps.clone(),
         }
     }
@@ -294,6 +297,7 @@ impl SettlementEncoder {
             }
         };
         self.pre_interactions.extend(interactions.pre.into_iter());
+        self.post_interactions.extend(interactions.post.into_iter());
         Ok(execution)
     }
 
@@ -620,7 +624,11 @@ impl SettlementEncoder {
                     )
                     .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
                     .collect(),
-                Vec::new(),
+                self.post_interactions
+                    .into_iter()
+                    .unique()
+                    .flat_map(|interaction| interaction.encode())
+                    .collect(),
             ],
         }
     }
@@ -665,6 +673,7 @@ impl SettlementEncoder {
 
         self.execution_plan.append(&mut other.execution_plan);
         self.pre_interactions.append(&mut other.pre_interactions);
+        self.post_interactions.append(&mut other.post_interactions);
 
         for unwrap in other.unwraps {
             self.add_unwrap(unwrap);
@@ -753,7 +762,7 @@ pub mod tests {
         contracts::WETH9,
         ethcontract::Bytes,
         maplit::hashmap,
-        model::order::{OrderBuilder, OrderData},
+        model::order::{Interactions, OrderBuilder, OrderData},
         shared::{
             dummy_contract,
             interaction::{EncodedInteraction, Interaction},
@@ -1140,6 +1149,90 @@ pub mod tests {
         assert_eq!(merged.trades.len(), 4);
         assert_eq!(merged.execution_plan.len(), 2);
         assert_eq!(merged.unwraps[0].amount, 3.into());
+    }
+
+    #[test]
+    fn add_trade_also_adds_interactions() {
+        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
+        let mut encoder = SettlementEncoder::new(prices);
+        let pre_interaction = InteractionData {
+            target: H160::from_low_u64_be(12),
+            value: 321.into(),
+            call_data: vec![1, 2, 3, 4],
+        };
+        let post_interaction = InteractionData {
+            target: H160::from_low_u64_be(42),
+            value: 1212.into(),
+            call_data: vec![4, 3, 2, 1],
+        };
+        encoder
+            .add_trade(
+                Order {
+                    data: OrderData {
+                        sell_token: token(1),
+                        sell_amount: 33.into(),
+                        buy_token: token(3),
+                        buy_amount: 11.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    interactions: Interactions {
+                        pre: vec![pre_interaction.clone()],
+                        post: vec![post_interaction.clone()],
+                    },
+                    ..Default::default()
+                },
+                33.into(),
+                13.into(),
+            )
+            .unwrap();
+
+        assert_eq!(encoder.pre_interactions, vec![pre_interaction]);
+        assert_eq!(encoder.post_interactions, vec![post_interaction]);
+    }
+
+    #[test]
+    fn merge_preserves_post_interactions() {
+        let mut encoder0 = SettlementEncoder::new(Default::default());
+        encoder0.post_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+
+        let mut encoder1 = SettlementEncoder::new(Default::default());
+        encoder1.post_interactions.push(InteractionData {
+            target: H160([1; 20]),
+            value: U256::zero(),
+            call_data: vec![0xa],
+        });
+        encoder1.post_interactions.push(InteractionData {
+            target: H160([2; 20]),
+            value: U256::one(),
+            call_data: vec![0xb],
+        });
+
+        let merged = encoder0.merge(encoder1).unwrap();
+        assert_eq!(
+            merged.post_interactions,
+            vec![
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([1; 20]),
+                    value: U256::zero(),
+                    call_data: vec![0xa],
+                },
+                InteractionData {
+                    target: H160([2; 20]),
+                    value: U256::one(),
+                    call_data: vec![0xb],
+                },
+            ]
+        );
     }
 
     #[test]
