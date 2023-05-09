@@ -121,7 +121,8 @@ async fn test() {
                                     "value": "200",
                                     "callData": "0xabcd",
                                 }
-                            ]
+                            ],
+                            "postInteractions": [],
                         },
                         "executedAmount": "100",
                     }
