@@ -216,6 +216,7 @@ pub struct OrderValidator {
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
     pub enable_eth_smart_contract_payments: bool,
+    enable_custom_interactions: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -299,6 +300,7 @@ impl OrderValidator {
             max_limit_orders_per_user,
             code_fetcher,
             enable_eth_smart_contract_payments: false,
+            enable_custom_interactions: false,
         }
     }
 
@@ -314,6 +316,11 @@ impl OrderValidator {
 
     pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
         self.enable_eth_smart_contract_payments = enable;
+        self
+    }
+
+    pub fn with_custom_interactions(mut self, enable: bool) -> Self {
+        self.enable_custom_interactions = enable;
         self
     }
 
