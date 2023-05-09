@@ -146,7 +146,7 @@ impl PostProcessing for PostProcessingPipeline {
                 .await
                 .map_or_else(
                     |err| {
-                        tracing::warn!("Failed to compute score: {}", err);
+                        tracing::warn!(?err, "failed to compute score");
                         None
                     },
                     Some,

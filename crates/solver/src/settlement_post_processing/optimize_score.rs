@@ -48,10 +48,8 @@ pub async fn compute_score(
         .map(Score::Score);
 
     tracing::debug!(
-        "solver {} objective value {}, score {:?}",
-        solver,
-        inputs.objective_value(),
-        score
+        ?solver, ?score, objective_value = %inputs.objective_value(),
+        "computed score",
     );
 
     score
