@@ -1183,12 +1183,41 @@ pub mod tests {
                     ..Default::default()
                 },
                 33.into(),
-                13.into(),
+                5.into(),
             )
             .unwrap();
 
-        assert_eq!(encoder.pre_interactions, vec![pre_interaction]);
-        assert_eq!(encoder.post_interactions, vec![post_interaction]);
+        // add second trade to verify that interactions get appended and not just set
+        encoder
+            .add_trade(
+                Order {
+                    data: OrderData {
+                        sell_token: token(1),
+                        sell_amount: 66.into(),
+                        buy_token: token(3),
+                        buy_amount: 22.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    interactions: Interactions {
+                        pre: vec![pre_interaction.clone()],
+                        post: vec![post_interaction.clone()],
+                    },
+                    ..Default::default()
+                },
+                66.into(),
+                5.into(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            encoder.pre_interactions,
+            vec![pre_interaction.clone(), pre_interaction]
+        );
+        assert_eq!(
+            encoder.post_interactions,
+            vec![post_interaction.clone(), post_interaction]
+        );
     }
 
     #[test]
