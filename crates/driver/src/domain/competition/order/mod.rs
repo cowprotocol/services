@@ -24,12 +24,12 @@ pub struct Order {
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
-    /// The onchain calls supposed to run before sending the user funds to the
-    /// settlement contract.
+    /// The onchain calls to run before sending user funds to the settlement
+    /// contract.
     /// These are set by the user and included in the settlement transaction.
     pub pre_interactions: Vec<eth::Interaction>,
-    /// The onchain calls supposed to run after sending bought tokens from the
-    /// settlement contract to the user.
+    /// The onchain calls to run after sending tokens from the settlement
+    /// contract to the user.
     /// These are set by the user and included in the settlement transaction.
     pub post_interactions: Vec<eth::Interaction>,
     pub sell_token_balance: SellTokenBalance,
