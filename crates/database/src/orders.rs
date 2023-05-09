@@ -89,7 +89,7 @@ pub enum ExecutionTime {
     Post,
 }
 
-/// One row in the `interactions` table
+/// One row in the `interactions` table.
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Interaction {
     pub target: Address,
