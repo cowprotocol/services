@@ -96,14 +96,14 @@ We use flyway to do migrations of our database schema. This table contains metad
 Summary:  
 The settlement contract allows associating user provided interactions to be executed before and after an order. This table stores these interactions and associates them with the respective orders.
 
- Column     | Type          | Nullable | Default | Details
-------------|---------------|----------|---------|--------
- order\_uid | bytea         | not null |         | <details>the order that this interaction belongs to</details>
- index      | integer       | not null |         | <details>index indicating in which interactions should be executed in case the same order has multiple interactions (ascending order)</details>
- target     | bytea         | not null |         | <details>address of the smart contract this interaction should call</details>
- value      | numeric       | not null |         | <details>amount of ETH this interaction should send to the smart contract</details>
- data       | bytea         | not null |         | <details>call data that contains the function selector and the bytes passed to it</details>
- execution  | executiontime | not null |         | <details>in which phase the interaction should be executed</details>
+ Column     | Type                   | Nullable | Default | Details
+------------|------------------------|----------|---------|--------
+ order\_uid | bytea                  | not null |         | <details>the order that this interaction belongs to</details>
+ index      | integer                | not null |         | <details>index indicating in which interactions should be executed in case the same order has multiple interactions (ascending order)</details>
+ target     | bytea                  | not null |         | <details>address of the smart contract this interaction should call</details>
+ value      | numeric                | not null |         | <details>amount of ETH this interaction should send to the smart contract</details>
+ data       | bytea                  | not null |         | <details>call data that contains the function selector and the bytes passed to it</details>
+ execution  | [enum](#executiontime) | not null |         | <details>in which phase the interaction should be executed</details>
 
 Indexes:  
 - PRIMARY KEY: btree(`order_uid`)  
