@@ -159,6 +159,10 @@ pub struct Arguments {
     /// Enable buy ETH orders paying to smart contract wallets.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_eth_smart_contract_payments: bool,
+
+    /// Enable support for orders with custom pre- and post-interactions.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub enable_custom_interactions: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -232,6 +236,11 @@ impl std::fmt::Display for Arguments {
             f,
             "max_limit_orders_per_user: {}",
             self.max_limit_orders_per_user
+        )?;
+        writeln!(
+            f,
+            "enable_custom_interactions: {:?}",
+            self.enable_custom_interactions
         )?;
 
         Ok(())
