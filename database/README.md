@@ -21,7 +21,6 @@ This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9b
 
 ### auction\_prices
 
-
 Summary:  
 Stores the native price of a token in a given auction. Used for computations related to CIP-20.
 
@@ -144,14 +143,14 @@ Indexes:
 Summary:  
 Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L23-L44) events emited by the `ICoWSwapOnchainOrders` interface plus some metadata.
 
- Column           | Type                       | Nullable | Default | Details
-------------------|----------------------------|----------|---------|--------
- uid              | bytea                      | not null |         | <details>the order that got created</details>
- sender           | bytea                      | not null |         | <details>the user that created the order with the smart contract</details>
- is\_reorged      | boolean                    | not null |         | <details>if the backend detects that an block creating an order got reorged it gets invalidated with this flag</details>
- block\_number    | bigint                     | not null |         | <details>the block in which the order was created</details>
- log\_index       | bigint                     | not null |         | <details>the index in which the `OrderPlacement` event was emitted </details>
- placement\_error | onchainorderplacementerror | nullable |         | <details>describes what error happened when placing the order (see `onchainorderplacementerror`)</details>
+ Column           | Type                                | Nullable | Default | Details
+------------------|-------------------------------------|----------|---------|--------
+ uid              | bytea                               | not null |         | <details>the order that got created</details>
+ sender           | bytea                               | not null |         | <details>the user that created the order with the smart contract</details>
+ is\_reorged      | boolean                             | not null |         | <details>if the backend detects that an block creating an order got reorged it gets invalidated with this flag</details>
+ block\_number    | bigint                              | not null |         | <details>the block in which the order was created</details>
+ log\_index       | bigint                              | not null |         | <details>the index in which the `OrderPlacement` event was emitted </details>
+ placement\_error | [enum](#onchainorderplacementerror) | nullable |         | <details>describes what error happened when placing the order</details>
 
 Indexes:  
 - "onchain\_placed\_orders\_pkey" PRIMARY KEY, btree (`uid`)  
@@ -196,31 +195,31 @@ Indexes:
 Summary:  
 Contains all relevant signed data of an order and metadata that is important for correctly executing the order.
 
-Column                    | Type                 | Nullable | Default | Details
---------------------------|----------------------|----------|---------|--------
- uid                      | bytea                | not null |         | <details>56 bytes identifier composed of a 32 bytes `hash` over the order data signed by the user, 20 bytes containing the `owner` and 4 bytes containing `valid_to`.</details>
- owner                    | bytea                | not null |         | <details>where the sell\_token will be taken from</details>
- creation\_timestamp      | timestamptz          | not null |         | <details>when the order was created</details>
- sell\_token              | bytea                | not null |         | <details>address of the token that will be sold</details>
- buy\_token               | bytea                | not null |         | <details>address of the token that will be bought</details>
- sell\_amount             | numeric              | not null |         | <details>amount in sell\_token that should at most be sold</details>
- buy\_amount              | numeric              | not null |         | <details>amount of buy\_token that should at least be bought</details>
- valid\_to                | timestamptz          | not null |         | <details>point in time when the order can no longer be settled</details>
- fee\_amount              | numeric              | not null |         | <details>amount in sell\_token the owner agreed upfront as a fee to be taken for the trade</details>
- kind                     | orderkind            | not null |         | <details>trade semantics of the order (see `orderkind`)</details>
- partially\_fillable      | bool                 | not null |         | <details>determines if the order can be executed in multiple smaller trades or if everything has to be executed at once</details>
- signature                | bytea                | not null |         | <details>signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme</details>
- cancellation\_timestamp  | timestamptz          | nullable |         | <details>when the order was cancelled. If the the timestamp is null it means the order was not cancelled</details>
- receiver                 | bytea                | nullable |         | <details>address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens</details>
- app\_data                | bytea                | not null |         | <details>Arbitrary data associated with this order but per design this is an IPFS hash which may contain additional meta data for this order signed by the user</details>
- signing\_scheme          | signingscheme        | not null |         | <details>what kind of signature was used to verify that the owner actually intended to create this order</details>
- settlement\_contract     | bytea                | not null |         | <details>address of the contract that should be used to settle this order</details>
- sell\_token\_balance     | selltokensource      | not null |         | <details>defines how sell\_tokens need to be transferred into the settlement contract. (see `selltokensource`)</details>
- buy\_token\_balance      | buytokendestination  | not null |         | <details>defined how buy\_tokens need to be transferred back to the user. (see `buytokendestination`)</details>
- full\_fee\_amount        | numeric              | not null |         | <details>estimation in sell\_token how much gas will be needed to execute this order</details>
- class                    | orderclass           | not null |         | <details>determines which special trade semantics will apply to the execution of this order. See class enum for more information</details>
- surplus\_fee             | numeric              | nullable |         | <details>dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet</details>
- surplus\_fee\_timestamp  | timestamptz          | nullable |         | <details>when the surplus\_fee was computed for this order, the backend ignores orders with too old surplus\_fee\_timestamp because that order's surplus\_fee is too inaccurate</details>
+Column                    | Type                         | Nullable | Default | Details
+--------------------------|------------------------------|----------|---------|--------
+ uid                      | bytea                        | not null |         | <details>56 bytes identifier composed of a 32 bytes `hash` over the order data signed by the user, 20 bytes containing the `owner` and 4 bytes containing `valid_to`.</details>
+ owner                    | bytea                        | not null |         | <details>where the sell\_token will be taken from</details>
+ creation\_timestamp      | timestamptz                  | not null |         | <details>when the order was created</details>
+ sell\_token              | bytea                        | not null |         | <details>address of the token that will be sold</details>
+ buy\_token               | bytea                        | not null |         | <details>address of the token that will be bought</details>
+ sell\_amount             | numeric                      | not null |         | <details>amount in sell\_token that should at most be sold</details>
+ buy\_amount              | numeric                      | not null |         | <details>amount of buy\_token that should at least be bought</details>
+ valid\_to                | timestamptz                  | not null |         | <details>point in time when the order can no longer be settled</details>
+ fee\_amount              | numeric                      | not null |         | <details>amount in sell\_token the owner agreed upfront as a fee to be taken for the trade</details>
+ kind                     | [enum](#orderkind)           | not null |         | <details>trade semantics of the order</details>
+ partially\_fillable      | bool                         | not null |         | <details>determines if the order can be executed in multiple smaller trades or if everything has to be executed at once</details>
+ signature                | bytea                        | not null |         | <details>signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme</details>
+ cancellation\_timestamp  | timestamptz                  | nullable |         | <details>when the order was cancelled. If the the timestamp is null it means the order was not cancelled</details>
+ receiver                 | bytea                        | nullable |         | <details>address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens</details>
+ app\_data                | bytea                        | not null |         | <details>Arbitrary data associated with this order but per design this is an IPFS hash which may contain additional meta data for this order signed by the user</details>
+ signing\_scheme          | [enum](#signingscheme)       | not null |         | <details>what kind of signature was used to verify that the owner actually intended to create this order</details>
+ settlement\_contract     | bytea                        | not null |         | <details>address of the contract that should be used to settle this order</details>
+ sell\_token\_balance     | [enum](#selltokensource)     | not null |         | <details>defines how sell\_tokens need to be transferred into the settlement contract</details>
+ buy\_token\_balance      | [enum](#buytokendestination) | not null |         | <details>defined how buy\_tokens need to be transferred back to the user</details>
+ full\_fee\_amount        | numeric                      | not null |         | <details>estimation in sell\_token how much gas will be needed to execute this order</details>
+ class                    | orderclass                   | not null |         | <details>determines which special trade semantics will apply to the execution of this order</details>
+ surplus\_fee             | numeric                      | nullable |         | <details>dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet</details>
+ surplus\_fee\_timestamp  | timestamptz                  | nullable |         | <details>when the surplus\_fee was computed for this order, the backend ignores orders with too old surplus\_fee\_timestamp because that order's surplus\_fee is too inaccurate</details>
 
 
 Indexes:  
@@ -248,19 +247,19 @@ Indexes:
 Summary:  
 Stores quotes in order to determine whether it makes sense to allow a user to creat an order with a given `fee_amount`. Quotes are short lived and get removed when they expire. `id`s are unique and increase monotonically.
 
- Column                | Type        | Nullable | Default | Details
------------------------|-------------|----------|---------|--------
- sell\_token           | bytea       | not null |         | <details>address token that should be sold</details>
- sell\_amount          | numeric     | not null |         | <details>amount that should be sold at most</details>
- buy\_token            | bytea       | not null |         | <details>address of token that should be bought</details>
- buy\_amount           | numeric     | not null |         | <details>amount that should be bought at least</details>
- expiration\_timestamp | timestamptz | not null |         | <details>when the quote should no longer considered valid. Invalid quotes will get deleted shortly</details>
- order\_kind           | orderkind   | not null |         | <details>trade semantics for the quoted order (see `orderkind`)</details>
- gas\_amount           | double      | not null |         | <details>amount of gas that would be used by the best quote</details>
- gas\_price            | double      | not null |         | <details>gas price at the time of quoting</details>
- sell\_token\_price    | double      | not null |         | <details>price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.</details>
- id                    | bigint      | not null | nextval('quotes\_id\_seq') | <details>unique identifier of this quote</details>
- quote\_kind           | quotekind   | not null |         | <details>semantics of the order the quote is generated for. Some orders cost more gas to execute since they incur some overhead. That needs to be reflected in a higher fee. When looking up a fee in the DB the order\_kind needs to match the order that the user wants to create (see `quotekind`).</details>
+ Column                | Type               | Nullable | Default | Details
+-----------------------|--------------------|----------|---------|--------
+ sell\_token           | bytea              | not null |         | <details>address token that should be sold</details>
+ sell\_amount          | numeric            | not null |         | <details>amount that should be sold at most</details>
+ buy\_token            | bytea              | not null |         | <details>address of token that should be bought</details>
+ buy\_amount           | numeric            | not null |         | <details>amount that should be bought at least</details>
+ expiration\_timestamp | timestamptz        | not null |         | <details>when the quote should no longer considered valid. Invalid quotes will get deleted shortly</details>
+ order\_kind           | [enum](#orderkind) | not null |         | <details>trade semantics for the quoted order</details>
+ gas\_amount           | double             | not null |         | <details>amount of gas that would be used by the best quote</details>
+ gas\_price            | double             | not null |         | <details>gas price at the time of quoting</details>
+ sell\_token\_price    | double             | not null |         | <details>price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.</details>
+ id                    | bigint             | not null | nextval('quotes\_id\_seq') | <details>unique identifier of this quote</details>
+ quote\_kind           | [enum](#quotekind) | not null |         | <details>semantics of the order the quote is generated for. Some orders cost more gas to execute since they incur some overhead. That needs to be reflected in a higher fee. When looking up a fee in the DB the order\_kind needs to match the order that the user wants to create.</details>
 
 Indexes:  
 - "quotes\_pkey" PRIMARY KEY, btree (`id`)  
@@ -351,14 +350,14 @@ Indexes:
 
 ### Enums
 
-`executiontime`  
+#### executiontime
 
  Value | Meaning
  ------|--------
  pre   | interaction should be executed before sending tokens to the settlement contract
  post  | interaction should be executed after receiving bought tokens from the settlement contract
 
-`onchainorderplacementerror`  
+#### onchainorderplacementerror
 
  Value                           | Meaning
 ---------------------------------|--------
@@ -371,14 +370,14 @@ Indexes:
  insufficient\_fee               | TODO
  other                           | some other error occurred
 
-`orderkind`
+#### orderkind
 
  Value | Meaning
 -------|--------
  sell  | the order sells the entire sell\_amount for at least the user signed buy\_amount
  buy   | the order buys the entire buy\_amount for at most the user signed sell\_amount
 
-`signingscheme`
+#### signingscheme
 
  Value               | Meaning
 ---------------------|--------
@@ -386,7 +385,7 @@ Indexes:
  eip1271onchainorder | TODO
  presignonchainorder | TODO
 
-`quotekind`  
+#### quotekind
 
  Value               | Meaning
 ---------------------|--------
@@ -394,7 +393,7 @@ Indexes:
  eip1271onchainorder | TODO
  presignonchainorder | TODO
 
-`selltokensource`
+#### selltokensource
 
  Value    | Meaning
 ----------|--------
@@ -402,14 +401,14 @@ Indexes:
  internal | TODO
  external | TODO
 
-`buytokendestination`
+#### buytokendestination
 
  Value    | Meaning
 ----------|--------
  erc20    | TODO
  internal | TODO
 
-`orderclass`
+#### orderclass
 
  Value     | Meaning
 -----------|--------
