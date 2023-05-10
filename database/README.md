@@ -12,7 +12,8 @@ The database contains the following tables:
 --------------|--------|----------|---------
  auction\_id  | bigint | not null |
  participant  | bytea  | not null |
-Indexes:
+
+Indexes:  
 - "auction\_participants\_pkey" PRIMARY KEY, btree (`auction_id`, `participant`)
 
 This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
@@ -57,7 +58,7 @@ auction\_id: which auction was settled
 tx\_from: address of the solver account that won the auction  
 tx\_nonce: nonce that will be used by the solver to settle the auction  
 
-### auctions (and auctions\_id\_seq counter))
+### auctions (and auctions\_id\_seq counter)
 
 Summary:  
 Stores only the current auction as a means to decouple auction creation in the `autopilot` from serving it in the `orderbook`. A new auction replaces the current one and uses the value of the `auctions_id_seq` sequence and increase it to ensure that auction ids are unique and monotonically increasing.  
@@ -204,23 +205,24 @@ Indexes:
 
 Enum `onchainorderplacementerror`  
 
-Value | Meaning
- quote\_not\_found | the order was created without first requesting a quote from the backend
- invalid\_quote | the associated quote does not apply to the order
- pre\_validation\_error | TODO
- disabled\_order\_order\_class | order was created with 
+ Value                           | Meaning
+---------------------------------|--------
+ quote\_not\_found               | the order was created without first requesting a quote from the backend
+ invalid\_quote                  | the associated quote does not apply to the order
+ pre\_validation\_error          | TODO
+ disabled\_order\_order\_class   | order was created with 
  valid\_to\_too\_far\_in\_future | TODO
- invalid\_order\_data | TODO
- insufficient\_fee | TODO
- other | some other error occurred
+ invalid\_order\_data            | TODO
+ insufficient\_fee               | TODO
+ other                           | some other error occurred
 
 Description:  
-uid: the order that got created
-sender: the user that created the order with the smart contract
-is\_reorged: if the backend detects that an block creating an order got reorged it gets invalidated with this flag
-block\_number: the block in which the order was created
-log\_index: the index in which the `OrderPlacement` event was emitted
-placement\_error: describes what error happened when placing the order (see `onchainorderplacementerror`)
+uid: the order that got created  
+sender: the user that created the order with the smart contract  
+is\_reorged: if the backend detects that an block creating an order got reorged it gets invalidated with this flag  
+block\_number: the block in which the order was created  
+log\_index: the index in which the `OrderPlacement` event was emitted  
+placement\_error: describes what error happened when placing the order (see `onchainorderplacementerror`)  
 
 ### order\_execution
 
@@ -236,7 +238,7 @@ Contains metainformation for trades, required for reward computations that canno
  solver\_fee  | numeric | nullable |
 
 Indexes:  
-- "order\_rewards\_pkey" PRIMARY KEY, btree (`order_uid`, `auction_id`)
+- "order\_rewards\_pkey" PRIMARY KEY, btree (`order_uid`, `auction_id`)  
   This table was originally called "order\_rewards" and renamed since then but the old index remained
 
 Description:  
@@ -247,7 +249,32 @@ surplus\_fee: dynamic fee computed by the protocol that should get taken from th
 solver\_fee: value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).  
 
 
-### order_quotes
+### order\_quotes
+
+Summary:  
+Quote data stored specifically for order that got created with the [`ICoWSwapOnchainOrders`](https://github.com/cowprotocol/ethflowcontract/blob/1d5d54a4ba890c5c0d3b26429ee32aa8e69f2f0d/src/interfaces/ICoWSwapOnchainOrders.sol#L6-L50) interface.  
+TODO: verify  
+
+ Colmun             | Type    | Nullable | Default
+--------------------|---------|----------|--------
+ order\_uid         | bytea   | not null |
+ gas\_amount        | double  | not null |
+ gas\_price         | double  | not null |
+ sell\_token\_price | double  | not null |
+ sell\_amount       | numeric | not null |
+ buy\_amount        | numeric | not null |
+
+Indexes:  
+- "order\_quotes\_pkey" PRIMARY KEY, btree (`order_uid`)  
+
+Description:  
+order\_uid: the order that this quote belongs to  
+gas\_amount: the estimated gas used by the quote used to create this order with  
+gas\_price: the gas price at the time of order creation  
+sell\_token\_price: the price of the sell\_token in ETH  
+sell\_amount: the sell\_amount of the quote used to create the order with  
+buy\_amount: the buy\_amount of the quote used to create the order with  
+
 ### orders
 
 Summary:  
@@ -434,7 +461,7 @@ Indexes:
 
 Description:  
 block\_number: the block in which the settlement happened
-log\_index: index of the `[Settlement](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68)` event  
+log\_index: index of the [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) event  
 gas\_used: the amount of gas the settlement consumed  
 effective\_gas\_price: the effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)  
 surplus: the amount of tokens users received above their limit price converted to ETH  
@@ -482,12 +509,12 @@ Indexes:
 - "settlements\_pkey" PRIMARY KEY, btree (`block_number`,`log_index`)  
 
 Description:  
-block\_number: the block in which the settlement happened
-log\_index: the index in which the event was emitted
-solver: the public address of the executing solver
-tx\_hash: the transaction hash in which the settlement got executed
-tx\_from: the address that submitted the transaction
-tx\_nonce: the nonce that was used to submit the transaction
+block\_number: the block in which the settlement happened  
+log\_index: the index in which the event was emitted  
+solver: the public address of the executing solver  
+tx\_hash: the transaction hash in which the settlement got executed  
+tx\_from: the address that submitted the transaction  
+tx\_nonce: the nonce that was used to submit the transaction  
 
 
 ### solver\_competitions
@@ -504,8 +531,8 @@ Indexes:
 - "solver\_competitions\_pkey" PRIMARY KEY, btree (`id`)  
 
 Description:  
-id: the id of the auction that the solver competition belongs to
-json: overview of the solver competition with unspecified format
+id: the id of the auction that the solver competition belongs to  
+json: overview of the solver competition with unspecified format  
 
 ### trades
 
