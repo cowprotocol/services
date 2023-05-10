@@ -330,7 +330,7 @@ Description:
  buy\_amount: amount of buy\_token that should at least be bought  
  valid\_to: point in time when the order can no longer be settled  
  fee\_amount: amount in sell\_token the owner agreed upfront as a fee to be taken for the trade  
- kind: whether the order is a buy or a sell order  
+ kind: trade semantics of the order (see `orderkind`)
  partially\_fillable: determines if the order can be executed in multiple smaller trades or if everything has to be executed at once  
  signature: signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme  
  cancellation\_timestamp: when the order was cancelled. If the the timestamp is null it means the order was not cancelled  
@@ -346,12 +346,167 @@ Description:
  surplus\_fee\_timestamp: when the surplus\_fee was computed for this order, the backend ignores orders with too old surplus\_fee\_timestamp because that order's surplus\_fee is too inaccurate  
 
 
-### presignature_events
-### quotes (and quotes_id_seq counter)
-### settlement_observations
-### settlement_scores
+### presignature\_events
+
+Summary:  
+Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e5c28877c1690415548de7bc4b5502f87e7f222/src/contracts/mixins/GPv2Signing.sol#L59-L61) events.
+
+ Column        | Type    | Nullable | Default
+---------------|---------|----------|--------
+ block\_number | bigint  | not null |
+ log\_index    | bigint  | not null |
+ owner         | bytea   | not null |
+ order\_uid    | bytea   | not null |
+ signed        | boolean | not null |
+
+Indexes:  
+- "presignature\_events\_pkey" PRIMARY KEY, btree (`block_number`, `log_index`)  
+
+Description:  
+block\_number: the block in which the event was emitted  
+log\_index: the index in which the event was emitted  
+owner: the owner of the order  
+order\_uid: the order for which the signature was given or revoked  
+signed: specifies if an a signature was given or revoked  
+
+### quotes (and quotes\_id\_seq counter)
+
+Summary:  
+Stores quotes in order to determine whether it makes sense to allow a user to creat an order with a given `fee_amount`. Quotes are short lived and get removed when they expire. `id`s are unique and increase monotonically.
+
+ Column                | Type        | Nullable | Default
+-----------------------|-------------|----------|--------
+ sell\_token           | bytea       | not null |
+ sell\_amount          | numeric     | not null |
+ buy\_token            | bytea       | not null |
+ buy\_amount           | numeric     | not null |
+ expiration\_timestamp | timestamptz | not null |
+ order\_kind           | orderkind   | not null |
+ gas\_amount           | double      | not null |
+ gas\_price            | double      | not null |
+ sell\_token\_price    | double      | not null |
+ id                    | bigint      | not null | nextval('quotes\_id\_seq')
+ quote\_kind           | quotekind   | not null |
+
+Indexes:  
+- "quotes\_pkey" PRIMARY KEY, btree (`id`)  
+- "quotes\_token\_expiration", btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)  
+
+
+Enum `quotekind`  
+
+ Value               | Meaning
+---------------------|--------
+ standard            | TODO
+ eip1271onchainorder | TODO
+ presignonchainorder | TODO
+
+Description:  
+sell\_token: address token that should be sold  
+sell\_amount: amount that should be sold at most  
+buy\_token: address of token that should be bought  
+buy\_amount: amount that should be bought at least  
+expiration\_timestamp: when the quote should no longer considered valid. Invalid quotes will get deleted shortly  
+order\_kind: trade semantics for the quoted order (see `orderkind`)  
+gas\_amount: amount of gas that would be used by the best quote  
+gas\_price: gas price at the time of quoting  
+sell\_token\_price: price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.  
+id: unique identifier of this quote  
+quote\_kind: semantics of the order the quote is generated for. Some orders cost more gas to execute since they incur some overhead. That needs to be reflected in a higher fee. When looking up a fee in the DB the order\_kind needs to match the order that the user wants to create (see `quotekind`).
+
+
+### settlement\_observations
+
+Summary:  
+During the solver competition solvers promise a solution of a certain quality. If the settlement that eventually gets executed on-chain is worse than what was promised solvers can get slashed. This table stores the quality of the solution that was actually executed on-chain. (see [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f))
+
+ Column                | Type    | Nullable | Default
+-----------------------|---------|----------|--------
+ block\_number         | bigint  | not null |
+ log\_index            | bigint  | not null |
+ gas\_used             | numeric | not null |
+ effective\_gas\_price | numeric | not null |
+ surplus               | numeric | not null |
+ fee                   | numeric | not null |
+
+Indexes:  
+- "settlement\_observations\_pkey" PRIMARY KEY, btree (`block_number`, `log_index`)  
+
+Description:  
+block\_number: the block in which the settlement happened
+log\_index: index of the `[Settlement](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68)` event  
+gas\_used: the amount of gas the settlement consumed  
+effective\_gas\_price: the effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)  
+surplus: the amount of tokens users received above their limit price converted to ETH  
+fee: the total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)  
+
+
+### settlement\_scores
+
+Summary:  
+Stores winning and follow up scores of every auction for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f) reward computation.
+
+ Column           | Type     | Nullable | Default 
+------------------|----------|----------|--------
+ auction\_id      | bigint   | not null |
+ winner           | bytea    | not null |
+ winning\_score   | numeric  | not null |
+ reference\_score | numeric  | not null |
+ block\_deadline  | bigint   | not null |
+
+Indexes:  
+- "settlement\_scores\_pkey" PRIMARY KEY, btree (`auction_id`)  
+
+Description:  
+auction\_id: the id of the auction the scores belong to  
+winner: public address of the winning solver  
+winning\_score: the score the winning solver submitted. This is the quality the auction observed on-chain should achieve to not reesult in slasing of the solver.  
+reference\_score: the score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.  
+block\_deadline: the block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly  
+
 ### settlements
-### solver_competitions
+
+Summary:  
+Stores data and metadata of `[Settlement](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68)` events emitted from the settlement contract.
+
+ Column        | Type   | Nullable | Default
+---------------|--------|----------|--------
+ block\_number | bigint | not null |
+ log\_index    | bigint | not null |
+ solver        | bytea  | not null |
+ tx\_hash      | bytea  | not null |
+ tx\_from      | bytea  | not null |
+ tx\_nonce     | bigint | not null |
+
+Indexes:  
+- "settlements\_pkey" PRIMARY KEY, btree (`block_number`,`log_index`)  
+
+Description:  
+block\_number: the block in which the settlement happened
+log\_index: the index in which the event was emitted
+solver: the public address of the executing solver
+tx\_hash: the transaction hash in which the settlement got executed
+tx\_from: the address that submitted the transaction
+tx\_nonce: the nonce that was used to submit the transaction
+
+
+### solver\_competitions
+
+Summary:  
+Stores an overview of the solver competition. It contains order contained in the auction along with prices for every relevant token as well as all valid solutions submitted by solvers together with their quality.
+
+ Column | Type   | Nullable | Default
+--------|--------|----------|--------
+ id     | bigint | not null |
+ json   | jsonb  | nullable |
+
+Indexes:  
+- "solver\_competitions\_pkey" PRIMARY KEY, btree (`id`)  
+
+Description:  
+id: the id of the auction that the solver competition belongs to
+json: overview of the solver competition with unspecified format
+
 ### trades
 
 Summary:  
