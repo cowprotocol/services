@@ -84,7 +84,7 @@ async fn impossible() {
         })
         // These two solutions result in different clearing prices and can't be merged.
         .solution(Solution::Valid, &["first order"])
-        .solution(Solution::AdditionalCalldata { bytes: 3 }, &["second order"])
+        .solution(Solution::LowerScore { additional_calldata: 3 }, &["second order"])
         .done()
         .await;
 

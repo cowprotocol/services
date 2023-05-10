@@ -129,8 +129,8 @@ pub enum Solution {
     Valid,
     /// Set up the solver to return a valid solution, with additional
     /// meaningless bytes appended to the calldata. This is useful for
-    /// changing the solution score in a controlled way.
-    AdditionalCalldata { bytes: usize },
+    /// lowering the solution score in a controlled way.
+    LowerScore { additional_calldata: usize },
     /// Set up the solver to return a solution with bogus calldata.
     InvalidCalldata,
 }

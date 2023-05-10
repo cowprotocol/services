@@ -23,9 +23,12 @@ async fn valid() {
             ..Default::default()
         })
         .solution(Solution::Valid, &["example order"])
-        // Additional calldata increases the TX size, so the fees are higher resulting in a lower
-        // score.
-        .solution(Solution::AdditionalCalldata { bytes: 5 }, &["example order"])
+        .solution(
+            Solution::LowerScore {
+                additional_calldata: 5,
+            },
+            &["example order"],
+        )
         .done()
         .await;
 
@@ -54,9 +57,12 @@ async fn invalid() {
             ..Default::default()
         })
         .solution(Solution::Valid, &["example order"])
-        // Additional calldata increases the TX size, so the fees are higher resulting in a lower
-        // score.
-        .solution(Solution::AdditionalCalldata { bytes: 5 }, &["example order"])
+        .solution(
+            Solution::LowerScore {
+                additional_calldata: 5,
+            },
+            &["example order"],
+        )
         .solution(Solution::InvalidCalldata, &["example order"])
         .done()
         .await;
