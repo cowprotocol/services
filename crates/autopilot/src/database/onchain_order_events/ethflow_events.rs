@@ -11,7 +11,7 @@ use {
         ethflow_orders::EthOrderPlacement,
         events::EventIndex,
         onchain_broadcasted_orders::OnchainOrderPlacement,
-        orders::{Interaction, Order},
+        orders::{ExecutionTime, Interaction, Order},
         PgTransaction,
     },
     ethcontract::Event as EthContractEvent,
@@ -99,7 +99,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
         database::ethflow_orders::insert_or_overwrite_orders(ex, eth_order_placements.as_slice())
             .await
             .context("append_ethflow_orders failed during appending eth order placement data")?;
-        database::orders::insert_or_overwrite_pre_interactions(ex, pre_interactions_data.as_slice())
+        database::orders::insert_or_overwrite_interactions(ex, pre_interactions_data.as_slice())
             .await
             .context("append_ethflow_orders failed during appending pre_interactions")
     }
@@ -126,6 +126,8 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
                 target: ByteArray(order.owner.0),
                 value: BigDecimal::new(0.into(), 1),
                 data: WRAP_ALL_SELECTOR.to_vec(),
+                index: 0,
+                execution: ExecutionTime::Pre,
             },
         }
     }

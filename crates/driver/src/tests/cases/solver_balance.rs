@@ -234,6 +234,7 @@ async fn test() {
                         "partiallyFillable": false,
                         "executed": "0",
                         "preInteractions": [],
+                        "postInteractions": [],
                         "class": "market",
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                         "signingScheme": "eip712",

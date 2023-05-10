@@ -4,6 +4,7 @@ use {
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
+            ExecutionTime,
             FullOrder as FullOrderDb,
             OrderClass as DbOrderClass,
             OrderKind as DbOrderKind,
@@ -38,7 +39,8 @@ use {
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
     let status = OrderStatus::Open;
-    let pre_interactions = extract_pre_interactions(&order)?;
+    let pre_interactions = extract_interactions(&order, ExecutionTime::Pre)?;
+    let post_interactions = extract_interactions(&order, ExecutionTime::Post)?;
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
@@ -118,21 +120,30 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         signature,
         interactions: Interactions {
             pre: pre_interactions,
+            post: post_interactions,
         },
     })
 }
 
-pub fn extract_pre_interactions(order: &FullOrderDb) -> Result<Vec<InteractionData>> {
-    let mut pre_interactions = Vec::new();
-    for i in 0..order.pre_interactions.len() {
-        pre_interactions.push(InteractionData {
-            target: H160(order.pre_interactions[i].0 .0),
-            value: big_decimal_to_u256(&order.pre_interactions[i].1)
-                .context("pre interaction value is not U256")?,
-            call_data: order.pre_interactions[i].2.to_vec(),
-        });
-    }
-    Ok(pre_interactions)
+pub fn extract_interactions(
+    order: &FullOrderDb,
+    execution: ExecutionTime,
+) -> Result<Vec<InteractionData>> {
+    let interactions = match execution {
+        ExecutionTime::Pre => &order.pre_interactions,
+        ExecutionTime::Post => &order.post_interactions,
+    };
+    interactions
+        .iter()
+        .map(|interaction| {
+            Ok(InteractionData {
+                target: H160(interaction.0 .0),
+                value: big_decimal_to_u256(&interaction.1)
+                    .context("interaction value is not U256")?,
+                call_data: interaction.2.to_vec(),
+            })
+        })
+        .collect()
 }
 
 pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {

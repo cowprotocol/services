@@ -33,7 +33,7 @@ use {
         db_order_conversions::{
             buy_token_destination_from,
             buy_token_destination_into,
-            extract_pre_interactions,
+            extract_interactions,
             onchain_order_placement_error_from,
             order_class_from,
             order_class_into,
@@ -357,7 +357,8 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
 
 fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let status = calculate_status(&order);
-    let pre_interactions = extract_pre_interactions(&order)?;
+    let pre_interactions = extract_interactions(&order, database::orders::ExecutionTime::Pre)?;
+    let post_interactions = extract_interactions(&order, database::orders::ExecutionTime::Post)?;
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
             user_valid_to,
@@ -427,6 +428,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         signature,
         interactions: Interactions {
             pre: pre_interactions,
+            post: post_interactions,
         },
     })
 }
@@ -501,6 +503,7 @@ mod tests {
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
             pre_interactions: Vec::new(),
+            post_interactions: Vec::new(),
             ethflow_data: None,
             onchain_user: None,
             onchain_placement_error: None,
