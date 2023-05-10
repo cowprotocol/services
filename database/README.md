@@ -6,30 +6,223 @@ With a live database information for all tables can be retrieved with the `\d` c
 
 The database contains the following tables:
 
-### auction_participants
+### auction\_participants
 
-   Column    |  Type  | Nullable | Default
--------------|--------|----------|---------
- auction_id  | bigint | not null |
- participant | bytea  | not null |
+   Column     |  Type  | Nullable | Default
+--------------|--------|----------|---------
+ auction\_id  | bigint | not null |
+ participant  | bytea  | not null |
 Indexes:
-- "auction_participants_pkey" PRIMARY KEY, btree (auction_id, participant)
+- "auction\_participants\_pkey" PRIMARY KEY, btree (`auction_id`, `participant`)
 
 This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
 
 
-### auction_prices
-### auction_transaction
-### auctions (and auctions_id_seq counter))
-### ethflow_orders
-### ethflow_refunds
-### fixed_bytes_test
-### flyway_schema_history
+### auction\_prices
+
+
+Summary:  
+Stores the native price of a token in a given auction. Used for computations related to CIP-20.
+
+ Column     | Type    | Nullable | Default
+------------|---------|----------|--------
+auction\_id | bigint  | not null |
+token       | bytea   | not null |
+price       | numeric | not null |
+
+Indexes:  
+- "auction\_prices\_pkey" PRIMARY KEY, btree (`auction_uid`, `token`)  
+
+Description:  
+auction\_id: in which auction this price was provided  
+token: address of the token the price refers to  
+price: TODO
+
+
+### auction\_transaction
+
+Summary:  
+Stores data required to recover the transaction with which a solver settled an auction.
+
+ Coulmn      | Type   | Nullable | Default
+-------------|--------|----------|--------
+ auction\_id | bigint | not null |
+ tx\_from    | bytea  | not null |
+ tx\_nonce   | bigint | not null |
+
+Indexes:  
+- "auction\_transaction\_pkey" PRIMARY KEY, btree (`auction_id`)  
+
+auction\_id: which auction was settled  
+tx\_from: address of the solver account that won the auction  
+tx\_nonce: nonce that will be used by the solver to settle the auction  
+
+### auctions (and auctions\_id\_seq counter))
+
+Summary:  
+Stores only the current auction as a means to decouple auction creation in the `autopilot` from serving it in the `orderbook`. A new auction replaces the current one and uses the value of the `auctions_id_seq` sequence and increase it to ensure that auction ids are unique and monotonically increasing.  
+
+ Column | Type   | Nullable | Default
+--------|--------|----------|--------
+ id     | bigint | not null |
+ json   | jsonb  | not null |
+
+Indexes:  
+- "auctions\_pkey" PRIMARY KEY, btree (`id`)  
+
+id: the id of the auction  
+json: the serialized version of the auction. Technically the format is unspecified. The only requirement is that whatever format the `autopilot` stores can be parsed by the `orderbook`.  
+
+### ethflow\_orders
+
+Summary:  
+TODO try to understand why this needs to be like this
+
+ Column    | Type   | Nullable | Default
+-----------|--------|----------|--------
+ uid       | bytea  | not null |
+ valid\_to | bigint | not null |
+
+Indexes:  
+- "ethflow\_orders\_pkey" PRIMARY KEY, btree (`uid`)  
+
+Description:  
+uid: the `order_uid` associated with the ethflow order  
+valid\_to: unix timestamp in seconds when the order expires  
+
+### ethflow\_refunds
+
+Summary:  
+For orders buying some token with native ETH users temporarily transfer ownership of their ETH to the ethflow contract. When their order expires the `refunder` service automatically returns the ETH to the user. The table stores data about the transactions that refunded expired orders.  
+
+ Column        | Type   | Nullable | Default
+---------------|--------|----------|--------
+ order\_uid    | bytea  | not null |
+ block\_number | bigint | not null |
+ tx\_hash      | bytea  | not null |
+
+Indexes:  
+- "ethflow\_refunds\_pkey" PRIMARY KEY, btree (`order_uid`)  
+
+order\_uid: id of the order that got refunded  
+block\_number: in which block the order got refunded  
+tx\_hash: the hash of the transaction that refunded the order  
+
+### flyway\_schema\_history
+
+Summary:  
+We use flyway to do migrations of our database schema. This table contains metadata for flyway to know which and when migrations have been applied. Since this table only contains data managed by flyway and we didn't encounter any need to take a closer look at it we'll just refer to the [flyway docs](https://flywaydb.org/documentation/).
+
 ### interactions
+
+Summary:  
+The settlement contract allows associating user provided interactions to be executed before and after an order. This table stores these interactions and associates them with the respective orders.
+
+ Column     | Type    | Nullable | Default
+------------|---------|----------|--------
+ order\_uid | bytea   | not null |
+ index      | integer | not null |
+ target     | bytea   | not null |
+ value      | numeric | not null |
+ data       | bytea   | not null |
+
+Enum `executiontime`  
+
+ Value | Meaning
+ ------|--------
+ pre   | interaction should be executed before sending tokens to the settlement contract
+ post  | interaction should be executed after receiving bought tokens from the settlement contract
+
+Indexes:  
+- "interactions\_pkey" PRIMARY KEY, btree (`order_uid`)  
+
+Description:  
+order\_uid: the order that this interaction belongs to  
+index: index indicating in which interactions should be executed in case the same order has multiple interactions (ascending order)
+target: address of the smart contract this interaction should call
+value: amount of ETH this interaction should send to the smart contract
+data: call data that contains the function selector and the bytes passed to it
+execution: determines in which phase the interaction should be executed (see enum `executiontime`)
+
+
 ### invalidations
-### onchain_order_invalidations
-### onchain_placed_orders
-### order_execution
+
+Summary:  
+Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L70-L71) events emited by [`invalidateOrder()`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L244-L255) of the settlement contract.
+
+ Column        | Type   | Nullable | Default
+---------------|--------|----------|--------
+ block\_number | bigint | not null |
+ log\_index    | bigint | not null |
+ order\_uid    | byteai | not null |
+
+Indexes:  
+- "invalidations\_pkey" PRIMARY KEY, btree (`block_number, log_index`)  
+
+Description:  
+block\_number: the block in which the event was emitted
+log\_index: the index in which the log was emitted
+order\_uid: the order that got invalidated
+
+
+### onchain\_order\_invalidations
+
+Summary:  
+Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L46-L49) events emited by the `ICoWSwapOnchainOrders` interface.
+
+ Column        | Type   | Nullable | Default
+---------------|--------|----------|--------
+ block\_number | bigint | not null |
+ log\_index    | bigint | not null |
+ uid           | byteai | not null |
+
+Indexes:  
+- "onchain\_order\_invalidations\_pkey" PRIMARY KEY, btree (`block_number, log_index`)  
+
+Description:  
+block\_number: the block in which the event was emitted
+log\_index: the index in which the log was emitted
+uid: the order that got invalidated
+
+
+### onchain\_placed\_orders
+
+Summary:  
+Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L23-L44) events emited by the `ICoWSwapOnchainOrders` interface plus some metadata.
+
+ Column           | Type                       | Nullable | Default
+------------------|----------------------------|----------|--------
+ uid              | bytea                      | not null |
+ sender           | bytea                      | not null |
+ is\_reorged      | boolean                    | not null |
+ block\_number    | bigint                     | not null |
+ log\_index       | bigint                     | not null |
+ placement\_error | onchainorderplacementerror | nullable |
+
+Indexes:  
+- "onchain\_placed\_orders\_pkey" PRIMARY KEY, btree (`uid`)  
+
+Enum `onchainorderplacementerror`  
+
+Value | Meaning
+ quote\_not\_found | the order was created without first requesting a quote from the backend
+ invalid\_quote | the associated quote does not apply to the order
+ pre\_validation\_error | TODO
+ disabled\_order\_order\_class | order was created with 
+ valid\_to\_too\_far\_in\_future | TODO
+ invalid\_order\_data | TODO
+ insufficient\_fee | TODO
+ other | some other error occurred
+
+Description:  
+uid: the order that got created
+sender: the user that created the order with the smart contract
+is\_reorged: if the backend detects that an block creating an order got reorged it gets invalidated with this flag
+block\_number: the block in which the order was created
+log\_index: the index in which the `OrderPlacement` event was emitted
+placement\_error: describes what error happened when placing the order (see `onchainorderplacementerror`)
+
+### order\_execution
 
 Summary:  
 Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
