@@ -5,6 +5,7 @@ use {
         settlement::Settlement,
         solver::score_computation::ScoreCalculator,
     },
+    anyhow::{anyhow, Result},
     ethcontract::Address,
     gas_estimation::GasPrice1559,
     num::{BigRational, FromPrimitive},
@@ -18,7 +19,7 @@ pub async fn compute_score(
     gas_price: GasPrice1559,
     prices: &ExternalPrices,
     solver: &Address,
-) -> Option<Score> {
+) -> Result<Score> {
     let gas_amount = settlement_simulator
         .estimate_gas(settlement.clone())
         .await
@@ -27,13 +28,17 @@ pub async fn compute_score(
             // This is because the gas estimation is not accurate enough and does not take
             // the EVM gas refund into account.
             gas_amount * 9 / 10
-        })
-        .ok()?;
+        })?;
 
     let inputs = Inputs::from_settlement(
         settlement,
         prices,
-        BigRational::from_f64(gas_price.effective_gas_price())?,
+        BigRational::from_f64(gas_price.effective_gas_price()).ok_or_else(|| {
+            anyhow!(
+                "gas price {} fails conversion to BigRational",
+                gas_price.effective_gas_price()
+            )
+        })?,
         &gas_amount,
     );
     let nmb_orders = settlement.trades().count();
@@ -42,12 +47,10 @@ pub async fn compute_score(
         .calculate(&inputs, nmb_orders)
         .map(Score::Score);
 
-    tracing::trace!(
-        "solver {} objective value {}, score {:?}",
-        solver,
-        inputs.objective_value(),
-        score
+    tracing::debug!(
+        ?solver, ?score, objective_value = %inputs.objective_value(),
+        "computed score",
     );
 
-    score.ok()
+    score
 }
