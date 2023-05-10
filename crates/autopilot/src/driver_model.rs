@@ -79,7 +79,7 @@ pub mod solve {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Serialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
         pub uid: OrderUid,
@@ -111,7 +111,7 @@ pub mod solve {
         pub signature: Signature,
     }
 
-    #[derive(Clone, Debug, Serialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Class {
         Market,
@@ -138,6 +138,7 @@ pub mod solve {
         pub id: String,
         pub score: U256,
         pub reward: Reward,
+        pub orders: Vec<Order>,
     }
 }
 

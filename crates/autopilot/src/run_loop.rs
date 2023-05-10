@@ -1,6 +1,9 @@
 use {
     crate::{
-        database::{competition::Competition, Postgres},
+        database::{
+            competition::{Competition, ExecutedFee, OrderExecution},
+            Postgres,
+        },
         driver_api::Driver,
         driver_model::{
             execute,
@@ -101,6 +104,39 @@ impl RunLoop {
             let block_deadline = self.current_block.borrow().number
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
+            let mut order_executions = vec![];
+            for order in &solution.orders {
+                let auction_order = auction
+                    .orders
+                    .iter()
+                    .find(|auction_order| auction_order.metadata.uid == order.uid);
+                match auction_order {
+                    Some(auction_order) => {
+                        let executed_fee = match auction_order.metadata.class {
+                            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                                match auction_order.data.partially_fillable {
+                                    // calculated by the solver, therefore we have to trust the
+                                    // driver here
+                                    true => {
+                                        ExecutedFee::Surplus(order.surplus_fee.unwrap_or_default())
+                                    }
+                                    // calculated by the protocol, therefore we can trust the
+                                    // auction
+                                    false => ExecutedFee::Surplus(surplus_fee.unwrap_or_default()),
+                                }
+                            }
+                            _ => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                        };
+                        order_executions.push(OrderExecution {
+                            order_id: order.uid,
+                            executed_fee,
+                        });
+                    }
+                    None => {
+                        tracing::error!(?order.uid, "order not found in auction");
+                    }
+                }
+            }
             let competition = Competition {
                 auction_id,
                 winner,
@@ -109,6 +145,7 @@ impl RunLoop {
                 participants,
                 prices,
                 block_deadline,
+                order_executions,
             };
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {

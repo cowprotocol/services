@@ -7,10 +7,23 @@ use {
         byte_array::ByteArray,
         settlement_scores::Score,
     },
+    model::order::OrderUid,
     number_conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };
+
+#[derive(Clone, Debug)]
+pub enum ExecutedFee {
+    Solver(U256),
+    Surplus(U256),
+}
+
+#[derive(Clone, Debug)]
+pub struct OrderExecution {
+    pub order_id: OrderUid,
+    pub executed_fee: ExecutedFee,
+}
 
 #[derive(Clone, Default)]
 pub struct Competition {
@@ -26,6 +39,7 @@ pub struct Competition {
     /// Winner receives performance rewards if a settlement is finalized on
     /// chain before this block height.
     pub block_deadline: u64,
+    pub order_executions: Vec<OrderExecution>,
 }
 
 // Skipped `prices` as too long.
@@ -50,6 +64,23 @@ impl super::Postgres {
             .start_timer();
 
         let mut ex = self.0.begin().await.context("begin")?;
+
+        for order_execution in &competition.order_executions {
+            let (solver_fee, surplus_fee) = match order_execution.executed_fee {
+                ExecutedFee::Solver(solver_fee) => (solver_fee, None),
+                ExecutedFee::Surplus(surplus_fee) => (Default::default(), Some(surplus_fee)),
+            };
+            let surplus_fee = surplus_fee.as_ref().map(u256_to_big_decimal);
+            database::order_execution::save(
+                &mut ex,
+                &ByteArray(order_execution.order_id.0),
+                competition.auction_id,
+                surplus_fee.as_ref(),
+                &u256_to_big_decimal(&solver_fee),
+            )
+            .await
+            .context("order_execution::save")?;
+        }
 
         database::settlement_scores::insert(
             &mut ex,
