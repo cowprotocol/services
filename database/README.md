@@ -314,7 +314,7 @@ Indexes:
 ### settlements
 
 Summary:  
-Stores data and metadata of `[Settlement](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68)` events emitted from the settlement contract.
+Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.
 
  Column        | Type   | Nullable | Default | Details
 ---------------|--------|----------|---------|--------
