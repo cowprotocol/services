@@ -32,13 +32,13 @@ This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9b
 ### order_execution
 
 Summary:  
-Contains metainformation for trades required to for reward computations that can not be recoverd from the block chain and are not stored in a persistent manner somewhere else.
+Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
 
- Column      | Type    | Nullable | Default
--------------|---------|----------|--------
+ Column       | Type    | Nullable | Default
+--------------|---------|----------|--------
  order\_uid   | bytea   | not null |
  auction\_id  | bigint  | not null |
- reward      | double  | not null |
+ reward       | double  | not null |
  surplus\_fee | numeric | nullable |
  solver\_fee  | numeric | nullable |
 
@@ -51,7 +51,7 @@ order\_uid: which order this trade execution is related to
 auction\_id: in which auction this trade was initiated  
 reward: revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)  
 surplus\_fee: dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.  
-solver\_fee: value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend (which may include subsidies; applies to every other order) or it contains.  
+solver\_fee: value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).  
 
 
 ### order_quotes
@@ -138,7 +138,7 @@ Description:
  valid\_to: point in time when the order can no longer be settled  
  fee\_amount: amount in sell\_token the owner agreed upfront as a fee to be taken for the trade  
  kind: whether the order is a buy or a sell order  
- partially\_fillable: determines if the order can be executed in multiple smaller trades or if it everything has to be executed at once  
+ partially\_fillable: determines if the order can be executed in multiple smaller trades or if everything has to be executed at once  
  signature: signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme  
  cancellation\_timestamp: when the order was cancelled. If the the timestamp is null it means the order was not cancelled  
  receiver: address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens  
