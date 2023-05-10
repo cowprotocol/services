@@ -226,7 +226,7 @@ Column                    | Type                         | Nullable | Default | 
  sell\_token\_balance     | [enum](#selltokensource)     | not null |         | <details>defines how sell\_tokens need to be transferred into the settlement contract</details>
  buy\_token\_balance      | [enum](#buytokendestination) | not null |         | <details>defined how buy\_tokens need to be transferred back to the user</details>
  full\_fee\_amount        | numeric                      | not null |         | <details>estimation in sell\_token how much gas will be needed to execute this order</details>
- class                    | orderclass                   | not null |         | <details>determines which special trade semantics will apply to the execution of this order</details>
+ class                    | [enum](#orderclass)          | not null |         | <details>determines which special trade semantics will apply to the execution of this order</details>
  surplus\_fee             | numeric                      | nullable |         | <details>dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet</details>
  surplus\_fee\_timestamp  | timestamptz                  | nullable |         | <details>when the surplus\_fee was computed for this order, the backend ignores orders with too old surplus\_fee\_timestamp because that order's surplus\_fee is too inaccurate</details>
 
@@ -392,11 +392,12 @@ Indexes:
 
 #### signingscheme
 
- Value               | Meaning
----------------------|--------
- standard            | TODO
- eip1271onchainorder | TODO
- presignonchainorder | TODO
+ Value   | Meaning
+---------|--------
+ presign | TODO
+ ethsign | TODO
+ eip1271 | TODO
+ eip712  | TODO
 
 #### quotekind
 
@@ -425,7 +426,7 @@ Indexes:
 
  Value     | Meaning
 -----------|--------
- ordinary  | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it. This can also be referred to as a market order.
+ market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquiidty | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
 
