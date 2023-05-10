@@ -30,6 +30,30 @@ This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9b
 ### onchain_order_invalidations
 ### onchain_placed_orders
 ### order_execution
+
+Summary:  
+Contains metainformation for trades required to for reward computations that can not be recoverd from the block chain and are not stored in a persistent manner somewhere else.
+
+ Column      | Type    | Nullable | Default
+-------------|---------|----------|--------
+ order\_uid   | bytea   | not null |
+ auction\_id  | bigint  | not null |
+ reward      | double  | not null |
+ surplus\_fee | numeric | nullable |
+ solver\_fee  | numeric | nullable |
+
+Indexes:  
+- "order\_rewards\_pkey" PRIMARY KEY, btree (`order_uid`, `auction_id`)
+  This table was originally called "order\_rewards" and renamed since then but the old index remained
+
+Description:  
+order\_uid: which order this trade execution is related to  
+auction\_id: in which auction this trade was initiated  
+reward: revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)  
+surplus\_fee: dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.  
+solver\_fee: value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend (which may include subsidies; applies to every other order) or it contains.  
+
+
 ### order_quotes
 ### orders
 
