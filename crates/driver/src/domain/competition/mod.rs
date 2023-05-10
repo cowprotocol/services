@@ -109,13 +109,13 @@ impl Competition {
             .collect_vec();
 
         // TODO(#1483): parallelize this
+        // TODO(#1480): more optimal approach for settlement merging
 
         // Merge the settlements in random order.
         settlements.shuffle(&mut rand::thread_rng());
         // The merged settlements in their final form.
         let mut results = Vec::new();
-        while !settlements.is_empty() {
-            let settlement = settlements.pop().unwrap();
+        while let Some(settlement) = settlements.pop() {
             // Has [`settlement`] been merged into another settlement?
             let mut merged = false;
             // Try to merge [`settlement`] into some other settlement.
@@ -141,7 +141,7 @@ impl Competition {
                     }
                     Err(err) => {
                         tracing::debug!(
-                            err = ?err,
+                            ?err,
                             settlement_1 = ?settlement.solutions(),
                             settlement_2 = ?other.solutions(),
                             "settlements can't be merged"
@@ -159,15 +159,14 @@ impl Competition {
         let settlements = results;
 
         // Score the settlements.
-        let scores = join_all(settlements.into_iter().map(|settlement| async move {
+        let scores = settlements.into_iter().map(|settlement| {
             tracing::trace!(
                 solutions = ?settlement.solutions(),
                 settlement_id = ?settlement.id(),
                 "scoring settlement"
             );
-            (settlement.score(&self.eth, auction).await, settlement)
-        }))
-        .await;
+            (settlement.score(&self.eth, auction), settlement)
+        });
 
         // Filter out settlements which failed scoring.
         let scores = scores.into_iter().filter_map(|(result, settlement)| {

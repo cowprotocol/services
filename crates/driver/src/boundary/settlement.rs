@@ -185,7 +185,7 @@ impl Settlement {
         }
     }
 
-    pub async fn score(
+    pub fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,

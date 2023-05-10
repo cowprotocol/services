@@ -124,15 +124,12 @@ pub struct Verified {
 
 impl Verified {
     /// Calculate the score for this settlement.
-    pub async fn score(
+    pub fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Result<super::Score, boundary::Error> {
-        self.inner
-            .boundary
-            .score(eth, auction, self.gas.estimate)
-            .await
+        self.inner.boundary.score(eth, auction, self.gas.estimate)
     }
 
     pub fn id(&self) -> Id {
