@@ -14,7 +14,7 @@ The database contains the following tables:
  participant  | bytea  | not null |         | <details>the solver that participated in the auction</details>
 
 Indexes:  
-- "auction\_participants\_pkey" PRIMARY KEY, btree (`auction_id`, `participant`)
+- PRIMARY KEY: btree(`auction_id`, `participant`)
 
 This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
 
@@ -31,7 +31,7 @@ token       | bytea   | not null |         | <details>address of the token the p
 price       | numeric | not null |         | <details>TODO</details>
 
 Indexes:  
-- "auction\_prices\_pkey" PRIMARY KEY, btree (`auction_uid`, `token`)  
+- PRIMARY KEY: btree(`auction_uid`, `token`)  
 
 ### auction\_transaction
 
@@ -45,7 +45,7 @@ Stores data required to recover the transaction with which a solver settled an a
  tx\_nonce   | bigint | not null |         | <details>nonce that will be used by the solver to settle the auction</details>
 
 Indexes:  
-- "auction\_transaction\_pkey" PRIMARY KEY, btree (`auction_id`)  
+- PRIMARY KEY: btree(`auction_id`)  
 
 ### auctions (and auctions\_id\_seq counter)
 
@@ -58,7 +58,7 @@ Stores only the current auction as a means to decouple auction creation in the `
  json   | jsonb  | not null |         | <details>the serialized version of the auction. Technically the format is unspecified. The only requirement is that whatever format the `autopilot` stores can be parsed by the `orderbook`.</details>
 
 Indexes:  
-- "auctions\_pkey" PRIMARY KEY, btree (`id`)  
+- PRIMARY KEY: btree(`id`)  
 
 ### ethflow\_orders
 
@@ -71,7 +71,7 @@ TODO try to understand why this needs to be like this
  valid\_to | bigint | not null |         | <details>unix timestamp in seconds when the order expires</details>
 
 Indexes:  
-- "ethflow\_orders\_pkey" PRIMARY KEY, btree (`uid`)  
+- PRIMARY KEY: btree(`uid`)  
 
 ### ethflow\_refunds
 
@@ -85,7 +85,7 @@ For orders buying some token with native ETH users temporarily transfer ownershi
  tx\_hash      | bytea  | not null |         | <details>the hash of the transaction that refunded the order</details>
 
 Indexes:  
-- "ethflow\_refunds\_pkey" PRIMARY KEY, btree (`order_uid`)  
+- PRIMARY KEY: btree(`order_uid`)  
 
 ### flyway\_schema\_history
 
@@ -107,7 +107,7 @@ The settlement contract allows associating user provided interactions to be exec
  execution  | executiontime | not null |         | <details>in which phase the interaction should be executed</details>
 
 Indexes:  
-- "interactions\_pkey" PRIMARY KEY, btree (`order_uid`)  
+- PRIMARY KEY: btree(`order_uid`)  
 
 
 ### invalidations
@@ -122,7 +122,8 @@ Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blo
  order\_uid    | byteai | not null |         | <details>the order that got invalidated</details>
 
 Indexes:  
-- "invalidations\_pkey" PRIMARY KEY, btree (`block_number, log_index`)  
+- PRIMARY KEY: btree(`block_number, log_index`)  
+- invalidations\_order\_uid: btree(`order_uid`, `block_number`, `log_index`)  
 
 ### onchain\_order\_invalidations
 
@@ -136,7 +137,8 @@ Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontr
  uid           | byteai | not null |         | <details>the order that got invalidated</details>
 
 Indexes:  
-- "onchain\_order\_invalidations\_pkey" PRIMARY KEY, btree (`block_number, log_index`)  
+- PRIMARY KEY: btree(`uid`)  
+- invalidation\_event\_index: btree(`block_number, log_index`)  
 
 ### onchain\_placed\_orders
 
@@ -153,7 +155,9 @@ Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract
  placement\_error | [enum](#onchainorderplacementerror) | nullable |         | <details>describes what error happened when placing the order</details>
 
 Indexes:  
-- "onchain\_placed\_orders\_pkey" PRIMARY KEY, btree (`uid`)  
+- PRIMARY KEY: btree(`uid`)  
+- event\_index: btree(`block_number`, `index`)
+- order\_sender: hash(sender)
 
 ### order\_execution
 
@@ -169,8 +173,14 @@ Contains metainformation for trades, required for reward computations that canno
  solver\_fee  | numeric | nullable |         | <details>value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).</details>
 
 Indexes:  
-- "order\_rewards\_pkey" PRIMARY KEY, btree (`order_uid`, `auction_id`)  
-  This table was originally called "order\_rewards" and renamed since then but the old index remained
+- PRIMARY KEY: btree(`order_uid`, `auction_id`)  
+- order\_creation\_timestamp: btree(`creation_timestamp`)
+- order\_owner: hash(`owner`)
+- order\_quoting\_parameters: btree(`sell_token`, `buy_token`, `sell_amount`)
+- order\_valid\_to: btree(`valid_to`)
+- user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
+- user\_valid\_to: btree(`valid_to`)
+- version\_idx: btree(`settlement_contract`)
 
 ### order\_quotes
 
@@ -188,7 +198,7 @@ TODO: verify
  buy\_amount        | numeric | not null |         | <details>the buy\_amount of the quote used to create the order with</details>
 
 Indexes:  
-- "order\_quotes\_pkey" PRIMARY KEY, btree (`order_uid`)  
+- PRIMARY KEY: btree(`order_uid`)  
 
 ### orders
 
@@ -223,7 +233,7 @@ Column                    | Type                         | Nullable | Default | 
 
 
 Indexes:  
-- "orders\_pkey" PRIMARY KEY, btree (`uid`)
+- PRIMARY KEY: btree(`uid`)
 
 ### presignature\_events
 
@@ -240,7 +250,9 @@ Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e
  signed        | boolean | not null |         | <details>specifies if an a signature was given or revoked</details>
 
 Indexes:  
-- "presignature\_events\_pkey" PRIMARY KEY, btree (`block_number`, `log_index`)  
+- PRIMARY KEY: btreebtree(`block_number`, `log_index`)  
+- most\_recent\_with\_orderuid: btree (`order_uid`, `block_number` DESC, `log_index` DESC)  
+- presignature\_owner: hash(`owner`)
 
 ### quotes (and quotes\_id\_seq counter)
 
@@ -262,8 +274,8 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  quote\_kind           | [enum](#quotekind) | not null |         | <details>semantics of the order the quote is generated for. Some orders cost more gas to execute since they incur some overhead. That needs to be reflected in a higher fee. When looking up a fee in the DB the order\_kind needs to match the order that the user wants to create.</details>
 
 Indexes:  
-- "quotes\_pkey" PRIMARY KEY, btree (`id`)  
-- "quotes\_token\_expiration", btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)  
+- PRIMARY KEY: btree(`id`)  
+- quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)  
 
 
 ### settlement\_observations
@@ -281,7 +293,7 @@ During the solver competition solvers promise a solution of a certain quality. I
  fee                   | numeric | not null |         | <details>the total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)</details>
 
 Indexes:  
-- "settlement\_observations\_pkey" PRIMARY KEY, btree (`block_number`, `log_index`)  
+- PRIMARY KEY: btree(`block_number`, `log_index`)  
 
 ### settlement\_scores
 
@@ -297,7 +309,7 @@ Stores winning and follow up scores of every auction for [CIP-20](https://snapsh
  block\_deadline  | bigint   | not null |         | <details>the block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly</details>
 
 Indexes:  
-- "settlement\_scores\_pkey" PRIMARY KEY, btree (`auction_id`)  
+- PRIMARY KEY: btree(`auction_id`)  
 
 ### settlements
 
@@ -314,7 +326,9 @@ Stores data and metadata of `[Settlement](https://github.com/cowprotocol/contrac
  tx\_nonce     | bigint | not null |         | <details>the nonce that was used to submit the transaction</details>
 
 Indexes:  
-- "settlements\_pkey" PRIMARY KEY, btree (`block_number`,`log_index`)  
+- PRIMARY KEY: btree(`block_number`,`log_index`)  
+- settlements\_tx\_from\_tx\_nonce: btree(`tx_from`, `tx_nonce`)
+- settlements\_tx\_hash: hash(`tx_hash`)
 
 ### solver\_competitions
 
@@ -327,7 +341,7 @@ Stores an overview of the solver competition. It contains order contained in the
  json   | jsonb  | nullable |         | <details>overview of the solver competition with unspecified format</details>
 
 Indexes:  
-- "solver\_competitions\_pkey" PRIMARY KEY, btree (`id`)  
+- PRIMARY KEY: btree(`id`)  
 
 ### trades
 
@@ -345,8 +359,8 @@ Trade events get issues for complete and for partial order executions.
  fee\_amount   | numeric | not null |         | <details>the fee amount in sell\_token that got executed in this trade. Note that this amount refers to all or a portion of the static fee\_amount the user signed during the order creation.</details>
 
 Indexes:  
-- "trades\_pkey" PRIMARY KEY, btree (`block_number`, `log_index`)  
-- "trade\_order\_uid" btree (`order_uid`, `block_number`, `log_index`)  
+- PRIMARY KEY: btree(`block_number`, `log_index`)  
+- trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)  
 
 ### Enums
 
