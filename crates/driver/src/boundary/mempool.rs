@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{competition::solution::settlement, eth},
+        domain::{competition::solution::settlement::Settlement, eth},
         infra::{blockchain::Ethereum, solver::Solver},
     },
     async_trait::async_trait,
@@ -54,8 +54,7 @@ pub enum HighRisk {
     Disabled,
 }
 
-// TODO Perhaps a better name for this in the future might be Relay
-/// The mempool to use for publishing settlements onchain.
+/// The mempool to use for publishing settlements to the blockchain.
 #[derive(Clone)]
 pub struct Mempool {
     config: Config,
@@ -110,7 +109,8 @@ impl Mempool {
         })
     }
 
-    pub async fn send(&self, solver: &Solver, settlement: settlement::Verified) -> Result<()> {
+    /// Publish the settlement and wait for it to be confirmed.
+    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<()> {
         let web3 = boundary::web3(&self.eth);
         let nonce = web3
             .eth()
@@ -141,18 +141,16 @@ impl Mempool {
             web3.clone(),
             &web3,
         )?;
-        let gas = settlement.gas;
-        let id = settlement.id();
         submitter
             .submit(
-                settlement.boundary().inner,
+                settlement.boundary.inner,
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
-                    gas_estimate: gas.estimate.into(),
+                    gas_estimate: settlement.gas.estimate.into(),
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
                     network_id: self.eth.network_id().to_string(),
-                    additional_call_data: id.to_be_bytes().into_iter().collect(),
+                    additional_call_data: settlement.id.to_be_bytes().into_iter().collect(),
                 },
             )
             .await?;

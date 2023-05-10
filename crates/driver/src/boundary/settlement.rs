@@ -48,7 +48,7 @@ use {
     std::sync::Arc,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     pub solver: eth::Address,
@@ -161,6 +161,7 @@ impl Settlement {
 
     pub fn tx(
         &self,
+        id: settlement::Id,
         contract: &contracts::GPv2Settlement,
         internalization: Internalization,
     ) -> eth::Tx {
@@ -176,11 +177,13 @@ impl Settlement {
             ethcontract::Account::Local(self.solver.into(), None),
         );
         let tx = builder.into_inner();
+        let mut input = tx.data.unwrap().0;
+        input.extend(id.0.to_be_bytes());
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap_or_default().into(),
-            input: tx.data.unwrap().0,
+            input,
             access_list: Default::default(),
         }
     }

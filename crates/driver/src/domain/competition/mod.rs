@@ -1,7 +1,7 @@
 use {
     self::solution::settlement,
     crate::{
-        domain::liquidity,
+        domain::{competition::solution::Settlement, liquidity},
         infra::{
             self,
             blockchain::Ethereum,
@@ -42,7 +42,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
-    pub settlement: Mutex<Option<settlement::Verified>>,
+    pub settlement: Mutex<Option<Settlement>>,
 }
 
 impl Competition {
@@ -86,23 +86,23 @@ impl Competition {
             }
         });
 
-        // Verify the solutions, encoding them into settlements.
+        // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            tracing::trace!(id = ?solution.id, "verifying");
+            tracing::trace!(id = ?solution.id, "encoding settlement");
             (
                 solution.id,
-                solution.verify(&self.eth, &self.simulator, auction).await,
+                solution.encode(auction, &self.eth, &self.simulator).await,
             )
         }))
         .await;
 
-        // Filter out solutions that failed verification.
+        // Filter out solutions that failed to encode.
         let mut settlements = settlements
             .into_iter()
             .filter_map(|(id, result)| {
                 result
                     .tap_err(|err| {
-                        tracing::info!(?err, ?id, "discarding solution: failed verification")
+                        tracing::info!(?err, ?id, "discarding solution: settlement encoding failed")
                     })
                     .ok()
             })
@@ -120,20 +120,12 @@ impl Competition {
             let mut merged = false;
             // Try to merge [`settlement`] into some other settlement.
             for other in settlements.iter_mut() {
-                match other
-                    .merge(
-                        &settlement,
-                        self.eth.contracts().settlement(),
-                        &self.eth,
-                        &self.simulator,
-                    )
-                    .await
-                {
+                match other.merge(&settlement, &self.eth, &self.simulator).await {
                     Ok(m) => {
                         tracing::debug!(
                             settlement_1 = ?settlement.solutions(),
                             settlement_2 = ?other.solutions(),
-                            "merged settlements"
+                            "merged solutions"
                         );
                         *other = m;
                         merged = true;
@@ -144,7 +136,7 @@ impl Competition {
                             ?err,
                             settlement_1 = ?settlement.solutions(),
                             settlement_2 = ?other.solutions(),
-                            "settlements can't be merged"
+                            "solutions can't be merged"
                         );
                     }
                 }
@@ -162,7 +154,7 @@ impl Competition {
         let scores = settlements.into_iter().map(|settlement| {
             tracing::trace!(
                 solutions = ?settlement.solutions(),
-                settlement_id = ?settlement.id(),
+                settlement_id = ?settlement.id,
                 "scoring settlement"
             );
             (settlement.score(&self.eth, auction), settlement)
@@ -186,7 +178,7 @@ impl Competition {
         let scores = scores.map(|(score, settlement)| {
             tracing::info!(
                 solutions = ?settlement.solutions(),
-                settlement_id = ?settlement.id(),
+                settlement_id = ?settlement.id,
                 score = f64::from(score.clone()),
                 "settlement scored"
             );
@@ -200,7 +192,7 @@ impl Competition {
 
         tracing::info!(?settlement, "winning settlement");
 
-        let id = settlement.id();
+        let id = settlement.id;
         *self.settlement.lock().unwrap() = Some(settlement);
         Ok((id, score))
     }
@@ -213,11 +205,11 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::InvalidSolutionId)?;
-        if id != settlement.id() {
+        if id != settlement.id {
             return Err(Error::InvalidSolutionId);
         }
         tracing::trace!(?id, "settling");
-        mempool::send(&self.mempools, &self.solver, settlement)
+        mempool::execute(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)
     }
