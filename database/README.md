@@ -27,7 +27,7 @@ Stores the native price of a token in a given auction. Used for computations rel
 ------------|---------|----------|--------
 auction\_id | bigint  | not null | <details>in which auction this price was provided</details>
 token       | bytea   | not null | <details>address of the token the price refers to</details>
-price       | numeric | not null |         | <details>TODO</details>
+price       | numeric | not null | <details>TODO</details>
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_uid`, `token`)  
@@ -39,9 +39,9 @@ Stores data required to recover the transaction with which a solver settled an a
 
  Coulmn      | Type   | Nullable | Details
 -------------|--------|----------|--------
- auction\_id | bigint | not null |
+ auction\_id | bigint | not null | <details>the id of the auction</details>
  tx\_from    | bytea  | not null | <details>address of the solver account that won the auction</details>
- tx\_nonce   | bigint | not null |         | <details>nonce that will be used by the solver to settle the auction</details>
+ tx\_nonce   | bigint | not null | <details>nonce that will be used by the solver to settle the auction</details>
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_id`)  
