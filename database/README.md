@@ -179,7 +179,7 @@ Quotes that an order was created with. This quotes get stored persistently and c
  order\_uid         | bytea   | not null | <details>order that this quote belongs to</details>
  gas\_amount        | double  | not null | <details>estimated gas used by the quote used to create this order with</details>
  gas\_price         | double  | not null | <details>gas price at the time of order creation</details>
- sell\_token\_price | double  | not null | <details>ither-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.</details>
+ sell\_token\_price | double  | not null | <details>ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.</details>
  sell\_amount       | numeric | not null | <details>sell\_amount of the quote used to create the order with</details>
  buy\_amount        | numeric | not null | <details>buy\_amount of the quote used to create the order with</details>
 
