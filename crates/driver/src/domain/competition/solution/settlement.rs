@@ -134,63 +134,6 @@ impl Settlement {
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
-        let (access_list, gas) = Self::simulate(
-            id,
-            solutions.clone(),
-            settlement.clone(),
-            eth,
-            simulator,
-            Internalization::Enable,
-        )
-        .await?;
-
-        // Ensure that the solver has sufficient balance for the settlement to be mined.
-        if eth.balance(settlement.solver).await? < gas.required_balance() {
-            return Err(Error::InsufficientBalance);
-        }
-
-        // Some rules which are enforced by the settlement contract for non-internalized
-        // interactions are not enforced for internalized interactions (in order to save
-        // gas). However, publishing a settlement with interactions that violate
-        // these rules constitutes a punishable offense for the solver, even if
-        // the interactions are internalized. To ensure that this doesn't happen, check
-        // that the settlement simulates even when internalizations are disabled.
-        if solutions
-            .values()
-            .flat_map(|solution| solution.interactions.iter())
-            .any(|interaction| interaction.internalize())
-        {
-            Self::simulate(
-                id,
-                solutions.clone(),
-                settlement.clone(),
-                eth,
-                simulator,
-                Internalization::Disable,
-            )
-            .await?;
-        }
-
-        Ok(Self {
-            id,
-            solutions,
-            boundary: settlement,
-            access_list,
-            gas,
-        })
-    }
-
-    /// Simulate executing this settlement on the blockchain. This process
-    /// generates the access list and estimates the gas needed to settle
-    /// the solution.
-    async fn simulate(
-        id: Id,
-        solutions: HashMap<solution::Id, Solution>,
-        settlement: boundary::Settlement,
-        eth: &Ethereum,
-        simulator: &Simulator,
-        internalization: Internalization,
-    ) -> Result<(eth::AccessList, Gas), Error> {
         // The settlement contract will fail if the receiver is a smart contract.
         // Because of this, if the receiver is a smart contract and we try to
         // estimate the access list, the access list estimation will also fail.
@@ -200,7 +143,8 @@ impl Settlement {
         // the access list is already specified.
 
         // The solution is to do access list estimation in two steps: first, simulate
-        // moving 1 wei into every smart contract to get a partial access list.
+        // moving 1 wei into every smart contract to get a partial access list, and then
+        // use that partial access list to calculate the final access list.
         let user_trades = solutions
             .values()
             .flat_map(|solution| solution.user_trades());
@@ -222,21 +166,79 @@ impl Settlement {
             .into_iter()
             .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
 
+        // Simulate the settlement and get the access list and gas.
+        let (access_list, gas) = Self::simulate(
+            id,
+            settlement.clone(),
+            &partial_access_list,
+            eth,
+            simulator,
+            Internalization::Enable,
+        )
+        .await?;
+        let price = eth.gas_price().await?;
+        let gas = Gas::new(gas, price);
+
+        // Ensure that the solver has sufficient balance for the settlement to be mined.
+        if eth.balance(settlement.solver).await? < gas.required_balance() {
+            return Err(Error::InsufficientBalance);
+        }
+
+        // Is at least one interaction internalized?
+        if solutions
+            .values()
+            .flat_map(|solution| solution.interactions.iter())
+            .any(|interaction| interaction.internalize())
+        {
+            // Some rules which are enforced by the settlement contract for non-internalized
+            // interactions are not enforced for internalized interactions (in order to save
+            // gas). However, publishing a settlement with interactions that violate
+            // these rules constitutes a punishable offense for the solver, even if
+            // the interactions are internalized. To ensure that this doesn't happen, check
+            // that the settlement simulates even when internalizations are disabled.
+            Self::simulate(
+                id,
+                settlement.clone(),
+                &partial_access_list,
+                eth,
+                simulator,
+                Internalization::Disable,
+            )
+            .await?;
+        }
+
+        Ok(Self {
+            id,
+            solutions,
+            boundary: settlement,
+            access_list,
+            gas,
+        })
+    }
+
+    /// Simulate executing this settlement on the blockchain. This process
+    /// ensures that the settlement does not revert, and calculates the
+    /// access list and gas needed to settle the solution.
+    async fn simulate(
+        id: Id,
+        settlement: boundary::Settlement,
+        partial_access_list: &eth::AccessList,
+        eth: &Ethereum,
+        simulator: &Simulator,
+        internalization: Internalization,
+    ) -> Result<(eth::AccessList, eth::Gas), Error> {
         // Add the partial access list to the settlement tx.
         let tx = settlement
             .tx(id, eth.contracts().settlement(), internalization)
-            .set_access_list(partial_access_list);
+            .set_access_list(partial_access_list.to_owned());
 
-        // Second, simulate the full access list, passing the partial access
-        // list into the simulation. This way the settlement contract does not
-        // fail, and hence the full access list estimation also does not fail.
+        // Simulate the full access list, passing the partial access
+        // list into the simulation.
         let access_list = simulator.access_list(tx.clone()).await?;
         let tx = tx.set_access_list(access_list.clone());
 
-        // Get the gas parameters for the settlement using the full access list.
-        let estimate = simulator.gas(tx).await?;
-        let price = eth.gas_price().await?;
-        let gas = Gas::new(estimate, price);
+        // Simulate the settlement using the full access list and get the gas used.
+        let gas = simulator.gas(tx).await?;
 
         Ok((access_list, gas))
     }
