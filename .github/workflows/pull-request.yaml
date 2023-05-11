@@ -25,6 +25,14 @@ jobs:
           cargo clippy --version
       - run: cargo +nightly fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
+  unit-tests:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      - run: cargo test
+  # TODO Also separate postgres and local node tests
   rust-tests:
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -83,8 +91,6 @@ jobs:
           sudo -u postgres createdb $USER
           psql -c "ALTER USER $USER PASSWORD '$FLYWAY_PASSWORD';"
           ${{ env.FLYWAY_PATH }}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
-      - run: cargo test --no-run
-      - run: cargo test
       # tests requiring a Postgres instance.
       - run: cargo test postgres -- --ignored --test-threads 1
       # tests requiring a local ethereum node
